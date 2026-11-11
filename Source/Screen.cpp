@@ -15,13 +15,23 @@ namespace col
 }
 static const char* const kNotes[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
+// The embedded typefaces. They are let go while JUCE is still up (releaseFonts, from the app's
+// shutdown): left to the end of the process, macOS's typeface is destroyed after the JUCE objects
+// it leans on, and the app aborts as it quits.
+static std::map<const char*, juce::Typeface::Ptr>& faceCache()
+{
+    static auto* cache = new std::map<const char*, juce::Typeface::Ptr>();     // never destroyed: emptied by releaseFonts
+    return *cache;
+}
+
 static juce::Font face (const char* data, int size, float px, float tracking)
 {
-    static std::map<const char*, juce::Typeface::Ptr> cache;
-    auto& t = cache[data];
+    auto& t = faceCache()[data];
     if (t == nullptr) t = juce::Typeface::createSystemTypefaceFor (data, (size_t) size);
     return juce::Font (juce::FontOptions (t).withPointHeight (px).withKerningFactor (tracking));
 }
+
+void Screen::releaseFonts() { faceCache().clear(); }
 
 Screen::Screen (Session& s)
     : ses (s), eng (s.engine),
@@ -261,32 +271,53 @@ void Screen::drawBar (G& g)
     lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
 }
 
+float Screen::slideGoal() const
+{
+    // the column of the panel CONFIG is open on goes to the third column, the one beside CONFIG
+    if (! cfgOpen || page != pMain) return 0.0f;
+    const int col = cfg.kind == 0 ? (cfg.lane < 5 ? cfg.lane : cfg.lane - 5) : cfg.kind == 1 ? cfg.slot : 3;
+    return (float) (2 - col) * 282.0f;
+}
+
 void Screen::drawMain (G& g)
 {
-    // CONFIG slides in from the left over two columns and moves the top three rows over
-    const float ease = cfgT * cfgT * (3.0f - 2.0f * cfgT), dx = 564.0f * ease;
+    // CONFIG slides in from the left over two columns; the top three rows move to bring its panel beside it
+    const float ease = cfgT * cfgT * (3.0f - 2.0f * cfgT);
+    const R cfgR (23.0f - 564.0f * (1.0f - ease), 78, 554, 894);
+    const float left = cfgT > 0.001f ? std::max (9.0f, std::floor (cfgR.getRight())) : 9.0f;
+    rowsClip = R (left, 64, 1710.0f - left, 912);
+    masterRect = {};
     {
         const juce::Graphics::ScopedSaveState state (g);
-        g.reduceClipRegion (juce::Rectangle<int> (9, 64, 1710, 912));
-        g.addTransform (juce::AffineTransform::translation (dx, 0.0f));
-        shift = dx;
-        for (int l = 0; l < kLanes; ++l)
+        g.reduceClipRegion (rowsClip.getSmallestIntegerContainer());
+        const size_t first = hits.size();
+        for (int copy = -1; copy <= 1; ++copy)
         {
-            const int col = l < 5 ? l : l - 5, row = l < 5 ? 0 : 1;
-            drawLane (g, l, R (23.0f + (float) col * 282.0f, row == 0 ? 78.0f : 430.0f, 272, 344));
+            const float dx = slideX + (float) copy * 1692.0f;       // six columns of 282
+            if (23.0f + dx >= rowsClip.getRight() || 1705.0f + dx <= rowsClip.getX()) continue;
+            const juce::Graphics::ScopedSaveState moved (g);
+            g.addTransform (juce::AffineTransform::translation (dx, 0.0f));
+            shift = dx;
+            for (int l = 0; l < kLanes; ++l)
+            {
+                const int col = l < 5 ? l : l - 5, row = l < 5 ? 0 : 1;
+                drawLane (g, l, R (23.0f + (float) col * 282.0f, row == 0 ? 78.0f : 430.0f, 272, 344));
+            }
+            drawSnapPanel (g, R (1433, 78, 272, 344));
+            for (int sl = 0; sl < kSlots; ++sl) drawInsert (g, sl, R (23.0f + (float) sl * 282.0f, 782, 272, 190));
+            drawReturns (g, R (869, 782, 272, 190));
+            drawMaster (g, R (1151, 782, 554, 190));
+            shift = 0.0f;
         }
-        drawSnapPanel (g, R (1433, 78, 272, 344));
-        for (int sl = 0; sl < kSlots; ++sl) drawInsert (g, sl, R (23.0f + (float) sl * 282.0f, 782, 272, 190));
-        drawReturns (g, R (869, 782, 272, 190));
-        drawMaster (g, R (1151, 782, 554, 190));
-        shift = 0.0f;
+        // what is off the screen or behind CONFIG cannot be touched
+        hits.erase (std::remove_if (hits.begin() + (long) first, hits.end(), [this] (const Hit& h) { return ! h.r.intersects (rowsClip); }), hits.end());
     }
     drawSequencer (g, R (23, 980, 1682, 110));
     if (cfgT > 0.001f)
     {
         const juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (juce::Rectangle<int> (9, 64, 1710, 912));
-        drawConfig (g, R (23.0f - 564.0f * (1.0f - ease), 78, 554, 894));
+        drawConfig (g, cfgR);
     }
 }
 
@@ -356,14 +387,25 @@ void Screen::drawConfig (G& g, R r)
         hit (cfgDisplay, hDisplay);
         y += (float) dh + 6;
     }
+    // what the module says of itself, and where a dropped file goes: onto this panel, for this panel
     String status = m.statusLine();
-    if (m.acceptsFiles())
+    if (cfg.kind == 0 && m.acceptsFiles())
     {
-        const String f = cfg.kind == 0 ? juce::File (eng.laneFile (cfg.lane)).getFileName() : String();
+        const String f = juce::File (eng.laneFile (cfg.lane)).getFileName();
         status << (status.isEmpty() ? "" : "   ") << (f.isNotEmpty() ? "FILE: " + f : m.fileHint() + " ON THIS LANE");
     }
-    if (cfgNote.isNotEmpty() && cfg.kind == 0) status = cfgNote;
-    if (status.isNotEmpty()) { plate (g, x0, y, status.toUpperCase(), fNote, 6, col::white, col::black, 22); y += 28; }
+    else if (cfg.kind != 0 && eng.acceptsFiles (cfg) && status.isEmpty())
+        status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");
+    if (cfgNote.isNotEmpty()) status = cfgNote;
+    if (status.isNotEmpty())
+    {
+        status = status.toUpperCase();
+        const R sr (x0, y, std::min (544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
+        g.setColour (col::white); g.fillRect (sr);
+        g.setColour (col::black); g.setFont (fNote);
+        g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
+        y += 28;
+    }
 
     const int cols = 6, total = (int) cfgParams.size(), rows = (total + cols - 1) / cols;
     const float rowH = 96.0f;
@@ -464,6 +506,7 @@ void Screen::drawInsert (G& g, int slot, R r)
 {
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     const int l = ses.activeLane, t = eng.insertType (l, slot);
+    hit (r, hDropFx, 1, slot);
     panel (g, r, col::putty);
     const String name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
     const float w = plate (g, x0, y0, name, fLegend, 8, col::white, col::black);
@@ -475,6 +518,7 @@ void Screen::drawInsert (G& g, int slot, R r)
 void Screen::drawReturns (G& g, R r)
 {
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
+    hit (r, hDropFx, 2, 1);
     panel (g, r, col::putty);
     plate (g, x0, y0, "RETURNS", fLegend, 8, col::white, col::black);
     const float xr = r.getRight() - 5;
@@ -482,12 +526,19 @@ void Screen::drawReturns (G& g, R r)
     headKeys (g, xr - 94, y0 + 2, 2, 0, 0, cx::kRetMS, cx::kRetMS + 1);
     text (g, "B", R (xr - 86, y0, 14, 26), fLegend, col::black);
     headKeys (g, xr, y0 + 2, 2, 0, 1, cx::kRetMS + 2, cx::kRetMS + 3);
-    for (int k = 0; k < 8; ++k) control (g, cx::kRet + k, x0 + (float) (k % 4) * 66, body + (float) (k / 4) * 77, 64, col::lit);
+    // A's four, then B's four for the reverb it is now
+    const int sm = eng.spaceModel();
+    for (int k = 0; k < 4; ++k)
+    {
+        control (g, cx::kRet + k, x0 + (float) k * 66, body, 64, col::lit);
+        control (g, cx::space (sm, k), x0 + (float) k * 66, body + 77, 64, col::lit);
+    }
 }
 
 void Screen::drawMaster (G& g, R r)
 {
-    masterRect = r.translated (shift, 0.0f);
+    // the copy of it that is on the screen (the columns go round while CONFIG is open)
+    if (const R mr = r.translated (shift, 0.0f).getIntersection (rowsClip); ! mr.isEmpty()) masterRect = masterRect.isEmpty() ? mr : masterRect.getUnion (mr);
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     panel (g, r, col::grey);
     plate (g, x0, y0, "MASTER", fLegend, 8, col::white, col::black);
@@ -797,7 +848,7 @@ void Screen::drawMacros (G& g)
             const int ln = i < cx::kRet ? i / cx::kPerLane : -1;
             if (ln != lastLane) { moves << (moves.isEmpty() ? "" : "   ") << (ln >= 0 ? String (lanes()[(size_t) ln].name) : String ("RETURNS")) << ": "; lastLane = ln; }
             else moves << ", ";
-            moves << eng.control (i).label;
+            moves << eng.control (i).label << (i >= cx::space (1, 0) && i < cx::space (1, 4) ? " (CONV)" : "");
         }
         g.drawFittedText (moves, juce::Rectangle<int> ((int) x0, (int) (ky + 102), 258, 64), juce::Justification::topLeft, 4, 0.8f);
     }
@@ -1109,19 +1160,31 @@ void Screen::filesDropped (const juce::StringArray& files, int x, int y)
 {
     if (files.size() == 0 || page != pMain) return;
     const auto p = logical ({ (float) x, (float) y });
-    int target = -1;
-    if (cfgOpen && cfg.kind == 0 && cfgRect.contains (p)) target = cfg.lane;        // onto the open CONFIG panel
+    // Where it lands. An open CONFIG panel takes it for whatever that panel is set to (a lane, an
+    // insert, a return). Else the panel under the pointer: a lane, an insert that takes files, the
+    // returns (for SPACE). Anywhere else, the active lane.
+    Engine::Target t { 0, ses.activeLane, 0 };
+    if (cfgOpen && cfgRect.contains (p)) t = cfg;
     else
         for (size_t i = hits.size(); i-- > 0;)
-            if (hits[i].kind == hLanePanel && hits[i].r.contains (p)) { target = hits[i].a; break; }
-    if (target < 0) target = ses.activeLane;                                         // anywhere else: the active lane
-    const juce::File f (files[0]);
-    const bool ok = eng.loadFile (target, f);
+        {
+            const auto& h = hits[i];
+            if (! h.r.contains (p)) continue;
+            if (h.kind == hLanePanel) { t = { 0, h.a, 0 }; break; }
+            if (h.kind == hDropFx)
+            {
+                const Engine::Target fx { h.a, ses.activeLane, h.b };
+                if (eng.acceptsFiles (fx)) t = fx;
+                break;
+            }
+        }
+    const bool takes = eng.acceptsFiles (t);
+    const bool ok = takes && eng.loadFiles (t, t.kind == 0 ? juce::StringArray (files[0]) : files);
     cfgOpen = false;
-    openConfig ({ 0, target, 0 });
-    cfgNote = ok ? String() : (eng.processorFor ({ 0, target, 0 })->mod().acceptsFiles()
-                                   ? "COULD NOT READ " + f.getFileName().toUpperCase() + ". IF MACOS ASKED FOR ACCESS TO THE FOLDER, ALLOW IT AND DROP THE FILE AGAIN."
-                                   : String ("THIS LANE'S MODULE TAKES NO AUDIO FILE."));
+    openConfig (t);
+    if (ok) cfgNote = {};
+    else if (! takes) cfgNote = t.kind == 0 ? "THIS LANE'S MODULE TAKES NO AUDIO FILE." : "THIS EFFECT TAKES NO AUDIO FILE.";
+    else cfgNote = "COULD NOT READ " + juce::File (files[0]).getFileName().toUpperCase() + ". IF MACOS ASKED FOR ACCESS TO THE FOLDER, ALLOW IT AND DROP THE FILE AGAIN.";
     if (ok) ses.touch();
     repaint();
 }
@@ -1173,9 +1236,20 @@ void Screen::timerCallback()
         cfgT = want > cfgT ? std::min (want, cfgT + 0.2f) : std::max (want, cfgT - 0.2f);
         repaint();
     }
+    // the rows travel to wherever CONFIG wants them, in step with its panel
+    if (const float goal = slideGoal(); goal != slideTo) { slideFrom = slideX; slideTo = goal; slideT = 0.0f; }
+    if (slideT < 1.0f)
+    {
+        slideT = std::min (1.0f, slideT + 0.2f);
+        slideX = slideFrom + (slideTo - slideFrom) * slideT * slideT * (3.0f - 2.0f * slideT);
+        repaint();
+    }
     if (page == pMain)
     {
         if (cfgOpen && ! cfgDisplay.isEmpty()) dirty (cfgDisplay);
+        if (cfgOpen)
+            if (auto* pr = eng.processorFor (cfg))
+                if (const String st = pr->mod().statusLine(); st != cfgStatus) { cfgStatus = st; cfgStale = true; dirty (cfgRect); }     // an import finishing says so
         dirty (masterRect);
         const bool run = eng.isRunning();
         if (run || wasRunning)

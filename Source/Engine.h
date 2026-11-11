@@ -37,8 +37,9 @@ namespace cx
     constexpr int kMute = kGen + 4, kSolo = kMute + 1;      // the lane's MUTE and SOLO
     constexpr int kInsMS = kSolo + 1;                       // MUTE and SOLO for each insert slot
     constexpr int kPerLane = kInsMS + kSlots * 2;
-    constexpr int kRet = kLanes * kPerLane;                 // 4 knobs for A, 4 for B
-    constexpr int kRetMS = kRet + 8;                        // A MUTE, A SOLO, B MUTE, B SOLO
+    constexpr int kRet = kLanes * kPerLane;                 // 4 knobs for A, 4 for B as REVERB, 4 for B as CONVOLUTION
+    constexpr int kRetKnobs = 4 + 4 * kSpaceModels;
+    constexpr int kRetMS = kRet + kRetKnobs;                // A MUTE, A SOLO, B MUTE, B SOLO
     constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT
     constexpr int kTempo = kMaster + 3, kKey = kTempo + 1, kGlide = kKey + 1;
     constexpr int kSnap = kGlide + 1;                       // the 16 snapshot knobs
@@ -48,6 +49,7 @@ namespace cx
     inline int gen (int l, int k)               { return l * kPerLane + kGen + k; }
     inline int insMute (int l, int slot)        { return l * kPerLane + kInsMS + slot * 2; }
     inline int insSolo (int l, int slot)        { return insMute (l, slot) + 1; }
+    inline int space (int model, int k)         { return kRet + 4 + model * 4 + k; }      // return B's knob k on that model
 }
 
 double glideBarsFor (float v);      // the GLIDE list: OFF, 1/4 bar ... 256 bars
@@ -89,12 +91,26 @@ public:
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
     void setInsertType (int lane, int slot, int type, bool defaults = true);
 
-    // A dropped audio file, for a lane whose module takes one.
-    bool loadFile (int lane, const juce::File&);
+    // ---- what a CONFIG panel, a dropped file or a setup change is aimed at
+    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1)
+
+    // ---- return B (SPACE) is one of two reverbs: 0 REVERB, 1 CONVOLUTION. Both stay built, so the
+    // places a convolution holds are still there when it comes back; only the chosen one runs.
+    int spaceModel() const                      { return spaceWant.load(); }
+    void setSpaceModel (int model);
+
+    // ---- dropped audio files, for a lane, insert or return whose module takes them. A convolution
+    // keeps eight places: the files go to the place its PLACE is on (several fill the next ones).
+    struct FileRef { int place = 0, type = -1; juce::StringArray files; };      // type: the insert effect they were given to
+    bool acceptsFiles (Target) const;
+    bool loadFiles (Target, const juce::StringArray& paths);
+    bool loadFile (int lane, const juce::File& f)   { return loadFiles ({ 0, lane, 0 }, juce::StringArray (f.getFullPathName())); }
     juce::String laneFile (int lane) const      { return files[(size_t) lane]; }
+    const std::vector<FileRef>& heldFiles (Target) const;
+    // A session opening: a return reads them at once, an insert when that effect is next in the slot.
+    void setHeldFiles (Target, const std::vector<FileRef>&);
 
     // ---- setup: every parameter of a hosted module that the performance screen does not show
-    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1)
     struct SetupParam { juce::String id, name, text; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; };
     using SetupState = std::vector<std::pair<juce::String, float>>;
     SFProcessor* processorFor (Target) const;
@@ -186,7 +202,13 @@ private:
 
     std::array<Lane, kLanes> lane;
     std::array<std::array<int, kSlots>, kLanes> insType {};
-    std::unique_ptr<SFProcessor> retA, retB;
+    std::unique_ptr<SFProcessor> retA;
+    std::array<std::unique_ptr<SFProcessor>, kSpaceModels> space;
+    std::atomic<int> spaceWant { 0 };
+    int spaceNow = 0, spaceHold = 0;                         // audio thread: the one that runs; samples it stays silent after a change
+    std::vector<FileRef> spaceFiles;
+    std::array<std::array<std::vector<FileRef>, kSlots>, kLanes> insFiles;
+    void replayFiles (SFProcessor&, const std::vector<FileRef>&);
     std::vector<std::unique_ptr<SFProcessor>> master;
     std::vector<std::pair<InsertInst*, uint64_t>> retired;
     juce::SpinLock patLock;

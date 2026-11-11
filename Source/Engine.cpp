@@ -19,6 +19,8 @@ static const float kSendDefaults[kLanes][2] = {
     { 0.0f, 0.0f }, { 0.12f, 0.0f }, { 0.2f, 0.2f }, { 0.0f, 0.35f }, { 0.3f, 0.2f }, { 0.0f, 0.0f },
     { 0.0f, 0.0f }, { 0.35f, 0.15f }, { 0.45f, 0.3f }, { 0.0f, 0.4f }, { 0.3f, 0.3f } };
 
+static const char* const kModelId = "__model";       // SPACE's reverb, among its setup
+
 struct Engine::Loud { sf::LoudnessMeter m; };
 Engine::InsertInst::InsertInst() = default;
 Engine::InsertInst::~InsertInst() = default;
@@ -142,17 +144,20 @@ Engine::Engine()
     }
 
     retA = makeProc (returnA().module, returnA().fixed);
-    retB = makeProc (returnB().module, returnB().fixed);
+    for (int m = 0; m < kSpaceModels; ++m) space[(size_t) m] = makeProc (returnB (m).module, returnB (m).fixed);
     for (int k = 0; k < 4; ++k)
     {
         auto& a = controls[(size_t) (cx::kRet + k)];
         bind[(size_t) (cx::kRet + k)] = makeBind (*retA, returnA().cells[k], &a);
         a.id = juce::String ("ret.dub_") + returnA().cells[k].param; a.snapshot = true;
-        auto& b = controls[(size_t) (cx::kRet + 4 + k)];
-        bind[(size_t) (cx::kRet + 4 + k)] = makeBind (*retB, returnB().cells[k], &b);
-        b.id = juce::String ("ret.space_") + returnB().cells[k].param; b.snapshot = true;
+        // B's four knobs once for each reverb it can be: a knob's place means something else on the other
+        for (int m = 0; m < kSpaceModels; ++m)
+        {
+            auto& b = controls[(size_t) cx::space (m, k)];
+            bind[(size_t) cx::space (m, k)] = makeBind (*space[(size_t) m], returnB (m).cells[k], &b);
+            b.id = juce::String (m == 0 ? "ret.space_" : "ret.conv_") + returnB (m).cells[k].param; b.snapshot = true;
+        }
     }
-
     named (cx::kRetMS, "ret.dub_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
     named (cx::kRetMS + 1, "ret.dub_solo", "SOLO", Kind::Toggle, 0.0f, false, false);
     named (cx::kRetMS + 2, "ret.space_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
@@ -296,6 +301,9 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults)
         }
         if (inst->proc->paramIndex ("dry") >= 0) inst->dryRaw = inst->proc->apvts.getRawParameterValue ("dry");
         if (prepared) { inst->proc->setRateAndBufferSizeDetails (sr, maxBlock); inst->proc->prepareToPlay (sr, maxBlock); }
+        // the files this effect was given in this slot: a new instance reads them again
+        const auto& held = insFiles[(size_t) l][(size_t) slot];
+        if (! held.empty() && held.front().type == type) replayFiles (*inst->proc, held);
     }
     else
         for (int c = 0; c < kCells; ++c)
@@ -332,18 +340,92 @@ void Engine::updateLatency()
     maxLat = mx;
 }
 
-bool Engine::loadFile (int l, const juce::File& f)
+// --------------------------------------------------------------------------------------- files
+bool Engine::acceptsFiles (Target t) const
 {
-    auto& m = lane[(size_t) l].proc->mod();
-    if (! m.acceptsFiles()) return false;
+    if (t.kind == 2 && t.slot == 1) return true;        // SPACE: a file makes it the convolution
+    auto* p = processorFor (t);
+    return p != nullptr && p->mod().acceptsFiles();
+}
+
+static int placeOf (SFProcessor& p)
+{
+    return p.paramIndex ("place") >= 0 ? (int) std::lround (p.apvts.getRawParameterValue ("place")->load()) : 0;
+}
+
+bool Engine::loadFiles (Target t, const juce::StringArray& paths)
+{
+    if (! acceptsFiles (t)) return false;
+    // unreadable (macOS has not been allowed into that folder yet, or the file is gone): say so
+    juce::StringArray ok;
+    for (auto& path : paths)
     {
-        // unreadable (macOS has not been allowed into that folder yet, or the file is gone): say so
-        juce::FileInputStream in (f);
-        if (! in.openedOk()) return false;
+        juce::FileInputStream in { juce::File (path) };
+        if (in.openedOk()) ok.add (path);
     }
-    m.loadFiles (juce::StringArray (f.getFullPathName()));
-    files[(size_t) l] = f.getFullPathName();
+    if (ok.isEmpty()) return false;
+    if (t.kind == 2 && t.slot == 1) setSpaceModel (1);
+    auto* p = processorFor (t);
+    if (p == nullptr) return false;
+    if (t.kind == 0)
+    {
+        p->mod().loadFiles (juce::StringArray (ok[0]));
+        files[(size_t) t.lane] = ok[0];
+        return true;
+    }
+    FileRef r;
+    r.place = placeOf (*p);
+    r.type = t.kind == 1 ? insType[(size_t) t.lane][(size_t) t.slot] : -1;
+    r.files = ok;
+    p->mod().loadFiles (ok);
+    // what was held for that place, or for another effect in this slot, is replaced
+    auto& held = t.kind == 1 ? insFiles[(size_t) t.lane][(size_t) t.slot] : spaceFiles;
+    held.erase (std::remove_if (held.begin(), held.end(), [&r] (const FileRef& o) { return o.place == r.place || o.type != r.type; }), held.end());
+    held.push_back (r);
     return true;
+}
+
+void Engine::replayFiles (SFProcessor& p, const std::vector<FileRef>& refs)
+{
+    if (! p.mod().acceptsFiles()) return;
+    const int pi = p.paramIndex ("place");
+    const float was = pi >= 0 ? p.param (pi)->getValue() : 0.0f;
+    for (auto& r : refs)
+    {
+        juce::StringArray ok;
+        for (auto& path : r.files) if (juce::File (path).existsAsFile()) ok.add (path);
+        if (ok.isEmpty()) continue;
+        if (pi >= 0) p.param (pi)->setValueNotifyingHost (p.param (pi)->convertTo0to1 ((float) r.place));
+        p.mod().loadFiles (ok);
+    }
+    if (pi >= 0) p.param (pi)->setValueNotifyingHost (was);
+}
+
+const std::vector<Engine::FileRef>& Engine::heldFiles (Target t) const
+{
+    static const std::vector<FileRef> none;
+    if (t.kind == 1) return insFiles[(size_t) t.lane][(size_t) t.slot];
+    if (t.kind == 2 && t.slot == 1) return spaceFiles;
+    return none;
+}
+
+void Engine::setHeldFiles (Target t, const std::vector<FileRef>& refs)
+{
+    if (t.kind == 2 && t.slot == 1) { spaceFiles = refs; replayFiles (*space[1], refs); }
+    else if (t.kind == 1)
+    {
+        insFiles[(size_t) t.lane][(size_t) t.slot] = refs;
+        if (auto* in = lane[(size_t) t.lane].ins[t.slot].load())
+            if (! refs.empty() && refs.front().type == in->type) replayFiles (*in->proc, refs);
+    }
+}
+
+void Engine::setSpaceModel (int model)
+{
+    model = juce::jlimit (0, kSpaceModels - 1, model);
+    if (model == spaceWant.load()) return;
+    spaceWant = model;
+    if (! prepared) spaceNow = model;
 }
 
 void Engine::panic() { panicNow = true; }
@@ -353,7 +435,7 @@ SFProcessor* Engine::processorFor (Target t) const
 {
     if (t.kind == 0) return lane[(size_t) t.lane].proc.get();
     if (t.kind == 1) { auto* in = lane[(size_t) t.lane].ins[t.slot].load(); return in != nullptr ? in->proc.get() : nullptr; }
-    return t.slot == 0 ? retA.get() : retB.get();
+    return t.slot == 0 ? retA.get() : space[(size_t) spaceWant.load()].get();
 }
 
 std::vector<std::string> Engine::boundIds (Target t) const
@@ -362,7 +444,7 @@ std::vector<std::string> Engine::boundIds (Target t) const
     auto add = [&ids] (const KnobDef* k, int n) { for (int i = 0; i < n; ++i) if (k[i].param != nullptr) ids.push_back (k[i].param); };
     if (t.kind == 0) add (lanes()[(size_t) t.lane].knobs, kLaneKnobs);
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) add (effects()[(size_t) ty].cells, kCells); }
-    else add ((t.slot == 0 ? returnA() : returnB()).cells, kCells);
+    else add ((t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells, kCells);
     return ids;
 }
 
@@ -371,6 +453,15 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
     std::vector<SetupParam> out;
     auto* p = processorFor (t);
     if (p == nullptr) return out;
+    if (t.kind == 2 && t.slot == 1)
+    {
+        // which reverb SPACE is: first in its CONFIG
+        SetupParam sp;
+        sp.id = kModelId; sp.name = "MODEL"; sp.kind = Kind::List;
+        for (int m = 0; m < kSpaceModels; ++m) sp.choices.add (spaceModelName (m));
+        sp.value = (float) spaceWant.load() / (float) (kSpaceModels - 1); sp.def = 0.0f; sp.text = spaceModelName (spaceWant.load());
+        out.push_back (sp);
+    }
     const auto bound = boundIds (t);
     const auto& specs = p->allSpecs();
     for (int i = 0; i < p->numModuleParams(); ++i)
@@ -391,6 +482,11 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
 
 void Engine::setSetup (Target t, const juce::String& id, float v)
 {
+    if (id == kModelId)
+    {
+        if (t.kind == 2 && t.slot == 1) setSpaceModel ((int) std::lround (juce::jlimit (0.0f, 1.0f, v) * (float) (kSpaceModels - 1)));
+        return;
+    }
     if (auto* p = processorFor (t))
     {
         const int i = p->paramIndex (id.toStdString());
@@ -405,6 +501,8 @@ Engine::SetupState Engine::getSetup (Target t) const
     SetupState st;
     if (auto* p = processorFor (t))
     {
+        // SPACE's setup says which reverb it was read from: it is only ever put back on that one
+        if (t.kind == 2 && t.slot == 1) st.push_back ({ kModelId, (float) spaceWant.load() });
         const auto bound = boundIds (t);
         const auto& specs = p->allSpecs();
         for (int i = 0; i < p->numModuleParams(); ++i)
@@ -418,6 +516,13 @@ void Engine::applySetup (Target t, const SetupState& st)
 {
     if (auto* p = processorFor (t))
     {
+        if (t.kind == 2 && t.slot == 1)
+        {
+            // Which reverb SPACE is belongs to the rig, not to a snapshot: setup from the other one is left out.
+            int from = 0;
+            for (auto& kv : st) if (kv.first == kModelId) from = (int) std::lround (kv.second);
+            if (from != spaceWant.load()) return;
+        }
         const auto bound = boundIds (t);
         for (auto& kv : st)
         {
@@ -447,7 +552,9 @@ void Engine::prepare (double rate, int block)
         for (auto& s : ln.eqSet) s = 99.0f;
         ln.patDirty = true;
     }
-    prep (*retA); prep (*retB);
+    prep (*retA);
+    for (auto& sp : space) prep (*sp);
+    spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre }) b->setSize (2, maxBlock, false, true, false);
     loud->m.prepare (sr);
@@ -660,11 +767,18 @@ void Engine::render (juce::AudioBuffer<float>& out)
     dryMixWas = dryNow;
 
     juce::AudioBuffer<float> a2 (sendA.getArrayOfWritePointers(), 2, n), bb2 (sendB.getArrayOfWritePointers(), 2, n), m2 (mix.getArrayOfWritePointers(), 2, n);
-    if (pan) { retA->panic(); retB->panic(); }
+    // SPACE changing reverbs: the one leaving fades over this block; the one arriving is emptied of
+    // whatever it held when it last ran, and comes up once that is done.
+    const int spaceNext = spaceWant.load();
+    const bool spaceSwap = spaceNext != spaceNow;
+    if (pan) { retA->panic(); space[(size_t) spaceNow]->panic(); }
     retA->processBlock (a2, noMidi);
-    retB->processBlock (bb2, noMidi);
+    space[(size_t) spaceNow]->processBlock (bb2, noMidi);
+    const bool spaceQuiet = spaceSwap || spaceHold > 0;
+    spaceHold = std::max (0, spaceHold - n);
+    if (spaceSwap) { spaceNow = spaceNext; space[(size_t) spaceNow]->panic(); spaceHold = (int) (sr * 0.02); }
     const float rg[2] = { cur[(size_t) cx::kRetMS] < 0.5f && (! anyRetSolo || retSolo[0]) ? 1.0f : 0.0f,
-                          cur[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) ? 1.0f : 0.0f };
+                          cur[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) && ! spaceQuiet ? 1.0f : 0.0f };
     for (int ch = 0; ch < 2; ++ch)
     {
         m2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, retGainWas[0], rg[0]);

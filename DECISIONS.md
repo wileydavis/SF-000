@@ -117,7 +117,7 @@ a snapshot could reach it later.
     amber, S lights green.
 35. **CONFIG moves the top three rows over by two columns** and leaves the sequencer strip alone,
     so the two right-hand columns (and MASTER) are off the screen while it is open. Opening a
-    lane's CONFIG makes that lane the active lane.
+    lane's CONFIG makes that lane the active lane. (Superseded by 52.)
 36. **CONFIG shows every module parameter that has no knob on the main screen**, six to a row, in
     the module's own order, under the module's own display from the suite. Nothing is hidden or
     regrouped yet.
@@ -142,6 +142,39 @@ a snapshot could reach it later.
 45. **Lane meters read each lane after its EQ, mute and solo**, before the master chain. The MIX
     pair reads the final output.
 46. **A gliding knob is green with a white mark at its target.** Knobs moved by hand never show it.
+
+## Third build (Nov 11): the convolution on SPACE, CONFIG beside its panel, the quit crash
+
+47. **SPACE (return B) is REVERB or CONVOLUTION, chosen by MODEL in its CONFIG.** The spec says
+    "B SPACE is SF REVERB, or SF TERROIR in its place". It starts as REVERB, so the rig sounds as
+    it did. Dropping a file on SPACE's CONFIG, or on the RETURNS panel, switches it to CONVOLUTION
+    and loads the file. Both reverbs stay built, so the places are still loaded when CONVOLUTION
+    comes back; only the chosen one runs. The change takes about 20 ms of silence on the return.
+48. **Each reverb has its own four SPACE knobs** (same labels, separate values, separate snapshot
+    ids `ret.space_*` and `ret.conv_*`). SIZE and DECAY mean different things on the two: on the
+    convolution they start at 100 %, the place as it was captured. Snapshots taken before this
+    build hold no convolution knobs, so recalling them leaves those where they are.
+49. **Which reverb SPACE is belongs to the rig, not to a snapshot.** Recalling any snapshot,
+    CLEAN SLATE included, leaves the model alone: the room is where you are playing, not part of
+    a scene. The rest of SPACE's CONFIG (PLACE included) is recalled only by snapshots taken on
+    the same model. Say if the model should travel with snapshots instead.
+50. **Impulse responses are remembered by path** in the session, per place, and read again when
+    the app opens; a CONVOLUTION insert's are read again whenever that effect is put back in its
+    slot. If a file has moved, that place is empty (the built-in room). The suite can also keep
+    the audio itself in its state; SF-000 does not use that yet.
+51. **A file dropped on an open CONFIG panel goes to that panel's target.** If the target takes
+    no file (the DUB delay, a compressor), nothing loads and the panel says so. Dropped anywhere
+    else it goes to the lane under the pointer, an insert that takes files, or the active lane.
+52. **CONFIG brings its panel beside it.** The top three rows slide so the configured lane's
+    column (an insert's, the returns') is the third column, next to CONFIG. To keep the screen
+    full the six columns wrap round, so for the right-hand columns the left-hand ones appear to
+    the right of them, and MASTER (two columns wide) can be cut in half at CONFIG's edge.
+53. **The convolution's CAPTURE key does nothing useful here.** It asks for SF CAPTURE on the
+    suite's bus, which SF-000 does not have. SWEEP FILE works: it writes the sweep to
+    Music/SF Live Suite/TERROIR, and the recording of it can be dropped on a place.
+54. **CLEAN SLATE is rebuilt each time the app opens**, so it covers controls a newer build adds.
+55. **The crash on quit** was the embedded typefaces being destroyed after JUCE had shut down
+    (macOS only). They are now released in the app's shutdown.
 
 ## Not verified
 

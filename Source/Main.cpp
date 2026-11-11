@@ -1,6 +1,6 @@
 // SF-000: the app. A window on the screens, the audio device, and three command-line tools:
 //   SF-000 --test [--wav file]                 offline audio and timing checks
-//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return] [--scale 2]   draw a screen to a PNG
+//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2]   draw a screen to a PNG
 //   SF-000 --dump                              every hosted module's parameters and presets
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "core/Processor.h"
@@ -419,6 +419,143 @@ static int uiTest()
         check (! bfile.empty() && 10.0 * std::log10 ((d + 1e-15) / (q + 1e-15)) > -20.0, "a phrase dropped on VOICE loads and changes what the lane plays");
         f.deleteFile();
     }
+    {
+        // 6. SPACE as a convolution: an impulse response (a second of noise dying away) written to disk
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory);
+        const auto ir = tmp.getChildFile ("sf000_ir_test.wav"), ir2 = tmp.getChildFile ("sf000_ir_test_b.wav");
+        auto writeIr = [] (const juce::File& f, double rate)
+        {
+            f.deleteFile();
+            juce::AudioBuffer<float> x (2, 48000);
+            juce::Random rng (7);
+            for (int i = 0; i < 48000; ++i)
+                for (int ch = 0; ch < 2; ++ch) x.setSample (ch, i, (i == 0 ? 0.9f : 0.5f * (rng.nextFloat() * 2.0f - 1.0f)) * (float) std::exp (-rate * i / 48000.0));
+            juce::WavAudioFormat wav;
+            if (auto out = std::unique_ptr<juce::FileOutputStream> (f.createOutputStream()))
+                if (auto* w = wav.createWriterFor (out.get(), 48000.0, 2, 24, {}, 0)) { out.release(); std::unique_ptr<juce::AudioFormatWriter> wr (w); wr->writeFromAudioSampleBuffer (x, 0, 48000); }
+        };
+        writeIr (ir, 5.0); writeIr (ir2, 12.0);
+        const Engine::Target space { 2, 0, 1 };
+        juce::AudioBuffer<float> b5 (2, 512);
+        // the places a convolution holds, read from its own state (slot numbers), once its imports are done
+        auto places = [&] (Engine& en)
+        {
+            std::vector<int> slots;
+            for (int tries = 0; tries < 400; ++tries)
+            {
+                for (int i = 0; i < 8; ++i) en.render (b5);
+                juce::Thread::sleep (15);
+                if (! en.processorFor (space)->mod().statusLine().startsWith ("IMPORTING") && tries > 6) break;
+            }
+            juce::ValueTree t ("STATE");
+            en.processorFor (space)->mod().save (t);
+            for (int i = 0; i < t.getNumChildren(); ++i) if (t.getChild (i).hasType ("PLACE")) slots.push_back ((int) t.getChild (i).getProperty ("slot", -1));
+            return slots;
+        };
+        auto heard = [&] (Engine& en)
+        {
+            // B alone, two bars
+            en.set (en.find ("ret.space_solo"), 1.0f);
+            en.setRunning (true);
+            std::vector<float> out;
+            for (int i = 0; i < 340; ++i) { en.render (b5); if (i >= 40) for (int k = 0; k < 512; ++k) out.push_back (b5.getSample (0, k)); }
+            return out;
+        };
+        auto level = [] (const std::vector<float>& v) { double q = 0.0; for (auto x : v) q += (double) x * x; return 10.0 * std::log10 (q / (double) std::max<size_t> (1, v.size()) + 1e-15); };
+
+        Engine e5; e5.prepare (48000.0, 512);
+        check (e5.acceptsFiles (space) && ! e5.acceptsFiles ({ 2, 0, 0 }) && e5.spaceModel() == 0, "SPACE starts as the REVERB and takes a file; DUB takes none");
+        const bool loaded = e5.loadFiles (space, juce::StringArray (ir.getFullPathName()));
+        check (loaded && e5.spaceModel() == 1 && e5.heldFiles (space).size() == 1, "an impulse response given to SPACE makes it the CONVOLUTION");
+        auto got = places (e5);
+        check (got.size() == 1 && got[0] == 0, ("the convolution holds it as place 1 (" + e5.processorFor (space)->mod().statusLine() + ")").toRawUTF8());
+        e5.setSetup (space, "place", 2.0f / 7.0f);
+        e5.loadFiles (space, juce::StringArray (ir2.getFullPathName()));
+        got = places (e5);
+        check (got.size() == 2 && got[1] == 2 && e5.heldFiles (space).size() == 2, "with PLACE on 3, the next file fills place 3 and leaves place 1");
+        const auto conv = heard (e5);
+        Engine e6; e6.prepare (48000.0, 512);
+        const auto rev = heard (e6);
+        check (level (conv) > -70.0 && level (rev) > -70.0 && ! e5.fault.load(), ("both reverbs sound on the B return (convolution " + juce::String (level (conv), 1) + " dB, reverb " + juce::String (level (rev), 1) + " dB)").toRawUTF8());
+        // the change of reverb while it plays: no fault, nothing but finite samples, and back again
+        bool clean = true;
+        for (int k = 0; k < 6; ++k)
+        {
+            e5.setSpaceModel (k % 2 == 0 ? 0 : 1);
+            for (int i = 0; i < 30; ++i) { e5.render (b5); for (int n = 0; n < 512; ++n) clean = clean && std::isfinite (b5.getSample (0, n)) && std::abs (b5.getSample (0, n)) < 4.0f; }
+        }
+        check (clean && ! e5.fault.load() && e5.spaceModel() == 1, "SPACE changes reverb and back while it plays");
+
+        // a snapshot leaves the reverb SPACE is alone; the session file brings it and its places back
+        Session::stateFileForTests = tmp.getChildFile ("sf000_session_test.json");
+        Session::stateFileForTests.deleteFile();
+        {
+            Engine e7; e7.prepare (48000.0, 512);
+            Session s7 (e7, true);
+            const auto init = s7.library.size() > 1 ? s7.library[1].id : 0;
+            e7.loadFiles (space, juce::StringArray (ir.getFullPathName()));
+            e7.setSetup (space, "place", 2.0f / 7.0f);
+            e7.loadFiles (space, juce::StringArray (ir2.getFullPathName()));
+            s7.recall (init);
+            check (e7.spaceModel() == 1, "recalling a snapshot taken on the REVERB leaves SPACE the CONVOLUTION");
+            s7.recall (kCleanSlateId);
+            check (e7.spaceModel() == 1, "so does CLEAN SLATE");
+            s7.touch(); s7.save();
+        }
+        {
+            // as the app does it: the session is read before the audio device starts
+            Engine e8;
+            Session s8 (e8, true);
+            e8.prepare (48000.0, 512);
+            const auto back = places (e8);
+            check (e8.spaceModel() == 1 && back.size() == 2 && back[0] == 0 && back[1] == 2, "the app opening again finds SPACE a CONVOLUTION with both places");
+        }
+        Session::stateFileForTests.deleteFile();
+        Session::stateFileForTests = juce::File();
+
+        // dropped on a CONFIG panel, a file goes to what that panel is set to
+        Engine e9; e9.prepare (48000.0, 512);
+        Session s9 (e9, false);
+        Screen sc9 (s9);
+        sc9.setSize ((int) Screen::kW, (int) Screen::kH);
+        auto draw9 = [&] { sc9.createComponentSnapshot (sc9.getLocalBounds(), false, 0.25f); };
+        sc9.showConfig (space); draw9();
+        auto at = sc9.testConfigRect().getCentre();
+        sc9.filesDropped (juce::StringArray (ir.getFullPathName()), (int) at.x, (int) at.y);
+        check (e9.spaceModel() == 1 && e9.heldFiles (space).size() == 1 && e9.laneFile (s9.activeLane).isEmpty(), "a file dropped on SPACE's CONFIG goes to SPACE, not to the active lane");
+        sc9.showConfig ({ 2, 0, 0 }); draw9();
+        at = sc9.testConfigRect().getCentre();
+        sc9.filesDropped (juce::StringArray (ir.getFullPathName()), (int) at.x, (int) at.y);
+        check (e9.laneFile (s9.activeLane).isEmpty() && e9.heldFiles (space).size() == 1, "dropped on DUB's CONFIG it goes nowhere: the delay takes no file");
+        e9.setInsertType (7, 0, 2);       // CONVOLUTION as the lead's first insert
+        s9.activeLane = 7;
+        sc9.showConfig ({ 1, 7, 0 }); draw9();
+        at = sc9.testConfigRect().getCentre();
+        sc9.filesDropped (juce::StringArray (ir2.getFullPathName()), (int) at.x, (int) at.y);
+        check (e9.heldFiles ({ 1, 7, 0 }).size() == 1 && e9.laneFile (7).isEmpty(), "dropped on a convolution insert's CONFIG it goes to that insert");
+        e9.setInsertType (7, 0, 0); e9.setInsertType (7, 0, 2);
+        check (e9.heldFiles ({ 1, 7, 0 }).size() == 1, "the insert's file is still held when the effect comes back to the slot");
+        sc9.showConfig ({ 0, 10, 0 }); draw9();
+        at = sc9.testConfigRect().getCentre();
+        sc9.filesDropped (juce::StringArray (ir.getFullPathName()), (int) at.x, (int) at.y);
+        check (e9.laneFile (10).isNotEmpty(), "dropped on VOICE's CONFIG it goes to VOICE");
+
+        // CONFIG open: the panel it is for stands right beside it
+        std::vector<Engine::Target> all;
+        for (int l = 0; l < kLanes; ++l) all.push_back ({ 0, l, 0 });
+        for (int k = 0; k < kSlots; ++k) all.push_back ({ 1, 7, k });
+        all.push_back ({ 2, 0, 0 }); all.push_back ({ 2, 0, 1 });
+        int beside = 0;
+        for (auto t : all)
+        {
+            if (t.kind == 1) s9.activeLane = t.lane;
+            sc9.showConfig (t); draw9();
+            const float edge = sc9.testConfigRect().getRight();
+            for (auto& h : sc9.testHits()) if (Screen::testIsPanelOf (h, t) && h.r.getX() >= edge && h.r.getX() - edge < 12.0f && h.r.getRight() <= Screen::kW) { ++beside; break; }
+        }
+        check (beside == (int) all.size(), (juce::String (beside) + " of " + juce::String ((int) all.size()) + " CONFIG panels open with their performance panel beside them").toRawUTF8());
+        ir.deleteFile(); ir2.deleteFile();
+    }
     std::printf (bad == 0 ? "ALL SCREEN CHECKS PASSED\n" : "%d SCREEN CHECK(S) FAILED\n", bad);
     return bad;
 }
@@ -444,6 +581,7 @@ static int shot (const juce::StringArray& args)
         ses.turnSnapKnob (3, 0.8f);
         for (int i = 0; i < 220; ++i) e.render (b);
     }
+    if (arg ("--space", "") == "conv") e.setSpaceModel (1);
     Screen sc (ses);
     const auto page = arg ("--page", "main");
     sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : Screen::pMain);
@@ -451,6 +589,7 @@ static int shot (const juce::StringArray& args)
     if (cfg == "lane") sc.showConfig ({ 0, ses.activeLane, 0 });
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
+    else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
     const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
     sc.setSize ((int) Screen::kW, (int) Screen::kH);
     const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
@@ -533,6 +672,7 @@ public:
         window = nullptr;
         session = nullptr;
         engine = nullptr;
+        sf0::Screen::releaseFonts();        // while JUCE is still up (left to the end of the process they abort the quit)
     }
 
     void systemRequestedQuit() override { quit(); }

@@ -79,6 +79,7 @@ public:
     void save();
     bool load();
     static juce::File stateFile();
+    static inline juce::File stateFileForTests;     // tests: the session is kept here instead
     std::function<void()> onChange;
 
 private:

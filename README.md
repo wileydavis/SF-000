@@ -48,6 +48,7 @@ First run:
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every pitched lane follows (parts are written in C) |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform |
+| Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
 
@@ -56,13 +57,21 @@ The screen never asks a question while it plays. PANIC silences every voice and 
 ### CONFIG: where a sound is set up
 
 The main screen is for playing. CONFIG is for building the sound: it slides in from the left over
-two columns and moves the top three rows over; the sequencer stays where it is.
+two columns, and the top three rows move so that the panel being set up (the lane, the insert, the
+returns) stands right beside it. The six columns go round: what leaves one edge of the screen comes
+back at the other. The sequencer stays where it is.
 
 - **A lane's CONFIG** holds everything its twelve knobs do not: MODEL and LAYER MODEL, the layer
   crossover (SPLIT, SPLIT HZ), sample start, end and fades, and the rest of the module's
   parameters. At the top is the module's own display: the waveform with its in and out points, and
   on VOICE the phrase with its cue points. The display takes the mouse.
 - **An insert's or a return's CONFIG** holds that effect's remaining parameters and its display.
+- **SPACE (return B) is one of two reverbs.** MODEL, first in its CONFIG, chooses REVERB (the
+  algorithmic one it starts as) or CONVOLUTION. The convolution holds eight places; PLACE (or a
+  click on the numbered boxes in its display) chooses one, and a dropped file fills the place it
+  is on. An empty place is the built-in room. Each reverb keeps its own four SPACE knobs. Which
+  reverb SPACE is, and the files it was given, belong to the rig: they are kept in the session and
+  a snapshot recall leaves them alone. A CONVOLUTION insert takes files the same way.
 - A menu shows its current choice under the knob. The parameter last touched shows its value in
   the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
   are more rows than fit.
@@ -81,7 +90,7 @@ pushes behind the ENERGY, BUILD, ACID, DIST and WARP knobs.
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv
 ```
 
 ## What is here

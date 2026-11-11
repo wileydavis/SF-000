@@ -15,7 +15,8 @@ public:
     enum Page { pMain, pLibrary, pMacros };
     void setPage (Page);
     std::function<void()> onAudioSetup, onFullScreen;
-    void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
+    void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
+    static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -37,12 +38,15 @@ public:
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
+    // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
+    static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
+    juce::Rectangle<float> testConfigRect() const { return cfgRect; }
 
 private:
     using G = juce::Graphics;
     using R = juce::Rectangle<float>;
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
-    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock };
+    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset };
 
@@ -104,14 +108,19 @@ private:
     int selKnob = 0, libScroll = 0;
     R selNameRect;
     bool mouseIsDown = false;
-    // CONFIG: the setup panel that slides in from the left and moves the top three rows over
+    // CONFIG: the setup panel that slides in from the left. The top three rows move so that the
+    // panel being set up (a lane, an insert, the returns) stands right beside it; their six columns
+    // go round, so what leaves one edge of the screen comes back at the other.
     float shift = 0.0f;
+    float slideX = 0.0f, slideFrom = 0.0f, slideTo = 0.0f, slideT = 1.0f;
+    float slideGoal() const;
+    R rowsClip;
     Engine::Target cfg;
     bool cfgOpen = false, cfgStale = true;
     float cfgT = 0.0f;
     int cfgScroll = 0, cfgAge = 0;
     std::vector<Engine::SetupParam> cfgParams;
-    juce::String cfgName, cfgNote;
+    juce::String cfgName, cfgNote, cfgStatus;
     R cfgDisplay, cfgRect;
     std::unique_ptr<juce::TextEditor> editor;
     std::function<void (juce::String)> editDone;

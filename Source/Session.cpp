@@ -4,7 +4,7 @@ namespace sf0
 {
 using juce::var;
 
-static const int kMorphEnd = cx::kRet + 8;      // lanes and returns: what a snapshot knob can reach
+static const int kMorphEnd = cx::kRet + cx::kRetKnobs;      // lanes and returns: what a snapshot knob can reach
 
 Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 {
@@ -273,6 +273,7 @@ void Session::stepInsert (int l, int slot)
 // ----------------------------------------------------------------------------------------- disk
 juce::File Session::stateFile()
 {
+    if (stateFileForTests != juce::File()) return stateFileForTests;
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
    #if JUCE_MAC
     dir = dir.getChildFile ("Application Support");
@@ -320,6 +321,37 @@ static var setupToVar (const Engine::SetupState& st)
     auto* o = new juce::DynamicObject();
     for (auto& kv : st) o->setProperty (kv.first, kv.second);
     return var (o);
+}
+
+static var refsToVar (const std::vector<Engine::FileRef>& refs)
+{
+    juce::Array<var> a;
+    for (auto& r : refs)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("place", r.place);
+        o->setProperty ("type", r.type);
+        juce::Array<var> fl;
+        for (auto& f : r.files) fl.add (f);
+        o->setProperty ("files", fl);
+        a.add (var (o));
+    }
+    return a;
+}
+
+static std::vector<Engine::FileRef> refsFromVar (const var& v)
+{
+    std::vector<Engine::FileRef> refs;
+    if (auto* a = v.getArray())
+        for (auto& e : *a)
+        {
+            Engine::FileRef r;
+            r.place = (int) e.getProperty ("place", 0);
+            r.type = (int) e.getProperty ("type", -1);
+            if (auto* fl = e.getProperty ("files", var()).getArray()) for (auto& f : *fl) r.files.add (f.toString());
+            if (! r.files.isEmpty()) refs.push_back (r);
+        }
+    return refs;
 }
 
 static Engine::SetupState setupFromVar (const var& v)
@@ -435,6 +467,23 @@ void Session::save()
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (engine.laneFile (l));
     root->setProperty ("files", fl);
+    // SPACE: which reverb it is, and the impulse responses its convolution was given. An insert's too.
+    auto* sp = new juce::DynamicObject();
+    sp->setProperty ("model", engine.spaceModel());
+    sp->setProperty ("files", refsToVar (engine.heldFiles ({ 2, 0, 1 })));
+    root->setProperty ("space", var (sp));
+    juce::Array<var> insf;
+    for (int l = 0; l < kLanes; ++l)
+        for (int k = 0; k < kSlots; ++k)
+            if (const auto& held = engine.heldFiles ({ 1, l, k }); ! held.empty())
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("lane", l);
+                o->setProperty ("slot", k);
+                o->setProperty ("files", refsToVar (held));
+                insf.add (var (o));
+            }
+    root->setProperty ("insertFiles", insf);
 
     juce::Array<var> lib, kn;
     for (auto& s : library) lib.add (snapToVar (s, engine));
@@ -487,6 +536,17 @@ bool Session::load()
     if (const var fl = root.getProperty ("files", var()); fl.isArray())
         for (int l = 0; l < kLanes && l < fl.size(); ++l)
             if (const juce::File f (fl[l].toString()); fl[l].toString().isNotEmpty() && f.existsAsFile()) engine.loadFile (l, f);
+    if (const var sp = root.getProperty ("space", var()); sp.isObject())
+    {
+        engine.setSpaceModel ((int) sp.getProperty ("model", 0));
+        engine.setHeldFiles ({ 2, 0, 1 }, refsFromVar (sp.getProperty ("files", var())));
+    }
+    if (auto* insf = root.getProperty ("insertFiles", var()).getArray())
+        for (auto& e : *insf)
+        {
+            const int l = (int) e.getProperty ("lane", -1), k = (int) e.getProperty ("slot", -1);
+            if (l >= 0 && l < kLanes && k >= 0 && k < kSlots) engine.setHeldFiles ({ 1, l, k }, refsFromVar (e.getProperty ("files", var())));
+        }
     baseId = (juce::int64) root.getProperty ("baseId", 0);
     selStep = -1;
     if (root.hasProperty ("base")) applySnapshot (snapFromVar (root["base"], engine), 0.0);
@@ -496,8 +556,8 @@ bool Session::load()
 // ------------------------------------------------------------------------- what it starts with
 void Session::ensureCleanSlate()
 {
-    // CLEAN SLATE: every knob where the rig starts it, no steps, no inserts. Always in the library.
-    if (findSnap (kCleanSlateId) != nullptr) return;
+    // CLEAN SLATE: every knob where the rig starts it, no steps, no inserts. Always in the library,
+    // and made again each time the app opens, so it covers whatever a newer build added.
     Snapshot s;
     s.id = kCleanSlateId;
     s.name = "CLEAN SLATE";
@@ -519,8 +579,9 @@ void Session::ensureCleanSlate()
     }
     s.retSetup = retInit;
     s.hasSetup = true;
-    library.insert (library.begin(), s);
-    dirty = true;
+    const int at = indexOf (kCleanSlateId);
+    if (at >= 0) { s.name = library[(size_t) at].name; s.time = library[(size_t) at].time; library[(size_t) at] = s; }
+    else { library.insert (library.begin(), s); dirty = true; }
 }
 
 void Session::makeFactory()

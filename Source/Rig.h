@@ -154,12 +154,21 @@ inline const FxDef& returnA()
           { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } };
     return d;
 }
-inline const FxDef& returnB()
+// B is one of two reverbs, chosen in its CONFIG: 0 the suite's REVERB, 1 its convolution reverb
+// (TERROIR: a place, from an impulse response dropped on it). Each has its own four knobs.
+constexpr int kSpaceModels = 2;
+inline const char* spaceModelName (int model) { return model == 1 ? "CONVOLUTION" : "REVERB"; }
+inline const FxDef& returnB (int model = 0)
 {
-    static const FxDef d { "SPACE", "REVERB", { { "mix", 1.0f }, { "dry", 0 }, { "size", 0.65f }, { "decay", 3.5f }, { "dark", 0.55f }, { "duck", 0.4f }, { "lo_cut", 220 } },
-        { { "SPACE SIZE", "size", 'u' }, { "SPACE DECAY", "decay", 'u' }, { "SPACE DARK", "dark", 'u' }, { "SPACE DUCK", "duck", 'u' },
-          { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } };
-    return d;
+    static const FxDef d[kSpaceModels] = {
+        { "SPACE", "REVERB", { { "mix", 1.0f }, { "dry", 0 }, { "size", 0.65f }, { "decay", 3.5f }, { "dark", 0.55f }, { "duck", 0.4f }, { "lo_cut", 220 } },
+          { { "SPACE SIZE", "size", 'u' }, { "SPACE DECAY", "decay", 'u' }, { "SPACE DARK", "dark", 'u' }, { "SPACE DUCK", "duck", 'u' },
+            { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } },
+        // the place as it was captured (SIZE and DECAY at 100 %), ducked and cut like the reverb it stands in for
+        { "SPACE", "TERROIR", { { "mix", 1.0f }, { "dry", 0 }, { "duck", 0.4f }, { "lo_cut", 220 } },
+          { { "SPACE SIZE", "size", 'u' }, { "SPACE DECAY", "decay", 'u' }, { "SPACE DARK", "dark", 'u' }, { "SPACE DUCK", "duck", 'u' },
+            { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } } };
+    return d[model == 1 ? 1 : 0];
 }
 
 // The master chain, built in: the lows made mono, tape, a bus compressor, a true-peak limiter that
