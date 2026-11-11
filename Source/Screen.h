@@ -7,6 +7,7 @@
 
 namespace sf0
 {
+class Recorder;
 class Screen : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
 {
 public:
@@ -16,6 +17,7 @@ public:
     enum Page { pMain, pLibrary, pMacros };
     void setPage (Page);
     std::function<void()> onAudioSetup, onFullScreen;
+    Recorder* recorder = nullptr;               // the REC key's; none: the key does nothing
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
@@ -35,12 +37,14 @@ public:
     // For the offline screen test: every control's place (screen units), kind and index, as last drawn.
     struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
     std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
-    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull); }
+    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec); }
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsControl (const TestHit& h, int ctl) { return (h.kind == hKnob || h.kind == hRead) && h.a == ctl; }
     static bool testIsToggle (const TestHit& h, int ctl) { return h.kind == hToggle && h.a == ctl; }
+    static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
+    void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     static bool testIsSnapKnob (const TestHit& h, int k) { return h.kind == hSnapKnob && h.a == k; }
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
     static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
@@ -54,7 +58,7 @@ private:
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset };
+               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec };
 
     void timerCallback() override;
     void dirty (R);
@@ -115,6 +119,9 @@ private:
     R masterRect, seqRect;
     bool wasRunning = false;
     juce::uint64 barSig = 0;
+    bool recWas = false;
+    juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
+    juce::uint32 recNoteAt = 0;
     juce::uint64 barNow() const;
     int lastStep = -1;
 

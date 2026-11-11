@@ -43,6 +43,7 @@ First run:
 | Drag the LENGTH knob | 1 to 128 steps. Click a page above the steps to see its 16 |
 | **M** in the sequencer strip | mute the active lane's own sequencer. Its steps stay, drawn grey, and go unplayed; the note it was holding is let go. Notes from MIDI in still sound on the lane. Press again and it comes back on its next lit step |
 | RANDOM, EUCLID | write a pattern at once; while the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite it |
+| **REC** (top bar) | press: start a take. Its key turns red and its name becomes the time it has run. **Hold** the key to end it. See Recording, below |
 | SNAPSHOT | keep everything on the main screen as a new snapshot |
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
@@ -82,6 +83,31 @@ back at the other. The sequencer stays where it is.
   the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
   are more rows than fit.
 - What CONFIG sets is stored in snapshots with everything else, except which reverb SPACE is.
+
+### Recording
+
+REC writes a take to `Music/SF-000/`, in a folder named for the moment it began. It starts at once,
+whether or not the clock is running, and goes on until its key is held. Quitting ends and keeps it.
+
+| FILE | WHAT |
+|---|---|
+| `00 SET.wav` | the set: the output, after the limiter. 24-bit |
+| `01 KICK.wav` to `11 VOICE.wav` | each lane as it went into the mix: after its inserts, EQ, MUTE and SOLO. 32-bit float, so none can clip |
+| `12 DUB.wav`, `13 SPACE.wav` | the two returns as they went into the mix. 32-bit float |
+| `take.txt` | when, how long, what was kept, and anything lost |
+| `session-at-start.json` | the rig as it stood when the take began |
+
+- The lanes and returns added together are what the master chain was given. Each begins with the
+  master chain's look-ahead in silence (181 samples at 48 kHz), so it lines up with the set.
+- A lane or return that was silent all take is not kept. `take.txt` names them.
+- A take is about 19 GB an hour at 48 kHz. The bar says how many hours the disk has room for as it
+  starts, and the take ends by itself, kept, with a minute of room left.
+- The audio thread never waits for the disk. If the disk falls behind by more than four seconds,
+  whole buffers are left out of every file alike (the files stay in step), the key turns amber, and
+  `take.txt` says how much was lost.
+- The files' lengths are written into them every ten seconds, so a take cut short by a crash or a
+  pulled plug still opens, up to there. Past 4 GB a file is written as RF64.
+- MIDI and knob moves are not recorded yet.
 
 ### Snapshots that come with it
 
@@ -140,7 +166,7 @@ build/.../SF-000 --miditest                       # notes in, the E16's knobs an
 build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec
 ```
 
 ### Load
@@ -162,6 +188,7 @@ meters when a bar has moved, the playing step.
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |
 | `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
+| `Source/Recorder.*` | takes: the set, the lanes and the returns to disk, off the audio thread |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 
@@ -175,7 +202,7 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
-- Recording of audio, MIDI and knob moves.
+- Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
 - The library's sound map and audio previews; meaning filters; snapshot knob pages beyond the first.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.
 - Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).

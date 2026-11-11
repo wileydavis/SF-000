@@ -376,6 +376,46 @@ You asked for a steady, known latency (and whether a smaller buffer or the drive
      hit meets smoothers still moving, and the limiter's AUTO, which remembers the loudest second
      for a minute, held the level 0.6 dB down for that minute.
 
+## Eighth build (Nov 11): recording, the audio
+
+The spec asks for multitrack audio, MIDI and every parameter move, written off the audio thread,
+and a set that can be rendered again. This build is the audio.
+
+106. **A take is the set, the eleven lanes and the two returns**, each a stereo file, in a folder
+     under `Music/SF-000/` named for when it began. The lanes and returns are taken where they
+     enter the mix (after inserts, EQ, MUTE and SOLO, and a soloed return's silencing of the
+     lanes), so together they are exactly what the master chain was given, and what was played is
+     what is kept.
+107. **The set is 24-bit; the lanes and returns are 32-bit float.** The limiter holds the set under
+     full scale. A lane can pass full scale on its way to the mix, and a float file cannot clip.
+     That makes a take about 19 GB an hour. *proposed*: say if 24-bit lanes (14.5 GB an hour, and
+     a lane that runs hot clips in its file) are the better trade.
+108. **WAV, not split.** JUCE writes plain WAV up to 4 GB and RF64 past it, which is the spec's
+     "format without that limit". A 32-bit float file passes 4 GB after 2.9 hours. If something
+     you use will not open RF64, say, and takes can be split instead.
+109. **The lanes and returns begin with the master chain's look-ahead in silence** (181 samples),
+     so every file in a take lines up. Checked: added together, they fit the set best at 0 samples.
+110. **A lane or return silent all take is not kept**, and `take.txt` names it. A lane you never
+     played would otherwise cost 1.4 GB an hour.
+111. **REC starts on a press and ends on a hold** (0.7 s), like DELETE in the library, so a stray
+     touch cannot end a set's recording. It runs whether or not the clock does: nothing before the
+     first RUN or between stops is missed. No key on the keyboard, for the same reason.
+112. **The audio thread copies each buffer into a four-second ring and a thread of its own writes
+     the files.** If the disk falls more than four seconds behind, whole buffers are left out of
+     every file alike, so the files stay in step; the key turns amber and `take.txt` says how
+     much. A take ends by itself, kept, if a write fails, if the disk has a minute of room left,
+     or if the sample rate changes.
+113. **Lengths are written into the files every ten seconds**, so a take cut off by a crash still
+     opens up to there. Quitting ends the take properly.
+114. **The session is copied into the take as it begins** (`session-at-start.json`): the rig the
+     recording started from.
+115. **Not in this build: MIDI and knob moves, and rendering a set again.** They belong together:
+     a log is only worth having if the set can be played back from it, to the sample.
+116. **Recording has not met a Mac.** It is tested offline: the set's file is the output sample
+     for sample, the parts line up, a silent lane is dropped, a second take gets its own folder,
+     and the key starts on a press and ends on a hold. Not tested: `Music/SF-000` on macOS, a real
+     disk falling behind, a file past 4 GB, hours of running.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -384,4 +424,6 @@ You asked for a steady, known latency (and whether a smaller buffer or the drive
   (and the Metal split-paint flag behind it), and everything MIDI on real hardware: the E16 scene,
   its rings, knob 16's swap, the page following the lane, the OXI One project, the clock out and
   CLOCK LEAD, the clock followed, and the sequencer's mute with the One playing a lane.
+- Not yet heard on the Mac: the rig without the suite's look-ahead (seventh build), and recording
+  (eighth).
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

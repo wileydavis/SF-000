@@ -128,6 +128,22 @@ public:
     float insidePartMs() const                  { return insideMs.load(); }
     void setOutputDelayForTests (float ms)      { outMs = ms; }
 
+    // ---- recording: what the audio thread hands on, a buffer at a time. Track 0 is the set (the
+    // output), 1 to 11 the lanes, each as it goes into the mix, then the two returns as they do:
+    // together, what the master chain is given. begin and end bracket each buffer. Nothing in a
+    // sink may wait or allocate.
+    static constexpr int kRecTracks = 1 + kLanes + 2;
+    struct RecSink
+    {
+        virtual ~RecSink() = default;
+        virtual void begin (int n) noexcept = 0;
+        virtual void track (int index, const float* l, const float* r, int n) noexcept = 0;
+        virtual void end (int n) noexcept = 0;
+    };
+    // Message thread. Returns once the audio thread has let go of the sink there was (nullptr: none).
+    void setRecSink (RecSink* s)                { const juce::SpinLock::ScopedLockType g (recLock); recSink = s; }
+    int masterLatency() const                   { return masterLat.load(); }      // samples the master chain holds the set back
+
     // ---- inserts: -1 empty, else an index into effects()
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
     using SetupState = std::vector<std::pair<juce::String, float>>;
@@ -336,6 +352,9 @@ private:
     std::atomic<uint64_t> blockCount { 0 };
     std::atomic<int> maxLat { 0 };
     int holdLat = 0;                            // what every lane is held to, whatever is on it
+    juce::SpinLock recLock;
+    RecSink* recSink = nullptr;
+    juce::AudioBuffer<float> recBuf;
     struct Loud;
     std::unique_ptr<Loud> loud;
     float peakHold[2] = { -100.0f, -100.0f };

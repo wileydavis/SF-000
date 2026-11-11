@@ -850,7 +850,7 @@ void Engine::prepare (double rate, int block)
     for (auto& sp : space) prep (*sp);
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
-    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre }) b->setSize (2, maxBlock, false, true, false);
+    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &recBuf }) b->setSize (2, maxBlock, false, true, false);
     liveMidi.ensureSize (8192);
     wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0;
     fol = Follow();
@@ -952,6 +952,10 @@ void Engine::render (juce::AudioBuffer<float>& out)
     auto clock = [this] { return profile ? juce::Time::getHighResolutionTicks() : (juce::int64) 0; };
     auto since = [this] (juce::int64 t) { return profile ? juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t) : 0.0; };
     const auto tAll = clock();
+    // A recording under way: held for the whole buffer, so stopping it waits for the buffer's end.
+    const juce::SpinLock::ScopedTryLockType recHold (recLock);
+    RecSink* const rec = recHold.isLocked() ? recSink : nullptr;
+    if (rec != nullptr) rec->begin (n);
     // When this block is on the wall clock, smoothed, so MIDI in and the clock out keep an even
     // pace however unevenly the device calls. (A test has no device: its clock is the samples.)
     const double durMs = (double) n * 1000.0 / sr, nowMs = wallMs >= 0.0 ? wallMs : virtualMs;
@@ -1154,6 +1158,16 @@ void Engine::render (juce::AudioBuffer<float>& out)
         laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
         for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); double q = 0.0; for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; laneSq[(size_t) l] += q; }
 
+        if (rec != nullptr)
+        {
+            // the lane as it goes into the mix (a soloed return silences it there, and so here)
+            if (dryMixWas == 1.0f && dryNow == 1.0f) rec->track (1 + l, b2.getReadPointer (0), b2.getReadPointer (1), n);
+            else
+            {
+                for (int ch = 0; ch < 2; ++ch) recBuf.copyFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas, dryNow);
+                rec->track (1 + l, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
+            }
+        }
         const float sa = cur[(size_t) cx::lane (l, cx::kSendA)], sb = cur[(size_t) cx::lane (l, cx::kSendB)];
         const float ga = sa * sa, gb = sb * sb;
         for (int ch = 0; ch < 2; ++ch)
@@ -1186,6 +1200,14 @@ void Engine::render (juce::AudioBuffer<float>& out)
         m2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, retGainWas[0], rg[0]);
         m2.addFromWithRamp (ch, 0, bb2.getReadPointer (ch), n, retGainWas[1], rg[1]);
     }
+    if (rec != nullptr)
+        for (int k = 0; k < 2; ++k)
+        {
+            // each return as it goes into the mix
+            const auto& wet = k == 0 ? a2 : bb2;
+            for (int ch = 0; ch < 2; ++ch) recBuf.copyFromWithRamp (ch, 0, wet.getReadPointer (ch), n, retGainWas[k], rg[k]);
+            rec->track (1 + kLanes + k, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
+        }
     retGainWas[0] = rg[0]; retGainWas[1] = rg[1];
 
     float inPk = 0.0f;
@@ -1229,6 +1251,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         float* d = out.getWritePointer (ch);
         for (int i = 0; i < n; ++i) d[i] = std::isfinite (s[i]) ? juce::jlimit (-1.0f, 1.0f, s[i]) : 0.0f;
     }
+    if (rec != nullptr) { rec->track (0, out.getReadPointer (0), out.getReadPointer (1), n); rec->end (n); }
     if (run) ppq += beats;
     profAll += since (tAll);
     ppqShown = ppq;

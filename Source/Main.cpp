@@ -10,6 +10,7 @@
 #include "core/Registry.h"
 #include "Screen.h"
 #include "Midi.h"
+#include "Recorder.h"
 #include <set>
 
 static void dumpModules()
@@ -113,6 +114,100 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         std::printf ("  %s: the rig's own delay is the same with no inserts and with any effect in all %d slots of a lane: %.2f ms (the lanes %d samples, the rest the limiter's look-ahead)\n",
                      steady ? "ok  " : "FAIL", kSlots, base, held);
         if (! steady) ++bad;
+    }
+
+    // Recording: the set and its parts go to disk as they are played.
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_rec_test");
+        tmp.deleteRecursively();
+        const auto state = tmp.getSiblingFile ("sf000_rec_test_state.json");
+        state.replaceWithText ("{}");
+        auto rd = [] (const juce::File& f, juce::AudioBuffer<float>& into, int& bits, bool& isFloat)
+        {
+            juce::WavAudioFormat wav;
+            auto in = f.createInputStream();
+            if (in == nullptr) return false;
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (in.release(), true));
+            if (r == nullptr) return false;
+            bits = (int) r->bitsPerSample; isFloat = r->usesFloatingPointData;
+            into.setSize (2, (int) r->lengthInSamples);
+            return r->read (&into, 0, (int) r->lengthInSamples, 0, true, true);
+        };
+        Engine e;
+        e.prepare (48000.0, 128);
+        e.setPattern (2, Pattern());                           // OPEN HAT plays nothing this take
+        juce::AudioBuffer<float> b (2, 128);
+        for (int k = 0; k < 750; ++k) e.render (b);            // settled, as the app is
+        Recorder rec (e);
+        rec.root = tmp;
+        rec.stateAtStart = [state] { return state; };
+        const auto err = rec.start();
+        const bool was = rec.recording();
+        e.setRunning (true);
+        const int blocks = 1500, total = blocks * 128;         // four seconds
+        juce::AudioBuffer<float> played (2, total);
+        for (int k = 0; k < blocks; ++k) { e.render (b); for (int ch = 0; ch < 2; ++ch) played.copyFrom (ch, k * 128, b, ch, 0, 128); }
+        rec.stop();
+        const auto dir = rec.folder();
+        const int lead = e.masterLatency();
+
+        juce::AudioBuffer<float> set, stem, sum (2, total);
+        sum.clear();
+        int bits = 0; bool fl = false;
+        bool ok = err.isEmpty() && was && ! rec.recording() && rd (dir.getChildFile ("00 SET.wav"), set, bits, fl) && bits == 24 && ! fl && set.getNumSamples() == total;
+        float worst = 0.0f;
+        if (ok) for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < total; ++i) worst = std::max (worst, std::abs (set.getSample (ch, i) - played.getSample (ch, i)));
+        ok = ok && worst < 2.0f / 8388608.0f;
+        std::printf ("  %s: 00 SET.wav is the output, sample for sample (%d samples, 24-bit, furthest %.1e)\n", ok ? "ok  " : "FAIL", set.getNumSamples(), (double) worst);
+        if (! ok) ++bad;
+
+        int kept = 0; bool stemsOk = true;
+        for (int t = 1; t < Engine::kRecTracks; ++t)
+        {
+            const auto f = dir.getChildFile (Recorder::trackName (t) + ".wav");
+            if (! f.existsAsFile()) continue;
+            ++kept;
+            stemsOk = stemsOk && rd (f, stem, bits, fl) && bits == 32 && fl && stem.getNumSamples() == total + lead;
+            if (stemsOk) for (int ch = 0; ch < 2; ++ch) sum.addFrom (ch, 0, stem, ch, 0, total);
+        }
+        const bool hatGone = ! dir.getChildFile (Recorder::trackName (3) + ".wav").existsAsFile();
+        const auto notes = dir.getChildFile ("take.txt").loadFileAsString();
+        stemsOk = stemsOk && kept == Engine::kRecTracks - 2 && hatGone && notes.contains ("NOT KEPT, SILENT THROUGHOUT: 03 OPEN HAT") && notes.contains ("LOST     nothing")
+                  && dir.getChildFile ("session-at-start.json").existsAsFile() && rec.lostSeconds() == 0.0;
+        std::printf ("  %s: ten lanes and the two returns kept in 32-bit float, each %d samples of silence longer; the lane that played nothing is not kept, and take.txt says so\n",
+                     stemsOk ? "ok  " : "FAIL", lead);
+        if (! stemsOk) ++bad;
+
+        // The parts, added together, line up with the set. Judged by the top of the spectrum (each
+        // signal differenced twice): the master's low cut turns the phase of the bass, which would
+        // pull a fit made on everything.
+        auto top = [total] (const juce::AudioBuffer<float>& x)
+        {
+            std::vector<float> y ((size_t) total, 0.0f);
+            const float* p = x.getReadPointer (0);
+            for (int i = 2; i < total; ++i) y[(size_t) i] = p[i] - 2.0f * p[i - 1] + p[i - 2];
+            return y;
+        };
+        const auto setTop = top (set), sumTop = top (sum);
+        int bestLag = 0; double best = -1.0;
+        for (int lag = -300; lag <= 300; ++lag)
+        {
+            double c = 0.0;
+            for (int i = 4000; i < total - 4000; ++i) c += (double) setTop[(size_t) i] * sumTop[(size_t) (i + lag)];
+            if (c > best) { best = c; bestLag = lag; }
+        }
+        const bool lined = std::abs (bestLag) <= 2;
+        std::printf ("  %s: the lanes and returns added together line up with the set (best fit %d samples off)\n", lined ? "ok  " : "FAIL", bestLag);
+        if (! lined) ++bad;
+
+        // a second take is a second folder
+        const auto err2 = rec.start();
+        for (int k = 0; k < 100; ++k) e.render (b);
+        rec.stop();
+        const bool two = err2.isEmpty() && rec.folder() != dir && rec.folder().getChildFile ("00 SET.wav").existsAsFile() && dir.getChildFile ("00 SET.wav").existsAsFile();
+        std::printf ("  %s: a second take goes in a folder of its own (%s)\n", two ? "ok  " : "FAIL", rec.note().toRawUTF8());
+        if (! two) ++bad;
+        tmp.deleteRecursively(); state.deleteFile();
     }
 
     // The kick alone: its first hit lands on the same sample whatever the block size.
@@ -485,6 +580,31 @@ static int uiTest()
         check (allSame && hitsKept && parts >= 12, (juce::String (parts) + " parts of the screen drawn on their own (knobs, the meters, the steps), with CONFIG shut and open: the same picture a whole redraw gives").toRawUTF8());
     }
 
+    // 2d. the REC key: a press starts a take, a short press leaves it running, a hold ends it
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_rec_ui_test");
+        tmp.deleteRecursively();
+        Recorder rec (e);
+        rec.root = tmp;
+        sc.recorder = &rec;
+        sc.setPage (Screen::pMain); draw();
+        juce::Point<float> at; int found = 0;
+        for (auto& h : sc.testHits()) if (Screen::testIsRec (h)) { at = h.r.getCentre(); ++found; }
+        click (at); audio (20);
+        const bool began = rec.recording();
+        sc.mouseDown (ev (at, at, false)); sc.testTick(); sc.mouseUp (ev (at, at, false));       // a tap: not long enough
+        const bool still = rec.recording();
+        audio (20); draw();
+        sc.mouseDown (ev (at, at, false)); juce::Thread::sleep (800); sc.testTick();
+        const bool ended = ! rec.recording();
+        sc.mouseUp (ev (at, at, false));
+        draw();
+        const bool kept = rec.folder().getChildFile ("00 SET.wav").existsAsFile() && rec.folder().getChildFile ("take.txt").existsAsFile();
+        check (found == 1 && began && still && ended && kept, "REC: a press starts a take, a tap leaves it running, a hold ends it and the take is kept");
+        sc.recorder = nullptr;
+        tmp.deleteRecursively();
+    }
+
     // 3. snapshots and the knobs, on a fresh rig
     {
         Engine e2; e2.prepare (48000.0, 512);
@@ -853,9 +973,16 @@ static int shot (const juce::StringArray& args)
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
     else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
+    // --rec: a take under way (in a folder of the system's temporary ones, gone again afterwards)
+    const auto recDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_shot_rec");
+    Recorder rec (e);
+    rec.root = recDir;
+    sc.recorder = &rec;
+    if (args.contains ("--rec")) { rec.start(); for (int i = 0; i < 94 * 75; ++i) e.render (b); }
     const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
     sc.setSize ((int) Screen::kW, (int) Screen::kH);
     const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
+    rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
     juce::File f (arg ("--shot", "sf000.png"));
     f.deleteFile();
     juce::FileOutputStream out (f);
@@ -1891,8 +2018,11 @@ public:
         if (err.isNotEmpty()) juce::Logger::writeToLog ("SF-000 audio: " + err);
         devices.addAudioCallback (engine.get());
         midi = std::make_unique<sf0::Midi> (*engine, *session);
+        recorder = std::make_unique<sf0::Recorder> (*engine);
+        recorder->stateAtStart = [this] { session->save(); return sf0::Session::stateFile(); };
 
         auto* screen = new sf0::Screen (*session);
+        screen->recorder = recorder.get();
         screen->onAudioSetup = [this] { audioSetup(); };
         screen->onFullScreen = [this]
         {
@@ -1905,6 +2035,7 @@ public:
 
     void shutdown() override
     {
+        recorder = nullptr;                 // a take under way is finished and kept
         if (engine != nullptr)
         {
             if (auto xml = devices.createStateXml()) { audioFile().getParentDirectory().createDirectory(); xml->writeTo (audioFile()); }
@@ -1944,6 +2075,7 @@ private:
     std::unique_ptr<sf0::Engine> engine;
     std::unique_ptr<sf0::Session> session;
     std::unique_ptr<sf0::Midi> midi;
+    std::unique_ptr<sf0::Recorder> recorder;
     std::unique_ptr<MainWindow> window;
     juce::Component::SafePointer<juce::DialogWindow> setup;
 };

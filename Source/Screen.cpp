@@ -1,4 +1,5 @@
 #include "Screen.h"
+#include "Recorder.h"
 #include "BinaryData.h"
 #include "core/Processor.h"
 #include <map>
@@ -268,6 +269,17 @@ void Screen::drawBar (G& g)
         g.fillRect (R (23, 17.5f, w, 40));
         text (g, "SF-000", R (23, 17.5f, w, 40), fFlag, col::lit);
         if (page != pMain) plate (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : "MACRO DESIGNER", fLegend, 8, col::white, col::black);
+        // REC: press to start a take, hold to end it. The time it has run stands in for its name.
+        {
+            const bool on = recorder != nullptr && recorder->recording();
+            key (g, R (950, 17.5f, 40, 40), on ? (recorder->lostSeconds() > 0.0 ? col::amber : col::red) : col::putty,
+                 mouseIsDown && drag.kind == hAct && drag.a == aRec ? 6.0f : 2.0f);
+            String t ("REC");
+            if (on) { const auto s = (juce::int64) recorder->seconds(); t = String (s / 3600) + ":" + String ((s / 60) % 60).paddedLeft ('0', 2) + ":" + String (s % 60).paddedLeft ('0', 2); }
+            text (g, t, R (996, 17.5f, 70, 40), fLegend, col::black, juce::Justification::centredLeft);
+            if (page == pMain && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000)
+                plate (g, 940.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
+        }
         text (g, "AUDIO", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "RUN", R (1222, 17.5f, 40, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "PANIC", R (1314, 17.5f, 56, 40), fLegend, col::black, juce::Justification::centredLeft);
@@ -283,6 +295,7 @@ void Screen::drawBar (G& g)
         lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
     }
     if (! collect) return;
+    hit (R (950, 17.5f, 40, 40), hAct, aRec, 0);
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
     hit (R (1176, 17.5f, 40, 40), hAct, aRun, 0);
     hit (R (1268, 17.5f, 40, 40), hAct, aPanic, 0);
@@ -925,6 +938,15 @@ void Screen::act (int a)
     {
         case aRun:      eng.setRunning (! eng.isRunning()); break;
         case aPanic:    eng.panic(); break;
+        case aRec:      // (a take under way is ended by holding the key: see the timer)
+            if (recorder != nullptr && ! recorder->recording())
+            {
+                const String err = recorder->start();
+                recNote = err.isNotEmpty() ? "NO RECORDING: " + err : recorder->note();
+                recNoteAt = juce::Time::getMillisecondCounter();
+                recWas = recorder->recording();
+            }
+            break;
         case aAudio:    if (onAudioSetup) onAudioSetup(); break;
         case aFull:     if (onFullScreen) onFullScreen(); break;
         case aCfgClose: cfgOpen = false; break;
@@ -1031,7 +1053,12 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             drag.v0 = s.on ? s.vel : fresh.vel; drag.g0 = s.on ? s.gate : fresh.gate; drag.r0 = s.on ? s.ratchet : 1;
             break;
         }
-        case hAct:      if (h->a != aDelete) { act (h->a); return; } break;
+        case hAct:
+            if (h->a == aDelete || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these two are held
+            act (h->a);
+            drag.fired = true;                  // (the press that starts a take is not also the hold that ends it)
+            if (h->a == aRec) repaint();
+            return;
         case hCard:     selSnap = ses.library[(size_t) h->a].id; ses.recall (selSnap); break;
         case hKnobCard: selKnob = h->a; break;
         case hSlot:
@@ -1266,8 +1293,12 @@ void Screen::endEdit (bool keep)
 // What the top bar shows that can change without a hand on it: RUN and the tempo, under an outside clock.
 juce::uint64 Screen::barNow() const
 {
+    const bool rec = recorder != nullptr && recorder->recording();
+    const bool note = recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000;
     return (juce::uint64) (eng.isRunning() ? 1 : 0) | (juce::uint64) (eng.following() ? 2 : 0)
-         | ((juce::uint64) (juce::uint32) std::lround (eng.target (cx::kTempo) * 14000.0f) << 2);
+         | ((juce::uint64) (juce::uint32) std::lround (eng.target (cx::kTempo) * 14000.0f) << 2)
+         | ((juce::uint64) (rec ? 1 + ((juce::int64) recorder->seconds() & 0xfffff) : 0) << 20)
+         | ((juce::uint64) (rec && recorder->lostSeconds() > 0.0 ? 1 : 0) << 41) | ((juce::uint64) (note ? 1 : 0) << 42);
 }
 
 // What the MASTER panel's meters and numbers show, to the pixel: it is drawn again only when this changes.
@@ -1293,7 +1324,10 @@ void Screen::timerCallback()
             if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl])
                 dirty (ctl == cx::lane (ses.activeLane, cx::kSeqMute) ? seqRect : h.r.expanded (14, 6));       // a sequencer's mute greys its steps
         }
-    if (barNow() != barSig) dirty (R (1160, 12, 320, 52));        // RUN and TEMPO, when an outside clock moves them
+    // a take that ended by itself (the disk) says so
+    if (recorder != nullptr)
+        if (const bool r = recorder->recording(); r != recWas) { recWas = r; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter(); }
+    if (barNow() != barSig) dirty (R (8, 12, 1712, 52));          // RUN and TEMPO, when an outside clock moves them; REC's time
     const float want = cfgOpen && page == pMain ? 1.0f : 0.0f;
     if (cfgT != want)
     {
@@ -1323,6 +1357,14 @@ void Screen::timerCallback()
             if (now != lastStep || run != wasRunning) dirty (seqRect);
         }
         wasRunning = run;
+    }
+    if (mouseIsDown && drag.kind == hAct && drag.a == aRec && ! drag.fired && recorder != nullptr && recorder->recording()
+        && juce::Time::getMillisecondCounter() - drag.t0 > 700)
+    {
+        drag.fired = true;
+        recorder->stop();
+        recWas = false; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter();
+        repaint();
     }
     if (mouseIsDown && drag.kind == hAct && drag.a == aDelete && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)
     {
