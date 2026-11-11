@@ -19,6 +19,13 @@ namespace e16
     // (127 down, 0 up): the knob's nearest snapshot is recalled. A lane's page coming up sends
     // CC 119 on channel 16 with the lane's number, and that lane becomes the active one.
     constexpr int kKnobCc = 12, kMidCc = 28, kSnapChannel = 16, kPressCc = 44, kFocusCc = 119;
+    // The library's scene (a second one: a scene has twelve pages and the first uses them all).
+    // Page 1 is the map, on channel 15: the E16's grid is the library laid out by sound, energy up
+    // the rows (the bottom row calm, the top row peak) and brightness along them (dark at the
+    // left). Page 2 is the finders, on channel 14: RECENT, FITS NOW, MORE, LESS. On both, a knob
+    // in place p sends CC 11 + p and its press CC 43 + p. Turning a knob goes through the
+    // snapshots it holds and plays each in the headphones; pressing it recalls that one to the set.
+    constexpr int kMapChannel = 15, kFindChannel = 14, kLibKnobs = 32;      // 0-15 the map, 16-31 the finders
     constexpr int kPerLane = 17;                                // 12 knobs, SEND A, SEND B, LOW, HIGH, MID
     constexpr int kSlots = kLanes * kPerLane + 16;              // every address that carries a value
     // ring colours, by the OXI App's numbers (the suite's, as set in the App on Nov 8)
@@ -32,6 +39,7 @@ namespace e16
     // The scene file's text, as the OXI App exports one. snapNames: the sixteen snapshot knobs'
     // names (an empty one is SNAP n).
     juce::String sceneText (const Engine&, const juce::StringArray& snapNames);
+    juce::String libraryText();                                 // the library's scene
 }
 
 class Midi : private juce::MidiInputCallback, private juce::Timer, private juce::Thread
@@ -96,6 +104,15 @@ private:
     std::array<std::atomic<juce::uint32>, e16::kSlots> heardAt;
     std::array<std::atomic<int>, 16> presses;
     std::atomic<int> focus { 0 };
+    // the library's scene
+    std::array<std::atomic<int>, e16::kLibKnobs> libLatest, libSent, libPresses;
+    std::array<std::atomic<juce::uint32>, e16::kLibKnobs> libHeardAt;
+    std::array<juce::int64, e16::kLibKnobs> libPick {};         // the snapshot each knob holds now
+    std::array<std::vector<juce::int64>, e16::kLibKnobs> libList;
+    std::array<juce::uint32, e16::kLibKnobs> libTouched {};
+    int libTick = 0;
+    std::vector<juce::int64> libFor (int knob);
+    void serviceLibrary();
     std::atomic<juce::MidiInput*> e16In { nullptr };
 
     // the rings of travelling knobs

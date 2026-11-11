@@ -69,6 +69,18 @@ public:
     // The bars a snapshot was taken over, kept beside the session as a small compressed clip.
     juce::File clipFile (juce::int64 id) const;
     void waitForClips();                // until the clips being written are on the disk (tests; quitting)
+    // ---- finding snapshots by their sound (those that have one kept)
+    // The map: four rows of energy (0 calm .. 3 peak) by four columns of brightness (0 dark .. 3 bright).
+    static int energyRow (const Profile& p)  { return juce::jlimit (0, 3, (int) (p.energy * 4.0f)); }
+    static int brightCol (const Profile& p)  { return juce::jlimit (0, 3, (int) (p.bright * 4.0f)); }
+    std::vector<juce::int64> mapCell (int row, int col) const;          // the snapshots in that square, calmest first
+    std::vector<juce::int64> recent (int most) const;                   // newest first
+    enum class Fit { like, more, less };
+    // like: nearest in sound first. more, less: a step up or down in energy from it, nearest step
+    // first, keeping to the ones nearest it in colour when there are more than fit.
+    std::vector<juce::int64> fitting (const Profile& now, Fit, int most) const;
+    const Profile& heardNow();          // what is playing, profiled (worked out again at most every second and a half)
+
     // Cue: a snapshot's clip in the headphones, apart from the set (0, or one with no clip: silence).
     // The rig itself is not touched.
     bool cue (juce::int64 id);          // false: that snapshot has no sound kept
@@ -115,6 +127,8 @@ private:
     bool dirty = false, useDisk = true;
     juce::ThreadPool clipWriter { 1 };
     juce::int64 cueId = 0;
+    Profile nowProfile;
+    juce::uint32 nowAt = 0;
     // the clips handed to the engine: each kept until a second after it was replaced
     std::vector<std::pair<std::unique_ptr<Engine::CueClip>, juce::uint32>> cueKept;
     void pruneCues();

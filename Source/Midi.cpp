@@ -278,6 +278,82 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
         { "outputOnEntry", "0" }, { "holdMode", "0" }, { "acceleration", "3" }, { "code", code }, { "pages", Json::arr (pages) } });
     return String (scene);
 }
+
+// The library's scene: the map on page 1, the finders on page 2, the rest empty. It carries the
+// first scene's script (which finds nothing of its own to do here), so its form is one the E16
+// is known to take.
+String libraryText()
+{
+    std::vector<std::string> pages;
+    String map;
+    juce::StringArray focus;
+    static const char* const rows[4] = { "PEAK", "DRIVE", "EASY", "CALM" };         // the top row of knobs first
+    static const char* const cols[4] = { "DK", "WM", "CL", "BR" };                  // dark, warm, clear, bright
+    static const int colColour[4] = { kRed, kPink, kLightBlue, kWhite };
+    {
+        std::vector<std::string> encs;
+        for (int p = 1; p <= 16; ++p)
+        {
+            Enc e;
+            const int r = (p - 1) / 4, c = (p - 1) % 4;
+            e.name = String (rows[r]) + " " + cols[c]; e.abbr = String (rows[r]).substring (0, 2) + cols[c];
+            e.colour = colColour[c];
+            e.channel = kMapChannel; e.number = kKnobCc + p - 1; e.def = 0;
+            e.press = 1; e.pressChannel = kMapChannel; e.pressNumber = kPressCc + p - 1;
+            encs.push_back (encJson (e, p));
+            map << "---";
+        }
+        pages.push_back (Json::obj ({ { "title", Json::str ("MAP") }, { "output", "0" }, { "channel", Json::num (kMapChannel) }, { "encoders", Json::arr (encs) } }));
+        focus.add ("0");
+    }
+    {
+        static const char* const names[4] = { "RECENT", "FITS NOW", "MORE", "LESS" };
+        static const char* const abbrs[4] = { "RCNT", "FITS", "MORE", "LESS" };
+        static const int colours[4] = { kViolet, kGreen, kWhite, kRed };
+        std::vector<std::string> encs;
+        for (int p = 1; p <= 16; ++p)
+        {
+            Enc e;
+            if (p <= 4)
+            {
+                e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = colours[p - 1];
+                e.channel = kFindChannel; e.number = kKnobCc + p - 1; e.def = 0;
+                e.press = 1; e.pressChannel = kFindChannel; e.pressNumber = kPressCc + p - 1;
+            }
+            encs.push_back (encJson (e, p));
+            map << "---";
+        }
+        pages.push_back (Json::obj ({ { "title", Json::str ("FIND") }, { "output", "0" }, { "channel", Json::num (kFindChannel) }, { "encoders", Json::arr (encs) } }));
+        focus.add ("0");
+    }
+    for (int page = 3; page <= 12; ++page)
+    {
+        std::vector<std::string> encs;
+        for (int p = 1; p <= 16; ++p) { encs.push_back (encJson (Enc(), p)); map << "---"; }
+        pages.push_back (Json::obj ({ { "title", Json::str ("-") }, { "output", "0" }, { "channel", "1" }, { "encoders", Json::arr (encs) } }));
+        focus.add ("0");
+    }
+    String src = String::fromUTF8 (BinaryData::rings_lua, BinaryData::rings_luaSize).replace ("\r\n", "\n");
+    src = src.replace ("@MAP@", map).replace ("@GREEN@", String (kGreen)).replace ("@FOCUS@", focus.joinIntoString (", "))
+             .replace ("@FOCUS_CH@", String (kSnapChannel - 1)).replace ("@FOCUS_CC@", String (kFocusCc));
+    // the icon: a four by four grid of dots
+    std::vector<std::string> icon;
+    for (int r = 0; r < 16; ++r)
+    {
+        int row = 0;
+        for (int c = 0; c < 16; ++c) if (r % 4 == 1 && c % 4 == 1) row |= 3 << (14 - c);
+        if (r % 4 == 2) for (int c = 0; c < 16; ++c) if (c % 4 == 1) row |= 3 << (14 - c);
+        icon.push_back (Json::num (row >> 8)); icon.push_back (Json::num (row & 0xff));
+    }
+    const std::string code = Json::obj ({ { "code", Json::str (minified (src)) }, { "fullScript", Json::str (src.replace ("\n", "\r\n")) },
+                                          { "scriptName", Json::str ("sf_glide_rings") } });
+    const std::string scene = Json::obj ({
+        { "title", Json::str ("SF-LIB") }, { "icon", Json::arr (icon) }, { "selectedPreset", "0" }, { "color", Json::num (kViolet) },
+        { "transmitMode", "0" }, { "pcOnEntry", "0" }, { "bankOnEntry", "65535" }, { "recentPage", "0" }, { "recentPreset", "0" },
+        { "transmitOnSceneEntry", "0" }, { "transmitOnPageSwitch", "0" }, { "transmitOnPresetLoad", "0" }, { "smartTransmit", "15" },
+        { "outputOnEntry", "0" }, { "holdMode", "0" }, { "acceleration", "3" }, { "code", code }, { "pages", Json::arr (pages) } });
+    return String (scene);
+}
 } // namespace e16
 
 // ===================================================================================== the ports
@@ -304,6 +380,10 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
     for (auto& v : sent) v = -1;
     for (auto& v : heardAt) v = 0;
     for (auto& v : presses) v = 0;
+    for (auto& v : libLatest) v = -1;
+    for (auto& v : libSent) v = -1;
+    for (auto& v : libPresses) v = 0;
+    for (auto& v : libHeardAt) v = 0;
     ringLast.fill (0); ringSentAt.fill (0.0);
     if (useDevices)
     {
@@ -474,6 +554,17 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     }
     if (! m.isController()) return;
     const int ch = m.getChannel(), num = m.getControllerNumber(), val = m.getControllerValue();
+    if (ch == e16::kMapChannel || ch == e16::kFindChannel)
+    {
+        const int base = ch == e16::kMapChannel ? 0 : 16;
+        if (num >= e16::kKnobCc && num < e16::kKnobCc + 16)
+        {
+            const auto k = (size_t) (base + num - e16::kKnobCc);
+            libLatest[k] = val; libSent[k] = val; libHeardAt[k] = juce::Time::getMillisecondCounter();
+        }
+        else if (num >= e16::kPressCc && num < e16::kPressCc + 16 && val >= 64) libPresses[(size_t) (base + num - e16::kPressCc)].fetch_add (1);
+        return;
+    }
     if (ch == e16::kSnapChannel)
     {
         if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; return; }
@@ -516,6 +607,7 @@ void Midi::service()
     for (int k = 0; k < 16; ++k)
         if (presses[(size_t) k].exchange (0) > 0) ses.pressSnapKnob (k);
     if (const int f = focus.exchange (0); f > 0) ses.selectLane (f - 1);
+    serviceLibrary();
 
     if (! toE16 && e16Out == nullptr) return;
     // The E16's rings follow the rig: a value that changed here (a recall, the mouse, a snapshot
@@ -532,6 +624,62 @@ void Midi::service()
         sent[(size_t) slot] = want;
     }
     rings (juce::Time::getMillisecondCounterHiRes());
+}
+
+// The snapshots a knob of the library's scene holds.
+std::vector<juce::int64> Midi::libFor (int k)
+{
+    if (k < 16) return ses.mapCell (3 - k / 4, k % 4);              // the top row of knobs is the top of the map
+    if (k == 16) return ses.recent (32);
+    if (k == 17) return ses.fitting (ses.heardNow(), Session::Fit::like, 12);
+    if (k == 18) return ses.fitting (ses.heardNow(), Session::Fit::more, 12);
+    if (k == 19) return ses.fitting (ses.heardNow(), Session::Fit::less, 12);
+    return {};
+}
+
+// The library's scene: a turn plays what the knob comes to in the headphones, a press recalls it.
+void Midi::serviceLibrary()
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    const bool refresh = ++libTick % 20 == 1;                       // twice a second, for the rings
+    for (int k = 0; k < e16::kLibKnobs; ++k)
+    {
+        const auto i = (size_t) k;
+        const int v = libLatest[i].exchange (-1);
+        const bool pressed = libPresses[i].exchange (0) > 0;
+        // What FITS NOW, MORE and LESS hold is worked out when a hand comes to the knob, and stays
+        // put while it is there: the list does not shift under it as the music moves.
+        const bool fresh = k >= 17 ? ((v >= 0 || pressed) && now - libTouched[i] > 4000) || (refresh && now - libTouched[i] > 4000)
+                                   : (v >= 0 || pressed || refresh);
+        if (fresh) libList[i] = libFor (k);
+        if (v >= 0 || pressed) libTouched[i] = now == 0 ? 1u : now;
+        const auto& list = libList[i];
+        const int n = (int) list.size();
+        if (v >= 0)
+        {
+            const juce::int64 id = n > 0 ? list[(size_t) juce::jlimit (0, n - 1, v * n / 128)] : 0;
+            if (id != libPick[i] || ses.cueing() != id) { libPick[i] = id; ses.cue (id); }
+        }
+        if (pressed)
+        {
+            juce::int64 id = std::find (list.begin(), list.end(), libPick[i]) != list.end() ? libPick[i] : (n > 0 ? list.front() : 0);
+            if (ses.findSnap (id) != nullptr) { libPick[i] = id; ses.recall (id); ses.cue (0); }
+        }
+    }
+    if (! toE16 && e16Out == nullptr) return;
+    // each ring sits in the middle of the place of the snapshot its knob holds (at nought with none)
+    for (int k = 0; k < e16::kLibKnobs; ++k)
+    {
+        const auto i = (size_t) k;
+        const auto& list = libList[i];
+        const int n = (int) list.size();
+        const auto at = std::find (list.begin(), list.end(), libPick[i]);
+        const int idx = at != list.end() ? (int) (at - list.begin()) : 0;
+        const int want = n > 0 ? juce::jlimit (0, 127, (idx * 128 + 64) / n) : 0;
+        if (want == libSent[i].load() || now - libHeardAt[i].load() < 150u) continue;
+        sendE16 (juce::MidiMessage::controllerEvent (k < 16 ? e16::kMapChannel : e16::kFindChannel, e16::kKnobCc + k % 16, want));
+        libSent[i] = want;
+    }
 }
 
 // GLIDE RINGS: the travelling knobs to the scene's script, as SysEx (the suite's E16Glide.h).

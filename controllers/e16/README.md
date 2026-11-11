@@ -67,3 +67,39 @@ build/SF000_artefacts/Release/SF-000.app/Contents/MacOS/SF-000 --e16 controllers
 
 The suite's ring colours by the OXI App's numbers: white 34, red 63, light blue 18, pink 50,
 violet 9, green 90 (a travelling knob). They are in `Source/Midi.h`.
+
+## The second scene: the library (`SF-000-LIBRARY.oxie16`, SF-LIB)
+
+A scene has twelve pages and the first uses them all, so the library is a scene of its own. Load it
+beside the first and change scenes on the E16 to reach it. `SF-000 --e16 SF-000.oxie16` writes both.
+
+```
+page 1: MAP, on channel 15. The grid is the library by sound:
+        PEAK  DK  WM  CL  BR      rows: energy, the top row the most
+        DRIVE DK  WM  CL  BR      columns: dark, warm, clear, bright
+        EASY  DK  WM  CL  BR      (ring colours: red, pink, light blue, white)
+        CALM  DK  WM  CL  BR
+page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS
+pages 3-12: empty
+```
+
+- **Turn** a knob: it goes through the snapshots it holds, and each is heard in the headphones
+  (outputs 3 + 4), in time with the set. The set is not touched.
+- **Press** it: the snapshot it is on is recalled to the set, over the GLIDE time, and the
+  headphones go quiet.
+- A knob's 128 places are shared out among what it holds: with four snapshots in a square, each has
+  a quarter of the turn. The ring sits in the middle of the one it is on.
+- A square with nothing in it does nothing, and its ring sits at nought.
+- FITS NOW, MORE and LESS are worked out from what is playing when your hand comes to the knob, and
+  stay put while it is there.
+- Only snapshots taken while the clock ran have a sound kept, so only those are on the map.
+
+| WHAT | CHANNEL | NUMBER |
+|---|---|---|
+| a MAP knob in place p (1-16) | 15 | CC 11 + p |
+| its press (127 down, 0 up) | 15 | CC 43 + p |
+| a FIND knob in place p (1-4) | 14 | CC 11 + p |
+| its press | 14 | CC 43 + p |
+
+Not tried on an E16. The scene carries the first scene's script (which has nothing to do here), so
+its form is one the E16 is known to take.

@@ -172,6 +172,14 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
   after START bar 1's first step cannot be early either: it is played at once. TRIM moves the steps
   either way by ear. The settings for the OXI One, and how to line all three up, are in
   `controllers/oxi-one/`.
+- **The E16's second scene, the library** (`controllers/e16/SF-000-LIBRARY.oxie16`, SF-LIB). Page 1
+  is the **MAP**: the grid of knobs is the library laid out by sound, energy up the rows (bottom
+  row calm, top row peak) and brightness along them (dark at the left, bright at the right). Each
+  knob holds the snapshots in its square. **Turn** it to go through them, each heard in the
+  headphones in time with the set; **press** it and that one is recalled to the set, over the
+  GLIDE time. Page 2 is **FIND**: RECENT (the newest first), FITS NOW (nearest in sound to what is
+  playing), MORE and LESS (a step up or down in energy from what is playing, nearest step first).
+  A ring shows where its knob is among what it holds; an empty square's ring sits at nought.
 - **The E16.** Load `controllers/e16/SF-000.oxie16` (see `controllers/e16/README.md`). Pages 1-11
   are the lanes: the twelve knobs where the screen has them, then SEND A, SEND B, LOW and HIGH. Press
   knob 16 and it is MID (its ring turns pink); press again for HIGH. Page 12 is the sixteen snapshot
@@ -228,8 +236,8 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
 - Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
-- The library: the sound map, the E16's page for it (turn to hear, press to recall), suggestions
-  that fit what is playing. Meaning filters; snapshot knob pages beyond the first.
+- The library: the sound map drawn on the screen, more finders (traits by name), suggestions timed
+  to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
 - A recall between two snapshots with different effects on a lane swaps the effects at once: the
   chains do not yet cross over the GLIDE time.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.

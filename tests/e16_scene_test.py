@@ -220,5 +220,33 @@ if os.path.exists(rings_path):
 else:
     print(f"     ({rings_path} is not there: run SF-000 --miditest first to play its ring reports to the script)")
 
+# The library's scene, written beside it: the same form, the map on page 1 and the finders on page 2.
+lib_path = os.path.join(os.path.dirname(path), os.path.splitext(os.path.basename(path))[0] + "-LIBRARY.oxie16")
+if os.path.exists(lib_path):
+    lraw = open(lib_path, "rb").read()
+    lib = json.loads(lraw)
+    encs = [e for p in lib["pages"] for e in p["encoders"]]
+    ok = all(b < 128 for b in lraw) and b"\n" not in lraw and list(lib) == HEADER and len(lib["pages"]) == 12 and 1 <= len(lib["title"]) <= 7
+    ok = ok and all(list(p) == PAGE and len(p["encoders"]) == 16 for p in lib["pages"])
+    ok = ok and all(list(e) == ENCODER and list(e["push_action"]) == PUSH and all(list(t) == TURN for t in e["turn_actions"]) for e in encs)
+    ok = ok and all(1 <= len(e["name"]) <= 8 and 1 <= len(e["abbr"]) <= 4 for e in encs)
+    the_map, find = lib["pages"][0], lib["pages"][1]
+    ok = ok and the_map["title"] == "MAP" and all(
+        e["turn_actions"][0]["type"] == 3 and e["turn_actions"][0]["channel"] == 15 and e["turn_actions"][0]["nr1"] == 12 + i
+        and e["push_action"]["type"] == 2 and e["push_action"]["channel"] == 15 and e["push_action"]["nr1"] == 44 + i
+        for i, e in enumerate(the_map["encoders"]))
+    ok = ok and find["title"] == "FIND" and [e["name"] for e in find["encoders"][:4]] == ["RECENT", "FITS NOW", "MORE", "LESS"]
+    ok = ok and all(e["turn_actions"][0]["channel"] == 14 and e["turn_actions"][0]["nr1"] == 12 + i and e["push_action"]["nr1"] == 44 + i
+                    for i, e in enumerate(find["encoders"][:4]))
+    ok = ok and all(e["turn_actions"][0]["type"] == 0 and e["push_action"]["type"] == 0 for e in find["encoders"][4:])
+    ok = ok and all(e["turn_actions"][0]["type"] == 0 for p in lib["pages"][2:] for e in p["encoders"])
+    used = {(e["turn_actions"][0]["channel"], e["turn_actions"][0]["nr1"]) for e in encs if e["turn_actions"][0]["type"] == 3}
+    mine = {(t["channel"], t["nr1"]) for p in scene["pages"] for e in p["encoders"] for t in e["turn_actions"] if t["type"] == 3}
+    ok = ok and not (used & mine) and lib["code"]["scriptName"] == scene["code"]["scriptName"]
+    check(ok, f"{os.path.basename(lib_path)}: the same form; MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), "
+              f"ten empty pages, and no address the first scene uses")
+else:
+    check(False, f"{os.path.basename(lib_path)} is missing")
+
 print("ALL CHECKS PASSED" if fails == 0 else f"{fails} CHECK(S) FAILED")
 sys.exit(1 if fails else 0)

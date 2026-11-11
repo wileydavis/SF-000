@@ -195,6 +195,64 @@ void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
     });
 }
 
+std::vector<juce::int64> Session::mapCell (int row, int col) const
+{
+    std::vector<const Snapshot*> in;
+    for (auto& s : library) if (s.profile.has && energyRow (s.profile) == row && brightCol (s.profile) == col) in.push_back (&s);
+    std::stable_sort (in.begin(), in.end(), [] (const Snapshot* a, const Snapshot* b) { return a->profile.energy < b->profile.energy; });
+    std::vector<juce::int64> ids;
+    for (auto* s : in) ids.push_back (s->id);
+    return ids;
+}
+
+std::vector<juce::int64> Session::recent (int most) const
+{
+    std::vector<const Snapshot*> in;
+    for (auto& s : library) if (s.profile.has) in.push_back (&s);
+    std::stable_sort (in.begin(), in.end(), [] (const Snapshot* a, const Snapshot* b) { return a->time > b->time; });
+    std::vector<juce::int64> ids;
+    for (size_t i = 0; i < in.size() && (int) i < most; ++i) ids.push_back (in[i]->id);
+    return ids;
+}
+
+std::vector<juce::int64> Session::fitting (const Profile& now, Fit kind, int most) const
+{
+    std::vector<juce::int64> ids;
+    if (! now.has) return ids;
+    struct Cand { const Snapshot* s; float colour, step; };
+    std::vector<Cand> c;
+    for (auto& s : library)
+    {
+        if (! s.profile.has) continue;
+        const float step = s.profile.energy - now.energy;
+        if (kind == Fit::more && step < 0.04f) continue;
+        if (kind == Fit::less && step > -0.04f) continue;
+        c.push_back ({ &s, distance (s.profile, now, kind != Fit::like), std::abs (step) });
+    }
+    if (kind == Fit::like) std::stable_sort (c.begin(), c.end(), [] (const Cand& a, const Cand& b) { return a.colour < b.colour; });
+    else
+    {
+        // the ones nearest in colour, then in order of the step
+        std::stable_sort (c.begin(), c.end(), [] (const Cand& a, const Cand& b) { return a.colour < b.colour; });
+        if ((int) c.size() > most) c.resize ((size_t) most);
+        std::stable_sort (c.begin(), c.end(), [] (const Cand& a, const Cand& b) { return a.step < b.step; });
+    }
+    for (size_t i = 0; i < c.size() && (int) i < most; ++i) ids.push_back (c[i].s->id);
+    return ids;
+}
+
+const Profile& Session::heardNow()
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    if (nowAt == 0 || now - nowAt > 1500)
+    {
+        Engine::Heard h;
+        nowProfile = engine.lastHeard (h) ? profileOf (h) : Profile();
+        nowAt = now == 0 ? 1u : now;
+    }
+    return nowProfile;
+}
+
 // A clip the engine may still be fading out is kept a second past being replaced.
 void Session::pruneCues()
 {
@@ -227,11 +285,11 @@ bool Session::cue (juce::int64 id)
         }
     }
     retire();
-    if (clip == nullptr) { engine.setCue (nullptr); cueId = 0; return false; }
-    engine.setCue (clip.get());
-    cueKept.push_back ({ std::move (clip), 0u });
-    cueId = id;
-    return true;
+    const auto was = cueId;
+    if (clip == nullptr) { engine.setCue (nullptr); cueId = 0; }
+    else { engine.setCue (clip.get()); cueKept.push_back ({ std::move (clip), 0u }); cueId = id; }
+    if (cueId != was && onChange) onChange();                       // (the library shows which is in the headphones)
+    return cueId != 0;
 }
 
 juce::int64 Session::take()

@@ -33,6 +33,9 @@ struct Profile
 
 Profile profileOf (const Engine::Heard&);
 
+// How unlike two sounds are: 0 the same. colourOnly leaves their energy out of it.
+float distance (const Profile& a, const Profile& b, bool colourOnly = false);
+
 // One colour for a profile: dark sounds deep red, through amber and yellow, to near white for the brightest.
 juce::Colour heat (float bright);
 } // namespace sf0

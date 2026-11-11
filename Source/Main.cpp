@@ -1178,7 +1178,12 @@ static int writeScene (const juce::String& path)
     const bool ok = f.replaceWithData (text.toRawUTF8(), text.getNumBytesAsUTF8());
     std::printf (ok ? "wrote %s (%d bytes): copy it into the OXI App's Scenes folder and send it to the E16\n" : "could not write %s\n",
                  f.getFullPathName().toRawUTF8(), (int) text.getNumBytesAsUTF8());
-    return ok ? 0 : 1;
+    // the library's scene beside it
+    const auto lib = sf0::e16::libraryText();
+    const auto lf = f.getSiblingFile (f.getFileNameWithoutExtension() + "-LIBRARY" + f.getFileExtension());
+    const bool ok2 = lf.replaceWithData (lib.toRawUTF8(), lib.getNumBytesAsUTF8());
+    std::printf (ok2 ? "wrote %s (%d bytes): the library's scene (the map, the finders)\n" : "could not write %s\n", lf.getFullPathName().toRawUTF8(), (int) lib.getNumBytesAsUTF8());
+    return ok && ok2 ? 0 : 1;
 }
 
 // Notes in, the E16's knobs, presses and rings, the clock out, patterns on the bar line: offline,
@@ -1705,7 +1710,8 @@ static int midiTest()
         midi.service();
         std::set<int> told;
         for (auto& m : out) if (m.isController()) told.insert (m.getChannel() * 128 + m.getControllerNumber());
-        check ((int) told.size() == e16::kSlots && (int) out.size() == e16::kSlots, "a fresh E16 is told every value once (" + juce::String ((int) out.size()) + " messages)");
+        check ((int) told.size() == e16::kSlots + e16::kLibKnobs && (int) out.size() == e16::kSlots + e16::kLibKnobs,
+               "a fresh E16 is told every value once (" + juce::String ((int) out.size()) + " messages: " + juce::String (e16::kSlots) + " knobs and the library scene's " + juce::String (e16::kLibKnobs) + " rings)");
         out.clear();
 
         const int tune = cx::lane (0, 0), punch = cx::lane (0, 5);
@@ -1827,6 +1833,111 @@ static int midiTest()
         const auto waited = shape (onsets (true)), atOnce = shape (onsets (false));
         check (waited == "0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.5 9.5 10.5 11.5", "a recalled pattern changes on the bar line: quarters to the end of bar 2, then offbeats (" + waited + ")");
         check (atOnce == "0.0 1.0 2.0 3.0 4.0 5.0 5.5 6.5 7.5 8.5 9.5 10.5 11.5", "an edited pattern changes at once (" + atOnce + ")");
+    }
+
+    // 5b. the library's scene: the grid is the map, a turn is heard in the headphones, a press recalls
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_lib_test");
+        tmp.deleteRecursively();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        {
+            Engine e;
+            e.prepare (48000.0, 256);
+            Session ses (e, true);
+            Midi m (e, ses, false);
+            std::vector<juce::MidiMessage> out;
+            m.toE16 = [&out] (const juce::MidiMessage& msg) { out.push_back (msg); };
+            juce::AudioBuffer<float> b (2, 256);
+            auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 256.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+            auto state = [&] (std::initializer_list<int> keep)
+            {
+                for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), std::find (keep.begin(), keep.end(), l) != keep.end() ? 0.0f : 1.0f);
+                bars (6.2);
+            };
+            auto take = [&] (std::initializer_list<int> keep) { state (keep); juce::Thread::sleep (3); return ses.take(); };
+            for (int k = 0; k < 200; ++k) e.render (b);
+            e.setRunning (true);
+            const auto all = take ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }), kick = take ({ 0 }), hats = take ({ 1, 2 }), pads = take ({ 9, 10 }), drums = take ({ 0, 1, 2, 3, 4 });
+            ses.waitForClips();
+            auto prof = [&] (juce::int64 id) { return ses.library[(size_t) ses.indexOf (id)].profile; };
+            auto knobOf = [&] (juce::int64 id) { const auto p = prof (id); return (3 - Session::energyRow (p)) * 4 + Session::brightCol (p); };
+            auto turn = [&] (int ch, int knob, int v) { m.incoming (juce::MidiMessage::controllerEvent (ch, e16::kKnobCc + knob, v), true); m.service(); };
+            auto press = [&] (int ch, int knob) { m.incoming (juce::MidiMessage::controllerEvent (ch, e16::kPressCc + knob, 127), true); m.service(); };
+
+            // the map: each snapshot is under the knob for its energy and brightness
+            bool placed = knobOf (all) < 8 && knobOf (hats) % 4 == 3 && knobOf (kick) % 4 == 0 && knobOf (pads) >= 8 && knobOf (all) != knobOf (kick) && knobOf (all) != knobOf (hats);
+            const auto cell = ses.mapCell (Session::energyRow (prof (hats)), Session::brightCol (prof (hats)));
+            const int where = (int) (std::find (cell.begin(), cell.end(), hats) - cell.begin());
+            turn (e16::kMapChannel, knobOf (hats), juce::jlimit (0, 127, (where * 128 + 64) / std::max (1, (int) cell.size())));
+            const bool heard = ses.cueing() == hats && ses.baseId != hats;
+            for (int k = 0; k < 8; ++k) e.render (b);
+            const bool sounding = e.cueBlock().getMagnitude (0, 256) > 0.01f;
+            press (e16::kMapChannel, knobOf (hats));
+            const bool recalled = ses.baseId == hats && ses.cueing() == 0;
+            check (placed && heard && sounding && recalled,
+                   "the map: the whole rig sits in the upper rows, the hats at the bright edge, the kick at the dark edge, pads low (knobs "
+                       + juce::String (knobOf (all) + 1) + ", " + juce::String (knobOf (hats) + 1) + ", " + juce::String (knobOf (kick) + 1) + ", " + juce::String (knobOf (pads) + 1)
+                       + "); turning a knob plays its snapshot in the headphones and leaves the set alone; pressing it recalls it");
+
+            // an empty square does nothing; a ring shows where its knob is among what it holds
+            int empty = -1;
+            for (int k = 0; k < 16 && empty < 0; ++k) if (ses.mapCell (3 - k / 4, k % 4).empty()) empty = k;
+            const auto baseWas = ses.baseId;
+            if (empty >= 0) { turn (e16::kMapChannel, empty, 90); press (e16::kMapChannel, empty); }
+            const bool nothing = empty < 0 || (ses.cueing() == 0 && ses.baseId == baseWas);
+            juce::Thread::sleep (170);
+            for (int k = 0; k < 21; ++k) m.service();
+            int kickRing = -1, emptyRing = -1;
+            for (auto& msg : out)
+                if (msg.isController() && msg.getChannel() == e16::kMapChannel)
+                {
+                    if (msg.getControllerNumber() == e16::kKnobCc + knobOf (kick)) kickRing = msg.getControllerValue();
+                    if (empty >= 0 && msg.getControllerNumber() == e16::kKnobCc + empty) emptyRing = msg.getControllerValue();
+                }
+            const int kickN = (int) ses.mapCell (Session::energyRow (prof (kick)), Session::brightCol (prof (kick))).size();
+            check (nothing && kickRing == 64 / std::max (1, kickN) && (empty < 0 || emptyRing == 0),
+                   "an empty square's knob does nothing and its ring is sent to nought; a knob not yet turned shows the first of what it holds (" + juce::String (kickRing) + " of " + juce::String (kickN) + ")");
+
+            // the finders: RECENT newest first; MORE and LESS a step up and down from what is playing
+            turn (e16::kFindChannel, 0, 0);
+            const bool newest = ses.cueing() == drums;
+            turn (e16::kFindChannel, 0, 127);
+            const bool oldest = ses.cueing() == all;
+            state ({ 0 });                                              // the kick alone playing now
+            juce::Thread::sleep (1600);                                 // (what is playing is profiled every second and a half)
+            const auto now = ses.heardNow();
+            turn (e16::kFindChannel, 2, 0);
+            const auto up = ses.cueing();
+            turn (e16::kFindChannel, 3, 0);
+            const auto down = ses.cueing();
+            turn (e16::kFindChannel, 1, 0);
+            const auto like = ses.cueing();
+            const bool steps = up != 0 && prof (up).energy > now.energy + 0.03f && down != 0 && prof (down).energy < now.energy - 0.03f && like == kick
+                               && prof (up).energy <= prof (all).energy && up != all;       // (the nearest step up, not the furthest)
+            press (e16::kFindChannel, 2);
+            check (newest && oldest && steps && ses.baseId == up,
+                   "RECENT runs from the newest to the oldest; with the kick alone playing (energy " + juce::String (now.energy, 2) + "), FITS NOW finds the kick alone, MORE a snapshot with more energy ("
+                       + juce::String (up != 0 ? prof (up).energy : 0.0f, 2) + "), LESS one with less (" + juce::String (down != 0 ? prof (down).energy : 0.0f, 2) + "); pressing MORE recalls it");
+        }
+        // the scene file
+        const auto lib = juce::JSON::parse (e16::libraryText());
+        bool form = lib.isObject() && lib["title"].toString() == "SF-LIB" && lib["pages"].isArray() && lib["pages"].size() == 12;
+        if (form)
+        {
+            const auto map = lib["pages"][0], find = lib["pages"][1];
+            form = map["title"].toString() == "MAP" && find["title"].toString() == "FIND" && map["encoders"].size() == 16;
+            for (int p = 0; p < 16 && form; ++p)
+            {
+                const auto en = map["encoders"][p];
+                form = (int) en["turn_actions"][0]["channel"] == e16::kMapChannel && (int) en["turn_actions"][0]["nr1"] == e16::kKnobCc + p
+                       && (int) en["push_action"]["channel"] == e16::kMapChannel && (int) en["push_action"]["nr1"] == e16::kPressCc + p && en["name"].toString().length() <= 8;
+            }
+            form = form && find["encoders"][0]["name"].toString() == "RECENT" && (int) find["encoders"][2]["turn_actions"][0]["channel"] == e16::kFindChannel
+                   && (int) find["encoders"][5]["turn_actions"][0]["type"] == 0 && lib["pages"][2]["encoders"].size() == 16;
+        }
+        check (form, "the library's scene is written: MAP on channel 15, FIND on 14, knob p on CC 11 + p with its press on CC 43 + p, ten empty pages");
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
     }
 
     // 6. the scene, and the session's backups

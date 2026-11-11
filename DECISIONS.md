@@ -464,6 +464,32 @@ same: a clip kept at every save, and a profile from the clip and from what the r
 128. **Effect chains that cross over the glide are required** (your word, Nov 11), after the
      library and cue.
 
+## Eleventh build (Nov 11): the library on the E16
+
+129. **The library is a second E16 scene (SF-LIB), not a page of the first.** A scene has twelve
+     pages and the first uses all twelve (eleven lanes and the snapshot knobs). You asked for a
+     page; this is two pages of a scene of their own, a scene change away.
+130. **MAP: the grid is the library by sound** (your choice, A): energy up the rows, brightness
+     along them. A snapshot's square is fixed by its own profile (each scale cut in four), so it
+     does not move as the library grows. Squares will fill unevenly; say if the cuts want moving.
+131. **A turn is heard, a press recalls.** Turning goes through what the knob holds, each in the
+     headphones in time with the set; pressing recalls the one it is on over the GLIDE time. The
+     E16's knobs send places, not steps, so a knob's 128 places are shared out among what it
+     holds, and its ring shows which.
+132. **FIND: RECENT, FITS NOW, MORE, LESS** (you asked for the first two; MORE and LESS are mine,
+     *proposed*, toward dialling a room's energy up and down). FITS NOW is nearest in sound to
+     what is playing. MORE and LESS are a step up or down in energy from it, nearest step first,
+     kept to the twelve nearest it in colour. What is playing is profiled from the tape when a
+     hand comes to the knob, and the list stays put while the hand is there.
+133. **Likeness is a weighted distance over the profile**: brightness, weight, density, tone,
+     wetness, the spectrum, the hits in the bar, the lanes, and energy. No learned model. With one
+     rig's sounds and a library of tens or hundreds, measures made for this rig go a long way and
+     can be checked; a learned embedding could add a finer sense of "sounds like" and is worth
+     trying once there is a real library to judge it against. It could run offline.
+134. **Noted, not built:** suggestions timed to where the set is (how long a state has held, where
+     the energy has been), the map drawn on the screen, more finders by named trait, and showing
+     on the main screen what is in the headphones.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -472,6 +498,7 @@ same: a clip kept at every save, and a profile from the clip and from what the r
   (and the Metal split-paint flag behind it), and everything MIDI on real hardware: the E16 scene,
   its rings, knob 16's swap, the page following the lane, the OXI One project, the clock out and
   CLOCK LEAD, the clock followed, and the sequencer's mute with the One playing a lane.
-- Not yet heard on the Mac: the rig without the suite's look-ahead (seventh build), and recording
-  (eighth).
+- Not yet heard on the Mac: the rig without the suite's look-ahead (seventh build), recording
+  (eighth), a snapshot's clip and profile (ninth), cue on outputs 3 + 4 (tenth), and the library's
+  E16 scene (eleventh), which has not met an E16.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

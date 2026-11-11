@@ -173,6 +173,16 @@ Profile profileOf (const Engine::Heard& h)
     return p;
 }
 
+float distance (const Profile& a, const Profile& b, bool colourOnly)
+{
+    auto sq = [] (float x, float y) { return (x - y) * (x - y); };
+    auto mean = [&sq] (const float* x, const float* y, int n) { float s = 0.0f; for (int i = 0; i < n; ++i) s += sq (x[i], y[i]); return s / (float) n; };
+    float d = sq (a.bright, b.bright) + 0.7f * sq (a.weight, b.weight) + 0.7f * sq (a.density, b.density) + 0.5f * sq (a.tone, b.tone) + 0.5f * sq (a.wet, b.wet)
+            + mean (a.bands.data(), b.bands.data(), 16) + 0.5f * mean (a.pulse.data(), b.pulse.data(), 32) + 0.7f * mean (a.lanes.data(), b.lanes.data(), kLanes);
+    if (! colourOnly) d += sq (a.energy, b.energy);
+    return d;
+}
+
 // ------------------------------------------------------------------------------------- keeping it
 static juce::var bytes (const float* v, int n)
 {
