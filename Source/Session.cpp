@@ -32,14 +32,24 @@ void Session::timerCallback()
 double Session::glideBeats() const { return glideBarsFor (engine.target (cx::kGlide)) * 4.0; }
 
 // ------------------------------------------------------------------------------------- controls
-void Session::userSet (int i, float v)
+void Session::selectLane (int l)
+{
+    l = juce::jlimit (0, kLanes - 1, l);
+    if (l == activeLane) return;
+    activeLane = l; selStep = -1; page = 0;
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::userSet (int i, float v, bool sounding)
 {
     if (i < 0 || i >= cx::kCount) return;
     v = juce::jlimit (0.0f, 1.0f, v);
     if (i >= cx::kSnap) { turnSnapKnob (i - cx::kSnap, v); return; }
     const auto& c = engine.control (i);
     base[(size_t) i] = c.morph && i < kMorphEnd ? v - offset[(size_t) i] : v;
-    engine.set (i, v);
+    // a sound knob under the hand travels over the GLIDE time, as a recalled one does (OFF: at once)
+    if (! sounding) engine.set (i, v, c.glides ? glideBeats() : 0.0);
     if (i < cx::kRet)
     {
         // a generator knob rewrites the pattern while its generator is armed
@@ -194,7 +204,7 @@ void Session::applySnapshot (const Snapshot& s, double glide)
             if (s.hasInsFiles && type >= 0) engine.expectInsertFiles (l, k, refs);
             engine.setInsertType (l, k, type, false, s.hasSetup ? &s.insSetup[(size_t) l][(size_t) k] : nullptr);
         }
-        engine.setPattern (l, s.patterns[(size_t) l]);
+        engine.setPattern (l, s.patterns[(size_t) l], true);         // while the clock runs: on the next bar line
         genType[(size_t) l] = s.gen[(size_t) l];
         if (s.hasSetup)
         {
@@ -543,10 +553,25 @@ void Session::save()
     if (tmp.replaceWithText (juce::JSON::toString (var (root)))) tmp.moveFileTo (f);
 }
 
+void Session::backUp()
+{
+    // The session as this launch found it, before anything writes to it: backups/session-<date>.json.
+    // A bad build or a bad save then costs at most what was done since the last time the app opened.
+    const auto f = stateFile();
+    if (! f.existsAsFile()) return;
+    const auto dir = f.getSiblingFile ("backups");
+    if (! dir.createDirectory()) return;
+    f.copyFileTo (dir.getChildFile ("session-" + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S") + ".json"));
+    auto old = dir.findChildFiles (juce::File::findFiles, false, "session-*.json");
+    old.sort();                                                 // by name: oldest first
+    for (int i = 0; i < old.size() - 20; ++i) old[i].deleteFile();
+}
+
 bool Session::load()
 {
     const auto f = stateFile();
     if (! f.existsAsFile()) return false;
+    backUp();
     const var root = juce::JSON::parse (f);
     if (! root.isObject() || (int) root.getProperty ("sf000", 0) != 1) return false;
 

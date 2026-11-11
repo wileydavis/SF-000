@@ -30,6 +30,7 @@ First run:
 | Do this | To |
 | --- | --- |
 | Drag a knob up or down | turn it (hold Shift for fine; double-click for its starting value; the wheel works too) |
+| Set GLIDE, then turn a knob | the sound travels there over the GLIDE time: the knob turns green and walks, with a white mark where it is going. It sets off on the next beat while the clock runs. Turn it again on the way and it carries on from where the sound is. OFF: at once |
 | Click a lane's name | make it the active lane: the inserts and the sequencer strip show it |
 | **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
@@ -43,6 +44,7 @@ First run:
 | RANDOM, EUCLID | write a pattern at once; while the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite it |
 | SNAPSHOT | keep everything on the main screen as a new snapshot |
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
+| Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order |
@@ -86,6 +88,24 @@ CLEAN SLATE (always first in the library) puts every knob where the rig starts i
 and no inserts. INIT is the rig as it first comes up, patterns and all. The other five are the
 pushes behind the ENERGY, BUILD, ACID, DIST and WARP knobs.
 
+### MIDI and the E16
+
+Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing.
+
+- **Notes in.** Every MIDI input is listened to. A lane's number is its channel (1 KICK to 11 VOICE),
+  so the OXI One plays the lanes as it played the Live tracks. Notes and the lane's own steps sound
+  together.
+- **Clock out.** START, STOP and 24 ticks a beat go to every output that is not the E16. Set the
+  OXI One to follow external clock. CLOCK LEAD is how long the follower takes to answer: play a plain
+  sixteenth pattern from it into a lane, read NOTES IN LAND x MS LATE in the panel, and put that
+  number on CLOCK LEAD. With the clock on, RUN waits two blocks and LEAD (a few ms) before the first
+  sound. SF-000 does not follow an outside clock yet.
+- **The E16.** Load `controllers/e16/SF-000.oxie16` (see `controllers/e16/README.md`). Pages 1-11
+  are the lanes: the twelve knobs where the screen has them, then SEND A, SEND B, LOW and HIGH. Press
+  knob 16 and it is MID (its ring turns pink); press again for HIGH. Page 12 is the sixteen snapshot
+  knobs; a press recalls that knob's nearest snapshot. Turning to a lane's page makes it the active
+  lane on the screen. The rings follow the rig, and a travelling knob's ring walks green.
+
 ## Checks
 
 ```
@@ -93,6 +113,9 @@ pushes behind the ENERGY, BUILD, ACID, DIST and WARP knobs.
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
+build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out, with made-up messages
+build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
+python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv
 ```
 
@@ -105,17 +128,22 @@ build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page librar
 | `Source/Sequencer.h` | patterns, ties, ratchets, the generators, MIDI on the sample |
 | `Source/Session.*` | base scene, snapshot library, snapshot knobs and their morph, the saved file |
 | `Source/Screen.*` | the three screens |
+| `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender |
+| `controllers/e16/` | the E16 scene and its script |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
-scene) and `audio.xml` (the interface). Delete `session.json` to start again from the factory rig.
+scene), `audio.xml` (the interface) and `midi.json` (clock on or off, CLOCK LEAD). Each time the app
+opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
+back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
 ## Not built yet
 
-- MIDI: no controller input, no E16 rings, no MIDI learn, no clock in or out.
+- MIDI: no MIDI learn for other controllers, no following an outside clock, no notes out.
+- The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
 - Recording of audio, MIDI and knob moves.
 - The library's sound map and audio previews; meaning filters; snapshot knob pages beyond the first.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.
-- Patterns changing on the bar line when a snapshot is recalled (they change at once).
+- Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).
 - Crash recovery beyond the saved session; the 8-hour soak test.

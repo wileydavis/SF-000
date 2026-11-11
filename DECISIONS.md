@@ -142,7 +142,8 @@ a snapshot could reach it later.
     changing what the lane plays.
 45. **Lane meters read each lane after its EQ, mute and solo**, before the master chain. The MIX
     pair reads the final output.
-46. **A gliding knob is green with a white mark at its target.** Knobs moved by hand never show it.
+46. **A gliding knob is green with a white mark at its target.** (In this build knobs moved by hand
+    did not glide. They do from the fourth build: 59.)
 
 ## Third build (Nov 11): the convolution on SPACE, CONFIG beside its panel, the quit crash
 
@@ -188,6 +189,52 @@ a snapshot could reach it later.
     the built-in room sounds for the moment the read takes.
 58. **Snapshots taken before this build say nothing about insert files.** Recalling one changes
     the effect in the slot as before and leaves whatever files that slot last held.
+
+## Fourth build (Nov 11): glide under the hand, MIDI, the E16, the clock
+
+59. **A knob turned by hand travels over the GLIDE time**, from the screen or the E16, as the suite's
+    SLOW ALL did and as the spec's glide section says ("applies to both knob turns and presses").
+    Until now only recalls and snapshot knobs glided, which is why turning a knob with GLIDE on did
+    nothing to see or hear. OFF is at once. TEMPO, the master knobs, menus and switches never glide.
+60. **A move already on its way does not wait for the beat again.** A new move sets off on the
+    next beat while the clock runs; turned again before it arrives, it carries on at once from
+    where the sound is. Before this a knob still being turned kept putting its start off.
+61. **An insert's knobs glide under the hand, but a recall still sets them at once** and no snapshot
+    knob reaches them: the same cell is a different knob when the slot holds another effect.
+62. **Notes in: every input is open, a lane's number is its channel.** Of the E16's USB ports only
+    the first is listened to, since it sends everything on each. Notes from the E16 are ignored.
+63. **A note sounds in the block after the one it arrived during**, at the matching place in the
+    block, so even spacing in is even spacing out. That is one buffer of delay on notes from
+    outside, on top of the device's own.
+64. **The clock goes to every output that is not the E16**, on or off as a whole. It runs ahead of
+    the sound by two blocks and CLOCK LEAD so a follower's notes are back in time to land on the
+    beat, and RUN waits that long before the first sound. LEAD starts at 0 ms: the OXI One's delay
+    has to be measured on the hardware (the panel shows how late its notes land).
+65. **The ticks are sent from their own thread**, each at its own moment, to within about a
+    millisecond. USB MIDI is no finer than that. If the OXI One needs tighter, CoreMIDI can be given
+    timestamps directly; that needs code only a Mac can build and test.
+66. **SF-000 does not follow an outside clock.** The spec proposed the internal clock as the main,
+    tested path.
+67. **The E16 scene is written by the app** from the rig table, in the suite's PERF scene's form:
+    lane n is page n and channel n, a knob in place p sends CC 11 + p. Ring colours follow the
+    screen (white sound, red shape, light blue levels and EQ); the snapshot knobs are violet (the
+    suite's colour for the set's own moves) and MID is pink.
+68. **HIGH and MID share knob 16 by the E16's own Swap Destination press**, as knob 1 and SLOW ALL
+    did in the suite. That knob's ring never goes green: the script cannot tell which is up.
+69. **The E16's page sets the active lane, not the other way round.** The script sends the page's
+    lane number as the suite's TRACK FOCUS did. Nothing in the suite's script turns the E16's page
+    from outside, so a lane clicked on the screen leaves the E16 where it is.
+70. **A knob the hand is on is not sent its own value back** for 150 ms, so the rig never argues
+    with a turn in progress.
+71. **The returns, the inserts and the master are not on the E16.** You asked for a page per lane
+    and the snapshot page.
+72. **A recalled step pattern waits for the next bar line** while the clock runs, to the sample. An
+    edit changes at once. The screen shows the new pattern straight away. Insert changes, menus and
+    switches still change at once.
+73. **The session is backed up each time the app opens** (the file as found, into `backups/`, the
+    last twenty kept).
+74. **None of the MIDI has met the hardware.** It is tested with messages made in the test, and the
+    scene's script on the suite's mock of the E16.
 
 ## Not verified
 

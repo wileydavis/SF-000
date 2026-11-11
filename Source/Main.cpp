@@ -2,10 +2,14 @@
 //   SF-000 --test [--wav file]                 offline audio and timing checks
 //   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2]   draw a screen to a PNG
 //   SF-000 --dump                              every hosted module's parameters and presets
+//   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
+//   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "core/Processor.h"
 #include "core/Registry.h"
 #include "Screen.h"
+#include "Midi.h"
+#include <set>
 
 static void dumpModules()
 {
@@ -308,6 +312,75 @@ static int uiTest()
     check (true, (juce::String (clicks) + " controls clicked, dragged and double-clicked across three screens").toRawUTF8());
     check (finite && ! e.fault.load(), "the audio is still clean afterwards");
 
+    // 2b. GLIDE set on the screen, then a snapshot knob turned on the screen: the pushed knobs travel
+    {
+        Engine eg; eg.prepare (48000.0, 512);
+        Session sg (eg, false);
+        Screen scg (sg);
+        scg.setSize ((int) Screen::kW, (int) Screen::kH);
+        juce::AudioBuffer<float> bg (2, 512);
+        auto drawG = [&] { scg.createComponentSnapshot (scg.getLocalBounds(), false, 0.25f); };
+        auto evG = [&] (juce::Point<float> p, juce::Point<float> down, bool dragged)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                     &scg, &scg, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, dragged);
+        };
+        auto dragG = [&] (juce::Point<float> p, float dy)
+        {
+            scg.mouseDown (evG (p, p, false));
+            for (int k = 1; k <= 4; ++k) scg.mouseDrag (evG (p + juce::Point<float> (0.0f, dy * (float) k / 4.0f), p, true));
+            scg.mouseUp (evG (p + juce::Point<float> (0.0f, dy), p, true));
+        };
+        for (int running = 0; running < 2; ++running)
+        {
+            eg.setRunning (running == 1);
+            for (int i = 0; i < 30; ++i) eg.render (bg);
+            drawG();
+            juce::Point<float> glideKnob, energyKnob;
+            for (auto& h : scg.testHits()) { if (Screen::testIsControl (h, cx::kGlide)) glideKnob = h.r.getCentre(); if (Screen::testIsSnapKnob (h, 0)) energyKnob = h.r.getCentre(); }
+            sg.userSet (cx::kGlide, 0.0f); sg.turnSnapKnob (0, 0.0f);
+            sg.userSet (cx::lane (0, 5), 0.3f); sg.userSet (cx::ins (7, 0, 1), 0.3f);
+            for (int i = 0; i < 10; ++i) eg.render (bg);
+            dragG (glideKnob, -14.0f * 4.0f);                             // four places up: 2 BARS
+            const juce::String set = eg.valueText (cx::kGlide);
+            const int dens = eg.find ("closed_hat.density");
+            const float d0 = eg.shown (dens);
+            dragG (energyKnob, -160.0f);                                  // ENERGY all the way up
+            for (int i = 0; i < 100; ++i) eg.render (bg);                 // about a second
+            const float mid = eg.shown (dens), to = eg.target (dens);
+            const bool going = eg.isGliding (dens);
+            for (int i = 0; i < 600; ++i) eg.render (bg);                 // past two bars
+            check (set == "2 BARS" && to > d0 + 0.2f && going && mid > d0 + 0.02f && mid < to - 0.02f && std::abs (eg.shown (dens) - to) < 1e-4f,
+                   (juce::String (running == 1 ? "running" : "stopped") + ": GLIDE at " + set + ", ENERGY turned up on the screen: CLOSED HAT DENSITY is on its way after a second ("
+                    + juce::String (d0, 2) + " > " + juce::String (mid, 2) + " > " + juce::String (to, 2) + ") and there after two bars").toRawUTF8());
+
+            // a knob under the hand travels too: the kick's PUNCH, and a knob of the lead's delay
+            sg.activeLane = 7;
+            drawG();
+            const int punch = cx::lane (0, 5), fdbk = cx::ins (7, 0, 1);
+            juce::Point<float> punchKnob, fdbkKnob;
+            for (auto& h : scg.testHits()) { if (Screen::testIsControl (h, punch)) punchKnob = h.r.getCentre(); if (Screen::testIsControl (h, fdbk)) fdbkKnob = h.r.getCentre(); }
+            const float p0 = eg.shown (punch), f0 = eg.shown (fdbk);
+            dragG (punchKnob, -60.0f); dragG (fdbkKnob, -60.0f);
+            const float pTo = eg.target (punch), fTo = eg.target (fdbk);
+            for (int i = 0; i < 100; ++i) eg.render (bg);
+            const float pMid = eg.shown (punch), fMid = eg.shown (fdbk);
+            const bool both = eg.isGliding (punch) && eg.isGliding (fdbk);
+            dragG (punchKnob, -20.0f);                                    // turned again on the way: on from where the sound is
+            eg.render (bg);
+            const float pNext = eg.shown (punch), pTo2 = eg.target (punch);
+            for (int i = 0; i < 600; ++i) eg.render (bg);
+            check (both && pTo > p0 + 0.2f && pMid > p0 + 0.02f && pMid < pTo - 0.02f && fMid > f0 + 0.02f && fMid < fTo - 0.02f
+                   && std::abs (pNext - pMid) < 0.02f && pTo2 > pTo && std::abs (eg.shown (punch) - pTo2) < 1e-4f && std::abs (eg.shown (fdbk) - fTo) < 1e-4f,
+                   (juce::String (running == 1 ? "running" : "stopped") + ": a knob turned by hand travels there over the GLIDE time (KICK PUNCH " + juce::String (p0, 2) + " > "
+                    + juce::String (pMid, 2) + " > " + juce::String (pTo, 2) + "; the delay's FEEDBACK too), and turned again on the way it carries on without a jump").toRawUTF8());
+            sg.userSet (cx::kGlide, 0.0f);
+            dragG (punchKnob, 40.0f);
+            eg.render (bg);
+            check (std::abs (eg.shown (punch) - eg.target (punch)) < 1e-6f && ! eg.isGliding (punch), "with GLIDE off it is there at once");
+        }
+    }
+
     // 3. snapshots and the knobs, on a fresh rig
     {
         Engine e2; e2.prepare (48000.0, 512);
@@ -487,7 +560,8 @@ static int uiTest()
         check (clean && ! e5.fault.load() && e5.spaceModel() == 1, "SPACE changes reverb and back while it plays");
 
         // a snapshot leaves the reverb SPACE is alone; the session file brings it and its places back
-        Session::stateFileForTests = tmp.getChildFile ("sf000_session_test.json");
+        tmp.getChildFile ("sf000_ui_test").deleteRecursively();
+        Session::stateFileForTests = tmp.getChildFile ("sf000_ui_test").getChildFile ("session.json");
         Session::stateFileForTests.deleteFile();
         {
             Engine e7; e7.prepare (48000.0, 512);
@@ -574,7 +648,7 @@ static int uiTest()
             return names;
         };
         auto blocks = [&] (Engine& en, int nb) { for (int i = 0; i < nb; ++i) en.render (b5); };
-        Session::stateFileForTests = tmp.getChildFile ("sf000_session_test2.json");
+        Session::stateFileForTests = tmp.getChildFile ("sf000_ui_test").getChildFile ("session2.json");
         Session::stateFileForTests.deleteFile();
         juce::int64 snapA = 0, snapB = 0, snapInit = 0;
         {
@@ -636,8 +710,8 @@ static int uiTest()
             tmp.getChildFile ("sf000_ir_moved.wav").moveFileTo (ir);
             tmp.getChildFile ("sf000_ir_moved_b.wav").moveFileTo (ir2);
         }
-        Session::stateFileForTests.deleteFile();
         Session::stateFileForTests = juce::File();
+        tmp.getChildFile ("sf000_ui_test").deleteRecursively();
         ir.deleteFile(); ir2.deleteFile();
     }
     std::printf (bad == 0 ? "ALL SCREEN CHECKS PASSED\n" : "%d SCREEN CHECK(S) FAILED\n", bad);
@@ -686,6 +760,359 @@ static int shot (const juce::StringArray& args)
     return ok ? 0 : 1;
 }
 
+// The snapshot knobs' names for the E16's page: from the session on disk if there is one (as named
+// in the macro designer), else the ones the rig starts with.
+static juce::StringArray snapKnobNames()
+{
+    juce::StringArray names;
+    const juce::var root = juce::JSON::parse (sf0::Session::stateFile());
+    if (auto* kn = root.getProperty ("knobs", juce::var()).getArray())
+        for (auto& k : *kn) names.add (k.getProperty ("name", "").toString());
+    if (names.isEmpty())
+    {
+        sf0::Engine e;
+        sf0::Session s (e, false);
+        for (auto& k : s.knobs) names.add (k.name);
+    }
+    while (names.size() < 16) names.add ({});
+    return names;
+}
+
+static int writeScene (const juce::String& path)
+{
+    sf0::Engine e;
+    const auto text = sf0::e16::sceneText (e, snapKnobNames());
+    const auto f = juce::File::getCurrentWorkingDirectory().getChildFile (path);
+    const bool ok = f.replaceWithData (text.toRawUTF8(), text.getNumBytesAsUTF8());
+    std::printf (ok ? "wrote %s (%d bytes): copy it into the OXI App's Scenes folder and send it to the E16\n" : "could not write %s\n",
+                 f.getFullPathName().toRawUTF8(), (int) text.getNumBytesAsUTF8());
+    return ok ? 0 : 1;
+}
+
+// Notes in, the E16's knobs, presses and rings, the clock out, patterns on the bar line: offline,
+// with messages made here in place of the hardware.
+static int midiTest()
+{
+    using namespace sf0;
+    int bad = 0;
+    auto check = [&] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    std::printf ("SF-000 MIDI checks\n");
+
+    // 1. the E16's addresses
+    {
+        std::set<int> seen;
+        bool round = true, clean = true;
+        for (int slot = 0; slot < e16::kSlots; ++slot)
+        {
+            int ch = 0, num = 0;
+            e16::addressOf (slot, ch, num);
+            round = round && e16::slotFor (ch, num) == slot && e16::controlFor (slot) >= 0 && e16::controlFor (slot) < cx::kCount;
+            clean = clean && seen.insert (ch * 128 + num).second && num != 6 && num != 38 && ! (num >= 96 && num <= 101) && num < 120;
+        }
+        for (int k = 0; k < 16; ++k) clean = clean && seen.insert (e16::kSnapChannel * 128 + e16::kPressCc + k).second;
+        clean = clean && seen.insert (e16::kSnapChannel * 128 + e16::kFocusCc).second;
+        check (round && clean, juce::String (e16::kSlots) + " knob addresses, 16 presses and the page's own: each one thing, none on a number MIDI keeps for itself");
+        Engine e;
+        const auto& bip = e.control (cx::lane (0, 0));       // KICK TUNE: a knob with a centre
+        const auto& uni = e.control (cx::lane (0, 1));
+        bool maps = bip.kind == Kind::Bipolar && e16::from7 (bip, 64) == 0.5f && e16::to7 (bip, 0.5f) == 64 && e16::from7 (bip, 0) == 0.0f && e16::from7 (bip, 127) == 1.0f;
+        for (int v = 0; v < 128; ++v) maps = maps && e16::to7 (bip, e16::from7 (bip, v)) == v && e16::to7 (uni, e16::from7 (uni, v)) == v;
+        check (maps, "every one of a knob's 128 places comes back as itself; a knob with a centre is centred at 64 exactly");
+    }
+
+    // 2. notes in: a lane's number is its channel, and a note takes the same path as a step
+    {
+        auto firstSound = [] (int l, bool external, int at)
+        {
+            Engine e;
+            e.prepare (48000.0, 512);
+            Pattern p;
+            if (! external) { p.steps[0].on = true; p.steps[0].vel = 1.0f; p.steps[0].gate = 2.0f; p.steps[0].octave = lanes()[(size_t) l].octave; }
+            for (int k = 0; k < kLanes; ++k) e.setPattern (k, k == l ? p : Pattern());
+            for (int k = 0; k < kLanes; ++k) for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (k, sl, -1);
+            for (int k = 0; k < cx::kCount; ++k) if (e.control (k).id.endsWith (".attack")) e.set (k, 0.0f);
+            e.solo = l;
+            e.setRunning (true);
+            const int note = 12 * (lanes()[(size_t) l].octave + 2);
+            if (external) { e.noteInAt (juce::MidiMessage::noteOn (l + 1, note, (juce::uint8) 127), at); e.noteInAt (juce::MidiMessage::noteOff (l + 1, note), at + 9000); }
+            juce::AudioBuffer<float> b (2, 512);
+            int on = -1;
+            for (int done = 0; done < 48000 && on < 0; done += 512)
+            {
+                e.render (b);
+                for (int i = 0; i < 512 && on < 0; ++i) if (std::abs (b.getSample (0, i)) + std::abs (b.getSample (1, i)) > 2e-3f) on = done + i;
+            }
+            return on;
+        };
+        int worst = 0, silent = 0;
+        juce::String list;
+        for (int l = 0; l < kLanes; ++l)
+        {
+            const int a = firstSound (l, false, 0), b = firstSound (l, true, 0);
+            if (b < 0) ++silent;
+            worst = std::max (worst, std::abs (a - b));
+            list << " " << (b - a);
+        }
+        check (silent == 0 && worst <= 2, "a note on a lane's channel sounds that lane, on the same sample a step would (differences, in samples:" + list + ")");
+        const int k0 = firstSound (0, true, 0), k1 = firstSound (0, true, 300);
+        check (k1 - k0 == 300, "300 samples later in, 300 samples later out");
+        // a note that only says when it came: one block later, at the same place in the block
+        auto arrived = [] (double ms)
+        {
+            Engine e;
+            e.prepare (48000.0, 512);
+            for (int k = 0; k < kLanes; ++k) { e.setPattern (k, Pattern()); for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (k, sl, -1); }
+            e.solo = 0;
+            juce::AudioBuffer<float> b (2, 512);
+            for (int i = 0; i < 4; ++i) e.render (b);                  // blocks 0-3: the fourth began at 32 ms
+            e.noteIn (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 127), 32.0 + ms);
+            int on = -1;
+            for (int done = 4 * 512; done < 48000 && on < 0; done += 512)
+            {
+                e.render (b);
+                for (int i = 0; i < 512 && on < 0; ++i) if (std::abs (b.getSample (0, i)) + std::abs (b.getSample (1, i)) > 2e-3f) on = done + i;
+            }
+            return on;
+        };
+        const int a1 = arrived (1.0), a2 = arrived (4.7), ref = firstSound (0, true, 0);
+        check (std::abs ((a2 - a1) - 178) <= 1 && std::abs ((a1 - ref) - (4 * 512 + 48)) <= 1,
+               "notes 3.7 ms apart on the way in are 3.7 ms apart in the sound (" + juce::String (a2 - a1) + " samples), in the block after the one they came during");
+    }
+
+    // 3. the clock out
+    {
+        auto kickAt = [] (bool clock, float lead, std::vector<Engine::ClockMsg>* got, double bpmAfter = 0.0)
+        {
+            Engine e;
+            e.prepare (48000.0, 128);
+            e.setClockOut (clock, lead);
+            e.solo = 0;
+            juce::AudioBuffer<float> b (2, 128);
+            for (int i = 0; i < 40; ++i) e.render (b);                 // stopped: the clock runs free
+            Engine::ClockMsg m;
+            int freeTicks = 0;
+            while (e.nextClock (m)) ++freeTicks;
+            e.setRunning (true);
+            int on = -1;
+            for (int done = 40 * 128; done < 40 * 128 + 96000; done += 128)
+            {
+                if (bpmAfter > 0.0 && done == 40 * 128 + 48000) e.set (cx::kTempo, tempoToValue (bpmAfter));
+                e.render (b);
+                for (int i = 0; i < 128 && on < 0; ++i) if (std::abs (b.getSample (0, i)) > 2e-3f) on = done + i - 40 * 128;
+                while (e.nextClock (m)) if (got != nullptr) got->push_back (m);
+            }
+            e.setRunning (false);
+            e.render (b);
+            while (e.nextClock (m)) if (got != nullptr) got->push_back (m);
+            return std::pair<int, int> (on, freeTicks);
+        };
+        std::vector<Engine::ClockMsg> got;
+        const auto plain = kickAt (false, 0.0f, nullptr), led = kickAt (true, 4.0f, &got);
+        const int wait = 2 * 128 + (int) std::lround (0.004 * 48000.0);
+        check (led.first - plain.first == wait, "with the clock on, RUN waits two blocks and LEAD before the first sound (" + juce::String (led.first - plain.first) + " samples at 4 ms)");
+        check (led.second >= 3 && led.second <= 6, "stopped, the clock still ticks at the tempo (" + juce::String (led.second) + " ticks in 107 ms)");
+        const double tick = 60000.0 / (132.0 * 24.0);
+        bool order = got.size() > 50 && got[0].byte == 0xFA && got[1].byte == 0xF8 && got.back().byte == 0xFC;
+        double worst = 0.0;
+        int ticks = 0;
+        for (size_t i = 2; i + 1 < got.size(); ++i) { order = order && got[i].byte == 0xF8; worst = std::max (worst, std::abs ((got[i].dueMs - got[i - 1].dueMs) - tick)); ++ticks; }
+        check (order && worst < 0.02, "START, then a tick every " + juce::String (tick, 3) + " ms to within " + juce::String (worst, 4) + " ms (" + juce::String (ticks + 1) + " ticks in two seconds), then STOP");
+        // The first tick against the first beat's sound: sent a block and LEAD before that beat is rendered.
+        const double beatRendered = (40 * 128 + wait) * 1000.0 / 48000.0, ahead = beatRendered - (got.size() > 1 ? got[1].dueMs : 0.0);
+        check (std::abs (ahead - (128 * 1000.0 / 48000.0 + 4.0)) < 0.05 && got[1].dueMs - got[0].dueMs == 1.0,
+               "the first tick leaves " + juce::String (ahead, 2) + " ms before its beat is rendered: one block for the note's way in, and LEAD");
+        std::vector<Engine::ClockMsg> turned;
+        kickAt (true, 4.0f, &turned, 90.0);
+        double lo = 1e9, hi = 0.0;
+        for (size_t i = 2; i + 1 < turned.size(); ++i) { const double d = turned[i].dueMs - turned[i - 1].dueMs; lo = std::min (lo, d); hi = std::max (hi, d); }
+        check (lo > tick - 0.05 && hi < 60000.0 / (90.0 * 24.0) + 0.05, "a tempo change slows the ticks without a gap or a burst (" + juce::String (lo, 2) + " to " + juce::String (hi, 2) + " ms)");
+    }
+
+    // 4. the E16: knobs in, values back, presses, the page's lane, travelling rings
+    juce::StringArray ringDump;
+    {
+        Engine e;
+        e.prepare (48000.0, 512);
+        Session ses (e, false);
+        Midi midi (e, ses, false);
+        std::vector<juce::MidiMessage> out;
+        midi.toE16 = [&] (const juce::MidiMessage& m) { out.push_back (m); };
+        juce::AudioBuffer<float> b (2, 512);
+        auto audio = [&] (int nb) { for (int i = 0; i < nb; ++i) e.render (b); };
+        auto cc = [] (int ch, int num, int v) { return juce::MidiMessage::controllerEvent (ch, num, v); };
+        auto ccOut = [&] (int ch, int num) { int v = -1; for (auto& m : out) if (m.isController() && m.getChannel() == ch && m.getControllerNumber() == num) v = m.getControllerValue(); return v; };
+
+        midi.service();
+        std::set<int> told;
+        for (auto& m : out) if (m.isController()) told.insert (m.getChannel() * 128 + m.getControllerNumber());
+        check ((int) told.size() == e16::kSlots && (int) out.size() == e16::kSlots, "a fresh E16 is told every value once (" + juce::String ((int) out.size()) + " messages)");
+        out.clear();
+
+        const int tune = cx::lane (0, 0), punch = cx::lane (0, 5);
+        midi.incoming (cc (1, 12, 100), true);
+        const bool atOnce = std::abs (e.target (tune) - e16::from7 (e.control (tune), 100)) < 1e-6f;
+        midi.incoming (cc (1, 17, 90), true);
+        midi.service(); audio (2);
+        check (atOnce && std::abs (ses.value (punch) - 90.0f / 127.0f) < 1e-6f && out.empty(), "a knob turned on the kick's page moves that knob at once, and nothing is sent back to it");
+        ses.turnSnapKnob (0, 0.5f); ses.turnSnapKnob (0, 0.0f);
+        check (std::abs (e.target (punch) - 90.0f / 127.0f) < 1e-4f, "the session knows where the hand left it: a snapshot knob there and back returns to it");
+        out.clear();
+
+        ses.userSet (cx::lane (2, 5), 0.3f);
+        midi.service();
+        check (ccOut (3, 17) == 38 && out.size() == 1, "a knob moved on the screen is sent to its place on the E16 (OPEN HAT knob 6: 38)");
+        out.clear();
+
+        midi.incoming (cc (5, 27, 127), true); midi.incoming (cc (5, 28, 0), true);
+        midi.service();
+        check (ses.value (cx::lane (4, cx::kEqHigh)) == 1.0f && ses.value (cx::lane (4, cx::kEqMid)) == 0.0f && ses.value (cx::lane (4, cx::kEqLow)) == 0.5f,
+               "knob 16 is HIGH, and MID once it is swapped (its second number)");
+
+        midi.incoming (cc (16, 119, 3), true);
+        midi.service();
+        check (ses.activeLane == 2, "the E16 turned to page 3 makes OPEN HAT the active lane");
+
+        // a snapshot knob from the E16: it pushes the rig, and the pushed knobs' places go back out
+        out.clear();
+        const int dens = e.find ("closed_hat.density");
+        const float d0 = e.target (dens);
+        midi.incoming (cc (16, 12, 127), true);
+        midi.service(); audio (4); midi.service();
+        check (std::abs (ses.value (cx::kSnap) - 1.0f) < 1e-6f && e.target (dens) > d0 + 0.2f && ccOut (2, 21) == e16::to7 (e.control (dens), e.target (dens)) && ccOut (16, 12) < 0,
+               "ENERGY turned up on the snapshot page pushes CLOSED HAT DENSITY, and its ring is sent the new place");
+        const auto before = ses.baseId;
+        out.clear();
+        juce::Thread::sleep (170);                                   // (a knob the hand was just on is left alone for 150 ms)
+        midi.incoming (cc (16, 44, 127), true); midi.incoming (cc (16, 44, 0), true);
+        midi.service(); audio (4); midi.service();
+        check (ses.baseId != before && ses.value (cx::kSnap) == 0.0f && ccOut (16, 12) == 0, "its press recalls the knob's nearest snapshot once, and the knob goes home on the E16 too");
+
+        // travelling: GLIDE at 1 bar. A knob turned on the E16 goes there over the bar, and its ring is told.
+        ses.userSet (cx::kGlide, 3.0f / 11.0f);
+        e.setRunning (true);
+        audio (20);
+        out.clear();
+        {
+            const int cut = e.find ("bass.cutoff");
+            const float c0 = e.shown (cut);
+            midi.incoming (cc (6, 18, c0 < 0.5f ? 120 : 10), true);
+            const float want = e.target (cut);
+            audio (40); midi.service();
+            const float mid = e.shown (cut);
+            int reports = 0;
+            for (auto& m : out) if (m.isSysEx() && m.getSysExDataSize() >= 8 && m.getSysExData()[3] == 1 && m.getSysExData()[4] == 5 && m.getSysExData()[5] == 18) ++reports;
+            audio (200); midi.service();
+            check (std::abs (want - c0) > 0.3f && std::abs (mid - c0) > 0.01f && std::abs (mid - want) > 0.01f && reports == 1 && std::abs (e.shown (cut) - want) < 1e-4f && ccOut (6, 18) < 0,
+                   "with GLIDE on, a knob turned on the E16 travels there (BASS CUTOFF " + juce::String (c0, 2) + " > " + juce::String (mid, 2) + " > " + juce::String (want, 2) + ") and its ring is told where the sound is");
+            out.clear();
+        }
+        juce::int64 init = 0;
+        for (auto& sn : ses.library) if (sn.name == "INIT") init = sn.id;
+        ses.recall (init);
+        int moves = 0, dones = 0, entries = 0;
+        bool wellFormed = true, kept16 = true;
+        for (int i = 0; i < 260; ++i)
+        {
+            audio (1);
+            if (i % 3 == 0) midi.service();
+            for (auto& m : out)
+                if (m.isSysEx())
+                {
+                    const auto* d = m.getSysExData();
+                    const int n = m.getSysExDataSize();
+                    wellFormed = wellFormed && n >= 6 && d[0] == 0x7D && d[1] == 0x53 && d[2] == 0x46 && (d[3] == 1 || d[3] == 2) && (n - 4) % (d[3] == 1 ? 4 : 2) == 0
+                                 && (n - 4) / (d[3] == 1 ? 4 : 2) <= (d[3] == 1 ? 14 : 28);
+                    for (int k = 4; k + 1 < n; k += d[3] == 1 ? 4 : 2) { kept16 = kept16 && d[k + 1] != 27 && d[k + 1] != 28 && d[k] < 11; if (d[3] == 1) ++entries; }
+                    (d[3] == 1 ? moves : dones)++;
+                    juce::String hex = "f0";
+                    for (int k = 0; k < n; ++k) hex << juce::String::toHexString ((int) d[k]).paddedLeft ('0', 2);
+                    ringDump.add (hex + "f7");
+                }
+            out.erase (std::remove_if (out.begin(), out.end(), [] (const juce::MidiMessage& m) { return m.isSysEx(); }), out.end());
+        }
+        check (wellFormed && kept16 && moves > 5 && dones >= 1 && entries > 20,
+               "a recall with GLIDE on reports the travelling knobs to the E16's script and says when each arrives (" + juce::String (moves) + " reports, " + juce::String (dones) + " arrivals)");
+    }
+
+    // 5. a recalled pattern waits for the bar line; an edit does not
+    {
+        auto onsets = [] (bool onBar)
+        {
+            Engine e;
+            e.prepare (48000.0, 512);
+            Pattern quarters, offbeats;
+            for (int k = 0; k < 16; k += 4) { quarters.steps[(size_t) k].on = true; quarters.steps[(size_t) k].gate = 0.5f; offbeats.steps[(size_t) (k + 2)].on = true; offbeats.steps[(size_t) (k + 2)].gate = 0.5f; }
+            for (int k = 0; k < kLanes; ++k) { e.setPattern (k, k == 1 ? quarters : Pattern()); for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (k, sl, -1); }
+            e.solo = 1;
+            e.set (cx::lane (1, cx::kSendA), 0.0f); e.set (cx::lane (1, cx::kSendB), 0.0f);       // no dub delay: the steps alone
+            e.setRunning (true);
+            juce::AudioBuffer<float> b (2, 512);
+            std::vector<double> beats;                                   // where each hit starts, in beats
+            const double spb = 48000.0 * 60.0 / e.tempo();
+            int quiet = 100000;
+            for (int done = 0; done < (int) (spb * 12.5); done += 512)
+            {
+                if (done <= (int) (spb * 5.3) && done + 512 > (int) (spb * 5.3)) e.setPattern (1, offbeats, onBar);     // in bar 2, after its second beat
+                e.render (b);
+                for (int i = 0; i < 512; ++i)
+                {
+                    const bool loud = std::abs (b.getSample (0, i)) + std::abs (b.getSample (1, i)) > 4e-3f;
+                    if (loud && quiet > 2400) beats.push_back ((double) (done + i) / spb);
+                    quiet = loud ? 0 : quiet + 1;
+                }
+            }
+            return beats;
+        };
+        auto shape = [] (const std::vector<double>& beats) { juce::String o; const double lat = beats.empty() ? 0.0 : beats[0]; for (auto q : beats) o << juce::String (q - lat, 1) << " "; return o.trim(); };
+        const auto waited = shape (onsets (true)), atOnce = shape (onsets (false));
+        check (waited == "0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.5 9.5 10.5 11.5", "a recalled pattern changes on the bar line: quarters to the end of bar 2, then offbeats (" + waited + ")");
+        check (atOnce == "0.0 1.0 2.0 3.0 4.0 5.0 5.5 6.5 7.5 8.5 9.5 10.5 11.5", "an edited pattern changes at once (" + atOnce + ")");
+    }
+
+    // 6. the scene, and the session's backups
+    {
+        Engine e;
+        juce::StringArray names;
+        for (auto* n : { "ENERGY", "BUILD", "ACID", "DIST", "WARP" }) names.add (n);
+        while (names.size() < 16) names.add ({});
+        const auto text = e16::sceneText (e, names);
+        const juce::var v = juce::JSON::parse (text);
+        const auto* pages = v.getProperty ("pages", juce::var()).getArray();
+        bool ok = pages != nullptr && pages->size() == 12 && v.getProperty ("title", "").toString() == "SF-000";
+        int knobs = 0;
+        if (ok)
+            for (auto& pg : *pages)
+            {
+                const auto* encs = pg.getProperty ("encoders", juce::var()).getArray();
+                ok = ok && encs != nullptr && encs->size() == 16;
+                if (ok) for (auto& en : *encs) { const auto nm = en.getProperty ("name", "").toString(); ok = ok && nm.isNotEmpty() && nm.length() <= 8 && en.getProperty ("abbr", "").toString().length() <= 4; ++knobs; }
+            }
+        const auto code = v.getProperty ("code", juce::var()).getProperty ("code", "").toString();
+        ok = ok && code.length() > 500 && code.length() < 7000 && ! code.contains ("@") && ! code.dropLastCharacters (1).contains ("\n");
+        check (ok && knobs == 192, "the E16 scene is written: 12 pages of 16, names that fit, the script inside (" + juce::String (text.length()) + " bytes)");
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_midi_test");
+        tmp.deleteRecursively(); tmp.createDirectory();
+        tmp.getChildFile ("SF-000.oxie16").replaceWithData (text.toRawUTF8(), text.getNumBytesAsUTF8());
+        tmp.getChildFile ("rings.txt").replaceWithText (ringDump.joinIntoString ("\n"));
+
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        for (int k = 0; k < 3; ++k)
+        {
+            Engine e2;
+            Session s2 (e2, true);
+            s2.userSet (cx::lane (0, 1), 0.1f * (float) (k + 1));
+            s2.save();
+            juce::Thread::sleep (1100);                                  // backups are named to the second
+        }
+        const int kept = tmp.getChildFile ("backups").getNumberOfChildFiles (juce::File::findFiles, "session-*.json");
+        Session::stateFileForTests = juce::File();
+        check (kept == 2, "each time the app opens, the session as it found it is copied aside (" + juce::String (kept) + " copies after three launches, the first with nothing to copy)");
+        std::printf ("  the scene and the ring reports are in %s (tests/e16_scene_test.py reads them)\n", tmp.getFullPathName().toRawUTF8());
+    }
+    std::printf (bad == 0 ? "ALL MIDI CHECKS PASSED\n" : "%d MIDI CHECK(S) FAILED\n", bad);
+    return bad;
+}
+
 class MainWindow : public juce::DocumentWindow
 {
 public:
@@ -702,6 +1129,74 @@ public:
         setVisible (true);
     }
     void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+};
+
+// AUDIO, set once before the set: the interface, its outputs and buffer; and under it MIDI: what is
+// connected, the clock out, and how far ahead of the sound the clock has to run for a follower's
+// notes to land on the beat.
+class SetupPanel : public juce::Component, private juce::Timer
+{
+public:
+    SetupPanel (juce::AudioDeviceManager& dm, sf0::Engine& e, sf0::Midi& m)
+        : audio (dm, 0, 0, 2, 2, false, false, true, false), engine (e), midi (m)
+    {
+        addAndMakeVisible (audio);
+        for (auto* l : { &ins, &e16, &outs, &late, &leadLabel }) { addAndMakeVisible (*l); l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1)); l->setFont (juce::FontOptions (14.0f)); }
+        addAndMakeVisible (clock);
+        clock.setButtonText ("SEND CLOCK (START, STOP, 24 TICKS A BEAT)");
+        clock.setToggleState (midi.sendsClock(), juce::dontSendNotification);
+        clock.onClick = [this] { midi.setSendsClock (clock.getToggleState()); };
+        addAndMakeVisible (lead);
+        lead.setRange (0.0, 40.0, 0.5);
+        lead.setValue (midi.lead(), juce::dontSendNotification);
+        lead.setTextValueSuffix (" ms");
+        lead.setSliderStyle (juce::Slider::LinearHorizontal);
+        lead.setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 22);
+        lead.onValueChange = [this] { midi.setLead ((float) lead.getValue()); };
+        leadLabel.setText ("CLOCK LEAD", juce::dontSendNotification);
+        setSize (520, 580);
+        timerCallback();
+        startTimerHz (4);
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        audio.setBounds (r.removeFromTop (380));
+        r = r.reduced (16, 4);
+        ins.setBounds (r.removeFromTop (24));
+        e16.setBounds (r.removeFromTop (24));
+        outs.setBounds (r.removeFromTop (24));
+        clock.setBounds (r.removeFromTop (26));
+        auto row = r.removeFromTop (28);
+        leadLabel.setBounds (row.removeFromLeft (110));
+        lead.setBounds (row);
+        late.setBounds (r.removeFromTop (44));
+    }
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (juce::Colour (0xff4D514E));
+        g.fillRect (16, 382, getWidth() - 32, 1);
+    }
+
+private:
+    void timerCallback() override
+    {
+        auto list = [] (const juce::StringArray& n) { return n.isEmpty() ? juce::String ("NONE") : n.joinIntoString (", "); };
+        ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
+        e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")), juce::dontSendNotification);
+        outs.setText ("CLOCK TO: " + list (midi.clockNames()), juce::dontSendNotification);
+        const int n = engine.notesHeard();
+        late.setText (n == 0 ? juce::String ("NOTES IN: NONE YET WHILE THE CLOCK RUNS. PLAY A PLAIN SIXTEENTH PATTERN INTO A LANE TO SEE HOW LATE IT LANDS.")
+                             : "NOTES IN LAND " + juce::String (std::abs (engine.notesLateMs()), 1) + " MS " + (engine.notesLateMs() >= 0.0f ? "LATE" : "EARLY")
+                                   + " (AGAINST THE SIXTEENTHS, " + juce::String (n) + " NOTES). ADD THAT TO CLOCK LEAD, OR TAKE IT OFF.",
+                      juce::dontSendNotification);
+    }
+    juce::AudioDeviceSelectorComponent audio;
+    sf0::Engine& engine;
+    sf0::Midi& midi;
+    juce::Label ins, e16, outs, late, leadLabel;
+    juce::ToggleButton clock;
+    juce::Slider lead;
 };
 
 class SF000App : public juce::JUCEApplication
@@ -725,6 +1220,8 @@ public:
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
+        if (args.contains ("--miditest")) { setApplicationReturnValue (midiTest()); quit(); return; }
+        if (args.contains ("--e16")) { const int i = args.indexOf ("--e16"); setApplicationReturnValue (writeScene (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("SF-000.oxie16"))); quit(); return; }
 
         engine = std::make_unique<sf0::Engine>();
         session = std::make_unique<sf0::Session> (*engine);
@@ -732,6 +1229,7 @@ public:
         const auto err = devices.initialise (0, 2, saved.get(), true);
         if (err.isNotEmpty()) juce::Logger::writeToLog ("SF-000 audio: " + err);
         devices.addAudioCallback (engine.get());
+        midi = std::make_unique<sf0::Midi> (*engine, *session);
 
         auto* screen = new sf0::Screen (*session);
         screen->onAudioSetup = [this] { audioSetup(); };
@@ -753,7 +1251,9 @@ public:
             devices.closeAudioDevice();
         }
         juce::Desktop::getInstance().setKioskModeComponent (nullptr, false);
+        setup.deleteAndZero();              // the setup dialog, if it is still up: it reads the MIDI object
         window = nullptr;
+        midi = nullptr;
         session = nullptr;
         engine = nullptr;
         sf0::Screen::releaseFonts();        // while JUCE is still up (left to the end of the process they abort the quit)
@@ -766,23 +1266,25 @@ private:
 
     void audioSetup()
     {
+        if (setup != nullptr) { setup->toFront (true); return; }
         // Set once, before the set: which interface, which outputs, the buffer size.
-        auto* sel = new juce::AudioDeviceSelectorComponent (devices, 0, 0, 2, 2, false, false, true, false);
-        sel->setSize (520, 380);
+        auto* sel = new SetupPanel (devices, *engine, *midi);
         juce::DialogWindow::LaunchOptions o;
         o.content.setOwned (sel);
-        o.dialogTitle = "SF-000 AUDIO";
+        o.dialogTitle = "SF-000 AUDIO AND MIDI";
         o.dialogBackgroundColour = juce::Colour (0xff2B2B28);
         o.escapeKeyTriggersCloseButton = true;
         o.useNativeTitleBar = true;
         o.resizable = false;
-        o.launchAsync();
+        setup = o.launchAsync();
     }
 
     juce::AudioDeviceManager devices;
     std::unique_ptr<sf0::Engine> engine;
     std::unique_ptr<sf0::Session> session;
+    std::unique_ptr<sf0::Midi> midi;
     std::unique_ptr<MainWindow> window;
+    juce::Component::SafePointer<juce::DialogWindow> setup;
 };
 
 START_JUCE_APPLICATION (SF000App)

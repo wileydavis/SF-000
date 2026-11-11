@@ -65,6 +65,7 @@ Engine::Bind Engine::makeBind (SFProcessor& p, const KnobDef& k, Control* c)
         if (spec.type == sf::PType::Choice) for (auto& s : spec.choices) c->choices.add (s);
         c->def = readBind (b);
         c->morph = c->kind == Kind::Knob || c->kind == Kind::Bipolar;
+        c->glides = c->morph;
     }
     return b;
 }
@@ -90,7 +91,7 @@ Engine::Engine()
     auto named = [this] (int i, juce::String id, juce::String label, Kind k, float def, bool snap, bool morph) -> Control&
     {
         auto& c = controls[(size_t) i];
-        c.id = id; c.label = label; c.kind = k; c.def = def; c.snapshot = snap; c.morph = morph; c.used = true;
+        c.id = id; c.label = label; c.kind = k; c.def = def; c.snapshot = snap; c.morph = morph; c.glides = morph; c.used = true;
         return c;
     };
 
@@ -123,7 +124,7 @@ Engine::Engine()
             {
                 auto& ct = controls[(size_t) cx::ins (l, s, c)];
                 ct.id = slug + ".i" + juce::String (s + 1) + ".c" + juce::String (c + 1);
-                ct.used = false; ct.snapshot = true; ct.morph = false;
+                ct.used = false; ct.snapshot = true; ct.morph = false; ct.glides = false;
             }
         }
         named (cx::lane (l, cx::kMute), slug + ".mute", "MUTE", Kind::Toggle, 0.0f, false, false);
@@ -171,7 +172,7 @@ Engine::Engine()
         {
             auto& c = controls[(size_t) (cx::kMaster + mk)];
             bind[(size_t) (cx::kMaster + mk)] = makeBind (*master.back(), st.knob, &c);
-            c.id = juce::String ("mst.") + juce::String (st.knob.label).toLowerCase(); c.snapshot = false; c.morph = false;
+            c.id = juce::String ("mst.") + juce::String (st.knob.label).toLowerCase(); c.snapshot = false; c.morph = false; c.glides = false;
             ++mk;
         }
     }
@@ -267,13 +268,95 @@ Pattern Engine::pattern (int l) const
     return lane[(size_t) l].shared;
 }
 
-void Engine::setPattern (int l, const Pattern& p)
+void Engine::setPattern (int l, const Pattern& p, bool onBarLine)
 {
+    auto& ln = lane[(size_t) l];
     {
         const juce::SpinLock::ScopedLockType g (patLock);
-        lane[(size_t) l].shared = p;
+        ln.shared = p;
     }
-    lane[(size_t) l].patDirty = true;
+    if (onBarLine && prepared && running.load()) { ln.patDirty = false; ln.patWait = true; }
+    else { ln.patWait = false; ln.patDirty = true; }
+}
+
+// ----------------------------------------------------------------------------------------- MIDI
+void Engine::noteIn (const juce::MidiMessage& m, double arrivedMs)
+{
+    if (! m.isNoteOnOrOff() || m.getChannel() < 1 || m.getChannel() > kLanes) return;
+    NoteEv e;
+    const auto* d = m.getRawData();
+    e.b[0] = d[0]; e.b[1] = d[1]; e.b[2] = d[2];
+    e.ms = arrivedMs;
+    const juce::SpinLock::ScopedLockType g (noteWrite);      // one writer at a time: several inputs, several threads
+    const auto w = noteFifo.write (1);
+    if (w.blockSize1 > 0) noteQ[(size_t) w.startIndex1] = e;
+}
+
+void Engine::noteInAt (const juce::MidiMessage& m, int sample)
+{
+    if (! m.isNoteOnOrOff() || m.getChannel() < 1 || m.getChannel() > kLanes) return;
+    NoteEv e;
+    const auto* d = m.getRawData();
+    e.b[0] = d[0]; e.b[1] = d[1]; e.b[2] = d[2];
+    e.at = std::max (0, sample);
+    const juce::SpinLock::ScopedLockType g (noteWrite);
+    const auto w = noteFifo.write (1);
+    if (w.blockSize1 > 0) noteQ[(size_t) w.startIndex1] = e;
+}
+
+bool Engine::nextClock (ClockMsg& m)
+{
+    const auto r = clockFifo.read (1);
+    if (r.blockSize1 <= 0) return false;
+    m = clockQ[(size_t) r.startIndex1];
+    return true;
+}
+
+void Engine::pushClock (juce::uint8 byte, double dueMs, juce::int64 sample)
+{
+    const auto w = clockFifo.write (1);
+    if (w.blockSize1 > 0) clockQ[(size_t) w.startIndex1] = { dueMs, sample, byte };
+}
+
+// The notes that came since the last block, each at the place in this block that matches when it
+// came (the block before this one's span of time), so what was played evenly sounds evenly.
+void Engine::gatherNotes (int n, double spb)
+{
+    liveMidi.clear();
+    const double span = std::max (0.05, blockMs - prevBlockMs);
+    auto place = [&] (const NoteEv& e) -> bool
+    {
+        int at = e.at;
+        if (at < 0)
+        {
+            if (e.ms >= blockMs) return false;                      // after this block began: the next one's
+            at = (int) std::floor ((e.ms - prevBlockMs) / span * (double) n);
+        }
+        at = juce::jlimit (0, n - 1, at);
+        liveMidi.addEvent (juce::MidiMessage (e.b[0], e.b[1], e.b[2]), at);
+        if ((e.b[0] & 0xf0) == 0x90 && e.b[2] > 0 && e.at < 0 && wasRunning)
+        {
+            // how far from the nearest sixteenth it lands, for setting the clock's LEAD
+            const double q = ppq + (double) at / spb, off = (q - std::round (q / kStepBeats) * kStepBeats) * 60000.0 / blockBpm;
+            if (std::abs (off) < 40.0)
+            {
+                const int c = lateCount.load();
+                lateMs = c == 0 ? (float) off : lateMs.load() + 0.08f * ((float) off - lateMs.load());
+                lateCount = c + 1;
+            }
+        }
+        return true;
+    };
+    int keep = 0;
+    for (int i = 0; i < noteKeptN; ++i) if (! place (noteKept[(size_t) i])) noteKept[(size_t) keep++] = noteKept[(size_t) i];
+    noteKeptN = keep;
+    for (;;)
+    {
+        const auto r = noteFifo.read (1);
+        if (r.blockSize1 <= 0) break;
+        const NoteEv e = noteQ[(size_t) r.startIndex1];
+        if (! place (e) && noteKeptN < (int) noteKept.size()) noteKept[(size_t) noteKeptN++] = e;
+    }
 }
 
 // -------------------------------------------------------------------------------------- inserts
@@ -311,8 +394,8 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults, const Setu
             const int i = cx::ins (l, slot, c);
             auto& ct = controls[(size_t) i];
             const juce::String id = ct.id;
-            if (d.cells[c].label != nullptr) { inst->bind[c] = makeBind (*inst->proc, d.cells[c], &ct); ct.morph = false; }
-            else { ct.used = false; ct.label = {}; ct.choices.clear(); ct.kind = Kind::Knob; ct.def = 0.0f; }
+            if (d.cells[c].label != nullptr) { inst->bind[c] = makeBind (*inst->proc, d.cells[c], &ct); ct.morph = false; }      // (its knobs glide under the hand; no snapshot knob reaches them)
+            else { ct.used = false; ct.label = {}; ct.choices.clear(); ct.kind = Kind::Knob; ct.def = 0.0f; ct.glides = false; }
             ct.id = id; ct.snapshot = true;
             if (defaults) set (i, ct.def);
             else applyBind (inst->bind[c], target (i));
@@ -333,7 +416,7 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults, const Setu
         for (int c = 0; c < kCells; ++c)
         {
             auto& ct = controls[(size_t) cx::ins (l, slot, c)];
-            ct.used = false; ct.label = {}; ct.choices.clear(); ct.kind = Kind::Knob;
+            ct.used = false; ct.label = {}; ct.choices.clear(); ct.kind = Kind::Knob; ct.glides = false;
         }
     insType[(size_t) l][(size_t) slot] = type;
     if (auto* old = ln.ins[slot].exchange (inst)) retired.push_back ({ old, blockCount.load() });
@@ -639,6 +722,7 @@ void Engine::prepare (double rate, int block)
         prep (*ln.proc);
         for (auto& i : ln.ins) if (auto* in = i.load()) prep (*in->proc);
         ln.midi.ensureSize (4096);
+        ln.patWait = false;
         for (auto& d : ln.dl) d.assign (8192, 0.0f);
         ln.dlPos = 0;
         for (auto& e : ln.eq) e = Biquad();
@@ -651,6 +735,8 @@ void Engine::prepare (double rate, int block)
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre }) b->setSize (2, maxBlock, false, true, false);
+    liveMidi.ensureSize (8192);
+    wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0;
     loud->m.prepare (sr);
     prepared = true;
     updateLatency();
@@ -680,10 +766,12 @@ void Engine::advanceControls (double beats)
             seen[s] = q;
             const float len = glideV[s].load();
             gFrom[s] = cur[s]; gTo[s] = targetV[s].load();
-            if (len > 0.0f && controls[s].morph)
+            if (len > 0.0f && controls[s].glides)
             {
-                // a glide starts on the next beat while the clock runs
-                gStart[s] = wasRunning ? gClock - beats + (std::ceil (ppq - 1e-9) - ppq) : gClock - beats;
+                // A move sets off on the next beat while the clock runs. One already on its way
+                // carries on from where the sound is toward the new place, without waiting again.
+                const double now = gClock - beats, fresh = wasRunning ? now + (std::ceil (ppq - 1e-9) - ppq) : now;
+                gStart[s] = gliding[s] ? std::max (now, std::min (gStart[s], fresh)) : fresh;
                 gLen[s] = len; gliding[s] = true;
             }
             else { cur[s] = gTo[s]; gliding[s] = false; }
@@ -748,9 +836,39 @@ void Engine::render (juce::AudioBuffer<float>& out)
     blockBpm = tempoFor (cur[(size_t) cx::kTempo]);
     const double beats = (double) n * blockBpm / 60.0 / sr, spb = sr * 60.0 / blockBpm;
     const bool starting = run && ! wasRunning, stopping = ! run && wasRunning;
-    if (starting) ppq = 0.0;
+
+    // When this block is on the wall clock, smoothed, so MIDI in and the clock out keep an even
+    // pace however unevenly the device calls. (A test has no device: its clock is the samples.)
+    const double durMs = (double) n * 1000.0 / sr, nowMs = wallMs >= 0.0 ? wallMs : virtualMs;
+    wallMs = -1.0; virtualMs += durMs;
+    if (! wallValid || std::abs (nowMs - (blockMs + lastDurMs)) > 30.0) { blockMs = nowMs; prevBlockMs = nowMs - durMs; wallValid = true; }
+    else { prevBlockMs = blockMs; blockMs += lastDurMs + 0.1 * (nowMs - (blockMs + lastDurMs)); }
+    lastDurMs = durMs;
+
+    // MIDI clock out. A follower's note for a beat has to be back here a block before that beat
+    // is rendered, so the clock runs ahead of the sound: two blocks (one for the sender to be on
+    // time, one for the note's way in) and LEAD, the follower's own delay. RUN waits that long.
+    const bool clk = clockOn.load();
+    const double lookBeats = clk ? (2.0 * durMs + (double) clockLead.load()) * blockBpm / 60000.0 : 0.0;
+    if (starting) ppq = -lookBeats;
+    if (clk)
+    {
+        const double base = blockMs + durMs;
+        if (starting) { clkPpq = 0.0; pushClock (0xFA, base - 1.0, samplesDone); }       // START, a millisecond before its first tick
+        if (stopping) pushClock (0xFC, base, samplesDone);
+        const double c0 = clkPpq, c1 = run ? std::max (clkPpq, ppq + beats + lookBeats) : clkPpq + beats;
+        for (auto k = (juce::int64) std::ceil (c0 * 24.0 - 1e-9); (double) k / 24.0 < c1 - 1e-12; ++k)
+        {
+            const double off = ((double) k / 24.0 - c0) * spb;
+            pushClock (0xF8, base + off * 1000.0 / sr, samplesDone + (juce::int64) std::llround (off));
+        }
+        clkPpq = c1;
+    }
+    else clkPpq = 0.0;
+
     wasRunning = run;
     advanceControls (beats);
+    gatherNotes (n, spb);
 
     const int keyIdx = (int) std::lround (cur[(size_t) cx::kKey] * 12.0f);
     sf::Bus::get().d().keyRoot.store (keyIdx - 1);
@@ -768,6 +886,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
     for (int l = 0; l < kLanes; ++l)
     {
         auto& ln = lane[(size_t) l];
+        if (! run && ln.patWait.load()) { ln.patWait = false; ln.patDirty = true; }      // the clock stopped: nothing to wait for
         if (ln.patDirty.load())
         {
             const juce::SpinLock::ScopedTryLockType g (patLock);
@@ -776,7 +895,31 @@ void Engine::render (juce::AudioBuffer<float>& out)
         ln.midi.clear();
         if (stopping || pan || starting) ln.player.stop (ln.midi, 0);
         if (pan) { ln.proc->panic(); for (auto& i : ln.ins) if (auto* in = i.load()) in->proc->panic(); }
-        if (run) ln.player.render (ppq, ppq + beats, spb, n, ln.midi);
+        if (run)
+        {
+            // a recalled pattern is taken up on the bar line, to the sample: the block is rendered round it
+            const double to = ppq + beats, bar = std::ceil (ppq / 4.0 - 1e-9) * 4.0;
+            if (ln.patWait.load() && bar < to - 1e-12)
+            {
+                if (bar > ppq) ln.player.render (ppq, bar, spb, n, ln.midi, ppq);
+                {
+                    const juce::SpinLock::ScopedTryLockType g (patLock);
+                    if (g.isLocked()) ln.player.pat = ln.shared; else ln.patDirty = true;      // (the screen is writing it: next block)
+                }
+                ln.patWait = false;
+                ln.player.render (std::max (ppq, bar), to, spb, n, ln.midi, ppq);
+            }
+            else ln.player.render (ppq, to, spb, n, ln.midi, ppq);
+        }
+        // notes from outside, on this lane's channel
+        if (! liveMidi.isEmpty())
+            for (const auto meta : liveMidi)
+            {
+                auto m = meta.getMessage();
+                if (m.getChannel() != l + 1) continue;
+                m.setChannel (1);
+                ln.midi.addEvent (m, meta.samplePosition);
+            }
 
         b2.clear();
         ln.proc->processBlock (b2, ln.midi);
@@ -933,11 +1076,13 @@ void Engine::audioDeviceAboutToStart (juce::AudioIODevice* d)
 void Engine::audioDeviceIOCallbackWithContext (const float* const*, int, float* const* outData, int numOut, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
     const auto t0 = juce::Time::getHighResolutionTicks();
+    const double calledMs = juce::Time::getMillisecondCounterHiRes();
     int done = 0;
     while (done < numSamples)
     {
         const int n = std::min (maxBlock, numSamples - done);
         juce::AudioBuffer<float> w (work.getArrayOfWritePointers(), 2, n);
+        wallMs = calledMs + (double) done * 1000.0 / sr;
         render (w);
         for (int ch = 0; ch < numOut; ++ch)
             if (outData[ch] != nullptr)

@@ -26,7 +26,8 @@ juce_add_binary_data(SF000Assets SOURCES
     assets/fonts/BarlowCondensed-Medium.ttf
     assets/fonts/BarlowCondensed-SemiBold.ttf
     assets/fonts/BarlowSemiCondensed-Medium.ttf
-    assets/fonts/BarlowSemiCondensed-SemiBold.ttf)
+    assets/fonts/BarlowSemiCondensed-SemiBold.ttf
+    controllers/e16/rings.lua)
 
 file(GLOB SF_SUITE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/suite/core/*.cpp ${CMAKE_SOURCE_DIR}/suite/modules/*.cpp)
 file(GLOB SF_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/Source/*.cpp)

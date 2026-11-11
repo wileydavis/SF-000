@@ -130,8 +130,9 @@ struct LanePlayer
         }
     }
 
-    // The events of [q0, q1): n samples at spb samples a beat.
-    void render (double q0, double q1, double spb, int n, juce::MidiBuffer& out)
+    // The events of [q0, q1), in a block of n samples at spb samples a beat that starts at block
+    // (q0 itself, unless the block is rendered in two parts round a bar line).
+    void render (double q0, double q1, double spb, int n, juce::MidiBuffer& out, double block)
     {
         const int len = juce::jlimit (1, kMaxSteps, pat.length);
         const auto first = (int64_t) std::ceil (q0 / kStepBeats - 1e-9);
@@ -171,7 +172,7 @@ struct LanePlayer
                 Ev* best = nullptr;
                 for (auto& e : q) if (e.live && e.on == (pass == 1) && e.ppq < q1 && (best == nullptr || e.ppq < best->ppq)) best = &e;
                 if (best == nullptr) break;
-                const int s = juce::jlimit (0, std::max (0, n - 1), (int) std::floor ((best->ppq - q0) * spb + 1e-6));
+                const int s = juce::jlimit (0, std::max (0, n - 1), (int) std::floor ((best->ppq - block) * spb + 1e-6));
                 if (best->on) out.addEvent (juce::MidiMessage::noteOn (1, best->note, (juce::uint8) best->vel), s);
                 else          out.addEvent (juce::MidiMessage::noteOff (1, best->note), s);
                 // a sent off stays known until its time has passed, so a tie can still find it

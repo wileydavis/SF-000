@@ -51,7 +51,10 @@ public:
     std::array<int, kLanes> genType;    // the armed generator per lane; -1 none
 
     // ---- controls
-    void userSet (int i, float v);      // a knob or key moved by hand
+    // A knob or key moved by hand. sounding: the engine already has the value (a controller's knob,
+    // set from the MIDI thread the moment it came); only the session's record of it is brought up.
+    void userSet (int i, float v, bool sounding = false);
+    void selectLane (int lane);         // the active lane, from outside the screen (a controller's page)
     float value (int i) const           { return engine.target (i); }
 
     // ---- snapshots
@@ -83,6 +86,7 @@ public:
     bool load();
     static juce::File stateFile();
     static inline juce::File stateFileForTests;     // tests: the session is kept here instead
+    static void backUp();               // a dated copy of the session as it was found, the last twenty kept
     std::function<void()> onChange;
 
 private:

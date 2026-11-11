@@ -38,6 +38,8 @@ public:
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
+    static bool testIsControl (const TestHit& h, int ctl) { return (h.kind == hKnob || h.kind == hRead) && h.a == ctl; }
+    static bool testIsSnapKnob (const TestHit& h, int k) { return h.kind == hSnapKnob && h.a == k; }
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
     static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
     juce::Rectangle<float> testConfigRect() const { return cfgRect; }

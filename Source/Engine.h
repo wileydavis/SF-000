@@ -25,6 +25,7 @@ struct Control
     bool used = true;               // false: an empty place (an insert cell with nothing in it)
     bool snapshot = true;           // stored in snapshots
     bool morph = false;             // a snapshot knob may move it (sound knobs only)
+    bool glides = false;            // a move of it travels over the GLIDE time: every sound knob, an insert's knobs too
     int steps() const               { return choices.size(); }
 };
 
@@ -84,8 +85,26 @@ public:
 
     // ---- patterns
     Pattern pattern (int lane) const;
-    void setPattern (int lane, const Pattern&);
+    // onBarLine: while the clock runs the lane takes it up at the next bar line (a recall). Otherwise at once (an edit).
+    void setPattern (int lane, const Pattern&, bool onBarLine = false);
     static Pattern defaultPattern (int lane);
+
+    // ---- MIDI in: notes for the lanes. A lane's number is its channel. Any thread.
+    // arrivedMs: juce::Time::getMillisecondCounterHiRes() when it came. It sounds one block later, at
+    // the place in the block that matches when it came, so notes keep their spacing to the sample.
+    void noteIn (const juce::MidiMessage&, double arrivedMs);
+    void noteInAt (const juce::MidiMessage&, int sampleInNextBlock);     // tests: exactly there
+    float notesLateMs() const                   { return lateMs.load(); }   // incoming notes against the sixteenths, averaged (+ late)
+    int notesHeard() const                      { return lateCount.load(); }
+
+    // ---- MIDI clock out: 24 ticks a beat, START and STOP, for whatever follows this rig. The clock
+    // runs ahead of the sound by two blocks and LEAD, so a follower's notes are back here in time
+    // to sound on the beat; RUN waits that long (a few ms) before the first sound.
+    struct ClockMsg { double dueMs = 0.0; juce::int64 sample = 0; juce::uint8 byte = 0; };
+    void setClockOut (bool on, float leadMs)    { clockOn = on; clockLead = juce::jlimit (0.0f, 60.0f, leadMs); }
+    bool clockOut() const                       { return clockOn.load(); }
+    float clockLeadMs() const                   { return clockLead.load(); }
+    bool nextClock (ClockMsg&);                 // the sender's thread: the oldest one waiting
 
     // ---- inserts: -1 empty, else an index into effects()
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
@@ -191,7 +210,7 @@ private:
         int dlPos = 0;
         std::atomic<int> delay { 0 };
         Pattern shared;                         // under patLock
-        std::atomic<bool> patDirty { true };
+        std::atomic<bool> patDirty { true }, patWait { false };    // patWait: taken up at the next bar line
         Lane();
         ~Lane();
     };
@@ -243,6 +262,24 @@ private:
     std::vector<std::string> boundIds (Target) const;
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
     juce::MidiBuffer noMidi;
+
+    // MIDI in and clock out (audio thread, but for the queues' other ends)
+    struct NoteEv { juce::uint8 b[3] = { 0, 0, 0 }; double ms = 0.0; int at = -1; };
+    static constexpr int kNoteQ = 1024, kClockQ = 512;
+    juce::AbstractFifo noteFifo { kNoteQ }, clockFifo { kClockQ };
+    std::array<NoteEv, kNoteQ> noteQ;
+    std::array<ClockMsg, kClockQ> clockQ;
+    juce::SpinLock noteWrite;
+    std::array<NoteEv, 128> noteKept;           // came after this block's start: for the next one
+    int noteKeptN = 0;
+    juce::MidiBuffer liveMidi;
+    void gatherNotes (int n, double spb);
+    void pushClock (juce::uint8 byte, double dueMs, juce::int64 sample);
+    std::atomic<bool> clockOn { false };
+    std::atomic<float> clockLead { 0.0f }, lateMs { 0.0f };
+    std::atomic<int> lateCount { 0 };
+    double wallMs = -1.0, virtualMs = 0.0, blockMs = 0.0, prevBlockMs = 0.0, lastDurMs = 0.0, clkPpq = 0.0;
+    bool wallValid = false;
 
     std::atomic<bool> running { false }, panicNow { false };
     bool wasRunning = false;
