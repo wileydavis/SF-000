@@ -832,6 +832,9 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const int n = out.getNumSamples();
     jassert (prepared && n <= maxBlock && out.getNumChannels() >= 2);
     const juce::ScopedNoDenormals noDenormals;
+    auto clock = [this] { return profile ? juce::Time::getHighResolutionTicks() : (juce::int64) 0; };
+    auto since = [this] (juce::int64 t) { return profile ? juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t) : 0.0; };
+    const auto tAll = clock();
     const bool run = running.load();
     blockBpm = tempoFor (cur[(size_t) cx::kTempo]);
     const double beats = (double) n * blockBpm / 60.0 / sr, spb = sr * 60.0 / blockBpm;
@@ -924,7 +927,10 @@ void Engine::render (juce::AudioBuffer<float>& out)
             }
 
         b2.clear();
+        auto tp = clock();
         ln.proc->processBlock (b2, ln.midi);
+        profLane[(size_t) l] += since (tp);
+        tp = clock();
         for (int sl = 0; sl < kSlots; ++sl)
             if (auto* in = ln.ins[sl].load())
             {
@@ -952,6 +958,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
                 }
             }
 
+        profIns[(size_t) l] += since (tp);
         // the lane EQ, after the inserts
         bool eqOn = false;
         for (int e = 0; e < 3; ++e)
@@ -1011,8 +1018,10 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const int spaceNext = spaceWant.load();
     const bool spaceSwap = spaceNext != spaceNow;
     if (pan) { retA->panic(); space[(size_t) spaceNow]->panic(); }
+    auto tr = clock();
     retA->processBlock (a2, noMidi);
     space[(size_t) spaceNow]->processBlock (bb2, noMidi);
+    profRet += since (tr);
     const bool spaceQuiet = spaceSwap || spaceHold > 0;
     spaceHold = std::max (0, spaceHold - n);
     if (spaceSwap) { spaceNow = spaceNext; space[(size_t) spaceNow]->panic(); spaceHold = (int) (sr * 0.02); }
@@ -1026,11 +1035,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
     retGainWas[0] = rg[0]; retGainWas[1] = rg[1];
 
     float inPk = 0.0f;
+    tr = clock();
     for (size_t k = 0; k < master.size(); ++k)
     {
         if (k + 1 == master.size()) inPk = m2.getMagnitude (0, n);
         master[k]->processBlock (m2, noMidi);
     }
+    profMaster += since (tr);
 
     // meters
     bool flt = false;
@@ -1065,6 +1076,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         for (int i = 0; i < n; ++i) d[i] = std::isfinite (s[i]) ? juce::jlimit (-1.0f, 1.0f, s[i]) : 0.0f;
     }
     if (run) ppq += beats;
+    profAll += since (tAll);
     ppqShown = ppq;
     samplesDone += n;
     blockCount.fetch_add (1);

@@ -3,6 +3,7 @@
 // 1728 x 1117 (5 px to the millimetre on a 16-inch MacBook Pro) and scaled to the window.
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "Session.h"
+#include <unordered_map>
 
 namespace sf0
 {
@@ -43,6 +44,8 @@ public:
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
     static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
     juce::Rectangle<float> testConfigRect() const { return cfgRect; }
+    // what the timer redraws besides knobs: the meters, the sequencer strip, CONFIG's display
+    std::vector<juce::Rectangle<int>> testMovingRects() const { std::vector<juce::Rectangle<int>> v; for (auto r : { masterRect, seqRect, cfgDisplay }) if (! r.isEmpty()) v.push_back (r.getSmallestIntegerContainer().expanded (2)); return v; }
 
 private:
     using G = juce::Graphics;
@@ -99,6 +102,13 @@ private:
     Page page = pMain;
     juce::AffineTransform xf;
     std::vector<Hit> hits;
+    // A paint of the whole screen lays everything out and gathers the hits. A paint of a part of it
+    // (a travelling knob, the meters, the playing step) draws only the panels that part touches
+    // and leaves the hits as they are: nothing has moved.
+    bool collect = true;
+    mutable std::unordered_map<std::string, float> widths;      // a plate's text, measured once
+    juce::uint64 meterSig = 0;                                  // what the meters showed when last drawn
+    juce::uint64 metersNow() const;
     juce::Font fLbl, fLegend, fNote, fRead, fFlag;
     std::array<float, cx::kCount> lastShown {};
     R masterRect, seqRect;

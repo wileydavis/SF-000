@@ -29,6 +29,12 @@ juce_add_binary_data(SF000Assets SOURCES
     assets/fonts/BarlowSemiCondensed-SemiBold.ttf
     controllers/e16/rings.lua)
 
+# macOS draws a window's changed parts as one box round all of them. With the meters in one corner
+# and a travelling knob in another that box is most of the screen, drawn 30 times a second. This
+# has JUCE draw each changed part on its own (its Metal layer renderer). To compare without it:
+#   cmake -B build -DSF000_SPLIT_PAINT=OFF && cmake --build build
+option(SF000_SPLIT_PAINT "Draw each changed part of the window on its own (macOS)" ON)
+
 file(GLOB SF_SUITE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/suite/core/*.cpp ${CMAKE_SOURCE_DIR}/suite/modules/*.cpp)
 file(GLOB SF_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/Source/*.cpp)
 
@@ -41,6 +47,7 @@ target_compile_definitions(SF000 PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_JACK=0
+    JUCE_COREGRAPHICS_RENDER_WITH_MULTIPLE_PAINT_CALLS=$<BOOL:${SF000_SPLIT_PAINT}>
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SF000,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SF000,JUCE_VERSION>"
     SF_MODULE_ID="SF000")

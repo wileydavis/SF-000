@@ -4,6 +4,7 @@
 //   SF-000 --dump                              every hosted module's parameters and presets
 //   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
 //   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
+//   SF-000 --perf                              the engine's share of real time and what the screen costs, on this machine
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "core/Processor.h"
 #include "core/Registry.h"
@@ -379,6 +380,58 @@ static int uiTest()
             eg.render (bg);
             check (std::abs (eg.shown (punch) - eg.target (punch)) < 1e-6f && ! eg.isGliding (punch), "with GLIDE off it is there at once");
         }
+    }
+
+    // 2c. a part of the screen drawn on its own leaves the picture exactly as drawing all of it would
+    {
+        Engine ep; ep.prepare (48000.0, 512);
+        Session sp (ep, false);
+        Screen scp (sp);
+        scp.setSize ((int) Screen::kW, (int) Screen::kH);
+        juce::AudioBuffer<float> bp (2, 512);
+        auto whole = [&] (juce::Image& img) { juce::Graphics g (img); scp.paintEntireComponent (g, true); };
+        auto part = [&] (juce::Image& img, juce::Rectangle<int> clip) { juce::Graphics g (img); g.reduceClipRegion (clip); scp.paintEntireComponent (g, true); };
+        auto same = [] (const juce::Image& a, const juce::Image& b)
+        {
+            // rows with a pixel that is plainly another colour (the software renderer shades a path's
+            // edge by a couple of levels where a clip cuts it; a missing knob or a hole is far more)
+            const juce::Image::BitmapData x (a, juce::Image::BitmapData::readOnly), y (b, juce::Image::BitmapData::readOnly);
+            int diff = 0;
+            for (int row = 0; row < a.getHeight(); ++row)
+            {
+                const auto* p = x.getLinePointer (row); const auto* q = y.getLinePointer (row);
+                bool off = false;
+                for (int k = 0; k < a.getWidth() * x.pixelStride && ! off; ++k) off = std::abs ((int) p[k] - (int) q[k]) > 6;
+                if (off) ++diff;
+            }
+            return diff;
+        };
+        bool allSame = true, hitsKept = true;
+        int parts = 0;
+        for (int cfg = 0; cfg < 3; ++cfg)
+        {
+            if (cfg == 1) scp.showConfig ({ 0, 0, 0 });               // CONFIG open on the kick (the rows moved over)
+            if (cfg == 2) scp.showConfig ({ 0, 10, 0 });              // and on VOICE (the columns gone round)
+            ep.setRunning (cfg != 0);
+            for (int i = 0; i < 40; ++i) ep.render (bp);
+            juce::Image shown (juce::Image::RGB, (int) Screen::kW, (int) Screen::kH, true), fresh (juce::Image::RGB, (int) Screen::kW, (int) Screen::kH, true);
+            whole (shown);
+            const auto hitsBefore = scp.testHits();
+            // things move: three knobs, the meters, the playing step
+            const int moved[] = { cx::lane (3, 2), cx::lane (9, 10), cx::lane (cfg == 2 ? 10 : 0, 5) };
+            for (int ctl : moved) sp.userSet (ctl, sp.value (ctl) > 0.5f ? 0.2f : 0.8f);
+            for (int i = 0; i < 25; ++i) ep.render (bp);
+            std::vector<juce::Rectangle<int>> rects;
+            for (auto& h : hitsBefore) for (int ctl : moved) if (Screen::testIsControl (h, ctl)) rects.push_back (h.r.expanded (14, 6).getSmallestIntegerContainer());
+            for (auto r : scp.testMovingRects()) rects.push_back (r);
+            for (auto r : rects) { part (shown, r); ++parts; }
+            hitsKept = hitsKept && scp.testHits().size() == hitsBefore.size();
+            whole (fresh);
+            const int rowsOff = same (shown, fresh);
+            allSame = allSame && rowsOff == 0;
+            if (rowsOff != 0) std::printf ("    (%d rows differ with CONFIG %d)\n", rowsOff, cfg);
+        }
+        check (allSame && hitsKept && parts >= 12, (juce::String (parts) + " parts of the screen drawn on their own (knobs, the meters, the steps), with CONFIG shut and open: the same picture a whole redraw gives").toRawUTF8());
     }
 
     // 3. snapshots and the knobs, on a fresh rig
@@ -1113,6 +1166,66 @@ static int midiTest()
     return bad;
 }
 
+// Where the time goes: the engine's share of real time (by lane, inserts, returns, master) at three
+// buffer sizes, and what one frame of the screen costs. Offline, on whatever machine runs it.
+static int perf()
+{
+    using namespace sf0;
+    std::printf ("SF-000 load (this machine, one core; real time = 100 %%)\n");
+    for (int block : { 64, 128, 512 })
+    {
+        Engine e;
+        e.prepare (48000.0, block);
+        e.setRunning (true);
+        juce::AudioBuffer<float> b (2, block);
+        for (int i = 0; i < 48000 * 2 / block; ++i) e.render (b);          // settle
+        e.profile = true;
+        const double secs = 16.0;
+        for (int i = 0; i < (int) (48000.0 * secs / block); ++i) e.render (b);
+        double lanesSum = 0.0, insSum = 0.0;
+        for (int l = 0; l < kLanes; ++l) { lanesSum += e.profLane[(size_t) l]; insSum += e.profIns[(size_t) l]; }
+        std::printf ("  blocks of %3d: engine %5.1f %%  (instruments %.1f, inserts %.1f, returns %.1f, master %.1f, the rest %.1f)\n", block, 100.0 * e.profAll / secs,
+                     100.0 * lanesSum / secs, 100.0 * insSum / secs, 100.0 * e.profRet / secs, 100.0 * e.profMaster / secs,
+                     100.0 * (e.profAll - lanesSum - insSum - e.profRet - e.profMaster) / secs);
+        if (block == 128)
+        {
+            std::printf ("    by lane:");
+            for (int l = 0; l < kLanes; ++l) std::printf (" %s %.1f", lanes()[(size_t) l].slug, 100.0 * e.profLane[(size_t) l] / secs);
+            std::printf ("\n");
+        }
+    }
+    {
+        Engine e;
+        e.prepare (48000.0, 128);
+        Session ses (e, false);
+        e.setRunning (true);
+        Screen sc (ses);
+        sc.setSize ((int) Screen::kW, (int) Screen::kH);
+        juce::AudioBuffer<float> b (2, 128);
+        for (int i = 0; i < 400; ++i) e.render (b);
+        juce::Image img (juce::Image::ARGB, (int) Screen::kW * 2, (int) Screen::kH * 2, true);
+        auto frame = [&] (juce::Rectangle<int> clip, int times)
+        {
+            juce::int64 spent = 0;
+            for (int i = 0; i < times; ++i)
+            {
+                e.render (b);                                           // (the meters move; not timed)
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                juce::Graphics g (img);
+                g.addTransform (juce::AffineTransform::scale (2.0f));
+                g.reduceClipRegion (clip);
+                sc.paintEntireComponent (g, true);
+                spent += juce::Time::getHighResolutionTicks() - t0;
+            }
+            return 1000.0 * juce::Time::highResolutionTicksToSeconds (spent) / times;
+        };
+        const double whole = frame (sc.getLocalBounds(), 30), master = frame ({ 1151, 782, 554, 190 }, 200), knob = frame ({ 300, 150, 76, 56 }, 200),
+                     none = frame ({ 0, 0, 1, 1 }, 200);
+        std::printf ("  the screen (drawn here in software at twice the size): the whole of it %.2f ms, the meters %.2f ms, one knob %.2f ms, nothing %.3f ms\n", whole, master, knob, none);
+    }
+    return 0;
+}
+
 class MainWindow : public juce::DocumentWindow
 {
 public:
@@ -1141,7 +1254,7 @@ public:
         : audio (dm, 0, 0, 2, 2, false, false, true, false), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
-        for (auto* l : { &ins, &e16, &outs, &late, &leadLabel }) { addAndMakeVisible (*l); l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1)); l->setFont (juce::FontOptions (14.0f)); }
+        for (auto* l : { &load, &ins, &e16, &outs, &late, &leadLabel }) { addAndMakeVisible (*l); l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1)); l->setFont (juce::FontOptions (14.0f)); }
         addAndMakeVisible (clock);
         clock.setButtonText ("SEND CLOCK WHILE IT RUNS (START, 24 TICKS A BEAT, STOP)");
         clock.setToggleState (midi.sendsClock(), juce::dontSendNotification);
@@ -1154,7 +1267,7 @@ public:
         lead.setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 22);
         lead.onValueChange = [this] { midi.setLead ((float) lead.getValue()); };
         leadLabel.setText ("CLOCK LEAD", juce::dontSendNotification);
-        setSize (520, 580);
+        setSize (520, 604);
         timerCallback();
         startTimerHz (4);
     }
@@ -1163,6 +1276,7 @@ public:
         auto r = getLocalBounds();
         audio.setBounds (r.removeFromTop (380));
         r = r.reduced (16, 4);
+        load.setBounds (r.removeFromTop (24));
         ins.setBounds (r.removeFromTop (24));
         e16.setBounds (r.removeFromTop (24));
         outs.setBounds (r.removeFromTop (24));
@@ -1182,6 +1296,7 @@ private:
     void timerCallback() override
     {
         auto list = [] (const juce::StringArray& n) { return n.isEmpty() ? juce::String ("NONE") : n.joinIntoString (", "); };
+        load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF THE TIME EACH BUFFER ALLOWS (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
         e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")), juce::dontSendNotification);
         outs.setText ("CLOCK TO: " + list (midi.clockNames()), juce::dontSendNotification);
@@ -1194,7 +1309,7 @@ private:
     juce::AudioDeviceSelectorComponent audio;
     sf0::Engine& engine;
     sf0::Midi& midi;
-    juce::Label ins, e16, outs, late, leadLabel;
+    juce::Label load, ins, e16, outs, late, leadLabel;
     juce::ToggleButton clock;
     juce::Slider lead;
 };
@@ -1221,6 +1336,7 @@ public:
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
         if (args.contains ("--miditest")) { setApplicationReturnValue (midiTest()); quit(); return; }
+        if (args.contains ("--perf")) { setApplicationReturnValue (perf()); quit(); return; }
         if (args.contains ("--e16")) { const int i = args.indexOf ("--e16"); setApplicationReturnValue (writeScene (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("SF-000.oxie16"))); quit(); return; }
 
         engine = std::make_unique<sf0::Engine>();

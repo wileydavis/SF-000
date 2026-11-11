@@ -59,7 +59,7 @@ void Screen::resized()
 }
 
 void Screen::dirty (R r) { repaint (r.transformedBy (xf).getSmallestIntegerContainer().expanded (2)); }
-void Screen::hit (R r, int kind, int a, int b) { hits.push_back ({ r.translated (shift, 0.0f), kind, a, b }); }
+void Screen::hit (R r, int kind, int a, int b) { if (collect) hits.push_back ({ r.translated (shift, 0.0f), kind, a, b }); }
 bool Screen::vis (G& g, R r) const { return g.clipRegionIntersects (r.getSmallestIntegerContainer()); }
 
 const Screen::Hit* Screen::hitAt (juce::Point<float> p) const
@@ -75,7 +75,20 @@ void Screen::text (G& g, const String& s, R r, const juce::Font& f, Colour c, ju
     g.drawText (s, r, j, false);
 }
 
-float Screen::tw (const juce::Font& f, const String& s) const { return juce::GlyphArrangement::getStringWidth (f, s); }
+float Screen::tw (const juce::Font& f, const String& s) const
+{
+    // Measuring text shapes it, which is slow: each string on each of the five fonts is measured once.
+    const char which = &f == &fLbl ? 'a' : &f == &fLegend ? 'b' : &f == &fNote ? 'c' : &f == &fRead ? 'd' : &f == &fFlag ? 'e' : 0;
+    if (which == 0) return juce::GlyphArrangement::getStringWidth (f, s);
+    std::string key (1, which);
+    key += s.toStdString();
+    const auto it = widths.find (key);
+    if (it != widths.end()) return it->second;
+    if (widths.size() > 4000) widths.clear();
+    const float w = juce::GlyphArrangement::getStringWidth (f, s);
+    widths[key] = w;
+    return w;
+}
 
 float Screen::plate (G& g, float x, float y, const String& s, const juce::Font& f, float padX, Colour bg, Colour fg, float h)
 {
@@ -180,9 +193,9 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
     const R kr (cxm - 20, y, 40, 40);
     if (! c.used) { if (vis (g, kr)) hollow (g, cxm, cym, 40, true); return; }
     const float v = eng.shown (ctl);
-    lastShown[(size_t) ctl] = v;
     if (vis (g, R (cellX - 10, y, cellW + 20, 43 + legendH)))
     {
+        lastShown[(size_t) ctl] = v;        // (only what was drawn: a change that was not is still owed a repaint)
         if (c.kind == Kind::Toggle) key (g, kr, v > 0.5f ? col::green : col::putty);
         else if (c.kind == Kind::Hold) key (g, kr, col::yellow, v > 0.5f ? 8.0f : 2.0f);
         else if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
@@ -201,12 +214,15 @@ void Screen::headKeys (G& g, float right, float y, int kind, int lane, int slot,
     for (int k = 0; k < 3; ++k)
     {
         const R kr (right - 72.0f + (float) k * 25.0f, y, 22, 22);
-        if (vis (g, kr)) { key (g, kr, fills[k]); text (g, letters[k], kr, fLbl, k == 0 && open ? col::lit : col::black); }
+        if (vis (g, kr))
+        {
+            key (g, kr, fills[k]); text (g, letters[k], kr, fLbl, k == 0 && open ? col::lit : col::black);
+            if (k == 1) lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
+            if (k == 2) lastShown[(size_t) soloCtl] = eng.shown (soloCtl);
+        }
         if (k == 0) hit (kr.expanded (1), hConfig, kind, lane * 8 + slot);
         else hit (kr.expanded (1), hToggle, k == 1 ? muteCtl : soloCtl);
     }
-    lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
-    lastShown[(size_t) soloCtl] = eng.shown (soloCtl);
 }
 
 void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const String& label, Colour fill, float legendGap, bool present)
@@ -224,9 +240,10 @@ void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const Strin
 // ------------------------------------------------------------------------------------ the pages
 void Screen::paint (G& g)
 {
+    collect = hits.empty() || g.getClipBounds().contains (getLocalBounds());
     g.fillAll (col::black);
     g.addTransform (xf);
-    hits.clear();
+    if (collect) hits.clear();
     if (vis (g, R (0, 0, kW, kH)))
     {
         g.setColour (col::sea);
@@ -261,14 +278,15 @@ void Screen::drawBar (G& g)
         readout (g, R (1487, 17.5f, 72, 40), "KEY", eng.valueText (cx::kKey));
         knob (g, 1597, 37.5f, 40, eng.shown (cx::kGlide), Kind::List, 12, col::lit);
         readout (g, R (1621, 17.5f, 84, 40), "GLIDE", eng.valueText (cx::kGlide));
+        lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
     }
+    if (! collect) return;
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
     hit (R (1176, 17.5f, 40, 40), hAct, aRun, 0);
     hit (R (1268, 17.5f, 40, 40), hAct, aPanic, 0);
     hit (R (1373, 17.5f, 96, 40), hRead, cx::kTempo, 0);
     hit (R (1487, 17.5f, 72, 40), hRead, cx::kKey, 0);
     hit (R (1573, 15.5f, 132, 44), hKnob, cx::kGlide, 0);
-    lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
 }
 
 float Screen::slideGoal() const
@@ -286,7 +304,7 @@ void Screen::drawMain (G& g)
     const R cfgR (23.0f - 564.0f * (1.0f - ease), 78, 554, 894);
     const float left = cfgT > 0.001f ? std::max (9.0f, std::floor (cfgR.getRight())) : 9.0f;
     rowsClip = R (left, 64, 1710.0f - left, 912);
-    masterRect = {};
+    if (collect) masterRect = {};
     {
         const juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (rowsClip.getSmallestIntegerContainer());
@@ -310,10 +328,10 @@ void Screen::drawMain (G& g)
             shift = 0.0f;
         }
         // what is off the screen or behind CONFIG cannot be touched
-        hits.erase (std::remove_if (hits.begin() + (long) first, hits.end(), [this] (const Hit& h) { return ! h.r.intersects (rowsClip); }), hits.end());
+        if (collect) hits.erase (std::remove_if (hits.begin() + (long) first, hits.end(), [this] (const Hit& h) { return ! h.r.intersects (rowsClip); }), hits.end());
     }
     drawSequencer (g, R (23, 980, 1682, 110));
-    if (cfgT > 0.001f)
+    if (cfgT > 0.001f && (collect || vis (g, cfgR)))
     {
         const juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (juce::Rectangle<int> (9, 64, 1710, 912));
@@ -378,8 +396,9 @@ void Screen::drawConfig (G& g, R r)
     {
         // the module's own display: waveform, in and out points, cue points. It takes the mouse.
         cfgDisplay = R (x0, y, 544, (float) dh);
-        g.setColour (juce::Colours::black); g.fillRect (cfgDisplay);
+        if (vis (g, cfgDisplay))
         {
+            g.setColour (juce::Colours::black); g.fillRect (cfgDisplay);
             const juce::Graphics::ScopedSaveState state (g);
             g.reduceClipRegion (cfgDisplay.getSmallestIntegerContainer());
             m.paint (g, cfgDisplay);
@@ -418,16 +437,19 @@ void Screen::drawConfig (G& g, R r)
         const auto& sp = cfgParams[(size_t) i];
         const float cxl = x0 + 2 + (float) (n % cols) * 90, cy = y + (float) (n / cols) * rowH;
         const R kr (cxl + 25, cy, 40, 40);
-        if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty);
-        else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
-        else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
-        legend (g, cxl + 45, cy + 43, sp.name);
-        if (sp.kind == Kind::List)
+        if (vis (g, R (cxl - 16, cy, 122, rowH)))
         {
-            const R vr (cxl + 1, cy + 73, 88, 16);
-            g.setColour (col::white); g.fillRect (vr);
-            g.setColour (col::black); g.setFont (fLbl);
-            g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
+            if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty);
+            else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
+            else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
+            legend (g, cxl + 45, cy + 43, sp.name);
+            if (sp.kind == Kind::List)
+            {
+                const R vr (cxl + 1, cy + 73, 88, 16);
+                g.setColour (col::white); g.fillRect (vr);
+                g.setColour (col::black); g.setFont (fLbl);
+                g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
+            }
         }
         hit (kr.expanded (4, 2), hSetup, i, 0);
     }
@@ -440,6 +462,7 @@ void Screen::drawConfig (G& g, R r)
 
 void Screen::drawLane (G& g, int l, R r)
 {
+    if (! collect && ! vis (g, r)) return;
     const auto& d = lanes()[(size_t) l];
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     const bool active = l == ses.activeLane;
@@ -464,6 +487,7 @@ void Screen::drawLane (G& g, int l, R r)
 
 void Screen::drawSnapPanel (G& g, R r)
 {
+    if (! collect && ! vis (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     panel (g, r, col::putty);
     if (vis (g, R (x0, y0, 262, 26)))
@@ -480,9 +504,9 @@ void Screen::drawSnapPanel (G& g, R r)
         if (ses.knobs[(size_t) k].snaps.size() >= 2)
         {
             const float v = eng.shown (cx::kSnap + k);
-            lastShown[(size_t) (cx::kSnap + k)] = v;
             if (vis (g, R (cxm - 40, y, 80, 58)))
             {
+                lastShown[(size_t) (cx::kSnap + k)] = v;
                 knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, col::teal);
                 text (g, ses.knobs[(size_t) k].name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
@@ -504,6 +528,7 @@ void Screen::drawSnapPanel (G& g, R r)
 
 void Screen::drawInsert (G& g, int slot, R r)
 {
+    if (! collect && ! vis (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     const int l = ses.activeLane, t = eng.insertType (l, slot);
     hit (r, hDropFx, 1, slot);
@@ -517,6 +542,7 @@ void Screen::drawInsert (G& g, int slot, R r)
 
 void Screen::drawReturns (G& g, R r)
 {
+    if (! collect && ! vis (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     hit (r, hDropFx, 2, 1);
     panel (g, r, col::putty);
@@ -537,8 +563,10 @@ void Screen::drawReturns (G& g, R r)
 
 void Screen::drawMaster (G& g, R r)
 {
+    if (! collect && ! vis (g, r)) return;
     // the copy of it that is on the screen (the columns go round while CONFIG is open)
-    if (const R mr = r.translated (shift, 0.0f).getIntersection (rowsClip); ! mr.isEmpty()) masterRect = masterRect.isEmpty() ? mr : masterRect.getUnion (mr);
+    if (collect) if (const R mr = r.translated (shift, 0.0f).getIntersection (rowsClip); ! mr.isEmpty()) masterRect = masterRect.isEmpty() ? mr : masterRect.getUnion (mr);
+    meterSig = metersNow();
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     panel (g, r, col::grey);
     plate (g, x0, y0, "MASTER", fLegend, 8, col::white, col::black);
@@ -593,6 +621,7 @@ void Screen::drawMaster (G& g, R r)
 void Screen::drawSequencer (G& g, R r)
 {
     seqRect = r;
+    if (! collect && ! vis (g, r)) return;
     panel (g, r, col::putty);
     const int l = ses.activeLane;
     const auto& d = lanes()[(size_t) l];
@@ -1221,6 +1250,19 @@ void Screen::endEdit (bool keep)
     repaint();
 }
 
+// What the MASTER panel's meters and numbers show, to the pixel: it is drawn again only when this changes.
+juce::uint64 Screen::metersNow() const
+{
+    juce::uint64 h = 1469598103934665603ull;
+    auto add = [&h] (float v, float steps) { h = (h ^ (juce::uint64) (juce::int64) std::lround (std::max (-61.0f, v) * steps)) * 1099511628211ull; };
+    for (auto& d : eng.laneDb) add (d.load(), 4.0f);
+    add (eng.peakL.load(), 4.0f); add (eng.peakR.load(), 4.0f);
+    add (eng.gainRed.load(), 10.0f); add (eng.lufs.load(), 10.0f);
+    add (eng.fault.load() ? 1.0f : 0.0f, 1.0f); add (eng.clipL.load() ? 1.0f : 0.0f, 1.0f); add (eng.clipR.load() ? 1.0f : 0.0f, 1.0f);
+    add ((float) ses.activeLane, 1.0f);
+    return h;
+}
+
 void Screen::timerCallback()
 {
     // repaint what moved on its own: gliding knobs, the meters, the step that is playing
@@ -1250,7 +1292,7 @@ void Screen::timerCallback()
         if (cfgOpen)
             if (auto* pr = eng.processorFor (cfg))
                 if (const String st = pr->mod().statusLine(); st != cfgStatus) { cfgStatus = st; cfgStale = true; dirty (cfgRect); }     // an import finishing says so
-        dirty (masterRect);
+        if (metersNow() != meterSig) dirty (masterRect);       // the meters, when a bar has moved by a pixel or a number has changed
         const bool run = eng.isRunning();
         if (run || wasRunning)
         {

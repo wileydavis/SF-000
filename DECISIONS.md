@@ -246,6 +246,28 @@ a snapshot could reach it later.
 77. **SF-000 takes notes from every port and goes by the channel alone**, so port B's channel 7
     plays RUMBLE as port A's does. The suite kept the two ports apart.
 
+## Load (Nov 11)
+
+78. **Where the time went, as far as it can be seen from here.** On this build machine (a slow
+    Xeon) the engine takes about 55 to 65 % of one core at any buffer size: BASS, RUMBLE, PAD, LEAD
+    and CHORD about 5 to 8 % each, the returns 9 %, the master 7 %. An M4 is several times faster,
+    so the engine should be well under 20 % there. Drawing the whole screen costs about fifty times
+    what drawing the meters does. macOS draws a window's changed parts as one box round all of
+    them, so meters in one corner and a moving knob or the step lamp in another meant most of the
+    screen was drawn 30 times a second. That is the likely bulk of the 63 % seen in Activity
+    Monitor; it has not been measured on the Mac.
+79. **Each changed part of the window is drawn on its own** (JUCE's Metal layer renderer,
+    `JUCE_COREGRAPHICS_RENDER_WITH_MULTIPLE_PAINT_CALLS`). JUCE says whether this helps depends on
+    the app; it is the case it was made for. It can be turned off to compare:
+    `cmake -B build -DSF000_SPLIT_PAINT=OFF && cmake --build build`.
+80. **A part-redraw draws only the panels it touches** and keeps the layout from the last whole
+    redraw. The meters are redrawn only when a bar has moved by a pixel or a number has changed, so
+    a silent rig draws nothing. Text is measured once. A knob is marked as drawn only when it was.
+81. **The clock's thread sleeps until a quarter of a millisecond before each tick** (it kept awake
+    for a millisecond), and looks for work every 10 ms when no clock is being sent.
+82. **AUDIO AND MIDI shows the engine's own load**, so the sound's share can be told from the
+    screen's. `SF-000 --perf` measures both offline.
+
 ## Not verified
 
 - Built and run on Linux only. It has not been compiled on macOS or heard by anyone.

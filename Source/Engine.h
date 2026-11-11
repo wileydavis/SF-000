@@ -161,6 +161,10 @@ public:
     std::array<double, kLanes> laneSq {};                    // sum of squares since the start (tests)
     std::array<float, kLanes> laneMax {};                    // highest sample since the start (tests)
     std::atomic<int> solo { -1 };                            // tests: only this lane reaches the mix
+    // tests: where a block's time goes, in seconds summed, while profile is on
+    bool profile = false;
+    std::array<double, kLanes> profLane {}, profIns {};
+    double profRet = 0.0, profMaster = 0.0, profAll = 0.0;
     double sampleRate() const                   { return sr; }
     int latencySamples() const                  { return maxLat.load(); }
 

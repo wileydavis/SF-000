@@ -1,6 +1,8 @@
 #include "Midi.h"
 #include "BinaryData.h"
+#include <chrono>
 #include <map>
+#include <thread>
 #include <string>
 
 namespace sf0
@@ -543,7 +545,8 @@ void Midi::rings (double nowMs)
 
 // ==================================================================================== the clock
 // Each tick goes out at its own moment: the engine says when (a block ahead at least), this thread
-// sleeps to within a millisecond of it and stays awake for the rest.
+// sleeps to a quarter of a millisecond before it and stays awake for the rest. With no clock to
+// send it looks only now and then.
 void Midi::run()
 {
     Engine::ClockMsg m;
@@ -551,10 +554,10 @@ void Midi::run()
     while (! threadShouldExit())
     {
         if (! have) have = engine.nextClock (m);
-        if (! have) { wait (1); continue; }
+        if (! have) { wait (engine.clockOut() && engine.isRunning() ? 1 : 10); continue; }
         const double left = m.dueMs - juce::Time::getMillisecondCounterHiRes();
         if (left > 60.0) { have = false; continue; }               // not this clock's (the device was restarted): let it go
-        if (left > 1.2) { wait ((int) (left - 1.0)); continue; }
+        if (left > 0.35) { std::this_thread::sleep_for (std::chrono::microseconds ((long long) ((left - 0.25) * 1000.0))); continue; }
         while (juce::Time::getMillisecondCounterHiRes() < m.dueMs && ! threadShouldExit()) juce::Thread::yield();
         {
             const juce::ScopedLock g (outLock);

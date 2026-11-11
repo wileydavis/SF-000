@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SF-000 — one-line build: ./build.sh        (then: open "build/SF000_artefacts/Release/SF-000.app")
 #   ./build.sh test    build, then run the offline audio and timing checks
+#   ./build.sh perf    build, then measure the engine's and the screen's load on this machine
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -38,6 +39,8 @@ echo
 echo "Built: $APP"
 if [ "${1:-}" = "test" ]; then
   "$BIN" --test
+elif [ "${1:-}" = "perf" ]; then
+  "$BIN" --perf
 elif [ "$(uname)" = "Darwin" ]; then
   echo "Run:   open \"$APP\""
 fi

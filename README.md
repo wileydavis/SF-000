@@ -111,6 +111,7 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
+./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out, with made-up messages
@@ -118,6 +119,13 @@ build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (sn
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv
 ```
+
+### Load
+
+Activity Monitor's figure is a share of one core (100 % is one of the Mac's cores busy all the time).
+It is the engine plus the screen. AUDIO AND MIDI shows the engine's share on its own (ENGINE: n %),
+and `./build.sh perf` measures both. The screen redraws only what moved: a travelling knob, the
+meters when a bar has moved, the playing step.
 
 ## What is here
 
