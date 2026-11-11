@@ -58,7 +58,7 @@ private:
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec };
+               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue };
 
     void timerCallback() override;
     void dirty (R);
@@ -120,6 +120,7 @@ private:
     bool wasRunning = false;
     juce::uint64 barSig = 0;
     bool recWas = false;
+    bool cueMode = false;                       // the library: a tap is heard in the headphones, not recalled
     juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
     juce::uint32 recNoteAt = 0;
     juce::uint64 barNow() const;

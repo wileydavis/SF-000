@@ -51,7 +51,7 @@ Screen::Screen (Session& s)
 
 Screen::~Screen() { ses.onChange = nullptr; }
 
-void Screen::setPage (Page p) { endEdit (true); page = p; repaint(); }
+void Screen::setPage (Page p) { endEdit (true); if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0); page = p; repaint(); }
 
 void Screen::resized()
 {
@@ -797,7 +797,8 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     const bool isBase = s.id == ses.baseId;
     const float wn = plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? col::black : col::white, isBase ? col::lit : col::black, 24);
     if (selected && hitKind == hCard) selNameRect = R (x0 + wTag, y0, std::max (wn, 150.0f), 24);
-    text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
+    if (s.id == ses.cueing()) plate (g, r.getRight() - 6 - (std::ceil (tw (fLegend, "IN THE PHONES")) + 16), y0, "IN THE PHONES", fLegend, 8, col::green, col::lit, 24);
+    else text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
     const float gy = y0 + 28, gh = 30;
     auto box = [&] (float x, float w) { const R b (x, gy, w, gh); g.setColour (col::black); g.fillRect (b); g.setColour (col::white); g.fillRect (b.reduced (1)); return b.reduced (1); };
     if (s.profile.has)
@@ -872,8 +873,13 @@ void Screen::drawLibrary (G& g)
     const bool has = ses.findSnap (selSnap) != nullptr;
     actKey (g, aRename, x0 + 226, ky, 64, "RENAME", col::yellow, 5, has);
     actKey (g, aDelete, x0 + 292, ky, 64, "HOLD: DELETE", col::red, 5, has);
-    const String help = "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.";
-    text (g, help, R (x0 + 400, ky, 1200, 40), fLbl, col::black, juce::Justification::centredLeft);
+    // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
+    actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5);
+    actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
+    const String help = ! cueMode ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE."
+                      : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES: TICK THEM IN AUDIO."
+                      : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
+    text (g, help, R (x0 + 540, ky, 1100, 40), fLbl, col::black, juce::Justification::centredLeft);
 }
 
 // ------------------------------------------------------------------------------ macro designer
@@ -990,6 +996,10 @@ void Screen::act (int a)
         case aCfgClose: cfgOpen = false; break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
+        case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
+        case aRecallCue:
+            if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr) { selSnap = id; ses.recall (id); ses.cue (0); }
+            break;
         case aLibrary:  setPage (pLibrary); break;
         case aMacros:   setPage (pMacros); break;
         case aMain:     setPage (pMain); break;
@@ -1097,7 +1107,12 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             drag.fired = true;                  // (the press that starts a take is not also the hold that ends it)
             if (h->a == aRec) repaint();
             return;
-        case hCard:     selSnap = ses.library[(size_t) h->a].id; ses.recall (selSnap); break;
+        case hCard:
+            selSnap = ses.library[(size_t) h->a].id;
+            if (! cueMode) ses.recall (selSnap);
+            else if (ses.cueing() == selSnap) ses.cue (0);
+            else ses.cue (selSnap);
+            break;
         case hKnobCard: selKnob = h->a; break;
         case hSlot:
         {

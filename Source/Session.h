@@ -69,6 +69,10 @@ public:
     // The bars a snapshot was taken over, kept beside the session as a small compressed clip.
     juce::File clipFile (juce::int64 id) const;
     void waitForClips();                // until the clips being written are on the disk (tests; quitting)
+    // Cue: a snapshot's clip in the headphones, apart from the set (0, or one with no clip: silence).
+    // The rig itself is not touched.
+    bool cue (juce::int64 id);          // false: that snapshot has no sound kept
+    juce::int64 cueing() const          { return cueId; }
     void turnSnapKnob (int k, float v);
     void pressSnapKnob (int k);         // recall the knob's nearest snapshot as the new base; the knob goes home
     Snapshot capture() const;
@@ -110,6 +114,10 @@ private:
     std::vector<float> base, offset;
     bool dirty = false, useDisk = true;
     juce::ThreadPool clipWriter { 1 };
+    juce::int64 cueId = 0;
+    // the clips handed to the engine: each kept until a second after it was replaced
+    std::vector<std::pair<std::unique_ptr<Engine::CueClip>, juce::uint32>> cueKept;
+    void pruneCues();
     void keepClip (juce::int64 id, const Engine::Heard&);
 };
 } // namespace sf0

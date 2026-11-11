@@ -287,6 +287,72 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
+    // Cue: a snapshot's clip in the headphones, in time with the clock, and the set untouched by it.
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_cue_test");
+        tmp.deleteRecursively();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        {
+            Engine e, plain;
+            e.prepare (48000.0, 128); plain.prepare (48000.0, 128);
+            Session ses (e, true);
+            juce::AudioBuffer<float> b (2, 128), pb (2, 128);
+            auto both = [&] { e.render (b); plain.render (pb); };
+            for (int k = 0; k < 400; ++k) both();
+            e.setRunning (true); plain.setRunning (true);
+            const int perBar = (int) (4.0 * 60.0 / e.tempo() * 48000.0 / 128.0);
+            for (int k = 0; k < perBar * 6; ++k) both();
+            const auto id = ses.take();
+            ses.waitForClips();
+            // the clip as the cue will play it
+            juce::AudioBuffer<float> clip;
+            {
+                juce::OggVorbisAudioFormat ogg;
+                if (auto in = ses.clipFile (id).createInputStream())
+                    if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (in.release(), true) })
+                    { clip.setSize (2, (int) r->lengthInSamples); r->read (&clip, 0, clip.getNumSamples(), 0, true, true); }
+            }
+            const int len = clip.getNumSamples();
+            const bool began = len > 1000 && ses.cue (id) && ses.cueing() == id;
+            // in time: each buffer's first sample is the clip where the rig is in its four bars
+            double worst = 0.0, loud = 0.0; bool same = true;
+            const double held = (double) (e.latencySamples() + e.masterLatency());
+            for (int k = 0; k < perBar * 5 && began; ++k)
+            {
+                const double ppq = e.songPos();
+                both();
+                for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 128; ++i) same = same && b.getSample (ch, i) == pb.getSample (ch, i);
+                if (k < 8) continue;                                        // (it fades in)
+                const double perSample = e.tempo() / 60.0 / 48000.0;
+                double q = std::fmod (ppq - held * perSample, 16.0); if (q < 0.0) q += 16.0;
+                const double pos = q / 16.0 * (double) len;
+                const int i0 = juce::jlimit (0, len - 1, (int) pos), i1 = (i0 + 1) % len;
+                const double want = clip.getSample (0, i0) + (clip.getSample (0, i1) - clip.getSample (0, i0)) * (pos - (double) i0);
+                worst = std::max (worst, std::abs (want - (double) e.cueBlock().getSample (0, 0)));
+                loud = std::max (loud, (double) e.cueBlock().getMagnitude (0, 128));
+            }
+            const bool timed = began && worst < 2.0e-3 && loud > 0.1;
+            std::printf ("  %s: CUE plays a snapshot's clip in time with the clock: each buffer begins where the rig is in its four bars (furthest %.1e), and the set is the same to the last bit with it playing\n",
+                         timed && same ? "ok  " : "FAIL", worst);
+            if (! (timed && same)) ++bad;
+
+            // stopped, it plays as it was kept; taken away, it fades out and the clip is let go
+            e.setRunning (false); plain.setRunning (false);
+            for (int k = 0; k < 40; ++k) both();
+            float pk = 0.0f;
+            for (int k = 0; k < 40; ++k) { both(); pk = std::max (pk, e.cueBlock().getMagnitude (0, 128)); }
+            ses.cue (0);
+            for (int k = 0; k < 8; ++k) both();
+            float after = 0.0f;
+            for (int k = 0; k < 40; ++k) { both(); after = std::max (after, e.cueBlock().getMagnitude (0, 128)); }
+            const bool off = pk > 0.1f && after == 0.0f && ses.cueing() == 0 && ! ses.cue (ses.library.front().id);       // (CLEAN SLATE has no clip)
+            std::printf ("  %s: with the clock stopped it plays on as it was kept; taken away it is silent within a few buffers; a snapshot with no sound kept gives none\n", off ? "ok  " : "FAIL");
+            if (! off) ++bad;
+        }
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+    }
+
     // The kick alone: its first hit lands on the same sample whatever the block size.
     int on[4] = { -1, -1, -1, -1 }; const int blocks[4] = { 64, 100, 512, 1024 };
     for (int k = 0; k < 4; ++k) run (blocks[k], 1, nullptr, 0, nullptr, nullptr, nullptr, &on[k]);
@@ -1892,7 +1958,7 @@ class SetupPanel : public juce::Component, private juce::Timer
 {
 public:
     SetupPanel (juce::AudioDeviceManager& dm, sf0::Engine& e, sf0::Midi& m)
-        : audio (dm, 0, 0, 2, 2, false, false, true, false), engine (e), midi (m)
+        : audio (dm, 0, 0, 2, 4, false, false, true, false), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
         for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel })
@@ -2159,7 +2225,7 @@ public:
         engine = std::make_unique<sf0::Engine>();
         session = std::make_unique<sf0::Session> (*engine);
         std::unique_ptr<juce::XmlElement> saved (juce::XmlDocument::parse (audioFile()));
-        const auto err = devices.initialise (0, 2, saved.get(), true);
+        const auto err = devices.initialise (0, 4, saved.get(), true);       // the set on 1 + 2, the headphones' cue on 3 + 4
         if (err.isNotEmpty()) juce::Logger::writeToLog ("SF-000 audio: " + err);
         devices.addAudioCallback (engine.get());
         midi = std::make_unique<sf0::Midi> (*engine, *session);

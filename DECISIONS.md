@@ -443,10 +443,26 @@ same: a clip kept at every save, and a profile from the clip and from what the r
 123. **With the clock stopped nothing is kept** unless something is plainly being played (the
      stopped rig idles at -40 dB: the RADIO on the lead's lane). The snapshots the rig comes with
      have no sound kept either: they were never played.
-124. **Noted, not built:** the clip in the headphones; the E16 page (the grid as a map of energy
+124. **Noted, not built (as of this build):** the clip in the headphones; the E16 page (the grid as a map of energy
      against brightness, a knob for the most recent, a knob of what fits what is playing now);
      suggestions timed to where the set is; a learned model for the categories; effect chains
      that cross over the glide.
+
+## Tenth build (Nov 11): cue
+
+125. **The headphones are outputs 3 + 4** (the Babyface's phones). The app now opens four outputs;
+     an `audio.xml` kept from before has two, so 3 + 4 want ticking in AUDIO once. With only two
+     open there is no cue, and the library says so.
+126. **The cue is the clip, played in time.** While the clock runs, where the clip is read follows
+     the rig's place in its four bars, so it sits on the set and follows the tempo; its pitch
+     moves with the tempo's ratio to its own (a clip kept at 132 and heard at 126 is 0.8 of a
+     semitone down). It is the sound as it was kept, not the rig run a second time: no load to
+     speak of and nothing added to the set's delay. The set is the same to the last bit with a
+     cue playing.
+127. **In the library, CUE turns a tap into listening and RECALL commits it.** *proposed*: a tap
+     with CUE off recalls at once, as before. Leaving the library ends the cue.
+128. **Effect chains that cross over the glide are required** (your word, Nov 11), after the
+     library and cue.
 
 ## Not verified
 

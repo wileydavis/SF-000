@@ -142,6 +142,18 @@ public:
     };
     bool lastHeard (Heard&, int bars = 4) const;      // message thread. false: there was nothing but silence
 
+    // ---- cue: a clip played to the headphones (outputs 3 and 4), apart from the set. While the
+    // clock runs it plays in time: its bars on the rig's bars, at the rig's tempo (so its pitch
+    // moves with the tempo's ratio to its own). Stopped, it plays as it was kept. A change of clip
+    // fades over 10 ms each way.
+    struct CueClip { juce::AudioBuffer<float> audio; int bars = 0; };
+    // Message thread. The clip must outlive its use: keep it a second past replacing it (nullptr: silence).
+    void setCue (const CueClip* c)              { cueWant = c; }
+    // Silence at once, and the audio thread has let go of every clip when this returns (before clips are destroyed).
+    void dropCue()                              { const juce::SpinLock::ScopedLockType g (cueLock); cueWant = nullptr; cueNow = nullptr; cueGain = 0.0f; }
+    bool hasCueOutput() const                   { return cueOuts.load(); }       // the device has outputs 3 and 4 open
+    const juce::AudioBuffer<float>& cueBlock() const { return cueBuf; }          // the last buffer's cue (the device callback; tests)
+
     // ---- recording: what the audio thread hands on, a buffer at a time. Track 0 is the set (the
     // output), 1 to 11 the lanes, each as it goes into the mix, then the two returns as they do:
     // together, what the master chain is given. begin and end bracket each buffer. Nothing in a
@@ -375,6 +387,14 @@ private:
     std::atomic<int> markCount { 0 };
     int runCount = 0;
     std::array<double, 2> retSq {};
+    std::atomic<const CueClip*> cueWant { nullptr };
+    const CueClip* cueNow = nullptr;            // audio thread
+    double cuePos = 0.0;
+    float cueGain = 0.0f;
+    juce::AudioBuffer<float> cueBuf;
+    std::atomic<bool> cueOuts { false };
+    juce::SpinLock cueLock;
+    void renderCue (int n, bool run, double ppq0, double beats);
     juce::SpinLock recLock;
     RecSink* recSink = nullptr;
     juce::AudioBuffer<float> recBuf;

@@ -411,6 +411,46 @@ bool Engine::followClock (double aheadMs)
     return f.have;
 }
 
+// The headphones' clip for this buffer. In time with the clock: where the clip is read follows the
+// rig's place in the bar, set back by what the lanes and the master hold the set back, so it sits
+// on the set as the set is heard.
+void Engine::renderCue (int n, bool run, double ppq0, double beats)
+{
+    cueBuf.clear (0, n);
+    const juce::SpinLock::ScopedTryLockType hold (cueLock);
+    if (! hold.isLocked()) return;
+    const CueClip* want = cueWant.load();
+    if (cueNow == nullptr && want == nullptr) { cueGain = 0.0f; return; }
+    const float step = 1.0f / (float) (0.01 * sr);
+    const double perSample = beats / (double) n, held = (double) (maxLat.load() + masterLat.load()) * perSample;
+    float* L = cueBuf.getWritePointer (0); float* R = cueBuf.getWritePointer (1);
+    for (int i = 0; i < n; ++i)
+    {
+        if (want != cueNow && cueGain <= 0.0f) { cueNow = want; cuePos = 0.0; }       // one clip out before the next comes in
+        if (cueNow == nullptr) { cueGain = 0.0f; break; }
+        const float target = want == cueNow ? 1.0f : 0.0f;
+        cueGain = target > cueGain ? std::min (target, cueGain + step) : std::max (target, cueGain - step);
+        const auto& a = cueNow->audio;
+        const int len = a.getNumSamples();
+        if (len < 2) continue;
+        double pos = cuePos;
+        if (run && cueNow->bars > 0 && beats > 0.0)
+        {
+            const double span = (double) cueNow->bars * 4.0;
+            double q = std::fmod (ppq0 + perSample * (double) i - held, span);
+            if (q < 0.0) q += span;
+            pos = q / span * (double) len;
+            cuePos = pos;
+        }
+        else { cuePos += 1.0; if (cuePos >= (double) len) cuePos -= (double) len; }
+        const int i0 = juce::jlimit (0, len - 1, (int) pos), i1 = i0 + 1 < len ? i0 + 1 : 0;
+        const float f = (float) (pos - (double) i0);
+        const float* l = a.getReadPointer (0); const float* r = a.getReadPointer (a.getNumChannels() > 1 ? 1 : 0);
+        L[i] = (l[i0] + (l[i1] - l[i0]) * f) * cueGain;
+        R[i] = (r[i0] + (r[i1] - r[i0]) * f) * cueGain;
+    }
+}
+
 // The last bars from the tape. Read behind the audio thread's place: what is copied here was
 // written whole buffers ago and is not written again for many seconds.
 bool Engine::lastHeard (Heard& h, int wantBars) const
@@ -914,7 +954,8 @@ void Engine::prepare (double rate, int block)
     for (auto& sp : space) prep (*sp);
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
-    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &recBuf }) b->setSize (2, maxBlock, false, true, false);
+    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &recBuf, &cueBuf }) b->setSize (2, maxBlock, false, true, false);
+    cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0;
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
     tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
     liveMidi.ensureSize (8192);
@@ -1341,6 +1382,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         for (int i = 0; i < n; ++i) d[i] = std::isfinite (s[i]) ? juce::jlimit (-1.0f, 1.0f, s[i]) : 0.0f;
     }
     if (rec != nullptr) { rec->track (0, out.getReadPointer (0), out.getReadPointer (1), n); rec->end (n); }
+    renderCue (n, run, ppq, beats);
     // the tape
     {
         const int at = (int) (tapePos & (kTape - 1)), first = std::min (n, kTape - at);
@@ -1382,8 +1424,10 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const*, int, float* 
             if (outData[ch] != nullptr)
             {
                 if (ch < 2) juce::FloatVectorOperations::copy (outData[ch] + done, w.getReadPointer (ch), n);
+                else if (ch < 4) juce::FloatVectorOperations::copy (outData[ch] + done, cueBuf.getReadPointer (ch - 2), n);     // the headphones
                 else juce::FloatVectorOperations::clear (outData[ch] + done, n);
             }
+        cueOuts = numOut >= 4 && outData[2] != nullptr && outData[3] != nullptr;
         done += n;
     }
     const double used = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0), avail = numSamples / sr;

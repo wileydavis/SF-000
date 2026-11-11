@@ -48,7 +48,7 @@ First run:
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
-| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE |
+| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every pitched lane follows (parts are written in C) |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform |
@@ -96,6 +96,12 @@ and from the rig itself it is given a profile, and its card in the library draws
 | the sixteen bars | the spectrum's shape, 30 Hz to 16 kHz |
 | the two rows of sixteen | where the hits fall in the bar: the top end above, the low end below |
 | the eleven bars | how much of each lane there was |
+
+**CUE** (in the library's strip) turns taps into listening: a tapped snapshot's four bars play in
+the headphones, on outputs 3 + 4, looped. While the clock runs they play in time: on the rig's bars
+and at the rig's tempo (so the pitch moves with the tempo's ratio to the clip's own). The set
+itself is not touched. Tap the card again to stop, another to hear that one, **RECALL** to take the
+one in the headphones to the set. Outputs 3 + 4 have to be ticked in AUDIO once.
 
 Also kept, and not drawn yet: weight (the low end's share), density, tone against texture,
 movement from bar to bar, and how wet (the returns' share). `SF-000 --profiles` prints them for the
@@ -222,8 +228,8 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
 - Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
-- The library: hearing a snapshot's clip in the headphones, the sound map, the E16's page for it,
-  suggestions that fit what is playing. Meaning filters; snapshot knob pages beyond the first.
+- The library: the sound map, the E16's page for it (turn to hear, press to recall), suggestions
+  that fit what is playing. Meaning filters; snapshot knob pages beyond the first.
 - A recall between two snapshots with different effects on a lane swaps the effects at once: the
   chains do not yet cross over the GLIDE time.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.

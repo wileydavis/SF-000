@@ -21,6 +21,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 Session::~Session()
 {
     stopTimer();
+    engine.dropCue();                   // before the clips go
     waitForClips();
     if (useDisk) save();
 }
@@ -28,6 +29,7 @@ Session::~Session()
 void Session::timerCallback()
 {
     if (dirty) save();
+    pruneCues();
 }
 
 double Session::glideBeats() const { return glideBarsFor (engine.target (cx::kGlide)) * 4.0; }
@@ -193,6 +195,45 @@ void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
     });
 }
 
+// A clip the engine may still be fading out is kept a second past being replaced.
+void Session::pruneCues()
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    for (size_t i = cueKept.size(); i-- > 0;)
+        if (cueKept[i].second != 0 && now - cueKept[i].second > 1000) cueKept.erase (cueKept.begin() + (long) i);
+}
+
+bool Session::cue (juce::int64 id)
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    auto retire = [this, now] { for (auto& k : cueKept) if (k.second == 0) k.second = now == 0 ? 1u : now; };
+    pruneCues();
+    const Snapshot* s = id != 0 ? findSnap (id) : nullptr;
+    std::unique_ptr<Engine::CueClip> clip;
+    if (s != nullptr)
+    {
+        if (! clipFile (id).existsAsFile()) waitForClips();              // (taken a moment ago: still being written)
+        if (auto in = clipFile (id).createInputStream())
+        {
+            juce::OggVorbisAudioFormat ogg;
+            if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (in.release(), true) })
+                if (r->lengthInSamples > 1 && r->lengthInSamples < 48000 * 60)
+                {
+                    clip = std::make_unique<Engine::CueClip>();
+                    clip->audio.setSize (2, (int) r->lengthInSamples);
+                    r->read (&clip->audio, 0, (int) r->lengthInSamples, 0, true, true);
+                    clip->bars = s->profile.has ? s->profile.bars : 0;
+                }
+        }
+    }
+    retire();
+    if (clip == nullptr) { engine.setCue (nullptr); cueId = 0; return false; }
+    engine.setCue (clip.get());
+    cueKept.push_back ({ std::move (clip), 0u });
+    cueId = id;
+    return true;
+}
+
 juce::int64 Session::take()
 {
     auto s = capture();
@@ -268,6 +309,7 @@ void Session::remove (juce::int64 id)
     const int i = indexOf (id);
     if (i < 0) return;
     library.erase (library.begin() + i);
+    if (cueId == id) cue (0);
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); }
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
     if (baseId == id) baseId = 0;
