@@ -305,6 +305,90 @@ void Engine::noteInAt (const juce::MidiMessage& m, int sample)
     if (w.blockSize1 > 0) noteQ[(size_t) w.startIndex1] = e;
 }
 
+void Engine::clockIn (juce::uint8 byte, double arrivedMs)
+{
+    if (byte != 0xF8 && byte != 0xFA && byte != 0xFB && byte != 0xFC) return;
+    const juce::SpinLock::ScopedLockType g (clockInWrite);
+    const auto w = clockInFifo.write (1);
+    if (w.blockSize1 > 0) clockInQ[(size_t) w.startIndex1] = { arrivedMs, byte };
+}
+
+// What came from the outside clock since the last block. Returns whether this block follows it.
+bool Engine::followClock (double aheadMs)
+{
+    auto& f = fol;
+    const bool on = followOn.load();
+    for (;;)
+    {
+        const auto r = clockInFifo.read (1);
+        if (r.blockSize1 <= 0) break;
+        const ClockIn m = clockInQ[(size_t) r.startIndex1];
+        if (! on) continue;
+        if (m.byte == 0xFA)      { f.arm = true; f.top = true; }            // START: the next tick is bar 1's first
+        else if (m.byte == 0xFB) { f.arm = true; f.top = false; }           // CONTINUE: on from where it stopped, at the next tick
+        else if (m.byte == 0xFC) { f.arm = false; f.rolling = false; running = false; }
+        else
+        {
+            const bool fresh = ! f.have || m.ms - f.lastArr > 250.0;
+            if (fresh || f.arm)
+            {
+                // The ticks begin, or the sender starts (and may start its ticks afresh): the line
+                // is laid through this tick, at the tempo last known.
+                if (fresh || f.per <= 0.0)
+                {
+                    f.per = 60000.0 / (24.0 * tempoFor (cur[(size_t) cx::kTempo]));
+                    f.bpmSlow = f.bpmSaid = 60000.0 / (24.0 * f.per);
+                }
+                f.t0 = m.ms; f.t1 = m.ms + f.per; f.count = 0; f.big = 0; f.have = true;
+                if (f.arm)
+                {
+                    f.idx = f.top ? 0 : f.idx + 1;
+                    f.rolling = true; f.arm = false; running = true;
+                }
+                else if (wasRunning)
+                {
+                    // Already playing when the ticks came: this one is taken for the nearest to
+                    // where the rig is, so nothing jumps.
+                    f.idx = (juce::int64) std::llround ((ppq + (m.ms - prevBlockMs - aheadMs) * blockBpm / 60000.0) * 24.0);
+                    f.rolling = true;
+                }
+                else { f.idx = 0; f.rolling = false; }
+            }
+            else
+            {
+                // Narrow once it has settled, so jitter is averaged out; wide while it settles and
+                // when the ticks are plainly somewhere else (the sender's tempo was turned). One
+                // tick far out on its own is taken for a late delivery and mostly left alone.
+                const double e = m.ms - f.t1;
+                f.big = e > 1.5 ? std::max (1, f.big + 1) : e < -1.5 ? std::min (-1, f.big - 1) : 0;
+                const bool wide = f.count < 48 || std::abs (f.big) >= 2;
+                const double w = juce::MathConstants<double>::twoPi * (wide ? 3.0 : 1.2) * f.per / 1000.0, eu = wide ? e : juce::jlimit (-3.0, 3.0, e);
+                f.t0 = f.t1;
+                f.t1 += std::sqrt (2.0) * w * eu + f.per;
+                f.per = juce::jlimit (60000.0 / (24.0 * 400.0), 60000.0 / (24.0 * 20.0), f.per + w * w * eu);
+                if (f.rolling) ++f.idx;
+            }
+            f.lastArr = m.ms; ++f.count;
+            // The tempo said to the instruments (their echo times hang on it) and shown: slow, and
+            // on the tenth of a bpm the sender is set to once it is plainly that, so it does not wander.
+            const double inst = 60000.0 / (24.0 * f.per);
+            f.bpmSlow += (f.count < 48 || std::abs (inst - f.bpmSlow) > 0.15 ? 0.2 : 0.02) * (inst - f.bpmSlow);
+            const double tenth = std::round (f.bpmSlow * 10.0) / 10.0, want = std::abs (tenth - f.bpmSlow) < 0.04 ? tenth : f.bpmSlow;
+            if (std::abs (want - f.bpmSaid) > 0.049 || (want == tenth && f.bpmSaid != tenth && std::abs (want - f.bpmSaid) > 0.02)) f.bpmSaid = want;
+        }
+    }
+    if (! on) { f = Follow(); locked = false; return false; }
+    if (f.have && blockMs - f.lastArr > 250.0) { f.have = false; f.rolling = false; }      // the clock has gone: on alone, at its tempo
+    locked = f.have;
+    if (f.have)
+    {
+        followBpm = (float) f.bpmSaid;
+        // the TEMPO control is the sender's tempo: shown, kept, and what the rig carries on at alone
+        if (const float v = tempoToValue (f.bpmSaid); targetV[(size_t) cx::kTempo].load() != v) set (cx::kTempo, v);
+    }
+    return f.have;
+}
+
 bool Engine::nextClock (ClockMsg& m)
 {
     const auto r = clockFifo.read (1);
@@ -504,6 +588,9 @@ void Engine::updateLatency()
     mx = std::min (mx, 8000);
     for (int l = 0; l < kLanes; ++l) lane[(size_t) l].delay = juce::jlimit (0, 8000, mx - lat[l]);
     maxLat = mx;
+    int ml = 0;
+    for (auto& m : master) ml += m->getLatencySamples();
+    masterLat = ml;
 }
 
 // --------------------------------------------------------------------------------------- files
@@ -738,6 +825,7 @@ void Engine::prepare (double rate, int block)
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre }) b->setSize (2, maxBlock, false, true, false);
     liveMidi.ensureSize (8192);
     wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0;
+    fol = Follow();
     loud->m.prepare (sr);
     prepared = true;
     updateLatency();
@@ -836,11 +924,6 @@ void Engine::render (juce::AudioBuffer<float>& out)
     auto clock = [this] { return profile ? juce::Time::getHighResolutionTicks() : (juce::int64) 0; };
     auto since = [this] (juce::int64 t) { return profile ? juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t) : 0.0; };
     const auto tAll = clock();
-    const bool run = running.load();
-    blockBpm = tempoFor (cur[(size_t) cx::kTempo]);
-    const double beats = (double) n * blockBpm / 60.0 / sr, spb = sr * 60.0 / blockBpm;
-    const bool starting = run && ! wasRunning, stopping = ! run && wasRunning;
-
     // When this block is on the wall clock, smoothed, so MIDI in and the clock out keep an even
     // pace however unevenly the device calls. (A test has no device: its clock is the samples.)
     const double durMs = (double) n * 1000.0 / sr, nowMs = wallMs >= 0.0 ? wallMs : virtualMs;
@@ -849,14 +932,51 @@ void Engine::render (juce::AudioBuffer<float>& out)
     else { prevBlockMs = blockMs; blockMs += lastDurMs + 0.1 * (nowMs - (blockMs + lastDurMs)); }
     lastDurMs = durMs;
 
+    // How long a note from outside takes to be heard: a block's wait, the interface, the look-ahead inside.
+    const double waitNow = devBufMs > 0.0 ? devBufMs : durMs, insideNow = (double) (maxLat.load() + masterLat.load()) * 1000.0 / sr;
+    waitMs = (float) waitNow; insideMs = (float) insideNow;
+    // An outside clock, if one is followed: its START and STOP are the transport's, its tempo the
+    // rig's. The rig's own steps are played ahead of it by that time (or not), and by TRIM.
+    const double ahead = (followBeat.load() ? waitNow + (double) outMs.load() + insideNow : 0.0) + (double) followTrim.load();
+    const bool led = followClock (ahead);
+    const bool run = running.load();
+    blockBpm = led ? fol.bpmSaid : tempoFor (cur[(size_t) cx::kTempo]);
+    double beats = (double) n * blockBpm / 60.0 / sr;
+    const bool starting = run && ! wasRunning, stopping = ! run && wasRunning;
+    bool again = false;                                 // the outside clock went back to the start while this was playing
+
     // MIDI clock out. A follower's note for a beat has to be back here a block before that beat
     // is rendered, so the clock runs ahead of the sound: two blocks (one for the sender to be on
     // time, one for the note's way in) and LEAD, the follower's own delay. RUN waits that long.
     // Ticks go out only while it runs, as Live's did: the OXI One is set up for a clock that
-    // starts with START, and falls back to its own when there is none.
-    const bool clk = clockOn.load();
+    // starts with START, and falls back to its own when there is none. None while following.
+    const bool clk = clockOn.load() && ! followOn.load();
     const double lookBeats = clk ? (2.0 * durMs + (double) clockLead.load()) * blockBpm / 60000.0 : 0.0;
     if (starting) ppq = -lookBeats;
+    if (led && run)
+    {
+        // Where the sender's clock is. A block holds what came during the block before it (a note
+        // from outside sounds at its own place in the next block), so with nothing ahead this
+        // block is the stretch of the sender's clock from the last block's time to this one's.
+        auto& f = fol;
+        if (! f.rolling) { f.idx = -1; f.rolling = true; }                  // RUN by hand, the sender stopped: from the top, on its next tick
+        // Up to the tick it expects next, the line between the last tick and that one; past it (the
+        // head start reaches a tick or two on), the steadier period alone.
+        const double slope = std::max (1.0, f.t1 - f.t0), per = std::max (1.0, f.per);
+        auto at = [&] (double ms) { return (ms <= f.t1 ? (double) f.idx + (ms - f.t0) / slope : (double) f.idx + 1.0 + (ms - f.t1) / per) / 24.0; };
+        const double from = at (prevBlockMs + ahead), end = at (blockMs + ahead);
+        const bool jump = ! starting && std::abs (from - ppq) > 0.25;      // the sender went somewhere else (START again, most likely)
+        if (starting || jump)
+        {
+            // It sets off from where the sender is now, so no step is skipped: what should already
+            // have been played ahead is played at once (bar 1's first step, after START).
+            const double here = at (prevBlockMs);
+            ppq = here < 0.5 ? std::min (0.0, here) : here;
+            again = jump;
+        }
+        beats = juce::jlimit (0.0, 0.5, end - ppq);
+    }
+    const double spb = beats > 1.0e-9 ? (double) n / beats : sr * 60.0 / blockBpm;
     if (clk)
     {
         const double base = blockMs + durMs;
@@ -899,7 +1019,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
             if (g.isLocked()) { ln.player.pat = ln.shared; ln.patDirty = false; }
         }
         ln.midi.clear();
-        if (stopping || pan || starting) ln.player.stop (ln.midi, 0);
+        if (stopping || pan || starting || again) ln.player.stop (ln.midi, 0);
         if (pan) { ln.proc->panic(); for (auto& i : ln.ins) if (auto* in = i.load()) in->proc->panic(); }
         // The lane's own sequencer muted: its steps keep their place and go unplayed, and what it
         // was holding ends now. Notes from outside still sound.
@@ -1091,6 +1211,9 @@ void Engine::render (juce::AudioBuffer<float>& out)
 void Engine::audioDeviceAboutToStart (juce::AudioIODevice* d)
 {
     prepare (d->getCurrentSampleRate(), std::max (64, d->getCurrentBufferSizeSamples()));
+    // (on the Mac the device's own figure already holds one buffer)
+    devBufMs = (double) d->getCurrentBufferSizeSamples() * 1000.0 / d->getCurrentSampleRate();
+    outMs = (float) ((double) d->getOutputLatencyInSamples() * 1000.0 / d->getCurrentSampleRate());
 }
 
 void Engine::audioDeviceIOCallbackWithContext (const float* const*, int, float* const* outData, int numOut, int numSamples, const juce::AudioIODeviceCallbackContext&)

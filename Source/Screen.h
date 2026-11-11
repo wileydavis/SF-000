@@ -114,6 +114,8 @@ private:
     std::array<float, cx::kCount> lastShown {};
     R masterRect, seqRect;
     bool wasRunning = false;
+    juce::uint64 barSig = 0;
+    juce::uint64 barNow() const;
     int lastStep = -1;
 
     struct Drag { int kind = 0, a = 0, b = 0; juce::Point<float> start; float v0 = 0, g0 = 0; int r0 = 1; bool moved = false; char axis = 0; juce::uint32 t0 = 0; bool fired = false; } drag;

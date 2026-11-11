@@ -335,6 +335,9 @@ void Midi::load()
     if (! v.isObject()) return;
     clockWanted = (bool) v.getProperty ("clock", true);
     leadMs = juce::jlimit (0.0f, 60.0f, (float) (double) v.getProperty ("lead", 0.0));
+    followWanted = (bool) v.getProperty ("follow", false);
+    beatWanted = (bool) v.getProperty ("on_beat", true);
+    trimMs = juce::jlimit (-40.0f, 40.0f, (float) (double) v.getProperty ("trim", 0.0));
 }
 
 void Midi::save() const
@@ -343,22 +346,44 @@ void Midi::save() const
     auto* o = new juce::DynamicObject();
     o->setProperty ("clock", clockWanted);
     o->setProperty ("lead", leadMs);
+    o->setProperty ("follow", followWanted);
+    o->setProperty ("on_beat", beatWanted);
+    o->setProperty ("trim", trimMs);
     file().getParentDirectory().createDirectory();
     file().replaceWithText (juce::JSON::toString (juce::var (o)));
 }
 
-void Midi::setSendsClock (bool on)
+// The clock is followed or sent, never both: a follower that also sent would be answered by itself.
+void Midi::apply()
 {
-    clockWanted = on;
-    engine.setClockOut (clockWanted && ! clockOuts.empty(), leadMs);
-    save();
+    engine.setFollow (followWanted, beatWanted, trimMs);
+    engine.setClockOut (clockWanted && ! followWanted && ! clockOuts.empty(), leadMs);
 }
 
-void Midi::setLead (float ms)
+void Midi::setSendsClock (bool on)      { clockWanted = on; apply(); save(); }
+void Midi::setLead (float ms)           { leadMs = juce::jlimit (0.0f, 60.0f, ms); apply(); save(); }
+void Midi::setFollowsClock (bool on)    { followWanted = on; apply(); save(); }
+void Midi::setOnBeat (bool on)          { beatWanted = on; apply(); save(); }
+void Midi::setTrim (float ms)           { trimMs = juce::jlimit (-40.0f, 40.0f, ms); apply(); save(); }
+
+String Midi::clockSource() const
 {
-    leadMs = juce::jlimit (0.0f, 60.0f, ms);
-    engine.setClockOut (clockWanted && ! clockOuts.empty(), leadMs);
-    save();
+    const juce::SpinLock::ScopedLockType g (clockSrcLock);
+    return clockSrc != nullptr && juce::Time::getMillisecondCounterHiRes() - clockSrcAt < 1000.0 ? clockSrcName : String();
+}
+
+void Midi::clockFrom (const void* source, const String& name, juce::uint8 byte, double arrivedMs)
+{
+    {
+        const juce::SpinLock::ScopedLockType g (clockSrcLock);
+        if (source != clockSrc)
+        {
+            if (clockSrc != nullptr && arrivedMs - clockSrcAt < 1000.0) return;       // another input is the clock
+            clockSrc = source; clockSrcName = name;
+        }
+        clockSrcAt = arrivedMs;
+    }
+    engine.clockIn (byte, arrivedMs);
 }
 
 juce::StringArray Midi::inputNames() const { juce::StringArray n; for (auto& i : inputs) n.add (i->getName()); return n; }
@@ -377,6 +402,7 @@ void Midi::scan()
         if (! there)
         {
             if (e16In.load() == inputs[i].get()) e16In = nullptr;
+            { const juce::SpinLock::ScopedLockType g (clockSrcLock); if (clockSrc == inputs[i].get()) clockSrc = nullptr; }
             inputs[i]->stop();
             inputs.erase (inputs.begin() + (long) i);
         }
@@ -422,13 +448,21 @@ void Midi::scan()
             if (! open) if (auto o = juce::MidiOutput::openDevice (d.identifier)) clockOuts.push_back (std::move (o));
         }
     }
-    engine.setClockOut (clockWanted && ! clockOuts.empty(), leadMs);
+    apply();
 }
 
 // ==================================================================================== messages
 void Midi::handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& m)
 {
-    incoming (m, source != nullptr && source == e16In.load());
+    const bool fromE16 = source != nullptr && source == e16In.load();
+    if (m.getRawDataSize() == 1 && ! fromE16)
+    {
+        const auto byte = m.getRawData()[0];
+        if (byte == 0xF8 || byte == 0xFA || byte == 0xFB || byte == 0xFC)
+            clockFrom (source, source != nullptr ? source->getName() : String(), byte, juce::Time::getMillisecondCounterHiRes());
+        return;
+    }
+    incoming (m, fromE16);
 }
 
 void Midi::incoming (const juce::MidiMessage& m, bool fromE16)

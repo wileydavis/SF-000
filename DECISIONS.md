@@ -214,7 +214,7 @@ a snapshot could reach it later.
     millisecond. USB MIDI is no finer than that. If the OXI One needs tighter, CoreMIDI can be given
     timestamps directly; that needs code only a Mac can build and test.
 66. **SF-000 does not follow an outside clock.** The spec proposed the internal clock as the main,
-    tested path.
+    tested path. (Changed in the sixth build: see 87.)
 67. **The E16 scene is written by the app** from the rig table, in the suite's PERF scene's form:
     lane n is page n and channel n, a knob in place p sends CC 11 + p. Ring colours follow the
     screen (white sound, red shape, light blue levels and EQ); the snapshot knobs are violet (the
@@ -284,6 +284,51 @@ a snapshot could reach it later.
     sequencer by holding an empty pattern for it.
 86. **It is on the screen only.** The E16's pages are unchanged.
 
+## Sixth build (Nov 11): following a clock
+
+87. **The clock is sent, followed, or neither**, one choice in AUDIO AND MIDI (it was a SEND
+    switch). You asked for the OXI One as the clock: tempo, start and stop on it, and other gear
+    driven from it alongside SF-000. A rig that followed and sent at once could be answered by its
+    own clock, so it never does both.
+88. **Following takes the sender's ticks, START, STOP and CONTINUE.** START's next tick is bar 1's
+    first step. A song position sent on its own is not read. The clock is taken from one input at a
+    time: the first to send, until it has been silent for a second. The ONE shows several USB ports
+    and the same clock on two would otherwise count double. The E16's ports are never the clock.
+89. **The sender's clock is a line through its ticks, not the ticks themselves**: each tick's time
+    goes through a delay-locked loop, narrow (1.2 Hz) once settled and wide (3 Hz) for the first two
+    beats and whenever two ticks running are more than 1.5 ms off the same way (the tempo was
+    turned). One late tick on its own moves it little. Measured offline at 128 samples a block:
+    ticks up to 1 ms early or late leave the steps within 0.45 ms (0.7 ms with the head start of
+    ON THE BEAT, which reaches a tick or two past the last one heard); a jump from 126 to 140
+    within 0.4 ms; a sweep from 120 to 135 over three seconds within 1 ms.
+90. **The tempo shown and told to the instruments is that line's, slowed, and set on the tenth of a
+    bpm it is plainly at**, so echo times do not wander. It is written to the TEMPO control: the
+    readout says CLOCK IN, a hand on TEMPO is overruled, and it is the tempo the rig keeps.
+91. **With no clock coming in it runs on its own.** If the ticks stop without a STOP it plays on
+    alone at that tempo rather than stopping the show. If ticks begin while it is already playing,
+    it takes the nearest one for where it is, so nothing jumps.
+92. **RUN by hand still works while following.** Stopped and started here under a running clock, it
+    comes back in at the sender's place in the bar. Started here while the sender is stopped, it
+    plays from the top, and the sender's START later takes it back to the top.
+93. **ON THE BEAT (the default) plays SF-000's own steps ahead of the clock by the time the rig
+    takes to sound**: one buffer's wait, the interface's output delay as the system reports it, and
+    the look-ahead in the lanes and the master. So they are heard with gear the sender plays
+    directly. Lanes the sender plays by MIDI cannot be played ahead and are heard that much later.
+    WITH NOTES IN gives no head start: the rig's own steps are heard with those lanes, that much
+    after the sender's gear. *proposed* default: say if WITH NOTES IN should be it.
+94. **TRIM is plus or minus 30 ms on top**, for the ear. The figure is worked out afresh as the
+    buffer or the inserts change, so it does not go stale.
+95. **After START, bar 1's first step cannot be played ahead and is played at once.** No step is
+    ever skipped to catch up: what should already have sounded is played in the first block.
+96. **Most of the delay is look-ahead, about 25 ms of some 30** at 48 kHz: 512 samples in each
+    instrument (the suite's pocket look-ahead), 512 more on a lane with a look-ahead insert, and
+    180 in the master.
+    I left it alone. Shortening it would change the sound's design; it is the thing to look at if
+    30 ms between the ONE's gear and the lanes it plays is too much.
+97. **The followed clock has not met the ONE.** It is tested with made-up ticks. I do not know the
+    ONE's jitter over USB, whether it needs a setting to send its clock, or whether the MkII has
+    the per-sequencer time offset the first ONE's beta firmware had.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -291,5 +336,5 @@ a snapshot could reach it later.
 - Not yet reported back from the Mac: the fix for the crash on quit, the cut in the screen's load
   (and the Metal split-paint flag behind it), and everything MIDI on real hardware: the E16 scene,
   its rings, knob 16's swap, the page following the lane, the OXI One project, the clock out and
-  CLOCK LEAD, and the sequencer's mute with the One playing a lane.
+  CLOCK LEAD, the clock followed, and the sequencer's mute with the One playing a lane.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

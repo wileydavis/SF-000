@@ -2,7 +2,8 @@
 // SF-000 MIDI: notes in for the lanes, the OXI E16 (knobs in, rings out) and the clock out.
 //   Notes: any input, a lane's number is its channel. They go straight to the engine.
 //   E16: the scene SF-000 writes itself (SF-000 --e16 file.oxie16), from the same table as below.
-//   Clock: 24 ticks a beat with START and STOP, to every output that is not the E16.
+//   Clock: sent (24 ticks a beat with START and STOP, to every output that is not the E16), or
+//   followed (the ticks, START, CONTINUE and STOP of one input at a time, never the E16's).
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Session.h"
 
@@ -45,6 +46,14 @@ public:
     void setSendsClock (bool);
     float lead() const                          { return leadMs; }
     void setLead (float ms);                    // how long a follower takes to answer the clock
+    // Following an outside clock takes the place of sending one.
+    bool followsClock() const                   { return followWanted; }
+    void setFollowsClock (bool);
+    bool onBeat() const                         { return beatWanted; }      // own steps played ahead, to be heard on the sender's beat
+    void setOnBeat (bool);
+    float trim() const                          { return trimMs; }
+    void setTrim (float ms);
+    juce::String clockSource() const;           // the input whose clock is followed now; empty: none is coming in
 
     // ---- what is connected
     juce::StringArray inputNames() const;
@@ -53,6 +62,9 @@ public:
 
     // A message as if it had come in (the inputs call this; so do tests). Any thread.
     void incoming (const juce::MidiMessage&, bool fromE16);
+    // A clock byte (tick, START, CONTINUE, STOP) from one input. The first input to send one is
+    // the clock; another is listened to only once that one has been silent for a second.
+    void clockFrom (const void* source, const juce::String& name, juce::uint8 byte, double arrivedMs);
     // Message thread, 40 times a second: knobs heard, presses, the lane in focus, the rings.
     void service();
     std::function<void (const juce::MidiMessage&)> toE16;      // tests: what would be sent to the E16
@@ -66,13 +78,18 @@ private:
     void rings (double nowMs);
     void load();
     void save() const;
+    void apply();
     static juce::File file();
 
     Engine& engine;
     Session& ses;
     const bool useDevices;
-    bool clockWanted = true;
-    float leadMs = 0.0f;
+    bool clockWanted = true, followWanted = false, beatWanted = true;
+    float leadMs = 0.0f, trimMs = 0.0f;
+    mutable juce::SpinLock clockSrcLock;
+    const void* clockSrc = nullptr;
+    double clockSrcAt = 0.0;
+    juce::String clockSrcName;
 
     // from the inputs' threads to the message thread
     std::array<std::atomic<int>, e16::kSlots> latest, sent;

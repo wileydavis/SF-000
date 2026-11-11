@@ -107,6 +107,27 @@ public:
     float clockLeadMs() const                   { return clockLead.load(); }
     bool nextClock (ClockMsg&);                 // the sender's thread: the oldest one waiting
 
+    // ---- following an outside clock (the OXI One on INT): its ticks, START, CONTINUE and STOP.
+    // Any thread; arrivedMs as for noteIn. While follow is on and ticks come in, the tempo and the
+    // transport are the sender's. This rig's own steps are played ahead of that clock by the time
+    // the rig takes to sound (onBeat: they are heard on the sender's beat, with gear it plays
+    // directly), or not ahead at all (they are heard with the notes the sender plays into it, which
+    // cannot be played ahead). trimMs moves them either way from there. With no ticks it runs on
+    // its own clock, at the tempo it last had. It sends no clock while it follows.
+    void clockIn (juce::uint8 byte, double arrivedMs);
+    void setFollow (bool on, bool onBeat, float trimMs)   { followOn = on; followBeat = onBeat; followTrim = juce::jlimit (-40.0f, 40.0f, trimMs); }
+    bool follows() const                        { return followOn.load(); }
+    bool following() const                      { return locked.load(); }       // ticks are coming in and it is on them
+    float followedBpm() const                   { return followBpm.load(); }
+    // How long after a note from outside arrives it is heard, in ms, and that time's three parts:
+    // the wait for the next buffer, the way out through the interface, the look-ahead inside (the
+    // lanes' and the master's).
+    float soundsAfterMs() const                 { return waitMs.load() + outMs.load() + insideMs.load(); }
+    float waitPartMs() const                    { return waitMs.load(); }
+    float outPartMs() const                     { return outMs.load(); }
+    float insidePartMs() const                  { return insideMs.load(); }
+    void setOutputDelayForTests (float ms)      { outMs = ms; }
+
     // ---- inserts: -1 empty, else an index into effects()
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
     using SetupState = std::vector<std::pair<juce::String, float>>;
@@ -281,6 +302,25 @@ private:
     juce::MidiBuffer liveMidi;
     void gatherNotes (int n, double spb);
     void pushClock (juce::uint8 byte, double dueMs, juce::int64 sample);
+    struct ClockIn { double ms = 0.0; juce::uint8 byte = 0; };
+    juce::AbstractFifo clockInFifo { kNoteQ };
+    std::array<ClockIn, kNoteQ> clockInQ;
+    juce::SpinLock clockInWrite;
+    std::atomic<bool> followOn { false }, followBeat { true }, locked { false };
+    std::atomic<float> followTrim { 0.0f }, followBpm { 0.0f }, waitMs { 0.0f }, outMs { 0.0f }, insideMs { 0.0f };
+    std::atomic<int> masterLat { 0 };
+    // The sender's clock as a line through its ticks: each tick's time filtered by a delay-locked
+    // loop, so a millisecond of jitter on a tick moves the line by a small part of it.
+    struct Follow
+    {
+        bool have = false;                      // ticks are coming in
+        bool rolling = false;                   // the sender's transport runs: its ticks are counted
+        bool arm = false, top = false;          // START (top) or CONTINUE came: it rolls from the next tick
+        double t0 = 0.0, t1 = 0.0, per = 0.0, lastArr = -1.0e12, bpmSlow = 0.0, bpmSaid = 0.0;
+        juce::int64 idx = 0;                    // the tick at t0, counted from START
+        int count = 0, big = 0;
+    } fol;
+    bool followClock (double aheadMs);
     std::atomic<bool> clockOn { false };
     std::atomic<float> clockLead { 0.0f }, lateMs { 0.0f };
     std::atomic<int> lateCount { 0 };
@@ -290,6 +330,7 @@ private:
     std::atomic<bool> running { false }, panicNow { false };
     bool wasRunning = false;
     double ppq = 0.0, gClock = 0.0, blockBpm = 132.0;
+    double devBufMs = 0.0;                      // the device's buffer; 0 with no device (a test: the block it renders)
     int64_t samplesDone = 0;
     std::atomic<double> ppqShown { 0.0 };
     std::atomic<uint64_t> blockCount { 0 };

@@ -17,8 +17,28 @@ card first.
 
 ## ONCE PER ONE: THE CONFIG
 
-The same as for Live. Global settings: the ONE keeps them, a project doesn't. **Shift + Back** opens
-the config; in it, hold **Shift + Back** to save.
+Global settings: the ONE keeps them, a project doesn't. **Shift + Back** opens the config; in it,
+hold **Shift + Back** to save. There are two ways round, and SF-000's AUDIO AND MIDI panel has to
+agree with the ONE (CLOCK: FOLLOW or SEND).
+
+### THE ONE IS THE CLOCK (SF-000 ON FOLLOW)
+
+Tempo, start and stop are on the ONE, and it can drive other gear alongside SF-000.
+
+| SETTING | VALUE |
+|---|---|
+| Sync (ONE stopped: **Shift + Stop** until it shows) | **INT** in the header |
+| MIDI › MIDI Transport Msgs Send | **On**: its START and STOP start and stop SF-000 |
+| MIDI › MIDI USB Thru | **Off** |
+| MIDI › Start Stop Msgs Ignore, Performance › Auto Sync | either: SF-000 sends no clock while it follows |
+
+The ONE's clock ticks have to reach SF-000 over USB as well as its START and STOP. I do not know
+whether the ONE has a setting of its own for that. If AUDIO AND MIDI still says NO CLOCK IS COMING IN
+while the ONE plays, look in the ONE's MIDI config for one.
+
+### SF-000 IS THE CLOCK (SF-000 ON SEND)
+
+The same as for Live.
 
 | SETTING | VALUE |
 |---|---|
@@ -68,12 +88,44 @@ STOP. With SF-000 stopped the ONE falls back to its own clock at the project's t
    spare project slot, and **Load** it. Open **Shift + Seq 7** and **Shift + Seq 8**: they must read
    12A and 13A. (The channel is the one byte the suite has not yet seen the ONE write itself. If one
    reads otherwise, set it there and save.)
-2. In SF-000, recall **CLEAN SLATE**, or clear the steps of the lanes the ONE will play. A lane's own
-   steps and the ONE's notes sound together, so with both you get every hit twice.
-3. AUDIO AND MIDI in SF-000: the ONE's ports are under MIDI IN and CLOCK TO, SEND CLOCK is on.
+2. In SF-000, mute the sequencer of each lane the ONE will play (**M** in the sequencer strip), or
+   recall **CLEAN SLATE**. A lane's own steps and the ONE's notes sound together, so with both you
+   get every hit twice.
+
+**The ONE as the clock:**
+
+3. AUDIO AND MIDI in SF-000: CLOCK on **FOLLOW**. The ONE's ports are under MIDI IN.
+4. Press play on the ONE. SF-000 starts with it, the panel says FOLLOWING and the ONE's tempo, and
+   TEMPO on the main screen reads CLOCK IN. Stop on the ONE stops SF-000. On the Load page,
+   **Shift + tap column 2** for MAIN.
+5. Choose where SF-000's own steps are heard (see the next section), and trim by ear.
+
+**SF-000 as the clock:**
+
+3. AUDIO AND MIDI in SF-000: CLOCK on **SEND**. The ONE's ports are under MIDI IN and CLOCK TO.
 4. RUN in SF-000. The ONE starts with it. On the Load page, **Shift + tap column 2** for MAIN.
 5. **Set CLOCK LEAD once.** With MAIN playing, AUDIO AND MIDI shows NOTES IN LAND x MS LATE. Put that
    number on CLOCK LEAD, stop and RUN again, and it should read near zero. The number belongs to the
    ONE and the buffer size; it is kept.
 
-SF-000 does not follow the ONE's clock: start and stop from SF-000.
+## THE ONE AS THE CLOCK: WHAT LINES UP WITH WHAT
+
+Three things play: gear the ONE drives directly (CV, gates, MIDI hardware), SF-000 lanes the ONE
+plays over USB, and SF-000's own sequencers. SF-000 is heard about 30 ms after a note reaches it;
+AUDIO AND MIDI shows the figure for the buffer and inserts in use, and its parts. The ONE's gear has
+no such delay, and a note cannot be played before it arrives.
+
+| IN SF-000 | ON THE ONE | ITS GEAR | LANES IT PLAYS | SF-000'S OWN STEPS |
+|---|---|---|---|---|
+| ON THE BEAT | nothing changed | on the beat | that much late | on the beat |
+| WITH NOTES IN | nothing changed | that much early | together | together |
+| ON THE BEAT | the sequencers that play SF-000 sent that much early | on the beat | on the beat | on the beat |
+| WITH NOTES IN | the sequencers that play gear sent that much late | together | together | together |
+
+- The last two rows need a time offset for each sequencer on the ONE. The first ONE was given one,
+  in milliseconds, up to 100 either way, in a firmware beta, by a forum post. I have not found it
+  in what I have of the MkII's manual, and do not know whether it moves the CV and gate outputs.
+- If the MkII has it, the fourth row is the cleaner: nothing is played early, so even the first step
+  after START lines up. With ON THE BEAT, bar 1's first step from SF-000 is that much late, once.
+- NOTES IN LAND in the panel shows the gap between the ONE's notes and SF-000's own steps as you
+  change either side.

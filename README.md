@@ -96,11 +96,25 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
 - **Notes in.** Every MIDI input is listened to. A lane's number is its channel (1 KICK to 11 VOICE),
   so the OXI One plays the lanes as it played the Live tracks. Notes and the lane's own steps sound
   together; **M** in the sequencer strip mutes a lane's own steps, so only the One plays it.
-- **Clock out.** While it runs, START, 24 ticks a beat and STOP go to every output that is not the
-  E16. The OXI One's settings and its project for SF-000 are in `controllers/oxi-one/`. CLOCK LEAD is how long the follower takes to answer: play a plain
-  sixteenth pattern from it into a lane, read NOTES IN LAND x MS LATE in the panel, and put that
-  number on CLOCK LEAD. With the clock on, RUN waits two blocks and LEAD (a few ms) before the first
-  sound. SF-000 does not follow an outside clock yet.
+- **The clock is sent, followed, or neither**: CLOCK in AUDIO AND MIDI. The choice is kept.
+- **SEND.** While it runs, START, 24 ticks a beat and STOP go to every output that is not the E16.
+  CLOCK LEAD is how long the follower takes to answer: play a plain sixteenth pattern from it into a
+  lane, read NOTES IN LAND x MS LATE in the panel, and put that number on CLOCK LEAD. With the clock
+  on, RUN waits two blocks and LEAD (a few ms) before the first sound.
+- **FOLLOW.** The OXI One (or any sender) is the clock: its START, STOP and CONTINUE are the
+  transport and its tempo is the rig's. The TEMPO readout says CLOCK IN and shows the sender's tempo.
+  SF-000 sends no clock while it follows. RUN still works by hand: stopped and started here while the
+  sender plays on, SF-000 comes back in at the sender's place in the bar. With no clock coming in,
+  SF-000 runs on its own at the tempo it last had; if the clock goes without a STOP (a cable pulled),
+  it plays on alone at that tempo.
+- **Following: where SF-000's own steps are heard.** A note from outside is heard some 30 ms after it
+  arrives (the panel says how many, and of what: the buffer, the interface, the look-ahead inside).
+  Gear the sender plays directly has no such delay. **ON THE BEAT** plays SF-000's own steps that
+  much early, so they are heard with that gear; lanes the sender plays by MIDI cannot be played
+  early and are heard that much later. **WITH NOTES IN** gives no head start: SF-000's own steps are
+  heard with the lanes the sender plays, that much after its gear. TRIM moves the steps either way
+  by ear. After START, bar 1's first step cannot be early: it is played at once. The settings for
+  the OXI One, and how to line all three up, are in `controllers/oxi-one/`.
 - **The E16.** Load `controllers/e16/SF-000.oxie16` (see `controllers/e16/README.md`). Pages 1-11
   are the lanes: the twelve knobs where the screen has them, then SEND A, SEND B, LOW and HIGH. Press
   knob 16 and it is MID (its ring turns pink); press again for HIGH. Page 12 is the sixteen snapshot
@@ -115,7 +129,8 @@ build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
-build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out, with made-up messages
+build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
+build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --notes
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute
@@ -137,20 +152,21 @@ meters when a bar has moved, the playing step.
 | `Source/Sequencer.h` | patterns, ties, ratchets, the generators, MIDI on the sample |
 | `Source/Session.*` | base scene, snapshot library, snapshot knobs and their morph, the saved file |
 | `Source/Screen.*` | the three screens |
-| `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender |
+| `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |
 | `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
-scene), `audio.xml` (the interface) and `midi.json` (clock on or off, CLOCK LEAD). Each time the app
+scene), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
 ## Not built yet
 
-- MIDI: no MIDI learn for other controllers, no following an outside clock, no notes out.
+- MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
+  START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
 - Recording of audio, MIDI and knob moves.
 - The library's sound map and audio previews; meaning filters; snapshot knob pages beyond the first.

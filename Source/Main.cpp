@@ -1082,6 +1082,273 @@ static int midiTest()
         check (lo > tick - 0.05 && hi < 60000.0 / (90.0 * 24.0) + 0.05, "a tempo change slows the ticks without a gap or a burst (" + juce::String (lo, 2) + " to " + juce::String (hi, 2) + " ms)");
     }
 
+    // 3b. following an outside clock: its START, STOP and CONTINUE, its tempo, its beat
+    {
+        struct Ev { double ms; juce::uint8 byte; };
+        struct Heard { std::vector<double> on; bool running = false, following = false; double tempo = 0.0, after = 0.0, late = 0.0; int lateN = 0; };
+        // ticks at a tempo from a moment on; returns the moment after the last one's beat-part
+        auto ticks = [] (std::vector<Ev>& v, double from, double bpm, int count, double jitter, juce::Random& r)
+        {
+            const double per = 60000.0 / (24.0 * bpm);
+            for (int i = 0; i < count; ++i) v.push_back ({ from + (double) i * per + (jitter > 0.0 ? (r.nextDouble() * 2.0 - 1.0) * jitter : 0.0), 0xF8 });
+            return from + (double) count * per;
+        };
+        // The closed hat on every eighth (or silent, with notes played in from outside), 128 samples
+        // a block unless said, the interface taken as 4 ms. Returns when each hit began, in ms of the output.
+        auto play = [] (const std::vector<Ev>& ev, double ms, int mode /* 0 follow off, 1 with notes in, 2 on the beat */, float trim,
+                        const std::vector<double>& notes = {}, std::function<void (sf0::Engine&, double)> each = nullptr, int n = 128)
+        {
+            Engine e;
+            e.prepare (48000.0, n);
+            Pattern eighths;
+            for (int k = 0; k < 16; k += 2) { eighths.steps[(size_t) k].on = true; eighths.steps[(size_t) k].vel = 1.0f; eighths.steps[(size_t) k].gate = 0.5f; }
+            for (int k = 0; k < kLanes; ++k) { e.setPattern (k, k == 1 && (notes.empty() || mode != 0) ? eighths : Pattern()); for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (k, sl, -1); }
+            e.set (cx::lane (1, cx::kSendA), 0.0f); e.set (cx::lane (1, cx::kSendB), 0.0f);
+            e.solo = 1;
+            e.setFollow (mode != 0, mode == 2, trim);
+            e.setOutputDelayForTests (4.0f);
+            juce::AudioBuffer<float> b (2, n);
+            const double dur = (double) n * 1000.0 / 48000.0;
+            size_t nextEv = 0, nextNote = 0;
+            Heard h;
+            int quiet = 100000;
+            for (int k = 0; (double) k * dur < ms; ++k)
+            {
+                const double now = (double) k * dur;                    // the engine's own clock, with no device: the samples
+                while (nextEv < ev.size() && ev[nextEv].ms <= now) { e.clockIn (ev[nextEv].byte, ev[nextEv].ms); ++nextEv; }
+                while (nextNote < notes.size() && notes[nextNote] <= now)
+                {
+                    e.noteIn (juce::MidiMessage::noteOn (2, 60, (juce::uint8) 127), notes[nextNote]);
+                    e.noteIn (juce::MidiMessage::noteOff (2, 60), notes[nextNote] + 40.0);
+                    ++nextNote;
+                }
+                if (each) each (e, now);
+                e.render (b);
+                for (int i = 0; i < n; ++i)
+                {
+                    const bool loud = std::abs (b.getSample (0, i)) + std::abs (b.getSample (1, i)) > 0.03f;      // (well above the hat's tail)
+                    if (loud && quiet > 2400) h.on.push_back ((double) (k * n + i) / 48.0);
+                    quiet = loud ? 0 : quiet + 1;
+                }
+            }
+            h.running = e.isRunning(); h.following = e.following(); h.tempo = e.tempo(); h.after = e.soundsAfterMs();
+            h.late = e.notesLateMs(); h.lateN = e.notesHeard();
+            return h;
+        };
+        juce::Random rnd (7);
+        const double beat = 60000.0 / 126.0;
+
+        // how long after it arrives a note from outside begins, on the output: the yardstick
+        std::vector<double> played;
+        for (int k = 0; k < 16; ++k) played.push_back (100.0 + (double) k * beat / 2.0);
+        const auto ref = play ({}, 4500.0, 0, 0.0f, played);
+        double lat = 0.0, latSpread = 0.0;
+        for (size_t k = 0; k < ref.on.size() && k < played.size(); ++k) lat += (ref.on[k] - played[k]) / (double) std::min (ref.on.size(), played.size());
+        for (size_t k = 0; k < ref.on.size() && k < played.size(); ++k) latSpread = std::max (latSpread, std::abs (ref.on[k] - played[k] - lat));
+        check (ref.on.size() == played.size() && latSpread < 0.2, "the yardstick: a note from outside begins " + juce::String (lat, 2) + " ms after it arrives, give or take " + juce::String (latSpread, 2));
+        // how far each hit is from where a note the sender played on that eighth would be (ms); `from`: the first eighth counted
+        auto errors = [&] (const Heard& h, double first, double perEighth, double shift, size_t from, size_t upTo = 100000)
+        {
+            double worst = 0.0;
+            for (size_t k = from; k < h.on.size() && k < upTo; ++k) worst = std::max (worst, std::abs (h.on[k] - (first + (double) k * perEighth + lat + shift)));
+            return worst;
+        };
+
+        // A. START, then a steady clock: each eighth where a note the sender played then would be
+        std::vector<Ev> a { { 50.0, 0xFA } };
+        ticks (a, 51.0, 126.0, 24 * 12, 0.0, rnd);
+        const auto ha = play (a, 5000.0, 1, 0.0f);
+        check (ha.on.size() == 21 && ha.running && ha.following && std::abs (ha.on[0] - (51.0 + lat)) < 0.2 && errors (ha, 51.0, beat / 2.0, 0.0, 0) < 0.3,
+               "START and a steady 126: it runs, bar 1's first step sounds on the first tick, and every eighth is where the sender's own note would be (worst "
+                   + juce::String (errors (ha, 51.0, beat / 2.0, 0.0, 0), 2) + " ms over " + juce::String ((int) ha.on.size()) + ")");
+        check (std::abs (ha.tempo - 126.0) < 0.001, "TEMPO reads the sender's: " + juce::String (ha.tempo, 2));
+        const auto hOff = play (a, 2000.0, 0, 0.0f);
+        check (hOff.on.empty() && ! hOff.running && ! hOff.following, "with FOLLOW off, a clock coming in starts nothing");
+
+        // B. the same clock with a millisecond of jitter on every tick, and the rig's tempo far from the sender's to begin with
+        std::vector<Ev> bj { { 50.0, 0xFA } };
+        ticks (bj, 51.0, 126.0, 24 * 20, 1.0, rnd);
+        const auto hb = play (bj, 9000.0, 1, 0.0f);
+        check (hb.on.size() >= 36 && errors (hb, 51.0, beat / 2.0, 0.0, 4) < 0.5,
+               "ticks arriving up to 1 ms early or late: the eighths stay within " + juce::String (errors (hb, 51.0, beat / 2.0, 0.0, 4), 2) + " ms once it has settled ("
+                   + juce::String (errors (hb, 51.0, beat / 2.0, 0.0, 0, 4), 2) + " ms in the first two beats)");
+        check (std::abs (hb.tempo - 126.0) < 0.001, "and TEMPO still reads " + juce::String (hb.tempo, 2));
+
+        // C. on the beat: its own steps are played ahead by the time the rig takes to sound
+        const auto hc = play (a, 5000.0, 2, 0.0f);
+        check (hc.on.size() == 21 && errors (hc, 51.0, beat / 2.0, -hc.after, 1) < 0.3 && hc.on[0] - (51.0 + lat) < 0.2 && hc.on[0] - (51.0 + lat) > -2.8,
+               "ON THE BEAT: every eighth is " + juce::String (hc.after, 1) + " ms ahead of that (the buffer, the interface, the look-ahead: heard on the sender's beat), worst "
+                   + juce::String (errors (hc, 51.0, beat / 2.0, -hc.after, 1), 2) + " ms; bar 1's first step cannot be, and is played at once, in the block the first tick is heard in (" + juce::String (hc.on[0] - (51.0 + lat), 2) + " ms)");
+        const auto ht = play (a, 5000.0, 1, 6.0f);
+        check (errors (ht, 51.0, beat / 2.0, -6.0, 1) < 0.3, "TRIM at 6 ms plays them 6 ms earlier (worst " + juce::String (errors (ht, 51.0, beat / 2.0, -6.0, 1), 2) + " ms)");
+
+        // the panel's readout: where the sender's notes land against the rig's own steps
+        std::vector<double> sent;
+        for (int k = 4; k < 20; ++k) sent.push_back (51.0 + (double) k * beat / 2.0);
+        const auto hn = play (a, 5000.0, 1, 0.0f, sent), hm = play (a, 5000.0, 2, 0.0f, sent);
+        check (hn.lateN >= 12 && std::abs (hn.late) < 0.3 && hm.lateN >= 12 && std::abs (hm.late - hm.after) < 0.3,
+               "NOTES IN LAND reads " + juce::String (hn.late, 2) + " ms with WITH NOTES IN and " + juce::String (hm.late, 1) + " ms late with ON THE BEAT: the head start the rig's own steps were given");
+
+        {
+            const auto hj = play (bj, 9000.0, 2, 0.0f);
+            check (errors (hj, 51.0, beat / 2.0, -hj.after, 4) < 0.9, "ON THE BEAT under that jitter: within " + juce::String (errors (hj, 51.0, beat / 2.0, -hj.after, 4), 2) + " ms of the beat it is aiming " + juce::String (hj.after, 1) + " ms ahead for");
+        }
+        // the same at 512 samples a block, with jitter: a note from outside waits a longer buffer, and the head start grows with it
+        {
+            std::vector<double> p5;
+            for (int k = 0; k < 8; ++k) p5.push_back (100.0 + (double) k * beat / 2.0);
+            const auto r5 = play ({}, 2500.0, 0, 0.0f, p5, nullptr, 512);
+            double lat5 = 0.0;
+            for (size_t k = 0; k < r5.on.size() && k < p5.size(); ++k) lat5 += (r5.on[k] - p5[k]) / (double) std::min (r5.on.size(), p5.size());
+            const auto h5 = play (bj, 9000.0, 2, 0.0f, {}, nullptr, 512);
+            double worst5 = 0.0;
+            for (size_t k = 4; k < h5.on.size(); ++k) worst5 = std::max (worst5, std::abs (h5.on[k] - (51.0 + (double) k * beat / 2.0 + lat5 - h5.after)));
+            check (r5.on.size() == p5.size() && h5.on.size() >= 36 && worst5 < 0.9 && std::abs (h5.after - hc.after - 8.0) < 0.01,
+                   "at 512 samples a block, ON THE BEAT under the same jitter: " + juce::String (h5.after, 1) + " ms ahead, within " + juce::String (worst5, 2) + " ms");
+        }
+
+        // D. the sender's tempo turned from 126 to 140 between two ticks
+        std::vector<Ev> d { { 50.0, 0xFA } };
+        const double turn = ticks (d, 51.0, 126.0, 24 * 4, 0.0, rnd);
+        ticks (d, turn, 140.0, 24 * 14, 0.0, rnd);
+        const auto hd = play (d, 7500.0, 1, 0.0f);
+        double worstTurn = 0.0, worstAfter = 0.0;
+        for (size_t k = 8; k < hd.on.size(); ++k)
+        {
+            const double err = std::abs (hd.on[k] - (turn + (double) (k - 8) * 60000.0 / 140.0 / 2.0 + lat));
+            (k < 12 ? worstTurn : worstAfter) = std::max (k < 12 ? worstTurn : worstAfter, err);
+        }
+        check (hd.on.size() >= 30 && worstTurn < 4.0 && worstAfter < 0.3 && std::abs (hd.tempo - 140.0) < 0.001,
+               "the sender turned from 126 to 140 at once: within " + juce::String (worstTurn, 2) + " ms over the next two beats, " + juce::String (worstAfter, 2) + " ms after them; TEMPO reads " + juce::String (hd.tempo, 2));
+
+        // E. STOP, CONTINUE, START again
+        std::vector<Ev> t { { 50.0, 0xFA } };
+        const double stopAt = ticks (t, 51.0, 126.0, 24 * 2 + 6, 0.0, rnd);         // two beats and a sixteenth, then STOP
+        t.push_back ({ stopAt - 5.0, 0xFC });
+        bool stopped = false, resumed = false, again = false;
+        t.push_back ({ stopAt + 800.0, 0xFB });
+        const double contAt = stopAt + 801.0;
+        const double restart = ticks (t, contAt, 126.0, 24 * 2, 0.0, rnd);          // CONTINUE: tick 54 next, the eighth at tick 60
+        t.push_back ({ restart - 5.0, 0xFC });
+        t.push_back ({ restart + 300.0, 0xFA });
+        ticks (t, restart + 301.0, 126.0, 24 * 3, 0.0, rnd);
+        const auto he = play (t, restart + 301.0 + 3.0 * beat - 30.0, 1, 0.0f, {}, [&] (sf0::Engine& e, double now)
+        {
+            if (now > stopAt + 100.0 && now < stopAt + 700.0) stopped = stopped || ! e.isRunning();
+            if (now > contAt + 100.0 && now < restart) resumed = resumed || e.isRunning();
+            if (now > restart + 400.0) again = again || e.isRunning();
+        });
+        // heard: eighths 0-4 (ticks 0, 12, 24, 36, 48), silence, then tick 60, 72, 84, 96 from the CONTINUE, then 0, 12, ... from the START
+        std::vector<double> want;
+        for (int k = 0; k < 5; ++k) want.push_back (51.0 + (double) k * beat / 2.0);
+        for (int k = 60; k < 54 + 48; k += 12) want.push_back (contAt + (double) (k - 54) * beat / 24.0);
+        for (int k = 0; k < 6; ++k) want.push_back (restart + 301.0 + (double) k * beat / 2.0);
+        double worstE = 0.0;
+        for (size_t k = 0; k < he.on.size() && k < want.size(); ++k) worstE = std::max (worstE, std::abs (he.on[k] - (want[k] + lat)));
+        check (stopped && resumed && again && he.on.size() == want.size() && worstE < 0.3,
+               "STOP stops it, CONTINUE takes it on from where it stopped, START takes it back to the top (" + juce::String ((int) he.on.size()) + " of " + juce::String ((int) want.size()) + " hits, worst " + juce::String (worstE, 2) + " ms)");
+
+        // F. the clock gone without a STOP (a cable pulled): it runs on alone at that tempo
+        std::vector<Ev> g { { 50.0, 0xFA } };
+        const double goneAt = ticks (g, 51.0, 118.5, 24 * 4, 0.0, rnd);
+        const auto hg = play (g, goneAt + 3000.0, 1, 0.0f);
+        double worstG = 0.0;
+        for (size_t k = 0; k < hg.on.size(); ++k) worstG = std::max (worstG, std::abs (hg.on[k] - (51.0 + (double) k * 60000.0 / 118.5 / 2.0 + lat)));
+        check (hg.running && ! hg.following && hg.on.size() >= 19 && worstG < 1.5 && std::abs (hg.tempo - 118.5) < 0.001,
+               "the clock gone without a STOP: it plays on alone at " + juce::String (hg.tempo, 1) + ", " + juce::String (worstG, 2) + " ms from where the sender would have been three seconds on");
+
+        // H. a sender that sends ticks while it is stopped, and starts them afresh with START
+        {
+            std::vector<Ev> h;
+            const double idleEnd = ticks (h, 10.0, 126.0, 40, 0.0, rnd);
+            const double go = idleEnd - 12.0;                               // START 12 ms before the tick that was due: its first tick comes 1 ms after it
+            while (! h.empty() && h.back().ms >= go) h.pop_back();
+            h.push_back ({ go, 0xFA });
+            ticks (h, go + 1.0, 126.0, 24 * 8, 0.0, rnd);
+            bool early = false;
+            const auto hh = play (h, go + 3500.0, 1, 0.0f, {}, [&] (sf0::Engine& e, double now) { if (now < go - 5.0) early = early || e.isRunning(); });
+            check (! early && hh.on.size() >= 14 && errors (hh, go + 1.0, beat / 2.0, 0.0, 0) < 0.3,
+                   "ticks sent while the sender is stopped start nothing; its START and the fresh tick after it are bar 1 (worst " + juce::String (errors (hh, go + 1.0, beat / 2.0, 0.0, 0), 2) + " ms)");
+        }
+
+        // I. RUN by hand while the sender plays on: stopped here, started here, back in at the sender's place
+        {
+            double posErr = 1.0e9, lastPos = 0.0;
+            const auto hi = play (a, 5000.0, 1, 0.0f, {}, [&] (sf0::Engine& e, double now)
+            {
+                if (std::abs (now - 1200.0) < 1.4) e.setRunning (false);
+                if (std::abs (now - 2300.0) < 1.4) e.setRunning (true);
+                if (now > 4000.0) { lastPos = e.songPos(); posErr = std::abs (lastPos - (now - 51.0) / beat); }
+            });
+            double worstI = 0.0; int inGap = 0;
+            for (auto on : hi.on)
+            {
+                if (on > 1300.0 && on < 2300.0) ++inGap;
+                const double q = (on - lat - 51.0) / (beat / 2.0);
+                worstI = std::max (worstI, std::abs (q - std::round (q)) * beat / 2.0);
+            }
+            check (inGap == 0 && hi.running && worstI < 0.3 && posErr < 0.02,
+                   "stopped and started by hand under a running clock: silent between, then back on the sender's eighths (worst " + juce::String (worstI, 2) + " ms) at the sender's place in the bar (beat "
+                       + juce::String (lastPos, 2) + ")");
+        }
+
+        // J. one tick delivered 8 ms late, the next on time
+        {
+            std::vector<Ev> l { { 50.0, 0xFA } };
+            ticks (l, 51.0, 126.0, 24 * 12, 0.0, rnd);
+            l[1 + 24 * 4 + 5].ms += 8.0;
+            const auto hl = play (l, 5000.0, 1, 0.0f);
+            check (errors (hl, 51.0, beat / 2.0, 0.0, 0) < 0.6, "one tick delivered 8 ms late moves the eighths by no more than " + juce::String (errors (hl, 51.0, beat / 2.0, 0.0, 0), 2) + " ms");
+        }
+
+        // K. the sender's tempo swept from 120 to 135 over three seconds, half a bpm at a time, with jitter
+        {
+            std::vector<Ev> w { { 50.0, 0xFA } };
+            std::vector<double> eighth;
+            double at = 51.0;
+            for (int k = 0; k < 24 * 16; ++k)
+            {
+                if (k % 12 == 0) eighth.push_back (at);
+                w.push_back ({ at + (rnd.nextDouble() * 2.0 - 1.0) * 0.5, 0xF8 });
+                const double bpm = juce::jlimit (120.0, 135.0, 120.0 + std::floor ((at - 1000.0) / 100.0) * 0.5);
+                at += 60000.0 / (24.0 * bpm);
+            }
+            const auto hw = play (w, at - 40.0, 1, 0.0f);
+            double worstW = 0.0;
+            for (size_t k = 2; k < hw.on.size() && k < eighth.size(); ++k) worstW = std::max (worstW, std::abs (hw.on[k] - (eighth[k] + lat)));
+            check (hw.on.size() + 1 >= eighth.size() && worstW < 2.0 && std::abs (hw.tempo - 135.0) < 0.001,
+                   "the sender swept from 120 to 135 over three seconds: the eighths stay within " + juce::String (worstW, 2) + " ms of it all the way; TEMPO ends on " + juce::String (hw.tempo, 1));
+        }
+
+        // G. two inputs carrying the same clock: one is listened to
+        {
+            Engine e;
+            e.prepare (48000.0, 128);
+            Session ses (e, false);
+            Midi m (e, ses, false);
+            m.setFollowsClock (true);
+            juce::AudioBuffer<float> b (2, 128);
+            int portA = 0, portB = 0;
+            const double per = 60000.0 / (24.0 * 126.0), dur = 128.0 * 1000.0 / 48000.0;
+            double next = 20.0;
+            bool first = true;
+            for (int k = 0; (double) k * dur < 3000.0; ++k)
+            {
+                while (next <= (double) k * dur)
+                {
+                    if (first) { m.clockFrom (&portA, "ONE A", 0xFA, next - 1.0); m.clockFrom (&portB, "ONE B", 0xFA, next - 0.9); first = false; }
+                    m.clockFrom (&portA, "ONE A", 0xF8, next); m.clockFrom (&portB, "ONE B", 0xF8, next + 0.2);
+                    next += per;
+                }
+                e.render (b);
+            }
+            check (e.following() && std::abs (e.followedBpm() - 126.0f) < 0.01f && e.isRunning(), "the same clock on two inputs is counted once (" + juce::String (e.followedBpm(), 1) + " bpm, not twice that)");
+            m.setFollowsClock (false);
+            for (int k = 0; k < 4; ++k) e.render (b);
+            check (! e.following(), "FOLLOW switched off lets go of the clock");
+        }
+    }
+
     // 4. the E16: knobs in, values back, presses, the page's lane, travelling rings
     juce::StringArray ringDump;
     {
@@ -1355,21 +1622,53 @@ public:
         : audio (dm, 0, 0, 2, 2, false, false, true, false), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
-        for (auto* l : { &load, &ins, &e16, &outs, &late, &leadLabel }) { addAndMakeVisible (*l); l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1)); l->setFont (juce::FontOptions (14.0f)); }
-        addAndMakeVisible (clock);
-        clock.setButtonText ("SEND CLOCK WHILE IT RUNS (START, 24 TICKS A BEAT, STOP)");
-        clock.setToggleState (midi.sendsClock(), juce::dontSendNotification);
-        clock.onClick = [this] { midi.setSendsClock (clock.getToggleState()); };
-        addAndMakeVisible (lead);
+        for (auto* l : { &load, &ins, &e16, &clockLabel, &status, &stepsLabel, &late, &knobLabel })
+        {
+            addAndMakeVisible (*l);
+            l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
+            l->setFont (juce::FontOptions (14.0f));
+            l->setMinimumHorizontalScale (1.0f);
+        }
+        late.setJustificationType (juce::Justification::topLeft);
+        clockLabel.setText ("CLOCK", juce::dontSendNotification);
+        stepsLabel.setText ("OWN STEPS", juce::dontSendNotification);
+        auto radio = [this] (juce::TextButton& b, const char* text, int group, std::function<void()> chosen)
+        {
+            addAndMakeVisible (b);
+            b.setButtonText (text);
+            b.setRadioGroupId (group);
+            b.setClickingTogglesState (true);
+            b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4D514E));
+            b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff428F47));
+            b.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffE8E5E1));
+            b.setColour (juce::TextButton::textColourOnId, juce::Colour (0xffE8E5E1));
+            b.onClick = [&b, chosen] { if (b.getToggleState()) chosen(); };
+        };
+        // the clock is sent, followed, or neither
+        radio (off, "OFF", 1,       [this] { midi.setFollowsClock (false); midi.setSendsClock (false); show(); });
+        radio (send, "SEND", 1,     [this] { midi.setFollowsClock (false); midi.setSendsClock (true); show(); });
+        radio (follow, "FOLLOW", 1, [this] { midi.setFollowsClock (true); show(); });
+        (midi.followsClock() ? follow : midi.sendsClock() ? send : off).setToggleState (true, juce::dontSendNotification);
+        // following: where the rig's own steps are heard
+        radio (onBeat, "ON THE BEAT", 2,     [this] { midi.setOnBeat (true); });
+        radio (withNotes, "WITH NOTES IN", 2, [this] { midi.setOnBeat (false); });
+        (midi.onBeat() ? onBeat : withNotes).setToggleState (true, juce::dontSendNotification);
+        for (auto* sl : { &lead, &trim })
+        {
+            addAndMakeVisible (*sl);
+            sl->setTextValueSuffix (" ms");
+            sl->setSliderStyle (juce::Slider::LinearHorizontal);
+            sl->setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 22);
+        }
         lead.setRange (0.0, 40.0, 0.5);
         lead.setValue (midi.lead(), juce::dontSendNotification);
-        lead.setTextValueSuffix (" ms");
-        lead.setSliderStyle (juce::Slider::LinearHorizontal);
-        lead.setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 22);
         lead.onValueChange = [this] { midi.setLead ((float) lead.getValue()); };
-        leadLabel.setText ("CLOCK LEAD", juce::dontSendNotification);
-        setSize (520, 604);
-        timerCallback();
+        trim.setRange (-30.0, 30.0, 0.5);
+        trim.setValue (midi.trim(), juce::dontSendNotification);
+        trim.setDoubleClickReturnValue (true, 0.0);
+        trim.onValueChange = [this] { midi.setTrim ((float) trim.getValue()); };
+        setSize (520, 720);
+        show();
         startTimerHz (4);
     }
     void resized() override
@@ -1380,12 +1679,21 @@ public:
         load.setBounds (r.removeFromTop (24));
         ins.setBounds (r.removeFromTop (24));
         e16.setBounds (r.removeFromTop (24));
-        outs.setBounds (r.removeFromTop (24));
-        clock.setBounds (r.removeFromTop (26));
-        auto row = r.removeFromTop (28);
-        leadLabel.setBounds (row.removeFromLeft (110));
-        lead.setBounds (row);
-        late.setBounds (r.removeFromTop (44));
+        r.removeFromTop (4);
+        auto row = r.removeFromTop (26);
+        clockLabel.setBounds (row.removeFromLeft (110));
+        for (auto* b : { &off, &send, &follow }) { b->setBounds (row.removeFromLeft (96)); row.removeFromLeft (6); }
+        r.removeFromTop (4);
+        status.setBounds (r.removeFromTop (24));
+        row = r.removeFromTop (26);
+        stepsLabel.setBounds (row.removeFromLeft (110));
+        for (auto* b : { &onBeat, &withNotes }) { b->setBounds (row.removeFromLeft (147)); row.removeFromLeft (6); }
+        r.removeFromTop (4);
+        row = r.removeFromTop (28);
+        knobLabel.setBounds (row.removeFromLeft (110));
+        lead.setBounds (row); trim.setBounds (row);
+        r.removeFromTop (2);
+        late.setBounds (r);
     }
     void paint (juce::Graphics& g) override
     {
@@ -1394,26 +1702,102 @@ public:
     }
 
 private:
+    // what the chosen clock needs on show
+    void show()
+    {
+        const bool fol = midi.followsClock(), snd = ! fol && midi.sendsClock();
+        for (auto* c : std::initializer_list<juce::Component*> { &stepsLabel, &onBeat, &withNotes, &trim }) c->setVisible (fol);
+        lead.setVisible (snd);
+        knobLabel.setVisible (fol || snd);
+        knobLabel.setText (fol ? "TRIM" : "CLOCK LEAD", juce::dontSendNotification);
+        timerCallback();
+    }
     void timerCallback() override
     {
         auto list = [] (const juce::StringArray& n) { return n.isEmpty() ? juce::String ("NONE") : n.joinIntoString (", "); };
-        load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF THE TIME EACH BUFFER ALLOWS (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
+        auto ms = [] (float v) { return juce::String (juce::roundToInt (v)); };
+        load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
         e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")), juce::dontSendNotification);
-        outs.setText ("CLOCK TO: " + list (midi.clockNames()), juce::dontSendNotification);
+        const bool fol = midi.followsClock(), snd = ! fol && midi.sendsClock();
         const int n = engine.notesHeard();
-        late.setText (n == 0 ? juce::String ("NOTES IN: NONE YET WHILE THE CLOCK RUNS. PLAY A PLAIN SIXTEENTH PATTERN INTO A LANE TO SEE HOW LATE IT LANDS.")
-                             : "NOTES IN LAND " + juce::String (std::abs (engine.notesLateMs()), 1) + " MS " + (engine.notesLateMs() >= 0.0f ? "LATE" : "EARLY")
-                                   + " (AGAINST THE SIXTEENTHS, " + juce::String (n) + " NOTES). ADD THAT TO CLOCK LEAD, OR TAKE IT OFF.",
-                      juce::dontSendNotification);
+        const juce::String landed = "NOTES IN LAND " + juce::String (std::abs (engine.notesLateMs()), 1) + " MS " + (engine.notesLateMs() >= 0.0f ? "LATE" : "EARLY");
+        if (fol)
+        {
+            const auto src = midi.clockSource();
+            status.setText (engine.following() ? "FOLLOWING " + (src.isNotEmpty() ? src.toUpperCase() : juce::String ("A CLOCK")) + ": " + juce::String (engine.followedBpm(), 1) + " BPM. ITS START AND STOP ARE THE TRANSPORT."
+                                               : juce::String ("NO CLOCK IS COMING IN: SF-000 RUNS ON ITS OWN TEMPO."), juce::dontSendNotification);
+            const juce::String total = ms (engine.soundsAfterMs());
+            late.setText ("A NOTE FROM OUTSIDE IS HEARD ABOUT " + total + " MS AFTER IT ARRIVES: " + ms (engine.waitPartMs()) + " WAITING FOR A BUFFER, " + ms (engine.outPartMs())
+                              + " OUT THROUGH THE INTERFACE, " + ms (engine.insidePartMs()) + " LOOK-AHEAD INSIDE.\n"
+                              + (midi.onBeat() ? "ON THE BEAT: SF-000'S OWN STEPS ARE PLAYED THAT MUCH EARLY, SO THEY ARE HEARD WITH GEAR THE SENDER PLAYS DIRECTLY. LANES IT PLAYS BY MIDI ARE HEARD " + total + " MS LATER."
+                                               : "WITH NOTES IN: SF-000'S OWN STEPS ARE HEARD WITH THE LANES THE SENDER PLAYS BY MIDI, " + total + " MS AFTER GEAR IT PLAYS DIRECTLY.")
+                              + (n > 0 ? "\n" + landed + " AGAINST SF-000'S OWN STEPS (" + juce::String (n) + " NOTES)." : juce::String()),
+                          juce::dontSendNotification);
+        }
+        else if (snd)
+        {
+            status.setText ("CLOCK TO: " + list (midi.clockNames()) + "   (START, 24 TICKS A BEAT, STOP, WHILE IT RUNS)", juce::dontSendNotification);
+            late.setText (n == 0 ? juce::String ("NOTES IN: NONE YET WHILE THE CLOCK RUNS. PLAY A PLAIN SIXTEENTH PATTERN INTO A LANE TO SEE HOW LATE IT LANDS.")
+                                 : landed + " (AGAINST THE SIXTEENTHS, " + juce::String (n) + " NOTES). ADD THAT TO CLOCK LEAD, OR TAKE IT OFF.",
+                          juce::dontSendNotification);
+        }
+        else
+        {
+            status.setText ("NO CLOCK IS SENT OR FOLLOWED.", juce::dontSendNotification);
+            late.setText ({}, juce::dontSendNotification);
+        }
     }
     juce::AudioDeviceSelectorComponent audio;
     sf0::Engine& engine;
     sf0::Midi& midi;
-    juce::Label load, ins, e16, outs, late, leadLabel;
-    juce::ToggleButton clock;
-    juce::Slider lead;
+    juce::Label load, ins, e16, clockLabel, status, stepsLabel, late, knobLabel;
+    juce::TextButton off, send, follow, onBeat, withNotes;
+    juce::Slider lead, trim;
 };
+
+// The AUDIO AND MIDI panel drawn to a file: --shot f.png --setup [send|follow|off] (a clock is fed in for follow).
+static int shotSetup (const juce::StringArray& args)
+{
+    using namespace sf0;
+    auto arg = [&] (const char* name, juce::String def) { const int i = args.indexOf (name); return i >= 0 && i + 1 < args.size() ? args[i + 1].unquoted() : def; };
+    const auto mode = arg ("--setup", "follow");
+    juce::AudioDeviceManager dm;
+    Engine e;
+    e.prepare (48000.0, 128);
+    Session ses (e, false);
+    Midi m (e, ses, false);
+    m.setFollowsClock (mode == "follow");
+    m.setSendsClock (mode == "send");
+    if (args.contains ("--notes")) m.setOnBeat (false);
+    e.setOutputDelayForTests (4.1f);
+    juce::AudioBuffer<float> b (2, 128);
+    int port = 0;
+    const double per = 60000.0 / (24.0 * 126.0), dur = 128.0 * 1000.0 / 48000.0;
+    double next = 20.0;
+    for (int k = 0; (double) k * dur < 2000.0; ++k)
+    {
+        if (mode == "follow") for (; next <= (double) k * dur; next += per) { if (next == 20.0) m.clockFrom (&port, "OXI ONE", 0xFA, next - 1.0); m.clockFrom (&port, "OXI ONE", 0xF8, next); }
+        e.render (b);
+    }
+    int other = 0;
+    if (mode == "follow") m.clockFrom (&other, "OXI ONE", 0xFE, juce::Time::getMillisecondCounterHiRes());     // (so the panel finds a source still sending)
+    SetupPanel panel (dm, e, m);
+    const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
+    juce::Image img (juce::Image::ARGB, juce::roundToInt ((float) panel.getWidth() * scale), juce::roundToInt ((float) panel.getHeight() * scale), true);
+    {
+        juce::Graphics g (img);
+        g.fillAll (juce::Colour (0xff2B2B28));
+        g.addTransform (juce::AffineTransform::scale (scale));
+        panel.paintEntireComponent (g, true);
+    }
+    juce::File f (arg ("--shot", "sf000-setup.png"));
+    f.deleteFile();
+    juce::FileOutputStream out (f);
+    if (! out.openedOk() || ! juce::PNGImageFormat().writeImageToStream (img, out)) { std::printf ("could not write %s\n", f.getFullPathName().toRawUTF8()); return 1; }
+    std::printf ("wrote %s (%d x %d)\n", f.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
+    return 0;
+}
 
 class SF000App : public juce::JUCEApplication
 {
@@ -1433,6 +1817,7 @@ public:
             setApplicationReturnValue (selfTest (w >= 0 && w + 1 < args.size() ? args[w + 1].unquoted() : juce::String(), nb >= 0 && nb + 1 < args.size() ? args[nb + 1].getDoubleValue() : 16.0));
             quit(); return;
         }
+        if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }

@@ -274,7 +274,9 @@ void Screen::drawBar (G& g)
         key (g, R (1070, 17.5f, 40, 40), col::white);
         key (g, R (1176, 17.5f, 40, 40), eng.isRunning() ? col::green : col::putty);
         key (g, R (1268, 17.5f, 40, 40), col::red, mouseIsDown && drag.kind == hAct && drag.a == aPanic ? 6.0f : 2.0f);
-        readout (g, R (1373, 17.5f, 96, 40), "TEMPO", eng.valueText (cx::kTempo));
+        // following an outside clock, the tempo is that clock's and says so
+        readout (g, R (1373, 17.5f, 96, 40), eng.following() ? "CLOCK IN" : "TEMPO", eng.valueText (cx::kTempo));
+        barSig = barNow();
         readout (g, R (1487, 17.5f, 72, 40), "KEY", eng.valueText (cx::kKey));
         knob (g, 1597, 37.5f, 40, eng.shown (cx::kGlide), Kind::List, 12, col::lit);
         readout (g, R (1621, 17.5f, 84, 40), "GLIDE", eng.valueText (cx::kGlide));
@@ -1261,6 +1263,13 @@ void Screen::endEdit (bool keep)
     repaint();
 }
 
+// What the top bar shows that can change without a hand on it: RUN and the tempo, under an outside clock.
+juce::uint64 Screen::barNow() const
+{
+    return (juce::uint64) (eng.isRunning() ? 1 : 0) | (juce::uint64) (eng.following() ? 2 : 0)
+         | ((juce::uint64) (juce::uint32) std::lround (eng.target (cx::kTempo) * 14000.0f) << 2);
+}
+
 // What the MASTER panel's meters and numbers show, to the pixel: it is drawn again only when this changes.
 juce::uint64 Screen::metersNow() const
 {
@@ -1284,6 +1293,7 @@ void Screen::timerCallback()
             if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl])
                 dirty (ctl == cx::lane (ses.activeLane, cx::kSeqMute) ? seqRect : h.r.expanded (14, 6));       // a sequencer's mute greys its steps
         }
+    if (barNow() != barSig) dirty (R (1160, 12, 320, 52));        // RUN and TEMPO, when an outside clock moves them
     const float want = cfgOpen && page == pMain ? 1.0f : 0.0f;
     if (cfgT != want)
     {
