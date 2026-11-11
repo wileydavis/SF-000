@@ -49,7 +49,7 @@ public:
     // Following an outside clock takes the place of sending one.
     bool followsClock() const                   { return followWanted; }
     void setFollowsClock (bool);
-    bool onBeat() const                         { return beatWanted; }      // own steps played ahead, to be heard on the sender's beat
+    bool onBeat() const                         { return beatWanted; }      // own steps played ahead, to be heard on the sender's beat (off: with the notes it plays in)
     void setOnBeat (bool);
     float trim() const                          { return trimMs; }
     void setTrim (float ms);
@@ -84,7 +84,7 @@ private:
     Engine& engine;
     Session& ses;
     const bool useDevices;
-    bool clockWanted = true, followWanted = false, beatWanted = true;
+    bool clockWanted = true, followWanted = false, beatWanted = false;
     float leadMs = 0.0f, trimMs = 0.0f;
     mutable juce::SpinLock clockSrcLock;
     const void* clockSrc = nullptr;

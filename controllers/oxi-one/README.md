@@ -98,7 +98,8 @@ STOP. With SF-000 stopped the ONE falls back to its own clock at the project's t
 4. Press play on the ONE. SF-000 starts with it, the panel says FOLLOWING and the ONE's tempo, and
    TEMPO on the main screen reads CLOCK IN. Stop on the ONE stops SF-000. On the Load page,
    **Shift + tap column 2** for MAIN.
-5. Choose where SF-000's own steps are heard (see the next section), and trim by ear.
+5. SF-000's own steps are heard with the lanes the ONE plays (WITH NOTES IN, the way it starts).
+   With gear the ONE drives directly, see the next section.
 
 **SF-000 as the clock:**
 
@@ -111,21 +112,26 @@ STOP. With SF-000 stopped the ONE falls back to its own clock at the project's t
 ## THE ONE AS THE CLOCK: WHAT LINES UP WITH WHAT
 
 Three things play: gear the ONE drives directly (CV, gates, MIDI hardware), SF-000 lanes the ONE
-plays over USB, and SF-000's own sequencers. SF-000 is heard about 30 ms after a note reaches it;
-AUDIO AND MIDI shows the figure for the buffer and inserts in use, and its parts. The ONE's gear has
-no such delay, and a note cannot be played before it arrives.
+plays over USB, and SF-000's own sequencers. SF-000 is heard about 30 ms after a note reaches it:
+LATENCY in AUDIO AND MIDI is the figure, to a tenth of a millisecond, for the buffer and inserts in
+use. The ONE's gear has no such delay, and a note cannot be played before it arrives.
 
 | IN SF-000 | ON THE ONE | ITS GEAR | LANES IT PLAYS | SF-000'S OWN STEPS |
 |---|---|---|---|---|
+| WITH NOTES IN (as it starts) | nothing changed | that much early | together | together |
 | ON THE BEAT | nothing changed | on the beat | that much late | on the beat |
-| WITH NOTES IN | nothing changed | that much early | together | together |
-| ON THE BEAT | the sequencers that play SF-000 sent that much early | on the beat | on the beat | on the beat |
 | WITH NOTES IN | the sequencers that play gear sent that much late | together | together | together |
+| ON THE BEAT | the sequencers that play SF-000 sent that much early | on the beat | on the beat | on the beat |
 
 - The last two rows need a time offset for each sequencer on the ONE. The first ONE was given one,
   in milliseconds, up to 100 either way, in a firmware beta, by a forum post. I have not found it
   in what I have of the MkII's manual, and do not know whether it moves the CV and gate outputs.
-- If the MkII has it, the fourth row is the cleaner: nothing is played early, so even the first step
-  after START lines up. With ON THE BEAT, bar 1's first step from SF-000 is that much late, once.
+- With no gear on the ONE, the first row is all there is to it: everything is SF-000 and it is
+  together.
+- If the MkII has the offset, the third row is the cleaner of the two: nothing is played early, so
+  even the first step after START lines up. With ON THE BEAT, bar 1's first step from SF-000 is
+  that much late, once.
+- "That much" is LATENCY. It moves when the buffer size changes and when a recall changes which
+  inserts are in, so an offset set on the ONE holds for one buffer size and one set of inserts.
 - NOTES IN LAND in the panel shows the gap between the ONE's notes and SF-000's own steps as you
   change either side.

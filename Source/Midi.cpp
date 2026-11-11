@@ -336,7 +336,7 @@ void Midi::load()
     clockWanted = (bool) v.getProperty ("clock", true);
     leadMs = juce::jlimit (0.0f, 60.0f, (float) (double) v.getProperty ("lead", 0.0));
     followWanted = (bool) v.getProperty ("follow", false);
-    beatWanted = (bool) v.getProperty ("on_beat", true);
+    beatWanted = (bool) v.getProperty ("on_beat", false);
     trimMs = juce::jlimit (-40.0f, 40.0f, (float) (double) v.getProperty ("trim", 0.0));
 }
 

@@ -310,16 +310,19 @@ a snapshot could reach it later.
 92. **RUN by hand still works while following.** Stopped and started here under a running clock, it
     comes back in at the sender's place in the bar. Started here while the sender is stopped, it
     plays from the top, and the sender's START later takes it back to the top.
-93. **ON THE BEAT (the default) plays SF-000's own steps ahead of the clock by the time the rig
-    takes to sound**: one buffer's wait, the interface's output delay as the system reports it, and
-    the look-ahead in the lanes and the master. So they are heard with gear the sender plays
-    directly. Lanes the sender plays by MIDI cannot be played ahead and are heard that much later.
-    WITH NOTES IN gives no head start: the rig's own steps are heard with those lanes, that much
-    after the sender's gear. *proposed* default: say if WITH NOTES IN should be it.
+93. **WITH NOTES IN is how it starts** (your word, Nov 11: gear on the ONE is the exception, the
+    ONE and the E16 the rule). The rig's own steps get no head start and are heard with the lanes
+    the sender plays by MIDI, so everything SF-000 plays is together; gear the sender plays
+    directly is heard before it. **ON THE BEAT** is for that gear: it plays the rig's own steps
+    ahead of the clock by the time the rig takes to sound (one buffer's wait, the interface's
+    output delay as the system reports it, the look-ahead in the lanes and the master), so they
+    are heard with the gear. Lanes the sender plays by MIDI cannot be played ahead and are then
+    heard that much later.
 94. **TRIM is plus or minus 30 ms on top**, for the ear. The figure is worked out afresh as the
     buffer or the inserts change, so it does not go stale.
-95. **After START, bar 1's first step cannot be played ahead and is played at once.** No step is
-    ever skipped to catch up: what should already have sounded is played in the first block.
+95. **With ON THE BEAT, bar 1's first step after START cannot be played ahead and is played at
+    once.** No step is ever skipped to catch up: what should already have sounded is played in the
+    first block.
 96. **Most of the delay is look-ahead, about 25 ms of some 30** at 48 kHz: 512 samples in each
     instrument (the suite's pocket look-ahead), 512 more on a lane with a look-ahead insert, and
     180 in the master.
@@ -328,6 +331,16 @@ a snapshot could reach it later.
 97. **The followed clock has not met the ONE.** It is tested with made-up ticks. I do not know the
     ONE's jitter over USB, whether it needs a setting to send its clock, or whether the MkII has
     the per-sequencer time offset the first ONE's beta firmware had.
+
+98. **AUDIO AND MIDI always shows the rig's LATENCY**, to a tenth of a millisecond, with its three
+    parts: the figure to delay outside gear by. It is worked out, not measured. The buffer's wait
+    and the look-ahead are exact (offline, a note from outside begins within 0.15 ms of their sum);
+    the interface's part is what the system reports for the device. A measurement, a click out of
+    an output and back into an input, is not built: SF-000 opens no audio input.
+99. **The figure moves** with the buffer size and with which inserts are in: 14.4 ms of look-ahead
+    with none, 25.1 with the starting rig's, at 48 kHz. So a recall that changes the inserts can
+    change it by about 11 ms. Holding it steady (every lane always given the longest look-ahead)
+    is not built: it would cost that much delay all the time. Say if you want it.
 
 ## Not verified
 

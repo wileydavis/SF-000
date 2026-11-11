@@ -1622,7 +1622,7 @@ public:
         : audio (dm, 0, 0, 2, 2, false, false, true, false), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
-        for (auto* l : { &load, &ins, &e16, &clockLabel, &status, &stepsLabel, &late, &knobLabel })
+        for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel })
         {
             addAndMakeVisible (*l);
             l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
@@ -1630,6 +1630,7 @@ public:
             l->setMinimumHorizontalScale (1.0f);
         }
         late.setJustificationType (juce::Justification::topLeft);
+        delay.setJustificationType (juce::Justification::topLeft);
         clockLabel.setText ("CLOCK", juce::dontSendNotification);
         stepsLabel.setText ("OWN STEPS", juce::dontSendNotification);
         auto radio = [this] (juce::TextButton& b, const char* text, int group, std::function<void()> chosen)
@@ -1650,8 +1651,8 @@ public:
         radio (follow, "FOLLOW", 1, [this] { midi.setFollowsClock (true); show(); });
         (midi.followsClock() ? follow : midi.sendsClock() ? send : off).setToggleState (true, juce::dontSendNotification);
         // following: where the rig's own steps are heard
-        radio (onBeat, "ON THE BEAT", 2,     [this] { midi.setOnBeat (true); });
         radio (withNotes, "WITH NOTES IN", 2, [this] { midi.setOnBeat (false); });
+        radio (onBeat, "ON THE BEAT", 2,     [this] { midi.setOnBeat (true); });
         (midi.onBeat() ? onBeat : withNotes).setToggleState (true, juce::dontSendNotification);
         for (auto* sl : { &lead, &trim })
         {
@@ -1667,7 +1668,7 @@ public:
         trim.setValue (midi.trim(), juce::dontSendNotification);
         trim.setDoubleClickReturnValue (true, 0.0);
         trim.onValueChange = [this] { midi.setTrim ((float) trim.getValue()); };
-        setSize (520, 720);
+        setSize (520, 750);
         show();
         startTimerHz (4);
     }
@@ -1680,6 +1681,8 @@ public:
         ins.setBounds (r.removeFromTop (24));
         e16.setBounds (r.removeFromTop (24));
         r.removeFromTop (4);
+        delay.setBounds (r.removeFromTop (70));
+        r.removeFromTop (4);
         auto row = r.removeFromTop (26);
         clockLabel.setBounds (row.removeFromLeft (110));
         for (auto* b : { &off, &send, &follow }) { b->setBounds (row.removeFromLeft (96)); row.removeFromLeft (6); }
@@ -1687,7 +1690,7 @@ public:
         status.setBounds (r.removeFromTop (24));
         row = r.removeFromTop (26);
         stepsLabel.setBounds (row.removeFromLeft (110));
-        for (auto* b : { &onBeat, &withNotes }) { b->setBounds (row.removeFromLeft (147)); row.removeFromLeft (6); }
+        for (auto* b : { &withNotes, &onBeat }) { b->setBounds (row.removeFromLeft (147)); row.removeFromLeft (6); }
         r.removeFromTop (4);
         row = r.removeFromTop (28);
         knobLabel.setBounds (row.removeFromLeft (110));
@@ -1715,7 +1718,14 @@ private:
     void timerCallback() override
     {
         auto list = [] (const juce::StringArray& n) { return n.isEmpty() ? juce::String ("NONE") : n.joinIntoString (", "); };
-        auto ms = [] (float v) { return juce::String (juce::roundToInt (v)); };
+        auto ms = [] (float v) { return juce::String (v, 1); };
+        // The rig's own delay, whatever the clock does: the figure to put on outside gear (or on
+        // the sequencers that play it) to hear it with SF-000. Worked out, not measured: the
+        // interface's part is what the system reports for it.
+        const juce::String total = ms (engine.soundsAfterMs());
+        delay.setText ("LATENCY: " + total + " MS FROM A NOTE ARRIVING TO ITS SOUND (" + ms (engine.waitPartMs()) + " WAITING FOR A BUFFER, " + ms (engine.outPartMs())
+                           + " OUT THROUGH THE INTERFACE, " + ms (engine.insidePartMs()) + " LOOK-AHEAD INSIDE). DELAY OUTSIDE GEAR BY THAT TO HEAR IT WITH SF-000. IT MOVES WITH THE BUFFER SIZE AND WITH THE INSERTS IN USE.",
+                       juce::dontSendNotification);
         load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
         e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")), juce::dontSendNotification);
@@ -1727,11 +1737,8 @@ private:
             const auto src = midi.clockSource();
             status.setText (engine.following() ? "FOLLOWING " + (src.isNotEmpty() ? src.toUpperCase() : juce::String ("A CLOCK")) + ": " + juce::String (engine.followedBpm(), 1) + " BPM. ITS START AND STOP ARE THE TRANSPORT."
                                                : juce::String ("NO CLOCK IS COMING IN: SF-000 RUNS ON ITS OWN TEMPO."), juce::dontSendNotification);
-            const juce::String total = ms (engine.soundsAfterMs());
-            late.setText ("A NOTE FROM OUTSIDE IS HEARD ABOUT " + total + " MS AFTER IT ARRIVES: " + ms (engine.waitPartMs()) + " WAITING FOR A BUFFER, " + ms (engine.outPartMs())
-                              + " OUT THROUGH THE INTERFACE, " + ms (engine.insidePartMs()) + " LOOK-AHEAD INSIDE.\n"
-                              + (midi.onBeat() ? "ON THE BEAT: SF-000'S OWN STEPS ARE PLAYED THAT MUCH EARLY, SO THEY ARE HEARD WITH GEAR THE SENDER PLAYS DIRECTLY. LANES IT PLAYS BY MIDI ARE HEARD " + total + " MS LATER."
-                                               : "WITH NOTES IN: SF-000'S OWN STEPS ARE HEARD WITH THE LANES THE SENDER PLAYS BY MIDI, " + total + " MS AFTER GEAR IT PLAYS DIRECTLY.")
+            late.setText ((midi.onBeat() ? "ON THE BEAT: SF-000'S OWN STEPS ARE PLAYED THAT MUCH EARLY, SO THEY ARE HEARD WITH GEAR THE SENDER PLAYS DIRECTLY. LANES IT PLAYS BY MIDI ARE HEARD " + total + " MS LATER."
+                                               : "WITH NOTES IN: SF-000'S OWN STEPS ARE HEARD WITH THE LANES THE SENDER PLAYS BY MIDI. GEAR IT PLAYS DIRECTLY IS HEARD " + total + " MS BEFORE BOTH.")
                               + (n > 0 ? "\n" + landed + " AGAINST SF-000'S OWN STEPS (" + juce::String (n) + " NOTES)." : juce::String()),
                           juce::dontSendNotification);
         }
@@ -1751,12 +1758,12 @@ private:
     juce::AudioDeviceSelectorComponent audio;
     sf0::Engine& engine;
     sf0::Midi& midi;
-    juce::Label load, ins, e16, clockLabel, status, stepsLabel, late, knobLabel;
+    juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel;
     juce::TextButton off, send, follow, onBeat, withNotes;
     juce::Slider lead, trim;
 };
 
-// The AUDIO AND MIDI panel drawn to a file: --shot f.png --setup [send|follow|off] (a clock is fed in for follow).
+// The AUDIO AND MIDI panel drawn to a file: --shot f.png --setup [send|follow|off] [--beat] (a clock is fed in for follow).
 static int shotSetup (const juce::StringArray& args)
 {
     using namespace sf0;
@@ -1769,7 +1776,7 @@ static int shotSetup (const juce::StringArray& args)
     Midi m (e, ses, false);
     m.setFollowsClock (mode == "follow");
     m.setSendsClock (mode == "send");
-    if (args.contains ("--notes")) m.setOnBeat (false);
+    m.setOnBeat (args.contains ("--beat"));
     e.setOutputDelayForTests (4.1f);
     juce::AudioBuffer<float> b (2, 128);
     int port = 0;

@@ -109,10 +109,10 @@ public:
 
     // ---- following an outside clock (the OXI One on INT): its ticks, START, CONTINUE and STOP.
     // Any thread; arrivedMs as for noteIn. While follow is on and ticks come in, the tempo and the
-    // transport are the sender's. This rig's own steps are played ahead of that clock by the time
-    // the rig takes to sound (onBeat: they are heard on the sender's beat, with gear it plays
-    // directly), or not ahead at all (they are heard with the notes the sender plays into it, which
-    // cannot be played ahead). trimMs moves them either way from there. With no ticks it runs on
+    // transport are the sender's. This rig's own steps are not played ahead (the usual way: they
+    // are heard with the notes the sender plays into it, which cannot be played ahead), or are
+    // played ahead of that clock by the time the rig takes to sound (onBeat: they are heard on the
+    // sender's beat, with gear it plays directly). trimMs moves them either way from there. With no ticks it runs on
     // its own clock, at the tempo it last had. It sends no clock while it follows.
     void clockIn (juce::uint8 byte, double arrivedMs);
     void setFollow (bool on, bool onBeat, float trimMs)   { followOn = on; followBeat = onBeat; followTrim = juce::jlimit (-40.0f, 40.0f, trimMs); }
@@ -306,7 +306,7 @@ private:
     juce::AbstractFifo clockInFifo { kNoteQ };
     std::array<ClockIn, kNoteQ> clockInQ;
     juce::SpinLock clockInWrite;
-    std::atomic<bool> followOn { false }, followBeat { true }, locked { false };
+    std::atomic<bool> followOn { false }, followBeat { false }, locked { false };
     std::atomic<float> followTrim { 0.0f }, followBpm { 0.0f }, waitMs { 0.0f }, outMs { 0.0f }, insideMs { 0.0f };
     std::atomic<int> masterLat { 0 };
     // The sender's clock as a line through its ticks: each tick's time filtered by a delay-locked
