@@ -124,6 +124,13 @@ Engine::Engine()
                 ct.used = false; ct.snapshot = true; ct.morph = false;
             }
         }
+        named (cx::lane (l, cx::kMute), slug + ".mute", "MUTE", Kind::Toggle, 0.0f, false, false);
+        named (cx::lane (l, cx::kSolo), slug + ".solo", "SOLO", Kind::Toggle, 0.0f, false, false);
+        for (int s = 0; s < kSlots; ++s)
+        {
+            named (cx::insMute (l, s), slug + ".i" + juce::String (s + 1) + ".mute", "MUTE", Kind::Toggle, 0.0f, false, false);
+            named (cx::insSolo (l, s), slug + ".i" + juce::String (s + 1) + ".solo", "SOLO", Kind::Toggle, 0.0f, false, false);
+        }
         static const char* const gn[] = { "HITS", "ROTATE", "ACCENTS", "SEED" };
         static const char* const gi[] = { "gen_hits", "gen_rotate", "gen_accents", "gen_seed" };
         static const float gd[] = { 0.31f, 0.5f, 0.2f, 0.0f };
@@ -145,6 +152,11 @@ Engine::Engine()
         bind[(size_t) (cx::kRet + 4 + k)] = makeBind (*retB, returnB().cells[k], &b);
         b.id = juce::String ("ret.space_") + returnB().cells[k].param; b.snapshot = true;
     }
+
+    named (cx::kRetMS, "ret.dub_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
+    named (cx::kRetMS + 1, "ret.dub_solo", "SOLO", Kind::Toggle, 0.0f, false, false);
+    named (cx::kRetMS + 2, "ret.space_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
+    named (cx::kRetMS + 3, "ret.space_solo", "SOLO", Kind::Toggle, 0.0f, false, false);
 
     int mk = 0;
     for (auto& st : masterChain())
@@ -174,7 +186,8 @@ Engine::Engine()
         cur[(size_t) i] = d; applied[(size_t) i] = d;
     }
     loud = std::make_unique<Loud>();
-    for (auto& p : lanePeak) p = 0.0f;
+    for (auto& p : laneDb) p = -100.0f;
+    for (int l = 0; l < kLanes; ++l) initSetup[(size_t) l] = getSetup ({ 0, l, 0 });
 
     // To begin with the lead has a delay and a radio on it, as the design shows.
     setInsertType (7, 0, 0);
@@ -226,10 +239,10 @@ Pattern Engine::defaultPattern (int l)
         { { 4, .6f, .3f }, { 7, .45f, .3f }, { 12, .7f, .3f }, { 15, .5f, .3f } },
         { { 2, .6f, .5f }, { 3, .75f, .5f }, { 4, .6f, .5f }, { 6, .6f, .5f }, { 7, .75f, .5f }, { 8, .6f, .5f }, { 10, .6f, .5f }, { 11, .75f, .5f }, { 12, .6f, .5f }, { 14, .6f, .5f }, { 15, .75f, .5f }, { 16, .6f, .5f } },
         {},
-        { { 1, .7f, .5f }, { 4, 1, .5f }, { 7, .7f, 1, 1, 3 }, { 8, .7f, .5f }, { 10, .7f, .5f }, { 11, 1, 2.5f, 1, 7 }, { 14, .7f, 1, 1, 10, 2 }, { 15, .7f, .6f, 2 }, { 16, .55f, .6f, 3 } },
+        { { 1, .7f, .5f }, { 4, 1, .5f }, { 7, .7f, 1.25f, 1, 3 }, { 8, .7f, .5f }, { 10, .7f, .5f }, { 11, 1, 2.5f, 1, 7 }, { 14, .7f, 1.25f, 1, 10, 2 }, { 15, .7f, .6f, 2 }, { 16, .55f, .6f, 3 } },
         { { 3, .8f, .3f }, { 11, .8f, .3f } },
-        { { 1, .6f, 16 } },
-        { { 9, .8f, .9f } },
+        { { 1, .6f, 16.25f } },
+        { { 9, .8f, 4 } },
     };
     Pattern p;
     const int oct = lanes()[(size_t) l].octave;
@@ -279,7 +292,9 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults)
             ct.id = id; ct.snapshot = true;
             if (defaults) set (i, ct.def);
             else applyBind (inst->bind[c], target (i));
+            if (d.cells[c].label != nullptr && juce::String (d.cells[c].param) == "mix") inst->mixCell = c;
         }
+        if (inst->proc->paramIndex ("dry") >= 0) inst->dryRaw = inst->proc->apvts.getRawParameterValue ("dry");
         if (prepared) { inst->proc->setRateAndBufferSizeDetails (sr, maxBlock); inst->proc->prepareToPlay (sr, maxBlock); }
     }
     else
@@ -321,11 +336,99 @@ bool Engine::loadFile (int l, const juce::File& f)
 {
     auto& m = lane[(size_t) l].proc->mod();
     if (! m.acceptsFiles()) return false;
-    m.loadFiles ({ f.getFullPathName() });
+    {
+        // unreadable (macOS has not been allowed into that folder yet, or the file is gone): say so
+        juce::FileInputStream in (f);
+        if (! in.openedOk()) return false;
+    }
+    m.loadFiles (juce::StringArray (f.getFullPathName()));
+    files[(size_t) l] = f.getFullPathName();
     return true;
 }
 
 void Engine::panic() { panicNow = true; }
+
+// ---------------------------------------------------------------------------------------- setup
+SFProcessor* Engine::processorFor (Target t) const
+{
+    if (t.kind == 0) return lane[(size_t) t.lane].proc.get();
+    if (t.kind == 1) { auto* in = lane[(size_t) t.lane].ins[t.slot].load(); return in != nullptr ? in->proc.get() : nullptr; }
+    return t.slot == 0 ? retA.get() : retB.get();
+}
+
+std::vector<std::string> Engine::boundIds (Target t) const
+{
+    std::vector<std::string> ids;
+    auto add = [&ids] (const KnobDef* k, int n) { for (int i = 0; i < n; ++i) if (k[i].param != nullptr) ids.push_back (k[i].param); };
+    if (t.kind == 0) add (lanes()[(size_t) t.lane].knobs, kLaneKnobs);
+    else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) add (effects()[(size_t) ty].cells, kCells); }
+    else add ((t.slot == 0 ? returnA() : returnB()).cells, kCells);
+    return ids;
+}
+
+std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
+{
+    std::vector<SetupParam> out;
+    auto* p = processorFor (t);
+    if (p == nullptr) return out;
+    const auto bound = boundIds (t);
+    const auto& specs = p->allSpecs();
+    for (int i = 0; i < p->numModuleParams(); ++i)
+    {
+        const auto& s = specs[(size_t) i];
+        if (std::find (bound.begin(), bound.end(), s.id) != bound.end()) continue;
+        auto* prm = p->param (i);
+        SetupParam sp;
+        sp.id = s.id; sp.name = s.name; sp.value = prm->getValue(); sp.def = prm->getDefaultValue(); sp.text = prm->getCurrentValueAsText();
+        if (s.type == sf::PType::Choice) { sp.kind = Kind::List; for (auto& c : s.choices) sp.choices.add (c); }
+        else if (s.type == sf::PType::Toggle) sp.kind = Kind::Toggle;
+        else if (s.type == sf::PType::Momentary) sp.kind = Kind::Hold;
+        else sp.kind = s.unit == "BIP" || (s.min < 0.0f && s.max > 0.0f && std::abs (s.min + s.max) < 1e-3f) ? Kind::Bipolar : Kind::Knob;
+        out.push_back (sp);
+    }
+    return out;
+}
+
+void Engine::setSetup (Target t, const juce::String& id, float v)
+{
+    if (auto* p = processorFor (t))
+    {
+        const int i = p->paramIndex (id.toStdString());
+        if (i < 0 || i >= p->numModuleParams()) return;
+        p->param (i)->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, v));
+        updateLatency();
+    }
+}
+
+Engine::SetupState Engine::getSetup (Target t) const
+{
+    SetupState st;
+    if (auto* p = processorFor (t))
+    {
+        const auto bound = boundIds (t);
+        const auto& specs = p->allSpecs();
+        for (int i = 0; i < p->numModuleParams(); ++i)
+            if (std::find (bound.begin(), bound.end(), specs[(size_t) i].id) == bound.end())
+                st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
+    }
+    return st;
+}
+
+void Engine::applySetup (Target t, const SetupState& st)
+{
+    if (auto* p = processorFor (t))
+    {
+        const auto bound = boundIds (t);
+        for (auto& kv : st)
+        {
+            const int i = p->paramIndex (kv.first.toStdString());
+            if (i < 0 || i >= p->numModuleParams() || std::find (bound.begin(), bound.end(), kv.first.toStdString()) != bound.end()) continue;
+            auto* prm = p->param (i);
+            if (std::abs (prm->getValue() - kv.second) > 1e-6f) prm->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, kv.second));
+        }
+        updateLatency();
+    }
+}
 
 // ---------------------------------------------------------------------------------------- audio
 void Engine::prepare (double rate, int block)
@@ -346,7 +449,7 @@ void Engine::prepare (double rate, int block)
     }
     prep (*retA); prep (*retB);
     for (auto& m : master) prep (*m);
-    for (auto* b : { &buf, &mix, &sendA, &sendB, &work }) b->setSize (2, maxBlock, false, true, false);
+    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre }) b->setSize (2, maxBlock, false, true, false);
     loud->m.prepare (sr);
     prepared = true;
     updateLatency();
@@ -400,7 +503,8 @@ void Engine::advanceControls (double beats)
                 const int k = i % cx::kPerLane;
                 if (k >= cx::kIns && k < cx::kGen)
                     if (auto* in = lane[(size_t) (i / cx::kPerLane)].ins[(k - cx::kIns) / kCells].load())
-                        applyBind (in->bind[(k - cx::kIns) % kCells], cur[s]);
+                        if (! (in->soloOn && (k - cx::kIns) % kCells == in->mixCell))
+                            applyBind (in->bind[(k - cx::kIns) % kCells], cur[s]);
             }
         }
     }
@@ -452,6 +556,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const bool pan = panicNow.exchange (false);
 
     for (auto* b : { &mix, &sendA, &sendB }) b->clear (0, n);
+    // who is heard: a soloed lane silences the other lanes; a soloed return silences every lane's dry signal
+    bool anySolo = false;
+    for (int l = 0; l < kLanes; ++l) anySolo = anySolo || cur[(size_t) cx::lane (l, cx::kSolo)] > 0.5f;
+    const bool retSolo[2] = { cur[(size_t) cx::kRetMS + 1] > 0.5f, cur[(size_t) cx::kRetMS + 3] > 0.5f };
+    const bool anyRetSolo = retSolo[0] || retSolo[1];
+    const float dryNow = anyRetSolo ? 0.0f : 1.0f;
+    const float fall = (float) (30.0 * n / sr);      // meters fall 30 dB a second
     juce::AudioBuffer<float> b2 (buf.getArrayOfWritePointers(), 2, n);
     for (int l = 0; l < kLanes; ++l)
     {
@@ -468,7 +579,32 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
         b2.clear();
         ln.proc->processBlock (b2, ln.midi);
-        for (auto& i : ln.ins) if (auto* in = i.load()) in->proc->processBlock (b2, noMidi);
+        for (int sl = 0; sl < kSlots; ++sl)
+            if (auto* in = ln.ins[sl].load())
+            {
+                // SOLO on an insert: only what the effect makes (its MIX held at full, its DRY switch off)
+                const bool solo = cur[(size_t) cx::insSolo (l, sl)] > 0.5f;
+                if (solo != in->soloOn)
+                {
+                    in->soloOn = solo;
+                    if (solo && in->dryRaw != nullptr) in->dryWas = in->dryRaw->load();
+                    if (in->mixCell >= 0) applyBind (in->bind[in->mixCell], solo ? 1.0f : cur[(size_t) cx::ins (l, sl, in->mixCell)]);
+                    if (in->dryRaw != nullptr) in->dryRaw->store (solo ? 0.0f : in->dryWas);
+                }
+                // MUTE on an insert: the lane passes it by. The effect keeps running, so its tail is current when it comes back.
+                const float g1 = cur[(size_t) cx::insMute (l, sl)] > 0.5f ? 0.0f : 1.0f, g0 = in->gWas;
+                in->gWas = g1;
+                if (g0 == 1.0f && g1 == 1.0f) { in->proc->processBlock (b2, noMidi); continue; }
+                juce::AudioBuffer<float> dry (pre.getArrayOfWritePointers(), 2, n);
+                for (int ch = 0; ch < 2; ++ch) dry.copyFrom (ch, 0, b2, ch, 0, n);
+                in->proc->processBlock (b2, noMidi);
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    float* w = b2.getWritePointer (ch);
+                    const float* dr = dry.getReadPointer (ch);
+                    for (int i = 0; i < n; ++i) { const float g = g0 + (g1 - g0) * (float) i / (float) n; w[i] = dr[i] + (w[i] - dr[i]) * g; }
+                }
+            }
 
         // the lane EQ, after the inserts
         bool eqOn = false;
@@ -497,29 +633,44 @@ void Engine::render (juce::AudioBuffer<float>& out)
         }
         ln.dlPos = (ln.dlPos + n) & 8191;
 
+        // MUTE and SOLO: a silenced lane still runs, so it comes back in time
+        const int so = solo.load();
+        const bool heard = cur[(size_t) cx::lane (l, cx::kMute)] < 0.5f && (! anySolo || cur[(size_t) cx::lane (l, cx::kSolo)] > 0.5f) && (so < 0 || so == l);
+        const float lg = heard ? 1.0f : 0.0f;
+        if (so >= 0 && so != l) ln.gainWas = 0.0f;       // a test's solo is in force from the first sample
+        if (lg != 1.0f || ln.gainWas != 1.0f) for (int ch = 0; ch < 2; ++ch) b2.applyGainRamp (ch, 0, n, ln.gainWas, lg);
+        ln.gainWas = lg;
+
         const float lp = b2.getMagnitude (0, n);
-        lanePeak[(size_t) l] = std::max (lp, lanePeak[(size_t) l].load() * 0.9f);
+        ln.hold = std::max (juce::Decibels::gainToDecibels (lp, -100.0f), ln.hold - fall);
+        laneDb[(size_t) l] = ln.hold;
         laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
         for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); double q = 0.0; for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; laneSq[(size_t) l] += q; }
-        const int so = solo.load();
-        if (so >= 0 && so != l) continue;
 
         const float sa = cur[(size_t) cx::lane (l, cx::kSendA)], sb = cur[(size_t) cx::lane (l, cx::kSendB)];
         const float ga = sa * sa, gb = sb * sb;
         for (int ch = 0; ch < 2; ++ch)
         {
-            mix.addFrom (ch, 0, b2, ch, 0, n);
+            mix.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas, dryNow);
             sendA.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, ln.sendWas[0], ga);
             sendB.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, ln.sendWas[1], gb);
         }
         ln.sendWas[0] = ga; ln.sendWas[1] = gb;
     }
+    dryMixWas = dryNow;
 
     juce::AudioBuffer<float> a2 (sendA.getArrayOfWritePointers(), 2, n), bb2 (sendB.getArrayOfWritePointers(), 2, n), m2 (mix.getArrayOfWritePointers(), 2, n);
     if (pan) { retA->panic(); retB->panic(); }
     retA->processBlock (a2, noMidi);
     retB->processBlock (bb2, noMidi);
-    for (int ch = 0; ch < 2; ++ch) { m2.addFrom (ch, 0, a2, ch, 0, n); m2.addFrom (ch, 0, bb2, ch, 0, n); }
+    const float rg[2] = { cur[(size_t) cx::kRetMS] < 0.5f && (! anyRetSolo || retSolo[0]) ? 1.0f : 0.0f,
+                          cur[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) ? 1.0f : 0.0f };
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        m2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, retGainWas[0], rg[0]);
+        m2.addFromWithRamp (ch, 0, bb2.getReadPointer (ch), n, retGainWas[1], rg[1]);
+    }
+    retGainWas[0] = rg[0]; retGainWas[1] = rg[1];
 
     float inPk = 0.0f;
     for (size_t k = 0; k < master.size(); ++k)
@@ -542,7 +693,6 @@ void Engine::render (juce::AudioBuffer<float>& out)
         pk[0] = std::max (pk[0], std::abs (l)); pk[1] = std::max (pk[1], std::abs (r));
         loud->m.push (l, r);
     }
-    const float fall = (float) (30.0 * n / sr);      // 30 dB a second
     for (int ch = 0; ch < 2; ++ch)
     {
         const float db = juce::Decibels::gainToDecibels (pk[ch], -100.0f);

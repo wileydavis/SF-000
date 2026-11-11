@@ -34,15 +34,20 @@ namespace cx
     constexpr int kSendA = kLaneKnobs, kSendB = kSendA + 1, kEqLow = kSendB + 1, kEqMid = kEqLow + 1, kEqHigh = kEqMid + 1;
     constexpr int kIns = kEqHigh + 1;                       // kSlots * kCells insert cells
     constexpr int kGen = kIns + kSlots * kCells;            // HITS, ROTATE, ACCENTS, SEED
-    constexpr int kPerLane = kGen + 4;
-    constexpr int kRet = kLanes * kPerLane;                 // 4 for A, 4 for B
-    constexpr int kMaster = kRet + 8;                       // TAPE, COMP, LIMIT
+    constexpr int kMute = kGen + 4, kSolo = kMute + 1;      // the lane's MUTE and SOLO
+    constexpr int kInsMS = kSolo + 1;                       // MUTE and SOLO for each insert slot
+    constexpr int kPerLane = kInsMS + kSlots * 2;
+    constexpr int kRet = kLanes * kPerLane;                 // 4 knobs for A, 4 for B
+    constexpr int kRetMS = kRet + 8;                        // A MUTE, A SOLO, B MUTE, B SOLO
+    constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT
     constexpr int kTempo = kMaster + 3, kKey = kTempo + 1, kGlide = kKey + 1;
     constexpr int kSnap = kGlide + 1;                       // the 16 snapshot knobs
     constexpr int kCount = kSnap + 16;
     inline int lane (int l, int k)              { return l * kPerLane + k; }
     inline int ins (int l, int slot, int cell)  { return l * kPerLane + kIns + slot * kCells + cell; }
     inline int gen (int l, int k)               { return l * kPerLane + kGen + k; }
+    inline int insMute (int l, int slot)        { return l * kPerLane + kInsMS + slot * 2; }
+    inline int insSolo (int l, int slot)        { return insMute (l, slot) + 1; }
 }
 
 double glideBarsFor (float v);      // the GLIDE list: OFF, 1/4 bar ... 256 bars
@@ -86,12 +91,25 @@ public:
 
     // A dropped audio file, for a lane whose module takes one.
     bool loadFile (int lane, const juce::File&);
+    juce::String laneFile (int lane) const      { return files[(size_t) lane]; }
+
+    // ---- setup: every parameter of a hosted module that the performance screen does not show
+    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1)
+    struct SetupParam { juce::String id, name, text; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; };
+    using SetupState = std::vector<std::pair<juce::String, float>>;
+    SFProcessor* processorFor (Target) const;
+    std::vector<SetupParam> setupParams (Target) const;
+    void setSetup (Target, const juce::String& id, float v);
+    SetupState getSetup (Target) const;
+    void applySetup (Target, const SetupState&);
+    const SetupState& initialSetup (int lane) const { return initSetup[(size_t) lane]; }
+    bool isGliding (int i) const                { return glideV[(size_t) i].load() > 0.0f && std::abs (shownV[(size_t) i].load() - targetV[(size_t) i].load()) > 1e-4f; }
 
     // ---- what the screen reads
     std::atomic<float> peakL { -100.0f }, peakR { -100.0f }, gainRed { 0.0f }, lufs { -70.0f };
     std::atomic<bool> clipL { false }, clipR { false }, fault { false };
     std::atomic<double> cpu { 0.0 };
-    std::array<std::atomic<float>, kLanes> lanePeak;         // each lane's level after its EQ (linear, falling)
+    std::array<std::atomic<float>, kLanes> laneDb;           // each lane's level as it reaches the mix (dB, falling)
     std::array<double, kLanes> laneSq {};                    // sum of squares since the start (tests)
     std::array<float, kLanes> laneMax {};                    // highest sample since the start (tests)
     std::atomic<int> solo { -1 };                            // tests: only this lane reaches the mix
@@ -117,7 +135,10 @@ private:
     {
         std::unique_ptr<SFProcessor> proc;
         Bind bind[kCells];
-        int type = -1;
+        int type = -1, mixCell = -1;
+        std::atomic<float>* dryRaw = nullptr;       // the effect's own DRY switch, if it has one
+        float dryWas = 1.0f, gWas = 1.0f;
+        bool soloOn = false;
         InsertInst();
         ~InsertInst();
     };
@@ -134,7 +155,7 @@ private:
         juce::MidiBuffer midi;
         Biquad eq[3];
         float eqDb[3] = { 0, 0, 0 }, eqSet[3] = { 99, 99, 99 };
-        float sendWas[2] = { 0, 0 };
+        float sendWas[2] = { 0, 0 }, gainWas = 1.0f, hold = -100.0f;
         std::vector<float> dl[2];
         int dlPos = 0;
         std::atomic<int> delay { 0 };
@@ -173,7 +194,11 @@ private:
     double sr = 48000.0;
     int maxBlock = 512;
     bool prepared = false;
-    juce::AudioBuffer<float> buf, mix, sendA, sendB, work;
+    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre;
+    std::array<SetupState, kLanes> initSetup;
+    std::array<juce::String, kLanes> files;
+    std::vector<std::string> boundIds (Target) const;
+    float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
     juce::MidiBuffer noMidi;
 
     std::atomic<bool> running { false }, panicNow { false };

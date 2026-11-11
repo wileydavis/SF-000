@@ -15,7 +15,14 @@ struct Snapshot
     std::array<Pattern, kLanes> patterns;
     std::array<std::array<int, kSlots>, kLanes> inserts {};
     std::array<int, kLanes> gen {};
+    // what CONFIG sets: each lane's model and other setup, each insert's, the two returns'
+    bool hasSetup = false;
+    std::array<Engine::SetupState, kLanes> setup;
+    std::array<std::array<Engine::SetupState, kSlots>, kLanes> insSetup;
+    std::array<Engine::SetupState, 2> retSetup;
 };
+
+constexpr juce::int64 kCleanSlateId = 999;
 
 // A snapshot knob: 2 to 10 snapshots in sweep order. Turning it moves every knob that differs
 // among them, as an offset from the base scene, so knobs stack.
@@ -80,6 +87,8 @@ private:
     void applySnapshot (const Snapshot&, double glideBeats);
     void regenerate (int lane);
     void makeFactory();
+    void ensureCleanSlate();
+    std::array<Engine::SetupState, 2> retInit;
     double glideBeats() const;
 
     std::vector<float> base, offset;

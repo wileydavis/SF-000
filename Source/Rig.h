@@ -112,7 +112,7 @@ inline const std::vector<LaneDef>& lanes()
         { "VOICE", "voice", "VOICE", true, 3,
           // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,
           // SIGNAL and GATE have nothing to act on); drop an audio file on the lane to give it a phrase
-          { { "model", 1 }, { "signal", 0.45f }, { "echo", 0.3f }, { "echo_fb", 0.55f }, { "level", -14 }, { "alloc", 0 } },
+          { { "model", 1 }, { "signal", 0.7f }, { "echo", 0.3f }, { "echo_fb", 0.55f }, { "level", -14 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "SIGNAL", "signal", 'u' }, { "ECHO TIME", "echo_time", 'm' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "ECHO FDBK", "echo_fb", 'u' }, { "ECHO", "echo", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },

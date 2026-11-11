@@ -12,7 +12,9 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     base.resize ((size_t) cx::kCount);
     offset.assign ((size_t) cx::kCount, 0.0f);
     for (int i = 0; i < cx::kCount; ++i) base[(size_t) i] = engine.target (i);
+    for (int r = 0; r < 2; ++r) retInit[(size_t) r] = engine.getSetup ({ 2, 0, r });
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
+    ensureCleanSlate();
     if (useDisk) startTimer (3000);
 }
 
@@ -139,9 +141,16 @@ Snapshot Session::capture() const
     for (int l = 0; l < kLanes; ++l)
     {
         s.patterns[(size_t) l] = engine.pattern (l);
-        for (int k = 0; k < kSlots; ++k) s.inserts[(size_t) l][(size_t) k] = engine.insertType (l, k);
+        for (int k = 0; k < kSlots; ++k)
+        {
+            s.inserts[(size_t) l][(size_t) k] = engine.insertType (l, k);
+            s.insSetup[(size_t) l][(size_t) k] = engine.getSetup ({ 1, l, k });
+        }
         s.gen[(size_t) l] = genType[(size_t) l];
+        s.setup[(size_t) l] = engine.getSetup ({ 0, l, 0 });
     }
+    for (int r = 0; r < 2; ++r) s.retSetup[(size_t) r] = engine.getSetup ({ 2, 0, r });
+    s.hasSetup = true;
     return s;
 }
 
@@ -177,7 +186,13 @@ void Session::applySnapshot (const Snapshot& s, double glide)
                 engine.setInsertType (l, k, s.inserts[(size_t) l][(size_t) k], false);
         engine.setPattern (l, s.patterns[(size_t) l]);
         genType[(size_t) l] = s.gen[(size_t) l];
+        if (s.hasSetup)
+        {
+            engine.applySetup ({ 0, l, 0 }, s.setup[(size_t) l]);
+            for (int k = 0; k < kSlots; ++k) engine.applySetup ({ 1, l, k }, s.insSetup[(size_t) l][(size_t) k]);
+        }
     }
+    if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, s.retSetup[(size_t) r]);
     applyMorph (glide);
 }
 
@@ -300,6 +315,21 @@ static Pattern patternFromVar (const var& v, int octave)
     return p;
 }
 
+static var setupToVar (const Engine::SetupState& st)
+{
+    auto* o = new juce::DynamicObject();
+    for (auto& kv : st) o->setProperty (kv.first, kv.second);
+    return var (o);
+}
+
+static Engine::SetupState setupFromVar (const var& v)
+{
+    Engine::SetupState st;
+    if (auto* o = v.getDynamicObject())
+        for (auto& p : o->getProperties()) st.push_back ({ p.name.toString(), juce::jlimit (0.0f, 1.0f, (float) p.value) });
+    return st;
+}
+
 static var snapToVar (const Snapshot& s, const Engine& e)
 {
     auto* o = new juce::DynamicObject();
@@ -322,6 +352,21 @@ static var snapToVar (const Snapshot& s, const Engine& e)
     o->setProperty ("patterns", pats);
     o->setProperty ("inserts", ins);
     o->setProperty ("gen", gen);
+    if (s.hasSetup)
+    {
+        juce::Array<var> ls, is, rs;
+        for (int l = 0; l < kLanes; ++l)
+        {
+            ls.add (setupToVar (s.setup[(size_t) l]));
+            juce::Array<var> sl;
+            for (int k = 0; k < kSlots; ++k) sl.add (setupToVar (s.insSetup[(size_t) l][(size_t) k]));
+            is.add (var (sl));
+        }
+        for (int r = 0; r < 2; ++r) rs.add (setupToVar (s.retSetup[(size_t) r]));
+        auto* su = new juce::DynamicObject();
+        su->setProperty ("lanes", ls); su->setProperty ("inserts", is); su->setProperty ("returns", rs);
+        o->setProperty ("setup", var (su));
+    }
     return var (o);
 }
 
@@ -355,6 +400,17 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         }
         s.gen[(size_t) l] = l < gen.size() ? juce::jlimit (-1, 1, (int) gen[l]) : -1;
     }
+    if (const var su = v.getProperty ("setup", var()); su.isObject())
+    {
+        const var ls = su.getProperty ("lanes", var()), is = su.getProperty ("inserts", var()), rs = su.getProperty ("returns", var());
+        for (int l = 0; l < kLanes; ++l)
+        {
+            if (l < ls.size()) s.setup[(size_t) l] = setupFromVar (ls[l]);
+            for (int k = 0; k < kSlots; ++k) if (l < is.size() && k < is[l].size()) s.insSetup[(size_t) l][(size_t) k] = setupFromVar (is[l][k]);
+        }
+        for (int r = 0; r < 2; ++r) if (r < rs.size()) s.retSetup[(size_t) r] = setupFromVar (rs[r]);
+        s.hasSetup = true;
+    }
     return s;
 }
 
@@ -376,6 +432,9 @@ void Session::save()
         if (engine.control (i).used && ! engine.control (i).snapshot) other->setProperty (engine.control (i).id, engine.target (i));
     root->setProperty ("controls", var (other));
     root->setProperty ("activeLane", activeLane);
+    juce::Array<var> fl;
+    for (int l = 0; l < kLanes; ++l) fl.add (engine.laneFile (l));
+    root->setProperty ("files", fl);
 
     juce::Array<var> lib, kn;
     for (auto& s : library) lib.add (snapToVar (s, engine));
@@ -425,6 +484,9 @@ bool Session::load()
             if (i >= 0 && ! engine.control (i).snapshot) { engine.set (i, (float) p.value); base[(size_t) i] = engine.target (i); }
         }
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
+    if (const var fl = root.getProperty ("files", var()); fl.isArray())
+        for (int l = 0; l < kLanes && l < fl.size(); ++l)
+            if (const juce::File f (fl[l].toString()); fl[l].toString().isNotEmpty() && f.existsAsFile()) engine.loadFile (l, f);
     baseId = (juce::int64) root.getProperty ("baseId", 0);
     selStep = -1;
     if (root.hasProperty ("base")) applySnapshot (snapFromVar (root["base"], engine), 0.0);
@@ -432,6 +494,35 @@ bool Session::load()
 }
 
 // ------------------------------------------------------------------------- what it starts with
+void Session::ensureCleanSlate()
+{
+    // CLEAN SLATE: every knob where the rig starts it, no steps, no inserts. Always in the library.
+    if (findSnap (kCleanSlateId) != nullptr) return;
+    Snapshot s;
+    s.id = kCleanSlateId;
+    s.name = "CLEAN SLATE";
+    s.time = juce::Time::getCurrentTime();
+    s.values.assign ((size_t) cx::kCount, -1.0f);
+    for (int i = 0; i < cx::kCount; ++i)
+    {
+        const auto& c = engine.control (i);
+        const int k = i < cx::kRet ? i % cx::kPerLane : -1;
+        const bool insertCell = k >= cx::kIns && k < cx::kGen;
+        if (c.snapshot && c.used && ! insertCell) s.values[(size_t) i] = c.def;
+    }
+    for (int l = 0; l < kLanes; ++l)
+    {
+        for (auto& st : s.patterns[(size_t) l].steps) st.octave = lanes()[(size_t) l].octave;
+        s.inserts[(size_t) l].fill (-1);
+        s.gen[(size_t) l] = -1;
+        s.setup[(size_t) l] = engine.initialSetup (l);
+    }
+    s.retSetup = retInit;
+    s.hasSetup = true;
+    library.insert (library.begin(), s);
+    dirty = true;
+}
+
 void Session::makeFactory()
 {
     // The rig as it comes up is INIT. Five more snapshots, each a push in one direction from it,

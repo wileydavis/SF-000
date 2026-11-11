@@ -1,5 +1,6 @@
 #include "Screen.h"
 #include "BinaryData.h"
+#include "core/Processor.h"
 #include <map>
 
 namespace sf0
@@ -33,7 +34,7 @@ Screen::Screen (Session& s)
     setOpaque (true);
     setWantsKeyboardFocus (true);
     lastShown.fill (-1.0f);
-    ses.onChange = [this] { repaint(); };
+    ses.onChange = [this] { cfgStale = true; repaint(); };
     startTimerHz (30);
 }
 
@@ -48,6 +49,7 @@ void Screen::resized()
 }
 
 void Screen::dirty (R r) { repaint (r.transformedBy (xf).getSmallestIntegerContainer().expanded (2)); }
+void Screen::hit (R r, int kind, int a, int b) { hits.push_back ({ r.translated (shift, 0.0f), kind, a, b }); }
 bool Screen::vis (G& g, R r) const { return g.clipRegionIntersects (r.getSmallestIntegerContainer()); }
 
 const Screen::Hit* Screen::hitAt (juce::Point<float> p) const
@@ -84,7 +86,7 @@ void Screen::legend (G& g, float cx, float y, const String& label)
     else text (g, label, R (cx - 60, y, 120, 14), fLbl, col::black);
 }
 
-void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int steps, Colour litCol)
+void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int steps, Colour litCol, float target)
 {
     const float body = (float) size * 0.5f, ro = size >= 40 ? 17.0f : 13.0f, ri = size >= 40 ? 10.0f : 7.0f;
     const float pi = juce::MathConstants<float>::pi, seg = pi / 8.0f;
@@ -118,6 +120,13 @@ void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int s
         g.drawLine (cx + sx * (ri - 0.5f), cy + cs * (ri - 0.5f), cx + sx * (ro + 0.5f), cy + cs * (ro + 0.5f), size >= 40 ? 1.7f : 1.4f);
     }
     if (kind == Kind::Bipolar) { g.setColour (col::lit); g.fillRect (cx - 1.5f, cy - body, 3.0f, body - ro); }
+    if (target >= 0.0f)
+    {
+        // where it is going: a mark across the ring
+        const float an = pi + juce::jlimit (0.0f, 1.0f, target) * 2.0f * pi, sx = std::sin (an), cs = -std::cos (an);
+        g.setColour (col::lit);
+        g.drawLine (cx + sx * (ri - 2.0f), cy + cs * (ri - 2.0f), cx + sx * body, cy + cs * body, 3.0f);
+    }
 }
 
 void Screen::hollow (G& g, float cx, float cy, float d, bool round)
@@ -166,10 +175,28 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
     {
         if (c.kind == Kind::Toggle) key (g, kr, v > 0.5f ? col::green : col::putty);
         else if (c.kind == Kind::Hold) key (g, kr, col::yellow, v > 0.5f ? 8.0f : 2.0f);
+        else if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
         else knob (g, cxm, cym, size, v, c.kind, c.steps(), litCol);
         legend (g, cxm, y + (legendH < 20.0f ? 45.0f : 43.0f), c.label);
     }
-    hits.push_back ({ kr.expanded (4, 2), c.kind == Kind::Toggle ? hToggle : c.kind == Kind::Hold ? hHold : hKnob, ctl, 0 });
+    hit (kr.expanded (4, 2), c.kind == Kind::Toggle ? hToggle : c.kind == Kind::Hold ? hHold : hKnob, ctl, 0);
+}
+
+// CONFIG, MUTE and SOLO: three small lettered keys at the right of a header
+void Screen::headKeys (G& g, float right, float y, int kind, int lane, int slot, int muteCtl, int soloCtl)
+{
+    const bool open = cfgOpen && cfg.kind == kind && (kind == 2 ? cfg.slot == slot : cfg.lane == lane && (kind == 0 || cfg.slot == slot));
+    const Colour fills[3] = { open ? col::black : col::white, eng.shown (muteCtl) > 0.5f ? col::amber : col::putty, eng.shown (soloCtl) > 0.5f ? col::green : col::putty };
+    static const char* const letters[3] = { "C", "M", "S" };
+    for (int k = 0; k < 3; ++k)
+    {
+        const R kr (right - 72.0f + (float) k * 25.0f, y, 22, 22);
+        if (vis (g, kr)) { key (g, kr, fills[k]); text (g, letters[k], kr, fLbl, k == 0 && open ? col::lit : col::black); }
+        if (k == 0) hit (kr.expanded (1), hConfig, kind, lane * 8 + slot);
+        else hit (kr.expanded (1), hToggle, k == 1 ? muteCtl : soloCtl);
+    }
+    lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
+    lastShown[(size_t) soloCtl] = eng.shown (soloCtl);
 }
 
 void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const String& label, Colour fill, float legendGap, bool present)
@@ -181,7 +208,7 @@ void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const Strin
         key (g, kr, fill, mouseIsDown && drag.kind == hAct && drag.a == a ? 6.0f : 2.0f);
         legend (g, kr.getCentreX(), y + 40 + legendGap, label);
     }
-    hits.push_back ({ kr.expanded (3), hAct, a, 0 });
+    hit (kr.expanded (3), hAct, a, 0);
 }
 
 // ------------------------------------------------------------------------------------ the pages
@@ -225,27 +252,148 @@ void Screen::drawBar (G& g)
         knob (g, 1597, 37.5f, 40, eng.shown (cx::kGlide), Kind::List, 12, col::lit);
         readout (g, R (1621, 17.5f, 84, 40), "GLIDE", eng.valueText (cx::kGlide));
     }
-    hits.push_back ({ R (1070, 17.5f, 40, 40), hAct, aAudio, 0 });
-    hits.push_back ({ R (1176, 17.5f, 40, 40), hAct, aRun, 0 });
-    hits.push_back ({ R (1268, 17.5f, 40, 40), hAct, aPanic, 0 });
-    hits.push_back ({ R (1373, 17.5f, 96, 40), hRead, cx::kTempo, 0 });
-    hits.push_back ({ R (1487, 17.5f, 72, 40), hRead, cx::kKey, 0 });
-    hits.push_back ({ R (1573, 15.5f, 132, 44), hKnob, cx::kGlide, 0 });
+    hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
+    hit (R (1176, 17.5f, 40, 40), hAct, aRun, 0);
+    hit (R (1268, 17.5f, 40, 40), hAct, aPanic, 0);
+    hit (R (1373, 17.5f, 96, 40), hRead, cx::kTempo, 0);
+    hit (R (1487, 17.5f, 72, 40), hRead, cx::kKey, 0);
+    hit (R (1573, 15.5f, 132, 44), hKnob, cx::kGlide, 0);
     lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
 }
 
 void Screen::drawMain (G& g)
 {
-    for (int l = 0; l < kLanes; ++l)
+    // CONFIG slides in from the left over two columns and moves the top three rows over
+    const float ease = cfgT * cfgT * (3.0f - 2.0f * cfgT), dx = 564.0f * ease;
     {
-        const int col = l < 5 ? l : l - 5, row = l < 5 ? 0 : 1;
-        drawLane (g, l, R (23.0f + (float) col * 282.0f, row == 0 ? 78.0f : 430.0f, 272, 344));
+        const juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (juce::Rectangle<int> (9, 64, 1710, 912));
+        g.addTransform (juce::AffineTransform::translation (dx, 0.0f));
+        shift = dx;
+        for (int l = 0; l < kLanes; ++l)
+        {
+            const int col = l < 5 ? l : l - 5, row = l < 5 ? 0 : 1;
+            drawLane (g, l, R (23.0f + (float) col * 282.0f, row == 0 ? 78.0f : 430.0f, 272, 344));
+        }
+        drawSnapPanel (g, R (1433, 78, 272, 344));
+        for (int sl = 0; sl < kSlots; ++sl) drawInsert (g, sl, R (23.0f + (float) sl * 282.0f, 782, 272, 190));
+        drawReturns (g, R (869, 782, 272, 190));
+        drawMaster (g, R (1151, 782, 554, 190));
+        shift = 0.0f;
     }
-    drawSnapPanel (g, R (1433, 78, 272, 344));
-    for (int s = 0; s < kSlots; ++s) drawInsert (g, s, R (23.0f + (float) s * 282.0f, 782, 272, 190));
-    drawReturns (g, R (869, 782, 272, 190));
-    drawMaster (g, R (1151, 782, 554, 190));
     drawSequencer (g, R (23, 980, 1682, 110));
+    if (cfgT > 0.001f)
+    {
+        const juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (juce::Rectangle<int> (9, 64, 1710, 912));
+        drawConfig (g, R (23.0f - 564.0f * (1.0f - ease), 78, 554, 894));
+    }
+}
+
+void Screen::openConfig (Engine::Target t)
+{
+    const bool same = cfgOpen && cfg.kind == t.kind && cfg.slot == t.slot && (t.kind == 2 || cfg.lane == t.lane);
+    if (same) { cfgOpen = false; return; }
+    cfg = t; cfgOpen = true; cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {};
+    if (t.kind == 0 && ses.activeLane != t.lane) { ses.activeLane = t.lane; ses.selStep = -1; ses.page = 0; }
+}
+
+void Screen::drawConfig (G& g, R r)
+{
+    cfgRect = r;
+    hit (r, hBlock);
+    panel (g, r, col::grey);
+    const float x0 = r.getX() + 5, y0 = r.getY() + 5;
+    auto* p = eng.processorFor (cfg);
+    String tag, name;
+    if (cfg.kind == 0) { tag = String (cfg.lane + 1); name = lanes()[(size_t) cfg.lane].name; }
+    else if (cfg.kind == 1)
+    {
+        tag = String (cfg.lane + 1) + "." + String (cfg.slot + 1);
+        const int t = eng.insertType (cfg.lane, cfg.slot);
+        name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
+    }
+    else { tag = cfg.slot == 0 ? "A" : "B"; name = cfg.slot == 0 ? "DUB" : "SPACE"; }
+    const float wTag = std::max (30.0f, std::ceil (tw (fLegend, tag)) + 10.0f);
+    g.setColour (col::black); g.fillRect (R (x0, y0, wTag, 26));
+    text (g, tag, R (x0, y0, wTag, 26), fLegend, col::lit);
+    float x = x0 + wTag;
+    x += plate (g, x, y0, name, fLegend, 8, col::white, col::black) + 2;
+    plate (g, x, y0, "CONFIG", fNote, 6, col::white, col::black);
+    const R cr (r.getRight() - 27, y0 + 2, 22, 22);
+    key (g, cr, col::white);
+    text (g, "X", cr, fLbl, col::black);
+    hit (cr.expanded (2), hAct, aCfgClose, 0);
+
+    if (cfgStale || ++cfgAge > 12) { cfgParams = p != nullptr ? eng.setupParams (cfg) : std::vector<Engine::SetupParam>(); cfgStale = false; cfgAge = 0; }
+    // the parameter last touched, with its value
+    for (auto& sp : cfgParams)
+        if (sp.name == cfgName)
+        {
+            const String v = sp.name + "   " + sp.text.toUpperCase();
+            plate (g, cr.getX() - 8 - (std::ceil (tw (fNote, v)) + 12), y0, v, fNote, 6, col::white, col::black);
+            break;
+        }
+
+    float y = y0 + 34;
+    cfgDisplay = {};
+    if (p == nullptr)
+    {
+        text (g, "THIS SLOT IS EMPTY. CLICK ITS NAME ON THE MAIN SCREEN TO PUT AN EFFECT IN IT.", R (x0, y, 544, 40), fLbl, col::black, juce::Justification::centredLeft);
+        return;
+    }
+    auto& m = p->mod();
+    if (const int dh = juce::jmin (230, m.displayHeight()); dh > 0)
+    {
+        // the module's own display: waveform, in and out points, cue points. It takes the mouse.
+        cfgDisplay = R (x0, y, 544, (float) dh);
+        g.setColour (juce::Colours::black); g.fillRect (cfgDisplay);
+        {
+            const juce::Graphics::ScopedSaveState state (g);
+            g.reduceClipRegion (cfgDisplay.getSmallestIntegerContainer());
+            m.paint (g, cfgDisplay);
+        }
+        hit (cfgDisplay, hDisplay);
+        y += (float) dh + 6;
+    }
+    String status = m.statusLine();
+    if (m.acceptsFiles())
+    {
+        const String f = cfg.kind == 0 ? juce::File (eng.laneFile (cfg.lane)).getFileName() : String();
+        status << (status.isEmpty() ? "" : "   ") << (f.isNotEmpty() ? "FILE: " + f : m.fileHint() + " ON THIS LANE");
+    }
+    if (cfgNote.isNotEmpty() && cfg.kind == 0) status = cfgNote;
+    if (status.isNotEmpty()) { plate (g, x0, y, status.toUpperCase(), fNote, 6, col::white, col::black, 22); y += 28; }
+
+    const int cols = 6, total = (int) cfgParams.size(), rows = (total + cols - 1) / cols;
+    const float rowH = 96.0f;
+    const int rowsVis = std::max (1, (int) ((r.getBottom() - 8 - y) / rowH));
+    cfgScroll = juce::jlimit (0, std::max (0, rows - rowsVis), cfgScroll);
+    for (int n = 0; n < rowsVis * cols; ++n)
+    {
+        const int i = cfgScroll * cols + n;
+        if (i >= total) break;
+        const auto& sp = cfgParams[(size_t) i];
+        const float cxl = x0 + 2 + (float) (n % cols) * 90, cy = y + (float) (n / cols) * rowH;
+        const R kr (cxl + 25, cy, 40, 40);
+        if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty);
+        else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
+        else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
+        legend (g, cxl + 45, cy + 43, sp.name);
+        if (sp.kind == Kind::List)
+        {
+            const R vr (cxl + 1, cy + 73, 88, 16);
+            g.setColour (col::white); g.fillRect (vr);
+            g.setColour (col::black); g.setFont (fLbl);
+            g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
+        }
+        hit (kr.expanded (4, 2), hSetup, i, 0);
+    }
+    if (rows > rowsVis)
+    {
+        const String more = "ROWS " + String (cfgScroll + 1) + " TO " + String (cfgScroll + rowsVis) + " OF " + String (rows) + ": SCROLL";
+        plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, more)) + 12), r.getBottom() - 27, more, fNote, 6, col::white, col::black, 22);
+    }
 }
 
 void Screen::drawLane (G& g, int l, R r)
@@ -253,21 +401,18 @@ void Screen::drawLane (G& g, int l, R r)
     const auto& d = lanes()[(size_t) l];
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     const bool active = l == ses.activeLane;
-    hits.push_back ({ r, hLanePanel, l, 0 });
+    hit (r, hLanePanel, l, 0);
     panel (g, r, col::putty);
     const String num (l + 1);
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
-    if (vis (g, R (x0, y0, 262, 26)))
+    if (vis (g, R (x0, y0, wTag, 26)))
     {
         g.setColour (col::black); g.fillRect (R (x0, y0, wTag, 26));
         text (g, num, R (x0, y0, wTag, 26), fLegend, col::lit);
-        const float wn = plate (g, x0 + wTag, y0, d.name, fLegend, 8, active ? col::black : col::white, active ? col::lit : col::black);
-        hits.push_back ({ R (x0, y0, wTag + wn, 26), hLane, l, 0 });
-        const float xr = r.getRight() - 7;
-        for (int k = 0; k < kSlots; ++k) lamp (g, xr - 6 - (float) (2 - k) * 15, y0 + 13, eng.insertType (l, k) >= 0 ? col::green : col::putty);
-        text (g, "INS", R (xr - 47 - 40, y0, 40, 26), fLbl, col::black, juce::Justification::centredRight);
     }
-    else hits.push_back ({ R (x0, y0, wTag + std::ceil (tw (fLegend, d.name)) + 16, 26), hLane, l, 0 });
+    const float wn = plate (g, x0 + wTag, y0, d.name, fLegend, 8, active ? col::black : col::white, active ? col::lit : col::black);
+    hit (R (x0, y0, wTag + wn, 26), hLane, l, 0);
+    headKeys (g, r.getRight() - 5, y0 + 2, 0, l, 0, cx::lane (l, cx::kMute), cx::lane (l, cx::kSolo));
     for (int k = 0; k < kLaneKnobs; ++k)
         control (g, cx::lane (l, k), x0 + (float) (k % 4) * 66, body + (float) (k / 4) * 77, 64, k < 8 ? col::lit : k < 11 ? col::red : col::blue);
     control (g, cx::lane (l, cx::kSendA), x0, body + 231, 64, col::blue);
@@ -299,7 +444,7 @@ void Screen::drawSnapPanel (G& g, R r)
                 knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, col::teal);
                 text (g, ses.knobs[(size_t) k].name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
-            hits.push_back ({ kr.expanded (4, 2), hSnapKnob, k, 0 });
+            hit (kr.expanded (4, 2), hSnapKnob, k, 0);
         }
         else if (vis (g, kr)) hollow (g, cxm, y + 20, 40, true);
     }
@@ -310,7 +455,7 @@ void Screen::drawSnapPanel (G& g, R r)
         key (g, bar, col::yellow, mouseIsDown && drag.kind == hAct && drag.a == aSnapshot ? 6.0f : 2.0f);
         text (g, "SNAPSHOT", R (x0, ky + 43, 130, 14), fLbl, col::black);
     }
-    hits.push_back ({ bar, hAct, aSnapshot, 0 });
+    hit (bar, hAct, aSnapshot, 0);
     actKey (g, aLibrary, x0 + 132, ky, 64, "LIBRARY", col::white);
     actKey (g, aMacros, x0 + 198, ky, 64, "MACROS", col::white);
 }
@@ -322,7 +467,8 @@ void Screen::drawInsert (G& g, int slot, R r)
     panel (g, r, col::putty);
     const String name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
     const float w = plate (g, x0, y0, name, fLegend, 8, col::white, col::black);
-    hits.push_back ({ R (x0, y0, w, 26), hInsHead, slot, 0 });
+    hit (R (x0, y0, w, 26), hInsHead, slot, 0);
+    if (t >= 0) headKeys (g, r.getRight() - 5, y0 + 2, 1, l, slot, cx::insMute (l, slot), cx::insSolo (l, slot));
     for (int c = 0; c < kCells; ++c) control (g, cx::ins (l, slot, c), x0 + (float) (c % 4) * 66, body + (float) (c / 4) * 77, 64, col::lit);
 }
 
@@ -330,18 +476,18 @@ void Screen::drawReturns (G& g, R r)
 {
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     panel (g, r, col::putty);
-    if (vis (g, R (x0, y0, 262, 26)))
-    {
-        plate (g, x0, y0, "RETURNS", fLegend, 8, col::white, col::black);
-        const String note = juce::CharPointer_UTF8 ("A DUB \xc2\xb7 B SPACE");
-        plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, note)) + 12), y0, note, fNote, 6, col::white, col::black);
-    }
+    plate (g, x0, y0, "RETURNS", fLegend, 8, col::white, col::black);
+    const float xr = r.getRight() - 5;
+    text (g, "A", R (xr - 180, y0, 14, 26), fLegend, col::black);
+    headKeys (g, xr - 94, y0 + 2, 2, 0, 0, cx::kRetMS, cx::kRetMS + 1);
+    text (g, "B", R (xr - 86, y0, 14, 26), fLegend, col::black);
+    headKeys (g, xr, y0 + 2, 2, 0, 1, cx::kRetMS + 2, cx::kRetMS + 3);
     for (int k = 0; k < 8; ++k) control (g, cx::kRet + k, x0 + (float) (k % 4) * 66, body + (float) (k / 4) * 77, 64, col::lit);
 }
 
 void Screen::drawMaster (G& g, R r)
 {
-    masterRect = r;
+    masterRect = r.translated (shift, 0.0f);
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     panel (g, r, col::grey);
     plate (g, x0, y0, "MASTER", fLegend, 8, col::white, col::black);
@@ -355,34 +501,42 @@ void Screen::drawMaster (G& g, R r)
     readout (g, R (x0 + 66, fy, 64, 42), "GR", String (eng.gainRed.load(), 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     const float lu = eng.lufs.load();
     readout (g, R (x0 + 132, fy, 64, 42), "LUFS", lu < -60.0f ? String ("--") : String (lu, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
-    // the meter: two bars on a dial plate
-    const R mp (x0 + 216, body + 17, 328, 84);
+    // meters: every lane as it reaches the mix, then the mix itself
+    const R mp (x0 + 212, y0, 332, 180);
     g.setColour (col::white); g.fillRect (mp);
-    const float bx = mp.getX() + 26, len = 264.0f;
-    auto xOf = [len] (float db) { return juce::jlimit (0.0f, len, (db + 60.0f) / 66.0f * len); };
-    const float dbs[2] = { eng.peakL.load(), eng.peakR.load() };
-    const bool clips[2] = { eng.clipL.load(), eng.clipR.load() };
-    for (int ch = 0; ch < 2; ++ch)
+    const float top = mp.getY() + 26, H = 122.0f, bot = top + H;
+    auto yOf = [bot, H] (float db) { return bot - juce::jlimit (0.0f, H, (db + 60.0f) / 66.0f * H); };
+    auto bar = [&] (float x, float w, float db)
     {
-        const float y = mp.getY() + 8 + (float) ch * 22;
-        text (g, ch == 0 ? "L" : "R", R (mp.getX() + 10, y, 10, 18), fLbl, col::black, juce::Justification::centredLeft);
-        g.setColour (col::black); g.fillRect (R (bx, y, len + 4, 18));
-        g.setColour (col::white); g.fillRect (R (bx + 2, y + 2, len, 14));
-        g.setColour (col::black); g.fillRect (R (bx + 2, y + 2, xOf (dbs[ch]), 14));
-        key (g, R (bx + len + 10, y, 18, 18), clips[ch] ? col::red : col::white);
+        g.setColour (col::black); g.fillRect (R (x, top - 2, w, H + 4));
+        g.setColour (col::white); g.fillRect (R (x + 2, top, w - 4, H));
+        g.setColour (col::black); g.fillRect (R (x + 2, yOf (db), w - 4, bot - yOf (db)));
+    };
+    for (int l = 0; l < kLanes; ++l)
+    {
+        const float x = mp.getX() + 8 + (float) l * 23;
+        bar (x, 18, eng.laneDb[(size_t) l].load());
+        const R nb (x - 2, bot + 8, 22, 16);
+        const bool act = l == ses.activeLane;
+        if (act) { g.setColour (col::black); g.fillRect (nb); }
+        text (g, String (l + 1), nb, fLbl, act ? col::lit : col::black);
     }
-    const float sy = mp.getY() + 52, ox = bx + 2;
-    g.setColour (col::black); g.fillRect (R (ox + xOf (-6), sy, xOf (0) - xOf (-6), 7));
-    g.setColour (col::amber); g.fillRect (R (ox + xOf (-6) + 1, sy + 1, xOf (0) - xOf (-6) - 2, 5));
-    g.setColour (col::black); g.fillRect (R (ox + xOf (0), sy, xOf (6) - xOf (0), 7));
-    g.setColour (col::red); g.fillRect (R (ox + xOf (0) + 1, sy + 1, xOf (6) - xOf (0) - 2, 5));
-    static const int ticks[] = { -48, -24, -12, -6, 0 };
+    const float mx = mp.getX() + 267;
+    bar (mx, 16, eng.peakL.load());
+    bar (mx + 18, 16, eng.peakR.load());
+    key (g, R (mx, mp.getY() + 6, 16, 12), eng.clipL.load() ? col::red : col::white);
+    key (g, R (mx + 18, mp.getY() + 6, 16, 12), eng.clipR.load() ? col::red : col::white);
+    text (g, "MIX", R (mx - 4, bot + 8, 42, 16), fLbl, col::black);
+    const float sx = mx + 37;
+    g.setColour (col::amber); g.fillRect (R (sx, yOf (0), 3, yOf (-6) - yOf (0)));
+    g.setColour (col::red); g.fillRect (R (sx, yOf (6), 3, yOf (0) - yOf (6)));
+    static const int ticks[] = { -48, -24, -12, 0 };
     for (int t : ticks)
     {
-        g.setColour (col::black); g.fillRect (R (ox + xOf ((float) t) - 1, sy, 2, 9));
-        if (t != -6) text (g, t == 0 ? String ("0") : String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) + String (-t), R (ox + xOf ((float) t) - 20, sy + 10, 40, 14), fLbl, col::black);
+        g.setColour (col::black); g.fillRect (R (sx, yOf ((float) t) - 1, 6, 2));
+        text (g, t == 0 ? String ("0") : String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) + String (-t), R (sx + 7, yOf ((float) t) - 7, 22, 14), fLbl, col::black, juce::Justification::centredLeft);
     }
-    text (g, "CLIP", R (bx + len + 8, sy + 1, 40, 14), fLbl, col::black, juce::Justification::centredLeft);
+    hit (R (mx - 2, mp.getY() + 2, 40, 20), hAct, aClipReset, 0);
 }
 
 void Screen::drawSequencer (G& g, R r)
@@ -409,7 +563,7 @@ void Screen::drawSequencer (G& g, R r)
     // pattern keys, then step keys
     knob (g, x0 + 28, ky + 20, 40, (float) len / 128.0f, Kind::Knob, 0, col::lit);
     legend (g, x0 + 28, ky + 45, "LENGTH");
-    hits.push_back ({ R (x0 + 4, ky - 2, 48, 44), hLen, 0, 0 });
+    hit (R (x0 + 4, ky - 2, 48, 44), hLen, 0, 0);
     actKey (g, aNudgeL, x0 + 58, ky, 56, "< NUDGE", col::yellow, 5);
     actKey (g, aNudgeR, x0 + 116, ky, 56, "NUDGE >", col::yellow, 5);
     actKey (g, aRatchet, x0 + 184, ky, 56, "RATCHET", col::yellow, 5);
@@ -437,7 +591,7 @@ void Screen::drawSequencer (G& g, R r)
                 else if (! pat.steps[(size_t) i].on) { g.setColour (col::white); g.fillRect (c.reduced (1)); }
             }
         }
-        hits.push_back ({ pr.expanded (0, 3), hPageSel, w, 0 });
+        hit (pr.expanded (0, 3), hPageSel, w, 0);
     }
 
     // sixteen steps
@@ -448,7 +602,7 @@ void Screen::drawSequencer (G& g, R r)
         const bool in = i < len, on = in && x.on;
         const float sx = x1 + (float) j * 45 + (float) (j / 4) * 7;
         const R kr (sx, ky, 40, 40), inner = kr.reduced (2);
-        hits.push_back ({ kr, hStep, i, 0 });
+        hit (kr, hStep, i, 0);
         if (! vis (g, R (sx - 16, y0 + 20, 72, 82))) continue;
         // a gate over one step runs on: through unlit steps as a tie, into a lit one as legato
         int k = -1;
@@ -458,7 +612,7 @@ void Screen::drawSequencer (G& g, R r)
         float carry = 0.0f; bool bridge = false;
         if (tied)
         {
-            if (on) bridge = end >= (float) i - 0.001f;
+            if (on) bridge = end >= (float) i + kLegatoOver - 0.001f;
             else { carry = juce::jlimit (0.0f, 1.0f, end - (float) i); if (carry < 0.03f) carry = 0.0f; bridge = carry > 0.0f; }
         }
         lamp (g, sx + 20, y0 + 30, i == playing ? col::green : col::putty);
@@ -493,7 +647,7 @@ void Screen::drawSequencer (G& g, R r)
             {
                 const float e2 = std::min ((float) ks + pat.steps[(size_t) ks].gate, (float) len);
                 const bool nextOn = pat.steps[(size_t) (i + 1)].on;
-                if (nextOn ? e2 >= (float) (i + 1) - 0.001f : e2 - (float) (i + 1) > 0.03f)
+                if (nextOn ? e2 >= (float) (i + 1) + kLegatoOver - 0.001f : e2 - (float) (i + 1) > 0.03f)
                 {
                     const float hk = std::round (pat.steps[(size_t) ks].vel * 36.0f), h = nextOn ? std::min (6.0f, hk) : hk;
                     g.fillRect (R (sx + 38, inner.getBottom() - h, 9, h));
@@ -525,7 +679,7 @@ void Screen::drawSequencer (G& g, R r)
 // -------------------------------------------------------------------------------------- library
 void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selected, int hitKind)
 {
-    hits.push_back ({ r, hitKind, index, 0 });
+    hit (r, hitKind, index, 0);
     if (! vis (g, r)) return;
     g.setColour (col::black); g.fillRect (r);
     g.setColour (col::putty); g.fillRect (r.reduced (selected ? 4.0f : 1.0f));
@@ -587,7 +741,7 @@ void Screen::drawMacros (G& g)
         const R r (23.0f + (float) (k % 4) * 282, 78.0f + (float) (k / 4) * 224, 272, 216);
         const auto& kn = ses.knobs[(size_t) k];
         const bool sel = k == selKnob;
-        hits.push_back ({ r, hKnobCard, k, 0 });
+        hit (r, hKnobCard, k, 0);
         if (vis (g, r))
         {
             g.setColour (col::black); g.fillRect (r);
@@ -610,12 +764,12 @@ void Screen::drawMacros (G& g)
             const float v = eng.shown (cx::kSnap + k);
             lastShown[(size_t) (cx::kSnap + k)] = v;
             knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, col::teal);
-            hits.push_back ({ R (x0 + 8, ky - 2, 48, 44), hSnapKnob, k, 0 });
+            hit (R (x0 + 8, ky - 2, 48, 44), hSnapKnob, k, 0);
         }
         else hollow (g, x0 + 32, ky + 20, 40, true);
         legend (g, x0 + 32, ky + 43, "TURN");
         knob (g, x0 + 98, ky + 20, 40, kn.depth * 0.5f, Kind::Knob, 0, col::lit);
-        hits.push_back ({ R (x0 + 74, ky - 2, 48, 44), hDepth, k, 0 });
+        hit (R (x0 + 74, ky - 2, 48, 44), hDepth, k, 0);
         legend (g, x0 + 98, ky + 43, "DEPTH");
         for (int s = 0; s < 10; ++s)
         {
@@ -625,7 +779,7 @@ void Screen::drawMacros (G& g)
                 const int li = ses.indexOf (kn.snaps[(size_t) s]);
                 g.setColour (col::black); g.fillRect (sr);
                 text (g, String (li + 1), sr, fLbl, col::lit);
-                hits.push_back ({ sr, hSlot, k, s });
+                hit (sr, hSlot, k, s);
             }
             else { g.setColour (col::sea); g.drawRect (sr.reduced (0.5f), 1.0f); }
         }
@@ -680,6 +834,8 @@ void Screen::act (int a)
         case aPanic:    eng.panic(); break;
         case aAudio:    if (onAudioSetup) onAudioSetup(); break;
         case aFull:     if (onFullScreen) onFullScreen(); break;
+        case aCfgClose: cfgOpen = false; break;
+        case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
         case aLibrary:  setPage (pLibrary); break;
         case aMacros:   setPage (pMacros); break;
@@ -720,14 +876,16 @@ void Screen::act (int a)
 
 void Screen::stepTap (int i)
 {
-    // An unlit step lights and is selected; a lit step is selected first, and a second tap puts it out.
+    // An unlit step lights, at velocity 75 and a whole step of gate, and is selected. A lit step is
+    // selected first; a second tap puts it out, and it forgets everything it held.
     const int l = ses.activeLane;
     Pattern p = ses.pattern (l);
     if (i >= p.length) return;
     auto& s = p.steps[(size_t) i];
-    if (! s.on) { s.on = true; ses.selStep = i; ses.setPattern (l, p); }
+    const int oct = lanes()[(size_t) l].octave;
+    if (! s.on) { clearStep (s, oct); s.on = true; ses.selStep = i; ses.setPattern (l, p); }
     else if (ses.selStep != i) ses.selStep = i;
-    else { s.on = false; ses.setPattern (l, p); }
+    else { clearStep (s, oct); ses.setPattern (l, p); }
 }
 
 void Screen::mouseDown (const juce::MouseEvent& e)
@@ -748,15 +906,36 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hLen:      drag.v0 = (float) ses.pattern (ses.activeLane).length; break;
         case hToggle:   ses.userSet (h->a, ses.value (h->a) > 0.5f ? 0.0f : 1.0f); break;
         case hHold:     ses.userSet (h->a, 1.0f); break;
-        case hLane:     ses.activeLane = h->a; ses.selStep = -1; ses.page = 0; ses.touch(); break;
-        case hInsHead:  ses.stepInsert (ses.activeLane, h->a); break;
+        case hLane:
+            ses.activeLane = h->a; ses.selStep = -1; ses.page = 0; ses.touch();
+            if (cfgOpen && cfg.kind != 2) { cfg.lane = h->a; cfgStale = true; cfgScroll = 0; }
+            break;
+        case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
+        case hSetup:
+            if (h->a < (int) cfgParams.size())
+            {
+                const auto& sp = cfgParams[(size_t) h->a];
+                cfgName = sp.name;
+                drag.v0 = sp.value;
+                if (sp.kind == Kind::Toggle) eng.setSetup (cfg, sp.id, sp.value > 0.5f ? 0.0f : 1.0f);
+                else if (sp.kind == Kind::Hold) eng.setSetup (cfg, sp.id, 1.0f);
+                cfgStale = true;
+                ses.touch();
+            }
+            break;
+        case hDisplay:
+            if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouse (p, cfgDisplay, true);
+            ses.touch();
+            break;
+        case hInsHead:  ses.stepInsert (ses.activeLane, h->a); cfgStale = true; break;
         case hPageSel:  ses.page = h->a; break;
         case hStep:
         {
             const Pattern pat = ses.pattern (ses.activeLane);
             if (h->a >= pat.length) { drag.kind = 0; break; }
             const auto& s = pat.steps[(size_t) h->a];
-            drag.v0 = s.vel; drag.g0 = s.gate; drag.r0 = s.ratchet;
+            const Step fresh;
+            drag.v0 = s.on ? s.vel : fresh.vel; drag.g0 = s.on ? s.gate : fresh.gate; drag.r0 = s.on ? s.ratchet : 1;
             break;
         }
         case hAct:      if (h->a != aDelete) { act (h->a); return; } break;
@@ -798,6 +977,24 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             if (drag.kind == hSnapKnob || ctl >= cx::kTempo) repaint();
             break;
         }
+        case hSetup:
+            if (drag.a < (int) cfgParams.size())
+            {
+                const auto& sp = cfgParams[(size_t) drag.a];
+                if (sp.kind == Kind::Toggle || sp.kind == Kind::Hold) break;
+                const int nc = sp.choices.size();
+                const float v = sp.kind == Kind::List && nc > 1 ? drag.v0 + std::round (dy / 14.0f) / (float) (nc - 1)
+                                                               : drag.v0 + dy / (e.mods.isShiftDown() ? 800.0f : 160.0f);
+                eng.setSetup (cfg, sp.id, v);
+                cfgStale = true;
+                ses.touch();
+                repaint();
+            }
+            break;
+        case hDisplay:
+            if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouse (p, cfgDisplay, false);
+            dirty (cfgDisplay);
+            break;
         case hDepth:
             ses.knobs[(size_t) drag.a].depth = juce::jlimit (0.0f, 2.0f, drag.v0 + dy / 80.0f);
             ses.turnSnapKnob (drag.a, ses.value (cx::kSnap + drag.a));
@@ -818,20 +1015,17 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             Pattern pat = ses.pattern (ses.activeLane);
             const int i = drag.a;
             auto& s = pat.steps[(size_t) i];
-            s.on = true;
+            if (! s.on) { clearStep (s, lanes()[(size_t) ses.activeLane].octave); s.on = true; }
             if (drag.axis == 'v') s.vel = juce::jlimit (0.15f, 1.0f, drag.v0 + dy / 60.0f);
             else
             {
-                // the gate follows the hand: a step's pitch is a step of gate; past the edge it runs on to the next lit step
-                float mx = 1.0f;
-                if (drag.r0 == 1)
-                {
-                    int nx = pat.length;
-                    for (int k = i + 1; k < pat.length; ++k) if (pat.steps[(size_t) k].on) { nx = k; break; }
-                    mx = (float) std::max (1, nx - i);
-                }
+                // The gate follows the hand: a step's pitch is a step of gate. It stops at the step's own edge and at the
+                // next lit step's edge; a little past that edge it is legato into that step.
+                const float dist = (float) stepsToNext (pat, i);
+                const float mx = drag.r0 == 1 ? dist + 0.25f : 1.0f;
                 float gt = drag.g0 + dx / 45.0f;
-                if (gt > 0.93f && gt < 1.07f) gt = 1.0f;
+                if (std::abs (gt - 1.0f) < 0.07f) gt = 1.0f;
+                if (std::abs (gt - dist) < 0.07f) gt = dist;
                 s.gate = juce::jlimit (0.15f, mx, gt);
             }
             ses.selStep = i;
@@ -847,6 +1041,9 @@ void Screen::mouseUp (const juce::MouseEvent&)
 {
     mouseIsDown = false;
     if (drag.kind == hHold) ses.userSet (drag.a, 0.0f);
+    if (drag.kind == hSetup && drag.a < (int) cfgParams.size() && cfgParams[(size_t) drag.a].kind == Kind::Hold) eng.setSetup (cfg, cfgParams[(size_t) drag.a].id, 0.0f);
+    if (drag.kind == hDisplay) if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouseUp();
+    cfgStale = true;
     if (drag.kind == hStep && ! drag.moved) stepTap (drag.a);
     drag.kind = 0;
     repaint();
@@ -859,6 +1056,11 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
+        else if (h->kind == hSetup && h->a < (int) cfgParams.size())
+        {
+            const auto& sp = cfgParams[(size_t) h->a];
+            if (sp.kind == Kind::Knob || sp.kind == Kind::Bipolar || sp.kind == Kind::List) { eng.setSetup (cfg, sp.id, sp.def); cfgStale = true; ses.touch(); }
+        }
         repaint();
     }
 }
@@ -866,6 +1068,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     if (page != pMain) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (cfgOpen && cfgRect.contains (logical (e.position))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (const auto* h = hitAt (logical (e.position)))
         if (h->kind == hKnob || h->kind == hSnapKnob || h->kind == hRead)
         {
@@ -881,20 +1084,46 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
 bool Screen::keyPressed (const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::spaceKey) { act (aRun); return true; }
-    if (k == juce::KeyPress::escapeKey) { if (page != pMain) setPage (pMain); else if (onFullScreen) onFullScreen(); return true; }
+    if (k == juce::KeyPress::escapeKey)
+    {
+        if (page != pMain) setPage (pMain);
+        else if (cfgOpen) { cfgOpen = false; repaint(); }
+        else if (onFullScreen) onFullScreen();
+        return true;
+    }
     if (k.getTextCharacter() == 'f' || k.getTextCharacter() == 'F') { if (onFullScreen) onFullScreen(); return true; }
     if (k == juce::KeyPress::leftKey)  { ses.page = std::max (0, ses.page - 1); repaint(); return true; }
     if (k == juce::KeyPress::rightKey) { ses.page = std::min (7, ses.page + 1); repaint(); return true; }
-    if (k == juce::KeyPress::upKey)    { ses.activeLane = std::max (0, ses.activeLane - 1); ses.selStep = -1; ses.page = 0; repaint(); return true; }
-    if (k == juce::KeyPress::downKey)  { ses.activeLane = std::min (kLanes - 1, ses.activeLane + 1); ses.selStep = -1; ses.page = 0; repaint(); return true; }
+    if (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey)
+    {
+        ses.activeLane = juce::jlimit (0, kLanes - 1, ses.activeLane + (k == juce::KeyPress::upKey ? -1 : 1));
+        ses.selStep = -1; ses.page = 0;
+        if (cfgOpen && cfg.kind != 2) { cfg.lane = ses.activeLane; cfgStale = true; cfgScroll = 0; }
+        repaint();
+        return true;
+    }
     return false;
 }
 
 void Screen::filesDropped (const juce::StringArray& files, int x, int y)
 {
+    if (files.size() == 0 || page != pMain) return;
     const auto p = logical ({ (float) x, (float) y });
-    for (auto& h : hits)
-        if (h.kind == hLanePanel && h.r.contains (p) && files.size() > 0) { eng.loadFile (h.a, juce::File (files[0])); break; }
+    int target = -1;
+    if (cfgOpen && cfg.kind == 0 && cfgRect.contains (p)) target = cfg.lane;        // onto the open CONFIG panel
+    else
+        for (size_t i = hits.size(); i-- > 0;)
+            if (hits[i].kind == hLanePanel && hits[i].r.contains (p)) { target = hits[i].a; break; }
+    if (target < 0) target = ses.activeLane;                                         // anywhere else: the active lane
+    const juce::File f (files[0]);
+    const bool ok = eng.loadFile (target, f);
+    cfgOpen = false;
+    openConfig ({ 0, target, 0 });
+    cfgNote = ok ? String() : (eng.processorFor ({ 0, target, 0 })->mod().acceptsFiles()
+                                   ? "COULD NOT READ " + f.getFileName().toUpperCase() + ". IF MACOS ASKED FOR ACCESS TO THE FOLDER, ALLOW IT AND DROP THE FILE AGAIN."
+                                   : String ("THIS LANE'S MODULE TAKES NO AUDIO FILE."));
+    if (ok) ses.touch();
+    repaint();
 }
 
 void Screen::beginEdit (R where, const String& initial, std::function<void (String)> done)
@@ -938,8 +1167,15 @@ void Screen::timerCallback()
             const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
             if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl]) dirty (h.r.expanded (14, 6));
         }
+    const float want = cfgOpen && page == pMain ? 1.0f : 0.0f;
+    if (cfgT != want)
+    {
+        cfgT = want > cfgT ? std::min (want, cfgT + 0.2f) : std::max (want, cfgT - 0.2f);
+        repaint();
+    }
     if (page == pMain)
     {
+        if (cfgOpen && ! cfgDisplay.isEmpty()) dirty (cfgDisplay);
         dirty (masterRect);
         const bool run = eng.isRunning();
         if (run || wasRunning)

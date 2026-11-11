@@ -31,10 +31,12 @@ First run:
 | --- | --- |
 | Drag a knob up or down | turn it (hold Shift for fine; double-click for its starting value; the wheel works too) |
 | Click a lane's name | make it the active lane: the inserts and the sequencer strip show it |
+| **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it |
+| **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
 | Click an insert's name | step that slot through DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, EMPTY |
-| Click a step | unlit: light and select it. Lit: select it. Lit and selected: put it out |
+| Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
-| Drag a step left or right | gate. Past the step's edge it runs on: a tie through unlit steps, legato into a lit one |
+| Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note) |
 | RATCHET, NOTE, OCTAVE | change the selected step (NOTE and OCTAVE on lanes that take notes) |
 | < NUDGE, NUDGE > | move the whole pattern one step |
 | Drag the LENGTH knob | 1 to 128 steps. Click a page above the steps to see its 16 |
@@ -45,10 +47,32 @@ First run:
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every pitched lane follows (parts are written in C) |
-| Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase) |
+| Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform |
+| Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
 
 The screen never asks a question while it plays. PANIC silences every voice and tail.
+
+### CONFIG: where a sound is set up
+
+The main screen is for playing. CONFIG is for building the sound: it slides in from the left over
+two columns and moves the top three rows over; the sequencer stays where it is.
+
+- **A lane's CONFIG** holds everything its twelve knobs do not: MODEL and LAYER MODEL, the layer
+  crossover (SPLIT, SPLIT HZ), sample start, end and fades, and the rest of the module's
+  parameters. At the top is the module's own display: the waveform with its in and out points, and
+  on VOICE the phrase with its cue points. The display takes the mouse.
+- **An insert's or a return's CONFIG** holds that effect's remaining parameters and its display.
+- A menu shows its current choice under the knob. The parameter last touched shows its value in
+  the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
+  are more rows than fit.
+- What CONFIG sets is stored in snapshots with everything else.
+
+### Snapshots that come with it
+
+CLEAN SLATE (always first in the library) puts every knob where the rig starts it, with no steps
+and no inserts. INIT is the rig as it first comes up, patterns and all. The other five are the
+pushes behind the ENERGY, BUILD, ACID, DIST and WARP knobs.
 
 ## Checks
 
@@ -57,7 +81,7 @@ The screen never asks a question while it plays. PANIC silences every voice and 
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return
 ```
 
 ## What is here

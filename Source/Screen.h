@@ -15,6 +15,7 @@ public:
     enum Page { pMain, pLibrary, pMacros };
     void setPage (Page);
     std::function<void()> onAudioSetup, onFullScreen;
+    void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -33,16 +34,17 @@ public:
     struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
     std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
     static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull); }
-    static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth; }
+    static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
+    static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
 
 private:
     using G = juce::Graphics;
     using R = juce::Rectangle<float>;
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
-    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth };
+    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull };
+               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset };
 
     void timerCallback() override;
     void dirty (R);
@@ -55,7 +57,9 @@ private:
     float tw (const juce::Font&, const juce::String&) const;
     float plate (G&, float x, float y, const juce::String&, const juce::Font&, float padX, juce::Colour bg, juce::Colour fg, float h = 26.0f);
     void legend (G&, float cx, float y, const juce::String&);
-    void knob (G&, float cx, float cy, int size, float v, Kind, int steps, juce::Colour lit);
+    void knob (G&, float cx, float cy, int size, float v, Kind, int steps, juce::Colour lit, float target = -1.0f);
+    void hit (R, int kind, int a = 0, int b = 0);
+    void headKeys (G&, float right, float y, int kind, int lane, int slot, int muteCtl, int soloCtl);
     void hollow (G&, float cx, float cy, float d, bool round);
     void key (G&, R, juce::Colour fill, float border = 2.0f);
     void lamp (G&, float cx, float cy, juce::Colour fill, float d = 12.0f);
@@ -75,6 +79,8 @@ private:
     void drawSequencer (G&, R);
     void drawLibrary (G&);
     void drawMacros (G&);
+    void drawConfig (G&, R);
+    void openConfig (Engine::Target);
     void drawSnapCard (G&, const Snapshot&, int index, R, bool selected, int hitKind);
 
     void act (int a);
@@ -98,6 +104,15 @@ private:
     int selKnob = 0, libScroll = 0;
     R selNameRect;
     bool mouseIsDown = false;
+    // CONFIG: the setup panel that slides in from the left and moves the top three rows over
+    float shift = 0.0f;
+    Engine::Target cfg;
+    bool cfgOpen = false, cfgStale = true;
+    float cfgT = 0.0f;
+    int cfgScroll = 0, cfgAge = 0;
+    std::vector<Engine::SetupParam> cfgParams;
+    juce::String cfgName, cfgNote;
+    R cfgDisplay, cfgRect;
     std::unique_ptr<juce::TextEditor> editor;
     std::function<void (juce::String)> editDone;
 };

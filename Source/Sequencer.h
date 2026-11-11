@@ -1,8 +1,9 @@
 #pragma once
 // SF-000 sequencer. One pattern per lane, 1 to 128 steps of a sixteenth. Every step holds a
-// velocity, a gate (in steps: over 1 it runs on), a ratchet count and, on a pitched lane, a note.
-// A gate that reaches the next lit step is legato into it (the notes overlap: a slide on ACID, a
-// glide on the mono models); onto the same note it is a tie (one note, held, no new attack).
+// velocity, a gate (in steps), a ratchet count and, on a pitched lane, a note. A gate of 1 is the
+// whole step and stops there. Dragged past the step's edge it runs on: through unlit steps as a held
+// note, and into the next lit step as legato (the notes overlap: a slide on ACID, a glide on the
+// mono models); onto the same note it is a tie (one note, held, no new attack).
 // The audio thread turns a pattern into MIDI on the sample.
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <algorithm>
@@ -14,16 +15,20 @@ namespace sf0
 {
 constexpr int kMaxSteps = 128;
 constexpr double kStepBeats = 0.25;      // a sixteenth
+constexpr float kLegatoOver = 0.05f;     // how far past the next lit step a gate must reach to be legato into it
 
 struct Step
 {
     bool on = false;
-    float vel = 0.8f;       // 0..1; high is the accent on ACID
-    float gate = 0.5f;      // steps
+    float vel = 0.75f;      // 0..1; high is the accent on ACID
+    float gate = 1.0f;      // steps: 1 is the whole step
     int ratchet = 1;        // 1..4 hits in the step
     int note = 0;           // 0..11, C..B
     int octave = 3;         // C3 = MIDI 60, as the suite counts
 };
+
+// A step put out forgets everything it held.
+inline void clearStep (Step& s, int octave) { s = Step(); s.octave = octave; }
 
 struct Pattern
 {
@@ -74,12 +79,12 @@ inline void generate (Pattern& p, const GenParams& g)
         std::stable_sort (hits.begin(), hits.begin() + H, [] (auto& a, auto& b) { return a.first > b.first; });
         for (int k = 0; k < A; ++k) acc[hits[(size_t) k].second] = true;
     }
-    for (int i = 0; i < len; ++i) { auto& s = p.steps[(size_t) i]; s.on = false; s.vel = 0.8f; s.gate = 0.5f; s.ratchet = 1; }
+    for (int i = 0; i < len; ++i) { auto& s = p.steps[(size_t) i]; s.on = false; s.vel = 0.75f; s.gate = 1.0f; s.ratchet = 1; }
     for (int i = 0; i < len; ++i)
         if (hit[i])
         {
             auto& s = p.steps[(size_t) ((((i + R) % len) + len) % len)];
-            s.on = true; s.vel = acc[i] ? 1.0f : 0.6f;
+            s.on = true; s.vel = acc[i] ? 1.0f : 0.75f;
         }
 }
 
@@ -147,9 +152,10 @@ struct LanePlayer
                 continue;
             }
             const int dist = stepsToNext (pat, i);
-            const bool reaches = st.gate >= (float) dist - 0.02f;
+            // past the next lit step's edge: legato into it. Up to the edge: the note ends there and the next one strikes.
+            const bool reaches = st.gate >= (float) dist + kLegatoOver;
             const double end = reaches ? tq + (dist + 0.12) * kStepBeats
-                                       : tq + juce::jlimit (0.05, (double) dist - 0.03, (double) st.gate) * kStepBeats;
+                                       : tq + juce::jlimit (0.05, (double) dist, (double) st.gate) * kStepBeats;
             // A tie: the note before reached this step and is the same note: it carries on.
             bool tied = false;
             for (auto& e : q)

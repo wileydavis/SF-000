@@ -109,6 +109,40 @@ a snapshot could reach it later.
 33. **Sheet 1 of the visual language still says legends sit on white plates.** The main screen
     dropped them; the sheet has not been updated.
 
+## Second build (Nov 11): CONFIG, mute and solo, meters
+
+34. **C, M and S are small lettered keys** at the right of every lane, insert and return header, in
+    place of the three INS lamps. The letters go on the keys because there is no room for a legend
+    under them. C is white (it opens another surface) and black while its panel is open; M lights
+    amber, S lights green.
+35. **CONFIG moves the top three rows over by two columns** and leaves the sequencer strip alone,
+    so the two right-hand columns (and MASTER) are off the screen while it is open. Opening a
+    lane's CONFIG makes that lane the active lane.
+36. **CONFIG shows every module parameter that has no knob on the main screen**, six to a row, in
+    the module's own order, under the module's own display from the suite. Nothing is hidden or
+    regrouped yet.
+37. **SOLO on an insert plays only what the effect adds:** its MIX is held at full and its own DRY
+    switch off while SOLO is lit. MUTE passes the lane round it; the effect keeps running so its
+    tail is current when it comes back.
+38. **SOLO on a return** silences every lane's dry signal and the other return.
+39. **Mute and solo are not stored in snapshots.** They are kept in the session, so they come back
+    when the app is reopened.
+40. **A gate of exactly one step is not a tie.** New steps start with a whole-step gate, so two lit
+    steps side by side strike twice. Legato needs the gate dragged a little past the next lit
+    step's edge (the bar shows a link). The factory LEAD pattern keeps its two slides this way.
+41. **Generated steps** now start at velocity 75 (accents 100) and a whole-step gate, as hand-made
+    ones do.
+42. **CLEAN SLATE cannot be lost:** if it is deleted it is back the next time the app starts.
+43. **Dropped files are remembered by the session, not by snapshots.** A snapshot recall never
+    loads audio from disk.
+44. **VOICE starts with a clearer radio (SIGNAL 70 %) and a one-beat step**, so a dropped phrase
+    is plainly heard. The first build's step was a tenth of a second long, which is the likely
+    reason the phrase "did not seem to load": the offline test shows the file loading and
+    changing what the lane plays.
+45. **Lane meters read each lane after its EQ, mute and solo**, before the master chain. The MIX
+    pair reads the final output.
+46. **A gliding knob is green with a white mark at its target.** Knobs moved by hand never show it.
+
 ## Not verified
 
 - Built and run on Linux only. It has not been compiled on macOS or heard by anyone.
