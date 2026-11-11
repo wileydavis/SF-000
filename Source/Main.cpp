@@ -554,6 +554,90 @@ static int uiTest()
             for (auto& h : sc9.testHits()) if (Screen::testIsPanelOf (h, t) && h.r.getX() >= edge && h.r.getX() - edge < 12.0f && h.r.getRight() <= Screen::kW) { ++beside; break; }
         }
         check (beside == (int) all.size(), (juce::String (beside) + " of " + juce::String ((int) all.size()) + " CONFIG panels open with their performance panel beside them").toRawUTF8());
+
+        // 7. an insert travels with snapshots whole: the effect, its CONFIG, the files it holds
+        const Engine::Target leadIns { 1, 7, 0 };
+        auto placeNames = [&] (Engine& en, Engine::Target t, bool wait)
+        {
+            juce::StringArray names;
+            auto* pr = en.processorFor (t);
+            if (pr == nullptr) return names;
+            for (int tries = 0; wait && tries < 400; ++tries)
+            {
+                for (int i = 0; i < 8; ++i) en.render (b5);
+                juce::Thread::sleep (15);
+                if (! pr->mod().statusLine().startsWith ("IMPORTING") && tries > 6) break;
+            }
+            juce::ValueTree st ("STATE");
+            pr->mod().save (st);
+            for (int i = 0; i < st.getNumChildren(); ++i) if (st.getChild (i).hasType ("PLACE")) names.add (st.getChild (i).getProperty ("slot").toString() + ":" + st.getChild (i).getProperty ("name").toString());
+            return names;
+        };
+        auto blocks = [&] (Engine& en, int nb) { for (int i = 0; i < nb; ++i) en.render (b5); };
+        Session::stateFileForTests = tmp.getChildFile ("sf000_session_test2.json");
+        Session::stateFileForTests.deleteFile();
+        juce::int64 snapA = 0, snapB = 0, snapInit = 0;
+        {
+            Engine e10; e10.prepare (48000.0, 512);
+            Session s10 (e10, true);
+            e10.setRunning (true);
+            snapInit = s10.take();                                   // the lead's first insert is the delay
+            e10.setInsertType (7, 0, 2);                             // now a convolution, with a place
+            e10.loadFiles (leadIns, juce::StringArray (ir.getFullPathName()));
+            { const auto got1 = placeNames (e10, leadIns, true).joinIntoString (",");
+              check (got1.equalsIgnoreCase ("0:sf000_ir_test"), "a convolution insert on the lead takes an impulse response"); }
+            const int lengthParam = 3;                               // a CONFIG choice of the insert's, to see it come back
+            e10.setSetup (leadIns, "length", (float) lengthParam / 7.0f);
+            snapA = s10.take();
+            const auto sa = s10.findSnap (snapA);
+            check (sa != nullptr && sa->hasInsFiles && sa->insFiles[7][0].size() == 1 && sa->inserts[7][0] == 2, "the snapshot holds the insert and its file");
+
+            s10.recall (snapInit); blocks (e10, 6);
+            check (e10.insertType (7, 0) == 0 && e10.insertFiles (7, 0).empty(), "recalling the earlier snapshot puts the delay back");
+            ir.moveFileTo (tmp.getChildFile ("sf000_ir_moved.wav"));  // the disk can no longer help
+            s10.recall (snapA);
+            auto length = [&] { for (auto& sp : e10.setupParams (leadIns)) if (sp.id == "length") return (int) std::lround (sp.value * 7.0f); return -1; };
+            check (e10.insertType (7, 0) == 2 && placeNames (e10, leadIns, false).joinIntoString (",").equalsIgnoreCase ("0:sf000_ir_test") && length() == lengthParam,
+                   "recalling it brings the convolution back with its place and its CONFIG at once, without the disk");
+            tmp.getChildFile ("sf000_ir_moved.wav").moveFileTo (ir);
+            blocks (e10, 6);
+
+            // a second snapshot with another place on the same insert: each recall brings its own
+            e10.loadFiles (leadIns, juce::StringArray (ir2.getFullPathName()));
+            placeNames (e10, leadIns, true);
+            snapB = s10.take();
+            s10.recall (snapA);
+            check (placeNames (e10, leadIns, true).joinIntoString (",").equalsIgnoreCase ("0:sf000_ir_test"), "the first snapshot still brings back the first place (read again from the disk this once)");
+            blocks (e10, 6);
+            s10.recall (snapB);
+            check (placeNames (e10, leadIns, false).joinIntoString (",").equalsIgnoreCase ("0:sf000_ir_test_b"), "and the second its own, at once");
+            blocks (e10, 6);
+            s10.recall (snapA);
+            check (placeNames (e10, leadIns, false).joinIntoString (",").equalsIgnoreCase ("0:sf000_ir_test") && ! e10.fault.load(), "back and forth, each at once, while it plays");
+            s10.recall (snapInit);
+            s10.touch(); s10.save();
+        }
+        {
+            // the app opening again on the delay: the snapshots' convolutions are read ahead
+            Engine e11;
+            Session s11 (e11, true);
+            e11.prepare (48000.0, 512);
+            e11.setRunning (true);
+            for (int i = 0; i < 60; ++i) { blocks (e11, 8); juce::Thread::sleep (15); }      // the imports, in their own time
+            ir.moveFileTo (tmp.getChildFile ("sf000_ir_moved.wav"));
+            ir2.moveFileTo (tmp.getChildFile ("sf000_ir_moved_b.wav"));
+            check (e11.insertType (7, 0) == 0, "it opens as it was left");
+            s11.recall (snapB);
+            const bool b = placeNames (e11, leadIns, false).joinIntoString (",").equalsIgnoreCase ("0:sf000_ir_test_b");
+            blocks (e11, 6);
+            s11.recall (snapA);
+            const bool a = placeNames (e11, leadIns, false).joinIntoString (",").equalsIgnoreCase ("0:sf000_ir_test");
+            check (a && b && ! e11.fault.load(), "after the app opens again, both snapshots bring their convolution back at once, without the disk");
+            tmp.getChildFile ("sf000_ir_moved.wav").moveFileTo (ir);
+            tmp.getChildFile ("sf000_ir_moved_b.wav").moveFileTo (ir2);
+        }
+        Session::stateFileForTests.deleteFile();
+        Session::stateFileForTests = juce::File();
         ir.deleteFile(); ir2.deleteFile();
     }
     std::printf (bad == 0 ? "ALL SCREEN CHECKS PASSED\n" : "%d SCREEN CHECK(S) FAILED\n", bad);

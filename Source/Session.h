@@ -20,6 +20,9 @@ struct Snapshot
     std::array<Engine::SetupState, kLanes> setup;
     std::array<std::array<Engine::SetupState, kSlots>, kLanes> insSetup;
     std::array<Engine::SetupState, 2> retSetup;
+    // the files each insert holds (a convolution's impulse responses). Snapshots from before this was kept say nothing.
+    bool hasInsFiles = false;
+    std::array<std::array<std::vector<Engine::FileRef>, kSlots>, kLanes> insFiles;
 };
 
 constexpr juce::int64 kCleanSlateId = 999;
@@ -89,6 +92,7 @@ private:
     void regenerate (int lane);
     void makeFactory();
     void ensureCleanSlate();
+    void warmInserts();                 // every file-holding insert the library's snapshots name, read ahead
     std::array<Engine::SetupState, 2> retInit;
     double glideBeats() const;
 

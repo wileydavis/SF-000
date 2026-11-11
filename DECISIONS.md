@@ -134,7 +134,8 @@ a snapshot could reach it later.
     ones do.
 42. **CLEAN SLATE cannot be lost:** if it is deleted it is back the next time the app starts.
 43. **Dropped files are remembered by the session, not by snapshots.** A snapshot recall never
-    loads audio from disk.
+    loads audio from disk. (For inserts this is superseded by 56: their files travel with
+    snapshots. It still holds for a lane's sample and for SPACE.)
 44. **VOICE starts with a clearer radio (SIGNAL 70 %) and a one-beat step**, so a dropped phrase
     is plainly heard. The first build's step was a tenth of a second long, which is the likely
     reason the phrase "did not seem to load": the offline test shows the file loading and
@@ -158,10 +159,9 @@ a snapshot could reach it later.
     CLEAN SLATE included, leaves the model alone: the room is where you are playing, not part of
     a scene. The rest of SPACE's CONFIG (PLACE included) is recalled only by snapshots taken on
     the same model. Say if the model should travel with snapshots instead.
-50. **Impulse responses are remembered by path** in the session, per place, and read again when
-    the app opens; a CONVOLUTION insert's are read again whenever that effect is put back in its
-    slot. If a file has moved, that place is empty (the built-in room). The suite can also keep
-    the audio itself in its state; SF-000 does not use that yet.
+50. **Impulse responses are remembered by path**, per place, and read again when the app opens.
+    If a file has moved, that place is empty (the built-in room). The suite can also keep the
+    audio itself in its state; SF-000 does not use that yet.
 51. **A file dropped on an open CONFIG panel goes to that panel's target.** If the target takes
     no file (the DUB delay, a compressor), nothing loads and the panel says so. Dropped anywhere
     else it goes to the lane under the pointer, an insert that takes files, or the active lane.
@@ -175,6 +175,19 @@ a snapshot could reach it later.
 54. **CLEAN SLATE is rebuilt each time the app opens**, so it covers controls a newer build adds.
 55. **The crash on quit** was the embedded typefaces being destroyed after JUCE had shut down
     (macOS only). They are now released in the app's shutdown.
+
+56. **An insert travels with snapshots whole:** the effect, its knobs, its CONFIG and the files
+    it holds (a convolution's impulse responses, per place). Only the two returns are rig
+    settings. A recall leaves an insert running if it is already as the snapshot has it;
+    otherwise the slot gets the snapshot's effect with the snapshot's files.
+57. **A recall does not wait on the disk for an insert's files.** A file-holding insert that is
+    taken out is kept aside with its places loaded (up to twelve), and when the app opens every
+    such insert the library's snapshots name is made ready ahead of time. It goes back in with
+    the right room from its first block. The one case that reads the disk at recall: a snapshot
+    whose insert held files that have since been replaced on the running insert by a new drop;
+    the built-in room sounds for the moment the read takes.
+58. **Snapshots taken before this build say nothing about insert files.** Recalling one changes
+    the effect in the slot as before and leaves whatever files that slot last held.
 
 ## Not verified
 

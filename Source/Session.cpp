@@ -145,12 +145,14 @@ Snapshot Session::capture() const
         {
             s.inserts[(size_t) l][(size_t) k] = engine.insertType (l, k);
             s.insSetup[(size_t) l][(size_t) k] = engine.getSetup ({ 1, l, k });
+            s.insFiles[(size_t) l][(size_t) k] = engine.insertFiles (l, k);
         }
         s.gen[(size_t) l] = genType[(size_t) l];
         s.setup[(size_t) l] = engine.getSetup ({ 0, l, 0 });
     }
     for (int r = 0; r < 2; ++r) s.retSetup[(size_t) r] = engine.getSetup ({ 2, 0, r });
     s.hasSetup = true;
+    s.hasInsFiles = true;
     return s;
 }
 
@@ -182,8 +184,16 @@ void Session::applySnapshot (const Snapshot& s, double glide)
     for (int l = 0; l < kLanes; ++l)
     {
         for (int k = 0; k < kSlots; ++k)
-            if (engine.insertType (l, k) != s.inserts[(size_t) l][(size_t) k])
-                engine.setInsertType (l, k, s.inserts[(size_t) l][(size_t) k], false);
+        {
+            // An insert comes back whole: the effect, its CONFIG, and the files it held. One that
+            // is already there as the snapshot has it is left running.
+            const int type = s.inserts[(size_t) l][(size_t) k];
+            const auto& refs = s.insFiles[(size_t) l][(size_t) k];
+            const bool asItIs = s.hasInsFiles ? engine.insertHolds (l, k, type, refs) : engine.insertType (l, k) == type;
+            if (asItIs) continue;
+            if (s.hasInsFiles && type >= 0) engine.expectInsertFiles (l, k, refs);
+            engine.setInsertType (l, k, type, false, s.hasSetup ? &s.insSetup[(size_t) l][(size_t) k] : nullptr);
+        }
         engine.setPattern (l, s.patterns[(size_t) l]);
         genType[(size_t) l] = s.gen[(size_t) l];
         if (s.hasSetup)
@@ -384,6 +394,21 @@ static var snapToVar (const Snapshot& s, const Engine& e)
     o->setProperty ("patterns", pats);
     o->setProperty ("inserts", ins);
     o->setProperty ("gen", gen);
+    if (s.hasInsFiles)
+    {
+        juce::Array<var> insf;
+        for (int l = 0; l < kLanes; ++l)
+            for (int k = 0; k < kSlots; ++k)
+                if (const auto& refs = s.insFiles[(size_t) l][(size_t) k]; ! refs.empty())
+                {
+                    auto* f = new juce::DynamicObject();
+                    f->setProperty ("lane", l);
+                    f->setProperty ("slot", k);
+                    f->setProperty ("files", refsToVar (refs));
+                    insf.add (var (f));
+                }
+        o->setProperty ("insertFiles", insf);
+    }
     if (s.hasSetup)
     {
         juce::Array<var> ls, is, rs;
@@ -442,6 +467,18 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         }
         for (int r = 0; r < 2; ++r) if (r < rs.size()) s.retSetup[(size_t) r] = setupFromVar (rs[r]);
         s.hasSetup = true;
+    }
+    if (const var insf = v.getProperty ("insertFiles", var()); insf.isArray())
+    {
+        for (int n = 0; n < insf.size(); ++n)
+        {
+            const int l = (int) insf[n].getProperty ("lane", -1), k = (int) insf[n].getProperty ("slot", -1);
+            if (l < 0 || l >= kLanes || k < 0 || k >= kSlots || s.inserts[(size_t) l][(size_t) k] < 0) continue;
+            auto refs = refsFromVar (insf[n].getProperty ("files", var()));
+            for (auto& r : refs) r.type = s.inserts[(size_t) l][(size_t) k];       // the effect is kept by name: its files go with it
+            s.insFiles[(size_t) l][(size_t) k] = refs;
+        }
+        s.hasInsFiles = true;
     }
     return s;
 }
@@ -550,7 +587,20 @@ bool Session::load()
     baseId = (juce::int64) root.getProperty ("baseId", 0);
     selStep = -1;
     if (root.hasProperty ("base")) applySnapshot (snapFromVar (root["base"], engine), 0.0);
+    warmInserts();
     return true;
+}
+
+void Session::warmInserts()
+{
+    // A snapshot recall should not wait on the disk: the file-holding inserts the library names
+    // are made now, with their files read, and kept aside until a recall wants them.
+    for (auto& s : library)
+        if (s.hasInsFiles)
+            for (int l = 0; l < kLanes; ++l)
+                for (int k = 0; k < kSlots; ++k)
+                    if (const auto& refs = s.insFiles[(size_t) l][(size_t) k]; ! refs.empty())
+                        engine.warmInsert (l, k, s.inserts[(size_t) l][(size_t) k], refs);
 }
 
 // ------------------------------------------------------------------------- what it starts with
@@ -579,6 +629,7 @@ void Session::ensureCleanSlate()
     }
     s.retSetup = retInit;
     s.hasSetup = true;
+    s.hasInsFiles = true;
     const int at = indexOf (kCleanSlateId);
     if (at >= 0) { s.name = library[(size_t) at].name; s.time = library[(size_t) at].time; library[(size_t) at] = s; }
     else { library.insert (library.begin(), s); dirty = true; }

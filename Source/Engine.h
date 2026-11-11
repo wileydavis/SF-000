@@ -89,7 +89,9 @@ public:
 
     // ---- inserts: -1 empty, else an index into effects()
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
-    void setInsertType (int lane, int slot, int type, bool defaults = true);
+    using SetupState = std::vector<std::pair<juce::String, float>>;
+    // setup: the effect's CONFIG as it should be from its first sound (a snapshot's), else as it comes
+    void setInsertType (int lane, int slot, int type, bool defaults = true, const SetupState* setup = nullptr);
 
     // ---- what a CONFIG panel, a dropped file or a setup change is aimed at
     struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1)
@@ -101,7 +103,12 @@ public:
 
     // ---- dropped audio files, for a lane, insert or return whose module takes them. A convolution
     // keeps eight places: the files go to the place its PLACE is on (several fill the next ones).
-    struct FileRef { int place = 0, type = -1; juce::StringArray files; };      // type: the insert effect they were given to
+    struct FileRef
+    {
+        int place = 0, type = -1;               // type: the insert effect they were given to
+        juce::StringArray files;
+        bool operator== (const FileRef& o) const { return place == o.place && type == o.type && files == o.files; }
+    };
     bool acceptsFiles (Target) const;
     bool loadFiles (Target, const juce::StringArray& paths);
     bool loadFile (int lane, const juce::File& f)   { return loadFiles ({ 0, lane, 0 }, juce::StringArray (f.getFullPathName())); }
@@ -109,10 +116,16 @@ public:
     const std::vector<FileRef>& heldFiles (Target) const;
     // A session opening: a return reads them at once, an insert when that effect is next in the slot.
     void setHeldFiles (Target, const std::vector<FileRef>&);
+    // An insert's files travel with snapshots. What the effect in a slot holds now (none if it takes
+    // none); whether it is this effect holding exactly these; and an effect made ready ahead of
+    // time with its files read, so that a recall puts it in without going to the disk.
+    std::vector<FileRef> insertFiles (int lane, int slot) const;
+    bool insertHolds (int lane, int slot, int type, const std::vector<FileRef>&) const;
+    void warmInsert (int lane, int slot, int type, const std::vector<FileRef>&);
+    void expectInsertFiles (int lane, int slot, const std::vector<FileRef>&);    // what the next effect put in that slot is to hold (nothing is read)
 
     // ---- setup: every parameter of a hosted module that the performance screen does not show
     struct SetupParam { juce::String id, name, text; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; };
-    using SetupState = std::vector<std::pair<juce::String, float>>;
     SFProcessor* processorFor (Target) const;
     std::vector<SetupParam> setupParams (Target) const;
     void setSetup (Target, const juce::String& id, float v);
@@ -152,6 +165,8 @@ private:
         std::unique_ptr<SFProcessor> proc;
         Bind bind[kCells];
         int type = -1, mixCell = -1;
+        int lane = -1, slot = -1;                   // where it was made for
+        std::vector<FileRef> files;                 // the files it holds (a convolution's places)
         std::atomic<float>* dryRaw = nullptr;       // the effect's own DRY switch, if it has one
         float dryWas = 1.0f, gWas = 1.0f;
         bool soloOn = false;
@@ -209,6 +224,12 @@ private:
     std::vector<FileRef> spaceFiles;
     std::array<std::array<std::vector<FileRef>, kSlots>, kLanes> insFiles;
     void replayFiles (SFProcessor&, const std::vector<FileRef>&);
+    // Message thread: file-holding inserts that were taken out, or made ahead for a snapshot. They
+    // keep their places loaded, so they go back in with the right room from the first block.
+    std::vector<InsertInst*> parked;
+    InsertInst* takeParked (int lane, int slot, int type, const std::vector<FileRef>&);
+    void park (InsertInst*);
+    static void applySetupTo (SFProcessor&, const std::vector<std::string>& bound, const SetupState&);
     std::vector<std::unique_ptr<SFProcessor>> master;
     std::vector<std::pair<InsertInst*, uint64_t>> retired;
     juce::SpinLock patLock;

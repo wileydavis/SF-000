@@ -203,6 +203,7 @@ Engine::Engine()
 Engine::~Engine()
 {
     collectRetired (true);
+    for (auto* p : parked) delete p;
     for (auto& ln : lane) for (auto& i : ln.ins) delete i.exchange (nullptr);
 }
 
@@ -276,17 +277,35 @@ void Engine::setPattern (int l, const Pattern& p)
 }
 
 // -------------------------------------------------------------------------------------- inserts
-void Engine::setInsertType (int l, int slot, int type, bool defaults)
+void Engine::setInsertType (int l, int slot, int type, bool defaults, const SetupState* setup)
 {
     type = juce::jlimit (-1, (int) effects().size() - 1, type);
     auto& ln = lane[(size_t) l];
+    collectRetired (false);
     InsertInst* inst = nullptr;
     if (type >= 0)
     {
         const auto& d = effects()[(size_t) type];
-        inst = new InsertInst();
-        inst->type = type;
-        inst->proc = makeProc (d.module, d.fixed);
+        // the files this effect holds in this slot (dropped on it, or a snapshot's)
+        const auto& held = insFiles[(size_t) l][(size_t) slot];
+        const bool filed = ! held.empty() && held.front().type == type;
+        // One that already holds them, taken out earlier or made ahead: it goes back in with its
+        // places loaded. Otherwise a new one, which reads them from the disk.
+        if (filed) inst = takeParked (l, slot, type, held);
+        const bool reused = inst != nullptr;
+        if (! reused)
+        {
+            inst = new InsertInst();
+            inst->type = type; inst->lane = l; inst->slot = slot;
+            inst->proc = makeProc (d.module, d.fixed);
+        }
+        else
+        {
+            // as a new one would be: every parameter where the effect starts it (its places stay)
+            for (int i = 0; i < inst->proc->numModuleParams(); ++i) inst->proc->param (i)->setValueNotifyingHost (inst->proc->param (i)->getDefaultValue());
+            for (auto& f : d.fixed) if (const int i = inst->proc->paramIndex (f.param); i >= 0) inst->proc->param (i)->setValueNotifyingHost (inst->proc->param (i)->convertTo0to1 (f.value));
+        }
+        inst->mixCell = -1; inst->dryWas = 1.0f; inst->gWas = 1.0f; inst->soloOn = false;
         for (int c = 0; c < kCells; ++c)
         {
             const int i = cx::ins (l, slot, c);
@@ -300,10 +319,15 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults)
             if (d.cells[c].label != nullptr && juce::String (d.cells[c].param) == "mix") inst->mixCell = c;
         }
         if (inst->proc->paramIndex ("dry") >= 0) inst->dryRaw = inst->proc->apvts.getRawParameterValue ("dry");
+        // its CONFIG before it is prepared: a convolution builds its first room for the knobs as they stand
+        if (setup != nullptr)
+        {
+            std::vector<std::string> bound;
+            for (auto& cell : d.cells) if (cell.param != nullptr) bound.push_back (cell.param);
+            applySetupTo (*inst->proc, bound, *setup);
+        }
         if (prepared) { inst->proc->setRateAndBufferSizeDetails (sr, maxBlock); inst->proc->prepareToPlay (sr, maxBlock); }
-        // the files this effect was given in this slot: a new instance reads them again
-        const auto& held = insFiles[(size_t) l][(size_t) slot];
-        if (! held.empty() && held.front().type == type) replayFiles (*inst->proc, held);
+        if (filed && ! reused) { replayFiles (*inst->proc, held); inst->files = held; }
     }
     else
         for (int c = 0; c < kCells; ++c)
@@ -319,10 +343,68 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults)
 
 void Engine::collectRetired (bool all)
 {
-    // An insert taken out is deleted once the audio thread has gone two blocks without it.
+    // An insert taken out is let go once the audio thread has gone two blocks without it: deleted,
+    // or kept aside if it holds files.
     const auto now = blockCount.load();
     for (size_t i = retired.size(); i-- > 0;)
-        if (all || now >= retired[i].second + 2 || ! prepared) { delete retired[i].first; retired.erase (retired.begin() + (long) i); }
+        if (all || now >= retired[i].second + 2 || ! prepared)
+        {
+            if (all || retired[i].first->files.empty()) delete retired[i].first;
+            else park (retired[i].first);
+            retired.erase (retired.begin() + (long) i);
+        }
+}
+
+Engine::InsertInst* Engine::takeParked (int l, int slot, int type, const std::vector<FileRef>& refs)
+{
+    for (size_t i = 0; i < parked.size(); ++i)
+        if (auto* p = parked[i]; p->lane == l && p->slot == slot && p->type == type && p->files == refs)
+        {
+            parked.erase (parked.begin() + (long) i);
+            return p;
+        }
+    return nullptr;
+}
+
+void Engine::park (InsertInst* inst)
+{
+    // one per slot and set of files; the oldest go when there are many
+    for (size_t i = parked.size(); i-- > 0;)
+        if (auto* p = parked[i]; p->lane == inst->lane && p->slot == inst->slot && p->type == inst->type && p->files == inst->files)
+        { delete p; parked.erase (parked.begin() + (long) i); }
+    parked.push_back (inst);
+    while (parked.size() > 12) { delete parked.front(); parked.erase (parked.begin()); }
+}
+
+std::vector<Engine::FileRef> Engine::insertFiles (int l, int slot) const
+{
+    if (auto* in = lane[(size_t) l].ins[slot].load()) return in->files;
+    return {};
+}
+
+bool Engine::insertHolds (int l, int slot, int type, const std::vector<FileRef>& refs) const
+{
+    auto* in = lane[(size_t) l].ins[slot].load();
+    if (type < 0) return in == nullptr;
+    return in != nullptr && in->type == type && in->files == refs;
+}
+
+void Engine::warmInsert (int l, int slot, int type, const std::vector<FileRef>& refs)
+{
+    if (type < 0 || type >= (int) effects().size() || refs.empty() || refs.front().type != type) return;
+    collectRetired (false);
+    if (insertHolds (l, slot, type, refs)) return;
+    for (auto* p : parked) if (p->lane == l && p->slot == slot && p->type == type && p->files == refs) return;
+    for (auto& r : retired) if (r.first->lane == l && r.first->slot == slot && r.first->type == type && r.first->files == refs) return;
+    const auto& d = effects()[(size_t) type];
+    auto* inst = new InsertInst();
+    inst->type = type; inst->lane = l; inst->slot = slot;
+    inst->proc = makeProc (d.module, d.fixed);
+    if (! inst->proc->mod().acceptsFiles()) { delete inst; return; }
+    if (prepared) { inst->proc->setRateAndBufferSizeDetails (sr, maxBlock); inst->proc->prepareToPlay (sr, maxBlock); }
+    replayFiles (*inst->proc, refs);
+    inst->files = refs;
+    park (inst);
 }
 
 void Engine::updateLatency()
@@ -382,6 +464,7 @@ bool Engine::loadFiles (Target t, const juce::StringArray& paths)
     auto& held = t.kind == 1 ? insFiles[(size_t) t.lane][(size_t) t.slot] : spaceFiles;
     held.erase (std::remove_if (held.begin(), held.end(), [&r] (const FileRef& o) { return o.place == r.place || o.type != r.type; }), held.end());
     held.push_back (r);
+    if (t.kind == 1) if (auto* in = lane[(size_t) t.lane].ins[t.slot].load()) in->files = held;
     return true;
 }
 
@@ -414,10 +497,16 @@ void Engine::setHeldFiles (Target t, const std::vector<FileRef>& refs)
     if (t.kind == 2 && t.slot == 1) { spaceFiles = refs; replayFiles (*space[1], refs); }
     else if (t.kind == 1)
     {
+        // kept for when that effect is next put in the slot; one already there with other files reads these now
         insFiles[(size_t) t.lane][(size_t) t.slot] = refs;
         if (auto* in = lane[(size_t) t.lane].ins[t.slot].load())
-            if (! refs.empty() && refs.front().type == in->type) replayFiles (*in->proc, refs);
+            if (! refs.empty() && refs.front().type == in->type && ! (in->files == refs)) { replayFiles (*in->proc, refs); in->files = refs; }
     }
+}
+
+void Engine::expectInsertFiles (int l, int slot, const std::vector<FileRef>& refs)
+{
+    insFiles[(size_t) l][(size_t) slot] = refs;
 }
 
 void Engine::setSpaceModel (int model)
@@ -512,6 +601,17 @@ Engine::SetupState Engine::getSetup (Target t) const
     return st;
 }
 
+void Engine::applySetupTo (SFProcessor& p, const std::vector<std::string>& bound, const SetupState& st)
+{
+    for (auto& kv : st)
+    {
+        const int i = p.paramIndex (kv.first.toStdString());
+        if (i < 0 || i >= p.numModuleParams() || std::find (bound.begin(), bound.end(), kv.first.toStdString()) != bound.end()) continue;
+        auto* prm = p.param (i);
+        if (std::abs (prm->getValue() - kv.second) > 1e-6f) prm->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, kv.second));
+    }
+}
+
 void Engine::applySetup (Target t, const SetupState& st)
 {
     if (auto* p = processorFor (t))
@@ -523,14 +623,7 @@ void Engine::applySetup (Target t, const SetupState& st)
             for (auto& kv : st) if (kv.first == kModelId) from = (int) std::lround (kv.second);
             if (from != spaceWant.load()) return;
         }
-        const auto bound = boundIds (t);
-        for (auto& kv : st)
-        {
-            const int i = p->paramIndex (kv.first.toStdString());
-            if (i < 0 || i >= p->numModuleParams() || std::find (bound.begin(), bound.end(), kv.first.toStdString()) != bound.end()) continue;
-            auto* prm = p->param (i);
-            if (std::abs (prm->getValue() - kv.second) > 1e-6f) prm->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, kv.second));
-        }
+        applySetupTo (*p, boundIds (t), st);
         updateLatency();
     }
 }
@@ -552,6 +645,7 @@ void Engine::prepare (double rate, int block)
         for (auto& s : ln.eqSet) s = 99.0f;
         ln.patDirty = true;
     }
+    for (auto* pk : parked) prep (*pk->proc);
     prep (*retA);
     for (auto& sp : space) prep (*sp);
     spaceNow = spaceWant.load(); spaceHold = 0;

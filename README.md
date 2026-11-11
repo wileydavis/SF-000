@@ -71,11 +71,14 @@ back at the other. The sequencer stays where it is.
   click on the numbered boxes in its display) chooses one, and a dropped file fills the place it
   is on. An empty place is the built-in room. Each reverb keeps its own four SPACE knobs. Which
   reverb SPACE is, and the files it was given, belong to the rig: they are kept in the session and
-  a snapshot recall leaves them alone. A CONVOLUTION insert takes files the same way.
+  a snapshot recall leaves them alone.
+- **An insert belongs to snapshots, whole.** A CONVOLUTION insert takes files the same way (drop
+  them on its CONFIG), and a snapshot keeps the effect, its knobs, its CONFIG and those files. A
+  recall puts it back with its room already loaded.
 - A menu shows its current choice under the knob. The parameter last touched shows its value in
   the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
   are more rows than fit.
-- What CONFIG sets is stored in snapshots with everything else.
+- What CONFIG sets is stored in snapshots with everything else, except which reverb SPACE is.
 
 ### Snapshots that come with it
 
