@@ -337,6 +337,7 @@ void Engine::prepare (double rate, int block)
     {
         prep (*ln.proc);
         for (auto& i : ln.ins) if (auto* in = i.load()) prep (*in->proc);
+        ln.midi.ensureSize (4096);
         for (auto& d : ln.dl) d.assign (8192, 0.0f);
         ln.dlPos = 0;
         for (auto& e : ln.eq) e = Biquad();
@@ -498,6 +499,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
         const float lp = b2.getMagnitude (0, n);
         lanePeak[(size_t) l] = std::max (lp, lanePeak[(size_t) l].load() * 0.9f);
+        laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
         for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); double q = 0.0; for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; laneSq[(size_t) l] += q; }
         const int so = solo.load();
         if (so >= 0 && so != l) continue;

@@ -93,6 +93,7 @@ public:
     std::atomic<double> cpu { 0.0 };
     std::array<std::atomic<float>, kLanes> lanePeak;         // each lane's level after its EQ (linear, falling)
     std::array<double, kLanes> laneSq {};                    // sum of squares since the start (tests)
+    std::array<float, kLanes> laneMax {};                    // highest sample since the start (tests)
     std::atomic<int> solo { -1 };                            // tests: only this lane reaches the mix
     double sampleRate() const                   { return sr; }
     int latencySamples() const                  { return maxLat.load(); }

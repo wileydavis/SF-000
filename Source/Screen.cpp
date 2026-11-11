@@ -1,5 +1,6 @@
 #include "Screen.h"
 #include "BinaryData.h"
+#include <map>
 
 namespace sf0
 {
@@ -633,7 +634,18 @@ void Screen::drawMacros (G& g)
             if (auto* sn = ses.findSnap (kn.snaps[s])) order << (s > 0 ? "  >  " : "") << sn->name;
         g.setColour (col::black); g.setFont (fLbl);
         g.drawFittedText (order.isEmpty() ? String ("NO SNAPSHOTS. PICK THIS KNOB, THEN TAP SNAPSHOTS ON THE RIGHT.") : order,
-                          juce::Rectangle<int> ((int) x0, (int) (ky + 68), 258, 96), juce::Justification::topLeft, 6, 1.0f);
+                          juce::Rectangle<int> ((int) x0, (int) (ky + 68), 258, 30), juce::Justification::topLeft, 2, 1.0f);
+        // what it moves, lane by lane
+        String moves;
+        int lastLane = -2;
+        for (int i : ses.knobScope (k))
+        {
+            const int ln = i < cx::kRet ? i / cx::kPerLane : -1;
+            if (ln != lastLane) { moves << (moves.isEmpty() ? "" : "   ") << (ln >= 0 ? String (lanes()[(size_t) ln].name) : String ("RETURNS")) << ": "; lastLane = ln; }
+            else moves << ", ";
+            moves << eng.control (i).label;
+        }
+        g.drawFittedText (moves, juce::Rectangle<int> ((int) x0, (int) (ky + 102), 258, 64), juce::Justification::topLeft, 4, 0.8f);
     }
     // the library, to pick from
     const int total = (int) ses.library.size();

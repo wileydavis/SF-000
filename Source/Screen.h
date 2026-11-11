@@ -29,6 +29,13 @@ public:
 
     static constexpr float kW = 1728.0f, kH = 1117.0f;
 
+    // For the offline screen test: every control's place (screen units), kind and index, as last drawn.
+    struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
+    std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
+    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull); }
+    static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth; }
+    static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
+
 private:
     using G = juce::Graphics;
     using R = juce::Rectangle<float>;

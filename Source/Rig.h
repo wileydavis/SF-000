@@ -68,16 +68,16 @@ inline const std::vector<LaneDef>& lanes()
         { "PERC", "perc", "STRIKE", false, 3,
           // a struck membrane: SIZE, TENSION and MATERIAL take it from a tom to a pipe to a sheet of glass
           { { "model", 4 }, { "size", 0.55f }, { "material", 0.3f }, { "decay", 0.35f }, { "tension", 0.4f }, { "power", 0.45f }, { "distance", 0.25f },
-            { "level", -11 }, { "alloc", 0 } },
+            { "level", -14 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "SIZE", "size", 'u' }, { "POSITION", "position", 'u' }, { "DISTANCE", "distance", 'u' },
             { "SPREAD", "spread", 'u' }, { "TENSION", "tension", 'u' }, { "MATERIAL", "material", 'u' }, { "POWER", "power", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
 
         { "BASS", "bass", "BASS", true, 1,
-          // a rolling ladder bass with a sine sub under it; the kick's pocket is cut for it
+          // a rolling ladder bass with a sine sub under it (LAYER); the kick's pocket is cut for it
           { { "model", 0 }, { "layer_model", 5 }, { "layer", 0.5f }, { "split", 1.0f }, { "split_hz", 120 }, { "cutoff", 0.3f }, { "res", 0.35f },
             { "env_amt", 0.45f }, { "gate", 0.4f }, { "decay", 0.4f }, { "pocket_depth", 0.7f }, { "level", -7 }, { "alloc", 0 } },
-          { { "GLIDE", "glide", 'u' }, { "ACCENT", "accent", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
+          { { "GLIDE", "glide", 'u' }, { "LAYER", "layer", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
 
@@ -91,13 +91,13 @@ inline const std::vector<LaneDef>& lanes()
         { "LEAD", "lead", "LEAD", true, 3,
           // the 303 circuit: a gate that reaches the next step slides, a hard step is the accent
           { { "model", 0 }, { "cutoff", 0.35f }, { "res", 0.75f }, { "env_amt", 0.6f }, { "accent", 0.7f }, { "gate", 0.5f }, { "level", -12 }, { "alloc", 0 } },
-          { { "GLIDE", "glide", 'u' }, { "ACCENT", "accent", 'u' }, { "RES", "res", 'u' }, { "COLOR", "color", 'u' },
+          { { "TUNE", "tune", 'b' }, { "ACCENT", "accent", 'u' }, { "RES", "res", 'u' }, { "COLOR", "color", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
 
         { "CHORD", "chord", "LEAD", true, 3,
           // the dub stab: one note plays the chord
-          { { "model", 3 }, { "cutoff", 0.4f }, { "res", 0.3f }, { "env_amt", 0.5f }, { "space", 0.6f }, { "gate", 0.5f }, { "level", -12 }, { "alloc", 0 } },
+          { { "model", 3 }, { "cutoff", 0.4f }, { "res", 0.3f }, { "env_amt", 0.5f }, { "space", 0.6f }, { "gate", 0.5f }, { "level", -15 }, { "alloc", 0 } },
           { { "DETUNE", "detune", 'u' }, { "ATTACK", "attack", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
@@ -110,8 +110,9 @@ inline const std::vector<LaneDef>& lanes()
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
 
         { "VOICE", "voice", "VOICE", true, 3,
-          // with no phrase loaded it sings a formant choir from the notes; drop a file on the lane for a phrase
-          { { "model", 0 }, { "echo", 0.3f }, { "echo_fb", 0.55f }, { "level", -14 }, { "alloc", 0 } },
+          // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,
+          // SIGNAL and GATE have nothing to act on); drop an audio file on the lane to give it a phrase
+          { { "model", 1 }, { "signal", 0.45f }, { "echo", 0.3f }, { "echo_fb", 0.55f }, { "level", -14 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "SIGNAL", "signal", 'u' }, { "ECHO TIME", "echo_time", 'm' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "ECHO FDBK", "echo_fb", 'u' }, { "ECHO", "echo", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
@@ -170,7 +171,7 @@ inline const std::vector<MasterStage>& masterChain()
         { "LOWEND", { { "mono_freq", 150 }, { "rumble_cut", 25 } }, { nullptr, nullptr, 'u' } },
         { "DRIVE",  { { "character", 0.0f }, { "low_keep", 120 }, { "auto_gain", 1 }, { "drive", 0.12f } }, { "TAPE", "drive", 'u', 0.0f, 0.6f } },
         { "GLUE",   { { "attack", 4 }, { "release", 4 }, { "ratio", 0 }, { "sc_hpf", 110 }, { "push", 0.25f } }, { "COMP", "push", 'u', 0.0f, 0.8f } },
-        { "LIMIT",  { { "auto", 1 }, { "auto_mode", 1 }, { "ceiling", -1.0f }, { "target", -9.0f }, { "clip", 0.3f } }, { "LIMIT", "target", 'u' } },
+        { "LIMIT",  { { "auto", 1 }, { "auto_mode", 1 }, { "ceiling", -1.0f }, { "target", -9.0f }, { "clip", 0.3f }, { "input", 5.0f } }, { "LIMIT", "target", 'u' } },
     };
     return M;
 }

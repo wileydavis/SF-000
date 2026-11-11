@@ -12,7 +12,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     base.resize ((size_t) cx::kCount);
     offset.assign ((size_t) cx::kCount, 0.0f);
     for (int i = 0; i < cx::kCount; ++i) base[(size_t) i] = engine.target (i);
-    if (! (useDisk && load())) makeFactory();
+    if (! (useDisk && load())) { makeFactory(); dirty = true; }
     if (useDisk) startTimer (3000);
 }
 
@@ -465,7 +465,7 @@ void Session::makeFactory()
     derive (1004, "DIST HOT",  { { "kick.drive", .6f }, { "bass.drive", .55f }, { "lead.drive", .7f }, { "perc.power", .8f }, { "closed_hat.drive", .5f },
                                  { "open_hat.drive", .5f }, { "clap.drive", .5f }, { "rumble.grit", .7f }, { "voice.drive", .6f }, { "ret.dub_drive", .7f } });
     derive (1005, "WARP FAR",  { { "pad.detune", 1.0f }, { "pad.color", .9f }, { "chord.detune", .9f }, { "perc.size", .12f }, { "perc.tension", .9f },
-                                 { "perc.material", .85f }, { "lead.glide", .8f }, { "kick.pitch_time", .95f }, { "kick.tune", .3f }, { "closed_hat.tune", .2f },
+                                 { "perc.material", .85f }, { "lead.color", .9f }, { "kick.pitch_time", .95f }, { "kick.tune", .3f }, { "closed_hat.tune", .2f },
                                  { "open_hat.tune", .75f }, { "voice.tune", .25f }, { "rumble.size", 1.0f }, { "bass.glide", .7f } });
     static const char* const names[] = { "ENERGY", "BUILD", "ACID", "DIST", "WARP" };
     for (int k = 0; k < 5; ++k) { knobs[(size_t) k].name = names[k]; knobs[(size_t) k].snaps = { 1000, 1001 + k }; }
