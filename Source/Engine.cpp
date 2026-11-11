@@ -20,6 +20,10 @@ static const float kSendDefaults[kLanes][2] = {
     { 0.0f, 0.0f }, { 0.35f, 0.15f }, { 0.45f, 0.3f }, { 0.0f, 0.4f }, { 0.3f, 0.3f } };
 
 struct Engine::Loud { sf::LoudnessMeter m; };
+Engine::InsertInst::InsertInst() = default;
+Engine::InsertInst::~InsertInst() = default;
+Engine::Lane::Lane() { for (auto& i : ins) i = nullptr; }
+Engine::Lane::~Lane() = default;
 
 // ------------------------------------------------------------------------------------- building
 std::unique_ptr<SFProcessor> Engine::makeProc (const char* module, const std::vector<Fixed>& fixed)

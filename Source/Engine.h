@@ -117,6 +117,8 @@ private:
         std::unique_ptr<SFProcessor> proc;
         Bind bind[kCells];
         int type = -1;
+        InsertInst();
+        ~InsertInst();
     };
     struct Biquad
     {
@@ -137,7 +139,8 @@ private:
         std::atomic<int> delay { 0 };
         Pattern shared;                         // under patLock
         std::atomic<bool> patDirty { true };
-        Lane() { for (auto& i : ins) i = nullptr; }
+        Lane();
+        ~Lane();
     };
 
     std::unique_ptr<SFProcessor> makeProc (const char* module, const std::vector<Fixed>& fixed);

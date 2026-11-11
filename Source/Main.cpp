@@ -1,7 +1,11 @@
-// SF-000: the app. (Stub while the engine is being built.)
+// SF-000: the app. A window on the screens, the audio device, and three command-line tools:
+//   SF-000 --test [--wav file]                 offline audio and timing checks
+//   SF-000 --shot file.png [--page library|macros] [--lane N] [--scale 2]   draw a screen to a PNG
+//   SF-000 --dump                              every hosted module's parameters and presets
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "core/Processor.h"
 #include "core/Registry.h"
+#include "Screen.h"
 
 static void dumpModules()
 {
@@ -25,7 +29,6 @@ static void dumpModules()
 }
 
 
-#include "Engine.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 // Offline checks: every lane sounds, hits land on the grid at any block size, the mix is loud and clean.
@@ -106,24 +109,128 @@ static int selfTest (const juce::String& wavPath)
     return bad;
 }
 
+
+static int shot (const juce::StringArray& args)
+{
+    using namespace sf0;
+    auto arg = [&] (const char* name, juce::String def) { const int i = args.indexOf (name); return i >= 0 && i + 1 < args.size() ? args[i + 1].unquoted() : def; };
+    Engine e;
+    e.prepare (48000.0, 512);
+    Session ses (e, false);
+    ses.activeLane = juce::jlimit (0, kLanes - 1, arg ("--lane", "8").getIntValue() - 1);
+    if (ses.activeLane != 7) ses.selStep = -1;
+    e.setRunning (true);
+    juce::AudioBuffer<float> b (2, 512);
+    for (int i = 0; i < 700; ++i) e.render (b);          // a few bars in, so the meters and the playing step show
+    if (args.contains ("--snap")) ses.take();
+    Screen sc (ses);
+    const auto page = arg ("--page", "main");
+    sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : Screen::pMain);
+    const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
+    sc.setSize ((int) Screen::kW, (int) Screen::kH);
+    const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
+    juce::File f (arg ("--shot", "sf000.png"));
+    f.deleteFile();
+    juce::FileOutputStream out (f);
+    juce::PNGImageFormat png;
+    const bool ok = out.openedOk() && png.writeImageToStream (img, out);
+    std::printf (ok ? "wrote %s (%d x %d)\n" : "could not write %s\n", f.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
+    return ok ? 0 : 1;
+}
+
+class MainWindow : public juce::DocumentWindow
+{
+public:
+    explicit MainWindow (juce::Component* content)
+        : DocumentWindow ("SF-000", juce::Colour (0xff2B2B28), DocumentWindow::allButtons)
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (content, false);
+        setResizable (true, false);
+        // as close to 1728 x 1117 as the display allows, keeping the shape
+        const auto area = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea;
+        const float s = std::min (1.0f, std::min ((float) area.getWidth() / sf0::Screen::kW, (float) (area.getHeight() - 30) / sf0::Screen::kH));
+        centreWithSize ((int) (sf0::Screen::kW * s), (int) (sf0::Screen::kH * s));
+        setVisible (true);
+    }
+    void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
+};
+
 class SF000App : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override    { return "SF-000"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
+    bool moreThanOneInstanceAllowed() override          { return false; }
+
     void initialise (const juce::String& cmd) override
     {
-        if (cmd.contains ("--dump")) { dumpModules(); quit(); return; }
-        if (cmd.contains ("--test"))
+        const auto args = juce::StringArray::fromTokens (cmd, true);
+        if (args.contains ("--dump")) { dumpModules(); quit(); return; }
+        if (args.contains ("--test"))
         {
-            const auto args = juce::StringArray::fromTokens (cmd, true);
             const int w = args.indexOf ("--wav");
             setApplicationReturnValue (selfTest (w >= 0 && w + 1 < args.size() ? args[w + 1].unquoted() : juce::String()));
             quit(); return;
         }
-        quit();
+        if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
+
+        engine = std::make_unique<sf0::Engine>();
+        session = std::make_unique<sf0::Session> (*engine);
+        std::unique_ptr<juce::XmlElement> saved (juce::XmlDocument::parse (audioFile()));
+        const auto err = devices.initialise (0, 2, saved.get(), true);
+        if (err.isNotEmpty()) juce::Logger::writeToLog ("SF-000 audio: " + err);
+        devices.addAudioCallback (engine.get());
+
+        auto* screen = new sf0::Screen (*session);
+        screen->onAudioSetup = [this] { audioSetup(); };
+        screen->onFullScreen = [this]
+        {
+            auto& d = juce::Desktop::getInstance();
+            d.setKioskModeComponent (d.getKioskModeComponent() == nullptr ? window.get() : nullptr, false);
+        };
+        window = std::make_unique<MainWindow> (screen);
+        screen->grabKeyboardFocus();
     }
-    void shutdown() override {}
+
+    void shutdown() override
+    {
+        if (engine != nullptr)
+        {
+            if (auto xml = devices.createStateXml()) { audioFile().getParentDirectory().createDirectory(); xml->writeTo (audioFile()); }
+            devices.removeAudioCallback (engine.get());
+            devices.closeAudioDevice();
+        }
+        juce::Desktop::getInstance().setKioskModeComponent (nullptr, false);
+        window = nullptr;
+        session = nullptr;
+        engine = nullptr;
+    }
+
+    void systemRequestedQuit() override { quit(); }
+
+private:
+    static juce::File audioFile() { return sf0::Session::stateFile().getSiblingFile ("audio.xml"); }
+
+    void audioSetup()
+    {
+        // Set once, before the set: which interface, which outputs, the buffer size.
+        auto* sel = new juce::AudioDeviceSelectorComponent (devices, 0, 0, 2, 2, false, false, true, false);
+        sel->setSize (520, 380);
+        juce::DialogWindow::LaunchOptions o;
+        o.content.setOwned (sel);
+        o.dialogTitle = "SF-000 AUDIO";
+        o.dialogBackgroundColour = juce::Colour (0xff2B2B28);
+        o.escapeKeyTriggersCloseButton = true;
+        o.useNativeTitleBar = true;
+        o.resizable = false;
+        o.launchAsync();
+    }
+
+    juce::AudioDeviceManager devices;
+    std::unique_ptr<sf0::Engine> engine;
+    std::unique_ptr<sf0::Session> session;
+    std::unique_ptr<MainWindow> window;
 };
 
 START_JUCE_APPLICATION (SF000App)
