@@ -23,7 +23,9 @@ namespace sf
 {
 namespace
 {
-static_assert (Convolver::kLatency == Pocket::kLatency, "TERROIR's wet path latency is the Pocket's");
+// (With no Pocket latency, as SF-000 builds it, the dry signal is not delayed and the wet path's
+// own latency is so much pre-delay.)
+static_assert (Pocket::kLatency == 0 || Convolver::kLatency == Pocket::kLatency, "TERROIR's wet path latency is the Pocket's");
 
 // One slot's capture, as stored in the Live set.
 struct Place

@@ -35,6 +35,11 @@ juce_add_binary_data(SF000Assets SOURCES
 #   cmake -B build -DSF000_SPLIT_PAINT=OFF && cmake --build build
 option(SF000_SPLIT_PAINT "Draw each changed part of the window on its own (macOS)" ON)
 
+# The suite's instruments and time effects each held their sound back 512 samples so the kick's
+# reports reached them in time, whatever order Live ran its plugins in. SF-000 runs the kick's lane
+# first, so they need no wait: 0. (512 builds them as the suite does, to compare.)
+set(SF000_POCKET_LATENCY 0 CACHE STRING "Samples the suite's pocket holds each module's sound back (the suite's own: 512)")
+
 file(GLOB SF_SUITE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/suite/core/*.cpp ${CMAKE_SOURCE_DIR}/suite/modules/*.cpp)
 file(GLOB SF_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/Source/*.cpp)
 
@@ -50,7 +55,8 @@ target_compile_definitions(SF000 PRIVATE
     JUCE_COREGRAPHICS_RENDER_WITH_MULTIPLE_PAINT_CALLS=$<BOOL:${SF000_SPLIT_PAINT}>
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SF000,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SF000,JUCE_VERSION>"
-    SF_MODULE_ID="SF000")
+    SF_MODULE_ID="SF000"
+    SF_POCKET_LATENCY=${SF000_POCKET_LATENCY})
 target_link_libraries(SF000
     PRIVATE
         SF000Assets

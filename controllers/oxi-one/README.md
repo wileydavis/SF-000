@@ -112,9 +112,8 @@ STOP. With SF-000 stopped the ONE falls back to its own clock at the project's t
 ## THE ONE AS THE CLOCK: WHAT LINES UP WITH WHAT
 
 Three things play: gear the ONE drives directly (CV, gates, MIDI hardware), SF-000 lanes the ONE
-plays over USB, and SF-000's own sequencers. SF-000 is heard about 30 ms after a note reaches it:
-LATENCY in AUDIO AND MIDI is the figure, to a tenth of a millisecond, for the buffer and inserts in
-use. The ONE's gear has no such delay, and a note cannot be played before it arrives.
+plays over USB, and SF-000's own sequencers. SF-000 is heard about 10 ms after a note reaches it:
+LATENCY in AUDIO AND MIDI is the figure, to a tenth of a millisecond, for the buffer size in use. The ONE's gear has no such delay, and a note cannot be played before it arrives.
 
 | IN SF-000 | ON THE ONE | ITS GEAR | LANES IT PLAYS | SF-000'S OWN STEPS |
 |---|---|---|---|---|
@@ -131,7 +130,7 @@ use. The ONE's gear has no such delay, and a note cannot be played before it arr
 - If the MkII has the offset, the third row is the cleaner of the two: nothing is played early, so
   even the first step after START lines up. With ON THE BEAT, bar 1's first step from SF-000 is
   that much late, once.
-- "That much" is LATENCY. It moves when the buffer size changes and when a recall changes which
-  inserts are in, so an offset set on the ONE holds for one buffer size and one set of inserts.
+- "That much" is LATENCY. Only the buffer size changes it, so an offset set on the ONE holds until
+  the buffer size is changed.
 - NOTES IN LAND in the panel shows the gap between the ONE's notes and SF-000's own steps as you
   change either side.

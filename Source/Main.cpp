@@ -47,6 +47,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         Engine e;
         e.prepare (48000.0, block);
         e.solo = solo;
+        // two seconds stopped first, as the app is before RUN: every smoother has settled
+        { juce::AudioBuffer<float> w (2, block); for (int k = 0; k < 96000 / block; ++k) e.render (w); }
         e.setRunning (true);
         const int total = (int) (bars * 4.0 * 48000.0 * 60.0 / e.tempo());
         juce::AudioBuffer<float> b (2, block);
@@ -88,6 +90,30 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     }
     if (lufs < -16.0f || lufs > -6.0f) { std::printf ("  FAIL: loudness out of range\n"); ++bad; }
     if (peak > -0.5f) { std::printf ("  FAIL: peak above the ceiling\n"); ++bad; }
+
+    // No lane holds its sound back, whatever is put on it: the rig's delay does not move with the inserts.
+    {
+        Engine e;
+        e.prepare (48000.0, 128);
+        juce::AudioBuffer<float> b (2, 128);
+        e.render (b);
+        const float base = e.insidePartMs();
+        const int held = e.latencySamples();
+        int worst = held, least = held;
+        float most = base;
+        for (int t = 0; t < (int) effects().size(); ++t)
+        {
+            for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (7, sl, t);
+            e.render (b);
+            worst = std::max (worst, e.latencySamples()); least = std::min (least, e.latencySamples()); most = std::max (most, e.insidePartMs());
+        }
+        for (int l = 0; l < kLanes; ++l) for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (l, sl, -1);
+        e.render (b);
+        const bool steady = lat == held && worst == held && least == held && e.latencySamples() == held && held < 64 && most == base && e.insidePartMs() == base;
+        std::printf ("  %s: the rig's own delay is the same with no inserts and with any effect in all %d slots of a lane: %.2f ms (the lanes %d samples, the rest the limiter's look-ahead)\n",
+                     steady ? "ok  " : "FAIL", kSlots, base, held);
+        if (! steady) ++bad;
+    }
 
     // The kick alone: its first hit lands on the same sample whatever the block size.
     int on[4] = { -1, -1, -1, -1 }; const int blocks[4] = { 64, 100, 512, 1024 };
@@ -1033,6 +1059,32 @@ static int midiTest()
         check (tail[0] > 0.05f && tail[1] < 2e-3f, "muted while it holds a note, the note is let go (peak " + juce::String (tail[0], 3) + " held, " + juce::String (tail[1], 5) + " muted)");
     }
 
+    // 2c. the returns are on the grid: the dub delay's first echo is its division after the hit
+    {
+        auto onsetOf = [] (bool echo)
+        {
+            Engine e;
+            e.prepare (48000.0, 128);
+            Pattern one;
+            one.steps[0].on = true; one.steps[0].vel = 1.0f; one.steps[0].gate = 0.5f; one.length = 64;
+            for (int k = 0; k < kLanes; ++k) { e.setPattern (k, k == 1 ? one : Pattern()); for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (k, sl, -1); }
+            for (int k = 0; k < kLanes; ++k) { e.set (cx::lane (k, cx::kSendA), k == 1 && echo ? 1.0f : 0.0f); e.set (cx::lane (k, cx::kSendB), 0.0f); }
+            e.set (cx::kTempo, tempoToValue (120.0));
+            if (echo) e.set (cx::kRetMS + 1, 1.0f);            // the delay return alone: no dry sound
+            juce::AudioBuffer<float> b (2, 128);
+            for (int k = 0; k < 400; ++k) e.render (b);          // settled, as the app is before RUN
+            e.setRunning (true);
+            float peak = 0.0f;
+            std::vector<float> mono;
+            for (int k = 0; k < 300; ++k) { e.render (b); for (int i = 0; i < 128; ++i) { mono.push_back (std::abs (b.getSample (0, i)) + std::abs (b.getSample (1, i))); peak = std::max (peak, mono.back()); } }
+            for (size_t i = 0; i < mono.size(); ++i) if (mono[i] > 0.25f * peak) return (int) i;
+            return -1;
+        };
+        const int dry = onsetOf (false), wet = onsetOf (true);
+        const double off = (double) (wet - dry - 18000) / 48.0;          // DUB TIME starts on a dotted eighth: 18000 samples at 120
+        check (dry >= 0 && wet > dry && std::abs (off) < 2.5, "the dub delay's first echo comes a dotted eighth after the hit, to " + juce::String (off, 1) + " ms (it was 10.7 ms late while the returns held their sound back)");
+    }
+
     // 3. the clock out
     {
         auto kickAt = [] (bool clock, float lead, std::vector<Engine::ClockMsg>* got, double bpmAfter = 0.0)
@@ -1724,7 +1776,7 @@ private:
         // interface's part is what the system reports for it.
         const juce::String total = ms (engine.soundsAfterMs());
         delay.setText ("LATENCY: " + total + " MS FROM A NOTE ARRIVING TO ITS SOUND (" + ms (engine.waitPartMs()) + " WAITING FOR A BUFFER, " + ms (engine.outPartMs())
-                           + " OUT THROUGH THE INTERFACE, " + ms (engine.insidePartMs()) + " LOOK-AHEAD INSIDE). DELAY OUTSIDE GEAR BY THAT TO HEAR IT WITH SF-000. IT MOVES WITH THE BUFFER SIZE AND WITH THE INSERTS IN USE.",
+                           + " OUT THROUGH THE INTERFACE, " + ms (engine.insidePartMs()) + " THE LIMITER'S LOOK-AHEAD). DELAY OUTSIDE GEAR BY THAT TO HEAR IT WITH SF-000. ONLY THE BUFFER SIZE CHANGES IT.",
                        juce::dontSendNotification);
         load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);

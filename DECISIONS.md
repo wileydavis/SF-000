@@ -59,11 +59,12 @@ a snapshot could reach it later.
 11. **The LIMIT knob sets the loudness target** (-16 to -5 LUFS, starting at -9). The limiter's AUTO
     trims its own input slowly until the loudest passage sits at the target. It lifts only a mix
     already within 6 dB of the target, so a breakdown is held where it was. The factory rig
-    measures -9.4 LUFS with peaks at -1.1 dBFS.
+    measures -9.6 LUFS with peaks at -1.1 dBFS (16 bars, started from a settled rig).
 12. **GR is approximate.** It compares the limiter's output peak with its input peak, so it also
     shows AUTO's trim. A true gain-reduction readout needs a tap inside the limiter.
 13. **Lanes are delay-compensated** to the latest one (the kick's pocket needs lookahead), so every
-    lane leaves about 21 ms late and together.
+    lane leaves about 21 ms late and together. (Changed in the seventh build: see 100. The lanes
+    now leave 15 samples late, and together.)
 
 ## Sequencer
 
@@ -323,9 +324,9 @@ a snapshot could reach it later.
 95. **With ON THE BEAT, bar 1's first step after START cannot be played ahead and is played at
     once.** No step is ever skipped to catch up: what should already have sounded is played in the
     first block.
-96. **Most of the delay is look-ahead, about 25 ms of some 30** at 48 kHz: 512 samples in each
-    instrument (the suite's pocket look-ahead), 512 more on a lane with a look-ahead insert, and
-    180 in the master.
+96. (Superseded by 100.) **Most of the delay was look-ahead, about 25 ms of some 30** at 48 kHz:
+    512 samples in each instrument (the suite's pocket look-ahead), 512 more on a lane with a
+    look-ahead insert, and 180 in the master.
     I left it alone. Shortening it would change the sound's design; it is the thing to look at if
     30 ms between the ONE's gear and the lanes it plays is too much.
 97. **The followed clock has not met the ONE.** It is tested with made-up ticks. I do not know the
@@ -337,10 +338,43 @@ a snapshot could reach it later.
     and the look-ahead are exact (offline, a note from outside begins within 0.15 ms of their sum);
     the interface's part is what the system reports for the device. A measurement, a click out of
     an output and back into an input, is not built: SF-000 opens no audio input.
-99. **The figure moves** with the buffer size and with which inserts are in: 14.4 ms of look-ahead
-    with none, 25.1 with the starting rig's, at 48 kHz. So a recall that changes the inserts can
-    change it by about 11 ms. Holding it steady (every lane always given the longest look-ahead)
-    is not built: it would cost that much delay all the time. Say if you want it.
+99. (Superseded by 100 and 101.) **The figure moved** with the buffer size and with which inserts
+    were in: 14.4 ms of look-ahead with none, 25.1 with the starting rig's, at 48 kHz.
+
+## Seventh build (Nov 11): the look-ahead taken out, the latency steady
+
+You asked for a steady, known latency (and whether a smaller buffer or the driver could cut it).
+
+100. **The suite's 512-sample look-ahead is built as 0 in SF-000** (`SF000_POCKET_LATENCY`, a build
+     option; 512 builds the suite's own). Each instrument and each DELAY, REVERB and CONVOLUTION
+     held its sound back 512 samples so the kick's reports reached it in time whatever order Live
+     ran its plugins in. SF-000's engine plays the kick's lane first in every buffer, so the
+     reports are already there. The pocket never looked ahead of the kick: it only waited.
+101. **Every lane is held to one fixed wait, whatever is on it**: its instrument's and the slowest
+     effect's in every slot, which is now 15 samples (the distortion's oversampling, 5 each). So
+     the rig's own delay is 4.1 ms at 48 kHz, 196 samples, nearly all of it the limiter's
+     look-ahead, and no insert or recall moves it. With a 128-sample buffer the whole LATENCY is
+     about 10 ms; it was about 32 and could move by 11.
+102. **Checked against a build with the 512 left in**, both started from a settled rig (two
+     seconds stopped, as the app is before RUN). With no inserts or sends: kick, both hats, clap,
+     perc, bass, lead, chord and voice come out the same to the last bit, 512 samples sooner; the
+     pad differs by less than a thousandth; the rumble has the same level and spectrum and its
+     noise falls differently. The whole rig has the same level (0.01 dB) and the same spectrum to
+     0.15 dB in every octave. Its waveform is not the same, for the reasons in 103 and because
+     the delay's wow and the reverb turn at a different moment against the music.
+103. **What does change in the sound.** The two returns were not delay-compensated, so their sound
+     left 512 samples (10.7 ms) after the lanes'. Now the dub delay's echoes land on their
+     division (offline: 9.5 ms late before, within 1.2 ms now) and the reverb answers 10.7 ms
+     sooner. A CONVOLUTION insert's wet sound now comes 10.7 ms after its dry (the convolver's own
+     delay, as pre-delay) where the dry used to wait for it. Listen for these three; the build
+     option puts the old way back.
+104. **A smaller buffer helps a little, the driver not at all.** SF-000 is on Core Audio already.
+     The buffer counts about twice (the wait for the next one, and the one on its way out): 64
+     samples instead of 128 takes off about 2.7 ms. ENGINE in the panel is the headroom to watch.
+     Not tried on a device at 32.
+105. **The offline test now starts from a settled rig**, as the app does. Started cold, the first
+     hit meets smoothers still moving, and the limiter's AUTO, which remembers the loudest second
+     for a minute, held the level 0.6 dB down for that minute.
 
 ## Not verified
 

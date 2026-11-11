@@ -98,9 +98,10 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
   together; **M** in the sequencer strip mutes a lane's own steps, so only the One plays it.
 - **LATENCY** in AUDIO AND MIDI is how long SF-000 takes from a note arriving to its sound, to a
   tenth of a millisecond, and what it is made of: the wait for a buffer, the way out through the
-  interface, the look-ahead inside. It is the figure to delay outside gear by to hear it with
-  SF-000. It is worked out, not measured (the interface's part is what the system reports), and it
-  moves with the buffer size and with the inserts in use.
+  interface, and 4 ms inside (the limiter's look-ahead). About 10 ms at 128 samples, less at 64. It
+  is the figure to delay outside gear by to hear it with SF-000. It is worked out, not measured
+  (the interface's part is what the system reports). Only the buffer size changes it: no insert and
+  no recall does.
 - **The clock is sent, followed, or neither**: CLOCK in AUDIO AND MIDI. The choice is kept.
 - **SEND.** While it runs, START, 24 ticks a beat and STOP go to every output that is not the E16.
   CLOCK LEAD is how long the follower takes to answer: play a plain sixteenth pattern from it into a
@@ -112,8 +113,8 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
   sender plays on, SF-000 comes back in at the sender's place in the bar. With no clock coming in,
   SF-000 runs on its own at the tempo it last had; if the clock goes without a STOP (a cable pulled),
   it plays on alone at that tempo.
-- **Following: where SF-000's own steps are heard.** A note from outside is heard some 30 ms after it
-  arrives (LATENCY, above). Gear the sender plays directly has no such delay. **WITH NOTES IN** (the way it starts) gives no
+- **Following: where SF-000's own steps are heard.** A note from outside is heard about 10 ms after
+  it arrives (LATENCY, above). Gear the sender plays directly has no such delay. **WITH NOTES IN** (the way it starts) gives no
   head start: SF-000's own steps are heard with the lanes the sender plays, and everything SF-000
   plays is together. Gear the sender plays directly is heard that much before it. **ON THE BEAT**
   is for playing with such gear: SF-000's own steps are played that much early, so they are heard

@@ -335,6 +335,7 @@ private:
     std::atomic<double> ppqShown { 0.0 };
     std::atomic<uint64_t> blockCount { 0 };
     std::atomic<int> maxLat { 0 };
+    int holdLat = 0;                            // what every lane is held to, whatever is on it
     struct Loud;
     std::unique_ptr<Loud> loud;
     float peakHold[2] = { -100.0f, -100.0f };

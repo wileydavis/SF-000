@@ -15,7 +15,12 @@ namespace sf
 class Pocket
 {
 public:
-    static constexpr int kLatency = 512;
+    // SF-000 builds this as 0 (SF_POCKET_LATENCY): its engine plays the kick's lane first in every
+    // block, so the kick's reports are there before any other lane needs them, with no wait.
+   #ifndef SF_POCKET_LATENCY
+    #define SF_POCKET_LATENCY 512
+   #endif
+    static constexpr int kLatency = SF_POCKET_LATENCY;
     static constexpr int kTrace = 128;
     // Takes part in SF BUILD's drop duck. Off on a TAP or STRIP whose ROLE is KICK, PERC or DECK:
     // like SF KICK, PERC, STRIKE and DECK, which have no Pocket, they never duck under the kick.

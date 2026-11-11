@@ -3,6 +3,8 @@
 #include "core/Registry.h"
 #include "core/Bus.h"
 #include "core/Loudness.h"
+#include <map>
+#include <mutex>
 
 namespace sf0
 {
@@ -28,6 +30,26 @@ Engine::Lane::Lane() { for (auto& i : ins) i = nullptr; }
 Engine::Lane::~Lane() = default;
 
 // ------------------------------------------------------------------------------------- building
+// The longest any insert effect holds its sound back at this sample rate (the distortion's
+// oversampling, a few samples). Found once for each rate, from one of each made for the purpose.
+static int slowestEffect (double rate)
+{
+    static std::mutex lock;
+    static std::map<int, int> known;
+    const std::lock_guard<std::mutex> g (lock);
+    const int key = (int) std::lround (rate);
+    if (const auto it = known.find (key); it != known.end()) return it->second;
+    int most = 0;
+    for (auto& d : effects())
+    {
+        SFProcessor p (sf::makeModule (d.module));
+        p.setRateAndBufferSizeDetails (rate, 512);
+        p.prepareToPlay (rate, 512);
+        most = std::max (most, p.getLatencySamples());
+    }
+    return known[key] = most;
+}
+
 std::unique_ptr<SFProcessor> Engine::makeProc (const char* module, const std::vector<Fixed>& fixed)
 {
     auto p = std::make_unique<SFProcessor> (sf::makeModule (module));
@@ -585,7 +607,9 @@ void Engine::updateLatency()
         for (auto& i : lane[(size_t) l].ins) if (auto* in = i.load()) lat[l] += in->proc->getLatencySamples();
         mx = std::max (mx, lat[l]);
     }
-    mx = std::min (mx, 8000);
+    // Every lane is given the longest wait any lane could need, always (holdLat), so the rig's
+    // delay does not move with what a recall or a hand puts on a lane.
+    mx = std::min (std::max (mx, holdLat), 8000);
     for (int l = 0; l < kLanes; ++l) lane[(size_t) l].delay = juce::jlimit (0, 8000, mx - lat[l]);
     maxLat = mx;
     int ml = 0;
@@ -817,6 +841,10 @@ void Engine::prepare (double rate, int block)
         for (auto& s : ln.eqSet) s = 99.0f;
         ln.patDirty = true;
     }
+    // the longest wait a lane could need: its instrument's, and the slowest effect in every slot
+    int inst = 0;
+    for (auto& ln : lane) inst = std::max (inst, ln.proc->getLatencySamples());
+    holdLat = inst + kSlots * slowestEffect (sr);
     for (auto* pk : parked) prep (*pk->proc);
     prep (*retA);
     for (auto& sp : space) prep (*sp);
