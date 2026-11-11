@@ -95,8 +95,8 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
 - **Notes in.** Every MIDI input is listened to. A lane's number is its channel (1 KICK to 11 VOICE),
   so the OXI One plays the lanes as it played the Live tracks. Notes and the lane's own steps sound
   together.
-- **Clock out.** START, STOP and 24 ticks a beat go to every output that is not the E16. Set the
-  OXI One to follow external clock. CLOCK LEAD is how long the follower takes to answer: play a plain
+- **Clock out.** While it runs, START, 24 ticks a beat and STOP go to every output that is not the
+  E16. The OXI One's settings and its project for SF-000 are in `controllers/oxi-one/`. CLOCK LEAD is how long the follower takes to answer: play a plain
   sixteenth pattern from it into a lane, read NOTES IN LAND x MS LATE in the panel, and put that
   number on CLOCK LEAD. With the clock on, RUN waits two blocks and LEAD (a few ms) before the first
   sound. SF-000 does not follow an outside clock yet.
@@ -130,6 +130,7 @@ build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page librar
 | `Source/Screen.*` | the three screens |
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender |
 | `controllers/e16/` | the E16 scene and its script |
+| `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 

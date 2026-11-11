@@ -848,6 +848,8 @@ void Engine::render (juce::AudioBuffer<float>& out)
     // MIDI clock out. A follower's note for a beat has to be back here a block before that beat
     // is rendered, so the clock runs ahead of the sound: two blocks (one for the sender to be on
     // time, one for the note's way in) and LEAD, the follower's own delay. RUN waits that long.
+    // Ticks go out only while it runs, as Live's did: the OXI One is set up for a clock that
+    // starts with START, and falls back to its own when there is none.
     const bool clk = clockOn.load();
     const double lookBeats = clk ? (2.0 * durMs + (double) clockLead.load()) * blockBpm / 60000.0 : 0.0;
     if (starting) ppq = -lookBeats;
@@ -856,7 +858,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         const double base = blockMs + durMs;
         if (starting) { clkPpq = 0.0; pushClock (0xFA, base - 1.0, samplesDone); }       // START, a millisecond before its first tick
         if (stopping) pushClock (0xFC, base, samplesDone);
-        const double c0 = clkPpq, c1 = run ? std::max (clkPpq, ppq + beats + lookBeats) : clkPpq + beats;
+        const double c0 = clkPpq, c1 = run ? std::max (clkPpq, ppq + beats + lookBeats) : clkPpq;
         for (auto k = (juce::int64) std::ceil (c0 * 24.0 - 1e-9); (double) k / 24.0 < c1 - 1e-12; ++k)
         {
             const double off = ((double) k / 24.0 - c0) * spb;

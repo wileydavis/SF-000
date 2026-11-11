@@ -236,6 +236,16 @@ a snapshot could reach it later.
 74. **None of the MIDI has met the hardware.** It is tested with messages made in the test, and the
     scene's script on the suite's mock of the E16.
 
+75. **The clock is sent only while SF-000 runs** (changed within the fourth build: it first ran
+    free while stopped). Live did the same, and the OXI One's settings from the suite (Sync USB,
+    Auto Sync on) are known to work with a clock that begins with START. Stopped, the ONE falls
+    back to its own clock.
+76. **The OXI One's project is SF START with 49 bytes changed:** the name (SF000) and the spare
+    sequencers 7 and 8, moved from 7B and 16A to 12A and 13A. The parts' channels already matched.
+    Its four scenes are the suite's. The tempo (120) is left as the ONE wrote it.
+77. **SF-000 takes notes from every port and goes by the channel alone**, so port B's channel 7
+    plays RUMBLE as port A's does. The suite kept the two ports apart.
+
 ## Not verified
 
 - Built and run on Linux only. It has not been compiled on macOS or heard by anyone.

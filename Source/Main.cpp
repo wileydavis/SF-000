@@ -888,7 +888,7 @@ static int midiTest()
             e.setClockOut (clock, lead);
             e.solo = 0;
             juce::AudioBuffer<float> b (2, 128);
-            for (int i = 0; i < 40; ++i) e.render (b);                 // stopped: the clock runs free
+            for (int i = 0; i < 40; ++i) e.render (b);                 // stopped: no clock
             Engine::ClockMsg m;
             int freeTicks = 0;
             while (e.nextClock (m)) ++freeTicks;
@@ -910,7 +910,7 @@ static int midiTest()
         const auto plain = kickAt (false, 0.0f, nullptr), led = kickAt (true, 4.0f, &got);
         const int wait = 2 * 128 + (int) std::lround (0.004 * 48000.0);
         check (led.first - plain.first == wait, "with the clock on, RUN waits two blocks and LEAD before the first sound (" + juce::String (led.first - plain.first) + " samples at 4 ms)");
-        check (led.second >= 3 && led.second <= 6, "stopped, the clock still ticks at the tempo (" + juce::String (led.second) + " ticks in 107 ms)");
+        check (led.second == 0, "stopped, nothing is sent: the clock begins with START, as Live's did");
         const double tick = 60000.0 / (132.0 * 24.0);
         bool order = got.size() > 50 && got[0].byte == 0xFA && got[1].byte == 0xF8 && got.back().byte == 0xFC;
         double worst = 0.0;
@@ -1143,7 +1143,7 @@ public:
         addAndMakeVisible (audio);
         for (auto* l : { &ins, &e16, &outs, &late, &leadLabel }) { addAndMakeVisible (*l); l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1)); l->setFont (juce::FontOptions (14.0f)); }
         addAndMakeVisible (clock);
-        clock.setButtonText ("SEND CLOCK (START, STOP, 24 TICKS A BEAT)");
+        clock.setButtonText ("SEND CLOCK WHILE IT RUNS (START, 24 TICKS A BEAT, STOP)");
         clock.setToggleState (midi.sendsClock(), juce::dontSendNotification);
         clock.onClick = [this] { midi.setSendsClock (clock.getToggleState()); };
         addAndMakeVisible (lead);

@@ -97,7 +97,7 @@ public:
     float notesLateMs() const                   { return lateMs.load(); }   // incoming notes against the sixteenths, averaged (+ late)
     int notesHeard() const                      { return lateCount.load(); }
 
-    // ---- MIDI clock out: 24 ticks a beat, START and STOP, for whatever follows this rig. The clock
+    // ---- MIDI clock out: START, 24 ticks a beat while it runs, STOP, for whatever follows this rig. The clock
     // runs ahead of the sound by two blocks and LEAD, so a follower's notes are back here in time
     // to sound on the beat; RUN waits that long (a few ms) before the first sound.
     struct ClockMsg { double dueMs = 0.0; juce::int64 sample = 0; juce::uint8 byte = 0; };
