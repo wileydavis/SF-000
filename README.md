@@ -44,7 +44,7 @@ First run:
 | **M** in the sequencer strip | mute the active lane's own sequencer. Its steps stay, drawn grey, and go unplayed; the note it was holding is let go. Notes from MIDI in still sound on the lane. Press again and it comes back on its next lit step |
 | RANDOM, EUCLID | write a pattern at once; while the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite it |
 | **REC** (top bar) | press: start a take. Its key turns red and its name becomes the time it has run. **Hold** the key to end it. See Recording, below |
-| SNAPSHOT | keep everything on the main screen as a new snapshot |
+| SNAPSHOT | keep everything on the main screen as a new snapshot. If the clock is running, the last four bars are kept with it as a clip and it is given a profile: nothing to name or tag (see The library, below) |
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
@@ -83,6 +83,24 @@ back at the other. The sequencer stays where it is.
   the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
   are more rows than fit.
 - What CONFIG sets is stored in snapshots with everything else, except which reverb SPACE is.
+
+### The library: what a snapshot sounded like
+
+A snapshot taken while the clock runs keeps its sound: the last four whole bars of the output, cut
+on the bar lines, as a small Ogg file (about 80 KB) in `clips/` beside the session. From those bars
+and from the rig itself it is given a profile, and its card in the library draws it:
+
+| ON THE CARD | WHAT |
+|---|---|
+| the coloured block | as tall as its **energy** (the level before the master evens it out, how many hits a beat, how bright), as hot as it is **bright**: deep red for dark, through amber and yellow, to white |
+| the sixteen bars | the spectrum's shape, 30 Hz to 16 kHz |
+| the two rows of sixteen | where the hits fall in the bar: the top end above, the low end below |
+| the eleven bars | how much of each lane there was |
+
+Also kept, and not drawn yet: weight (the low end's share), density, tone against texture,
+movement from bar to bar, and how wet (the returns' share). `SF-000 --profiles` prints them for the
+snapshots the rig comes with and some plain cases. A snapshot taken with the clock stopped, or
+from before this build, has no sound kept: its card shows how busy each lane's pattern is, as before.
 
 ### Recording
 
@@ -188,12 +206,13 @@ meters when a bar has moved, the playing step.
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |
 | `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
+| `Source/Profile.*` | what a snapshot sounded like, worked out from the bars kept with it |
 | `Source/Recorder.*` | takes: the set, the lanes and the returns to disk, off the audio thread |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
-scene), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
+scene, each snapshot's profile), `clips/` (each snapshot's four bars), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
@@ -203,7 +222,10 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
 - Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
-- The library's sound map and audio previews; meaning filters; snapshot knob pages beyond the first.
+- The library: hearing a snapshot's clip in the headphones, the sound map, the E16's page for it,
+  suggestions that fit what is playing. Meaning filters; snapshot knob pages beyond the first.
+- A recall between two snapshots with different effects on a lane swaps the effects at once: the
+  chains do not yet cross over the GLIDE time.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.
 - Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).
 - Crash recovery beyond the saved session; the 8-hour soak test.

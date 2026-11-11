@@ -210,6 +210,83 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively(); state.deleteFile();
     }
 
+    // A snapshot keeps its sound: the last whole bars as a clip, and a profile worked out from them.
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_clip_test");
+        tmp.deleteRecursively();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        juce::int64 kickId = 0, hatId = 0, fullId = 0;
+        Profile kick, hat, full;
+        bool silentHas = true;
+        {
+            Engine e;
+            e.prepare (48000.0, 128);
+            Session ses (e, true);
+            juce::AudioBuffer<float> b (2, 128);
+            auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 128.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+            for (int k = 0; k < 400; ++k) e.render (b);
+            silentHas = ses.library[(size_t) ses.indexOf (ses.take())].profile.has;      // nothing has played: nothing to keep
+            auto only = [&] (std::initializer_list<int> keep)
+            {
+                for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), std::find (keep.begin(), keep.end(), l) != keep.end() ? 0.0f : 1.0f);
+                bars (6.3);                                                               // taken part of the way through a bar
+                return ses.take();
+            };
+            e.setRunning (true);
+            fullId = only ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+            kickId = only ({ 0 });
+            hatId = only ({ 1, 2 });
+            ses.waitForClips();
+            full = ses.library[(size_t) ses.indexOf (fullId)].profile; kick = ses.library[(size_t) ses.indexOf (kickId)].profile; hat = ses.library[(size_t) ses.indexOf (hatId)].profile;
+
+            // the clip: four bars to the sample, beginning on a bar line (the kick's first hit is at its start)
+            juce::OggVorbisAudioFormat ogg;
+            juce::AudioBuffer<float> clip;
+            int first = -1; bool read = false;
+            if (auto in = ses.clipFile (kickId).createInputStream())
+                if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (in.release(), true) })
+                {
+                    clip.setSize (2, (int) r->lengthInSamples);
+                    read = r->read (&clip, 0, clip.getNumSamples(), 0, true, true);
+                    for (int i = 0; i < clip.getNumSamples() && first < 0; ++i) if (std::abs (clip.getSample (0, i)) > 0.05f) first = i;
+                }
+            const int want = (int) std::lround (16.0 * 60.0 / e.tempo() * 48000.0);
+            const bool clipOk = read && std::abs (clip.getNumSamples() - want) <= 2 && first >= 0 && first < 96 && kick.bars == 4 && std::abs (kick.bpm - (float) e.tempo()) < 0.05f;
+            std::printf ("  %s: a snapshot's clip is its last four whole bars (%d samples, %d wanted), from the bar line (the kick begins %d samples in), kept as Ogg (%d KB)\n",
+                         clipOk ? "ok  " : "FAIL", clip.getNumSamples(), want, first, (int) (ses.clipFile (kickId).getSize() / 1024));
+            if (! clipOk) ++bad;
+
+            ses.remove (hatId);
+            const bool gone = ! ses.clipFile (hatId).existsAsFile() && ses.clipFile (kickId).existsAsFile();
+            std::printf ("  %s: a deleted snapshot's clip goes with it\n", gone ? "ok  " : "FAIL");
+            if (! gone) ++bad;
+            ses.touch(); ses.save();
+        }
+        // the profile tells the states apart, and is still there when the app opens again
+        const bool four = kick.pulse[0] > 0.5f && kick.pulse[4] > 0.5f && kick.pulse[8] > 0.5f && kick.pulse[12] > 0.5f && kick.pulse[2] < 0.2f && kick.pulse[6] < 0.2f && kick.pulse[10] < 0.2f;
+        bool hatLow = true;
+        for (int k = 0; k < 16; ++k) hatLow = hatLow && hat.pulse[(size_t) k] < 0.1f;
+        const bool told = kick.has && hat.has && full.has && ! silentHas && four && hatLow
+                          && kick.weight > 0.8f && hat.weight < 0.1f && hat.bright > 0.8f && kick.bright < 0.3f && kick.tone > hat.tone + 0.5f
+                          && full.energy > kick.energy + 0.15f && full.energy > hat.energy + 0.15f
+                          && kick.lanes[0] > 0.5f && kick.lanes[1] < 0.05f && hat.lanes[1] > 0.1f && hat.lanes[0] < 0.05f;
+        std::printf ("  %s: the profile: the kick alone is heavy, dark and on the four beats; the hats alone are bright with no low end; the whole rig has the most energy (%.2f, %.2f, %.2f); silence keeps nothing\n",
+                     told ? "ok  " : "FAIL", kick.energy, hat.energy, full.energy);
+        if (! told) ++bad;
+        {
+            Engine e2;
+            e2.prepare (48000.0, 128);
+            Session again (e2, true);
+            const int i = again.indexOf (kickId);
+            const bool back = i >= 0 && again.library[(size_t) i].profile.has && std::abs (again.library[(size_t) i].profile.weight - kick.weight) < 0.01f
+                              && std::abs (again.library[(size_t) i].profile.pulse[4] - kick.pulse[4]) < 0.01f && again.clipFile (kickId).existsAsFile();
+            std::printf ("  %s: the profile and the clip are there when the app opens again\n", back ? "ok  " : "FAIL");
+            if (! back) ++bad;
+        }
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+    }
+
     // The kick alone: its first hit lands on the same sample whatever the block size.
     int on[4] = { -1, -1, -1, -1 }; const int blocks[4] = { 64, 100, 512, 1024 };
     for (int k = 0; k < 4; ++k) run (blocks[k], 1, nullptr, 0, nullptr, nullptr, nullptr, &on[k]);
@@ -955,6 +1032,23 @@ static int shot (const juce::StringArray& args)
     juce::AudioBuffer<float> b (2, 512);
     for (int i = 0; i < 700; ++i) e.render (b);          // a few bars in, so the meters and the playing step show
     if (args.contains ("--snap")) ses.take();
+    if (args.contains ("--profiled"))
+    {
+        // a library with sound kept in it: each snapshot it comes with played and taken again, and some plainer states
+        auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 512.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+        const auto first = ses.library;
+        for (auto& s : first) { ses.recall (s.id); bars (7.0); ses.take(); }
+        auto only = [&] (std::initializer_list<int> keep)
+        {
+            for (auto& s : first) if (s.name == "INIT") ses.recall (s.id);
+            for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), std::find (keep.begin(), keep.end(), l) != keep.end() ? 0.0f : 1.0f);
+            bars (7.0); ses.take();
+            for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), 0.0f);
+        };
+        only ({ 0 }); only ({ 0, 5 }); only ({ 0, 1, 2, 3, 4 }); only ({ 9, 10 }); only ({ 7 }); only ({ 1, 2 }); only ({ 0, 5, 6, 9 }); only ({ 1, 2, 3, 4, 7, 8 });
+        for (auto& s : first) if (s.name == "INIT") ses.recall (s.id);
+        bars (2.0);
+    }
     if (args.contains ("--glide"))
     {
         // a snapshot knob turned with GLIDE at 4 bars, caught on the way
@@ -1942,6 +2036,56 @@ private:
     juce::Slider lead, trim;
 };
 
+// What the profile makes of the rig in a few states: each snapshot it comes with, and some plain
+// cases to judge the numbers by. SF-000 --profiles
+static int profiles()
+{
+    using namespace sf0;
+    Engine e;
+    e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> b (2, 256);
+    auto run = [&] (double bars) { const int blocks = (int) (bars * 4.0 * 60.0 / e.tempo() * 48000.0 / 256.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+    auto show = [&] (const juce::String& name)
+    {
+        Engine::Heard h;
+        if (! e.lastHeard (h)) { std::printf ("  %-22s nothing heard\n", name.toRawUTF8()); return; }
+        const auto p = profileOf (h);
+        juce::String bands, low, top, lanesOn;
+        for (auto v : p.bands) bands << juce::String::charToString (" .:-=+*#@"[juce::jlimit (0, 8, (int) (v * 8.99f))]);
+        for (int s = 0; s < 16; ++s) { low << juce::String::charToString (" .oO@"[juce::jlimit (0, 4, (int) (p.pulse[(size_t) s] * 4.99f))]); top << juce::String::charToString (" .oO@"[juce::jlimit (0, 4, (int) (p.pulse[(size_t) (16 + s)] * 4.99f))]); }
+        for (auto v : p.lanes) lanesOn << juce::String::charToString (" .oO@"[juce::jlimit (0, 4, (int) (v * 4.99f))]);
+        std::printf ("  %-22s energy %.2f weight %.2f bright %.2f density %.2f tone %.2f move %.2f wet %.2f | %d bars %.1f bpm mix %.1f dB | [%s] low[%s] top[%s] lanes[%s]\n",
+                     name.toRawUTF8(), p.energy, p.weight, p.bright, p.density, p.tone, p.movement, p.wet, p.bars, p.bpm, h.mixDb,
+                     bands.toRawUTF8(), low.toRawUTF8(), top.toRawUTF8(), lanesOn.toRawUTF8());
+    };
+    std::printf ("SF-000 profiles\n");
+    e.setRunning (true);
+    for (size_t i = 0; i < ses.library.size(); ++i)
+    {
+        ses.recall (ses.library[i].id);
+        run (7.0);
+        show (ses.library[i].name);
+    }
+    // plain cases, from the rig as it first comes up
+    auto only = [&] (std::initializer_list<int> keep, const char* name)
+    {
+        for (auto& s : ses.library) if (s.name == "INIT") ses.recall (s.id);
+        for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), std::find (keep.begin(), keep.end(), l) != keep.end() ? 0.0f : 1.0f);
+        run (7.0);
+        show (name);
+        for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), 0.0f);
+    };
+    only ({ 0 }, "kick alone");
+    only ({ 0, 5 }, "kick and bass");
+    only ({ 0, 1, 2, 3, 4 }, "drums");
+    only ({ 9, 10 }, "pad and voice");
+    only ({ 7 }, "lead alone");
+    only ({ 1, 2 }, "hats alone");
+    e.setRunning (false);
+    return 0;
+}
+
 // The AUDIO AND MIDI panel drawn to a file: --shot f.png --setup [send|follow|off] [--beat] (a clock is fed in for follow).
 static int shotSetup (const juce::StringArray& args)
 {
@@ -2008,6 +2152,7 @@ public:
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
         if (args.contains ("--miditest")) { setApplicationReturnValue (midiTest()); quit(); return; }
+        if (args.contains ("--profiles")) { setApplicationReturnValue (profiles()); quit(); return; }
         if (args.contains ("--perf")) { setApplicationReturnValue (perf()); quit(); return; }
         if (args.contains ("--e16")) { const int i = args.indexOf ("--e16"); setApplicationReturnValue (writeScene (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("SF-000.oxie16"))); quit(); return; }
 

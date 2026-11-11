@@ -798,7 +798,45 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     const float wn = plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? col::black : col::white, isBase ? col::lit : col::black, 24);
     if (selected && hitKind == hCard) selNameRect = R (x0 + wTag, y0, std::max (wn, 150.0f), 24);
     text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
-    // how busy each lane's pattern is
+    const float gy = y0 + 28, gh = 30;
+    auto box = [&] (float x, float w) { const R b (x, gy, w, gh); g.setColour (col::black); g.fillRect (b); g.setColour (col::white); g.fillRect (b.reduced (1)); return b.reduced (1); };
+    if (s.profile.has)
+    {
+        // What it sounded like, from the bars kept with it. One block: as tall as its energy, as
+        // hot as it is bright (deep red for dark, through amber and yellow, to white).
+        const auto& p = s.profile;
+        const R e = box (x0, 16);
+        const float eh = std::round (juce::jlimit (0.0f, 1.0f, p.energy) * e.getHeight());
+        g.setColour (heat (p.bright)); g.fillRect (R (e.getX(), e.getBottom() - eh, e.getWidth(), eh));
+        // the spectrum's shape, low to high
+        const R sp = box (x0 + 20, 82);
+        g.setColour (col::black);
+        for (int k = 0; k < 16; ++k)
+        {
+            const float h = std::round (p.bands[(size_t) k] * sp.getHeight());
+            g.fillRect (R (sp.getX() + (float) k * 5, sp.getBottom() - h, 4, h));
+        }
+        // where the hits fall in the bar: the top above, the low end below
+        const R pu = box (x0 + 106, 98);
+        for (int row = 0; row < 2; ++row)
+            for (int k = 0; k < 16; ++k)
+            {
+                const float v = p.pulse[(size_t) ((row == 0 ? 16 : 0) + k)];
+                if (v < 0.08f) continue;
+                g.setColour (col::black.withAlpha (juce::jlimit (0.0f, 1.0f, v)));
+                g.fillRect (R (pu.getX() + (float) k * 6, pu.getY() + (float) row * 14, 5, 13));
+            }
+        // how much of each lane
+        const R la = box (x0 + 208, 52);
+        g.setColour (col::black);
+        for (int l = 0; l < kLanes; ++l)
+        {
+            const float h = std::round (p.lanes[(size_t) l] * la.getHeight());
+            g.fillRect (R (la.getX() + 1 + (float) l * 4.5f, la.getBottom() - h, 3.5f, h));
+        }
+        return;
+    }
+    // no sound was kept with it: how busy each lane's pattern is
     for (int l = 0; l < kLanes; ++l)
     {
         const auto& p = s.patterns[(size_t) l];

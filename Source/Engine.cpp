@@ -411,6 +411,70 @@ bool Engine::followClock (double aheadMs)
     return f.have;
 }
 
+// The last bars from the tape. Read behind the audio thread's place: what is copied here was
+// written whole buffers ago and is not written again for many seconds.
+bool Engine::lastHeard (Heard& h, int wantBars) const
+{
+    h = Heard();
+    h.sampleRate = sr;
+    for (auto& d : h.laneDb) d = -100.0f;
+    h.retDb = { -100.0f, -100.0f };
+    if (! prepared) return false;
+    const juce::int64 end = tapeEnd.load();
+    const int count = markCount.load();
+    juce::int64 from = 0, to = 0;
+    const Mark* m0 = nullptr; const Mark* m1 = nullptr;
+    int bars = 0;
+    if (count >= 2)
+    {
+        int last = count - 1;
+        if (marks[(size_t) (last % kMarks)].sample > end) --last;          // (that bar line's sound has not left the master chain yet)
+        if (last >= 1)
+        {
+            const auto& e1 = marks[(size_t) (last % kMarks)];
+            int k = 0;
+            while (k < wantBars && last - (k + 1) >= 0 && last - (k + 1) > count - kMarks
+                   && marks[(size_t) ((last - (k + 1)) % kMarks)].run == e1.run) ++k;
+            // whole bars, if the last of them ended within the last eight seconds (the clock runs, or has only just stopped)
+            if (k >= 1 && end - e1.sample < (juce::int64) (sr * 8.0))
+            {
+                m1 = &e1; m0 = &marks[(size_t) ((last - k) % kMarks)];
+                bars = k; from = m0->sample; to = e1.sample;
+            }
+        }
+    }
+    if (bars == 0) { to = end; from = std::max<juce::int64> (0, end - (juce::int64) (sr * 8.0)); }
+    const juce::int64 len64 = to - from;
+    if (len64 < (juce::int64) (sr * 0.5) || len64 > kTape - 65536 || end - from > kTape - 65536) return false;
+    const int len = (int) len64;
+    h.audio.setSize (2, len);
+    const int at = (int) (from & (kTape - 1)), first = std::min (len, kTape - at);
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        h.audio.copyFrom (ch, 0, tape[(size_t) ch].data() + at, first);
+        if (first < len) h.audio.copyFrom (ch, first, tape[(size_t) ch].data(), len - first);
+    }
+    // (with no bar lines to go by, an effect's hiss or a tail dying away is not a sound to keep: the
+    // stopped rig idles at -40 dB, the lead's lane)
+    if (h.audio.getMagnitude (0, len) < 1.0e-4f) return false;
+    if (bars == 0 && h.audio.getRMSLevel (0, 0, len) < 0.03f) return false;
+    if (bars > 0)
+    {
+        h.bars = bars;
+        h.bpm = (double) bars * 4.0 * 60.0 * sr / (double) len;
+        auto db = [len] (double q) { return q > 0.0 ? (float) std::max (-100.0, 10.0 * std::log10 (q / (2.0 * (double) len))) : -100.0f; };
+        double all = 0.0;
+        for (int l = 0; l < kLanes + 2; ++l)
+        {
+            const double q = m1->sq[(size_t) l] - m0->sq[(size_t) l];
+            all += q;
+            if (l < kLanes) h.laneDb[(size_t) l] = db (q); else h.retDb[(size_t) (l - kLanes)] = db (q);
+        }
+        h.mixDb = db (all);
+    }
+    return true;
+}
+
 bool Engine::nextClock (ClockMsg& m)
 {
     const auto r = clockFifo.read (1);
@@ -851,6 +915,8 @@ void Engine::prepare (double rate, int block)
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &recBuf }) b->setSize (2, maxBlock, false, true, false);
+    for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
+    tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
     liveMidi.ensureSize (8192);
     wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0;
     fol = Follow();
@@ -1024,6 +1090,22 @@ void Engine::render (juce::AudioBuffer<float>& out)
     }
     else clkPpq = 0.0;
 
+    // Where a bar line falls in this buffer, noted against the tape: its sound leaves the master
+    // chain that much later than it is made.
+    if (starting || again) ++runCount;
+    if (run)
+    {
+        const double bar = std::ceil (ppq / 4.0 - 1e-9) * 4.0;
+        if (bar < ppq + beats - 1e-12)
+        {
+            auto& m = marks[(size_t) (markCount.load() % kMarks)];
+            m.sample = tapePos + (juce::int64) std::llround ((bar - ppq) * spb) + maxLat.load() + masterLat.load();
+            m.run = runCount;
+            for (int l = 0; l < kLanes; ++l) m.sq[(size_t) l] = laneSq[(size_t) l];
+            m.sq[(size_t) kLanes] = retSq[0]; m.sq[(size_t) kLanes + 1] = retSq[1];
+            markCount.fetch_add (1);
+        }
+    }
     wasRunning = run;
     advanceControls (beats);
     gatherNotes (n, spb);
@@ -1200,6 +1282,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
         m2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, retGainWas[0], rg[0]);
         m2.addFromWithRamp (ch, 0, bb2.getReadPointer (ch), n, retGainWas[1], rg[1]);
     }
+    for (int k = 0; k < 2; ++k)
+    {
+        const auto& wet = k == 0 ? a2 : bb2;
+        double q = 0.0;
+        for (int ch = 0; ch < 2; ++ch) { const float* x = wet.getReadPointer (ch); for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; }
+        retSq[(size_t) k] += q * (double) (rg[k] * rg[k]);
+    }
     if (rec != nullptr)
         for (int k = 0; k < 2; ++k)
         {
@@ -1252,6 +1341,17 @@ void Engine::render (juce::AudioBuffer<float>& out)
         for (int i = 0; i < n; ++i) d[i] = std::isfinite (s[i]) ? juce::jlimit (-1.0f, 1.0f, s[i]) : 0.0f;
     }
     if (rec != nullptr) { rec->track (0, out.getReadPointer (0), out.getReadPointer (1), n); rec->end (n); }
+    // the tape
+    {
+        const int at = (int) (tapePos & (kTape - 1)), first = std::min (n, kTape - at);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            juce::FloatVectorOperations::copy (tape[(size_t) ch].data() + at, out.getReadPointer (ch), first);
+            if (first < n) juce::FloatVectorOperations::copy (tape[(size_t) ch].data(), out.getReadPointer (ch) + first, n - first);
+        }
+        tapePos += n;
+        tapeEnd = tapePos;
+    }
     if (run) ppq += beats;
     profAll += since (tAll);
     ppqShown = ppq;

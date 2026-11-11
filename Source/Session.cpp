@@ -21,6 +21,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 Session::~Session()
 {
     stopTimer();
+    waitForClips();
     if (useDisk) save();
 }
 
@@ -166,6 +167,32 @@ Snapshot Session::capture() const
     return s;
 }
 
+juce::File Session::clipFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".ogg"); }
+
+void Session::waitForClips() { while (clipWriter.getNumJobs() > 0) juce::Thread::sleep (2); }
+
+// Written by a thread of its own: Ogg Vorbis, a hundred-odd kilobytes for four bars.
+void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
+{
+    auto audio = std::make_shared<juce::AudioBuffer<float>> (heard.audio);
+    const auto file = clipFile (id);
+    const double rate = heard.sampleRate;
+    clipWriter.addJob ([audio, file, rate]
+    {
+        file.getParentDirectory().createDirectory();
+        const auto part = file.getSiblingFile (file.getFileName() + ".part");
+        part.deleteFile();
+        bool ok = false;
+        if (auto out = part.createOutputStream())
+        {
+            juce::OggVorbisAudioFormat ogg;
+            std::unique_ptr<juce::AudioFormatWriter> w (ogg.createWriterFor (out.get(), rate, 2, 16, {}, 6));
+            if (w != nullptr) { out.release(); ok = w->writeFromAudioSampleBuffer (*audio, 0, audio->getNumSamples()); }
+        }
+        if (ok) part.moveFileTo (file); else part.deleteFile();
+    });
+}
+
 juce::int64 Session::take()
 {
     auto s = capture();
@@ -175,6 +202,13 @@ juce::int64 Session::take()
     while (taken (nameFor (n))) ++n;
     s.name = nameFor (n);
     lastTakenAt = s.time.formatted ("%H:%M:%S");
+    // its sound: the bars just played are profiled here and kept as a clip, with nothing asked
+    Engine::Heard heard;
+    if (engine.lastHeard (heard))
+    {
+        s.profile = profileOf (heard);
+        if (useDisk) keepClip (s.id, heard);
+    }
     library.push_back (s);
     touch();
     return s.id;
@@ -234,6 +268,7 @@ void Session::remove (juce::int64 id)
     const int i = indexOf (id);
     if (i < 0) return;
     library.erase (library.begin() + i);
+    if (useDisk) { waitForClips(); clipFile (id).deleteFile(); }
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
     if (baseId == id) baseId = 0;
     applyMorph (0.0);
@@ -388,6 +423,7 @@ static var snapToVar (const Snapshot& s, const Engine& e)
     o->setProperty ("id", s.id);
     o->setProperty ("name", s.name);
     o->setProperty ("time", s.time.toMilliseconds());
+    if (s.profile.has) o->setProperty ("profile", s.profile.toVar());
     auto* vals = new juce::DynamicObject();
     for (int i = 0; i < cx::kCount && i < (int) s.values.size(); ++i)
         if (s.values[(size_t) i] >= 0.0f) vals->setProperty (e.control (i).id, s.values[(size_t) i]);
@@ -443,6 +479,7 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
     s.id = (juce::int64) v.getProperty ("id", 0);
     s.name = v.getProperty ("name", "SNAP").toString();
     s.time = juce::Time ((juce::int64) v.getProperty ("time", 0));
+    s.profile = Profile::fromVar (v.getProperty ("profile", var()));
     s.values.assign ((size_t) cx::kCount, -1.0f);
     // by id: a control that no longer exists is ignored, a new one keeps its place in the base
     if (auto* vals = v.getProperty ("values", var()).getDynamicObject())

@@ -128,6 +128,20 @@ public:
     float insidePartMs() const                  { return insideMs.load(); }
     void setOutputDelayForTests (float ms)      { outMs = ms; }
 
+    // ---- the last bars as they were heard: a snapshot takes its sound and its profile from here.
+    // The output is kept on a tape that goes round (some twenty seconds), with where the bar lines
+    // fell and how much of each lane and return there was.
+    struct Heard
+    {
+        juce::AudioBuffer<float> audio;         // the output: whole bars from a bar line, if the clock was running
+        double sampleRate = 48000.0, bpm = 0.0;
+        int bars = 0;                           // 0: no bar lines to go by (the last seconds, as they were)
+        std::array<float, kLanes> laneDb {};    // each lane's level into the mix over those bars (-100: silent or not known)
+        std::array<float, 2> retDb {};          // the two returns'
+        float mixDb = -100.0f;                  // all of them together: what the master chain was given
+    };
+    bool lastHeard (Heard&, int bars = 4) const;      // message thread. false: there was nothing but silence
+
     // ---- recording: what the audio thread hands on, a buffer at a time. Track 0 is the set (the
     // output), 1 to 11 the lanes, each as it goes into the mix, then the two returns as they do:
     // together, what the master chain is given. begin and end bracket each buffer. Nothing in a
@@ -352,6 +366,15 @@ private:
     std::atomic<uint64_t> blockCount { 0 };
     std::atomic<int> maxLat { 0 };
     int holdLat = 0;                            // what every lane is held to, whatever is on it
+    static constexpr int kTape = 1 << 20, kMarks = 64;
+    std::array<std::vector<float>, 2> tape;
+    juce::int64 tapePos = 0;                    // audio thread
+    std::atomic<juce::int64> tapeEnd { 0 };
+    struct Mark { juce::int64 sample = 0; int run = 0; std::array<double, kLanes + 2> sq {}; };
+    std::array<Mark, kMarks> marks;             // the bar lines, where their sound leaves on the tape
+    std::atomic<int> markCount { 0 };
+    int runCount = 0;
+    std::array<double, 2> retSq {};
     juce::SpinLock recLock;
     RecSink* recSink = nullptr;
     juce::AudioBuffer<float> recBuf;

@@ -416,6 +416,38 @@ and a set that can be rendered again. This build is the audio.
      and the key starts on a press and ends on a hold. Not tested: `Music/SF-000` on macOS, a real
      disk falling behind, a file past 4 GB, hours of running.
 
+## Ninth build (Nov 11): a snapshot keeps its sound
+
+You put this ahead of recording knob moves: no barrier to taking a snapshot, nothing to name or
+tag, and a library you can read at a glance on stage. The spec's sections 9 and 10 ask for the
+same: a clip kept at every save, and a profile from the clip and from what the rig knows.
+
+117. **The engine keeps the last twenty seconds of its output on a tape that goes round**, with
+     where each bar line fell and how much of each lane and return there was. SNAPSHOT takes the
+     last four whole bars from it, cut on the bar lines (and set back by the master's look-ahead,
+     so the bar's first hit is the clip's first sample). What you heard when you pressed is what
+     is kept, the One's notes included: nothing is rendered again.
+118. **Four bars, not the spec's eight seconds**: at 132 that is 7.3 s, and a clip that is whole
+     bars loops. Fewer if the clock has run for less.
+119. **The clip is Ogg Vorbis** (about 80 KB), written by a thread of its own into `clips/`. The
+     profile is worked out at once, on the press. Deleting a snapshot deletes its clip.
+120. **The profile**, each from 0 to 1: energy, weight, bright, density, tone, movement, wet; the
+     spectrum in sixteen bands; where the hits fall in the bar, low end and top; how much of each
+     lane. Its scales are set from this rig's own sound and are fixed, so a snapshot's profile
+     does not shift as the library grows. They will want tuning against your own library.
+121. **Energy is 55% the mix's level before the master, 30% hits a beat, 15% brightness.** The
+     output's own loudness would not do: the limiter evens it out. *proposed* weights.
+122. **The card draws the profile**: one block as tall as the energy and as hot as the
+     brightness, the spectrum, the hits in the bar, the lanes. *proposed* look: say what reads
+     and what does not at arm's length.
+123. **With the clock stopped nothing is kept** unless something is plainly being played (the
+     stopped rig idles at -40 dB: the RADIO on the lead's lane). The snapshots the rig comes with
+     have no sound kept either: they were never played.
+124. **Noted, not built:** the clip in the headphones; the E16 page (the grid as a map of energy
+     against brightness, a knob for the most recent, a knob of what fits what is playing now);
+     suggestions timed to where the set is; a learned model for the categories; effect chains
+     that cross over the glide.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley

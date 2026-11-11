@@ -2,6 +2,7 @@
 // SF-000 session (message thread): what the screens edit. The base scene, the snapshot library,
 // the sixteen snapshot knobs and their morph, the armed generators, and the file it is all kept in.
 #include "Engine.h"
+#include "Profile.h"
 #include <functional>
 
 namespace sf0
@@ -23,6 +24,9 @@ struct Snapshot
     // the files each insert holds (a convolution's impulse responses). Snapshots from before this was kept say nothing.
     bool hasInsFiles = false;
     std::array<std::array<std::vector<Engine::FileRef>, kSlots>, kLanes> insFiles;
+    // what it sounded like when it was taken, worked out from the bars kept with it (has: false if
+    // nothing was playing, or it was taken before profiles were kept)
+    Profile profile;
 };
 
 constexpr juce::int64 kCleanSlateId = 999;
@@ -62,6 +66,9 @@ public:
     std::array<MacroKnob, 16> knobs;
     juce::int64 baseId = 0;             // the snapshot last recalled or taken
     juce::String lastTakenAt { "NONE YET" };
+    // The bars a snapshot was taken over, kept beside the session as a small compressed clip.
+    juce::File clipFile (juce::int64 id) const;
+    void waitForClips();                // until the clips being written are on the disk (tests; quitting)
     void turnSnapKnob (int k, float v);
     void pressSnapKnob (int k);         // recall the knob's nearest snapshot as the new base; the knob goes home
     Snapshot capture() const;
@@ -102,5 +109,7 @@ private:
 
     std::vector<float> base, offset;
     bool dirty = false, useDisk = true;
+    juce::ThreadPool clipWriter { 1 };
+    void keepClip (juce::int64 id, const Engine::Heard&);
 };
 } // namespace sf0
