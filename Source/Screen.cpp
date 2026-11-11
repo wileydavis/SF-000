@@ -635,7 +635,18 @@ void Screen::drawSequencer (G& g, R r)
     g.setColour (col::black); g.fillRect (R (x0, y0, wTag, 26));
     text (g, num, R (x0, y0, wTag, 26), fLegend, col::lit);
     const float wn = plate (g, x0 + wTag, y0, d.name, fLegend, 8, col::white, col::black);
-    plate (g, x0 + wTag + wn + 2, y0, String (len) + (len == 1 ? " STEP" : " STEPS"), fNote, 6, col::white, col::black);
+    const float ws = plate (g, x0 + wTag + wn + 2, y0, String (len) + (len == 1 ? " STEP" : " STEPS"), fNote, 6, col::white, col::black);
+    // M: this lane's own sequencer muted. Its steps stay and go unplayed; notes from outside still sound.
+    const int muteCtl = cx::lane (l, cx::kSeqMute);
+    const bool seqOff = eng.shown (muteCtl) > 0.5f;
+    const R mk (x0 + wTag + wn + 2 + ws + 4, y0 + 2, 22, 22);
+    if (vis (g, mk))
+    {
+        key (g, mk, seqOff ? col::amber : col::putty);
+        text (g, "M", mk, fLbl, col::black);
+        lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
+    }
+    hit (mk.expanded (1), hToggle, muteCtl);
     const bool hasSel = ses.selStep >= 0 && ses.selStep < len;
     const String st = hasSel ? "STEP " + String (ses.selStep + 1) : String ("NO STEP");
     plate (g, x0 + 356 - (std::ceil (tw (fNote, st)) + 12), y0, st, fNote, 6, col::white, col::black);
@@ -698,7 +709,7 @@ void Screen::drawSequencer (G& g, R r)
         lamp (g, sx + 20, y0 + 30, i == playing ? col::green : col::putty);
         if (in) { g.setColour (col::black); g.fillRect (kr); g.setColour (col::white); g.fillRect (inner); }
         else { g.setColour (col::sea); g.drawRect (kr.reduced (0.5f), 1.0f); }
-        g.setColour (col::black);
+        g.setColour (seqOff ? col::grey : col::black);      // muted: the steps are there, in grey
         if (on)
         {
             const int rr = juce::jlimit (1, 4, x.ratchet);
@@ -1270,7 +1281,8 @@ void Screen::timerCallback()
         if (h.kind == hKnob || h.kind == hSnapKnob || h.kind == hToggle || h.kind == hHold)
         {
             const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
-            if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl]) dirty (h.r.expanded (14, 6));
+            if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl])
+                dirty (ctl == cx::lane (ses.activeLane, cx::kSeqMute) ? seqRect : h.r.expanded (14, 6));       // a sequencer's mute greys its steps
         }
     const float want = cfgOpen && page == pMain ? 1.0f : 0.0f;
     if (cfgT != want)

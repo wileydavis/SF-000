@@ -264,6 +264,31 @@ static int uiTest()
     click (stepKey (6));
     check (ses.pattern (7).steps[6].on && std::abs (ses.pattern (7).steps[6].vel - 0.75f) < 0.001f && std::abs (ses.pattern (7).steps[6].gate - 1.0f) < 0.001f,
            "a new step starts at velocity 75 and a whole step of gate");
+    {
+        // the strip's M key mutes the sequencer of the lane it shows, and no other
+        ses.selectLane (0); draw();
+        const int sm = cx::lane (0, cx::kSeqMute);
+        juce::Point<float> at; int found = 0;
+        for (auto& h : sc.testHits()) { if (Screen::testIsToggle (h, sm)) { at = h.r.getCentre(); ++found; } for (int l = 1; l < kLanes; ++l) if (Screen::testIsToggle (h, cx::lane (l, cx::kSeqMute))) found += 100; }
+        audio (200);
+        double k0 = e.laneSq[0], h0 = e.laneSq[1];
+        audio (200);
+        const double kickOn = e.laneSq[0] - k0, hatOn = e.laneSq[1] - h0;
+        click (at); audio (400);                    // the kick in the air dies away
+        k0 = e.laneSq[0]; h0 = e.laneSq[1];
+        audio (200);
+        const double kickOff = e.laneSq[0] - k0, hatOff = e.laneSq[1] - h0;
+        const bool lit = e.target (sm) > 0.5f;
+        const auto shot = ses.take();
+        click (at); audio (4);
+        const bool back = e.target (sm) < 0.5f;
+        ses.recall (shot);                          // taken while it was muted
+        audio (4);
+        check (found == 1 && lit && back && kickOn > 1e-3 && kickOff < kickOn * 1e-4 && hatOff > hatOn * 0.5,
+               "the sequencer's M key stops the kick's steps and leaves the hat's playing; a second press brings them back");
+        check (e.target (sm) < 0.5f, "it is not a snapshot's to change: recalling one taken while it was muted leaves it playing");
+        ses.selectLane (7); draw();
+    }
 
     // 2. everything, on every page: a click, then a drag on what turns
     int clicks = 0;
@@ -793,6 +818,7 @@ static int shot (const juce::StringArray& args)
         for (int i = 0; i < 220; ++i) e.render (b);
     }
     if (arg ("--space", "") == "conv") e.setSpaceModel (1);
+    if (args.contains ("--seqmute")) { ses.userSet (cx::lane (ses.activeLane, cx::kSeqMute), 1.0f); for (int i = 0; i < 8; ++i) e.render (b); }
     Screen sc (ses);
     const auto page = arg ("--page", "main");
     sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : Screen::pMain);
@@ -930,6 +956,81 @@ static int midiTest()
         const int a1 = arrived (1.0), a2 = arrived (4.7), ref = firstSound (0, true, 0);
         check (std::abs ((a2 - a1) - 178) <= 1 && std::abs ((a1 - ref) - (4 * 512 + 48)) <= 1,
                "notes 3.7 ms apart on the way in are 3.7 ms apart in the sound (" + juce::String (a2 - a1) + " samples), in the block after the one they came during");
+    }
+
+    // 2b. a lane's own sequencer muted: its steps go unplayed, what it held ends, notes from outside
+    //     still sound, and it comes back on a step
+    {
+        auto rig = [] (Engine& e, int l, const Pattern& p)
+        {
+            e.prepare (48000.0, 512);
+            for (int k = 0; k < kLanes; ++k) { e.setPattern (k, k == l ? p : Pattern()); for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (k, sl, -1); }
+            e.set (cx::lane (l, cx::kSendA), 0.0f); e.set (cx::lane (l, cx::kSendB), 0.0f);
+            e.set (cx::kTempo, tempoToValue (120.0));           // a beat is 24000 samples
+            e.solo = l;
+            juce::AudioBuffer<float> w (2, 512);
+            e.render (w);                                       // the tempo is taken up before it runs
+            e.setRunning (true);
+        };
+        juce::AudioBuffer<float> b (2, 512);
+        // peak over some blocks, and where the sound first rose above the floor (-1: it did not)
+        auto run = [&b] (Engine& e, int blocks, int& done, int* onset = nullptr)
+        {
+            float peak = 0.0f;
+            if (onset != nullptr) *onset = -1;
+            for (int k = 0; k < blocks; ++k, done += 512)
+            {
+                e.render (b);
+                for (int i = 0; i < 512; ++i)
+                {
+                    const float v = std::abs (b.getSample (0, i)) + std::abs (b.getSample (1, i));
+                    peak = std::max (peak, v);
+                    if (onset != nullptr && *onset < 0 && v > 2e-3f) *onset = done + i;
+                }
+            }
+            return peak;
+        };
+        Pattern four;
+        for (int k = 0; k < 16; k += 4) { four.steps[(size_t) k].on = true; four.steps[(size_t) k].vel = 1.0f; }
+        Engine e;
+        rig (e, 0, four);
+        const int mute = cx::lane (0, cx::kSeqMute);
+        int done = 0, first = -1, ext = -1, back = -1;
+        const float loud = run (e, 188, done, &first);          // a bar of kicks
+        e.set (mute, 1.0f);
+        run (e, 400, done);                                     // the last kick dies away, and the limiter's lift of it
+        const float quiet = run (e, 188, done);                 // a bar with every step unplayed
+        check (loud > 0.1f && quiet < 2e-3f && e.isRunning(), "SEQ MUTE: the lane's steps go unplayed while the transport runs on (peak " + juce::String (loud, 3) + " to " + juce::String (quiet, 5) + ")");
+        e.noteInAt (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 127), 100);
+        e.noteInAt (juce::MidiMessage::noteOff (1, 60), 100 + 4000);
+        const int extAt = done + 100;
+        const float outside = run (e, 100, done, &ext);
+        check (outside > 0.1f && ext - extAt == first, "a note from outside still sounds on the muted lane, as soon as a step would (" + juce::String (ext - extAt) + " samples, a step " + juce::String (first) + ")");
+        run (e, 431, done);                                     // it dies away again; then somewhere between two steps
+        const int offAt = done;
+        e.set (mute, 0.0f);
+        run (e, 188, done, &back);
+        const int grid = ((back - first) % 24000 + 24000) % 24000, off = std::min (grid, 24000 - grid);
+        check (back >= 0 && off <= 2 && back - first > offAt - 512 && back - first < offAt + 24000,
+               "unmuted between steps, it comes back on its next lit step, on the grid (" + juce::String (off) + " samples off, " + juce::String (back - first - offAt) + " after the key)");
+
+        // a held note: the mute ends it, where the unmuted lane goes on sounding
+        float tail[2] = { 0, 0 };
+        int lead = 0;
+        for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].name) == "LEAD") lead = l;
+        Pattern held;
+        held.steps[0].on = true; held.steps[0].vel = 1.0f; held.steps[0].gate = 16.0f; held.steps[0].octave = lanes()[(size_t) lead].octave;
+        for (int m = 0; m < 2; ++m)
+        {
+            Engine h;
+            rig (h, lead, held);
+            int d2 = 0;
+            run (h, 60, d2);                                    // into the first note
+            if (m == 1) h.set (cx::lane (lead, cx::kSeqMute), 1.0f);
+            run (h, 60, d2);                                    // its release
+            tail[m] = run (h, 30, d2);                          // still inside the first bar
+        }
+        check (tail[0] > 0.05f && tail[1] < 2e-3f, "muted while it holds a note, the note is let go (peak " + juce::String (tail[0], 3) + " held, " + juce::String (tail[1], 5) + " muted)");
     }
 
     // 3. the clock out

@@ -129,6 +129,7 @@ Engine::Engine()
         }
         named (cx::lane (l, cx::kMute), slug + ".mute", "MUTE", Kind::Toggle, 0.0f, false, false);
         named (cx::lane (l, cx::kSolo), slug + ".solo", "SOLO", Kind::Toggle, 0.0f, false, false);
+        named (cx::lane (l, cx::kSeqMute), slug + ".seq_mute", "SEQ MUTE", Kind::Toggle, 0.0f, false, false);
         for (int s = 0; s < kSlots; ++s)
         {
             named (cx::insMute (l, s), slug + ".i" + juce::String (s + 1) + ".mute", "MUTE", Kind::Toggle, 0.0f, false, false);
@@ -900,21 +901,26 @@ void Engine::render (juce::AudioBuffer<float>& out)
         ln.midi.clear();
         if (stopping || pan || starting) ln.player.stop (ln.midi, 0);
         if (pan) { ln.proc->panic(); for (auto& i : ln.ins) if (auto* in = i.load()) in->proc->panic(); }
+        // The lane's own sequencer muted: its steps keep their place and go unplayed, and what it
+        // was holding ends now. Notes from outside still sound.
+        const bool seqOff = cur[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
+        if (seqOff && ! ln.seqOff) ln.player.stop (ln.midi, 0);
+        ln.seqOff = seqOff;
         if (run)
         {
             // a recalled pattern is taken up on the bar line, to the sample: the block is rendered round it
             const double to = ppq + beats, bar = std::ceil (ppq / 4.0 - 1e-9) * 4.0;
             if (ln.patWait.load() && bar < to - 1e-12)
             {
-                if (bar > ppq) ln.player.render (ppq, bar, spb, n, ln.midi, ppq);
+                if (bar > ppq && ! seqOff) ln.player.render (ppq, bar, spb, n, ln.midi, ppq);
                 {
                     const juce::SpinLock::ScopedTryLockType g (patLock);
                     if (g.isLocked()) ln.player.pat = ln.shared; else ln.patDirty = true;      // (the screen is writing it: next block)
                 }
                 ln.patWait = false;
-                ln.player.render (std::max (ppq, bar), to, spb, n, ln.midi, ppq);
+                if (! seqOff) ln.player.render (std::max (ppq, bar), to, spb, n, ln.midi, ppq);
             }
-            else ln.player.render (ppq, to, spb, n, ln.midi, ppq);
+            else if (! seqOff) ln.player.render (ppq, to, spb, n, ln.midi, ppq);
         }
         // notes from outside, on this lane's channel
         if (! liveMidi.isEmpty())

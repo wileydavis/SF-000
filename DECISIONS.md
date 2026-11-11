@@ -268,7 +268,28 @@ a snapshot could reach it later.
 82. **AUDIO AND MIDI shows the engine's own load**, so the sound's share can be told from the
     screen's. `SF-000 --perf` measures both offline.
 
+## Fifth build (Nov 11): the sequencer's mute
+
+83. **Each lane's sequencer has its own mute**: **M** in the sequencer strip, after the step
+    count, amber when on. The lane's steps stay where they are and go unplayed, drawn grey. The
+    playing lamp still runs, so the place in the bar can be seen. Notes from MIDI in still sound
+    on the lane, which is what it is for: the OXI One playing a lane without the lane's own
+    pattern on top.
+84. **Muting lets go of the note the sequencer holds, at once; unmuting waits for the next lit
+    step.** It is a note-off, not a cut: the release, the echoes and the reverb ring out. Nothing
+    needs timing by hand: the lane comes back on the grid. (A note of the same pitch held from
+    outside at that moment is let go with it.)
+85. **It is kept with the session, like MUTE and SOLO, and a snapshot recall leaves it alone.**
+    *proposed*: say if snapshots should carry it. A snapshot can already silence a lane's
+    sequencer by holding an empty pattern for it.
+86. **It is on the screen only.** The E16's pages are unchanged.
+
 ## Not verified
 
-- Built and run on Linux only. It has not been compiled on macOS or heard by anyone.
+- Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
+  builds and plays it on his Mac.
+- Not yet reported back from the Mac: the fix for the crash on quit, the cut in the screen's load
+  (and the Metal split-paint flag behind it), and everything MIDI on real hardware: the E16 scene,
+  its rings, knob 16's swap, the page following the lane, the OXI One project, the clock out and
+  CLOCK LEAD, and the sequencer's mute with the One playing a lane.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

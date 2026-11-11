@@ -37,7 +37,8 @@ namespace cx
     constexpr int kGen = kIns + kSlots * kCells;            // HITS, ROTATE, ACCENTS, SEED
     constexpr int kMute = kGen + 4, kSolo = kMute + 1;      // the lane's MUTE and SOLO
     constexpr int kInsMS = kSolo + 1;                       // MUTE and SOLO for each insert slot
-    constexpr int kPerLane = kInsMS + kSlots * 2;
+    constexpr int kSeqMute = kInsMS + kSlots * 2;           // the lane's own sequencer muted: its steps stay, unplayed
+    constexpr int kPerLane = kSeqMute + 1;
     constexpr int kRet = kLanes * kPerLane;                 // 4 knobs for A, 4 for B as REVERB, 4 for B as CONVOLUTION
     constexpr int kRetKnobs = 4 + 4 * kSpaceModels;
     constexpr int kRetMS = kRet + kRetKnobs;                // A MUTE, A SOLO, B MUTE, B SOLO
@@ -210,6 +211,7 @@ private:
         Biquad eq[3];
         float eqDb[3] = { 0, 0, 0 }, eqSet[3] = { 99, 99, 99 };
         float sendWas[2] = { 0, 0 }, gainWas = 1.0f, hold = -100.0f;
+        bool seqOff = false;                    // audio thread: its sequencer was muted last block
         std::vector<float> dl[2];
         int dlPos = 0;
         std::atomic<int> delay { 0 };

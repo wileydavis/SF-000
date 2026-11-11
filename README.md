@@ -41,6 +41,7 @@ First run:
 | RATCHET, NOTE, OCTAVE | change the selected step (NOTE and OCTAVE on lanes that take notes) |
 | < NUDGE, NUDGE > | move the whole pattern one step |
 | Drag the LENGTH knob | 1 to 128 steps. Click a page above the steps to see its 16 |
+| **M** in the sequencer strip | mute the active lane's own sequencer. Its steps stay, drawn grey, and go unplayed; the note it was holding is let go. Notes from MIDI in still sound on the lane. Press again and it comes back on its next lit step |
 | RANDOM, EUCLID | write a pattern at once; while the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite it |
 | SNAPSHOT | keep everything on the main screen as a new snapshot |
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
@@ -94,7 +95,7 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
 
 - **Notes in.** Every MIDI input is listened to. A lane's number is its channel (1 KICK to 11 VOICE),
   so the OXI One plays the lanes as it played the Live tracks. Notes and the lane's own steps sound
-  together.
+  together; **M** in the sequencer strip mutes a lane's own steps, so only the One plays it.
 - **Clock out.** While it runs, START, 24 ticks a beat and STOP go to every output that is not the
   E16. The OXI One's settings and its project for SF-000 are in `controllers/oxi-one/`. CLOCK LEAD is how long the follower takes to answer: play a plain
   sixteenth pattern from it into a lane, read NOTES IN LAND x MS LATE in the panel, and put that
@@ -117,7 +118,7 @@ build/.../SF-000 --uitest                         # clicks and drags every contr
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out, with made-up messages
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute
 ```
 
 ### Load
