@@ -10,6 +10,8 @@ static const int kMorphEnd = cx::kRet + cx::kRetKnobs;      // lanes and returns
 Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 {
     genType.fill (-1);
+    for (auto& a : movedAt) a = 0;
+    for (auto& b : movedBy) b = 0;
     base.resize ((size_t) cx::kCount);
     offset.assign ((size_t) cx::kCount, 0.0f);
     for (int i = 0; i < cx::kCount; ++i) base[(size_t) i] = engine.target (i);

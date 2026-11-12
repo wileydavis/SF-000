@@ -4,13 +4,14 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "Session.h"
 #include "Skin.h"
+#include "Stage.h"
 #include <unordered_map>
 
 namespace sf0
 {
 class Recorder;
 class Online;
-class Screen : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
+class Screen : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer, private juce::AsyncUpdater
 {
 public:
     explicit Screen (Session&);
@@ -25,9 +26,27 @@ public:
     void setLit (bool on) { lit = on; warm = false; repaint(); }
     bool isLit() const { return lit; }
     // The lit skin's dark instrument: a graphite case and dark plates, light print, the same lights. D on the keyboard changes over.
-    void setDark (bool on) { dark = on; skin.setDark (on); warm = false; repaint(); }
+    void setDark (bool on) { dark = on; skin.setDark (on); if (stage != nullptr) stage->setDark (on); warm = false; repaint(); }
     bool isDark() const { return dark; }
-    std::function<void()> onLook;               // L or D was pressed: the look to keep for next time
+    // The 3D stage (3 on the keyboard): the instrument as a solid thing, lit, seen through an eye
+    // that can be moved. It is the lit skin's layout and the same hand; only the drawing differs.
+    // Asked for, it shows once OpenGL has started; if it cannot start, the lit skin stays and
+    // threeNote() says why.
+    void setThree (bool on);
+    bool isThree() const { return wantThree; }
+    bool threeShowing() const { return three; }
+    juce::String threeNote() const { return stageNote; }
+    Stage* stageOrNull() const { return stage.get(); }
+    // Where the eye is kept, whether a drag off the controls may move it (locked: it may not), and
+    // whether it goes to what a controller moves.
+    struct Eye { Stage::Pose pose; bool locked = true, follow = true; };
+    Eye eye() const;
+    void setEye (const Eye&);
+    void refreshNow() { cancelPendingUpdate(); refreshStage(); }       // the stage brought up to date at once (tests, screenshots)
+    std::function<void()> onLook;               // the look was changed from the keyboard or by the hand: keep it for next time
+    // (these stand in front of the component's own: in 3D a repaint is the sheet and the parts brought up to date)
+    void repaint();
+    void repaint (juce::Rectangle<int>);
     // INFO (I on the keyboard): every control that MIDI reaches shows its CC number, a panel its
     // channel, and a control the mouse rests on says what it does and where MIDI finds it.
     void setInfo (bool on) { info = on; hovering = false; tipRect = {}; repaint(); }
@@ -44,6 +63,7 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMagnify (const juce::MouseEvent&, float) override;
     bool keyPressed (const juce::KeyPress&) override;
     bool isInterestedInFileDrag (const juce::StringArray&) override { return true; }
     void filesDropped (const juce::StringArray&, int, int) override;
@@ -75,6 +95,20 @@ public:
     juce::Rectangle<float> testConfigRect() const { return cfgRect; }
     // what the timer redraws besides knobs: the meters, the sequencer strip, CONFIG's display
     std::vector<juce::Rectangle<int>> testMovingRects() const { std::vector<juce::Rectangle<int>> v; for (auto r : { masterRect, seqRect, cfgDisplay }) if (! r.isEmpty()) v.push_back (r.getSmallestIntegerContainer().expanded (2)); return v; }
+    // for the tests: what the eye is following (empty: nothing), and the tags that are up (a control's index, or -1 INFO's box, -2 the line of words)
+    juce::Rectangle<float> testFollowing() const { return followOn ? followBox : juce::Rectangle<float>(); }
+    std::vector<int> testTags() const { std::vector<int> v; for (const auto& t : tagsUp) v.push_back (t); return v; }
+    static bool testIsRun (const TestHit& h) { return h.kind == hAct && h.a == aRun; }
+    static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
+    static bool testIsConfigKey (const TestHit& h, int lane) { return h.kind == hConfig && h.a == 0 && h.b == lane * 8; }
+    Page testPage() const { return page; }
+    double testPrintMs() const { return printMs; }
+    double testSendMs() const { return sendMs; }
+    void testRenameKnob() { act (aRenameKnob); }
+    bool testEditing() const { return editor != nullptr; }
+    bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
+    void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
+    juce::String testTagText (int ctl) const { const auto it = tagPics.find (ctl); return it != tagPics.end() ? it->second.key : juce::String(); }
 
 private:
     using G = juce::Graphics;
@@ -85,7 +119,48 @@ private:
                aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones };
 
     void timerCallback() override;
+    void handleAsyncUpdate() override;
     void dirty (R);
+    // the 3D stage
+    void stageState();                  // it has started, or could not
+    void refreshStage();                // the parts recorded and the sheet printed, as the screen now stands
+    void drawAll (G&);                  // the whole screen, to whatever is being drawn on
+    juce::Point<float> where (const juce::MouseEvent&) const;      // the place on the screen (units) under the pointer
+    float pointsPerUnit() const { return std::min ((float) getWidth() / kW, (float) getHeight() / kH); }
+    std::unique_ptr<Stage> stage;
+    bool three = false, wantThree = false, recording = false, printing = false;
+    Parts recorded;
+    juce::RectangleList<int> sheetDirty;
+    bool sheetAll = true;
+    int knobCtl = -1;                   // the control the knob about to be drawn shows (its lights then follow the engine themselves)
+    juce::Colour knobLight;
+    juce::Point<float> pressAt, eyeLast;
+    int eyeDrag = 0;                    // the hand is on the view: 1 turning it, 2 sliding it
+    Stage::Pose eyePose;
+    bool eyeLocked = true, eyeFollow = true;
+    juce::String stageNote;
+    // Following: the eye goes to the module of a knob that a hand on the controller turns, and
+    // out to hold every knob a snapshot is moving. A sequencer's own moves, and anything that is
+    // not a knob (keys, the tempo under an outside clock), never move it.
+    void followMoves();
+    R panelOf (juce::Point<float>) const;       // the plate a place is on (or a little room round the place)
+    std::array<float, cx::kCount> followWas {};
+    std::array<bool, cx::kCount> bySequencer {};
+    juce::uint32 followAt = 0;
+    bool followOn = false;
+    R followBox;
+    // The tags over the stage: a moved knob's name and value beside it, INFO's box by the pointer,
+    // and a line of words at the foot of the window for a moment.
+    void showTags();
+    void say (const juce::String&);
+    juce::Image tagPicture (int ctl);
+    struct TagPic { juce::String key; juce::Image image; juce::uint32 stamp = 0; };
+    std::map<int, TagPic> tagPics;
+    juce::String tagsWere, sayText;
+    juce::uint32 sayAt = 0, tagStamp = 1;
+    juce::Point<float> hoverAt;
+    std::vector<int> tagsUp;
+    double printMs = 0.0, sendMs = 0.0;         // the last printing of the sheet: drawing it, and handing it to the stage
     juce::Point<float> logical (juce::Point<float> p) const { return p.transformedBy (xf.inverted()); }
     const Hit* hitAt (juce::Point<float>) const;
     bool vis (G&, R) const;         // is it in what is being painted (lit: or near enough for its shade to be)

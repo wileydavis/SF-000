@@ -59,22 +59,36 @@ Screen::Screen (Session& s)
     startTimerHz (30);
 }
 
-Screen::~Screen() { ses.onChange = nullptr; }
+Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullptr; }
 
 void Screen::setPage (Page p) { endEdit (true); if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0); page = p; repaint(); }
 
 void Screen::resized()
 {
+    if (stage != nullptr && wantThree) stage->setHome (stage->home(), false);       // (a named view is fitted to the window's new shape)
     const float s = std::min ((float) getWidth() / kW, (float) getHeight() / kH);
     xf = juce::AffineTransform::scale (s).translated (((float) getWidth() - kW * s) * 0.5f, ((float) getHeight() - kH * s) * 0.5f);
 }
 
-void Screen::dirty (R r) { repaint (r.transformedBy (xf).getSmallestIntegerContainer().expanded (2)); }
+void Screen::dirty (R r)
+{
+    if (three && stage != nullptr)
+    {
+        // in 3D: that much of the sheet is printed again, and the parts recorded again, before the next frame
+        sheetDirty.add ((r.expanded (2.0f) * stage->sheetScale()).getSmallestIntegerContainer());
+        triggerAsyncUpdate();
+        return;
+    }
+    juce::Component::repaint (r.transformedBy (xf).getSmallestIntegerContainer().expanded (2));
+}
+void Screen::repaint() { if (three) { sheetAll = true; triggerAsyncUpdate(); } else juce::Component::repaint(); }
+void Screen::repaint (juce::Rectangle<int> r) { if (three) { sheetAll = true; triggerAsyncUpdate(); } else juce::Component::repaint (r); }
 void Screen::hit (R r, int kind, int a, int b) { if (collect) hits.push_back ({ r.translated (shift, 0.0f), kind, a, b }); }
 // Lit, a thing's picture reaches past its own edge (the shade it casts, its glow), so what is
 // near a part-paint is drawn again with it: the part then matches what a whole paint would give.
-bool Screen::vis (G& g, R r) const { return g.clipRegionIntersects (r.expanded (lit ? 12.0f : 0.0f).getSmallestIntegerContainer()); }
-bool Screen::seen (G& g, R r) const { return g.clipRegionIntersects (r.getSmallestIntegerContainer()); }
+// (Recording for the 3D stage, everything is "in what is being painted": the record is of the whole screen.)
+bool Screen::vis (G& g, R r) const { return recording || g.clipRegionIntersects (r.expanded (lit ? 12.0f : 0.0f).getSmallestIntegerContainer()); }
+bool Screen::seen (G& g, R r) const { return recording || g.clipRegionIntersects (r.getSmallestIntegerContainer()); }
 
 const Screen::Hit* Screen::hitAt (juce::Point<float> p) const
 {
@@ -90,6 +104,7 @@ void Screen::text (G& g, const String& s, R r, const juce::Font& f, Colour c, ju
 
 void Screen::textRaw (G& g, const String& s, R r, const juce::Font& f, Colour c, juce::Justification j)
 {
+    if (recording) return;          // (the record is of solid things; print is the sheet's)
     g.setColour (c); g.setFont (f);
     g.drawText (s, r, j, false);
 }
@@ -165,13 +180,18 @@ void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int s
         a = (float) m * per; b = a + per;
     }
     else b = v;
+    if (lit && recording)
+    {
+        skin.recordKnob (cx, cy, size, knobCtl, (int) kind, steps, knobCtl >= 0 ? knobLight : litCol, a, b, target >= 0.0f ? juce::jlimit (0.0f, 0.9999f, target) : -1.0f);
+        return;
+    }
     if (lit)
     {
         // The knob as modelled: a dark cap in a ring of sixteen lights. The lights say where it stands.
         skin.knob (g, cx, cy, size);
         if (b - a > 0.0005f) skin.ringLit (g, cx, cy, size, a, b, litCol);
         if (kind == Kind::Bipolar) { g.setColour (tone (col::black)); g.fillRect (cx - 1.0f, cy - body - 4.5f, 2.0f, 3.5f); }       // its middle, printed on the plate
-        if (target >= 0.0f)
+        if (target >= 0.0f && ! printing)       // (in 3D the light it is going to is lit instead)
         {
             const float an = pi + juce::jlimit (0.0f, 1.0f, target) * 2.0f * pi, sx = std::sin (an), cs = -std::cos (an);
             const float r0 = size >= 40 ? 12.0f : 8.3f;
@@ -295,13 +315,18 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
         if (seen (g, lit ? kr : R (cellX - 10, y, cellW + 20, 43 + legendH))) lastShown[(size_t) ctl] = v;        // (only what was drawn: a change that was not is still owed a repaint)
         if (c.kind == Kind::Toggle) key (g, kr, v > 0.5f ? col::green : col::putty);
         else if (c.kind == Kind::Hold) key (g, kr, col::yellow, v > 0.5f ? 8.0f : 2.0f);
-        else if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
-        else knob (g, cxm, cym, size, v, c.kind, c.steps(), litCol);
+        else
+        {
+            knobCtl = ctl; knobLight = litCol;
+            if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
+            else knob (g, cxm, cym, size, v, c.kind, c.steps(), litCol);
+            knobCtl = -1;
+        }
         if (info)
         {
             if (c.kind == Kind::Toggle) number (g, ctl, kr, inkOn (cap (v > 0.5f ? col::green : col::putty), col::black));
             else if (c.kind == Kind::Hold) number (g, ctl, kr, col::black);
-            else number (g, ctl, R (cxm - 14, cym - 10 - (lit ? (size >= 40 ? 3.0f : 2.0f) : 0.0f), 28, 20), col::lit);       // (lit, the cap's top stands a little up the screen)
+            else number (g, ctl, R (cxm - 14, cym - 10 - (lit && ! three ? (size >= 40 ? 3.0f : 2.0f) : 0.0f), 28, 20), col::lit);       // (lit, the cap's top stands a little up the screen)
         }
         legend (g, cxm, y + (legendH < 20.0f ? 45.0f : 43.0f), c.label);
     }
@@ -577,7 +602,7 @@ void Screen::point (juce::Point<float> p)
     if (hovering) dirty (tipRect);
 }
 
-void Screen::mouseMove (const juce::MouseEvent& e) { if (info) point (logical (e.position)); }
+void Screen::mouseMove (const juce::MouseEvent& e) { pressAt = hoverAt = e.position; if (info) point (where (e)); }
 void Screen::mouseExit (const juce::MouseEvent&) { if (hovering) { hovering = false; dirty (tipRect); tipRect = {}; } }
 
 void Screen::drawTip (G& g)
@@ -597,9 +622,15 @@ void Screen::drawTip (G& g)
 // ------------------------------------------------------------------------------------ the pages
 void Screen::paint (G& g)
 {
+    if (three) { g.fillAll (juce::Colours::black); return; }       // (the stage covers it)
     collect = hits.empty() || g.getClipBounds().contains (getLocalBounds());
     g.fillAll (night() ? night::room : col::black);
     g.addTransform (xf);
+    drawAll (g);
+}
+
+void Screen::drawAll (G& g)
+{
     if (collect) hits.clear();
     if (lit) { skin.begin (g); if (vis (g, R (0, 0, kW, kH))) skin.body (g, kW, kH); }
     else if (vis (g, R (0, 0, kW, kH)))
@@ -611,7 +642,7 @@ void Screen::paint (G& g)
     if (page == pMain) drawMain (g);
     else if (page == pLibrary) drawLibrary (g);
     else drawMacros (g);
-    if (info && hovering && ! mouseIsDown) drawTip (g);
+    if (info && hovering && ! mouseIsDown && ! three) drawTip (g);      // (in 3D the box floats by the pointer: see the timer)
 }
 
 void Screen::drawBar (G& g)
@@ -658,7 +689,9 @@ void Screen::drawBar (G& g)
         readout (g, R (1373, 17.5f, 96, 40), eng.following() ? "CLOCK IN" : "TEMPO", eng.valueText (cx::kTempo));
         barSig = barNow();
         readout (g, R (1487, 17.5f, 72, 40), "KEY", eng.valueText (cx::kKey));
+        knobCtl = cx::kGlide; knobLight = col::lit;
         knob (g, 1597, 37.5f, 40, eng.shown (cx::kGlide), Kind::List, 12, col::lit);
+        knobCtl = -1;
         if (info) number (g, cx::kGlide, R (1597 - 14, 37.5f - 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
         readout (g, R (1621, 17.5f, 84, 40), "GLIDE", eng.valueText (cx::kGlide));
         if (seen (g, bar)) lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
@@ -693,6 +726,7 @@ void Screen::drawMain (G& g)
     {
         const juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (rowsClip.getSmallestIntegerContainer());
+        skin.setClip (&rowsClip);
         const size_t first = hits.size();
         for (int copy = -1; copy <= 1; ++copy)
         {
@@ -700,7 +734,7 @@ void Screen::drawMain (G& g)
             if (23.0f + dx >= rowsClip.getRight() || 1705.0f + dx <= rowsClip.getX()) continue;
             const juce::Graphics::ScopedSaveState moved (g);
             g.addTransform (juce::AffineTransform::translation (dx, 0.0f));
-            shift = dx;
+            shift = dx; skin.setShift (dx);
             for (int l = 0; l < kLanes; ++l)
             {
                 const int col = l < 5 ? l : l - 5, row = l < 5 ? 0 : 1;
@@ -710,8 +744,9 @@ void Screen::drawMain (G& g)
             for (int sl = 0; sl < kSlots; ++sl) drawInsert (g, sl, R (23.0f + (float) sl * 282.0f, 782, 272, 190));
             drawReturns (g, R (869, 782, 272, 190));
             drawMaster (g, R (1151, 782, 554, 190));
-            shift = 0.0f;
+            shift = 0.0f; skin.setShift (0.0f);
         }
+        skin.setClip (nullptr);
         // what is off the screen or behind CONFIG cannot be touched
         if (collect) hits.erase (std::remove_if (hits.begin() + (long) first, hits.end(), [this] (const Hit& h) { return ! h.r.intersects (rowsClip); }), hits.end());
     }
@@ -720,7 +755,10 @@ void Screen::drawMain (G& g)
     {
         const juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (juce::Rectangle<int> (9, 64, 1710, 912));
+        const R cfgClip (9, 64, 1710, 912);
+        skin.setClip (&cfgClip);
         drawConfig (g, cfgR);
+        skin.setClip (nullptr);
     }
 }
 
@@ -782,13 +820,15 @@ void Screen::drawConfig (G& g, R r)
         cfgDisplay = R (x0, y, 544, (float) dh);
         if (vis (g, cfgDisplay))
         {
+            if (recording) skin.window (g, cfgDisplay, juce::Colours::black);       // (in 3D it is a display like the others: what it shows is light)
             g.setColour (juce::Colours::black); g.fillRect (cfgDisplay);
+            if (! recording)
             {
                 const juce::Graphics::ScopedSaveState state (g);
                 g.reduceClipRegion (cfgDisplay.getSmallestIntegerContainer());
                 m.paint (g, cfgDisplay);
             }
-            if (lit)
+            if (lit && ! three)
             {
                 // set into the plate: the cut shades its upper and left edges
                 g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.6f), 0.0f, cfgDisplay.getY(), juce::Colours::transparentBlack, 0.0f, cfgDisplay.getY() + 7.0f, false));
@@ -918,7 +958,9 @@ void Screen::drawSnapPanel (G& g, R r)
             if (vis (g, R (cxm - 40, y, 80, 58)))
             {
                 if (seen (g, lit ? kr : R (cxm - 40, y, 80, 58))) lastShown[(size_t) (cx::kSnap + k)] = v;
+                knobCtl = cx::kSnap + k; knobLight = col::teal;
                 knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, col::teal);
+                knobCtl = -1;
                 if (info) number (g, cx::kSnap + k, R (cxm - 14, y + 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
                 text (g, ses.knobs[(size_t) k].name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
@@ -1474,9 +1516,18 @@ void Screen::mouseDown (const juce::MouseEvent& e)
 {
     if (editor != nullptr) endEdit (true);
     grabKeyboardFocus();
-    const auto p = logical (e.position);
+    const auto p = where (e);
     const auto* h = hitAt (p);
     drag = {};
+    pressAt = eyeLast = e.position;
+    eyeDrag = 0;
+    if (three && ! eyeLocked && (h == nullptr || e.mods.isRightButtonDown() || e.mods.isAltDown()))
+    {
+        // the view is unlocked and the hand is off the controls (or the right button is down): it moves the eye
+        eyeDrag = e.mods.isRightButtonDown() || e.mods.isShiftDown() ? 2 : 1;
+        if (stage != nullptr) stage->lookAt (nullptr);
+        return;
+    }
     mouseIsDown = true;
     if (hovering) { hovering = false; dirty (tipRect); tipRect = {}; }      // (the box is out of the hand's way)
     if (h == nullptr) return;
@@ -1554,7 +1605,17 @@ void Screen::mouseDown (const juce::MouseEvent& e)
 
 void Screen::mouseDrag (const juce::MouseEvent& e)
 {
-    const auto p = logical (e.position);
+    if (eyeDrag != 0)
+    {
+        if (stage != nullptr)
+        {
+            const auto d = e.position - eyeLast;
+            if (eyeDrag == 1) stage->turn (d.x, d.y); else stage->slide (d.x, d.y);
+        }
+        eyeLast = e.position;
+        return;
+    }
+    const auto p = where (e);
     const float dx = p.x - drag.start.x, dy = drag.start.y - p.y;
     switch (drag.kind)
     {
@@ -1632,6 +1693,13 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
 
 void Screen::mouseUp (const juce::MouseEvent&)
 {
+    if (eyeDrag != 0)
+    {
+        eyeDrag = 0;
+        if (stage != nullptr) eyePose = stage->home();
+        if (onLook) onLook();
+        return;
+    }
     mouseIsDown = false;
     if (drag.kind == hHold) ses.userSet (drag.a, 0.0f);
     if (drag.kind == hSetup && drag.a < (int) cfgParams.size() && cfgParams[(size_t) drag.a].kind == Kind::Hold) eng.setSetup (cfg, cfgParams[(size_t) drag.a].id, 0.0f);
@@ -1644,7 +1712,7 @@ void Screen::mouseUp (const juce::MouseEvent&)
 
 void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (const auto* h = hitAt (logical (e.position)))
+    if (const auto* h = hitAt (where (e)))
     {
         if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
@@ -1661,8 +1729,17 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     if (page != pMain) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
-    if (cfgOpen && cfgRect.contains (logical (e.position))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
-    if (const auto* h = hitAt (logical (e.position)))
+    if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    const auto* h = hitAt (where (e));
+    if (three && ! eyeLocked && stage != nullptr && (h == nullptr || ! (h->kind == hKnob || h->kind == hSnapKnob || h->kind == hRead)))
+    {
+        // the view is unlocked and the wheel is off the knobs: nearer or further
+        stage->closer (w.deltaY * (w.isSmooth ? 6.0f : 2.5f));
+        eyePose = stage->home();
+        if (onLook) onLook();
+        return;
+    }
+    if (h != nullptr)
         if (h->kind == hKnob || h->kind == hSnapKnob || h->kind == hRead)
         {
             const int ctl = h->kind == hSnapKnob ? cx::kSnap + h->a : h->a;
@@ -1674,9 +1751,47 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
         }
 }
 
+void Screen::mouseMagnify (const juce::MouseEvent&, float by)
+{
+    // two fingers apart on the trackpad: nearer (with the view unlocked)
+    if (! three || eyeLocked || stage == nullptr || by <= 0.0f) return;
+    stage->closer (std::log (by) / std::log (1.0f / 0.9f));
+    eyePose = stage->home();
+    if (onLook) onLook();
+}
+
 bool Screen::keyPressed (const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::spaceKey) { act (aRun); return true; }
+    // The 3D stage. 3: on and off. V: the next view (from above, the player's, from the corner).
+    // K: unlock the view, so that a drag off the controls turns it, and lock it where it is put.
+    // M: whether the eye goes to what a controller moves.
+    if (k.getTextCharacter() == '3') { setThree (! wantThree); if (onLook) onLook(); return true; }
+    if (wantThree && (k.getTextCharacter() == 'v' || k.getTextCharacter() == 'V'))
+    {
+        eyePose = Stage::Pose();
+        eyePose.view = stage != nullptr && stage->home().view >= 0 ? (stage->home().view + 1) % 3 : 1;
+        eyePose.turn = eyePose.view == 2 ? -30.0f : 0.0f; eyePose.tilt = eyePose.view == 0 ? 89.9f : eyePose.view == 1 ? 56.0f : 31.0f;
+        if (stage != nullptr) { stage->lookAt (nullptr); stage->setHome (eyePose, true); }
+        followOn = false;
+        say (eyePose.view == 0 ? "FROM ABOVE" : eyePose.view == 1 ? "THE PLAYER'S VIEW" : "FROM THE CORNER");
+        if (onLook) onLook();
+        return true;
+    }
+    if (wantThree && (k.getTextCharacter() == 'k' || k.getTextCharacter() == 'K')) {
+        eyeLocked = ! eyeLocked;
+        if (stage != nullptr) eyePose = stage->home();
+        say (eyeLocked ? "VIEW LOCKED" : "VIEW UNLOCKED.  DRAG OFF THE CONTROLS: TURN IT.  SHIFT-DRAG: SLIDE IT.  SCROLL: NEARER.  K: LOCK IT.");
+        if (onLook) onLook();
+        return true;
+    }
+    if (wantThree && (k.getTextCharacter() == 'm' || k.getTextCharacter() == 'M')) {
+        eyeFollow = ! eyeFollow;
+        if (! eyeFollow && stage != nullptr) { followOn = false; stage->lookAt (nullptr); }
+        say (eyeFollow ? "THE EYE FOLLOWS THE CONTROLLER" : "THE EYE STAYS HOME");
+        if (onLook) onLook();
+        return true;
+    }
     if (k == juce::KeyPress::escapeKey)
     {
         if (page != pMain) setPage (pMain);
@@ -1685,7 +1800,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         return true;
     }
     if (k.getTextCharacter() == 'f' || k.getTextCharacter() == 'F') { if (onFullScreen) onFullScreen(); return true; }
-    if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { setLit (! lit); if (onLook) onLook(); return true; }
+    if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { if (wantThree) setThree (false); setLit (! lit); if (onLook) onLook(); return true; }
     if (k.getTextCharacter() == 'i' || k.getTextCharacter() == 'I') { setInfo (! info); return true; }
     if (k.getTextCharacter() == 'h' || k.getTextCharacter() == 'H') { act (aPhones); return true; }
     if (k.getTextCharacter() == 'd' || k.getTextCharacter() == 'D')
@@ -1711,7 +1826,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
 void Screen::filesDropped (const juce::StringArray& files, int x, int y)
 {
     if (files.size() == 0 || page != pMain) return;
-    const auto p = logical ({ (float) x, (float) y });
+    const auto p = three && stage != nullptr ? stage->unitsAt ({ (float) x, (float) y }) : logical ({ (float) x, (float) y });
     // Where it lands. An open CONFIG panel takes it for whatever that panel is set to (a lane, an
     // insert, a return). Else the panel under the pointer: a lane, an insert that takes files, the
     // returns (for SPACE). Anywhere else, the active lane.
@@ -1758,7 +1873,21 @@ void Screen::beginEdit (R where, const String& initial, std::function<void (Stri
     editor->onReturnKey = [this] { endEdit (true); };
     editor->onEscapeKey = [this] { endEdit (false); };
     editor->onFocusLost = [this] { endEdit (true); };
-    addAndMakeVisible (*editor);
+    if (three && stage != nullptr)
+    {
+        // Over the 3D stage nothing of the screen's own can be drawn, so the box is a small window
+        // of its own, put where the name is.
+        const float pts = pointsPerUnit();
+        juce::Rectangle<int> box (0, 0, juce::roundToInt (where.getWidth() * pts), juce::roundToInt (where.getHeight() * pts));
+        box.setCentre (stage->pointsOf (where.getCentreX(), where.getCentreY(), Parts::kPlate).roundToInt());
+        box = box.constrainedWithin (getLocalBounds());
+        editor->setFont (fLegend.withHeight ((float) box.getHeight() * 0.8f));
+        editor->addToDesktop (juce::ComponentPeer::windowIsTemporary);
+        editor->setBounds (localAreaToGlobal (box));
+        editor->setVisible (true);
+        editor->toFront (true);
+    }
+    else addAndMakeVisible (*editor);
     editor->grabKeyboardFocus();
 }
 
@@ -1769,7 +1898,7 @@ void Screen::endEdit (bool keep)
     auto fn = std::move (editDone);
     editDone = nullptr;
     if (keep && fn) fn (ed->getText());
-    removeChildComponent (ed.get());
+    if (ed->isOnDesktop()) ed->removeFromDesktop(); else removeChildComponent (ed.get());
     repaint();
 }
 
@@ -1797,10 +1926,307 @@ juce::uint64 Screen::metersNow() const
     return h;
 }
 
+// ---------------------------------------------------------------------------------- the 3D stage
+void Screen::setThree (bool on)
+{
+    wantThree = on;
+    stageNote = {};
+    if (on)
+    {
+        lit = true;
+        if (stage == nullptr) { stage = std::make_unique<Stage> (eng); stage->onState = [this] { stageState(); }; }
+        stage->setDark (dark);
+        stage->setHome (eyePose, false);
+        stage->attachTo (*this);
+        stageState();
+    }
+    else
+    {
+        three = false;
+        cancelPendingUpdate();
+        if (stage != nullptr) stage->detach();
+        warm = false;
+        setOpaque (true);
+        juce::Component::repaint();
+    }
+}
+
+void Screen::stageState()
+{
+    if (stage == nullptr || ! wantThree) return;
+    if (stage->state() == Stage::State::failed)
+    {
+        // it could not start here: the lit skin stays, and says why
+        stageNote = stage->whyNot();
+        recNote = "3D COULD NOT START: " + stageNote.toUpperCase(); recNoteAt = juce::Time::getMillisecondCounter();        // (said on the bar, for a few seconds)
+        wantThree = three = false;
+        stage->detach();
+        warm = false;
+        juce::Component::repaint();
+        if (onLook) onLook();
+        return;
+    }
+    if (stage->state() == Stage::State::running && three)
+    {
+        // (its picture was made again, as when the window moves to another screen: it is given everything again)
+        sheetAll = true;
+        refreshStage();
+    }
+    if (stage->state() == Stage::State::running && ! three)
+    {
+        three = true;
+        sheetAll = true;
+        for (int i = 0; i < cx::kCount; ++i) followWas[(size_t) i] = eng.shown (i);
+        bySequencer.fill (false);
+        followOn = false; tagsWere = {};
+        refreshStage();
+        say ("3D.  V: THE NEXT VIEW.  K: UNLOCK THE VIEW.  M: FOLLOW.  3: BACK.");
+    }
+}
+
+Screen::Eye Screen::eye() const { return { stage != nullptr && wantThree ? stage->home() : eyePose, eyeLocked, eyeFollow }; }
+void Screen::setEye (const Eye& e) { eyePose = e.pose; eyeLocked = e.locked; eyeFollow = e.follow; if (stage != nullptr) stage->setHome (eyePose, false); }
+
+juce::Point<float> Screen::where (const juce::MouseEvent& e) const
+{
+    if (! three || stage == nullptr) return logical (e.position);
+    // A knob in the hand turns by how far the hand has moved, as on the flat screen, however near
+    // the eye is. Anything else is wherever the pointer is on the instrument.
+    if (mouseIsDown && (drag.kind == hKnob || drag.kind == hRead || drag.kind == hSnapKnob || drag.kind == hDepth || drag.kind == hLen || drag.kind == hSetup))
+        return drag.start + (e.position - pressAt) / std::max (0.05f, pointsPerUnit());
+    return stage->unitsAt (e.position);
+}
+
+void Screen::handleAsyncUpdate() { refreshStage(); }
+
+Screen::R Screen::panelOf (juce::Point<float> p) const
+{
+    R found;
+    for (const auto& pl : recorded.plates)
+        if (pl.r.contains (p) && pl.clip.has (p.x, p.y))
+            found = pl.r.getIntersection (R::leftTopRightBottom (std::max (pl.clip.x0, 0.0f), std::max (pl.clip.y0, 0.0f), std::min (pl.clip.x1, kW), std::min (pl.clip.y1, kH)));
+    return found.isEmpty() ? R (p.x - 150.0f, p.y - 50.0f, 300.0f, 110.0f).getIntersection (R (0, 0, kW, kH)) : found;
+}
+
+void Screen::followMoves()
+{
+    if (stage == nullptr) return;
+    const auto now = juce::Time::getMillisecondCounter();
+    std::vector<R> direct, swept;
+    for (const auto& h : hits)
+    {
+        if (h.kind != hKnob && h.kind != hSnapKnob) continue;
+        const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
+        if (ctl < 0 || ctl >= cx::kCount) continue;
+        const auto i = (size_t) ctl;
+        const float v = eng.shown (ctl);
+        const bool travelling = std::abs (v - followWas[i]) > 1.0e-4f || eng.isGliding (ctl);
+        followWas[i] = v;
+        const int by = ses.movedBy[i].load();
+        const bool recent = now - ses.movedAt[i].load() < 900u;
+        // a sequencer's own move is its own from its last message until the knob has come to rest
+        if (by == 2 && recent) bySequencer[i] = true; else if (! travelling) bySequencer[i] = false;
+        if (bySequencer[i] || ctl >= cx::kSnap) continue;       // (a snapshot knob itself: what it moves is what is shown)
+        if (mouseIsDown && drag.kind == hKnob && drag.a == ctl) continue;       // (in the hand on the screen: the hand is already there)
+        if (by == 1 && recent) direct.push_back (h.r);
+        else if (travelling) swept.push_back (h.r);
+    }
+    // several moving together with no hand on them: a snapshot. One or two under a hand on the controller: that module.
+    const auto& use = swept.size() >= 3 ? swept : direct;
+    if (eyeFollow && ! use.empty() && eyeDrag == 0)
+    {
+        R box;
+        for (const auto& r : use) { const R p = panelOf (r.getCentre()); box = box.isEmpty() ? p : box.getUnion (p); }
+        box = box.expanded (10.0f).getIntersection (R (0, 0, kW, kH));
+        followAt = now;
+        if (box.getWidth() * box.getHeight() > 0.7f * kW * kH && stage->home().view >= 0)
+        {
+            // nearly all of it, and home is a view of all of it: home
+            if (followOn) { followOn = false; stage->lookAt (nullptr); }
+        }
+        else if (! followOn || box != followBox) { followBox = box; followOn = true; stage->lookAt (&box); }
+    }
+    else if (followOn && (! eyeFollow || eyeDrag != 0 || now - followAt > 2200u)) { followOn = false; stage->lookAt (nullptr); }
+}
+
+void Screen::say (const String& words) { sayText = words; sayAt = juce::Time::getMillisecondCounter(); }
+
+// A moved knob's tag: its name and where it is, its value as the engine reads it, and a bar for how far round it stands.
+juce::Image Screen::tagPicture (int ctl)
+{
+    const auto& c = eng.control (ctl);
+    String where, label; const char* what = nullptr;
+    describe (ctl, where, label, what);
+    if (ctl >= cx::kSnap) { label = ses.knobs[(size_t) (ctl - cx::kSnap)].name; where = "SNAPSHOTS"; }
+    int ch = 0, num = 0;
+    if (ccx::addressOf (ctl, ch, num)) where << (where.isEmpty() ? "" : "  ") << "CH " << ch << " CC " << num;
+    const String value = ctl >= cx::kSnap ? String (juce::roundToInt (eng.shown (ctl) * 100.0f)) : eng.valueText (ctl);
+    const float v = juce::jlimit (0.0f, 1.0f, eng.shown (ctl));
+    const String key = label + "|" + value + "|" + where + "|" + String (juce::roundToInt (v * 200.0f)) + (eng.isGliding (ctl) ? "g" : "");
+    auto& pic = tagPics[ctl];
+    if (pic.key == key && pic.image.isValid()) return pic.image;
+    // (light on dark whatever the instrument: it floats over it)
+    Colour accent = col::lit;
+    for (const auto& k : recorded.knobs) if (k.ctl == ctl) accent = Colour (k.light);
+    if (eng.isGliding (ctl)) accent = col::green;
+    if (accent != col::lit) accent = accent.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.5f);
+    const float s = stage != nullptr ? stage->tagScale() : 2.0f;
+    const float wide = std::max (150.0f, std::max (tw (fLbl, label) + tw (fRead, value) + 44.0f, tw (fNote, where) + 24.0f)), tall = 58.0f;
+    juce::Image img (juce::Image::ARGB, juce::roundToInt (wide * s), juce::roundToInt (tall * s), true, juce::SoftwareImageType());
+    {
+        G g (img);
+        g.addTransform (juce::AffineTransform::scale (s));
+        const R b (0.5f, 0.5f, wide - 1.0f, tall - 1.0f);
+        g.setColour (Colour (0xee0D0E0E)); g.fillRoundedRectangle (b, 4.0f);
+        g.setColour (Colour (0x38D8D3C8)); g.drawRoundedRectangle (b, 4.0f, 1.0f);
+        g.setColour (accent); g.fillRoundedRectangle (R (0.5f, 0.5f, wide - 1.0f, 2.5f), 1.2f);
+        g.setColour (night::ink); g.setFont (fLbl); g.drawText (label, R (11, 9, wide - 22, 16), juce::Justification::centredLeft, false);
+        g.setColour (night::dim); g.setFont (fNote.withHeight (11.5f)); g.drawText (where, R (11, 26, wide - 22, 13), juce::Justification::centredLeft, false);
+        g.setColour (accent); g.setFont (fRead.withHeight (24.0f)); g.drawText (value, R (11, 7, wide - 22, 30), juce::Justification::centredRight, false);
+        const R track (11, tall - 12.0f, wide - 22, 3.0f);
+        g.setColour (Colour (0x30D8D3C8)); g.fillRoundedRectangle (track, 1.5f);
+        const float lo = c.kind == Kind::Bipolar ? std::min (v, 0.5f) : 0.0f, hi = c.kind == Kind::Bipolar ? std::max (v, 0.5f) : v;
+        g.setColour (accent); g.fillRoundedRectangle (R (track.getX() + track.getWidth() * lo, track.getY(), std::max (2.0f, track.getWidth() * (hi - lo)), 3.0f), 1.5f);
+    }
+    pic.key = key; pic.image = img; pic.stamp = ++tagStamp;
+    return img;
+}
+
+void Screen::showTags()
+{
+    if (stage == nullptr) return;
+    const auto now = juce::Time::getMillisecondCounter();
+    std::vector<Stage::Tag> out;
+    String sig;
+    tagsUp.clear();
+    // knobs in the hand on the screen, or under a hand on the controller: the three moved last
+    struct Moved { int ctl; R r; juce::uint32 at; };
+    std::vector<Moved> moved;
+    for (const auto& h : hits)
+    {
+        if (h.kind != hKnob && h.kind != hSnapKnob) continue;
+        const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
+        if (ctl < 0 || ctl >= cx::kCount) continue;
+        const bool inHand = mouseIsDown && ((drag.kind == hKnob && drag.a == ctl) || (drag.kind == hSnapKnob && cx::kSnap + drag.a == ctl));
+        const bool onController = ses.movedBy[(size_t) ctl].load() == 1 && now - ses.movedAt[(size_t) ctl].load() < 1300u;
+        if (inHand || onController) moved.push_back ({ ctl, h.r, inHand ? now : ses.movedAt[(size_t) ctl].load() });
+    }
+    std::sort (moved.begin(), moved.end(), [] (const Moved& a, const Moved& b) { return a.at > b.at; });
+    if (moved.size() > 3) moved.resize (3);
+    for (const auto& m : moved)
+    {
+        Stage::Tag t;
+        t.id = 100 + m.ctl;
+        t.image = tagPicture (m.ctl);
+        t.stamp = tagPics[m.ctl].stamp;
+        t.x = m.r.getCentreX(); t.y = m.r.getCentreY();
+        t.height = stage->heightAt (t.x, t.y);
+        t.reach = 19.5f;
+        for (const auto& k : recorded.knobs) if (std::abs (k.cx - t.x) < 3.0f && std::abs (k.cy - t.y) < 3.0f) t.reach = k.big ? 19.5f : 13.65f;
+        sig << t.id << ":" << (int) t.stamp << " ";
+        tagsUp.push_back (m.ctl);
+        out.push_back (std::move (t));
+    }
+    // INFO's box, by the pointer
+    if (info && hovering && ! mouseIsDown && tip.any)
+    {
+        const String key = tip.title + tip.body.joinIntoString ("|") + tip.midi.joinIntoString ("|");
+        auto& pic = tagPics[-1];
+        if (pic.key != key || ! pic.image.isValid())
+        {
+            const float s = stage->tagScale();
+            const R b = tip.box;
+            juce::Image img (juce::Image::ARGB, juce::roundToInt (b.getWidth() * s) + 2, juce::roundToInt (b.getHeight() * s) + 2, true, juce::SoftwareImageType());
+            {
+                G g (img);
+                g.addTransform (juce::AffineTransform::translation (-b.getX(), -b.getY()).scaled (s));
+                drawTip (g);
+            }
+            pic.key = key; pic.image = img; pic.stamp = ++tagStamp;
+        }
+        Stage::Tag t;
+        t.id = 1; t.image = pic.image; t.stamp = pic.stamp; t.place = Stage::Tag::byPointer; t.px = hoverAt;
+        sig << "tip:" << (int) t.stamp << ":" << juce::roundToInt (hoverAt.x) << "," << juce::roundToInt (hoverAt.y) << " ";
+        tagsUp.push_back (-1);
+        out.push_back (std::move (t));
+    }
+    // a line of words at the foot of the window, for a moment
+    if (sayText.isNotEmpty() && now - sayAt < 3200u)
+    {
+        auto& pic = tagPics[-2];
+        if (pic.key != sayText || ! pic.image.isValid())
+        {
+            const float s = stage->tagScale(), wide = tw (fLegend, sayText) + 36.0f, tall = 34.0f;
+            juce::Image img (juce::Image::ARGB, juce::roundToInt (wide * s), juce::roundToInt (tall * s), true, juce::SoftwareImageType());
+            {
+                G g (img);
+                g.addTransform (juce::AffineTransform::scale (s));
+                g.setColour (Colour (0xee0D0E0E)); g.fillRoundedRectangle (R (0.5f, 0.5f, wide - 1.0f, tall - 1.0f), 4.0f);
+                g.setColour (Colour (0x38D8D3C8)); g.drawRoundedRectangle (R (0.5f, 0.5f, wide - 1.0f, tall - 1.0f), 4.0f, 1.0f);
+                g.setColour (night::ink); g.setFont (fLegend); g.drawText (sayText, R (0, 0, wide, tall), juce::Justification::centred, false);
+            }
+            pic.key = sayText; pic.image = img; pic.stamp = ++tagStamp;
+        }
+        Stage::Tag t;
+        t.id = 2; t.image = pic.image; t.stamp = pic.stamp; t.place = Stage::Tag::fixed; t.px = { (float) getWidth() * 0.5f, (float) getHeight() - 22.0f };
+        sig << "say:" << (int) t.stamp << " ";
+        tagsUp.push_back (-2);
+        out.push_back (std::move (t));
+    }
+    if (sig == tagsWere) return;        // nothing new: the stage has them
+    tagsWere = sig;
+    stage->setTags (std::move (out));
+}
+
+// The screen as it now stands, given to the stage: first the solid parts (one whole drawing of the
+// screen with nothing drawn, only written down; it also lays out and gathers what the hand can
+// touch), then the print (drawn for real, onto the sheet, where it has changed).
+void Screen::refreshStage()
+{
+    if (! three || stage == nullptr) return;
+    {
+        juce::Image none (juce::Image::ARGB, 1, 1, true, juce::SoftwareImageType());
+        G g (none);
+        g.reduceClipRegion (juce::Rectangle<int>());
+        recorded.clear();
+        recorded.dark = dark;
+        recording = true; collect = true;
+        skin.setMode (Skin::Mode::record, &recorded);
+        drawAll (g);
+        skin.setMode (Skin::Mode::pictures);
+        recording = false;
+        recorded.settle();
+        stage->setParts (recorded);
+    }
+    auto& img = stage->sheet();
+    const juce::Rectangle<int> whole (0, 0, img.getWidth(), img.getHeight());
+    juce::RectangleList<int> px;
+    if (sheetAll) px.add (whole);
+    else { px = sheetDirty; px.clipTo (whole); px.consolidate(); }
+    sheetAll = false; sheetDirty.clear();
+    if (px.isEmpty()) return;
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    for (const auto& r : px) img.clear (r, juce::Colours::transparentBlack);
+    {
+        G g (img);
+        g.reduceClipRegion (px);
+        g.addTransform (juce::AffineTransform::scale (stage->sheetScale()));
+        printing = true; collect = false;
+        skin.setMode (Skin::Mode::print);
+        drawAll (g);
+        skin.setMode (Skin::Mode::pictures);
+        printing = false;
+    }
+    const double t1 = juce::Time::getMillisecondCounterHiRes();
+    for (const auto& r : px) stage->sheetChanged (r);
+    printMs = t1 - t0; sendMs = juce::Time::getMillisecondCounterHiRes() - t1;
+}
+
 void Screen::timerCallback()
 {
-    if (lit && skin.settled()) { warm = false; repaint(); }     // the window has a new size and has held it: the pictures are made again for its pixels
-    if (lit && ! warm && skin.ready() && ! mouseIsDown)
+    if (three) { followMoves(); showTags(); }
+    if (lit && ! three && skin.settled()) { warm = false; repaint(); }     // the window has a new size and has held it: the pictures are made again for its pixels
+    if (lit && ! three && ! warm && skin.ready() && ! mouseIsDown)
     {
         // CONFIG's plate and the cards of the other pages, made while nothing is waiting on them
         warm = true;

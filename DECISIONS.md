@@ -757,6 +757,92 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      own): now it is. The addresses that are on no E16 page (inserts, returns, master, mutes)
      have nothing there to update.
 
+## Twentieth build (Nov 12): the 3D stage
+
+You saw the three.js study, said "that's amazing, I want that, let's build it", that it must be
+world class, lag free, efficient and stable, that every button must work (mute, solo, the
+sequencer), and that if in the app is best for performance and reliability, to do that.
+
+191. **In the app, drawn by the app** (OpenGL on a thread of its own), not a web view. A web view
+     would be a second interface in JavaScript, kept in step with the first over a bridge, with
+     every display drawn twice; and it runs in another process the app cannot answer for. Native,
+     there is one interface, no bridge, and the drawing thread reads the engine directly.
+192. **The 3D stage is a third look for the same screen** (flat, lit, 3D), not a new screen. The
+     lit skin already drew the screen as a set of solid things (panel, knob, key, lamp, window);
+     in 3D those calls write the things down, and the stage builds them. Everything flat goes
+     into one picture laid over their tops. So every page and every control came across at once,
+     and there is one place that lays out and one that takes the hand. A check reaches all 341
+     controls of the main screen through the eye, from above and from the player's view; from the
+     corner 318, where a cap hides what is behind it, and every knob.
+193. **OpenGL 3.2, and what that risks.** It is what JUCE gives on both the Mac and the machine
+     this is built on, where a software driver runs the checks and draws the pictures. On the Mac
+     it has been "deprecated" since 2018 and still works; if Apple removes it, the stage's drawing
+     (one file) is rewritten for Metal and nothing else changes. *Mine.* I cannot run a Mac from
+     here: see Not verified.
+194. **If it cannot start, the lit skin stays** and says why on the bar and in `3d.log`. A shader
+     the driver refuses, a buffer it will not make, no OpenGL at all: each is a sentence, not a
+     black window. `SF000_3D_FAIL=1` shows it. *Mine.*
+     **And if it starts and draws nothing, it notices.** The first picture with the instrument in
+     it is read back at 63 points, before the glow (are they numbers?) and as finished (is it one
+     flat colour?). Blank twice running and the stage gives up, writes what it found, and the lit
+     skin comes back. This is the failure the study had on your Mac, which no software driver
+     shows; the shaders are written so that it cannot happen (205), and this is for the case
+     where I am wrong about that. A real picture's darkest and brightest points are 200 or more
+     apart of 255, in every view, pale and dark; under 6 counts as blank. `SF000_3D_FAIL=blank`
+     shows it. *Mine.*
+195. **It opens in 3D** (you: "I want that"). **3** goes to the lit skin and back; **L** still
+     goes to the flat drawing (and leaves 3D). *proposed.*
+196. **Three views, and the view is locked until K** (you: "position it and lock it in a preferred
+     position"). TOP, PLAYER (how it starts) and HERO, as in the study, each fitted to the window.
+     Locked is the default because a live instrument must not turn when a hand misses a knob.
+     Unlocked: drag off the controls to turn, shift- or right-drag to slide, wheel or pinch to come
+     nearer. *proposed:* the keys (V, K, M); there is nothing on the screen for them but a line of
+     words that comes up when one is pressed.
+197. **Following, and what must not move the eye** (you: MIDI follow moves "worked amazingly";
+     "watch out that midi sequencer pulses don't trigger the follow moves"). The eye goes to a
+     knob's module when the knob is turned on the E16, and out to hold everything when three or
+     more knobs move together with no hand on them (a snapshot). It never moves for notes, the
+     clock, the tempo, keys (mute, solo, THROW, FREEZE), or a knob moved from any port but the
+     E16's: that is a sequencer playing it, and it stays the sequencer's until the knob has come
+     to rest. For this the MIDI code now notes which port moved each control. *proposed:* a
+     snapshot recalled by a sequencer (RECALL) does fly out, since it is many knobs travelling
+     and not a pulse; say if an arrangement should leave the view alone entirely.
+198. **Tags** (you: "a popup hud should appear by the knob showing its value"). For a knob in the
+     hand on the screen, or under a hand on the E16; the three moved last. They show the engine's
+     own reading (the study could only show 0 to 127). Not for a sequencer's moves, and not one
+     per knob of a snapshot. A hand on the screen does not move the eye: the hand is already there.
+199. **A knob's lights are read from the engine on the drawing thread**, every frame, not handed
+     over by the screen thirty times a second. They move with the sound even if the rest of the
+     app is busy for a moment. *Mine.*
+200. **A dimmer underglow** (you: "a little dimmer"). The glow under the case and the warm light
+     up its sides are well under the study's.
+201. **Efficiency.** Nothing is drawn twice that has not changed: the shadows only when something
+     that casts one moves; the sheet only where it differs from what was last sent (compared in
+     64-pixel squares); and with nothing moving a frame is the last picture shown again. On the
+     Mac the display asks for each frame, so the eye and the lights move at its rate (120 a
+     second on yours). Here, in software: recording the screen 0.03 ms, printing a knob's part of
+     the sheet 0.1 ms, all of it 25 to 40 ms.
+202. **The sheet is three pixels to the unit on a display like yours** (two on a plain one), so
+     that the print is clean when the eye is close to one module. It costs 70 MB twice over.
+     *Mine.* `SF000_SHEET=2` halves that if it is ever wanted.
+203. **Empty places are dimples**, the plate's own colour in shade, where the study had black
+     discs. *proposed.*
+204. **A name is typed in a small window over the stage**, since nothing of the screen's own can
+     be drawn over OpenGL's picture.
+205. **The study page is not in this repo.** It was a way to find out; the app's stage is written
+     from its findings, in C++, with none of its code. One thing it found the hard way is kept:
+     a colour that is not a number, from a power of a value read just off a triangle's edge, was
+     spread by the glow over the whole picture and turned it black on your Mac and not on the
+     software driver. The stage's shaders clamp every colour they write.
+206. **The checks name the window manager's properties before they start** (Linux only, where
+     the checks run; nothing on the Mac). One stage test in six stopped dead where the typing
+     window opens. A debugger on the stopped test showed why: the X server the checks run on has
+     no window manager, JUCE asked it about a property it had never heard of, and its error
+     arrived on the drawing thread while the screen's thread held Xlib's lock, so each waited for
+     the other. With the names said first the server raises no such error (25 a run before, none
+     after), and the test has run seventeen times in a row since. The Mac has no X server and no
+     Xlib: this was the test bench, not the instrument.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -791,4 +877,17 @@ same: a clip kept at every save, and a profile from the clip and from what the r
   as pictures the app drew to a file (the main screen, a glide, CONFIG open, the library, the
   macro designer), and their checks run in software. Not seen: the Mac's own drawing of it (how it looks on the display, what it costs
   with each changed part painted on its own), a window changing size, and how it feels to play.
+- **The 3D stage (twentieth) has never run on a Mac.** Everything about it is checked here on a
+  software OpenGL driver (Mesa llvmpipe): that it starts, what it draws (looked at as pictures),
+  that the hand reaches every control through the eye, the view, following, the tags, the dark
+  instrument, and falling back. Not checked, because nothing here can check it: Apple's OpenGL
+  taking these shaders (they are written to the oldest version it offers, and to its stricter
+  rules as I know them); the frame rate on your display; the picture on a display with two pixels
+  to the point; the mouse over the OpenGL view; the small typing window; full screen and moving
+  the window between displays. If it does not start, or starts and draws a blank picture, the
+  lit skin comes up and `3d.log` says why: send me that line. The study did run on your Mac at 120 frames a second in a browser, with more
+  triangles than this draws.
+- Following is checked with made-up moves marked as the E16's or as another port's. The real
+  thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
+  not), a recall from each.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

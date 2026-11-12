@@ -311,6 +311,7 @@ bool Skin::emits (Colour c) { return c == kGreen || c == kAmber; }
 
 void Skin::begin (G& g)
 {
+    if (mode != Mode::pictures) return;
     const float sc = g.getInternalContext().getPhysicalPixelScaleFactor();
     if (scale <= 0.0f) { scale = want = sc; return; }
     if (std::abs (sc - scale) < 0.002f) { want = scale; return; }
@@ -348,6 +349,7 @@ void Skin::put (G& g, const Pic& p, float x, float y) const
 // The case: one slab, its top edge rounded over, its front seen below it.
 void Skin::body (G& g, float w, float h)
 {
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->body = true; return; }
     auto& shell = caseImg[dark];
     const Colour tint = dark ? kNightCase : kCase;
     if (shell.isNull())
@@ -416,7 +418,7 @@ void Skin::body (G& g, float w, float h)
     g.drawImage (shell, R (0.0f, 0.0f, w, h));
 }
 
-void Skin::makePanel (float width, float height, Colour ground) { if (scale > 0.0f) panelPic (juce::roundToInt (width), juce::roundToInt (height), ground); }
+void Skin::makePanel (float width, float height, Colour ground) { if (scale > 0.0f && mode == Mode::pictures) panelPic (juce::roundToInt (width), juce::roundToInt (height), ground); }
 
 const Skin::Pic& Skin::panelPic (int w, int h, Colour ground)
 {
@@ -433,6 +435,7 @@ const Skin::Pic& Skin::panelPic (int w, int h, Colour ground)
 
 void Skin::panel (G& g, R r, Colour ground)
 {
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->plates.push_back ({ r.translated (shift, 0.0f), ground.getARGB(), clip, 0.0f }); return; }
     g.setOpacity (1.0f);
     put (g, panelPic (juce::roundToInt (r.getWidth()), juce::roundToInt (r.getHeight()), ground), r.getX(), r.getY());
 }
@@ -448,8 +451,17 @@ KnobDims dims (int size)
 }
 }
 
+void Skin::recordKnob (float cx, float cy, int size, int ctl, int kind, int steps, Colour light, float a, float b, float mark)
+{
+    if (rec == nullptr || mode != Mode::record) return;
+    Parts::Knob k;
+    k.cx = cx + shift; k.cy = cy; k.big = size >= 40; k.ctl = ctl; k.kind = kind; k.steps = steps; k.light = light.getARGB(); k.a = a; k.b = b; k.mark = mark; k.clip = clip;
+    rec->knobs.push_back (k);
+}
+
 void Skin::knob (G& g, float cx, float cy, int size)
 {
+    if (mode != Mode::pictures) return;         // (recorded whole, by recordKnob)
     const auto d = dims (size);
     const auto& p = pic (Key { wKnob, size >= 40 ? 40 : 30, 0, 0, 0 }, [&]
     {
@@ -466,6 +478,7 @@ void Skin::knob (G& g, float cx, float cy, int size)
 
 void Skin::ringLit (G& g, float cx, float cy, int size, float a, float b, Colour c)
 {
+    if (mode != Mode::pictures) return;
     const auto d = dims (size);
     const auto& p = pic (Key { wRing, size >= 40 ? 40 : 30, 0, c.getARGB(), 0 }, [&]
     {
@@ -497,6 +510,7 @@ void Skin::ringLit (G& g, float cx, float cy, int size, float a, float b, Colour
 
 void Skin::key (G& g, R r, Colour c, bool down)
 {
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->keys.push_back ({ r.translated (shift, 0.0f), c.getARGB(), down, emits (c), clip, 0.0f }); return; }
     const int w = juce::roundToInt (r.getWidth()), h = juce::roundToInt (r.getHeight());
     const auto& p = pic (Key { wKey, w, h, c.getARGB(), down ? 1 : 0 }, [&]
     {
@@ -513,6 +527,7 @@ void Skin::key (G& g, R r, Colour c, bool down)
 
 void Skin::lamp (G& g, float cx, float cy, Colour c, float d, bool on)
 {
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->lamps.push_back ({ cx + shift, cy, d, c.getARGB(), on, clip, 0.0f }); return; }
     const int di = juce::roundToInt (d);
     const auto& p = pic (Key { wLamp, di, 0, c.getARGB(), on ? 1 : 0 }, [&]
     {
@@ -527,6 +542,7 @@ void Skin::lamp (G& g, float cx, float cy, Colour c, float d, bool on)
 
 void Skin::hollow (G& g, float cx, float cy, float d, bool round)
 {
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->hollows.push_back ({ cx + shift, cy, d, round, clip, 0.0f }); return; }
     const int di = juce::roundToInt (d);
     const auto& p = pic (Key { wHollow, di, 0, 0, round ? 1 : 0 }, [&]
     {
@@ -550,6 +566,7 @@ void Skin::hollow (G& g, float cx, float cy, float d, bool round)
 // shade the pane; its lower and right edges catch the light.
 void Skin::window (G& g, R r, Colour glass)
 {
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->panes.push_back ({ r.translated (shift, 0.0f), glass.getARGB(), clip, 0.0f }); return; }
     const bool deep = glass.getPerceivedBrightness() < 0.4f;        // a dark pane
     g.setColour (juce::Colours::black.withAlpha (dark ? 0.60f : 0.45f));
     g.fillRoundedRectangle (r.expanded (0.8f), 2.2f);
@@ -573,6 +590,8 @@ void Skin::window (G& g, R r, Colour glass)
 
 void Skin::badge (G& g, R r, const juce::String& name, const juce::Font& font)
 {
+    if (mode == Mode::record) { if (rec != nullptr) rec->badges.push_back ({ r, 0.0f }); return; }
+    if (mode == Mode::print) { g.setColour (Colour (0xffF6F6F6)); g.setFont (font); g.drawText (name, r, juce::Justification::centred, false); return; }      // (its letters, flat on it)
     const int w = juce::roundToInt (r.getWidth()), h = juce::roundToInt (r.getHeight());
     const auto& p = pic (Key { wBadge, w, h, 0, 0 }, [&]
     {

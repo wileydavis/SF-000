@@ -24,7 +24,10 @@ First run:
 1. Press **AUDIO** (white key, top bar) and pick the interface and its outputs. The choice is kept.
 2. Press **RUN** (or the space bar). Every lane has a starting pattern.
 3. Press **F** for full screen at 1728 x 1117; **F** or **Esc** leaves it.
-4. Press **D** for the dark instrument and **D** again for the light one. **L** changes between the
+4. It opens as the 3D stage: the instrument as a solid thing, lit. **3** changes between that and
+   the lit skin; **V** goes round its three views; **K** unlocks the view so a drag turns it. See
+   The 3D stage, below.
+5. Press **D** for the dark instrument and **D** again for the light one. **L** changes between the
    lit skin (how it starts) and the flat drawing. The look is kept between runs. See The look, below.
 
 ## Playing it
@@ -59,6 +62,10 @@ First run:
 | Arrow keys | up and down: the active lane. Left and right: the step page |
 | **I** | INFO: every control MIDI reaches shows its CC number, a panel its channel, and a control the mouse rests on says what it does. **I** again puts it away |
 | **H** | PHONES: headphones on the one pair of outputs. While a cue plays, the set is in the left ear and the cue in the right (see The library, below) |
+| **3** | the 3D stage, or the lit skin it is drawn from (see The 3D stage, below) |
+| **V** | 3D: the next view. From above, the player's, from the corner |
+| **K** | 3D: unlock the view (drag off the controls to turn it, shift-drag or right-drag to slide it, scroll or pinch to come nearer), and lock it where it is put |
+| **M** | 3D: whether the eye goes to what the controller moves |
 | **D** | the dark instrument, or the light one |
 | **L** | the lit skin, or the flat drawing it replaced |
 
@@ -100,6 +107,56 @@ first pass at it.
 
 The pictures are made when the window first shows and again when it changes size (it waits until
 the size has held for a moment). `./build.sh perf` gives what both drawings cost on your Mac.
+
+### The 3D stage
+
+**3** on the keyboard. The instrument is drawn as a solid thing: the case, a plate in each pocket,
+caps in rings of lights, keys, glass displays, lit from behind and to the left with a soft shadow
+under everything that stands up, a little warm light under the case, and a glow round every light
+that is on. It is how the app opens. **3** again is the lit skin.
+
+It is not a second interface. The screen lays out and handles everything exactly as before; in 3D
+its drawing goes to a different place. So every control works: the lanes' knobs and C, M and S
+keys, the sequencer and its step keys, CONFIG, the library, the macro designer, INFO. A knob in
+the hand turns by how far the hand moves, as on the flat screen, however near the eye is; a step
+key's gate and anything else that follows the hand is wherever the pointer is on the instrument.
+
+- **Three views**, each with the whole instrument fitted to the window. **V** goes round them:
+  from above (the flat screen's own view, with depth), the player's (56 degrees up, how it
+  starts), from the corner (low, for the look of it: a cap hides the legend behind it from there).
+- **The view is locked** until **K** unlocks it. Unlocked, a drag that starts off the controls
+  turns the instrument, shift-drag or right-drag slides it, the wheel or a pinch brings it nearer
+  (over a knob the wheel still turns the knob). **K** again locks it where you put it. The view,
+  the lock and M are kept between runs.
+- **The eye follows the controller** (**M** turns this off and on). A knob turned on the E16: the
+  eye flies in to that knob's module, and goes home a couple of seconds after the hand stops. A
+  snapshot recalled or pushed, when three or more knobs are moving together: it flies out to
+  hold all of them. What never moves it: notes, the clock, the tempo under an outside clock,
+  keys (mute, solo, THROW, FREEZE), and any knob moved by a message from another port than the
+  E16's, which is a sequencer playing it. Those knobs' lights move; the view stays.
+- **A moved knob has a tag beside it**: its name, the reading the engine gives (hertz, decibels,
+  a sixteenth), where it is and its MIDI address, and a bar. In the hand on the screen, or under
+  a hand on the E16; not for a sequencer's moves or a snapshot's. INFO's box floats by the
+  pointer the same way.
+- **A knob's lights follow the engine itself**, read on the drawing thread every frame, so they
+  move with the sound whatever else the app is doing.
+- **Typing a name** (a snapshot's, a snapshot knob's) happens in a small box over the stage.
+- **D** is the dark instrument here too.
+
+If OpenGL cannot start on a machine, the lit skin stays, the top bar says why for a few seconds,
+and the reason is written to `3d.log` beside the session. The same if it starts and its first
+picture comes out blank: the stage reads that picture back, and gives way to the lit skin
+rather than show nothing. 3D is tried again at the next launch, or with **3**.
+
+How it is made: the lit skin's drawing calls are a list of solid parts (a plate here, a knob
+there, a key held down), and in 3D the skin writes that list down instead of drawing pictures.
+Everything flat, which is the print on the plates and what the displays show, is drawn by the
+same code into one picture (the sheet) that is laid over the tops of the parts; a display's part
+of it is light. OpenGL 3.2 draws both on a thread of its own: a shadow map from the one light,
+the picture at four samples a pixel in a wide range of brightness, the bright parts spread for
+the glow, and the whole eased into the display's range. Only what changes is done again: a moved
+knob prints a few square centimetres of the sheet; nothing moving, a frame shows the last
+picture again.
 
 ### CONFIG: where a sound is set up
 
@@ -322,13 +379,26 @@ build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
+build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
 build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapshot library running on this machine (its `npm run dev`)
 build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
+build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
+```
+
+On Linux the two 3D lines need a display and OpenGL 3.2; a software driver will do:
+`xvfb-run -a -s "-screen 0 2000x1300x24" build/.../SF-000 --stagetest`. `SF000_SHEET=2` (or 3)
+sets how fine the sheet is, `SF000_SAMPLES=0` turns edge smoothing off, `SF000_3D_FAIL=1` makes
+the stage refuse to start and `SF000_3D_FAIL=blank` makes it start and draw nothing (to see the
+falling back from each). The checks first tell the X server the names of a window manager's
+properties: on a server with none (Xvfb), JUCE's asking after them raised errors that could
+lock the screen's thread and the drawing thread against each other.
+
+```
 ```
 
 ### Load
@@ -351,7 +421,9 @@ meters when a bar has moved, the playing step.
 | `tests/fixtures/` | a session file as an older build wrote it, for the check that old files still open |
 | `Source/Screen.*` | the three screens |
 | `Source/Help.h` | what each control does, in a line or two: INFO's boxes |
-| `Source/Skin.*` | the lit skin: surfaces as heights and finishes (the 3D model's), lit into pictures the screen is put together from |
+| `Source/Skin.*` | the lit skin: surfaces as heights and finishes (the 3D model's), lit into pictures the screen is put together from; for the 3D stage, the same calls written down as parts |
+| `Source/Parts.h` | the solid parts a screen is made of, as the skin records them |
+| `Source/Stage.*` | the 3D stage: the parts and the sheet drawn with OpenGL, the eye, what the pointer is on |
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |
 | `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
@@ -363,7 +435,7 @@ meters when a bar has moved, the playing step.
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
 scene, each snapshot's profile; its layout and the rules that keep old files readable are in
-`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `look.json` (the look: lit or flat, light or dark), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
+`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `look.json` (the look: 3D, lit or flat, light or dark, and where the 3D stage's eye is kept), `3d.log` (why the 3D stage could not start, if it ever could not), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
@@ -373,6 +445,11 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   itself: no texture maps, one finish per material, and the inside of the displays (the meters,
   the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices
   it does not follow yet are listed in `DECISIONS.md` (items 172 to 174).
+- The 3D stage: its shapes are built from the model's measurements (the cap's outline is the
+  model's), not loaded from the model file, and its materials are one finish each. No reflections
+  of the room, no shade in the corners where a knob meets its plate beyond the one shadow. A
+  snapshot's fly-out goes by how many knobs are moving, not by knowing a recall happened. Metal
+  (OpenGL is the Mac's older way of drawing; it works and Apple no longer improves it).
 
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.

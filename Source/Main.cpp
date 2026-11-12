@@ -1672,7 +1672,43 @@ static int shot (const juce::StringArray& args)
         (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
         sc.testPointAt ({ pt.upToFirstOccurrenceOf (",", false, false).getFloatValue(), pt.fromFirstOccurrenceOf (",", false, false).getFloatValue() });
     }
-    const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
+    juce::Image img;
+    if (args.contains ("--3d"))
+    {
+        // The 3D stage, as drawn: --view top|player|hero (or --turn and --tilt degrees, --away units),
+        // --size WxH (the window, in points). It needs a window to draw in.
+        const auto size = arg ("--size", "1728x1117");
+        sc.setSize (juce::jlimit (320, 8000, size.upToFirstOccurrenceOf ("x", false, true).getIntValue()), juce::jlimit (200, 8000, size.fromFirstOccurrenceOf ("x", false, true).getIntValue()));
+        sc.addToDesktop (0);
+        sc.setVisible (true);
+        Screen::Eye eye;
+        const auto view = arg ("--view", "player");
+        eye.pose.view = view == "top" ? 0 : view == "hero" ? 2 : 1;
+        eye.pose.turn = eye.pose.view == 2 ? -30.0f : 0.0f; eye.pose.tilt = eye.pose.view == 0 ? 89.9f : eye.pose.view == 1 ? 56.0f : 31.0f;
+        if (args.contains ("--turn")) eye.pose.turn = arg ("--turn", "0").getFloatValue();
+        if (args.contains ("--tilt")) eye.pose.tilt = arg ("--tilt", "56").getFloatValue();
+        sc.setEye (eye);
+        sc.setThree (true);
+        for (int i = 0; i < 400 && sc.isThree() && ! sc.threeShowing(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        if (! sc.threeShowing()) { std::printf ("the 3D stage did not start: %s\n", sc.threeNote().toRawUTF8()); return 1; }
+        if (args.contains ("--look"))
+        {
+            // --look x,y,w,h: the eye goes to hold that much of the screen (units), as it does when following
+            juce::StringArray n; n.addTokens (arg ("--look", ""), ",", "");
+            if (n.size() == 4) { const juce::Rectangle<float> box (n[0].getFloatValue(), n[1].getFloatValue(), n[2].getFloatValue(), n[3].getFloatValue()); sc.stageOrNull()->lookAt (&box); }
+        }
+        sc.refreshNow();
+        sc.stageOrNull()->settle();
+        (void) sc.stageOrNull()->capture();
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        sc.refreshNow();
+        const double t1 = juce::Time::getMillisecondCounterHiRes();
+        img = sc.stageOrNull()->capture();
+        std::printf ("3D: %s; a frame %.1f ms; the screen recorded and nothing to print %.2f ms; the first picture's darkest to brightest %d of 255\n", sc.stageOrNull()->driver().toRawUTF8(), sc.stageOrNull()->frameMs(), t1 - t0, sc.stageOrNull()->firstPictureSpread());
+        sc.setThree (false);
+        sc.removeFromDesktop();
+    }
+    else img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
     rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
     sc.online = nullptr; online = nullptr; Session::stateFileForTests = juce::File(); onlineDir.deleteRecursively();
     juce::File f (arg ("--shot", "sf000.png"));
@@ -2763,6 +2799,339 @@ static int perf()
     return 0;
 }
 
+// The 3D stage, played: SF-000 --stagetest. It needs a display to open a window on (xvfb will do)
+// and OpenGL 3.2 (a software driver will do: this is about what is drawn and what the hand
+// reaches, not how fast).
+static int stageTest()
+{
+    using namespace sf0;
+    int bad = 0;
+    auto check = [&] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
+    std::printf ("SF-000 3D stage test\n");
+    Engine e;
+    e.prepare (48000.0, 512);
+    Session ses (e, false);
+    juce::AudioBuffer<float> b (2, 512);
+    auto audio = [&] (int blocks) { for (int i = 0; i < blocks; ++i) e.render (b); };
+    audio (40);
+    {
+        // 0. where it cannot start, the lit skin stays and says why
+        setenv ("SF000_3D_FAIL", "1", 1);
+        Screen sc (ses);
+        sc.setSize (864, 558);
+        sc.addToDesktop (0); sc.setVisible (true);
+        int told = 0;
+        sc.onLook = [&told] { ++told; };
+        sc.setThree (true);
+        for (int i = 0; i < 200 && sc.isThree(); ++i) pump (25);
+        const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.5f);
+        check (! sc.isThree() && ! sc.threeShowing() && sc.threeNote().isNotEmpty() && sc.isLit() && told == 1, "a stage that cannot start leaves the lit skin up, says why (" + sc.threeNote() + ") and has the look kept");
+        check (img.getPixelAt (300, 200).getBrightness() > 0.2f, "and the lit skin is drawn as before");
+        unsetenv ("SF000_3D_FAIL");
+        sc.removeFromDesktop();
+    }
+    {
+        // 0b. where it starts and then draws nothing (one maker's chips blanking the frame), it notices, gives up and says so
+        setenv ("SF000_3D_FAIL", "blank", 1);
+        Screen sc (ses);
+        sc.setSize (864, 558);
+        sc.addToDesktop (0); sc.setVisible (true);
+        int told = 0;
+        sc.onLook = [&told] { ++told; };
+        sc.setThree (true);
+        bool wasUp = false;
+        for (int i = 0; i < 400 && sc.isThree(); ++i) { wasUp = wasUp || sc.threeShowing(); pump (25); }
+        const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.5f);
+        check (wasUp && ! sc.isThree() && ! sc.threeShowing() && sc.threeNote().contains ("blank") && sc.isLit() && told == 1, "a stage that starts and then draws a blank picture is caught, and the lit skin comes back (" + sc.threeNote() + ")");
+        check (img.getPixelAt (300, 200).getBrightness() > 0.2f, "drawn as before");
+        unsetenv ("SF000_3D_FAIL");
+        sc.removeFromDesktop();
+    }
+    Screen sc (ses);
+    sc.setSize (1296, 838);
+    sc.addToDesktop (0); sc.setVisible (true);
+    sc.setThree (true);
+    for (int i = 0; i < 400 && sc.isThree() && ! sc.threeShowing(); ++i) pump (25);
+    check (sc.threeShowing(), "the 3D stage starts" + (sc.threeShowing() ? " (" + sc.stageOrNull()->driver() + ")" : ": " + sc.threeNote()));
+    if (! sc.threeShowing()) { std::printf ("%d FAILED\n", bad); return 1; }
+    auto* st = sc.stageOrNull();
+    for (int i = 0; i < 200 && sc.isThree() && st->firstPictureSpread() < 0; ++i) pump (25);
+    check (sc.isThree() && st->firstPictureSpread() >= 6, "and its first picture is looked at and is a picture (darkest to brightest: " + juce::String (st->firstPictureSpread()) + " of 255)");
+    // everything brought up to date and a frame drawn (which is also when the eye's place is known to the hand)
+    auto fresh = [&] { sc.testTick(); sc.refreshNow(); st->settle(); return st->capture(); };
+    auto view = [&] (int v)
+    {
+        Screen::Eye eye = sc.eye();
+        eye.pose = Stage::Pose(); eye.pose.view = v; eye.pose.turn = v == 2 ? -30.0f : 0.0f; eye.pose.tilt = v == 0 ? 89.9f : v == 1 ? 56.0f : 31.0f;
+        sc.setEye (eye);
+        fresh();
+    };
+    auto pt = [&] (juce::Point<float> u) { return st->pointsOf (u.x, u.y, st->heightAt (u.x, u.y)); };
+    auto ev = [&] (juce::Point<float> p, juce::Point<float> down, bool dragged, juce::ModifierKeys mods = juce::ModifierKeys())
+    {
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, mods, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                 &sc, &sc, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, dragged);
+    };
+    auto click = [&] (juce::Point<float> u) { const auto p = pt (u); sc.mouseDown (ev (p, p, false)); sc.mouseUp (ev (p, p, false)); fresh(); };
+    auto dragPoints = [&] (juce::Point<float> u, float dx, float dy)
+    {
+        const auto p = pt (u);
+        sc.mouseDown (ev (p, p, false));
+        for (int k = 1; k <= 4; ++k) sc.mouseDrag (ev (p + juce::Point<float> (dx, dy) * ((float) k / 4.0f), p, true));
+        sc.mouseUp (ev (p + juce::Point<float> (dx, dy), p, true));
+        fresh();
+    };
+    auto knobTags = [&] { std::vector<int> v; for (int t : sc.testTags()) if (t >= 0) v.push_back (t); return v; };      // (not INFO's box or the line of words)
+    // a knob moved as the E16 moves one (1) or as a sequencer's port does (2): the engine first, then who it was, then the session's record
+    auto fromOutside = [&] (int ctl, float v, int by) { e.set (ctl, v, 0.0); ses.moved (ctl, by); ses.userSet (ctl, v, true); audio (4); };
+    auto find = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc.testHits()) if (is (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+
+    // 1. what the hand can reach, through the eye: each control's place on the window is that control
+    for (int v = 0; v < 3; ++v)
+    {
+        view (v);
+        int all = 0, back = 0, knobs = 0, knobsBack = 0;
+        for (auto& h : sc.testHits())
+        {
+            const auto u = h.r.getCentre();
+            const auto got = st->unitsAt (pt (u));
+            const bool ok = h.r.expanded (1.0f).contains (got);
+            ++all; back += ok ? 1 : 0;
+            if (Screen::testIsKnob (h)) { ++knobs; knobsBack += ok ? 1 : 0; }
+        }
+        static const char* const names[] = { "from above", "the player's view", "from the corner" };
+        // (from the corner a knob's cap hides some of what is behind it, as it would on the bench: the knobs themselves are all in reach)
+        const bool ok = v < 2 ? back >= all - all / 100 : knobsBack >= knobs - knobs / 50;
+        check (all > 300 && ok, juce::String (names[v]) + ": " + juce::String (back) + " of " + juce::String (all) + " controls answer where they are drawn (" + juce::String (knobsBack) + " of " + juce::String (knobs) + " knobs)");
+    }
+
+    // 2. the hand, in the player's view
+    view (1);
+    auto stepKey = [&] (int index) { return find ([index] (const Screen::TestHit& h) { return Screen::testIsStep (h) && h.a == index; }); };
+    click (stepKey (1));
+    check (ses.pattern (7).steps[1].on && ses.selStep == 1, "a tap on a step key lights its step");
+    click (stepKey (1));
+    check (! ses.pattern (7).steps[1].on, "and another puts it out");
+    {
+        const float before = ses.pattern (7).steps[9].on ? ses.pattern (7).steps[9].vel : 0.75f;
+        const auto u = stepKey (9);
+        const auto p0 = pt (u), p1 = st->pointsOf (u.x, u.y - 24.0f, st->heightAt (u.x, u.y));
+        dragPoints (u, p1.x - p0.x, p1.y - p0.y);
+        check (ses.pattern (7).steps[9].on && ses.pattern (7).steps[9].vel > before + 0.2f, "a step dragged up the instrument gets louder (" + juce::String (before, 2) + " to " + juce::String (ses.pattern (7).steps[9].vel, 2) + ")");
+    }
+    {
+        const int mute = cx::lane (2, cx::kMute), solo = cx::lane (4, cx::kSolo);
+        click (find ([mute] (const Screen::TestHit& h) { return Screen::testIsToggle (h, mute); }));
+        check (ses.value (mute) > 0.5f, "a lane's M key mutes it");
+        click (find ([mute] (const Screen::TestHit& h) { return Screen::testIsToggle (h, mute); }));
+        check (ses.value (mute) < 0.5f, "and unmutes it");
+        click (find ([solo] (const Screen::TestHit& h) { return Screen::testIsToggle (h, solo); }));
+        check (ses.value (solo) > 0.5f, "a lane's S key solos it");
+        click (find ([solo] (const Screen::TestHit& h) { return Screen::testIsToggle (h, solo); }));
+    }
+    {
+        const int ctl = cx::lane (0, 5);
+        ses.userSet (ctl, 0.2f); audio (4); fresh();
+        const auto u = find ([ctl] (const Screen::TestHit& h) { return Screen::testIsControl (h, ctl); });
+        const float perUnit = std::min (1296.0f / Screen::kW, 838.0f / Screen::kH);
+        dragPoints (u, 0.0f, -48.0f * perUnit);
+        check (std::abs (ses.value (ctl) - (0.2f + 48.0f / 160.0f)) < 0.01f, "a knob dragged up turns as far as on the flat screen, however near the eye is (" + juce::String (ses.value (ctl), 3) + ")");
+        check (knobTags().empty(), "let go, its tag is gone");
+        const auto p = pt (u);
+        sc.mouseDown (ev (p, p, false)); sc.mouseDrag (ev (p + juce::Point<float> (0.0f, -6.0f), p, true)); sc.testTick();
+        const auto tags = knobTags();
+        check (tags.size() == 1 && tags[0] == ctl && sc.testTagText (ctl).startsWith ("PUNCH|") && sc.testFollowing().isEmpty(), "in the hand, its tag is up with its name and reading (" + sc.testTagText (ctl) + "), and the eye stays where it is");
+        sc.mouseUp (ev (p, p, true)); fresh();
+    }
+    {
+        const bool was = e.isRunning();
+        click (find (Screen::testIsRun));
+        check (e.isRunning() != was, "the RUN key starts and stops it");
+        click (find (Screen::testIsRun));
+    }
+    {
+        click (find ([] (const Screen::TestHit& h) { return Screen::testIsConfigKey (h, 2); }));
+        for (int i = 0; i < 12; ++i) fresh();
+        check (! sc.testConfigRect().isEmpty(), "a lane's C key opens CONFIG");
+        // its knobs are in reach where they are drawn, and the rows cut off by its panel are not
+        int cfgKnobs = 0, cfgBack = 0;
+        for (auto& h : sc.testHits()) if (Screen::testIsConfig (h)) { ++cfgKnobs; cfgBack += h.r.expanded (1.0f).contains (st->unitsAt (pt (h.r.getCentre()))) ? 1 : 0; }
+        check (cfgKnobs > 0 && cfgBack == cfgKnobs, "CONFIG's own controls answer where they are drawn (" + juce::String (cfgBack) + " of " + juce::String (cfgKnobs) + ")");
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey));
+        for (int i = 0; i < 12; ++i) fresh();
+    }
+    {
+        click (find (Screen::testIsLibraryKey));
+        check (sc.testPage() == Screen::pLibrary, "the LIBRARY key turns to the library");
+        const auto img = fresh();
+        check (img.isValid(), "which is drawn on the stage too");
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)); fresh();
+        check (sc.testPage() == Screen::pMain, "and Esc turns back");
+    }
+    {
+        // a name is typed in a small window of its own, over the stage
+        sc.setPage (Screen::pMacros); fresh();
+        sc.testRenameKnob(); pump (50);
+        check (sc.testEditing() && sc.testEditorFloats(), "renaming a snapshot knob opens a box over the stage");
+        sc.testEndEdit ("dawn"); fresh();
+        check (! sc.testEditing() && ses.knobs[0].name == "DAWN", "and what is typed is taken (" + ses.knobs[0].name + ")");
+        sc.setPage (Screen::pMain); fresh();
+    }
+
+    // 3. the sheet: a part of it printed again is the same as all of it printed again
+    {
+        ses.userSet (cx::kTempo, 0.37f); ses.userSet (cx::lane (3, 2), 0.9f, true); audio (30);
+        const auto part = fresh();
+        sc.repaint();
+        const auto whole = fresh();
+        int differ = 0;
+        if (part.isValid() && whole.isValid() && part.getBounds() == whole.getBounds())
+        {
+            const juce::Image::BitmapData a (part, juce::Image::BitmapData::readOnly), c (whole, juce::Image::BitmapData::readOnly);
+            for (int y = 0; y < a.height; ++y) if (std::memcmp (a.getLinePointer (y), c.getLinePointer (y), (size_t) a.width * 4) != 0) ++differ;
+        }
+        else differ = -1;
+        check (differ == 0, "a part of the sheet printed again gives the picture a whole printing gives (" + juce::String (differ) + " rows differ)");
+    }
+
+    // 4. the eye
+    {
+        const auto home0 = st->home();
+        const juce::Point<float> off (20.0f, 20.0f);       // off the instrument: nothing there
+        sc.mouseDown (ev (off, off, false)); sc.mouseDrag (ev (off + juce::Point<float> (80.0f, 30.0f), off, true)); sc.mouseUp (ev (off + juce::Point<float> (80.0f, 30.0f), off, true));
+        check (st->home().turn == home0.turn && st->home().tilt == home0.tilt && sc.eye().locked, "locked, a drag off the controls leaves the view alone");
+        sc.keyPressed (juce::KeyPress ('k', juce::ModifierKeys(), 'k'));
+        sc.mouseDown (ev (off, off, false)); sc.mouseDrag (ev (off + juce::Point<float> (80.0f, 30.0f), off, true)); sc.mouseUp (ev (off + juce::Point<float> (80.0f, 30.0f), off, true));
+        const auto turned = st->home();
+        check (! sc.eye().locked && turned.view == -1 && std::abs (turned.turn - home0.turn) > 5.0f && std::abs (turned.tilt - home0.tilt) > 2.0f, "K unlocks it: the same drag turns the instrument (" + juce::String (turned.turn, 1) + " round, " + juce::String (turned.tilt, 1) + " up)");
+        juce::MouseWheelDetails wheel; wheel.deltaX = 0.0f; wheel.deltaY = 0.5f; wheel.isReversed = false; wheel.isSmooth = false; wheel.isInertial = false;
+        sc.mouseWheelMove (ev (off, off, false), wheel);
+        check (st->home().away < turned.away * 0.95f, "and the wheel brings it nearer");
+        {
+            const int ctl = cx::lane (0, 5);
+            const float was = ses.value (ctl);
+            fresh();
+            const auto p = pt (find ([ctl] (const Screen::TestHit& h) { return Screen::testIsControl (h, ctl); }));
+            sc.mouseWheelMove (ev (p, p, false), wheel);
+            check (ses.value (ctl) > was && st->home().away == sc.eye().pose.away, "over a knob the wheel still turns the knob");
+        }
+        sc.keyPressed (juce::KeyPress ('k', juce::ModifierKeys(), 'k'));
+        check (sc.eye().locked && sc.eye().pose.turn == st->home().turn, "K again locks it where it was put");
+        sc.keyPressed (juce::KeyPress ('v', juce::ModifierKeys(), 'v'));
+        check (st->home().view == 1, "V goes to a view of the whole instrument");
+        sc.keyPressed (juce::KeyPress ('v', juce::ModifierKeys(), 'v'));
+        check (st->home().view == 2, "and V again to the next");
+        view (1);
+    }
+
+    // 5. following: a knob under a hand on the controller, a snapshot, and what must not move the eye
+    {
+        auto restFor = [&] (int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) { audio (4); sc.testTick(); pump (20); } };
+        fresh(); restFor (100);
+        const int ctl = cx::lane (7, 6);
+        const auto laneRect = [&] (int lane) { for (auto& h : sc.testHits()) if (Screen::testIsPanelOf (h, { 0, lane, 0 })) return h.r; return juce::Rectangle<float>(); };
+        fromOutside (ctl, 0.8f, 1); sc.testTick(); sc.testTick();
+        const auto box = sc.testFollowing();
+        check (! box.isEmpty() && box.contains (laneRect (7)) && box.getWidth() < laneRect (7).getWidth() + 40.0f, "a knob turned on the controller: the eye goes to its module (" + box.toString() + ")");
+        check (knobTags().size() == 1 && knobTags()[0] == ctl && sc.testTagText (ctl).startsWith ("CUTOFF|"), "and its tag is up: " + sc.testTagText (ctl));
+        fresh();
+        check (st->isAway(), "the eye has left home");
+        restFor (1500);
+        check (! sc.testFollowing().isEmpty() && knobTags().empty(), "the tag goes; the eye stays a moment longer");
+        restFor (1500);
+        check (sc.testFollowing().isEmpty(), "left alone, it goes home");
+        // a sequencer's own move: nothing
+        const int seq = cx::lane (2, 3);
+        fromOutside (seq, 0.9f, 2); sc.testTick(); sc.testTick();
+        check (sc.testFollowing().isEmpty() && knobTags().empty(), "a knob moved from a sequencer's port moves no eye and raises no tag");
+        // and several of them at once (a sequencer's automation of a whole lane) are still its own
+        for (int k : { 0, 1, 2, 4 }) fromOutside (cx::lane (3, k), 0.6f, 2);
+        sc.testTick(); sc.testTick();
+        check (sc.testFollowing().isEmpty() && knobTags().empty(), "nor do several moved from a sequencer's port at once");
+        // a key (a mute pulsed from the controller): nothing
+        ses.moved (cx::lane (1, cx::kMute), 1); ses.userSet (cx::lane (1, cx::kMute), 1.0f); audio (4); sc.testTick(); sc.testTick();
+        check (sc.testFollowing().isEmpty() && knobTags().empty(), "a key pressed on the controller moves no eye");
+        ses.userSet (cx::lane (1, cx::kMute), 0.0f);
+        // the tempo, under an outside clock: nothing
+        ses.userSet (cx::kTempo, 0.5f); audio (4); sc.testTick(); sc.testTick();
+        check (sc.testFollowing().isEmpty(), "the tempo moving moves no eye");
+        restFor (1000);
+        // several knobs moving together with no hand on them: a snapshot. The eye goes out to hold them all.
+        for (int lane : { 0, 1 }) for (int k : { 1, 4, 6 }) e.set (cx::lane (lane, k), 0.15f + 0.1f * (float) k, 0.0);
+        audio (4); sc.testTick();
+        const auto wide = sc.testFollowing();
+        check (! wide.isEmpty() && wide.contains (laneRect (0)) && wide.contains (laneRect (1)) && ! wide.contains (laneRect (7)), "a snapshot moving two lanes' knobs: the eye goes out to hold both (" + wide.toString() + ")");
+        check (knobTags().empty(), "with no tag on any of them");
+        // FOLLOW off
+        sc.keyPressed (juce::KeyPress ('m', juce::ModifierKeys(), 'm'));
+        restFor (2600);
+        fromOutside (ctl, 0.3f, 1); sc.testTick(); sc.testTick();
+        check (sc.testFollowing().isEmpty() && knobTags().size() == 1, "M: the eye stays home, and the tag still comes up");
+        sc.keyPressed (juce::KeyPress ('m', juce::ModifierKeys(), 'm'));
+        restFor (3200);
+        check (sc.testFollowing().isEmpty(), "M again: it follows again, and with nothing moving it is home");
+    }
+
+    // 6. INFO: the box floats by the pointer
+    {
+        sc.setInfo (true); fresh();
+        const int ctl = cx::lane (6, 3);
+        const auto p = pt (find ([ctl] (const Screen::TestHit& h) { return Screen::testIsControl (h, ctl); }));
+        sc.mouseMove (ev (p, p, false)); sc.testTick();
+        const auto tags = sc.testTags();
+        check (std::find (tags.begin(), tags.end(), -1) != tags.end() && sc.testTip().contains ("RUMBLE"), "INFO: a knob pointed at says what it is, in a box by the pointer");
+        sc.setInfo (false); fresh();
+    }
+
+    // 7. the dark instrument, and back to the lit skin and the flat drawing
+    {
+        const auto light = fresh();
+        if (const auto dump = juce::SystemStats::getEnvironmentVariable ("SF000_STAGETEST_PNG", ""); dump.isNotEmpty())
+        { juce::File f (dump); f.deleteFile(); juce::FileOutputStream out (f); juce::PNGImageFormat png; png.writeImageToStream (light, out); }
+        sc.setDark (true);
+        const auto dark = fresh();
+        const auto mid = pt ({ 700.0f, 38.0f }).roundToInt();       // (bare case, on the top bar)
+        check (light.getPixelAt (mid.x, mid.y).getBrightness() > dark.getPixelAt (mid.x, mid.y).getBrightness() + 0.3f,
+               "D: the dark instrument (the case at " + mid.toString() + ": " + juce::String (light.getPixelAt (mid.x, mid.y).getBrightness(), 2) + " light, " + juce::String (dark.getPixelAt (mid.x, mid.y).getBrightness(), 2) + " dark)");
+        sc.setDark (false);
+        sc.keyPressed (juce::KeyPress ('3', juce::ModifierKeys(), '3'));
+        pump (100);
+        const auto flat = sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.5f);
+        check (! sc.isThree() && ! sc.threeShowing() && flat.getPixelAt (200, 150).getBrightness() > 0.3f, "3: back to the lit skin, drawn as before");
+        sc.keyPressed (juce::KeyPress ('3', juce::ModifierKeys(), '3'));
+        for (int i = 0; i < 400 && sc.isThree() && ! sc.threeShowing(); ++i) pump (25);
+        check (sc.threeShowing(), "3 again: the stage is back");
+        st = sc.stageOrNull();
+        fresh();
+    }
+
+    // 8. how long things take here (a software driver: the frame is no guide to a graphics card; the rest is)
+    {
+        double rec = 1.0e9, printAll = 1.0e9, printPart = 1.0e9, drawn = 0.0, sent = 0.0;
+        for (int i = 0; i < 5; ++i)
+        {
+            auto t0 = juce::Time::getMillisecondCounterHiRes();
+            sc.refreshNow();
+            rec = std::min (rec, juce::Time::getMillisecondCounterHiRes() - t0);
+            sc.repaint();
+            t0 = juce::Time::getMillisecondCounterHiRes();
+            sc.refreshNow();
+            if (juce::Time::getMillisecondCounterHiRes() - t0 < printAll) { printAll = juce::Time::getMillisecondCounterHiRes() - t0; drawn = sc.testPrintMs(); sent = sc.testSendMs(); }
+            ses.userSet (cx::lane (3, 2), 0.1f * (float) (i + 1), true); audio (2); sc.testTick();
+            t0 = juce::Time::getMillisecondCounterHiRes();
+            sc.refreshNow();
+            printPart = std::min (printPart, juce::Time::getMillisecondCounterHiRes() - t0);
+        }
+        (void) fresh();
+        std::printf ("  the screen recorded: %.2f ms; recorded and all of the sheet printed: %.1f ms (drawn %.1f, handed over %.1f); recorded and a knob's part printed: %.2f ms; a frame: %.0f ms\n", rec, printAll, drawn, sent, printPart, st->frameMs());
+    }
+    sc.setThree (false);
+    sc.removeFromDesktop();
+    std::printf (bad == 0 ? "all passed\n" : "%d FAILED\n", bad);
+    return bad == 0 ? 0 : 1;
+}
+
 class MainWindow : public juce::DocumentWindow
 {
 public:
@@ -3248,6 +3617,31 @@ private:
     juce::TextButton check, keep;
 };
 
+#if JUCE_LINUX
+// Only for the Linux build, where the checks run. An X server with no window manager (Xvfb) has never
+// heard the names of the window manager's properties. JUCE then asks about a property with no name,
+// the server answers with an error, and if that answer is read by the OpenGL thread while this thread
+// holds Xlib's lock, each waits for the other for good: one stage test in six stopped dead where the
+// typing window opens. Saying the names first makes the server answer "not set", as on a real desktop.
+// The connection stays open, or a server with no one else on it would forget them again.
+static void nameTheWindowManagersProperties()
+{
+    static juce::DynamicLibrary x11;
+    if (! x11.open ("libX11.so.6")) return;
+    using Open = void* (*) (const char*);
+    using Intern = unsigned long (*) (void*, const char*, int);
+    const auto open = (Open) x11.getFunction ("XOpenDisplay");
+    const auto intern = (Intern) x11.getFunction ("XInternAtom");
+    if (open == nullptr || intern == nullptr) return;
+    if (void* display = open (nullptr))
+        for (const char* name : { "WM_PROTOCOLS", "WM_TAKE_FOCUS", "WM_DELETE_WINDOW", "WM_CHANGE_STATE", "WM_STATE",
+                                  "_NET_WM_PING", "_NET_WM_WINDOW_TYPE", "_NET_WM_WINDOW_TYPE_NORMAL", "_NET_WM_WINDOW_TYPE_COMBO",
+                                  "_NET_WM_STATE", "_NET_WM_STATE_HIDDEN", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_ALLOWED_ACTIONS",
+                                  "_NET_FRAME_EXTENTS", "_NET_WORKAREA", "_MOTIF_WM_HINTS" })
+            intern (display, name, 0);
+}
+#endif
+
 class SF000App : public juce::JUCEApplication
 {
 public:
@@ -3258,6 +3652,9 @@ public:
     void initialise (const juce::String& cmd) override
     {
         const auto args = juce::StringArray::fromTokens (cmd, true);
+       #if JUCE_LINUX
+        nameTheWindowManagersProperties();
+       #endif
         if (args.contains ("--dump")) { dumpModules(); quit(); return; }
         if (args.contains ("--test"))
         {
@@ -3270,6 +3667,7 @@ public:
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
+        if (args.contains ("--stagetest")) { setApplicationReturnValue (stageTest()); quit(); return; }
         if (args.contains ("--onlinetest"))
         {
             const int i = args.indexOf ("--onlinetest");
@@ -3308,18 +3706,43 @@ public:
         // The look last chosen (L: the lit skin or the flat drawing; D: its dark instrument) is kept between runs.
         {
             const juce::var look = juce::JSON::parse (lookFile());
+            // (and the 3D stage: whether it is up, where its eye is kept, whether the view is locked, whether it follows)
+            bool three = true;
+            sf0::Screen::Eye eye;
             if (look.isObject())
             {
                 screen->setLit ((bool) look.getProperty ("lit", true));
                 screen->setDark ((bool) look.getProperty ("dark", false));
+                three = (bool) look.getProperty ("three", true);
+                if (const juce::var v = look.getProperty ("eye", juce::var()); v.isObject())
+                {
+                    auto num = [&v] (const char* name, float def) { const juce::var x = v.getProperty (name, juce::var()); return x.isVoid() ? def : (float) (double) x; };
+                    eye.pose.view = juce::jlimit (-1, 2, (int) num ("view", 1.0f));
+                    eye.pose.turn = juce::jlimit (-180.0f, 180.0f, num ("turn", 0.0f)); eye.pose.tilt = juce::jlimit (6.0f, 89.9f, num ("tilt", 56.0f));
+                    eye.pose.away = juce::jlimit (260.0f, 16000.0f, num ("away", 4000.0f));
+                    eye.pose.tx = num ("x", 0.0f); eye.pose.ty = num ("y", 0.0f); eye.pose.tz = num ("z", 0.0f);
+                    eye.locked = (bool) v.getProperty ("locked", true); eye.follow = (bool) v.getProperty ("follow", true);
+                }
             }
+            screen->setEye (eye);
             screen->onLook = [screen]
             {
                 auto* o = new juce::DynamicObject();
                 o->setProperty ("lit", screen->isLit());
                 o->setProperty ("dark", screen->isDark());
+                o->setProperty ("three", screen->isThree() || screen->threeNote().isNotEmpty());     // (asked for, even if it could not start this time)
+                const auto e = screen->eye();
+                auto* v = new juce::DynamicObject();
+                v->setProperty ("view", e.pose.view); v->setProperty ("turn", e.pose.turn); v->setProperty ("tilt", e.pose.tilt); v->setProperty ("away", e.pose.away);
+                v->setProperty ("x", e.pose.tx); v->setProperty ("y", e.pose.ty); v->setProperty ("z", e.pose.tz);
+                v->setProperty ("locked", e.locked); v->setProperty ("follow", e.follow);
+                o->setProperty ("eye", juce::var (v));
                 lookFile().replaceWithText (juce::JSON::toString (juce::var (o)));
+                // if the 3D stage could not start, why is kept beside the session
+                if (screen->threeNote().isNotEmpty())
+                    lookFile().getSiblingFile ("3d.log").appendText (juce::Time::getCurrentTime().toString (true, true) + "  " + screen->threeNote() + "\n");
             };
+            if (three) screen->setThree (true);
         }
         window = std::make_unique<MainWindow> (screen);
         screen->grabKeyboardFocus();

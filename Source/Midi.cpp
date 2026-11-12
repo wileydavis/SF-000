@@ -450,6 +450,7 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
     for (auto& v : libHeardAt) v = 0;
     for (auto& v : libTurn) v = 0;
     for (auto& v : exLatest) v = -1;
+    for (auto& v : exBy) v = 2;
     for (auto& v : recallHeard) v = -1;
     for (auto& v : recallIn) v = 0;
     ringLast.fill (0); ringSentAt.fill (0.0);
@@ -641,7 +642,7 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     if (ch == e16::kSnapChannel)
     {
         if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; if (val >= 1 && val <= e16::kSnapPage) pageUp = val; return; }
-        if (num == e16::kGlideCc) { glideFromE16 = fromE16; glideIn = val; return; }
+        if (num == e16::kGlideCc) { glideFromE16 = fromE16; glideIn = val; ses.moved (cx::kGlide, fromE16 ? 1 : 2); return; }
         if (num >= e16::kPressCc && num < e16::kPressCc + 16) { if (val >= 64) presses[(size_t) (num - e16::kPressCc)].fetch_add (1); return; }
         if (num >= ccx::kRecall && num < ccx::kRecall + 16)
         {
@@ -652,11 +653,12 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         }
     }
     // (an insert's place is whatever effect is in it when the message thread comes to it)
-    if (const int extra = ccx::extraFor (ch, num); extra >= 0) { exLatest[(size_t) extra] = val; return; }
+    if (const int extra = ccx::extraFor (ch, num); extra >= 0) { exBy[(size_t) extra] = fromE16 ? 1 : 2; exLatest[(size_t) extra] = val; return; }
     const int slot = e16::slotFor (ch, num);
     if (slot < 0) return;
     const int ctl = e16::controlFor (slot);
     if (fromE16) { sent[(size_t) slot] = val; heardAt[(size_t) slot] = juce::Time::getMillisecondCounter(); }
+    ses.moved (ctl, fromE16 ? 1 : 2);           // (who moved it: the 3D stage's eye goes to a hand on the E16, not to a sequencer)
     // A lane's knob is taken up at once, from this thread (and travels over the GLIDE time, if one
     // is set). The session's record of it (the base scene under the snapshot knobs) follows on the
     // message thread, as does a snapshot knob's whole move.
@@ -700,6 +702,7 @@ void Midi::service()
         const int ctl = ccx::controlFor (extra, engine.spaceModel());
         const auto& c = engine.control (ctl);
         if (! c.used) continue;                                 // an empty place
+        ses.moved (ctl, exBy[(size_t) extra].load());
         ses.userSet (ctl, c.kind == Kind::Toggle || c.kind == Kind::Hold ? (v >= 64 ? 1.0f : 0.0f) : e16::from7 (c, v));
     }
     // A page that has just come up is told its values again, a moment after it has settled.

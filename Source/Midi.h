@@ -145,6 +145,7 @@ private:
     int pageNow = 0, pageWait = 0, glideSent = -1;              // message thread
     juce::uint32 glideHeardAt = 0;
     std::array<std::atomic<int>, ccx::kExtras> exLatest;         // the addresses that are not the E16's
+    std::array<std::atomic<int>, ccx::kExtras> exBy;             // and whose port each last came in on (1 the E16's, 2 another)
     std::array<std::atomic<int>, 16> recallHeard, recallIn;     // RECALL: the value last said; the one to act on
     // the library's scene
     std::array<std::atomic<int>, e16::kLibKnobs> libLatest, libSent, libPresses, libTurn;      // libTurn: the clicks turned since last looked at

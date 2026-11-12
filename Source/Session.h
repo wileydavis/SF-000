@@ -57,6 +57,13 @@ public:
 
     Engine& engine;
 
+    // Who last moved each control from outside, and when (the millisecond counter): 1 a hand on
+    // the controller (the E16), 2 something on another port (a sequencer playing it). The 3D
+    // stage's eye goes to the first and not to the second. Written from the MIDI thread.
+    std::array<std::atomic<juce::uint32>, cx::kCount> movedAt;
+    std::array<std::atomic<juce::uint8>, cx::kCount> movedBy;
+    void moved (int ctl, int by) { if (ctl >= 0 && ctl < cx::kCount) { movedBy[(size_t) ctl] = (juce::uint8) by; movedAt[(size_t) ctl] = juce::Time::getMillisecondCounter(); } }
+
     // ---- what the screens show
     int activeLane = 7;
     int selStep = 6;                    // the selected step of the active lane; -1 none

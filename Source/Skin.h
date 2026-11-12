@@ -4,6 +4,7 @@
 // is lit once, from the upper left and a little behind, seen from a little in front of straight
 // above, and kept as a picture; the screen is then put together from the pictures.
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "Parts.h"
 #include <functional>
 #include <map>
 #include <tuple>
@@ -58,6 +59,18 @@ public:
     // (Each keeps its own pictures, so changing over costs nothing after the first time.)
     void setDark (bool on) { dark = on ? 1 : 0; }
 
+    // For the 3D stage the same calls do one of two other things. Recording, each writes down the
+    // solid thing it stands for (and draws nothing). Printing, the solid things draw nothing at
+    // all: only what is printed on them is wanted, and the screen draws that itself.
+    enum class Mode { pictures, record, print };
+    void setMode (Mode m, Parts* into = nullptr) { mode = m; rec = into; }
+    bool recording() const { return mode == Mode::record; }
+    bool printing() const { return mode == Mode::print; }
+    void setClip (const R* r) { clip = Parts::Clip(); if (r != nullptr) clip = { r->getX(), r->getY(), r->getRight(), r->getBottom() }; }      // what is being recorded shows only inside this
+    void setShift (float dx) { shift = dx; }                        // and stands this far to the right of where it is drawn
+    // A knob, whole: which of the engine's controls it shows (or -1), and what is lit if none.
+    void recordKnob (float cx, float cy, int size, int ctl, int kind, int steps, juce::Colour light, float a, float b, float mark);
+
     void body (G&, float w, float h);                               // the case, corner to corner
     void panel (G&, R, juce::Colour ground);                        // a module's plate, in its pocket
     void makePanel (float w, float h, juce::Colour ground);         // its picture made now, ahead of its first showing (a big plate takes a moment)
@@ -82,6 +95,10 @@ private:
     std::map<Key, Pic> pics[2];             // the light instrument's, the dark one's
     juce::Image caseImg[2];
     int dark = 0;
+    Mode mode = Mode::pictures;
+    Parts* rec = nullptr;
+    Parts::Clip clip;
+    float shift = 0.0f;
     float scale = 0.0f, want = 0.0f;
     juce::uint32 wantAt = 0;
 };
