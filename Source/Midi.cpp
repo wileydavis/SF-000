@@ -215,6 +215,12 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
             {
                 naming (d.knobs[p - 1], e.name, e.abbr);
                 e.colour = p <= 8 ? kWhite : p <= 11 ? kRed : kLightBlue;     // as the screen lights them: sound, shape, level
+                if (p == 1)
+                {
+                    // and GLIDE behind a press: the ring turns green while the knob is on GLIDE
+                    e.press = 2; e.channel2 = kSnapChannel; e.number2 = kGlideCc; e.colour2 = kGreen;
+                    e.def2 = to7 (eng.control (cx::kGlide), eng.control (cx::kGlide).def);
+                }
             }
             else if (p == 13) { e.name = "SEND A"; e.abbr = "SNDA"; e.colour = kLightBlue; }
             else if (p == 14) { e.name = "SEND B"; e.abbr = "SNDB"; e.colour = kLightBlue; }
@@ -228,7 +234,7 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
                 e.def2 = to7 (eng.control (mid), eng.control (mid).def);
             }
             encs.push_back (encJson (e, p));
-            map << (p == 16 ? String ("---") : hex (e.channel, e.number));       // a knob that swaps keeps its own ring
+            map << (p == 16 || p == 1 ? String ("---") : hex (e.channel, e.number));     // a knob that swaps keeps its own ring
         }
         pages.push_back (Json::obj ({ { "title", Json::str (codes[l]) }, { "output", "0" }, { "channel", Json::num (l + 1) }, { "encoders", Json::arr (encs) } }));
         focus.add (String (l + 1));
@@ -249,7 +255,7 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
             map << "---";
         }
         pages.push_back (Json::obj ({ { "title", Json::str ("SNAP") }, { "output", "0" }, { "channel", Json::num (kSnapChannel) }, { "encoders", Json::arr (encs) } }));
-        focus.add ("0");
+        focus.add (String (kSnapPage));         // (not a lane: SF-000 leaves the active lane alone, and tells the page its values)
     }
 
     String src = String::fromUTF8 (BinaryData::rings_lua, BinaryData::rings_luaSize).replace ("\r\n", "\n");
@@ -320,6 +326,7 @@ String libraryText()
                 e.channel = kFindChannel; e.number = kKnobCc + p - 1; e.def = 0;
                 e.press = 1; e.pressChannel = kFindChannel; e.pressNumber = kPressCc + p - 1;
             }
+            else if (p == 16) { e.name = "GLIDE"; e.abbr = "GLID"; e.colour = kGreen; e.channel = kSnapChannel; e.number = kGlideCc; e.def = 0; }
             encs.push_back (encJson (e, p));
             map << "---";
         }
@@ -510,6 +517,7 @@ void Midi::scan()
         e16Out = wantId.isNotEmpty() ? juce::MidiOutput::openDevice (wantId) : nullptr;
         e16OutId = e16Out != nullptr ? wantId : String();
         for (auto& v : sent) v = -1;            // a fresh E16 is told every value
+        glideSent = -1;
         ringOn.fill (false);
     }
     {
@@ -567,7 +575,8 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     }
     if (ch == e16::kSnapChannel)
     {
-        if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; return; }
+        if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; if (val >= 1 && val <= e16::kSnapPage) pageUp = val; return; }
+        if (num == e16::kGlideCc) { glideIn = val; return; }
         if (num >= e16::kPressCc && num < e16::kPressCc + 16) { if (val >= 64) presses[(size_t) (num - e16::kPressCc)].fetch_add (1); return; }
     }
     const int slot = e16::slotFor (ch, num);
@@ -607,14 +616,33 @@ void Midi::service()
     for (int k = 0; k < 16; ++k)
         if (presses[(size_t) k].exchange (0) > 0) ses.pressSnapKnob (k);
     if (const int f = focus.exchange (0); f > 0) ses.selectLane (f - 1);
+    const auto now = juce::Time::getMillisecondCounter();
+    // GLIDE from the E16 (knob 1 of a lane's page, pressed; knob 16 of the library's FIND)
+    if (const int g = glideIn.exchange (-1); g >= 0)
+    {
+        ses.userSet (cx::kGlide, e16::from7 (engine.control (cx::kGlide), g));
+        glideSent = g; glideHeardAt = now;
+    }
+    // A page that has just come up is told its values again, a moment after it has settled.
+    if (const int pg = pageUp.exchange (0); pg > 0) { pageNow = pg; pageWait = 2; }
+    if (pageWait > 0 && --pageWait == 0)
+    {
+        const int first = (pageNow - 1) * e16::kPerLane, count = pageNow == e16::kSnapPage ? 16 : e16::kPerLane;
+        for (int k = 0; k < count && first + k < e16::kSlots; ++k) sent[(size_t) (first + k)] = -1;
+        glideSent = -1;
+    }
     serviceLibrary();
 
     if (! toE16 && e16Out == nullptr) return;
     // The E16's rings follow the rig: a value that changed here (a recall, the mouse, a snapshot
     // knob's push) is sent to its address. A knob the hand is on is left alone for a moment.
-    const auto now = juce::Time::getMillisecondCounter();
-    for (int slot = 0; slot < e16::kSlots; ++slot)
+    // No more than a couple of dozen at a time (a fresh E16 is told some two hundred, and a burst
+    // of that size can be more than it takes in), the page that is up first.
+    int room = 24;
+    const int from = pageNow > 0 ? (pageNow - 1) * e16::kPerLane : 0;
+    for (int k = 0; k < e16::kSlots && room > 0; ++k)
     {
+        const int slot = (from + k) % e16::kSlots;
         const int ctl = e16::controlFor (slot);
         const int want = e16::to7 (engine.control (ctl), engine.target (ctl));
         if (want == sent[(size_t) slot].load() || now - heardAt[(size_t) slot].load() < 150u) continue;
@@ -622,6 +650,12 @@ void Midi::service()
         e16::addressOf (slot, ch, num);
         sendE16 (juce::MidiMessage::controllerEvent (ch, num, want));
         sent[(size_t) slot] = want;
+        --room;
+    }
+    if (const int want = e16::to7 (engine.control (cx::kGlide), engine.target (cx::kGlide)); want != glideSent && now - glideHeardAt >= 150u)
+    {
+        sendE16 (juce::MidiMessage::controllerEvent (e16::kSnapChannel, e16::kGlideCc, want));
+        glideSent = want;
     }
     rings (juce::Time::getMillisecondCounterHiRes());
 }

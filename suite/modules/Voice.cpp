@@ -107,6 +107,7 @@ public:
         const float choirCal = cal::gain (cal::voiceChoir);
         const float phraseCal = smp != nullptr ? cal::at (cal::voice, model) : 1.0f;
         for (int k = 0; k < 2; ++k) { radio[k].set (300.0f * (1.0f - sig * 0.6f), 0.7f, sr); radioHi[k].set (2200.0f + sig * 9000.0f, 0.7f, sr); }
+        carUp = 1.0f - std::exp (-1.0f / (0.005f * (float) sr)); carDown = 1.0f - std::exp (-1.0f / (0.35f * (float) sr));
         const double echoBeats = divisionBeats (c.ci (ECHOTIME), divIndex ("1 BAR"));
         const float echoD = (float) std::min (echoBeats * c.samplesPerBeat(), sr * 8.5);
         const float echoAmt = c.v (ECHO), echoFb = c.v (ECHOFB) * 0.95f;
@@ -247,9 +248,13 @@ private:
 
     float radioChain (float x, float sig)
     {
+        // [SF-000] The hiss rides on the level of the voice (up in 5 ms, down over a third of a
+        // second): with nothing said there is no transmission, and the lane is silent.
+        const float in = std::abs (x);
+        radioOn += (in > radioOn ? carUp : carDown) * (in - radioOn);
         x = radioHi[0].tickLP (radio[0].tickHP (x));
         x = fastTanh (x * (2.5f - sig * 1.5f)) * 0.8f;
-        return x + rng.next() * 0.01f * (1.0f - sig);
+        return x + rng.next() * 0.01f * (1.0f - sig) * std::min (1.0f, radioOn * 20.0f);
     }
 
     float vocode (float x, int model, float carrierHz, float sig)
@@ -307,6 +312,7 @@ private:
     Play play;
     std::array<ChoirVoice, 6> choir;
     Svf ana[kVb], car[kVb], radio[2], radioHi[2], echoLp[2];
+    float radioOn = 0.0f, carUp = 1.0f, carDown = 1.0f;      // [SF-000] the RADIO model's hiss follows the voice
     Follower fol[kVb];
     DelayLine echoLine[2];
     Noise rng;

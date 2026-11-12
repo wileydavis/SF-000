@@ -5,7 +5,8 @@
 -- again. Turn a travelling knob and the ring shows your hand for a moment. The knobs themselves are
 -- the scene's plain CC knobs: if this script stops, the rings show the knobs' values as before.
 -- LANE FOCUS: a lane's page that comes up sends that lane's number (CC 119 on channel 16, to every
--- output, as the knobs send) and SF-000 makes it the active lane. The snapshot page sends nothing.
+-- output, as the knobs send) and SF-000 makes it the active lane. The snapshot page sends 12: no
+-- lane's number, so the active lane stays. Either way SF-000 tells the page its values again.
 --
 -- SF-000 reports the travelling knobs as SysEx:
 --   F0 7D 53 46 01 {channel-1, number, value / 128, value % 128} ... F7   where the sound is (0-16383)

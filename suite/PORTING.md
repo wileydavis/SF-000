@@ -20,3 +20,7 @@ and master stage (see `Source/Rig.h` and `Source/Engine.cpp`), so the sound, the
 and the 30 ms smoothing are the suite's.
 
 To take newer suite code: copy the three folders again and re-apply the changes above.
+- `modules/FxColor.cpp` (RADIO) and `modules/Voice.cpp` (the RADIO model): the hiss, and RADIO's
+  dropouts and squeals, ride on the level of the signal (all of it from -26 dBFS up, none with
+  nothing; up in 5 ms, down over about a third of a second). In Live a silent track's devices are put to sleep; here everything always runs, and a
+  lane that was not playing hissed and chirped on its own. Marked `[SF-000]`.

@@ -720,6 +720,28 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
+    // Stopped, the rig is silent. The lead's RADIO (and the VOICE's own) used to hiss on with nothing
+    // playing, and the radio's receiver chirped to itself; now the static rides on the lane's sound.
+    {
+        Engine e;
+        e.prepare (48000.0, 128);
+        juce::AudioBuffer<float> b (2, 128);
+        auto peakOver = [&] (double seconds) { float pk = 0.0f; for (int k = 0; k < (int) (seconds * 48000.0 / 128.0); ++k) { e.render (b); pk = std::max (pk, b.getMagnitude (0, 128)); } return pk; };
+        auto db = [] (float x) { return juce::Decibels::gainToDecibels (x, -160.0f); };
+        const float cold = peakOver (4.0);
+        e.setRunning (true);
+        const float playing = peakOver (8.0);
+        e.setRunning (false);
+        peakOver (10.0);                                        // the echoes and the reverb die away, the static with them
+        const float soon = peakOver (2.0);
+        peakOver (16.0);
+        const float after = peakOver (2.0);
+        const bool quiet = cold < 1.0e-5f && playing > 0.1f && soon < 3.0e-3f && after < 1.0e-4f;
+        std::printf ("  %s: stopped, the rig is silent: %.0f dBFS before anything has played; after it stops the tails die away, the static with them (%.0f dBFS ten seconds on, %.0f dBFS half a minute on; playing peaks at %.1f)\n",
+                     quiet ? "ok  " : "FAIL", db (cold), db (soon), db (after), db (playing));
+        if (! quiet) ++bad;
+    }
+
     // The kick alone: its first hit lands on the same sample whatever the block size.
     int on[4] = { -1, -1, -1, -1 }; const int blocks[4] = { 64, 100, 512, 1024 };
     for (int k = 0; k < 4; ++k) run (blocks[k], 1, nullptr, 0, nullptr, nullptr, nullptr, &on[k]);
@@ -2118,10 +2140,43 @@ static int midiTest()
         auto ccOut = [&] (int ch, int num) { int v = -1; for (auto& m : out) if (m.isController() && m.getChannel() == ch && m.getControllerNumber() == num) v = m.getControllerValue(); return v; };
 
         midi.service();
+        const int firstGo = (int) out.size();
+        for (int k = 0; k < 12; ++k) midi.service();
         std::set<int> told;
         for (auto& m : out) if (m.isController()) told.insert (m.getChannel() * 128 + m.getControllerNumber());
-        check ((int) told.size() == e16::kSlots + e16::kLibKnobs && (int) out.size() == e16::kSlots + e16::kLibKnobs,
-               "a fresh E16 is told every value once (" + juce::String ((int) out.size()) + " messages: " + juce::String (e16::kSlots) + " knobs and the library scene's " + juce::String (e16::kLibKnobs) + " rings)");
+        const int all = e16::kSlots + e16::kLibKnobs + 1;
+        check ((int) told.size() == all && (int) out.size() == all && firstGo <= 24 + e16::kLibKnobs + 1,
+               "a fresh E16 is told every value once (" + juce::String ((int) out.size()) + " messages: " + juce::String (e16::kSlots) + " knobs, GLIDE and the library scene's "
+               + juce::String (e16::kLibKnobs) + " rings), two dozen knobs at a time (" + juce::String (firstGo) + " in the first go)");
+        out.clear();
+
+        // a page that comes up is told its sixteen values again, whatever the E16 made of them meanwhile
+        midi.incoming (cc (16, 119, 6), true);
+        for (int k = 0; k < 4; ++k) midi.service();
+        std::set<int> again;
+        for (auto& m : out) if (m.isController() && m.getChannel() == 6) again.insert (m.getControllerNumber());
+        const bool lanePage = again.size() == 17 && *again.begin() == 12 && *again.rbegin() == 28 && ccOut (16, 30) >= 0 && ses.activeLane == 5;
+        out.clear();
+        const int laneWas = ses.activeLane;
+        midi.incoming (cc (16, 119, 12), true);
+        for (int k = 0; k < 4; ++k) midi.service();
+        std::set<int> snaps;
+        for (auto& m : out) if (m.isController() && m.getChannel() == 16 && m.getControllerNumber() >= 12 && m.getControllerNumber() < 28) snaps.insert (m.getControllerNumber());
+        check (lanePage && snaps.size() == 16 && ses.activeLane == laneWas,
+               "a page that comes up is told its values again (the bass's sixteen knobs, MID and GLIDE; the snapshot page its sixteen), so a knob's first turn starts where the rig is");
+        out.clear();
+        midi.incoming (cc (16, 119, 1), true); midi.service(); midi.service(); midi.service(); out.clear();
+
+        // GLIDE from the E16 (knob 1 of a lane's page, pressed), and back to it from the screen
+        const float glideWas = e.target (cx::kGlide);
+        midi.incoming (cc (16, 30, 64), true);
+        midi.service();
+        const bool fromE16 = std::abs (e.target (cx::kGlide) - 64.0f / 127.0f) < 1.0e-6f && out.empty();
+        ses.userSet (cx::kGlide, glideWas);
+        juce::Thread::sleep (160);
+        midi.service();
+        check (fromE16 && ccOut (16, 30) == e16::to7 (e.control (cx::kGlide), glideWas) && out.size() == 1,
+               "GLIDE is turned from the E16 (CC 30 on channel 16) with nothing sent back, and a GLIDE set on the screen is sent to it");
         out.clear();
 
         const int tune = cx::lane (0, 0), punch = cx::lane (0, 5);
@@ -2147,6 +2202,7 @@ static int midiTest()
         midi.incoming (cc (16, 119, 3), true);
         midi.service();
         check (ses.activeLane == 2, "the E16 turned to page 3 makes OPEN HAT the active lane");
+        midi.service(); midi.service();             // (the page is told its values again: not what the next checks count)
 
         // a snapshot knob from the E16: it pushes the rig, and the pushed knobs' places go back out
         out.clear();

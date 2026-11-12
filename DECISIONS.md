@@ -614,6 +614,26 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      now and then (142 found one cause; this is the other). For that check the clock is the time
      rendered. One engine, as the app has, is not touched by any of this.
 
+## Sixteenth build (Nov 11): from the first night on the E16 and the ONE
+
+166. **A knob's first turn no longer jumps** (you: the E16 should start where the rig is). I could
+     not see from here why the values sent when the E16 was plugged in did not all hold, so both
+     likely causes are dealt with: a page that comes up (or a scene that loads) is told its
+     sixteen values again, and the two hundred a newly plugged-in E16 is told go two dozen at a
+     time, not in one burst. The snapshot page now says when it comes up too (12).
+167. **GLIDE is a press on knob 1, on every lane's page** (you: it worked that way in the suite's
+     scene, as SLOW). One address for all of them. Knob 1 keeps its own ring for it, so the
+     lane's first knob no longer shows a travelling ring. The snapshot page has no press to
+     spare; the library scene has GLIDE as knob 16 of FIND. *proposed*, the last two.
+168. **Static rides on the sound** (you: the lead and the voice hissed on when stopped, and the
+     lead chirped like birds). The lead's RADIO, and the VOICE's RADIO model, added their hiss
+     whether or not anything was playing, and the radio's dropouts squealed on their own. In Live
+     a silent track's devices are put to sleep, which hid it. Now the hiss follows the level of
+     what is coming in, and a dropout needs a signal to drop: a lane that is not playing is
+     silent, and after a stop the static dies away with the echoes. NOISE, DROPOUT and SQUELCH do
+     what they did while the lane plays. The change is in SF-000's copy of the suite
+     (`suite/PORTING.md`); the suite's own repo is untouched.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -635,4 +655,8 @@ same: a clip kept at every save, and a profile from the clip and from what the r
 - The crossings (fifteenth) are checked for where they stand in time, that both sides run and are
   let go, and that the lane's sound has no step or gap in it. How a crossing sounds, between
   which effects and models it is musical and between which it is merely smooth, needs your ears.
+- The sixteenth build's E16 changes are checked against made-up messages and a mock E16, not the
+  thing itself: whether a knob's first turn still jumps, and whether the press on knob 1 swaps to
+  GLIDE as the scene file says, need the hardware. Both scenes must be loaded onto the E16 again.
+  ONLINE's https from the Mac has since been reported working (a snapshot arrived).
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

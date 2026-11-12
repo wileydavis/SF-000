@@ -210,9 +210,19 @@ public:
         const float sqTop = juce::jlimit (700.0f, 4200.0f, hi);                     // the squeal starts at the band's top
         const float breathNorm = 6.0f * std::sqrt ((float) sr / 48000.0f);         // white noise per Hz, any rate
         const float invN = 1.0f / (float) c.n;
+        // [SF-000] The carrier: there is a transmission only while something is being sent. The hiss
+        // rides on the level of what comes in (all of it from -26 dBFS up, less below, none with
+        // nothing) and dropouts, with their squeals, happen only while there is a signal to drop.
+        // So a lane that is not playing is silent, not a bed of static with a receiver chirping to
+        // itself, and the hiss dies away with an echo's tail. It rises in 5 ms and falls over about
+        // a third of a second, so it carries through the gaps between notes.
+        const float carUp = 1.0f - std::exp (-1.0f / (0.005f * (float) sr)), carDown = 1.0f - std::exp (-1.0f / (0.35f * (float) sr));
         for (int i = 0; i < c.n; ++i)
         {
-            if (dropLeft <= 0 && rng.uni() < dropProb)
+            const float in = std::max (std::abs (io.getSample (0, i)), std::abs (io.getSample (1, i)));
+            carEnv += (in > carEnv ? carUp : carDown) * (in - carEnv);
+            const float carrier = std::min (1.0f, carEnv * 20.0f);
+            if (dropLeft <= 0 && carrier > 0.3f && rng.uni() < dropProb)
             {
                 dropLeft = (int) ((0.02 + rng.uni() * 0.13) * sr);
                 sqAt = std::min (dropLeft / 2, (int) (0.03 * sr));                  // the squeal leads the signal back in
@@ -245,7 +255,7 @@ public:
                 x = bp[k][3].tickLP (bp[k][2].tickLP (x));
                 x = fastTanh (x * (2.0f - sig)) * rm;
                 if (bits < 32000.0f) x = std::round (x * bits) / bits;
-                x = x * g2 + rng.next() * noiseAmt + squeal;
+                x = x * g2 + rng.next() * noiseAmt * carrier + squeal;
                 io.setSample (k, i, dry * (1.0f - mix) + x * mix);
             }
         }
@@ -315,6 +325,7 @@ private:
     Noise rng;
     int dropLeft = 0, sqAt = -1;
     float g1 = 1.0f, g2 = 1.0f, ringPh = 0.0f, holdCount = 0.0f, held[2] {};
+    float carEnv = 0.0f;                            // [SF-000] the level of what is being sent
     std::atomic<float> dispDrop { 1.0f };
 };
 ModulePtr makeRADIO() { return std::make_unique<RadioModule>(); }

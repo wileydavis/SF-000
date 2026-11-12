@@ -220,13 +220,17 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
   knob holds the snapshots in its square. **Turn** it to go through them, each heard in the
   headphones in time with the set; **press** it and that one is recalled to the set, over the
   GLIDE time. Page 2 is **FIND**: RECENT (the newest first), FITS NOW (nearest in sound to what is
-  playing), MORE and LESS (a step up or down in energy from what is playing, nearest step first).
-  A ring shows where its knob is among what it holds; an empty square's ring sits at nought.
+  playing), MORE and LESS (a step up or down in energy from what is playing, nearest step first),
+  and knob 16 is GLIDE. A ring shows where its knob is among what it holds; an empty square's
+  ring sits at nought.
 - **The E16.** Load `controllers/e16/SF-000.oxie16` (see `controllers/e16/README.md`). Pages 1-11
   are the lanes: the twelve knobs where the screen has them, then SEND A, SEND B, LOW and HIGH. Press
-  knob 16 and it is MID (its ring turns pink); press again for HIGH. Page 12 is the sixteen snapshot
-  knobs; a press recalls that knob's nearest snapshot. Turning to a lane's page makes it the active
-  lane on the screen. The rings follow the rig, and a travelling knob's ring walks green.
+  knob 16 and it is MID (its ring turns pink); press again for HIGH. Press knob 1 and it is GLIDE
+  (its ring turns green), the same GLIDE on every lane's page; press again for the lane's first
+  knob. Page 12 is the sixteen snapshot knobs; a press recalls that knob's nearest snapshot.
+  Turning to a lane's page makes it the active lane on the screen. The rings follow the rig, and a
+  travelling knob's ring walks green. A page that comes up is told its values again, so a knob's
+  first turn starts where the rig is.
 
 ## Checks
 

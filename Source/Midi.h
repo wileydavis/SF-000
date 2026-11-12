@@ -19,6 +19,13 @@ namespace e16
     // (127 down, 0 up): the knob's nearest snapshot is recalled. A lane's page coming up sends
     // CC 119 on channel 16 with the lane's number, and that lane becomes the active one.
     constexpr int kKnobCc = 12, kMidCc = 28, kSnapChannel = 16, kPressCc = 44, kFocusCc = 119;
+    // GLIDE, from any lane's page: a press on knob 1 swaps it to GLIDE (its ring green) and back,
+    // as the suite's scene had SLOW. One address for all of them: CC 30 on channel 16. (The
+    // snapshot page's presses recall; the library scene has GLIDE as knob 16 of FIND.)
+    // A page that comes up says so (CC 119 on channel 16: a lane's number, 12 for the snapshot
+    // page), and is told its sixteen values again: whatever the E16 made of them while the page
+    // was away, the knobs start where the rig is.
+    constexpr int kGlideCc = 30, kSnapPage = 12;
     // The library's scene (a second one: a scene has twelve pages and the first uses them all).
     // Page 1 is the map, on channel 15: the E16's grid is the library laid out by sound, energy up
     // the rows (the bottom row calm, the top row peak) and brightness along them (dark at the
@@ -104,6 +111,9 @@ private:
     std::array<std::atomic<juce::uint32>, e16::kSlots> heardAt;
     std::array<std::atomic<int>, 16> presses;
     std::atomic<int> focus { 0 };
+    std::atomic<int> pageUp { 0 }, glideIn { -1 };
+    int pageNow = 0, pageWait = 0, glideSent = -1;              // message thread
+    juce::uint32 glideHeardAt = 0;
     // the library's scene
     std::array<std::atomic<int>, e16::kLibKnobs> libLatest, libSent, libPresses;
     std::array<std::atomic<juce::uint32>, e16::kLibKnobs> libHeardAt;

@@ -31,8 +31,15 @@ pages 1-11: a lane each (KCK CHH OHH CLP PRC BAS RMB LED CRD PAD VOX), on the la
 page 12: SNAP, the sixteen snapshot knobs (violet), on channel 16. Press: recall.
 ```
 
+- **Knob 1, pressed, is GLIDE** on every lane's page: its ring turns green and it sets how long
+  knobs and recalls travel (OFF at the bottom, 256 bars at the top). A press swaps it back to the
+  lane's first knob. It is one GLIDE whichever page it is turned on. (On the snapshot page a
+  press recalls, so GLIDE is not there; the library scene has it as knob 16 of FIND.)
 - **Knob 16** is HIGH. A press swaps it to MID and its ring turns pink; a press swaps it back. The
   E16 does this itself (Swap Destination) and keeps a value for each.
+- **A page that comes up is told its values.** When you turn to a page (or the scene loads), SF-000
+  sends that page's sixteen values again, so a knob's first turn starts where the rig is and does
+  not jump. A newly plugged-in E16 is told every page's, a couple of dozen at a time.
 - **A snapshot knob's press** recalls the snapshot the knob is nearest to as the new base, and the
   knob goes back to zero, as a double-click on the screen does.
 - **Turning to a lane's page** makes that lane the active one on the screen (its inserts, its
@@ -40,7 +47,8 @@ page 12: SNAP, the sixteen snapshot knobs (violet), on channel 16. Press: recall
   E16's page.
 - **Rings.** A value changed on the screen, by a recall or by a snapshot knob is sent to its knob.
   While a knob travels (GLIDE), its ring is green and walks with the sound; turn it and the ring
-  shows your hand for a moment. Knob 16 keeps its own ring (the script cannot tell HIGH from MID).
+  shows your hand for a moment. Knobs 1 and 16 keep their own rings (the script cannot tell which
+  of a swapping knob's two is up).
 
 ## Addresses
 
@@ -50,7 +58,8 @@ page 12: SNAP, the sixteen snapshot knobs (violet), on channel 16. Press: recall
 | MID (knob 16 swapped) | the lane's number | CC 28 |
 | a snapshot knob p | 16 | CC 11 + p (12-27) |
 | a snapshot knob's press | 16 | CC 43 + p (44-59), 127 down and 0 up |
-| the page that came up | 16 | CC 119, value the lane's number |
+| GLIDE (knob 1 swapped, on any lane's page) | 16 | CC 30 |
+| the page that came up | 16 | CC 119, value the lane's number (12: the snapshot page) |
 
 A knob with a centre (TUNE, FILTER, LOW, MID, HIGH) is centred at 64 exactly.
 
@@ -79,7 +88,7 @@ page 1: MAP, on channel 15. The grid is the library by sound:
         DRIVE DK  WM  CL  BR      columns: dark, warm, clear, bright
         EASY  DK  WM  CL  BR      (ring colours: red, pink, light blue, white)
         CALM  DK  WM  CL  BR
-page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS
+page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 pages 3-12: empty
 ```
 

@@ -67,6 +67,9 @@ for n, page in enumerate(scene["pages"][:11], 1):
             ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == n and t2["nr1"] == 28 and e["color2"] == PINK
             ok = ok and t["defaultValue"] == 64 and t2["defaultValue"] == 64 and e["name"] == "HIGH/MID"
             seen[(n, 28)] = seen.get((n, 28), 0) + 1
+        elif p == 1:
+            # GLIDE behind a press on knob 1 of every lane's page: one address for all of them
+            ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == 16 and t2["nr1"] == 30 and e["color2"] == GREEN
         else:
             ok = ok and push["type"] == 0 and t2 == TURN_OFF and e["color2"] == 0
     names.append(", ".join(f'{e["name"]} ({e["abbr"]})' for e in page["encoders"][:12]))
@@ -174,7 +177,7 @@ check(e.E.rate == 50 and e.sent() == [(0, 15, 119, 1)], "the scene opens on the 
 e.goto(8)
 check(e.sent() == [(0, 15, 119, 8)], "turned to page 8: LEAD's number is sent")
 e.goto(12)
-check(e.sent() == [], "turned to the snapshot page: nothing is sent, the active lane stays")
+check(e.sent() == [(0, 15, 119, 12)], "turned to the snapshot page: it says 12 (no lane's number: the active lane stays, and the page is told its values)")
 e.goto(1)
 e.sent()
 e.move((1, 13, 9000), (1, 21, 7000))
@@ -196,8 +199,8 @@ e.goto(9)
 check(e.rings() == {}, "a page change hands every ring back")
 quiet = E16(send=False)
 quiet.goto(3)
-quiet.move((3, 12, 500))
-check(quiet.rings() == {1: (500, GREEN)}, "firmware without the script's MIDI out: no page number is sent, the rings still work")
+quiet.move((3, 12, 500), (3, 13, 500))
+check(quiet.rings() == {2: (500, GREEN)}, "firmware without the script's MIDI out: no page number is sent, the rings still work (knob 1 swaps to GLIDE, so it keeps its own ring)")
 
 if os.path.exists(rings_path):
     msgs = [bytes.fromhex(line) for line in open(rings_path).read().split() if line]
@@ -238,13 +241,15 @@ if os.path.exists(lib_path):
     ok = ok and find["title"] == "FIND" and [e["name"] for e in find["encoders"][:4]] == ["RECENT", "FITS NOW", "MORE", "LESS"]
     ok = ok and all(e["turn_actions"][0]["channel"] == 14 and e["turn_actions"][0]["nr1"] == 12 + i and e["push_action"]["nr1"] == 44 + i
                     for i, e in enumerate(find["encoders"][:4]))
-    ok = ok and all(e["turn_actions"][0]["type"] == 0 and e["push_action"]["type"] == 0 for e in find["encoders"][4:])
+    ok = ok and all(e["turn_actions"][0]["type"] == 0 and e["push_action"]["type"] == 0 for e in find["encoders"][4:15])
+    glide = find["encoders"][15]
+    ok = ok and glide["name"] == "GLIDE" and glide["turn_actions"][0]["type"] == 3 and glide["turn_actions"][0]["channel"] == 16 and glide["turn_actions"][0]["nr1"] == 30 and glide["push_action"]["type"] == 0
     ok = ok and all(e["turn_actions"][0]["type"] == 0 for p in lib["pages"][2:] for e in p["encoders"])
     used = {(e["turn_actions"][0]["channel"], e["turn_actions"][0]["nr1"]) for e in encs if e["turn_actions"][0]["type"] == 3}
     mine = {(t["channel"], t["nr1"]) for p in scene["pages"] for e in p["encoders"] for t in e["turn_actions"] if t["type"] == 3}
-    ok = ok and not (used & mine) and lib["code"]["scriptName"] == scene["code"]["scriptName"]
-    check(ok, f"{os.path.basename(lib_path)}: the same form; MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), "
-              f"ten empty pages, and no address the first scene uses")
+    ok = ok and (used & mine) == {(16, 30)} and lib["code"]["scriptName"] == scene["code"]["scriptName"]
+    check(ok, f"{os.path.basename(lib_path)}: the same form; MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), GLIDE as FIND's knob 16, "
+              f"ten empty pages, and no address the first scene uses but GLIDE's")
 else:
     check(False, f"{os.path.basename(lib_path)} is missing")
 
