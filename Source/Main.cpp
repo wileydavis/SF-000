@@ -8,6 +8,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "core/Processor.h"
 #include "core/Registry.h"
+#include "core/Bus.h"
 #include "Screen.h"
 #include "Midi.h"
 #include "Recorder.h"
@@ -351,17 +352,160 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         if (! arrived) ++bad;
     }
 
+    // A recall crosses over what cannot travel. An effect put in or taken out, a model, a menu: the
+    // one that was there carries on as it is and fades out over the GLIDE time while the new one
+    // arrives beside it. What can travel still travels, the knobs of an effect that stays among them.
+    {
+        struct Tap : Engine::RecSink
+        {
+            int want = 0; std::vector<float> x;
+            void begin (int) noexcept override {}
+            void track (int index, const float* l, const float*, int n) noexcept override { if (index == want) x.insert (x.end(), l, l + n); }
+            void end (int) noexcept override {}
+        };
+        Engine e;
+        e.prepare (48000.0, 128);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, 128);
+        const double perBar = 4.0 * 60.0 / e.tempo() * 48000.0;
+        auto bars = [&] (double n) { const int blocks = (int) (n * perBar / 128.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+        auto jump = [] (const std::vector<float>& x, size_t from, size_t to) { float m = 0.0f; for (size_t i = std::max<size_t> (1, from); i < std::min (to, x.size()); ++i) m = std::max (m, std::abs (x[i] - x[i - 1])); return m; };
+        const int steps = e.control (cx::kGlide).steps();
+        for (int i = 0; i < steps; ++i) if (glideBarsFor ((float) i / (float) (steps - 1)) == 2.0) ses.userSet (cx::kGlide, (float) i / (float) (steps - 1));
+        for (int k = 0; k < 400; ++k) e.render (b);
+        e.setRunning (true);
+        bars (2.0);
+
+        // -- effects: the lead comes with DELAY and RADIO; another state has DISTORTION in the delay's place and no radio
+        const auto withDelay = ses.take();
+        e.setInsertType (7, 0, 3);
+        e.setInsertType (7, 1, -1);
+        bars (0.5);
+        const auto withDist = ses.take();
+        ses.finishTakes (true);
+        ses.recall (withDelay);
+        bars (3.5); e.tidy(); bars (0.1); e.tidy();
+        const bool settled = e.leaving() == 0 && e.insertType (7, 0) == 0 && e.insertType (7, 1) == 5;
+        Tap tap; tap.want = 1 + 7;
+        e.setRecSink (&tap);
+        bars (2.0);
+        const size_t at = tap.x.size();
+        ses.recall (withDist);
+        const bool both = e.leaving() == 2 && e.insertType (7, 0) == 3 && e.insertType (7, 1) == -1;
+        bars (1.25);
+        const float mid = e.fadeShown (7, 0), midB = e.fadeShown (7, 1);
+        bars (1.25);
+        const float done = e.fadeShown (7, 0);
+        const size_t after = tap.x.size();
+        e.tidy(); bars (0.1); e.tidy();
+        const float calm = jump (tap.x, 0, at), across = jump (tap.x, at, after);
+        e.setRecSink (nullptr);
+        const bool crossed = settled && both && mid > 0.3f && mid < 0.7f && std::abs (mid - midB) < 1.0e-6f && done == 1.0f && e.leaving() == 0 && across < calm * 2.0f + 0.01f;
+        std::printf ("  %s: a recall that changes a lane's effects crosses them over the GLIDE time: both run, half way after a bar and a beat (%.2f), done in two bars and a beat, the old ones let go, and no step in the lane's sound (largest %.3f, against %.3f before)\n",
+                     crossed ? "ok  " : "FAIL", mid, across, calm);
+        if (! crossed) ++bad;
+
+        // -- an effect that stays: its knobs travel
+        const int fb = cx::ins (7, 0, 1);                           // the distortion's CHARACTER
+        ses.userSet (fb, 0.2f); bars (3.0);
+        const auto low = ses.take();
+        ses.userSet (fb, 0.9f); bars (3.0);
+        const auto high = ses.take();
+        ses.finishTakes (true);
+        ses.recall (low);
+        const int none = e.leaving();
+        bars (1.25);
+        const float part = e.shown (fb);
+        bars (1.5);
+        const bool travelled = none == 0 && part > 0.3f && part < 0.8f && std::abs (e.shown (fb) - 0.2f) < 1.0e-4f;
+        juce::ignoreUnused (high);
+
+        // -- the instrument: a model changed in CONFIG, a menu turned, and a knob that only travels
+        Tap kick; kick.want = 1;
+        auto st = e.getSetup ({ 0, 0, 0 });
+        const auto first = st;
+        for (auto& kv : st) if (kv.first == "model") kv.second = kv.second < 0.5f ? 1.0f : 0.0f;
+        const auto plain = ses.take();                              // the kick as it comes
+        e.setRecSink (&kick);
+        bars (2.0);
+        const size_t kA = kick.x.size();                            // (two bars of the one model, then two of the other)
+        e.applySetup ({ 0, 0, 0 }, st);
+        bars (0.5);
+        const auto otherModel = ses.take();
+        ses.finishTakes (true);
+        bars (2.0);
+        const size_t k0 = kick.x.size();
+        ses.recall (plain);
+        const bool forked = e.leaving() == 1;
+        bars (1.25);
+        const float vmid = e.fadeShown (0, kSlots);
+        bars (1.5);
+        const size_t k1 = kick.x.size();
+        e.tidy(); bars (0.1); e.tidy();
+        e.setRecSink (nullptr);
+        bool back = e.leaving() == 0 && e.fadeShown (0, kSlots) == 1.0f;
+        for (auto& kv : e.getSetup ({ 0, 0, 0 })) for (auto& was : first) if (kv.first == was.first) back = back && std::abs (kv.second - was.second) < 1.0e-4f;
+        // every beat of the crossing has its kick: neither silence nor a doubled hit
+        // every beat of the crossing has its kick, between the two models' own levels: neither a gap nor a doubled hit
+        float least = 10.0f, most = 0.0f, one = 0.0f, other = 0.0f;
+        const size_t beat = (size_t) (perBar / 4.0);
+        auto peaks = [&] (size_t from, size_t to, float& lo, float& hi)
+        {
+            for (size_t p = from; p + beat <= to; p += beat) { float pk = 0.0f; for (size_t i = p; i < p + beat; ++i) pk = std::max (pk, std::abs (kick.x[i])); lo = std::min (lo, pk); hi = std::max (hi, pk); }
+        };
+        float skip = 10.0f;
+        peaks (0, kA, skip, one);
+        peaks (k0 - 2 * (size_t) perBar, k0, skip, other);
+        peaks (k0, k1, least, most);
+        const float usual = std::max (one, other), quiet = std::min (one, other);
+        const bool steady = quiet > 0.02f && least > 0.6f * quiet && most < 1.25f * usual;
+        // a menu on the lane (the kick's ECHO SPACE) forks too; a knob that travels does not
+        const int menu = cx::lane (0, 2), tune = cx::lane (0, 0);
+        const auto m0 = ses.take();
+        ses.userSet (menu, e.target (menu) < 0.5f ? 1.0f : 0.0f);
+        const auto m1 = ses.take();
+        ses.userSet (tune, 0.7f); bars (3.0);
+        const auto t1 = ses.take();
+        ses.finishTakes (true);
+        ses.recall (m1);                                            // only TUNE differs: it glides
+        const int glides = e.leaving();
+        bars (3.0);
+        ses.recall (m0);                                            // the menu differs: the lane is forked
+        const int forks = e.leaving();
+        bars (3.0); e.tidy(); bars (0.1); e.tidy();
+        juce::ignoreUnused (otherModel, t1, kA);
+        const bool told = glides == 0 && forks == 1 && e.leaving() == 0;
+        std::printf ("  %s: a kept effect's knobs travel through a recall (%.2f on the way from 0.90 to 0.20); a lane whose model or menu changes is crossed from the one playing to its changed copy (%.2f after a bar and a beat) with a kick on every beat of it (beats peak between %.2f and %.2f; the two models alone %.2f and %.2f), and one where only knobs differ is left to glide\n",
+                     travelled && forked && vmid > 0.3f && vmid < 0.7f && back && steady && told ? "ok  " : "FAIL", part, vmid, least, most, quiet, usual);
+        if (! (travelled && forked && vmid > 0.3f && vmid < 0.7f && back && steady && told)) ++bad;
+
+        // what a fork costs the message thread (the audio thread is not held up by it)
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        for (int l = 0; l < kLanes; ++l) e.forkVoice (l, 0.0);
+        const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+        bars (0.5); e.tidy(); bars (0.1); e.tidy();
+        std::printf ("  %s: forking all eleven lanes at once takes %.0f ms of the message thread, and all are let go again\n", e.leaving() == 0 ? "ok  " : "FAIL", ms);
+        if (e.leaving() != 0) ++bad;
+    }
+
     // Cue: a snapshot's clip in the headphones, in time with the clock, and the set untouched by it.
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_cue_test");
         tmp.deleteRecursively();
         Session::stateFileForTests = tmp.getChildFile ("session.json");
         {
+            // The set is compared with a second rig run beside it. The two share the suite's bus, and
+            // its instruments judge how old a kick's report is by the clock on the wall; with the
+            // render pausing (the clip is written here) the two could come to differ by that alone.
+            // So for these two the clock is the time rendered, the same for both in every buffer.
+            static double rendered = 0.0;
+            rendered = 1000.0;
+            sf::Bus::testClock = +[] { return rendered; };
             Engine e, plain;
             e.prepare (48000.0, 128); plain.prepare (48000.0, 128);
             Session ses (e, true);
             juce::AudioBuffer<float> b (2, 128), pb (2, 128);
-            auto both = [&] { e.render (b); plain.render (pb); };
+            auto both = [&] { rendered += 128.0 / 48000.0; e.render (b); plain.render (pb); };
             for (int k = 0; k < 400; ++k) both();
             e.setRunning (true); plain.setRunning (true);
             const int perBar = (int) (4.0 * 60.0 / e.tempo() * 48000.0 / 128.0);
@@ -379,13 +523,14 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             const int len = clip.getNumSamples();
             const bool began = len > 1000 && ses.cue (id) && ses.cueing() == id;
             // in time: each buffer's first sample is the clip where the rig is in its four bars
-            double worst = 0.0, loud = 0.0; bool same = true;
+            double worst = 0.0, loud = 0.0, drift = 0.0; bool same = true;
             const double held = (double) (e.latencySamples() + e.masterLatency());
             for (int k = 0; k < perBar * 5 && began; ++k)
             {
                 const double ppq = e.songPos();
                 both();
-                for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 128; ++i) same = same && b.getSample (ch, i) == pb.getSample (ch, i);
+                for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 128; ++i) drift = std::max (drift, (double) std::abs (b.getSample (ch, i) - pb.getSample (ch, i)));
+                same = drift == 0.0;
                 if (k < 8) continue;                                        // (it fades in)
                 const double perSample = e.tempo() / 60.0 / 48000.0;
                 double q = std::fmod (ppq - held * perSample, 16.0); if (q < 0.0) q += 16.0;
@@ -396,8 +541,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 loud = std::max (loud, (double) e.cueBlock().getMagnitude (0, 128));
             }
             const bool timed = began && worst < 2.0e-3 && loud > 0.1;
-            std::printf ("  %s: CUE plays a snapshot's clip in time with the clock: each buffer begins where the rig is in its four bars (furthest %.1e), and the set is the same to the last bit with it playing\n",
-                         timed && same ? "ok  " : "FAIL", worst);
+            std::printf ("  %s: CUE plays a snapshot's clip in time with the clock: each buffer begins where the rig is in its four bars (furthest %.1e), and the set is the same to the last bit with it playing (%.1e from a rig run beside it)\n",
+                         timed && same ? "ok  " : "FAIL", worst, drift);
             if (! (timed && same)) ++bad;
 
             // stopped, it plays as it was kept; taken away, it fades out and the clip is let go
@@ -413,6 +558,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             std::printf ("  %s: with the clock stopped it plays on as it was kept; taken away it is silent within a few buffers; a snapshot with no sound kept gives none\n", off ? "ok  " : "FAIL");
             if (! off) ++bad;
         }
+        sf::Bus::testClock = nullptr;
         Session::stateFileForTests = juce::File();
         tmp.deleteRecursively();
     }

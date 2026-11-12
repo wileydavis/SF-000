@@ -196,7 +196,21 @@ public:
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
     using SetupState = std::vector<std::pair<juce::String, float>>;
     // setup: the effect's CONFIG as it should be from its first sound (a snapshot's), else as it comes
-    void setInsertType (int lane, int slot, int type, bool defaults = true, const SetupState* setup = nullptr);
+    // fadeBeats: the effect that was there leaves, and this one arrives, over that long (a recall's
+    // GLIDE). 0: over a fiftieth of a second, enough not to click.
+    // cells: the eight knobs' values for the new effect (below 0: as the slot's knob stands). They are
+    // given to the new effect alone: the one leaving keeps its own to the end.
+    void setInsertType (int lane, int slot, int type, bool defaults = true, const SetupState* setup = nullptr, double fadeBeats = 0.0, const float* cells = nullptr);
+    // A lane's instrument is about to change in a way that cannot travel: its model or another of
+    // CONFIG's settings, a menu, a switch. The one playing carries on exactly as it is and fades out
+    // over fadeBeats; a copy of it takes its place, to be changed. Knobs that travel move both.
+    void forkVoice (int lane, double fadeBeats);
+    // Message thread, now and then: lets go of the effects and instruments that have finished leaving.
+    void tidy()                                 { collectRetired (false); }
+    // How far a lane's fades have got: 1 when nothing is leaving. stage: 0 to kSlots - 1 an insert, kSlots the instrument.
+    float fadeShown (int lane, int stage) const { return this->lane[(size_t) lane].fadeAt[stage].load(); }
+    bool isPrepared() const                     { return prepared; }
+    int leaving() const;                        // instruments and effects still on their way out (or waiting to be let go)
 
     // ---- what a CONFIG panel, a dropped file or a setup change is aimed at
     struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1)
@@ -287,10 +301,32 @@ private:
         float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1[2] = { 0, 0 }, z2[2] = { 0, 0 };
         float tick (float x, int ch) { const float y = b0 * x + z1[ch]; z1[ch] = b1 * x - a1 * y + z2[ch]; z2[ch] = b2 * x - a2 * y; return y; }
     };
-    struct Lane
+    // A lane's instrument: the processor, and what each of the lane's twelve knobs moves in it.
+    struct Voice
     {
         std::unique_ptr<SFProcessor> proc;
-        std::atomic<InsertInst*> ins[kSlots];
+        Bind bind[kLaneKnobs];
+        Voice();
+        ~Voice();
+    };
+    static constexpr int kStages = kSlots + 1;      // the three inserts, then the instrument
+    struct Lane
+    {
+        // What plays, and what is leaving: at each stage one may be on its way out while another
+        // takes its place. Only the message thread changes these; the audio thread reads them and
+        // says when a fade is done (fadeDone), and the message thread then lets the old one go.
+        std::atomic<Voice*> voice { nullptr }, voiceOut { nullptr };
+        std::atomic<InsertInst*> ins[kSlots], out[kSlots];
+        std::atomic<juce::uint32> fadeSeq[kStages], fadeDone[kStages];
+        std::atomic<uint64_t> fadeDoneAt[kStages];      // the buffer a fade ended in: after it, the one that left is not touched again
+        std::atomic<float> fadeBeats[kStages], fadeAt[kStages];
+        // audio thread
+        juce::uint32 fadeSeen[kStages] = {};
+        double fadeStart[kStages] = {}, fadeLen[kStages] = {};
+        float fadeG[kStages];
+        bool fading[kStages] = {};
+        float slotG[kSlots];                    // an insert's MUTE, as it stood last block
+        Voice* voiceSeen = nullptr;
         LanePlayer player;
         juce::MidiBuffer midi;
         Biquad eq[3];
@@ -343,12 +379,15 @@ private:
     static void applySetupTo (SFProcessor&, const std::vector<std::string>& bound, const SetupState&);
     std::vector<std::unique_ptr<SFProcessor>> master;
     std::vector<std::pair<InsertInst*, uint64_t>> retired;
+    std::vector<std::pair<Voice*, uint64_t>> retiredVoices;
+    bool fadeStep (Lane&, int stage, double beats, float& g0, float& g1);
+    juce::MidiBuffer ghostMidi;
     juce::SpinLock patLock;
 
     double sr = 48000.0;
     int maxBlock = 512;
     bool prepared = false;
-    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre;
+    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost;
     std::array<SetupState, kLanes> initSetup;
     std::array<juce::String, kLanes> files;
     std::vector<std::string> boundIds (Target) const;

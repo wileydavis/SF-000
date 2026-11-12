@@ -114,6 +114,23 @@ is there at once. Press it the moment you arrive (or while a knob glides) and th
 at once, but its card fills in a few bars later, once four bars of that state have played. If you
 move on first, it keeps the bars that were held; if there were none, the bars it was taken over.
 
+### A recall, when more than knobs differ
+
+Sound knobs travel to a recalled snapshot's places over the GLIDE time. What cannot travel is
+crossed over instead, over the same time and starting on the same beat:
+
+- **An effect put in, taken out or changed for another** (or the same effect with another CONFIG,
+  other files, or a menu or switch of its own moved): the one that was there carries on exactly
+  as it was and fades out, its tail with it, while the new one arrives beside it.
+- **An instrument's model, anything else CONFIG sets, or a menu among its knobs**: the instrument
+  playing carries on as it is and fades out; a copy of it, changed, fades in. Both are played the
+  same notes, and both follow the knobs that travel.
+- **An effect that stays** keeps running, and its knobs travel like any other.
+
+With GLIDE OFF the crossing takes a fiftieth of a second: enough not to click. While something
+crosses, that lane runs both, so a long glide between very different snapshots costs more of the
+processor until it is over.
+
 ### ONLINE: the library on the web
 
 With **ONLINE** lit (the library screen's strip), every snapshot you take goes to your snapshot
@@ -269,8 +286,8 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
 - Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
 - The library: the sound map drawn on the screen, more finders (traits by name), suggestions timed
   to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
-- A recall between two snapshots with different effects on a lane swaps the effects at once: the
-  chains do not yet cross over the GLIDE time.
+- A snapshot knob moves sound knobs only: it does not cross between effects or models (a recall does).
+  A model changed by hand in CONFIG changes at once. Nothing on the screen shows a crossing yet.
 - Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound.
   The session file is ready for it: `FORMAT.md`.
 - ONLINE the other way: loading a library file, buckets and snapshot knobs made in the web library.

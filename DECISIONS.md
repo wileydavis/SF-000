@@ -579,6 +579,41 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      snapshot knob moves is). Notes from outside cannot be seen to change: if the One starts
      playing something else on a lane, the bars still count as held.
 
+## Fifteenth build (Nov 11): a recall crosses over what cannot travel
+
+157. **What cannot glide is crossed over, over the GLIDE time** (required, your word; "effects,
+     modules, models"). Each stage of a lane (its instrument, then its three inserts) can hold one
+     that is leaving beside the one that has taken its place. Both are given the same input, and
+     the stage moves from the old one's sound to the new one's. Only what differs runs double.
+158. **The fade sets off with the knobs**: on the next beat while the clock runs, over the GLIDE
+     time. With GLIDE OFF it takes a fiftieth of a second, so a recall no longer clicks.
+159. **An effect is crossed when anything of it that cannot travel differs**: another effect, none,
+     other files, another CONFIG, a menu or switch of its own. Its knobs alone differing, it stays,
+     and they travel. (Before, an insert's knobs jumped at a recall.)
+160. **An instrument is crossed when its model, anything else in CONFIG, or a menu among its
+     twelve knobs differs.** The one playing is left exactly as it is; a copy of it is made, put in
+     its place, and changed. Knobs that travel move both, so the two differ only in what could
+     not travel. Mine: it means a sustained note carries through on the old one and is not cut.
+161. **A straight-line crossing, not an equal-power one.** Mine. The two sides mostly carry the
+     same dry signal, which an equal-power curve would lift by 3 dB half way. The cost: tails that
+     have nothing in common dip a little half way.
+162. **A lane's instrument is now a part that can be replaced while it plays** (the processor and
+     what each of the lane's twelve knobs moves in it). This is what a slot taking different
+     modules needs; a fork is today always a copy of the same module.
+163. **Costs.** Forking a lane takes about 4 ms of the message thread here (42 ms for all eleven);
+     the audio thread is not held up. A lane that crosses runs both instruments, or both effects,
+     until the crossing is over. A second recall while one is crossing lets the earlier leaving
+     one go at once.
+164. **Not built:** a snapshot knob crossing between effects or models; a model changed by hand in
+     CONFIG being crossed rather than switched; the returns' CONFIG; anything on the screen to
+     show a crossing; lining up the distortion's five samples of delay against the effect it
+     crosses with.
+165. **The cue check's two rigs share one clock.** Two engines in one process share the suite's
+     bus, whose instruments judge a kick report's age by the wall clock; with a pause in the
+     render they could differ by that alone (up to -56 dB), which is what made that check fail
+     now and then (142 found one cause; this is the other). For that check the clock is the time
+     rendered. One engine, as the app has, is not touched by any of this.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -597,4 +632,7 @@ same: a clip kept at every save, and a profile from the clip and from what the r
   machine: sending, clips to the byte, waiting with no answer, catching up, renames, being turned
   away. Not checked: https from the Mac through Cloudflare Access with your service token, and
   the SET UP window itself (it is built and compiles; nothing here can press its keys).
+- The crossings (fifteenth) are checked for where they stand in time, that both sides run and are
+  let go, and that the lane's sound has no step or gap in it. How a crossing sounds, between
+  which effects and models it is musical and between which it is merely smooth, needs your ears.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

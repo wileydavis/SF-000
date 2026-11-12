@@ -140,6 +140,8 @@ private:
     void timerCallback() override;
     void applyMorph (double glideBeats);
     void applySnapshot (const Snapshot&, double glideBeats);
+    bool laneJumps (const Snapshot&, int lane) const;           // its instrument is to change in a way that cannot travel
+    bool insertStays (const Snapshot&, int lane, int slot) const;
     void regenerate (int lane);
     void makeFactory();
     void ensureCleanSlate();

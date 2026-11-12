@@ -33,6 +33,7 @@ Session::~Session()
 void Session::timerCallback()
 {
     finishTakes();
+    engine.tidy();
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
     if (const auto now = juce::Time::getMillisecondCounter(); useDisk && dirty && now - savedAt >= 2900) { savedAt = now; save(); }
     pruneCues();
@@ -415,30 +416,89 @@ void Session::finishTakes (bool all)
     }
 }
 
+// Whether two CONFIG states differ in anything they both name.
+static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState& b)
+{
+    for (auto& x : a)
+        for (auto& y : b)
+            if (x.first == y.first && std::abs (x.second - y.second) > 1.0e-4f) return true;
+    return false;
+}
+
+// A lane's instrument is to change in a way that cannot travel: something CONFIG sets (its model,
+// its layer, a sample's ends), or one of its knobs that is a menu or a switch.
+bool Session::laneJumps (const Snapshot& s, int l) const
+{
+    if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), s.setup[(size_t) l])) return true;
+    for (int k = 0; k < kLaneKnobs; ++k)
+    {
+        const int i = cx::lane (l, k);
+        const auto& c = engine.control (i);
+        const float v = i < (int) s.values.size() ? s.values[(size_t) i] : -1.0f;
+        if (v >= 0.0f && c.used && ! c.glides && std::abs (v - engine.target (i)) > 1.0e-4f) return true;
+    }
+    return false;
+}
+
+// An insert stays as it is through a recall: the same effect holding the same files, with the same
+// CONFIG, and no menu or switch of its own to move. (Its knobs may differ: they travel.)
+bool Session::insertStays (const Snapshot& s, int l, int k) const
+{
+    const int type = s.inserts[(size_t) l][(size_t) k];
+    const auto& refs = s.insFiles[(size_t) l][(size_t) k];
+    if (! (s.hasInsFiles ? engine.insertHolds (l, k, type, refs) : engine.insertType (l, k) == type)) return false;
+    if (type < 0) return true;
+    if (s.hasSetup && setupDiffers (engine.getSetup ({ 1, l, k }), s.insSetup[(size_t) l][(size_t) k])) return false;
+    for (int c = 0; c < kCells; ++c)
+    {
+        const int i = cx::ins (l, k, c);
+        const auto& ct = engine.control (i);
+        const float v = i < (int) s.values.size() ? s.values[(size_t) i] : -1.0f;
+        if (v >= 0.0f && ct.used && ! ct.glides && ct.kind != Kind::Hold && std::abs (v - engine.target (i)) > 1.0e-4f) return false;
+    }
+    return true;
+}
+
 void Session::applySnapshot (const Snapshot& s, double glide)
 {
-    // What cannot travel goes at once: menus, switches, insert cells, generator knobs, the key.
+    // What can travel, travels: sound knobs glide to their places. What cannot (an effect put in or
+    // taken out, a model, a menu, a switch) is crossed over instead, over the same time: the one
+    // that was there carries on as it is and fades out while the new one arrives beside it.
+    // 1. the lanes whose instrument is to change that way: the one playing leaves as it stands, and
+    //    a copy of it takes its place to be changed by what follows
+    //    (with the audio not yet started there is nothing playing to leave: the change is simply made)
+    if (engine.isPrepared()) for (int l = 0; l < kLanes; ++l) if (laneJumps (s, l)) engine.forkVoice (l, glide);
+    // 2. the inserts: an effect that changes comes whole (the effect, its CONFIG, the files it
+    //    held, its knobs); one that stays is left running, and its knobs travel
+    std::array<std::array<bool, kSlots>, kLanes> stays {};
+    for (int l = 0; l < kLanes; ++l)
+        for (int k = 0; k < kSlots; ++k)
+        {
+            stays[(size_t) l][(size_t) k] = insertStays (s, l, k);
+            if (stays[(size_t) l][(size_t) k]) continue;
+            const int type = s.inserts[(size_t) l][(size_t) k];
+            const auto& refs = s.insFiles[(size_t) l][(size_t) k];
+            float cells[kCells];
+            for (int c = 0; c < kCells; ++c) { const int i = cx::ins (l, k, c); cells[c] = i < (int) s.values.size() ? s.values[(size_t) i] : -1.0f; }
+            if (s.hasInsFiles && type >= 0) engine.expectInsertFiles (l, k, refs);
+            engine.setInsertType (l, k, type, false, s.hasSetup ? &s.insSetup[(size_t) l][(size_t) k] : nullptr, glide, cells);
+        }
+    // 3. every stored value. Sound knobs wait for the morph below; the knobs of an effect that
+    //    stays travel; the rest go at once (they reach only what has just arrived)
     for (int i = 0; i < cx::kCount && i < (int) s.values.size(); ++i)
     {
         const float v = s.values[(size_t) i];
         if (v < 0.0f) continue;
         const bool morph = engine.control (i).morph && i < kMorphEnd;
         base[(size_t) i] = v;
-        if (! morph) engine.set (i, v);
+        if (morph) continue;
+        const int k = i < cx::kRet ? i % cx::kPerLane : -1;
+        const bool cell = k >= cx::kIns && k < cx::kGen;
+        const bool travels = cell && engine.control (i).glides && stays[(size_t) (i / cx::kPerLane)][(size_t) ((k - cx::kIns) / kCells)];
+        engine.set (i, v, travels ? glide : 0.0);
     }
     for (int l = 0; l < kLanes; ++l)
     {
-        for (int k = 0; k < kSlots; ++k)
-        {
-            // An insert comes back whole: the effect, its CONFIG, and the files it held. One that
-            // is already there as the snapshot has it is left running.
-            const int type = s.inserts[(size_t) l][(size_t) k];
-            const auto& refs = s.insFiles[(size_t) l][(size_t) k];
-            const bool asItIs = s.hasInsFiles ? engine.insertHolds (l, k, type, refs) : engine.insertType (l, k) == type;
-            if (asItIs) continue;
-            if (s.hasInsFiles && type >= 0) engine.expectInsertFiles (l, k, refs);
-            engine.setInsertType (l, k, type, false, s.hasSetup ? &s.insSetup[(size_t) l][(size_t) k] : nullptr);
-        }
         engine.setPattern (l, s.patterns[(size_t) l], true);         // while the clock runs: on the next bar line
         genType[(size_t) l] = s.gen[(size_t) l];
         if (s.hasSetup)
@@ -450,7 +510,6 @@ void Session::applySnapshot (const Snapshot& s, double glide)
     if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, s.retSetup[(size_t) r]);
     applyMorph (glide);
 }
-
 void Session::recall (juce::int64 id)
 {
     if (auto* s = findSnap (id))

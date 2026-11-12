@@ -26,7 +26,13 @@ static const char* const kModelId = "__model";       // SPACE's reverb, among it
 struct Engine::Loud { sf::LoudnessMeter m; };
 Engine::InsertInst::InsertInst() = default;
 Engine::InsertInst::~InsertInst() = default;
-Engine::Lane::Lane() { for (auto& i : ins) i = nullptr; }
+Engine::Voice::Voice() = default;
+Engine::Voice::~Voice() = default;
+Engine::Lane::Lane()
+{
+    for (int k = 0; k < kSlots; ++k) { ins[k] = nullptr; out[k] = nullptr; slotG[k] = 1.0f; }
+    for (int k = 0; k < kStages; ++k) { fadeSeq[k] = 0; fadeDone[k] = 0; fadeDoneAt[k] = 0; fadeBeats[k] = 0.0f; fadeAt[k] = 1.0f; fadeG[k] = 1.0f; }
+}
 Engine::Lane::~Lane() = default;
 
 // ------------------------------------------------------------------------------------- building
@@ -122,7 +128,9 @@ Engine::Engine()
     {
         const auto& d = L[(size_t) l];
         auto& ln = lane[(size_t) l];
-        ln.proc = makeProc (d.module, d.fixed);
+        auto* first = new Voice();
+        first->proc = makeProc (d.module, d.fixed);
+        ln.voice = first;
         ln.player.pitched = d.pitched;
         ln.shared = defaultPattern (l);
         const juce::String slug (d.slug);
@@ -130,7 +138,7 @@ Engine::Engine()
         {
             const int i = cx::lane (l, k);
             auto& c = controls[(size_t) i];
-            bind[(size_t) i] = makeBind (*ln.proc, d.knobs[k], &c);
+            first->bind[k] = makeBind (*first->proc, d.knobs[k], &c);     // (a lane's knobs reach its voice; the table's own bind stays empty)
             c.id = slug + "." + d.knobs[k].param;
             c.snapshot = true;
         }
@@ -228,7 +236,13 @@ Engine::~Engine()
 {
     collectRetired (true);
     for (auto* p : parked) delete p;
-    for (auto& ln : lane) for (auto& i : ln.ins) delete i.exchange (nullptr);
+    for (auto& ln : lane)
+    {
+        for (auto& i : ln.ins) delete i.exchange (nullptr);
+        for (auto& i : ln.out) delete i.exchange (nullptr);
+        delete ln.voice.exchange (nullptr);
+        delete ln.voiceOut.exchange (nullptr);
+    }
 }
 
 int Engine::find (const juce::String& id) const
@@ -583,7 +597,14 @@ void Engine::gatherNotes (int n, double spb)
 }
 
 // -------------------------------------------------------------------------------------- inserts
-void Engine::setInsertType (int l, int slot, int type, bool defaults, const SetupState* setup)
+int Engine::leaving() const
+{
+    int n = 0;
+    for (auto& ln : lane) { for (auto& o : ln.out) n += o.load() != nullptr ? 1 : 0; n += ln.voiceOut.load() != nullptr ? 1 : 0; }
+    return n;
+}
+
+void Engine::setInsertType (int l, int slot, int type, bool defaults, const SetupState* setup, double fadeBeats, const float* cells)
 {
     stateMoved();
     type = juce::jlimit (-1, (int) effects().size() - 1, type);
@@ -622,7 +643,7 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults, const Setu
             else { ct.used = false; ct.label = {}; ct.choices.clear(); ct.kind = Kind::Knob; ct.def = 0.0f; ct.glides = false; }
             ct.id = id; ct.snapshot = true;
             if (defaults) set (i, ct.def);
-            else applyBind (inst->bind[c], target (i));
+            else applyBind (inst->bind[c], cells != nullptr && cells[c] >= 0.0f ? cells[c] : target (i));
             if (d.cells[c].label != nullptr && juce::String (d.cells[c].param) == "mix") inst->mixCell = c;
         }
         if (inst->proc->paramIndex ("dry") >= 0) inst->dryRaw = inst->proc->apvts.getRawParameterValue ("dry");
@@ -643,9 +664,69 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults, const Setu
             ct.used = false; ct.label = {}; ct.choices.clear(); ct.kind = Kind::Knob; ct.glides = false;
         }
     insType[(size_t) l][(size_t) slot] = type;
-    if (auto* old = ln.ins[slot].exchange (inst)) retired.push_back ({ old, blockCount.load() });
+    // The one that was there leaves over the fade while this one arrives. (One still leaving from an
+    // earlier change is let go at once.)
+    auto* old = ln.ins[slot].exchange (inst);
+    if (auto* earlier = ln.out[slot].exchange (prepared ? old : nullptr)) retired.push_back ({ earlier, blockCount.load() });
+    if (! prepared && old != nullptr) retired.push_back ({ old, blockCount.load() });
+    ln.fadeBeats[slot] = (float) fadeBeats;
+    ln.fadeSeq[slot].fetch_add (1);
+    // (the knobs' own places follow, now that the new effect is the one they reach)
+    if (cells != nullptr && type >= 0 && ! defaults) for (int c = 0; c < kCells; ++c) if (cells[c] >= 0.0f) set (cx::ins (l, slot, c), cells[c]);
     collectRetired (false);
     updateLatency();
+}
+
+void Engine::forkVoice (int l, double fadeBeats)
+{
+    auto& ln = lane[(size_t) l];
+    const auto& d = lanes()[(size_t) l];
+    auto* was = ln.voice.load();
+    auto* v = new Voice();
+    v->proc = makeProc (d.module, d.fixed);
+    // as the one playing stands, to the last parameter (CONFIG's too), with the file it plays
+    const int np = (int) was->proc->allSpecs().size();
+    for (int i = 0; i < np; ++i)
+        if (auto* from = was->proc->param (i))
+            if (auto* to = v->proc->param (i))
+                if (std::abs (to->getValue() - from->getValue()) > 1.0e-7f) to->setValueNotifyingHost (from->getValue());
+    for (int k = 0; k < kLaneKnobs; ++k) v->bind[k] = makeBind (*v->proc, d.knobs[k], nullptr);
+    if (files[(size_t) l].isNotEmpty()) v->proc->mod().loadFiles (juce::StringArray (files[(size_t) l]));
+    if (prepared) { v->proc->setRateAndBufferSizeDetails (sr, maxBlock); v->proc->prepareToPlay (sr, maxBlock); }
+    stateMoved();
+    ln.voice.store (v);
+    if (auto* earlier = ln.voiceOut.exchange (prepared ? was : nullptr)) retiredVoices.push_back ({ earlier, blockCount.load() });
+    if (! prepared) retiredVoices.push_back ({ was, blockCount.load() });
+    ln.fadeBeats[kSlots] = (float) fadeBeats;
+    ln.fadeSeq[kSlots].fetch_add (1);
+    collectRetired (false);
+    updateLatency();
+}
+
+// Audio thread, once a block for each stage of a lane: where its fade stands at the block's start
+// (g0) and end (g1), from 0 (all the one leaving) to 1 (all the one that took its place). False:
+// nothing is fading. A fade sets off with the knobs of a recall: on the next beat while the clock
+// runs, and over the same time. Never shorter than a fiftieth of a second.
+bool Engine::fadeStep (Lane& ln, int st, double beats, float& g0, float& g1)
+{
+    const juce::uint32 q = ln.fadeSeq[st].load();
+    if (q != ln.fadeSeen[st])
+    {
+        ln.fadeSeen[st] = q;
+        const double now = gClock - beats, least = 0.02 * tempoFor (cur[(size_t) cx::kTempo]) / 60.0, asked = (double) ln.fadeBeats[st].load();
+        ln.fadeLen[st] = std::max (asked, least);
+        ln.fadeStart[st] = asked > least && wasRunning ? now + (std::ceil (ppq - 1e-9) - ppq) : now;
+        ln.fadeG[st] = 0.0f;
+        ln.fading[st] = true;
+    }
+    if (! ln.fading[st]) return false;
+    g0 = ln.fadeG[st];
+    const double t = (gClock - ln.fadeStart[st]) / ln.fadeLen[st];
+    g1 = (float) juce::jlimit (0.0, 1.0, t);
+    ln.fadeG[st] = g1;
+    ln.fadeAt[st].store (g1, std::memory_order_relaxed);
+    if (t >= 1.0) { ln.fading[st] = false; ln.fadeDoneAt[st].store (blockCount.load()); ln.fadeDone[st].store (q); }
+    return true;
 }
 
 void Engine::collectRetired (bool all)
@@ -653,6 +734,26 @@ void Engine::collectRetired (bool all)
     // An insert taken out is let go once the audio thread has gone two blocks without it: deleted,
     // or kept aside if it holds files.
     const auto now = blockCount.load();
+    // one that has finished leaving (the audio thread says which fade is done) is taken off its lane, to be let go below
+    // (Once the buffer its fade ended in is over, the audio thread does not touch it again: it can
+    // go at once, and an effect holding files is kept aside for the next recall that wants it.)
+    for (auto& ln : lane)
+    {
+        auto gone = [&] (int st) { return all || ! prepared || (ln.fadeDone[st].load() == ln.fadeSeq[st].load() && now > ln.fadeDoneAt[st].load()); };
+        for (int k = 0; k < kSlots; ++k)
+            if (ln.out[k].load() != nullptr && gone (k))
+            {
+                auto* was = ln.out[k].exchange (nullptr);
+                if (all || was->files.empty()) delete was; else park (was);
+            }
+        if (ln.voiceOut.load() != nullptr && gone (kSlots)) delete ln.voiceOut.exchange (nullptr);
+    }
+    for (size_t i = retiredVoices.size(); i-- > 0;)
+        if (all || now >= retiredVoices[i].second + 2 || ! prepared)
+        {
+            delete retiredVoices[i].first;
+            retiredVoices.erase (retiredVoices.begin() + (long) i);
+        }
     for (size_t i = retired.size(); i-- > 0;)
         if (all || now >= retired[i].second + 2 || ! prepared)
         {
@@ -720,7 +821,7 @@ void Engine::updateLatency()
     int lat[kLanes] = {}, mx = 0;
     for (int l = 0; l < kLanes; ++l)
     {
-        lat[l] = lane[(size_t) l].proc->getLatencySamples();
+        lat[l] = lane[(size_t) l].voice.load()->proc->getLatencySamples();
         for (auto& i : lane[(size_t) l].ins) if (auto* in = i.load()) lat[l] += in->proc->getLatencySamples();
         mx = std::max (mx, lat[l]);
     }
@@ -837,7 +938,7 @@ void Engine::panic() { panicNow = true; }
 // ---------------------------------------------------------------------------------------- setup
 SFProcessor* Engine::processorFor (Target t) const
 {
-    if (t.kind == 0) return lane[(size_t) t.lane].proc.get();
+    if (t.kind == 0) return lane[(size_t) t.lane].voice.load()->proc.get();
     if (t.kind == 1) { auto* in = lane[(size_t) t.lane].ins[t.slot].load(); return in != nullptr ? in->proc.get() : nullptr; }
     return t.slot == 0 ? retA.get() : space[(size_t) spaceWant.load()].get();
 }
@@ -953,10 +1054,20 @@ void Engine::prepare (double rate, int block)
     // by an earlier one stays "alive" for four seconds by the clock on the wall, which made the
     // start of a render depend on what had run just before it. An engine starts with none.
     { auto& bd = sf::Bus::get().d(); bd.kickWrite = 0; bd.kickSeenMs = 0; }
+    // nothing is part-way between two effects or two instruments when the audio starts: what was leaving is let go
+    collectRetired (false);
+    for (auto& ln : lane)
+        for (int k = 0; k < kStages; ++k)
+        {
+            ln.fadeSeen[k] = ln.fadeSeq[k].load(); ln.fadeDone[k] = ln.fadeSeen[k];
+            ln.fading[k] = false; ln.fadeG[k] = 1.0f; ln.fadeAt[k] = 1.0f;
+        }
     auto prep = [this] (SFProcessor& p) { p.setRateAndBufferSizeDetails (sr, maxBlock); p.prepareToPlay (sr, maxBlock); };
     for (auto& ln : lane)
     {
-        prep (*ln.proc);
+        prep (*ln.voice.load()->proc);
+        if (auto* o = ln.voiceOut.load()) prep (*o->proc);
+        for (auto& i : ln.out) if (auto* in = i.load()) prep (*in->proc);
         for (auto& i : ln.ins) if (auto* in = i.load()) prep (*in->proc);
         ln.midi.ensureSize (4096);
         ln.patWait = false;
@@ -968,14 +1079,14 @@ void Engine::prepare (double rate, int block)
     }
     // the longest wait a lane could need: its instrument's, and the slowest effect in every slot
     int inst = 0;
-    for (auto& ln : lane) inst = std::max (inst, ln.proc->getLatencySamples());
+    for (auto& ln : lane) inst = std::max (inst, ln.voice.load()->proc->getLatencySamples());
     holdLat = inst + kSlots * slowestEffect (sr);
     for (auto* pk : parked) prep (*pk->proc);
     prep (*retA);
     for (auto& sp : space) prep (*sp);
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
-    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &recBuf, &cueBuf }) b->setSize (2, maxBlock, false, true, false);
+    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf }) b->setSize (2, maxBlock, false, true, false);
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0;
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
     tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
@@ -1037,7 +1148,14 @@ void Engine::advanceControls (double beats)
             else if (i < cx::kRet)
             {
                 const int k = i % cx::kPerLane;
-                if (k >= cx::kIns && k < cx::kGen)
+                if (k < kLaneKnobs)
+                {
+                    auto& ln = lane[(size_t) (i / cx::kPerLane)];
+                    if (auto* v = ln.voice.load()) applyBind (v->bind[k], cur[s]);
+                    // one on its way out follows the knobs that travel; a menu or a switch stays as it left it
+                    if (controls[s].glides && ln.fading[kSlots]) if (auto* o = ln.voiceOut.load()) applyBind (o->bind[k], cur[s]);
+                }
+                else if (k >= cx::kIns && k < cx::kGen)
                     if (auto* in = lane[(size_t) (i / cx::kPerLane)].ins[(k - cx::kIns) / kCells].load())
                         if (! (in->soloOn && (k - cx::kIns) % kCells == in->mixCell))
                             applyBind (in->bind[(k - cx::kIns) % kCells], cur[s]);
@@ -1210,7 +1328,21 @@ void Engine::render (juce::AudioBuffer<float>& out)
         }
         ln.midi.clear();
         if (stopping || pan || starting || again) ln.player.stop (ln.midi, 0);
-        if (pan) { ln.proc->panic(); for (auto& i : ln.ins) if (auto* in = i.load()) in->proc->panic(); }
+        auto* voice = ln.voice.load();
+        auto* voiceOut = ln.voiceOut.load();
+        if (voice != ln.voiceSeen)
+        {
+            // a voice that has just taken the lane: every knob as it stands now (it was copied a moment before it was put here)
+            ln.voiceSeen = voice;
+            for (int k = 0; k < kLaneKnobs; ++k) applyBind (voice->bind[k], cur[(size_t) cx::lane (l, k)]);
+        }
+        if (pan)
+        {
+            voice->proc->panic();
+            if (voiceOut != nullptr && ln.fading[kSlots]) voiceOut->proc->panic();
+            for (auto& i : ln.ins) if (auto* in = i.load()) in->proc->panic();
+            for (int k = 0; k < kSlots; ++k) if (auto* in = ln.out[k].load(); in != nullptr && ln.fading[k]) in->proc->panic();
+        }
         // The lane's own sequencer muted: its steps keep their place and go unplayed, and what it
         // was holding ends now. Notes from outside still sound.
         const bool seqOff = cur[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
@@ -1244,11 +1376,42 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
         b2.clear();
         auto tp = clock();
-        ln.proc->processBlock (b2, ln.midi);
+        {
+            // The instrument. While one is leaving, both are played the same notes and the lane
+            // crosses from the old to the new.
+            float f0 = 1.0f, f1 = 1.0f;
+            const bool fade = fadeStep (ln, kSlots, beats, f0, f1);
+            if (fade && voiceOut != nullptr)
+            {
+                juce::AudioBuffer<float> old (ghost.getArrayOfWritePointers(), 2, n);
+                old.clear();
+                ghostMidi.clear();
+                ghostMidi.addEvents (ln.midi, 0, n, 0);
+                voiceOut->proc->processBlock (old, ghostMidi);
+                voice->proc->processBlock (b2, ln.midi);
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    float* w = b2.getWritePointer (ch);
+                    const float* o = old.getReadPointer (ch);
+                    for (int i = 0; i < n; ++i) { const float g = f0 + (f1 - f0) * (float) i / (float) n; w[i] = o[i] + (w[i] - o[i]) * g; }
+                }
+            }
+            else voice->proc->processBlock (b2, ln.midi);
+        }
         profLane[(size_t) l] += since (tp);
         tp = clock();
         for (int sl = 0; sl < kSlots; ++sl)
-            if (auto* in = ln.ins[sl].load())
+        {
+            auto* in = ln.ins[sl].load();
+            auto* og = ln.out[sl].load();
+            float f0 = 1.0f, f1 = 1.0f;
+            const bool fade = fadeStep (ln, sl, beats, f0, f1);
+            if (! fade) og = nullptr;                   // (its fade is done: it waits to be let go)
+            // MUTE on an insert: the lane passes it by. The effect keeps running, so its tail is current when it comes back.
+            const float g1 = cur[(size_t) cx::insMute (l, sl)] > 0.5f ? 0.0f : 1.0f, g0 = ln.slotG[sl];
+            ln.slotG[sl] = g1;
+            if (in == nullptr && ! fade) continue;
+            if (in != nullptr)
             {
                 // SOLO on an insert: only what the effect makes (its MIX held at full, its DRY switch off)
                 const bool solo = cur[(size_t) cx::insSolo (l, sl)] > 0.5f;
@@ -1259,20 +1422,38 @@ void Engine::render (juce::AudioBuffer<float>& out)
                     if (in->mixCell >= 0) applyBind (in->bind[in->mixCell], solo ? 1.0f : cur[(size_t) cx::ins (l, sl, in->mixCell)]);
                     if (in->dryRaw != nullptr) in->dryRaw->store (solo ? 0.0f : in->dryWas);
                 }
-                // MUTE on an insert: the lane passes it by. The effect keeps running, so its tail is current when it comes back.
-                const float g1 = cur[(size_t) cx::insMute (l, sl)] > 0.5f ? 0.0f : 1.0f, g0 = in->gWas;
-                in->gWas = g1;
-                if (g0 == 1.0f && g1 == 1.0f) { in->proc->processBlock (b2, noMidi); continue; }
-                juce::AudioBuffer<float> dry (pre.getArrayOfWritePointers(), 2, n);
-                for (int ch = 0; ch < 2; ++ch) dry.copyFrom (ch, 0, b2, ch, 0, n);
-                in->proc->processBlock (b2, noMidi);
+                if (! fade && g0 == 1.0f && g1 == 1.0f) { in->proc->processBlock (b2, noMidi); continue; }
+            }
+            juce::AudioBuffer<float> dry (pre.getArrayOfWritePointers(), 2, n);
+            for (int ch = 0; ch < 2; ++ch) dry.copyFrom (ch, 0, b2, ch, 0, n);
+            if (in != nullptr) in->proc->processBlock (b2, noMidi);
+            if (fade)
+            {
+                // The effect that was here leaves as this one arrives: both are given the lane, and
+                // the slot crosses from the old to the new. No effect on either side is the lane itself.
+                const float* const* from = dry.getArrayOfReadPointers();
+                juce::AudioBuffer<float> old (ghost.getArrayOfWritePointers(), 2, n);
+                if (og != nullptr)
+                {
+                    for (int ch = 0; ch < 2; ++ch) old.copyFrom (ch, 0, dry, ch, 0, n);
+                    og->proc->processBlock (old, noMidi);
+                    from = old.getArrayOfReadPointers();
+                }
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    float* w = b2.getWritePointer (ch);
+                    const float* o = from[ch];
+                    for (int i = 0; i < n; ++i) { const float g = f0 + (f1 - f0) * (float) i / (float) n; w[i] = o[i] + (w[i] - o[i]) * g; }
+                }
+            }
+            if (g0 != 1.0f || g1 != 1.0f)
                 for (int ch = 0; ch < 2; ++ch)
                 {
                     float* w = b2.getWritePointer (ch);
                     const float* dr = dry.getReadPointer (ch);
                     for (int i = 0; i < n; ++i) { const float g = g0 + (g1 - g0) * (float) i / (float) n; w[i] = dr[i] + (w[i] - dr[i]) * g; }
                 }
-            }
+        }
 
         profIns[(size_t) l] += since (tp);
         // the lane EQ, after the inserts
@@ -1386,7 +1567,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     // meters
     bool flt = false;
-    for (auto& ln : lane) flt = flt || ln.proc->fault.load();
+    for (auto& ln : lane) flt = flt || ln.voice.load()->proc->fault.load();
     for (auto& m : master) flt = flt || m->fault.load();
     fault = flt;
     const float* L = m2.getReadPointer (0); const float* R = m2.getReadPointer (1);
