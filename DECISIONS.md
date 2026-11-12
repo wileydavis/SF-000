@@ -634,6 +634,52 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      what they did while the lane plays. The change is in SF-000's copy of the suite
      (`suite/PORTING.md`); the suite's own repo is untouched.
 
+## Seventeenth build (Nov 11): a lit skin, first pass, from the 3D model
+
+169. **The screen is drawn as the instrument in your model** (you: a quick first pass at
+     reskinning from the model, surfaces that look real, light with a little shadow). It starts
+     lit; **L** gives the flat drawing back. The flat drawing is kept exactly as it was (checked
+     pixel for pixel against the build before), so if the skin is slow or wrong on the Mac the
+     night is not lost.
+170. **Nothing moved.** The model's module is 49.72 by 63.09 mm and the screen's lane panel is
+     272 by 344 units: 5.46 units to the millimetre both ways, and the model's knob grid, display,
+     three keys and the six-by-two, four-and-a-wide, one-long pockets fall on the screen's own
+     places. So the skin changes how things are drawn and not where they are; every hit, drag and
+     check is as it was.
+171. **How it is made.** *Mine.* Not rendered from the model file. Each surface is described in
+     `Source/Skin.cpp` as heights, colours and finishes with the model's measurements, and lit by a
+     small renderer in the app: one light (upper left and a little behind, 64 degrees up), the
+     shade things cast, dimness at the foot of what stands up, a highlight on rounded edges, a
+     grain on the plates and the case. The eye is 6 degrees in front of straight above, so a cap
+     shows its front. Each part is lit once into a picture at the device's own pixels and the
+     screen is put together from the pictures. Why not render the model: it would be one fixed
+     picture per state made outside the app; this way the layout stays in the code, a new module
+     is a few lines, and your model's next revision is a change of numbers.
+172. **Where it leaves the model, on purpose.** *proposed*, each a line or two to change:
+     the ring's lights keep the screen's colours (white, red, blue, teal; green while travelling)
+     where the model's are all green, because the colours carry meaning while playing; the ring
+     is turned half a segment so a gap, not a light, is at six o'clock where a value starts;
+     C, M and S keep their own colours (white, and putty until lit amber or green) where the
+     model's three are amber, and stay 22 units square (the model's are 16.7) so their letters
+     read; the lane's display is 126 units wide (the model's is 107) so CLOSED HAT fits.
+173. **The active lane's display is the lit one.** *proposed.* In the flat drawing the active
+     lane's name was black and the rest white. The model gives every module a dark display, so
+     lit it is the other way about: dark for all, pale and lit for the active one. In the
+     library the black name is still the base scene.
+174. **A ring shows more than sixteen places.** *Mine.* Whole segments are lit whole and the one
+     the value stands in is as bright as the value is far into it, as the E16's rings do. A knob
+     with a middle has its middle printed on the plate above it.
+175. **What stands near a part-paint is drawn again with it.** *Mine.* Lit, a thing's picture
+     reaches past its own edge (its shade, its glow), so a part of the screen drawn by itself
+     takes in what is within 12 units of it; the check that a part-paint gives the same picture
+     as a whole one runs for both drawings. A control is now recorded as drawn only when its own
+     body was in the paint.
+176. **Cost.** Measured here in software at twice the size: the whole screen 82 to 89 ms lit
+     against 76 to 80 flat, the meters 3.4 ms against 1.6, one knob 0.4 against 0.3. The first
+     paint makes the pictures (0.75 s here); CONFIG's plate and the other pages' cards are made
+     just after, so the first opening does not wait. On the Mac the numbers will be different
+     (its drawing is not this machine's): `./build.sh perf` prints both.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -659,4 +705,8 @@ same: a clip kept at every save, and a profile from the clip and from what the r
   thing itself: whether a knob's first turn still jumps, and whether the press on knob 1 swaps to
   GLIDE as the scene file says, need the hardware. Both scenes must be loaded onto the E16 again.
   ONLINE's https from the Mac has since been reported working (a snapshot arrived).
+- The lit skin (seventeenth) has been looked at here only as pictures the app drew to a file
+  (the main screen, a glide, CONFIG open, the library, the macro designer), and its checks run
+  in software. Not seen: the Mac's own drawing of it (how it looks on the display, what it costs
+  with each changed part painted on its own), a window changing size, and how it feels to play.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

@@ -1,6 +1,6 @@
 // SF-000: the app. A window on the screens, the audio device, and three command-line tools:
 //   SF-000 --test [--wav file]                 offline audio and timing checks
-//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2]   draw a screen to a PNG
+//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat]   draw a screen to a PNG
 //   SF-000 --dump                              every hosted module's parameters and presets
 //   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
 //   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
@@ -1060,12 +1060,20 @@ static int uiTest()
         }
     }
 
-    // 2c. a part of the screen drawn on its own leaves the picture exactly as drawing all of it would
+    // 2c. a part of the screen drawn on its own leaves the picture exactly as drawing all of it would:
+    // with the lit skin (whose pictures reach past their own edges: shade, glow) and with the flat drawing
+    for (int flat = 0; flat < 2; ++flat)
     {
         Engine ep; ep.prepare (48000.0, 512);
         Session sp (ep, false);
         Screen scp (sp);
         scp.setSize ((int) Screen::kW, (int) Screen::kH);
+        if (flat == 0) check (scp.isLit(), "the screen starts with the lit skin");
+        else
+        {
+            scp.keyPressed (juce::KeyPress ('l', juce::ModifierKeys(), 'l'));
+            check (! scp.isLit(), "L on the keyboard gives the flat drawing back");
+        }
         juce::AudioBuffer<float> bp (2, 512);
         auto whole = [&] (juce::Image& img) { juce::Graphics g (img); scp.paintEntireComponent (g, true); };
         auto part = [&] (juce::Image& img, juce::Rectangle<int> clip) { juce::Graphics g (img); g.reduceClipRegion (clip); scp.paintEntireComponent (g, true); };
@@ -1079,7 +1087,11 @@ static int uiTest()
             {
                 const auto* p = x.getLinePointer (row); const auto* q = y.getLinePointer (row);
                 bool off = false;
-                for (int k = 0; k < a.getWidth() * x.pixelStride && ! off; ++k) off = std::abs ((int) p[k] - (int) q[k]) > 6;
+                for (int k = 0; k < a.getWidth() * x.pixelStride && ! off; ++k)
+                {
+                    off = std::abs ((int) p[k] - (int) q[k]) > 6;
+                    if (off && diff < 4) std::printf ("    (row %d, across %d: %d against %d)\n", row, k / x.pixelStride, (int) p[k], (int) q[k]);
+                }
                 if (off) ++diff;
             }
             return diff;
@@ -1109,7 +1121,7 @@ static int uiTest()
             allSame = allSame && rowsOff == 0;
             if (rowsOff != 0) std::printf ("    (%d rows differ with CONFIG %d)\n", rowsOff, cfg);
         }
-        check (allSame && hitsKept && parts >= 12, (juce::String (parts) + " parts of the screen drawn on their own (knobs, the meters, the steps), with CONFIG shut and open: the same picture a whole redraw gives").toRawUTF8());
+        check (allSame && hitsKept && parts >= 12, (juce::String (flat == 0 ? "lit: " : "flat: ") + juce::String (parts) + " parts of the screen drawn on their own (knobs, the meters, the steps), with CONFIG shut and open: the same picture a whole redraw gives").toRawUTF8());
     }
 
     // 2d. the REC key: a press starts a take, a short press leaves it running, a hold ends it
@@ -1572,6 +1584,7 @@ static int shot (const juce::StringArray& args)
     }
     const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
     sc.setSize ((int) Screen::kW, (int) Screen::kH);
+    if (args.contains ("--flat")) sc.setLit (false);            // the flat drawing the lit skin replaced
     const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
     rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
     sc.online = nullptr; online = nullptr; Session::stateFileForTests = juce::File(); onlineDir.deleteRecursively();
@@ -2503,9 +2516,17 @@ static int perf()
             }
             return 1000.0 * juce::Time::highResolutionTicksToSeconds (spent) / times;
         };
+        const double first = frame (sc.getLocalBounds(), 1);          // (lit: this one makes the pictures the rest are put together from)
         const double whole = frame (sc.getLocalBounds(), 30), master = frame ({ 1151, 782, 554, 190 }, 200), knob = frame ({ 300, 150, 76, 56 }, 200),
                      none = frame ({ 0, 0, 1, 1 }, 200);
-        std::printf ("  the screen (drawn here in software at twice the size): the whole of it %.2f ms, the meters %.2f ms, one knob %.2f ms, nothing %.3f ms\n", whole, master, knob, none);
+        std::printf ("  the screen (drawn here in software at twice the size): the whole of it %.2f ms, the meters %.2f ms, one knob %.2f ms, nothing %.3f ms; the first time, %.0f ms\n", whole, master, knob, none, first);
+        sc.showConfig ({ 0, 7, 0 });
+        const double cfgFirst = frame (sc.getLocalBounds(), 1);
+        sc.showConfig ({ 0, 7, 0 });                                  // (shut again)
+        std::printf ("    CONFIG, the first time it opens (its plate is made then): %.0f ms\n", cfgFirst);
+        sc.setLit (false);
+        const double fWhole = frame (sc.getLocalBounds(), 30), fMaster = frame ({ 1151, 782, 554, 190 }, 200), fKnob = frame ({ 300, 150, 76, 56 }, 200);
+        std::printf ("  the same with the flat drawing (L on the keyboard): the whole of it %.2f ms, the meters %.2f ms, one knob %.2f ms\n", fWhole, fMaster, fKnob);
     }
     return 0;
 }

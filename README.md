@@ -24,6 +24,7 @@ First run:
 1. Press **AUDIO** (white key, top bar) and pick the interface and its outputs. The choice is kept.
 2. Press **RUN** (or the space bar). Every lane has a starting pattern.
 3. Press **F** for full screen at 1728 x 1117; **F** or **Esc** leaves it.
+4. Press **L** to change between the lit skin (how it starts) and the flat drawing. See The look, below.
 
 ## Playing it
 
@@ -31,7 +32,7 @@ First run:
 | --- | --- |
 | Drag a knob up or down | turn it (hold Shift for fine; double-click for its starting value; the wheel works too) |
 | Set GLIDE, then turn a knob | the sound travels there over the GLIDE time: the knob turns green and walks, with a white mark where it is going. It sets off on the next beat while the clock runs. Turn it again on the way and it carries on from where the sound is. OFF: at once |
-| Click a lane's name | make it the active lane: the inserts and the sequencer strip show it |
+| Click a lane's name | make it the active lane: the inserts and the sequencer strip show it. Its display is the one lit up |
 | **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
 | Click an insert's name | step that slot through DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, EMPTY |
@@ -55,8 +56,38 @@ First run:
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
+| **L** | the lit skin, or the flat drawing it replaced |
 
 The screen never asks a question while it plays. PANIC silences every voice and tail.
+
+### The look: a lit skin, after the 3D model
+
+The screen is drawn as the instrument in the 3D model: the grey case, a cream plate standing in
+each pocket, dark caps in rings of sixteen lights, keys that stand up, displays set into the
+plates. Nothing has moved: every control is where it was and takes the mouse as before. This is a
+first pass at it.
+
+- **The sizes and heights are the model's.** Its module is 49.72 mm wide and the screen's is 272
+  units, so 5.46 units to the millimetre, and the model's knobs, rings, keys and display fall on
+  the screen's own places. From it: a plate stands 1.27 mm proud of the case; a big cap is 4.07 mm
+  across and 5.08 mm tall in a ring 2.29 to 3.37 mm out, on a base 7.15 mm across (a small one
+  3.03, 3.56, 1.60 to 2.36 and 5.0); a ring's lights stand 0.25 mm; a key 1.27 mm; the name plate
+  1.27 mm with letters 0.25 mm over it. (The case's corners are a little tighter than the model's
+  6 mm, to clear the name plate.)
+- **One light, upper left and a little behind, high up.** What stands up casts a short shade down
+  and to the right and is dim at its foot. The eye is a little in front of straight above, so a
+  cap shows its front and the case shows its front edge at the bottom of the screen.
+- **A knob's ring of lights says where it stands**, from six o'clock round, as on the E16. A
+  whole segment is lit whole; the one the value stands in is as bright as the value is far into
+  it. The colours are the ones the flat drawing had: white for a sound knob, red for decay or
+  gate, density and filter, blue for level, sends and EQ, teal for a snapshot knob, green while it
+  travels (with a white mark where it is going). A knob with a middle has a mark printed above it.
+- **Displays.** A panel's name is a dark display with light letters. The active lane's is lit:
+  pale, with dark letters. Readouts, the step pages and the meters are pale displays.
+- **L** on the keyboard gives the flat drawing back, exactly as it was, and L again the skin.
+
+The pictures are made when the window first shows and again when it changes size (it waits until
+the size has held for a moment). `./build.sh perf` gives what both drawings cost on your Mac.
 
 ### CONFIG: where a sound is set up
 
@@ -245,7 +276,8 @@ build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapsho
 build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --flat (the flat drawing)
+SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```
 
 ### Load
@@ -267,6 +299,7 @@ meters when a bar has moved, the playing step.
 | `FORMAT.md` | the session file: what is in it, and the rules it grows by |
 | `tests/fixtures/` | a session file as an older build wrote it, for the check that old files still open |
 | `Source/Screen.*` | the three screens |
+| `Source/Skin.*` | the lit skin: surfaces as heights and finishes (the 3D model's), lit into pictures the screen is put together from |
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |
 | `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
@@ -283,6 +316,12 @@ opens it copies the session as it found it into `backups/` beside it and keeps t
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
 ## Not built yet
+
+- The skin is a first pass, drawn from measurements of the 3D model, not rendered from the model
+  itself: no texture maps, one finish per material, and the inside of the displays (the meters,
+  the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices
+  it does not follow yet are listed in `DECISIONS.md` (items 172 to 174). L is not remembered
+  between runs.
 
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.

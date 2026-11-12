@@ -3,6 +3,7 @@
 // 1728 x 1117 (5 px to the millimetre on a 16-inch MacBook Pro) and scaled to the window.
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "Session.h"
+#include "Skin.h"
 #include <unordered_map>
 
 namespace sf0
@@ -20,6 +21,9 @@ public:
     std::function<void()> onAudioSetup, onFullScreen, onOnlineSetup;
     Online* online = nullptr;                   // the ONLINE key's; none: the key is not drawn
     Recorder* recorder = nullptr;               // the REC key's; none: the key does nothing
+    // The lit skin (surfaces with light and shade, after the 3D model) or the flat drawing it replaced. L on the keyboard changes over.
+    void setLit (bool on) { lit = on; warm = false; repaint(); }
+    bool isLit() const { return lit; }
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
@@ -67,7 +71,8 @@ private:
     void dirty (R);
     juce::Point<float> logical (juce::Point<float> p) const { return p.transformedBy (xf.inverted()); }
     const Hit* hitAt (juce::Point<float>) const;
-    bool vis (G&, R) const;
+    bool vis (G&, R) const;         // is it in what is being painted (lit: or near enough for its shade to be)
+    bool seen (G&, R) const;        // is it itself in what is being painted
 
     // drawing kit
     void text (G&, const juce::String&, R, const juce::Font&, juce::Colour, juce::Justification = juce::Justification::centred);
@@ -79,6 +84,12 @@ private:
     void headKeys (G&, float right, float y, int kind, int lane, int slot, int muteCtl, int soloCtl);
     void hollow (G&, float cx, float cy, float d, bool round);
     void key (G&, R, juce::Colour fill, float border = 2.0f);
+    void flatKey (G&, R, juce::Colour fill, float border = 2.0f);
+    void window (G&, R, juce::Colour glass);                    // a display's pane
+    void tag (G&, R, const juce::String&);                      // a number, light on dark
+    float title (G&, float x, float y, const juce::String&);    // a panel's name
+    void card (G&, R, bool selected);
+    bool off (G& g, R r) const { return ! collect && ! vis (g, r); }       // a part-paint that does not touch it
     void lamp (G&, float cx, float cy, juce::Colour fill, float d = 12.0f);
     void readout (G&, R, const juce::String& label, const juce::String& value);
     void panel (G&, R, juce::Colour ground);
@@ -107,6 +118,8 @@ private:
 
     Session& ses;
     Engine& eng;
+    Skin skin;
+    bool lit = true, warm = false;      // warm: the plates that are not on the first screen have been made
     Page page = pMain;
     juce::AffineTransform xf;
     std::vector<Hit> hits;
