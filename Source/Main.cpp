@@ -1,6 +1,6 @@
 // SF-000: the app. A window on the screens, the audio device, and three command-line tools:
 //   SF-000 --test [--wav file]                 offline audio and timing checks
-//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat]   draw a screen to a PNG
+//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat|--dark]   draw a screen to a PNG
 //   SF-000 --dump                              every hosted module's parameters and presets
 //   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
 //   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
@@ -1062,17 +1062,29 @@ static int uiTest()
 
     // 2c. a part of the screen drawn on its own leaves the picture exactly as drawing all of it would:
     // with the lit skin (whose pictures reach past their own edges: shade, glow) and with the flat drawing
-    for (int flat = 0; flat < 2; ++flat)
+    for (int look = 0; look < 3; ++look)
     {
         Engine ep; ep.prepare (48000.0, 512);
         Session sp (ep, false);
         Screen scp (sp);
         scp.setSize ((int) Screen::kW, (int) Screen::kH);
-        if (flat == 0) check (scp.isLit(), "the screen starts with the lit skin");
+        int told = 0;
+        scp.onLook = [&told] { ++told; };
+        if (look == 0) check (scp.isLit() && ! scp.isDark(), "the screen starts with the lit skin, the light instrument");
+        else if (look == 1)
+        {
+            scp.keyPressed (juce::KeyPress ('d', juce::ModifierKeys(), 'd'));
+            check (scp.isLit() && scp.isDark() && told == 1, "D on the keyboard gives the dark instrument, and says so to whoever keeps the look");
+        }
         else
         {
             scp.keyPressed (juce::KeyPress ('l', juce::ModifierKeys(), 'l'));
             check (! scp.isLit(), "L on the keyboard gives the flat drawing back");
+            scp.keyPressed (juce::KeyPress ('d', juce::ModifierKeys(), 'd'));
+            check (scp.isLit() && scp.isDark(), "from the flat drawing, D goes to the dark instrument");
+            scp.keyPressed (juce::KeyPress ('d', juce::ModifierKeys(), 'd'));
+            scp.keyPressed (juce::KeyPress ('l', juce::ModifierKeys(), 'l'));
+            check (! scp.isLit() && ! scp.isDark(), "and D then L are back at the flat drawing");
         }
         juce::AudioBuffer<float> bp (2, 512);
         auto whole = [&] (juce::Image& img) { juce::Graphics g (img); scp.paintEntireComponent (g, true); };
@@ -1121,7 +1133,7 @@ static int uiTest()
             allSame = allSame && rowsOff == 0;
             if (rowsOff != 0) std::printf ("    (%d rows differ with CONFIG %d)\n", rowsOff, cfg);
         }
-        check (allSame && hitsKept && parts >= 12, (juce::String (flat == 0 ? "lit: " : "flat: ") + juce::String (parts) + " parts of the screen drawn on their own (knobs, the meters, the steps), with CONFIG shut and open: the same picture a whole redraw gives").toRawUTF8());
+        check (allSame && hitsKept && parts >= 12, (juce::String (look == 0 ? "lit: " : look == 1 ? "dark: " : "flat: ") + juce::String (parts) + " parts of the screen drawn on their own (knobs, the meters, the steps), with CONFIG shut and open: the same picture a whole redraw gives").toRawUTF8());
     }
 
     // 2d. the REC key: a press starts a take, a short press leaves it running, a hold ends it
@@ -1585,6 +1597,7 @@ static int shot (const juce::StringArray& args)
     const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
     sc.setSize ((int) Screen::kW, (int) Screen::kH);
     if (args.contains ("--flat")) sc.setLit (false);            // the flat drawing the lit skin replaced
+    if (args.contains ("--dark")) sc.setDark (true);            // the lit skin's dark instrument
     const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
     rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
     sc.online = nullptr; online = nullptr; Session::stateFileForTests = juce::File(); onlineDir.deleteRecursively();
@@ -3073,6 +3086,22 @@ public:
             auto& d = juce::Desktop::getInstance();
             d.setKioskModeComponent (d.getKioskModeComponent() == nullptr ? window.get() : nullptr, false);
         };
+        // The look last chosen (L: the lit skin or the flat drawing; D: its dark instrument) is kept between runs.
+        {
+            const juce::var look = juce::JSON::parse (lookFile());
+            if (look.isObject())
+            {
+                screen->setLit ((bool) look.getProperty ("lit", true));
+                screen->setDark ((bool) look.getProperty ("dark", false));
+            }
+            screen->onLook = [screen]
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("lit", screen->isLit());
+                o->setProperty ("dark", screen->isDark());
+                lookFile().replaceWithText (juce::JSON::toString (juce::var (o)));
+            };
+        }
         window = std::make_unique<MainWindow> (screen);
         screen->grabKeyboardFocus();
         if (session->notSavingWhy.isNotEmpty())
@@ -3103,6 +3132,7 @@ public:
 
 private:
     static juce::File audioFile() { return sf0::Session::stateFile().getSiblingFile ("audio.xml"); }
+    static juce::File lookFile() { return sf0::Session::stateFile().getSiblingFile ("look.json"); }
 
     void audioSetup()
     {

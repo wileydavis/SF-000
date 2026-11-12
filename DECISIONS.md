@@ -680,6 +680,28 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      just after, so the first opening does not wait. On the Mac the numbers will be different
      (its drawing is not this machine's): `./build.sh perf` prints both.
 
+## Eighteenth build (Nov 11): the dark instrument
+
+177. **D is a dark instrument** (you: a dark version that can be toggled). The same shapes, the
+     same light, other materials: a graphite case (`#24272A`), dark plates (`#3B3C3A`, the master
+     and CONFIG `#303231`), dark keys, print in a light putty (`#D8D3C8`). The colours that
+     carry meaning are untouched: the rings' lights, the lit keys, the yellow keys, red PANIC.
+     *Mine*, the colours: tell me the ones your dark materials should be.
+178. **Pale displays turn over.** *Mine.* The meters, the step pages, the readouts and the small
+     notes are dark with light marks, and a step key is a dark cap with light bars, so the dark
+     instrument is dark all over and not dark with white windows. Two things stay bright: the
+     active lane's display, and the base scene's name in the library (the lit name there; the
+     library's own line of help says so).
+179. **It is the lit skin's.** *proposed.* The flat drawing has no dark form and stays exactly as
+     it was; from it, D goes to the lit dark instrument.
+180. **The look is kept.** *Mine.* L and D write `look.json` beside the session and the app opens
+     as it was left.
+181. **Shine comes off the shape, not its grain.** *Mine.* A surface's grain now only roughens how
+     the light falls on it. On a dark surface the grain's own glints were most of what one saw.
+     Both instruments are cleaner for it.
+182. **The spec's display mode for a dark stage** is not this, though this is a start: nothing is
+     dimmed, enlarged or simplified for distance. *proposed:* say if the dark instrument is enough.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -705,8 +727,8 @@ same: a clip kept at every save, and a profile from the clip and from what the r
   thing itself: whether a knob's first turn still jumps, and whether the press on knob 1 swaps to
   GLIDE as the scene file says, need the hardware. Both scenes must be loaded onto the E16 again.
   ONLINE's https from the Mac has since been reported working (a snapshot arrived).
-- The lit skin (seventeenth) has been looked at here only as pictures the app drew to a file
-  (the main screen, a glide, CONFIG open, the library, the macro designer), and its checks run
-  in software. Not seen: the Mac's own drawing of it (how it looks on the display, what it costs
+- The lit skin (seventeenth) and its dark instrument (eighteenth) have been looked at here only
+  as pictures the app drew to a file (the main screen, a glide, CONFIG open, the library, the
+  macro designer), and their checks run in software. Not seen: the Mac's own drawing of it (how it looks on the display, what it costs
   with each changed part painted on its own), a window changing size, and how it feels to play.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

@@ -54,6 +54,9 @@ public:
     // the device's pixels; when the window's size changes they are remade once it has held still.
     void begin (G&);
     bool settled();                         // true once: the size has held, the pictures were dropped: paint again
+    // The dark instrument: a graphite case, dark plates. The same shapes and the same light.
+    // (Each keeps its own pictures, so changing over costs nothing after the first time.)
+    void setDark (bool on) { dark = on ? 1 : 0; }
 
     void body (G&, float w, float h);                               // the case, corner to corner
     void panel (G&, R, juce::Colour ground);                        // a module's plate, in its pocket
@@ -76,8 +79,9 @@ private:
     const Pic& panelPic (int w, int h, juce::Colour ground);
     Pic from (const Relief&, Relief::As = Relief::As::lit) const;
     void put (G&, const Pic&, float x, float y) const;
-    std::map<Key, Pic> pics;
-    juce::Image caseImg;
+    std::map<Key, Pic> pics[2];             // the light instrument's, the dark one's
+    juce::Image caseImg[2];
+    int dark = 0;
     float scale = 0.0f, want = 0.0f;
     juce::uint32 wantAt = 0;
 };

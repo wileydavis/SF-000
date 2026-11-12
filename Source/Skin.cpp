@@ -202,14 +202,18 @@ juce::Image Relief::picture (As as) const
                 const auto i = (size_t) (y * W + x);
                 float gx = (z[(size_t) (y * W + std::min (W - 1, x + 1))] - z[(size_t) (y * W + std::max (0, x - 1))]) * 0.5f * s;
                 float gy = (z[(size_t) (std::min (H - 1, y + 1) * W + x)] - z[(size_t) (std::max (0, y - 1) * W + x)]) * 0.5f * s;
+                // the shine comes off the shape itself; the grain only roughens how the light falls on it
+                const float sInv = 1.0f / std::sqrt (gx * gx + gy * gy + 1.0f);
+                const float gloss = std::max (0.0f, shine (std::max (0.0f, (-gx * hx - gy * hy + hz) * sInv)) - flat);
                 if (gr[i] > 0.0f) { gx += gr[i] * hashf (x, y, 1); gy += gr[i] * hashf (x, y, 2); }
                 const float inv = 1.0f / std::sqrt (gx * gx + gy * gy + 1.0f);
                 const float nx = -gx * inv, ny = -gy * inv, nz = inv;
                 const float diff = std::min (std::max (0.0f, nx * kLx + ny * kLy + nz * kLz) / kLz, 1.4f);
                 const float sh = z[i] > zmax - 0.02f ? 1.0f : shade (x, y, z[i], zmax);      // (nothing stands over the highest things)
                 const float ao = 1.0f - kAo * juce::jlimit (0.0f, 1.0f, (zb[i] - z[i]) / kAoRange);
-                lf[i] = (kAmb * ao + (1.0f - kAmb) * diff * sh) * (1.0f + fall * (0.5f - (0.35f * (float) x / (float) W + 0.65f * (float) y / (float) H)));
-                sp[i] = gl[i] * std::max (0.0f, shine (std::max (0.0f, nx * hx + ny * hy + nz * hz)) - flat) * sh;
+                // (the falling-off of the light is the shape's own: the surface it stands on has its own)
+                lf[i] = (kAmb * ao + (1.0f - kAmb) * diff * sh) * (1.0f + so[i] * fall * (0.5f - (0.35f * (float) x / (float) W + 0.65f * (float) y / (float) H)));
+                sp[i] = gl[i] * gloss * sh;
             }
     }
 
@@ -298,7 +302,9 @@ juce::Image Relief::picture (As as) const
 namespace
 {
 enum What { wPanel = 1, wKnob, wRing, wKey, wLamp, wHollow, wBadge };
-const Colour kPutty (0xffCFC8BC), kCase (0xffA4B1B7), kBlack (0xff2B2B28), kUnlit (0xff4D514E), kGreen (0xff428F47), kRed (0xffB54142), kAmber (0xffC5843F);
+const Colour kCase (0xffA4B1B7), kBlack (0xff2B2B28), kUnlit (0xff4D514E), kGreen (0xff428F47), kAmber (0xffC5843F);
+// the dark instrument's own colours: the case, a knob's base, its unlit lights, its cap, an unlit lamp, the name plate
+const Colour kNightCase (0xff24272A), kNightBase (0xff111211), kNightUnlit (0xff474B48), kNightCap (0xff232321), kNightLens (0xff3C403D), kNightBadge (0xff151615);
 }
 
 bool Skin::emits (Colour c) { return c == kGreen || c == kAmber; }
@@ -314,16 +320,19 @@ void Skin::begin (G& g)
 bool Skin::settled()
 {
     if (want == scale || juce::Time::getMillisecondCounter() - wantAt < 300) return false;
-    scale = want; pics.clear(); caseImg = {};
+    scale = want;
+    for (auto& p : pics) p.clear();
+    for (auto& c : caseImg) c = {};
     return true;
 }
 
 const Skin::Pic& Skin::pic (const Key& k, const std::function<Pic()>& make)
 {
-    const auto it = pics.find (k);
-    if (it != pics.end()) return it->second;
+    auto& mine = pics[dark];
+    const auto it = mine.find (k);
+    if (it != mine.end()) return it->second;
     const auto t0 = juce::Time::getMillisecondCounterHiRes();
-    auto& made = pics.emplace (k, make()).first->second;
+    auto& made = mine.emplace (k, make()).first->second;
     if (std::getenv ("SF000_SKIN_TIMES") != nullptr)
         std::printf ("      picture %d (%d x %d, state %d): %d x %d px, %.1f ms\n", std::get<0> (k), std::get<1> (k), std::get<2> (k), std::get<4> (k), made.img.getWidth(), made.img.getHeight(), juce::Time::getMillisecondCounterHiRes() - t0);
     return made;
@@ -339,19 +348,21 @@ void Skin::put (G& g, const Pic& p, float x, float y) const
 // The case: one slab, its top edge rounded over, its front seen below it.
 void Skin::body (G& g, float w, float h)
 {
-    if (caseImg.isNull())
+    auto& shell = caseImg[dark];
+    const Colour tint = dark ? kNightCase : kCase;
+    if (shell.isNull())
     {
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         const struct Timed { double t0; ~Timed() { if (std::getenv ("SF000_SKIN_TIMES") != nullptr) std::printf ("      the case: %.1f ms\n", juce::Time::getMillisecondCounterHiRes() - t0); } } timed { t0 };
         const float S = scale;
         const int W = juce::roundToInt (w * S), H = juce::roundToInt (h * S);
-        caseImg = juce::Image (juce::Image::ARGB, W, H, false);
-        juce::Image::BitmapData bd (caseImg, juce::Image::BitmapData::writeOnly);
+        shell = juce::Image (juce::Image::ARGB, W, H, false);
+        juce::Image::BitmapData bd (shell, juce::Image::BitmapData::writeOnly);
         const R top (8.0f, 12.0f, w - 16.0f, h - 25.0f), swept = top.withBottom (top.getBottom() + kTilt * 25.4f * kU);
-        const float rad = 26.0f, round = 4.5f, cr = lin (kCase.getFloatRed()), cg = lin (kCase.getFloatGreen()), cb = lin (kCase.getFloatBlue());
+        const float rad = 26.0f, round = 4.5f, cr = lin (tint.getFloatRed()), cg = lin (tint.getFloatGreen()), cb = lin (tint.getFloatBlue());
         float hx = kLx, hy = kLy, hz = kLz + 1.0f;
         { const float inv = 1.0f / std::sqrt (hx * hx + hy * hy + hz * hz); hx *= inv; hy *= inv; hz *= inv; }
-        const float flat = shine (hz);
+        const float flat = shine (hz), grain = dark ? 0.055f : 0.11f;
         for (int y = 0; y < H; ++y)
         {
             const float uy = ((float) y + 0.5f) / S;
@@ -373,24 +384,26 @@ void Skin::body (G& g, float w, float h)
                 if (deep)
                 {
                     // flat: only the grain turns the light (to first order, with no roots or powers: most of the picture is this)
-                    const float l = (kAmb + (1.0f - kAmb) * (1.0f - 0.11f * (hashf (x, y, 1) * kLx + hashf (x, y, 2) * kLy) / kLz)) * fall;
+                    const float l = (kAmb + (1.0f - kAmb) * (1.0f - grain * (hashf (x, y, 1) * kLx + hashf (x, y, 2) * kLy) / kLz)) * fall;
                     r = cr * l; gg = cg * l; b = cb * l;
                 }
                 else if (cov > 0.0f)
                 {
-                    float gx = 0.11f * hashf (x, y, 1), gy = 0.11f * hashf (x, y, 2);            // bead-blasted
+                    float gx = grain * hashf (x, y, 1), gy = grain * hashf (x, y, 2);            // bead-blasted
+                    float spec = 0.0f;
                     if (d > -round)
                     {
                         // the edge rolls over
                         const float e = std::min (0.97f, (d + round) / round), slope = e / std::sqrt (1.0f - e * e);
                         float dx = sdRound (ux + 0.25f, uy, top, rad) - sdRound (ux - 0.25f, uy, top, rad), dy = sdRound (ux, uy + 0.25f, top, rad) - sdRound (ux, uy - 0.25f, top, rad);
                         const float len = std::sqrt (dx * dx + dy * dy) + 1.0e-6f;
-                        gx -= slope * dx / len; gy -= slope * dy / len;         // (the height falls outward)
+                        const float ex = -slope * dx / len, ey = -slope * dy / len;         // (the height falls outward)
+                        spec = 0.22f * std::max (0.0f, shine (std::max (0.0f, (-ex * hx - ey * hy + hz) / std::sqrt (ex * ex + ey * ey + 1.0f))) - flat);       // the shine off the roll itself
+                        gx += ex; gy += ey;
                     }
                     const float inv = 1.0f / std::sqrt (gx * gx + gy * gy + 1.0f), nx = -gx * inv, ny = -gy * inv, nz = inv;
                     const float diff = std::min (std::max (0.0f, nx * kLx + ny * kLy + nz * kLz) / kLz, 1.4f);
                     const float l = (kAmb + (1.0f - kAmb) * diff) * fall;
-                    const float spec = 0.22f * std::max (0.0f, shine (std::max (0.0f, nx * hx + ny * hy + nz * hz)) - flat);
                     r += (cr * l + spec - r) * cov; gg += (cg * l + spec - gg) * cov; b += (cb * l + spec - b) * cov;
                 }
                 auto* px = (juce::PixelARGB*) bd.getPixelPointer (x, y);
@@ -400,7 +413,7 @@ void Skin::body (G& g, float w, float h)
         }
     }
     g.setOpacity (1.0f);
-    g.drawImage (caseImg, R (0.0f, 0.0f, w, h));
+    g.drawImage (shell, R (0.0f, 0.0f, w, h));
 }
 
 void Skin::makePanel (float width, float height, Colour ground) { if (scale > 0.0f) panelPic (juce::roundToInt (width), juce::roundToInt (height), ground); }
@@ -411,8 +424,8 @@ const Skin::Pic& Skin::panelPic (int w, int h, Colour ground)
     {
         Relief rf ((float) w, (float) h, scale, 10.0f);
         const R b (0.0f, 0.0f, (float) w, (float) h);
-        rf.slab (b.expanded (1.3f), 8.6f, -2.6f, 0.0f, { kCase.darker (0.55f), 0.0f });           // the pocket it stands in, seen as the gap round it
-        rf.slab (b, 7.5f, 1.27f * kU, 1.2f, { ground, 0.10f, 0.10f });
+        rf.slab (b.expanded (1.3f), 8.6f, -2.6f, 0.0f, { (dark ? kNightCase : kCase).darker (0.55f), 0.0f });     // the pocket it stands in, seen as the gap round it
+        rf.slab (b, 7.5f, 1.27f * kU, 1.2f, { ground, dark ? 0.22f : 0.10f, dark ? 0.05f : 0.10f });       // (a dark surface shows its grain more)
         rf.fall = 0.05f;
         return from (rf);
     });
@@ -441,10 +454,10 @@ void Skin::knob (G& g, float cx, float cy, int size)
     const auto& p = pic (Key { wKnob, size >= 40 ? 40 : 30, 0, 0, 0 }, [&]
     {
         Relief rf (d.box * 2.0f, d.box * 2.0f, scale, 12.0f, 3);
-        rf.disc (d.box, d.box, d.base, 0.15f, 0.3f, { Colour (0xff1E1F1D), 0.55f });               // the dark ring let into the plate
-        rf.ring (d.box, d.box, d.r0, d.r1, 16, 1.5f, 0.25f * kU, { kUnlit, 0.45f });
-        rf.disc (d.box, d.box, d.cap + 0.7f, 0.03f * kU + 0.9f, 0.5f, { kBlack, 0.25f, 0.06f });   // the cap's skirt
-        rf.disc (d.box, d.box, d.cap, d.tall, d.round, { kBlack.brighter (0.12f), 0.42f, 0.045f }, false, 1.1f);
+        rf.disc (d.box, d.box, d.base, 0.15f, 0.3f, { dark ? kNightBase : Colour (0xff1E1F1D), 0.55f });      // the dark ring let into the plate
+        rf.ring (d.box, d.box, d.r0, d.r1, 16, 1.5f, 0.25f * kU, { dark ? kNightUnlit : kUnlit, 0.45f });
+        rf.disc (d.box, d.box, d.cap + 0.7f, 0.03f * kU + 0.9f, 0.5f, { dark ? kNightCap.darker (0.2f) : kBlack, 0.25f, 0.06f });   // the cap's skirt
+        rf.disc (d.box, d.box, d.cap, d.tall, d.round, { dark ? kNightCap : kBlack.brighter (0.12f), dark ? 0.75f : 0.42f, 0.045f }, false, 1.1f);
         return from (rf);
     });
     g.setOpacity (1.0f);
@@ -505,7 +518,7 @@ void Skin::lamp (G& g, float cx, float cy, Colour c, float d, bool on)
     {
         Relief rf (d, d, scale, 6.0f, 3);
         rf.disc (d * 0.5f, d * 0.5f, d * 0.5f, 0.7f, 0.5f, { Colour (0xff1E1F1D), 0.5f });
-        rf.disc (d * 0.5f, d * 0.5f, d * 0.5f - 2.0f, 2.6f, 2.2f, { on ? led (c) : Colour (0xff6C706A), 0.75f, 0.0f, on ? 1.0f : 0.0f });
+        rf.disc (d * 0.5f, d * 0.5f, d * 0.5f - 2.0f, 2.6f, 2.2f, { on ? led (c) : dark ? kNightLens : Colour (0xff6C706A), 0.75f, 0.0f, on ? 1.0f : 0.0f });
         return from (rf);
     });
     g.setOpacity (1.0f);
@@ -524,26 +537,33 @@ void Skin::hollow (G& g, float cx, float cy, float d, bool round)
     });
     g.setOpacity (1.0f);
     put (g, p, cx - d * 0.5f, cy - d * 0.5f);
+    if (dark)
+    {
+        // (shade does not show on a dark plate: a faint line keeps the place findable)
+        g.setColour (juce::Colours::white.withAlpha (0.07f));
+        if (round) g.drawEllipse (cx - d * 0.5f + 1.5f, cy - d * 0.5f + 1.5f, d - 3.0f, d - 3.0f, 1.0f);
+        else g.drawRoundedRectangle (R (cx - d * 0.5f + 1.5f, cy - d * 0.5f + 1.5f, d - 3.0f, d - 3.0f), 2.2f, 1.0f);
+    }
 }
 
 // A display: the surface is cut down to a pane. The cut's upper and left walls are in shade and
 // shade the pane; its lower and right edges catch the light.
 void Skin::window (G& g, R r, Colour glass)
 {
-    const bool dark = glass.getPerceivedBrightness() < 0.4f;
-    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    const bool deep = glass.getPerceivedBrightness() < 0.4f;        // a dark pane
+    g.setColour (juce::Colours::black.withAlpha (dark ? 0.60f : 0.45f));
     g.fillRoundedRectangle (r.expanded (0.8f), 2.2f);
-    g.setColour (juce::Colours::white.withAlpha (0.50f));
+    g.setColour (juce::Colours::white.withAlpha (dark ? 0.16f : 0.50f));       // (a dark plate's edge catches less)
     g.fillRect (R (r.getX() + 1.5f, r.getBottom() + 0.3f, r.getWidth() - 2.0f, 0.9f));
     g.fillRect (R (r.getRight() + 0.3f, r.getY() + 1.5f, 0.9f, r.getHeight() - 2.0f));
-    g.setColour (dark ? glass.darker (0.35f) : glass.interpolatedWith (Colour (0xffD3D6CB), 0.35f));
+    g.setColour (deep ? glass.darker (0.35f) : glass.interpolatedWith (Colour (0xffD3D6CB), 0.35f));
     g.fillRoundedRectangle (r, 1.4f);
     const float top = std::min (6.0f, r.getHeight() * 0.3f), left = std::min (4.0f, r.getWidth() * 0.2f);
-    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (dark ? 0.55f : 0.30f), 0.0f, r.getY(), juce::Colours::transparentBlack, 0.0f, r.getY() + top, false));
+    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (deep ? 0.55f : 0.30f), 0.0f, r.getY(), juce::Colours::transparentBlack, 0.0f, r.getY() + top, false));
     g.fillRect (r.withHeight (top));
-    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (dark ? 0.35f : 0.18f), r.getX(), 0.0f, juce::Colours::transparentBlack, r.getX() + left, 0.0f, false));
+    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (deep ? 0.35f : 0.18f), r.getX(), 0.0f, juce::Colours::transparentBlack, r.getX() + left, 0.0f, false));
     g.fillRect (r.withWidth (left));
-    if (dark)
+    if (deep)
     {
         // the pane's shine
         g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.10f), r.getX(), r.getBottom(), juce::Colours::transparentWhite, r.getX() + r.getHeight() * 0.8f, r.getY(), false));
@@ -559,7 +579,7 @@ void Skin::badge (G& g, R r, const juce::String& name, const juce::Font& font)
         const int fineBy = 2;
         Relief rf ((float) w, (float) h, scale, 8.0f, fineBy);
         const R b (0.0f, 0.0f, (float) w, (float) h);
-        rf.slab (b, 5.0f, 1.27f * kU, 1.2f, { kBlack, 0.35f, 0.05f });
+        rf.slab (b, 5.0f, 1.27f * kU, 1.2f, { dark ? kNightBadge : kBlack, dark ? 0.6f : 0.35f, 0.05f });
         const float ms = scale * (float) fineBy;
         juce::Image mask (juce::Image::ARGB, (int) std::ceil ((float) w * ms), (int) std::ceil ((float) h * ms), true);
         {

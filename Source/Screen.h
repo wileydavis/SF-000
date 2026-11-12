@@ -24,6 +24,10 @@ public:
     // The lit skin (surfaces with light and shade, after the 3D model) or the flat drawing it replaced. L on the keyboard changes over.
     void setLit (bool on) { lit = on; warm = false; repaint(); }
     bool isLit() const { return lit; }
+    // The lit skin's dark instrument: a graphite case and dark plates, light print, the same lights. D on the keyboard changes over.
+    void setDark (bool on) { dark = on; skin.setDark (on); warm = false; repaint(); }
+    bool isDark() const { return dark; }
+    std::function<void()> onLook;               // L or D was pressed: the look to keep for next time
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
@@ -75,7 +79,13 @@ private:
     bool seen (G&, R) const;        // is it itself in what is being painted
 
     // drawing kit
-    void text (G&, const juce::String&, R, const juce::Font&, juce::Colour, juce::Justification = juce::Justification::centred);
+    void text (G&, const juce::String&, R, const juce::Font&, juce::Colour, juce::Justification = juce::Justification::centred);       // (black is print: light on the dark instrument)
+    void textRaw (G&, const juce::String&, R, const juce::Font&, juce::Colour, juce::Justification = juce::Justification::centred);    // in exactly that colour
+    bool night() const { return lit && dark; }                  // the dark instrument is what is drawn
+    juce::Colour tone (juce::Colour) const;                     // a colour of the light instrument as the dark one has it: print, a display's ground, a plate
+    juce::Colour glass (juce::Colour) const;                    // a pane's
+    juce::Colour cap (juce::Colour) const;                      // a key's
+    juce::Colour inkOn (juce::Colour surface, juce::Colour asked) const;       // letters on a surface of that colour
     float tw (const juce::Font&, const juce::String&) const;
     float plate (G&, float x, float y, const juce::String&, const juce::Font&, float padX, juce::Colour bg, juce::Colour fg, float h = 26.0f);
     void legend (G&, float cx, float y, const juce::String&);
@@ -119,7 +129,7 @@ private:
     Session& ses;
     Engine& eng;
     Skin skin;
-    bool lit = true, warm = false;      // warm: the plates that are not on the first screen have been made
+    bool lit = true, dark = false, warm = false;      // warm: the plates that are not on the first screen have been made
     Page page = pMain;
     juce::AffineTransform xf;
     std::vector<Hit> hits;

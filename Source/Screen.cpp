@@ -15,6 +15,13 @@ namespace col
                  green (0xff428F47), red (0xffB54142), amber (0xffC5843F), yellow (0xffD7C352), blue (0xff447BB5), teal (0xff4490A1),
                  unlit (0xff4D514E), lit (0xffE9E6E2);
 }
+// The dark instrument (the lit skin, with D): its plates, its print, a pale display's ground, its
+// keys, a faint outline, a muted mark, and the room round the case.
+namespace night
+{
+    const Colour plate (0xff3B3C3A), plate2 (0xff303231), ink (0xffD8D3C8), paper (0xff1A1C1B), key (0xff565955), keyOff (0xff484A47),
+                 faint (0xff5A605D), dim (0xff7C807A), room (0xff0D0E0F);
+}
 static const char* const kNotes[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
 // The embedded typefaces. They are let go while JUCE is still up (releaseFonts, from the app's
@@ -76,8 +83,36 @@ const Screen::Hit* Screen::hitAt (juce::Point<float> p) const
 // ---------------------------------------------------------------------------------- drawing kit
 void Screen::text (G& g, const String& s, R r, const juce::Font& f, Colour c, juce::Justification j)
 {
+    textRaw (g, s, r, f, c == col::black ? tone (c) : c, j);
+}
+
+void Screen::textRaw (G& g, const String& s, R r, const juce::Font& f, Colour c, juce::Justification j)
+{
     g.setColour (c); g.setFont (f);
     g.drawText (s, r, j, false);
+}
+
+// The dark instrument turns the light one's roles over: print and marks are light, a pale
+// display's ground is dark, plates are dark. Lights, lit keys and the yellow keys are as they were.
+Colour Screen::tone (Colour c) const
+{
+    if (! night()) return c;
+    return c == col::black ? night::ink : c == col::white ? night::paper : c == col::putty ? night::plate : c == col::grey ? night::plate2 : c == col::sea ? night::faint : c;
+}
+
+Colour Screen::glass (Colour c) const { return night() && c == col::white ? night::paper : c; }
+
+Colour Screen::cap (Colour c) const
+{
+    if (! night()) return c;
+    return c == col::white ? night::key : c == col::putty ? night::keyOff : c == col::black ? night::ink : c;
+}
+
+Colour Screen::inkOn (Colour surface, Colour asked) const
+{
+    if (! night()) return asked;
+    if (surface.getPerceivedBrightness() > 0.40f) return col::black;
+    return asked == col::black ? night::ink : asked;
 }
 
 float Screen::tw (const juce::Font& f, const String& s) const
@@ -99,7 +134,7 @@ float Screen::plate (G& g, float x, float y, const String& s, const juce::Font& 
 {
     const float w = std::ceil (tw (f, s)) + padX * 2.0f;
     const R r (x, y, w, h);
-    if (vis (g, r)) { window (g, r, bg); text (g, s, r, f, fg); }
+    if (vis (g, r)) { window (g, r, bg); textRaw (g, s, r, f, inkOn (glass (bg), fg)); }
     return w;
 }
 
@@ -133,7 +168,7 @@ void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int s
         // The knob as modelled: a dark cap in a ring of sixteen lights. The lights say where it stands.
         skin.knob (g, cx, cy, size);
         if (b - a > 0.0005f) skin.ringLit (g, cx, cy, size, a, b, litCol);
-        if (kind == Kind::Bipolar) { g.setColour (col::black); g.fillRect (cx - 1.0f, cy - body - 4.5f, 2.0f, 3.5f); }       // its middle, printed on the plate
+        if (kind == Kind::Bipolar) { g.setColour (tone (col::black)); g.fillRect (cx - 1.0f, cy - body - 4.5f, 2.0f, 3.5f); }       // its middle, printed on the plate
         if (target >= 0.0f)
         {
             const float an = pi + juce::jlimit (0.0f, 1.0f, target) * 2.0f * pi, sx = std::sin (an), cs = -std::cos (an);
@@ -182,19 +217,19 @@ void Screen::hollow (G& g, float cx, float cy, float d, bool round)
 
 void Screen::key (G& g, R r, Colour fill, float border)
 {
-    if (lit) skin.key (g, r, fill, border > 2.5f);      // (a thick border was the flat drawing's way to show a key held down)
+    if (lit) skin.key (g, r, cap (fill), border > 2.5f);        // (a thick border was the flat drawing's way to show a key held down)
     else flatKey (g, r, fill, border);
 }
 
 void Screen::flatKey (G& g, R r, Colour fill, float border)
 {
-    g.setColour (col::black); g.fillRect (r);
-    g.setColour (fill); g.fillRect (r.reduced (border));
+    g.setColour (tone (col::black)); g.fillRect (r);
+    g.setColour (fill == col::white ? tone (fill) : fill); g.fillRect (r.reduced (border));
 }
 
 void Screen::window (G& g, R r, Colour glass)
 {
-    if (lit) skin.window (g, r.reduced (1.0f), glass);
+    if (lit) skin.window (g, r.reduced (1.0f), this->glass (glass));
     else { g.setColour (glass); g.fillRect (r); }
 }
 
@@ -215,8 +250,8 @@ void Screen::card (G& g, R r, bool selected)
 {
     if (lit)
     {
-        skin.panel (g, r, col::putty);
-        if (selected) { g.setColour (col::black); g.drawRoundedRectangle (r.reduced (3.0f), 5.0f, 3.0f); }
+        skin.panel (g, r, tone (col::putty));
+        if (selected) { g.setColour (tone (col::black)); g.drawRoundedRectangle (r.reduced (3.0f), 5.0f, 3.0f); }
         return;
     }
     g.setColour (col::black); g.fillRect (r);
@@ -241,7 +276,7 @@ void Screen::readout (G& g, R r, const String& label, const String& value)
 void Screen::panel (G& g, R r, Colour ground)
 {
     if (! vis (g, r)) return;
-    if (lit) { skin.panel (g, r, ground); return; }
+    if (lit) { skin.panel (g, r, tone (ground)); return; }
     g.setColour (col::black); g.fillRect (r);
     g.setColour (ground); g.fillRect (r.reduced (1.0f));
 }
@@ -276,7 +311,7 @@ void Screen::headKeys (G& g, float right, float y, int kind, int lane, int slot,
         const R kr (right - 72.0f + (float) k * 25.0f, y, 22, 22);
         if (vis (g, kr))
         {
-            key (g, kr, fills[k]); text (g, letters[k], kr, fLbl, k == 0 && open ? col::lit : col::black);
+            key (g, kr, fills[k]); textRaw (g, letters[k], kr, fLbl, inkOn (cap (fills[k]), k == 0 && open ? col::lit : col::black));
             if (k == 1 && seen (g, kr)) lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
             if (k == 2 && seen (g, kr)) lastShown[(size_t) soloCtl] = eng.shown (soloCtl);
         }
@@ -301,7 +336,7 @@ void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const Strin
 void Screen::paint (G& g)
 {
     collect = hits.empty() || g.getClipBounds().contains (getLocalBounds());
-    g.fillAll (col::black);
+    g.fillAll (night() ? night::room : col::black);
     g.addTransform (xf);
     if (collect) hits.clear();
     if (lit) { skin.begin (g); if (vis (g, R (0, 0, kW, kH))) skin.body (g, kW, kH); }
@@ -512,7 +547,7 @@ void Screen::drawConfig (G& g, R r)
         status = status.toUpperCase();
         const R sr (x0, y, std::min (544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
         window (g, sr, col::white);
-        g.setColour (col::black); g.setFont (fNote);
+        g.setColour (tone (col::black)); g.setFont (fNote);
         g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
         y += 28;
     }
@@ -537,8 +572,8 @@ void Screen::drawConfig (G& g, R r)
             if (sp.kind == Kind::List)
             {
                 const R vr (cxl + 1, cy + 73, 88, 16);
-                if (lit) skin.window (g, vr, col::white); else { g.setColour (col::white); g.fillRect (vr); }
-                g.setColour (col::black); g.setFont (fLbl);
+                if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
+                g.setColour (tone (col::black)); g.setFont (fLbl);
                 g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
             }
         }
@@ -568,9 +603,9 @@ void Screen::drawLane (G& g, int l, R r)
         const R dr (x0, y0, 126, 26);
         if (vis (g, dr))
         {
-            window (g, dr, active ? col::white : col::black);
-            text (g, num, R (x0 + 2, y0, 26, 26), fLegend, active ? col::black : col::lit);
-            text (g, d.name, R (x0 + 32, y0, 92, 26), fLegend, active ? col::black : col::lit, juce::Justification::centredLeft);
+            window (g, dr, active ? col::lit : col::black);         // (lit on the dark instrument too: the one bright display)
+            textRaw (g, num, R (x0 + 2, y0, 26, 26), fLegend, active ? col::black : col::lit);
+            textRaw (g, d.name, R (x0 + 32, y0, 92, 26), fLegend, active ? col::black : col::lit, juce::Justification::centredLeft);
         }
         hit (dr, hLane, l, 0);
     }
@@ -677,8 +712,8 @@ void Screen::drawMaster (G& g, R r)
     if (! vis (g, R (x0, body + 60, 544, 100))) return;
     // FAULT, gain reduction, loudness
     const float fy = body + 77;
-    g.setColour (col::black); g.fillRect (R (x0 + 6, fy + 8, 14, 26));
-    g.setColour (eng.fault.load() ? col::amber : col::grey); g.fillRect (R (x0 + 8, fy + 10, 10, 22));
+    g.setColour (tone (col::black)); g.fillRect (R (x0 + 6, fy + 8, 14, 26));
+    g.setColour (eng.fault.load() ? col::amber : tone (col::grey)); g.fillRect (R (x0 + 8, fy + 10, 10, 22));
     text (g, "FAULT", R (x0 + 25, fy, 40, 42), fLbl, col::black, juce::Justification::centredLeft);
     readout (g, R (x0 + 66, fy, 64, 42), "GR", String (eng.gainRed.load(), 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     const float lu = eng.lufs.load();
@@ -690,9 +725,9 @@ void Screen::drawMaster (G& g, R r)
     auto yOf = [bot, H] (float db) { return bot - juce::jlimit (0.0f, H, (db + 60.0f) / 66.0f * H); };
     auto bar = [&] (float x, float w, float db)
     {
-        g.setColour (col::black); g.fillRect (R (x, top - 2, w, H + 4));
-        g.setColour (col::white); g.fillRect (R (x + 2, top, w - 4, H));
-        g.setColour (col::black); g.fillRect (R (x + 2, yOf (db), w - 4, bot - yOf (db)));
+        g.setColour (tone (col::black)); g.fillRect (R (x, top - 2, w, H + 4));
+        g.setColour (tone (col::white)); g.fillRect (R (x + 2, top, w - 4, H));
+        g.setColour (tone (col::black)); g.fillRect (R (x + 2, yOf (db), w - 4, bot - yOf (db)));
     };
     for (int l = 0; l < kLanes; ++l)
     {
@@ -700,8 +735,8 @@ void Screen::drawMaster (G& g, R r)
         bar (x, 18, eng.laneDb[(size_t) l].load());
         const R nb (x - 2, bot + 8, 22, 16);
         const bool act = l == ses.activeLane;
-        if (act) { g.setColour (col::black); g.fillRect (nb); }
-        text (g, String (l + 1), nb, fLbl, act ? col::lit : col::black);
+        if (act) { g.setColour (tone (col::black)); g.fillRect (nb); }
+        textRaw (g, String (l + 1), nb, fLbl, act ? (night() ? col::black : col::lit) : tone (col::black));
     }
     const float mx = mp.getX() + 267;
     bar (mx, 16, eng.peakL.load());
@@ -715,7 +750,7 @@ void Screen::drawMaster (G& g, R r)
     static const int ticks[] = { -48, -24, -12, 0 };
     for (int t : ticks)
     {
-        g.setColour (col::black); g.fillRect (R (sx, yOf ((float) t) - 1, 6, 2));
+        g.setColour (tone (col::black)); g.fillRect (R (sx, yOf ((float) t) - 1, 6, 2));
         text (g, t == 0 ? String ("0") : String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) + String (-t), R (sx + 7, yOf ((float) t) - 7, 22, 14), fLbl, col::black, juce::Justification::centredLeft);
     }
     hit (R (mx - 2, mp.getY() + 2, 40, 20), hAct, aClipReset, 0);
@@ -745,7 +780,7 @@ void Screen::drawSequencer (G& g, R r)
     if (vis (g, mk))
     {
         key (g, mk, seqOff ? col::amber : col::putty);
-        text (g, "M", mk, fLbl, col::black);
+        textRaw (g, "M", mk, fLbl, inkOn (cap (seqOff ? col::amber : col::putty), col::black));
         if (seen (g, mk)) lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
     }
     hit (mk.expanded (1), hToggle, muteCtl);
@@ -772,17 +807,17 @@ void Screen::drawSequencer (G& g, R r)
         const R pr (x1 + (float) w * 93, y0, 85, 18);
         if (vis (g, pr))
         {
-            if (lit) skin.window (g, pr.reduced (0.5f), col::white);
-            if (w == ses.page) { g.setColour (col::black); g.drawRect (pr, 2.0f); }
+            if (lit) skin.window (g, pr.reduced (0.5f), glass (col::white));
+            if (w == ses.page) { g.setColour (tone (col::black)); g.drawRect (pr, 2.0f); }
             for (int j = 0; j < 16; ++j)
             {
                 const int i = w * 16 + j;
                 const R c (pr.getX() + 3 + (float) j * 5, pr.getY() + 3, 4, 12);
                 const bool in = i < len;
-                g.setColour (in ? col::black : col::sea); g.fillRect (c);
-                if (! in) { g.setColour (col::putty); g.fillRect (c.reduced (1)); }
+                g.setColour (tone (in ? col::black : col::sea)); g.fillRect (c);
+                if (! in) { g.setColour (tone (col::putty)); g.fillRect (c.reduced (1)); }
                 else if (i == playing) { g.setColour (col::green); g.fillRect (c.reduced (1)); }
-                else if (! pat.steps[(size_t) i].on) { g.setColour (col::white); g.fillRect (c.reduced (1)); }
+                else if (! pat.steps[(size_t) i].on) { g.setColour (tone (col::white)); g.fillRect (c.reduced (1)); }
             }
         }
         hit (pr.expanded (0, 3), hPageSel, w, 0);
@@ -813,7 +848,7 @@ void Screen::drawSequencer (G& g, R r)
         if (lit) { if (in) key (g, kr, col::white); else hollow (g, sx + 20, ky + 20, 40, false); }
         else if (in) { g.setColour (col::black); g.fillRect (kr); g.setColour (col::white); g.fillRect (inner); }
         else { g.setColour (col::sea); g.drawRect (kr.reduced (0.5f), 1.0f); }
-        g.setColour (seqOff ? col::grey : col::black);      // muted: the steps are there, in grey
+        g.setColour (seqOff ? (night() ? night::dim : col::grey) : tone (col::black));      // muted: the steps are there, in grey
         if (on)
         {
             const int rr = juce::jlimit (1, 4, x.ratchet);
@@ -851,8 +886,8 @@ void Screen::drawSequencer (G& g, R r)
         }
         const bool sel = in && i == ses.selStep;
         const R nb (sx, ky + 44, 40, 16);
-        if (sel) { g.setColour (col::black); g.fillRect (nb); }
-        text (g, d.pitched && on ? String (kNotes[juce::jlimit (0, 11, x.note)]) + String (x.octave) : String (i + 1), nb, fLbl, sel ? col::lit : col::black);
+        if (sel) { g.setColour (tone (col::black)); g.fillRect (nb); }
+        textRaw (g, d.pitched && on ? String (kNotes[juce::jlimit (0, 11, x.note)]) + String (x.octave) : String (i + 1), nb, fLbl, sel ? (night() ? col::black : col::lit) : tone (col::black));
     }
 
     // generators
@@ -882,7 +917,8 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
     tag (g, R (x0, y0, wTag, 24), num);
     const bool isBase = s.id == ses.baseId;
-    const float wn = plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? col::black : col::white, isBase ? col::lit : col::black, 24);
+    // the base scene's name is the black one; on the dark instrument, the lit one
+    const float wn = plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? (night() ? col::lit : col::black) : col::white, isBase ? (night() ? col::black : col::lit) : col::black, 24);
     if (selected && hitKind == hCard) selNameRect = R (x0 + wTag, y0, std::max (wn, 150.0f), 24);
     if (s.id == ses.cueing()) plate (g, r.getRight() - 6 - (std::ceil (tw (fLegend, "IN THE PHONES")) + 16), y0, "IN THE PHONES", fLegend, 8, col::green, col::lit, 24);
     else text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
@@ -890,7 +926,7 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     auto box = [&] (float x, float w)
     {
         const R b (x, gy, w, gh);
-        if (lit) skin.window (g, b.reduced (0.5f), col::white);
+        if (lit) skin.window (g, b.reduced (0.5f), glass (col::white));
         else { g.setColour (col::black); g.fillRect (b); g.setColour (col::white); g.fillRect (b.reduced (1)); }
         return b.reduced (1);
     };
@@ -904,7 +940,7 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
         g.setColour (heat (p.bright)); g.fillRect (R (e.getX(), e.getBottom() - eh, e.getWidth(), eh));
         // the spectrum's shape, low to high
         const R sp = box (x0 + 20, 82);
-        g.setColour (col::black);
+        g.setColour (tone (col::black));
         for (int k = 0; k < 16; ++k)
         {
             const float h = std::round (p.bands[(size_t) k] * sp.getHeight());
@@ -917,12 +953,12 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
             {
                 const float v = p.pulse[(size_t) ((row == 0 ? 16 : 0) + k)];
                 if (v < 0.08f) continue;
-                g.setColour (col::black.withAlpha (juce::jlimit (0.0f, 1.0f, v)));
+                g.setColour (tone (col::black).withAlpha (juce::jlimit (0.0f, 1.0f, v)));
                 g.fillRect (R (pu.getX() + (float) k * 6, pu.getY() + (float) row * 14, 5, 13));
             }
         // how much of each lane
         const R la = box (x0 + 208, 52);
-        g.setColour (col::black);
+        g.setColour (tone (col::black));
         for (int l = 0; l < kLanes; ++l)
         {
             const float h = std::round (p.lanes[(size_t) l] * la.getHeight());
@@ -938,9 +974,9 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
         for (int i = 0; i < p.length; ++i) on += p.steps[(size_t) i].on ? 1 : 0;
         const float f = juce::jlimit (0.0f, 1.0f, (float) on / (float) std::max (1, std::min (p.length, 16)));
         const R b (x0 + (float) l * 23.6f, y0 + 30, 20, 16);
-        g.setColour (col::black); g.fillRect (b);
-        g.setColour (col::white); g.fillRect (b.reduced (1));
-        g.setColour (col::black); g.fillRect (R (b.getX() + 1, b.getBottom() - 1 - std::round (f * 14), 18, std::round (f * 14)));
+        g.setColour (tone (col::black)); g.fillRect (b);
+        g.setColour (tone (col::white)); g.fillRect (b.reduced (1));
+        g.setColour (tone (col::black)); g.fillRect (R (b.getX() + 1, b.getBottom() - 1 - std::round (f * 14), 18, std::round (f * 14)));
     }
 }
 
@@ -969,7 +1005,8 @@ void Screen::drawLibrary (G& g)
     // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
     actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5);
     actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
-    const String help = ! cueMode ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE."
+    const String help = ! cueMode ? (night() ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE LIT NAME IS THE BASE SCENE."
+                                             : "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.")
                       : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES: TICK THEM IN AUDIO."
                       : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
     if (online == nullptr) { text (g, help, R (x0 + 540, ky, 1100, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
@@ -1029,12 +1066,12 @@ void Screen::drawMacros (G& g)
                 text (g, String (li + 1), sr, fLbl, col::lit);
                 hit (sr, hSlot, k, s);
             }
-            else { g.setColour (col::sea); g.drawRect (sr.reduced (0.5f), 1.0f); }
+            else { g.setColour (tone (col::sea)); g.drawRect (sr.reduced (0.5f), 1.0f); }
         }
         String order;
         for (size_t s = 0; s < kn.snaps.size(); ++s)
             if (auto* sn = ses.findSnap (kn.snaps[s])) order << (s > 0 ? "  >  " : "") << sn->name;
-        g.setColour (col::black); g.setFont (fLbl);
+        g.setColour (tone (col::black)); g.setFont (fLbl);
         g.drawFittedText (order.isEmpty() ? String ("NO SNAPSHOTS. PICK THIS KNOB, THEN TAP SNAPSHOTS ON THE RIGHT.") : order,
                           juce::Rectangle<int> ((int) x0, (int) (ky + 68), 258, 30), juce::Justification::topLeft, 2, 1.0f);
         // what it moves, lane by lane
@@ -1068,7 +1105,7 @@ void Screen::drawMacros (G& g)
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
     const String help = "PICK A KNOB. TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10). TAP A NUMBERED SLOT TO TAKE IT OUT. "
                         "THE KNOB MOVES ONLY WHAT DIFFERS AMONG ITS SNAPSHOTS, AS AN OFFSET FROM THE BASE SCENE.";
-    g.setColour (col::black); g.setFont (fLbl);
+    g.setColour (tone (col::black)); g.setFont (fLbl);
     g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 330, (int) ky - 4, 1300, 48), juce::Justification::centredLeft, 3, 1.0f);
 }
 
@@ -1365,7 +1402,14 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         return true;
     }
     if (k.getTextCharacter() == 'f' || k.getTextCharacter() == 'F') { if (onFullScreen) onFullScreen(); return true; }
-    if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { setLit (! lit); return true; }
+    if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { setLit (! lit); if (onLook) onLook(); return true; }
+    if (k.getTextCharacter() == 'd' || k.getTextCharacter() == 'D')
+    {
+        // the dark instrument, which is the lit skin's: from the flat drawing D goes to it
+        if (! lit) { setLit (true); setDark (true); } else setDark (! dark);
+        if (onLook) onLook();
+        return true;
+    }
     if (k == juce::KeyPress::leftKey)  { ses.page = std::max (0, ses.page - 1); repaint(); return true; }
     if (k == juce::KeyPress::rightKey) { ses.page = std::min (7, ses.page + 1); repaint(); return true; }
     if (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey)
@@ -1475,9 +1519,9 @@ void Screen::timerCallback()
     {
         // CONFIG's plate and the cards of the other pages, made while nothing is waiting on them
         warm = true;
-        skin.makePanel (554, 894, col::grey);
-        skin.makePanel (272, 66, col::putty);
-        skin.makePanel (272, 216, col::putty);
+        skin.makePanel (554, 894, tone (col::grey));
+        skin.makePanel (272, 66, tone (col::putty));
+        skin.makePanel (272, 216, tone (col::putty));
     }
     // repaint what moved on its own: gliding knobs, the meters, the step that is playing
     for (auto& h : hits)

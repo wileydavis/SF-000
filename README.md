@@ -24,7 +24,8 @@ First run:
 1. Press **AUDIO** (white key, top bar) and pick the interface and its outputs. The choice is kept.
 2. Press **RUN** (or the space bar). Every lane has a starting pattern.
 3. Press **F** for full screen at 1728 x 1117; **F** or **Esc** leaves it.
-4. Press **L** to change between the lit skin (how it starts) and the flat drawing. See The look, below.
+4. Press **D** for the dark instrument and **D** again for the light one. **L** changes between the
+   lit skin (how it starts) and the flat drawing. The look is kept between runs. See The look, below.
 
 ## Playing it
 
@@ -56,6 +57,7 @@ First run:
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
+| **D** | the dark instrument, or the light one |
 | **L** | the lit skin, or the flat drawing it replaced |
 
 The screen never asks a question while it plays. PANIC silences every voice and tail.
@@ -84,7 +86,15 @@ first pass at it.
   travels (with a white mark where it is going). A knob with a middle has a mark printed above it.
 - **Displays.** A panel's name is a dark display with light letters. The active lane's is lit:
   pale, with dark letters. Readouts, the step pages and the meters are pale displays.
-- **L** on the keyboard gives the flat drawing back, exactly as it was, and L again the skin.
+- **D** on the keyboard is the dark instrument: a graphite case, dark plates and keys, light
+  print. The lights, the lit keys and the yellow keys are as they were. A pale display turns dark
+  with light marks (the meters, the step pages, the readouts, a step key's bars), so the screen
+  gives off far less light. Two things stay bright because they are what to find at a glance: the
+  active lane's display, and in the library the base scene's name (there it is the lit name, where
+  on the light instrument it is the black one). D again is the light instrument.
+- **L** on the keyboard gives the flat drawing back, exactly as it was, and L again the skin. The
+  dark instrument is the skin's: from the flat drawing, D goes to it.
+- The look you leave it in is the look it opens in (`look.json`, beside the session).
 
 The pictures are made when the window first shows and again when it changes size (it waits until
 the size has held for a moment). `./build.sh perf` gives what both drawings cost on your Mac.
@@ -276,7 +286,7 @@ build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapsho
 build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --flat (the flat drawing)
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing)
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```
 
@@ -311,7 +321,7 @@ meters when a bar has moved, the playing step.
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
 scene, each snapshot's profile; its layout and the rules that keep old files readable are in
-`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
+`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `look.json` (the look: lit or flat, light or dark), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
@@ -320,8 +330,7 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
 - The skin is a first pass, drawn from measurements of the 3D model, not rendered from the model
   itself: no texture maps, one finish per material, and the inside of the displays (the meters,
   the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices
-  it does not follow yet are listed in `DECISIONS.md` (items 172 to 174). L is not remembered
-  between runs.
+  it does not follow yet are listed in `DECISIONS.md` (items 172 to 174).
 
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.
@@ -334,6 +343,7 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
 - Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound.
   The session file is ready for it: `FORMAT.md`.
 - ONLINE the other way: loading a library file, buckets and snapshot knobs made in the web library.
-- PA and cue outputs with room EQ; the second display mode for a dark stage.
+- PA and cue outputs with room EQ. A display mode made for a dark stage: the dark instrument (D)
+  is a start on it, with nothing dimmed or enlarged for distance.
 - Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).
 - Crash recovery beyond the saved session; the 8-hour soak test.
