@@ -1944,7 +1944,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         if (page != pMain) setPage (pMain);
         else if (cfgOpen && loadOpen) { loadOpen = false; repaint(); }
         else if (cfgOpen) { cfgOpen = false; repaint(); }
-        else if (onFullScreen) onFullScreen();
+        else if (onLeaveFullScreen) onLeaveFullScreen();
         return true;
     }
     if (k.getTextCharacter() == 'f' || k.getTextCharacter() == 'F') { if (onFullScreen) onFullScreen(); return true; }

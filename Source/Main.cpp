@@ -3099,6 +3099,62 @@ static int perf()
 // The 3D stage, played: SF-000 --stagetest. It needs a display to open a window on (xvfb will do)
 // and OpenGL 3.2 (a software driver will do: this is about what is drawn and what the hand
 // reaches, not how fast).
+// The app's icon is one of the instrument's own modules: a square plate with a 4 x 4 field of
+// knobs, some lit, drawn by the 3D stage from straight above. (--icon file.png; tools/icon.py
+// then gives it the corners and margins a Mac icon has.)
+static int iconShot (const juce::String& path)
+{
+    using namespace sf0;
+    Engine e;
+    juce::Component host;
+    host.setOpaque (true);
+    host.setSize (1024, 1024);
+    host.addToDesktop (0); host.setVisible (true);
+    Stage st (e);
+    Stage::Pose pose; pose.view = 0; pose.turn = 0.0f; pose.tilt = 89.9f;
+    st.setHome (pose, false);
+    st.setGlow (Stage::kGlowHue, 0.0f);
+    st.setDark (true);                              // (the dark instrument: its plates near black, its lights the brighter for it)
+    st.attachTo (host);
+    auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
+    for (int i = 0; i < 400 && st.state() == Stage::State::starting; ++i) pump (25);
+    if (st.state() != Stage::State::running) { std::printf ("the 3D stage did not start: %s\n", st.whyNot().toRawUTF8()); return 1; }
+    Parts p;
+    const float cx = Screen::kW * 0.5f, cy = Screen::kH * 0.5f, pitch = 58.0f, half = 138.0f;
+    p.dark = true;
+    p.plates.push_back ({ { cx - half - 60, cy - half - 60, 2 * half + 120, 2 * half + 120 }, 0xff1A1C1B, {}, 0.0f });       // something darker under it, for the plate's edge to be found against
+    p.plates.push_back ({ { cx - half, cy - half, 2 * half, 2 * half }, 0xff3B3C3A, {}, 0.0f });                              // the dark instrument's plate
+    // what each knob shows: how far round its lights go, and their colour (white, as most; a gate's red, a level's blue, one on its way in green)
+    const float lit[16] = { 0.50f, 0.72f, 0.30f, 0.86f,   0.64f, 0.22f, 0.94f, 0.42f,   0.58f, 0.80f, 0.36f, 0.70f,   0.46f, 0.90f, 0.28f, 0.62f };
+    const juce::uint32 white = 0xffF6F6F6, red = 0xffE8443C, blue = 0xff3D9BE9, green = 0xff3FD35C;
+    const juce::uint32 light[16] = { white, white, white, white,   white, green, white, white,   red, white, white, blue,   blue, blue, white, white };
+    for (int r = 0; r < 4; ++r)
+        for (int c = 0; c < 4; ++c)
+        {
+            Parts::Knob k;
+            k.cx = cx + ((float) c - 1.5f) * pitch; k.cy = cy + ((float) r - 1.5f) * pitch;
+            k.big = true; k.ctl = -1; k.kind = 0; k.steps = 0; k.light = light[r * 4 + c]; k.a = 0.0f; k.b = lit[r * 4 + c]; k.mark = -1.0f;
+            p.knobs.push_back (k);
+        }
+    p.settle();
+    st.setParts (p);
+    st.sheet().clear (st.sheet().getBounds(), juce::Colours::transparentBlack);
+    st.sheetChanged (st.sheet().getBounds());
+    const juce::Rectangle<float> box (cx - half - 8, cy - half - 8, 2 * half + 16, 2 * half + 16);
+    st.lookAt (&box);
+    pump (200);
+    st.settle();
+    const auto img = st.capture();
+    st.detach();
+    juce::PNGImageFormat png;
+    const juce::File f = juce::File::getCurrentWorkingDirectory().getChildFile (path);
+    f.deleteFile();
+    bool ok = false;
+    if (img.isValid()) if (auto out = f.createOutputStream()) ok = png.writeImageToStream (img, *out);
+    std::printf (ok ? "wrote %s (%d x %d)\n" : "could not write %s\n", f.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
+    return ok ? 0 : 1;
+}
+
 // The 3D stage is started with a note left beside the session, and the note is taken away once
 // the stage is up and has drawn (or has said why it is not, or the app has left in good order).
 // A note still there at launch means the last start never finished: the app died, or was
@@ -3461,6 +3517,28 @@ static int stageTest()
         const auto tags = sc.testTags();
         check (std::find (tags.begin(), tags.end(), -1) != tags.end() && sc.testTip().contains ("RUMBLE"), "INFO: a knob pointed at says what it is, in a box by the pointer");
         sc.setInfo (false); fresh();
+    }
+
+    {
+        // the glow under the case: its colour and brightness are SETUP's, and as it comes nothing has changed
+        auto rowsApart = [] (const juce::Image& x, const juce::Image& y)
+        {
+            if (! x.isValid() || x.getBounds() != y.getBounds()) return -1;
+            const juce::Image::BitmapData a (x, juce::Image::BitmapData::readOnly), c (y, juce::Image::BitmapData::readOnly);
+            int n = 0;
+            for (int yy = 0; yy < a.height; ++yy) if (std::memcmp (a.getLinePointer (yy), c.getLinePointer (yy), (size_t) a.width * 4) != 0) ++n;
+            return n;
+        };
+        pump (3400); fresh();
+        const auto asItComes = fresh();
+        sc.setGlow (0.58f, 1.0f);
+        const auto blue = fresh();
+        sc.setGlow (Stage::kGlowHue, 0.0f);
+        const auto none = fresh();
+        sc.setGlow (Stage::kGlowHue, Stage::kGlowBright);
+        const auto back = fresh();
+        const int toBlue = rowsApart (asItComes, blue), toNone = rowsApart (asItComes, none), again = rowsApart (asItComes, back);
+        check (toBlue > 100 && toNone > 100 && again == 0, "the glow under the case takes SETUP's colour and brightness (" + juce::String (toBlue) + " rows of the picture change for blue and bright, " + juce::String (toNone) + " for none), and put back it is as it was (" + juce::String (again) + ")");
     }
 
     // 7. the dark instrument, and back to the lit skin and the flat drawing
@@ -4084,6 +4162,7 @@ public:
             setApplicationReturnValue (selfTest (w >= 0 && w + 1 < args.size() ? args[w + 1].unquoted() : juce::String(), nb >= 0 && nb + 1 < args.size() ? args[nb + 1].getDoubleValue() : 16.0));
             quit(); return;
         }
+        if (args.contains ("--icon")) { const int i = args.indexOf ("--icon"); setApplicationReturnValue (iconShot (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("icon.png"))); quit(); return; }
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
@@ -4128,6 +4207,7 @@ public:
             window->setFullScreen (! window->isFullScreen());
             juce::Timer::callAfterDelay (400, [safe = juce::Component::SafePointer<sf0::Screen> (screen)] { if (safe != nullptr) safe->grabKeyboardFocus(); });
         };
+        screen->onLeaveFullScreen = [this] { if (window != nullptr && window->isFullScreen()) window->setFullScreen (false); };
         // The look last chosen (L: the lit skin or the flat drawing; D: its dark instrument) is kept between runs.
         {
             const juce::var look = juce::JSON::parse (lookFile());

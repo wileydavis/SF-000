@@ -20,6 +20,7 @@ juce_add_gui_app(SF000
     COMPANY_NAME                "Strange Frequencies"
     COMPANY_WEBSITE             "https://strangefrequencies.fm"
     BUNDLE_ID                   "fm.strangefrequencies.sf000"
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.png"
     MICROPHONE_PERMISSION_ENABLED FALSE)
 
 juce_add_binary_data(SF000Assets SOURCES

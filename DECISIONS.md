@@ -919,6 +919,54 @@ finding. Numbers in brackets are the audit's.
      notes are stamped when they reach SF-000, not when the Mac received them. The difference
      is under a millisecond as a rule and nobody has measured it here. Both want your Mac.
 
+## Twenty-second build (Nov 12): MOTION, CONFIG in boxes, LOAD, SETUP, the icon
+
+You asked what had happened to the motion system, then for: two motions in each instrument's
+CONFIG (waveform, amount, speed); tooltips on CONFIG's controls and logical groups with labels
+and boxes; a load button for anything that takes a file, usable full screen while playing; a way
+out of full screen; AUDIO renamed SETUP, with knobs there for the underglow's colour and
+brightness; and a new icon from a 4 x 4 module, then "use dark instrument for icon".
+
+222. **What had happened to MOTION: nothing was decided, it fell out.** The suite's two modulators
+     came across inside every module and ran, switched off, with no control anywhere: CONFIG
+     listed only a module's own parameters, and MOTION is the suite's. Mine to have flagged.
+223. **MOTION is the suite's own, all of it, in each lane's CONFIG**: WAVE, SPEED, TARGET, AMOUNT,
+     twice. The names are yours (the suite says SOURCE, RATE, DEPTH). *proposed:* TARGET lists the
+     lane's twelve knobs first, in the panel's order and by the panel's names, then the rest of
+     the instrument's. *proposed:* instruments only, as you said; an effect's CONFIG has none.
+224. **MOTION is kept in snapshots**, and a snapshot from before it could be set means it off:
+     that is what it sounded like. A recall that changes a lane's MOTION crosses the voice over,
+     as any change of CONFIG does.
+225. **Not built: seeing it on the main panel.** A knob being moved by MOTION shows nothing on
+     its ring yet; you hear it. A mark on the ring for where the sound is now is the next thing
+     I would add. *proposed.*
+226. **CONFIG's boxes**: SOUND, LAYER, SAMPLE, WAVETABLE, FM 4-OP, POCKET, ECHO, RIG, MOTION 1,
+     MOTION 2 (EFFECT on an insert or a return). The groups are the suite's own where it has them
+     and the control's name where it does not. A small box shares a row with others; MOTION's two
+     have rows of their own, last. *proposed.*
+227. **A model's own controls show only while that model plays** (FM 4-OP's thirteen, WAVETABLE's
+     table, a sample's four where SAMPLE is one model among others). The lead's CONFIG was 38
+     controls in seven rows; as an acid line it is 18 and MOTION, with nothing to scroll.
+     VOICE's phrase controls always show: every model of it plays the phrase. *proposed.*
+228. **ALLOC is gone from CONFIG.** The rig has no ALLOC; the switch did nothing. *Mine.*
+229. **Every CONFIG control answers INFO**: 548 of them across the instruments, effects and
+     returns, held to it by a check. The words follow the suite's manual, cut to a line or two.
+230. **LOAD is a list in CONFIG's own panel**, not the system's file window: folders, then the
+     sound files it can read, a click to go in or to load. So it works full screen, and in 3D.
+     It remembers where a lane's file and an effect's last came from. Loading is what dropping
+     was: the file is read on the screen's thread, and the sound carries on. *Mine:* no preview
+     of a file before it is loaded, and no typing of a path.
+231. **Full screen could be entered and never left.** JUCE's kiosk mode, on the Mac with the
+     system's title bar, asks for full screen on the way out as on the way in. F now uses the
+     window's own full screen, which goes both ways; Esc only ever leaves it; SETUP has a key for
+     it too. (Until you build this: ctrl-cmd-F, or the green button at the top of the screen.)
+232. **AUDIO is SETUP**, and holds what is set once: the interface, MIDI and the clock as before,
+     FULL SCREEN, and two knobs for the glow under the case, its colour and its brightness
+     (you had asked where the dimmer was). As it comes, the glow is exactly what it was.
+233. **The icon is a module of the dark instrument**: a plate with a 4 x 4 field of knobs, some
+     lit in the instrument's colours, drawn by the 3D stage itself from straight above
+     (`--icon`, then `tools/icon.py` for a Mac icon's corners). *proposed:* which knobs are lit.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -968,6 +1016,10 @@ finding. Numbers in brackets are the audit's.
   stopped and join at the next RUN, with no burst); a MUTE and a THROW sequenced from the ONE
   (tight, not late); quitting with ONLINE on and the network pulled (it should simply quit); a
   recall that changes VOICE's model with a long sample in it (no pause of the screen).
+- **The twenty-second build is unseen on the Mac**: leaving full screen (the fault was read in
+  JUCE's source, not reproduced; the fix uses a call I can only run on Linux), the SETUP window's
+  new row, the icon in the Dock (the Finder may show the old one until it forgets it), and how
+  MOTION sounds on each wave, which is the suite's code unchanged but has not been heard here.
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.

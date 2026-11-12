@@ -20,6 +20,7 @@ public:
     enum Page { pMain, pLibrary, pMacros };
     void setPage (Page);
     std::function<void()> onAudioSetup, onFullScreen, onOnlineSetup;
+    std::function<void()> onLeaveFullScreen;    // Esc, with nothing else open: out of full screen (never into it)
     Online* online = nullptr;                   // the ONLINE key's; none: the key is not drawn
     Recorder* recorder = nullptr;               // the REC key's; none: the key does nothing
     // The lit skin (surfaces with light and shade, after the 3D model) or the flat drawing it replaced. L on the keyboard changes over.

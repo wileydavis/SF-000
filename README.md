@@ -21,9 +21,9 @@ The first build clones JUCE 8.0.4 into `./JUCE` and takes a few minutes.
 
 First run:
 
-1. Press **AUDIO** (white key, top bar) and pick the interface and its outputs. The choice is kept.
+1. Press **SETUP** (white key, top bar) and pick the interface and its outputs. The choice is kept.
 2. Press **RUN** (or the space bar). Every lane has a starting pattern.
-3. Press **F** for full screen at 1728 x 1117; **F** or **Esc** leaves it.
+3. Press **F** for full screen at 1728 x 1117; **F** or **Esc** leaves it (so does FULL SCREEN in SETUP).
 4. It opens as the 3D stage: the instrument as a solid thing, lit. **3** changes between that and
    the lit skin; **V** goes round its three views; **K** unlocks the view so a drag turns it. See
    The 3D stage, below.
@@ -143,6 +143,9 @@ key's gate and anything else that follows the hand is wherever the pointer is on
 - **Typing a name** (a snapshot's, a snapshot knob's) happens in a small box over the stage.
 - **D** is the dark instrument here too.
 
+The glow under the case is set in SETUP: two knobs, its colour (round the wheel) and its
+brightness (none to four times what it comes with). Double-click a knob for what it came with.
+
 If OpenGL cannot start on a machine, the lit skin stays, the top bar says why for a few seconds,
 and the reason is written to `3d.log` beside the session. The same if it starts and its first
 picture comes out blank: the stage reads that picture back, and gives way to the lit skin
@@ -173,6 +176,21 @@ back at the other. The sequencer stays where it is.
   parameters. At the top is the module's own display: the waveform with its in and out points, and
   on VOICE the phrase with its cue points. The display takes the mouse.
 - **An insert's or a return's CONFIG** holds that effect's remaining parameters and its display.
+- **The controls stand in boxes by what they belong to**: SOUND (MODEL first), LAYER, SAMPLE,
+  ECHO, POCKET, RIG, and on an instrument MOTION 1 and MOTION 2. A model's own controls (FM 4-OP's
+  operators, WAVETABLE's table) and a sample's are there only while that model plays, as the
+  lane's model or its layer's: what is on the panel does something. More rows than fit: scroll.
+- **MOTION** moves one of the instrument's knobs by itself. Each lane has two: WAVE (sine,
+  triangle, square, ramps, random, drift, steps, an envelope, the kick's hits, the lane's own
+  notes), SPEED (a sixteenth to 64 bars, locked to the bars), TARGET (the lane's own knobs first,
+  as on its panel, then the rest of the instrument's) and AMOUNT (either way, up to the whole
+  range). It adds to where the knob stands and to what a snapshot knob does. It is kept in
+  snapshots; one taken before MOTION could be set means it off.
+- **LOAD**, on any CONFIG that takes a file (a sample, a phrase, an impulse response), lists
+  folders and sound files in the panel itself: a click goes into a folder, UP comes out, a click
+  on a file loads it as a drop would. No window of the system's is opened, so it works full
+  screen, while playing. It opens where the last file came from.
+- **INFO** (I) answers for every CONFIG control too.
 - **SPACE (return B) is one of two reverbs.** MODEL, first in its CONFIG, chooses REVERB (the
   algorithmic one it starts as) or CONVOLUTION. The convolution holds eight places; PLACE (or a
   click on the numbered boxes in its display) chooses one, and a dropped file fills the place it
@@ -204,12 +222,12 @@ and from the rig itself it is given a profile, and its card in the library draws
 the headphones, on outputs 3 + 4, looped. While the clock runs they play in time: on the rig's bars
 and at the rig's tempo (so the pitch moves with the tempo's ratio to the clip's own). The set
 itself is not touched. Tap the card again to stop, another to hear that one, **RECALL** to take the
-one in the headphones to the set. Outputs 3 + 4 have to be ticked in AUDIO once.
+one in the headphones to the set. Outputs 3 + 4 have to be ticked in SETUP once.
 
 **PHONES** (beside CUE, or **H** on any screen) is for playing on headphones with only one pair of
 outputs. While a cue plays, outputs 1 + 2 carry the set in the left ear (both its sides, summed)
 and the cue in the right; when the cue stops, the set is back in both, over 10 ms. With no cue
-playing nothing is different. The AUDIO key at the top turns green and reads PHONES while it is
+playing nothing is different. The SETUP key at the top turns green and reads PHONES while it is
 on. A recording, the meters and a snapshot's kept bars are the set itself whichever way it is.
 It is off every time SF-000 opens, so it cannot be left on for a PA.
 
@@ -293,18 +311,18 @@ pushes behind the ENERGY, BUILD, ACID, DIST and WARP knobs.
 
 ### MIDI and the E16
 
-Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing.
+Open SETUP to see what is connected. Nothing needs choosing.
 
 - **Notes in.** Every MIDI input is listened to. A lane's number is its channel (1 KICK to 11 VOICE),
   so the OXI One plays the lanes as it played the Live tracks. Notes and the lane's own steps sound
   together; **M** in the sequencer strip mutes a lane's own steps, so only the One plays it.
-- **LATENCY** in AUDIO AND MIDI is how long SF-000 takes from a note arriving to its sound, to a
+- **LATENCY** in SETUP is how long SF-000 takes from a note arriving to its sound, to a
   tenth of a millisecond, and what it is made of: the wait for a buffer, the way out through the
   interface, and 4 ms inside (the limiter's look-ahead). About 10 ms at 128 samples, less at 64. It
   is the figure to delay outside gear by to hear it with SF-000. It is worked out, not measured
   (the interface's part is what the system reports). Only the buffer size changes it: no insert and
   no recall does.
-- **The clock is sent, followed, or neither**: CLOCK in AUDIO AND MIDI. The choice is kept.
+- **The clock is sent, followed, or neither**: CLOCK in SETUP. The choice is kept.
 - **SEND.** While it runs, START, 24 ticks a beat and STOP go to every output that is not the E16.
   CLOCK LEAD is how long the follower takes to answer: play a plain sixteenth pattern from it into a
   lane, read NOTES IN LAND x MS LATE in the panel, and put that number on CLOCK LEAD. With the clock
@@ -387,10 +405,11 @@ build/.../SF-000 --uitest                         # clicks and drags every contr
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
 build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapshot library running on this machine (its `npm run dev`)
-build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
+build/.../SF-000 --shot setup.png --setup follow  # draw the SETUP panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
+build/.../SF-000 --icon raw.png                   # the picture the app's icon is made from (then: python3 tools/icon.py raw.png assets/icon.png)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```
@@ -409,7 +428,7 @@ lock the screen's thread and the drawing thread against each other.
 ### Load
 
 Activity Monitor's figure is a share of one core (100 % is one of the Mac's cores busy all the time).
-It is the engine plus the screen. AUDIO AND MIDI shows the engine's share on its own (ENGINE: n %),
+It is the engine plus the screen. SETUP shows the engine's share on its own (ENGINE: n %),
 and `./build.sh perf` measures both. The screen redraws only what moved: a travelling knob, the
 meters when a bar has moved, the playing step.
 
