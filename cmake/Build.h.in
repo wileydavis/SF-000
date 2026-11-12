@@ -1,0 +1,3 @@
+// Made by CMake each time it configures (build.sh does, every build): the commit this was built from.
+#pragma once
+#define SF000_COMMIT "@SF000_COMMIT@"

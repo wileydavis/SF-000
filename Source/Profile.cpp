@@ -200,6 +200,7 @@ juce::var Profile::toVar() const
 {
     auto* o = new juce::DynamicObject();
     auto set = [o] (const char* k, float v) { o->setProperty (k, juce::roundToInt (v * 1000.0f) / 1000.0); };
+    o->setProperty ("v", kProfileVersion);
     set ("energy", energy); set ("weight", weight); set ("bright", bright); set ("density", density);
     set ("tone", tone); set ("movement", movement); set ("wet", wet); set ("bpm", bpm);
     o->setProperty ("bars", bars);

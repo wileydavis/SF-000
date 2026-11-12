@@ -353,6 +353,163 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
+    // The session file (FORMAT.md): one written by an older build opens as it did and loses nothing;
+    // whatever this build does not know in a file is carried through a save; every snapshot says
+    // what it was made with; a file in a newer format is left alone.
+    {
+        using juce::var;
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_format_test");
+        tmp.deleteRecursively();
+        tmp.createDirectory();
+        const auto state = tmp.getChildFile ("session.json");
+        Session::stateFileForTests = state;
+        auto text = [] (const var& v) { return juce::JSON::toString (v, true); };
+        auto without = [] (const var& v, const char* key) { var c = v.clone(); if (auto* o = c.getDynamicObject()) o->removeProperty (key); return c; };
+        auto open = [] (const std::function<void (Session&)>& with)
+        {
+            Engine e;
+            e.prepare (48000.0, 128);
+            Session ses (e, true);
+            with (ses);
+            ses.touch(); ses.save();
+        };
+        auto isUid = [] (const juce::String& u) { return u.length() > 17 && u[16] == '-' && u.substring (0, 16).containsOnly ("0123456789abcdef") && u.substring (17).containsOnly ("0123456789abcdef"); };
+
+        const juce::File fixture = juce::File (SF000_SOURCE_DIR).getChildFile ("tests").getChildFile ("fixtures").getChildFile ("session-2026-11-11.json");
+        if (! fixture.existsAsFile())
+            std::printf ("  SKIP: the checks on an older build's session file need %s\n", fixture.getFullPathName().toRawUTF8());
+        else
+        {
+            // (a) a file as the build of 11 November 2026 wrote it, before any of this was kept
+            const var old = juce::JSON::parse (fixture);
+            const int n = old["library"].size();
+            fixture.copyFileTo (state);
+            bool read = false; juce::String libId;
+            open ([&] (Session& ses)
+            {
+                const int up = ses.indexOf (1001), last = (int) ses.library.size() - 1;
+                read = (int) ses.library.size() == n && up >= 0 && ses.library[(size_t) up].name == "ENERGY UP"
+                       && std::abs (ses.library[(size_t) up].values[(size_t) ses.engine.find ("closed_hat.density")] - 0.45f) < 1.0e-6f
+                       && ses.library[(size_t) up].inserts[7][0] == 0 && ses.library[(size_t) up].inserts[7][1] == 5 && ses.library[(size_t) up].inserts[7][2] == -1
+                       && ses.library[(size_t) last].name == old["library"][n - 1]["name"].toString() && ses.library[(size_t) last].profile.has
+                       && std::abs (ses.library[(size_t) last].profile.weight - (float) (double) old["library"][n - 1]["profile"]["weight"]) < 1.0e-3f
+                       && ses.notSavingWhy.isEmpty();
+                for (auto& sn : ses.library) read = read && ses.findSnap (sn.id) != nullptr;
+                libId = ses.libraryId;
+            });
+            var now = juce::JSON::parse (state);
+            bool same = now["library"].size() == n, signedAll = true;
+            for (int i = 0; i < n && same; ++i)
+            {
+                signedAll = signedAll && isUid (now["library"][i]["uid"].toString()) && now["library"][i]["uid"].toString().startsWith (libId + "-");
+                if ((juce::int64) old["library"][i]["id"] == kCleanSlateId) continue;      // made again each time the app opens
+                same = text (without (now["library"][i], "uid")) == text (old["library"][i]);
+            }
+            const auto uid5 = now["library"][5]["uid"].toString();
+            open ([] (Session&) {});
+            now = juce::JSON::parse (state);
+            const bool steady = now["library"][5]["uid"].toString() == uid5 && now["libraryId"].toString() == libId
+                                && tmp.getChildFile ("library-id.txt").loadFileAsString().trim() == libId;
+            tmp.getChildFile ("library-id.txt").deleteFile();                               // (its own file lost: the session's copy serves)
+            open ([] (Session&) {});
+            const bool found = tmp.getChildFile ("library-id.txt").loadFileAsString().trim() == libId;
+            std::printf ("  %s: a session file from the build of 11 November opens as it did (%d snapshots), and is saved with every snapshot as it was to the letter, each now with a uid that stays (%s)\n",
+                         read && same && signedAll && steady && found ? "ok  " : "FAIL", n, uid5.toRawUTF8());
+            if (! (read && same && signedAll && steady && found)) ++bad;
+
+            // (b) the same file with things in it this build has never heard of, at every depth
+            var odd = old.clone();
+            odd.getDynamicObject()->setProperty ("futureThing", juce::JSON::parse (R"({"a": 1, "b": [1, 2, 3]})"));
+            odd["controls"].getDynamicObject()->setProperty ("g.future", 0.5);
+            odd["knobs"][0].getDynamicObject()->setProperty ("curve", "exp");
+            { auto* d = new juce::DynamicObject(); d->setProperty ("00000000deadbeef", juce::JSON::parse (R"({"kind": "lane", "slot": "kick", "name": "A KICK LONG GONE"})")); odd.getDynamicObject()->setProperty ("defs", var (d)); }
+            var sn = odd["library"][n - 2];
+            const auto snId = (juce::int64) sn["id"];
+            sn.getDynamicObject()->setProperty ("ext", juce::JSON::parse (R"({"web": {"tags": ["dark", "rolling"], "like": [0.25, 0.5]}})"));
+            sn.getDynamicObject()->setProperty ("somethingNew", 5);
+            sn["values"].getDynamicObject()->setProperty ("kick.future_knob", 0.42);
+            sn["values"].getDynamicObject()->setProperty ("newlane.tune", 0.3);
+            sn["inserts"][5].getArray()->set (2, "SHIMMER");
+            sn["insertFiles"].getArray()->add (juce::JSON::parse (R"({"lane": 5, "slot": 2, "files": [{"place": 0, "type": 9, "files": ["/somewhere/a.wav"]}]})"));
+            sn["profile"].getDynamicObject()->setProperty ("tension", 0.7);
+            sn["profile"].getDynamicObject()->setProperty ("v", 9);
+            bool stepped = false;
+            if (auto* st = sn["patterns"][0]["steps"].getArray(); st != nullptr && st->size() > 0) { st->getReference (0).getArray()->add (0.5); stepped = true; }
+            state.replaceWithText (juce::JSON::toString (odd));
+            bool inApp = false;
+            open ([&] (Session& ses)
+            {
+                const int i = ses.indexOf (snId);
+                inApp = i >= 0 && ses.library[(size_t) i].inserts[5][2] == -1 && ses.library[(size_t) i].profile.has
+                        && ses.library[(size_t) i].patterns[0].steps[0].on == stepped;
+                ses.rename (snId, "roller");
+            });
+            now = juce::JSON::parse (state);
+            var want = sn.clone();
+            want.getDynamicObject()->setProperty ("name", "ROLLER");
+            const bool carried = text (without (now["library"][n - 2], "uid")) == text (want)
+                                 && text (now["futureThing"]) == text (odd["futureThing"])
+                                 && (double) now["controls"]["g.future"] == 0.5 && now["knobs"][0]["curve"].toString() == "exp"
+                                 && now["defs"]["00000000deadbeef"]["name"].toString() == "A KICK LONG GONE" && now["defs"].getDynamicObject()->getProperties().size() > 20
+                                 && stepped && inApp;
+            std::printf ("  %s: what this build does not know in a file is carried through a save: keys of the file's own, a tool's notes on a snapshot, values for knobs and an effect it has not got, more in a profile and a step, a definition long gone; and the snapshot's new name is in\n",
+                         carried ? "ok  " : "FAIL");
+            if (! carried) ++bad;
+        }
+
+        // (c) a fresh library: every snapshot says what it was made with, and the file holds the definitions
+        tmp.deleteRecursively(); tmp.createDirectory();
+        juce::int64 took = 0;
+        open ([&] (Session& ses) { took = ses.take(); });
+        {
+            const var now = juce::JSON::parse (state);
+            const var lib = now["library"];
+            var sn;
+            for (int i = 0; i < lib.size(); ++i) if ((juce::int64) lib[i]["id"] == took) sn = lib[i];
+            const var made = sn["made"], defs = now["defs"];
+            auto has = [&defs] (const var& print, const char* kind) { return print.toString().length() == 16 && defs[juce::Identifier (print.toString())]["kind"].toString() == kind; };
+            bool ok = sn.isObject() && sn["uid"].toString() == now["libraryId"].toString() + "-" + juce::String::toHexString (took) && isUid (sn["uid"].toString())
+                      && made["slots"].size() == kLanes && made["app"].toString().startsWith (JUCE_APPLICATION_VERSION_STRING)
+                      && has (made["chassis"], "chassis") && has (made["returns"]["dub"], "return") && has (made["returns"]["space"], "return") && has (made["returns"]["conv"], "return")
+                      && has (made["fx"]["DELAY"], "fx") && has (made["fx"]["RADIO"], "fx") && made["fx"].getDynamicObject()->getProperties().size() == 2
+                      && (int) now["sf000"] == Session::kFormat && now["wrote"]["app"].toString().isNotEmpty();
+            for (int l = 0; l < kLanes && ok; ++l)
+            {
+                const auto slot = made["slots"][l].toString();
+                const var def = defs[juce::Identifier (made["lanes"][juce::Identifier (slot)].toString())];
+                ok = slot == lanes()[(size_t) l].slug && def["kind"].toString() == "lane" && def["slot"].toString() == slot && def["knobs"].size() == kLaneKnobs
+                     && has (def["engine"], "engine") && defs[juce::Identifier (def["engine"].toString())]["params"][juce::Identifier (def["knobs"][0]["param"].toString())].isObject();
+            }
+            // the same build gives the same prints every time, and a profile says how it was worked out
+            Engine a, b;
+            bool again = a.defs().all.size() == b.defs().all.size() && a.defs().chassis == b.defs().chassis;
+            for (int l = 0; l < kLanes; ++l) again = again && a.defs().lane[(size_t) l] == b.defs().lane[(size_t) l];
+            Profile pr; pr.has = true;
+            const bool pv = (int) pr.toVar()["v"] == kProfileVersion;
+            std::printf ("  %s: a snapshot says what it was made with (the build, the lanes in order, a print for each lane, effect in use, return and the chassis), and the file holds every definition a print names (%d of them, %d KB)\n",
+                         ok && again && pv ? "ok  " : "FAIL", defs.getDynamicObject() != nullptr ? defs.getDynamicObject()->getProperties().size() : 0, (int) (text (defs).length() / 1024));
+            if (! (ok && again && pv)) ++bad;
+        }
+
+        // (d) a file in a newer format is not read and not written over; one that is not a session is put aside first
+        tmp.deleteRecursively(); tmp.createDirectory();
+        const juce::String newer = R"({"sf000": 2, "shape": "something this build cannot read", "library": []})";
+        state.replaceWithText (newer);
+        bool said = false, factory = false;
+        open ([&] (Session& ses) { said = ses.notSavingWhy.isNotEmpty(); factory = ses.indexOf (1000) >= 0; ses.take(); });
+        const bool left = said && factory && state.loadFileAsString() == newer && tmp.getNumberOfChildFiles (juce::File::findFilesAndDirectories, "*") == 2;   // (the file, and its backup folder)
+        tmp.deleteRecursively(); tmp.createDirectory();
+        state.replaceWithText ("{ \"sf000\": 1, \"library\": [ { \"id\": 5, ");               // cut short
+        open ([] (Session&) {});
+        const auto aside = tmp.findChildFiles (juce::File::findFiles, false, "session-unreadable-*.json");
+        const bool put = aside.size() == 1 && aside[0].loadFileAsString().startsWith ("{ \"sf000\": 1, \"library\": [ { \"id\": 5") && (int) juce::JSON::parse (state)["sf000"] == Session::kFormat;
+        std::printf ("  %s: a session file in a newer format is left exactly as it is (nothing is written while it is there, and the screen says so); one cut short is put aside before a fresh one replaces it\n",
+                     left && put ? "ok  " : "FAIL");
+        if (! (left && put)) ++bad;
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+    }
+
     // The kick alone: its first hit lands on the same sample whatever the block size.
     int on[4] = { -1, -1, -1, -1 }; const int blocks[4] = { 64, 100, 512, 1024 };
     for (int k = 0; k < 4; ++k) run (blocks[k], 1, nullptr, 0, nullptr, nullptr, nullptr, &on[k]);
@@ -2353,6 +2510,8 @@ public:
         };
         window = std::make_unique<MainWindow> (screen);
         screen->grabKeyboardFocus();
+        if (session->notSavingWhy.isNotEmpty())
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "NOTHING WILL BE SAVED THIS TIME", session->notSavingWhy);
     }
 
     void shutdown() override

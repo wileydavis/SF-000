@@ -1,4 +1,5 @@
 #include "Session.h"
+#include "Build.h"
 
 namespace sf0
 {
@@ -15,6 +16,8 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     for (int r = 0; r < 2; ++r) retInit[(size_t) r] = engine.getSetup ({ 2, 0, r });
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
     ensureCleanSlate();
+    findLibraryId (idInFile);
+    sign();
     if (useDisk) startTimer (3000);
 }
 
@@ -166,7 +169,55 @@ Snapshot Session::capture() const
     for (int r = 0; r < 2; ++r) s.retSetup[(size_t) r] = engine.getSetup ({ 2, 0, r });
     s.hasSetup = true;
     s.hasInsFiles = true;
+    s.made = madeNow (s);
     return s;
+}
+
+// What a snapshot was made with: this build, and the print of every definition its values lean on.
+// A later build, or another tool, reads the values by these (the definitions themselves are kept in
+// the session file).
+juce::var Session::madeNow (const Snapshot& s) const
+{
+    const auto& d = engine.defs();
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("app", juce::String (JUCE_APPLICATION_VERSION_STRING) + " " + SF000_COMMIT);
+    juce::Array<var> slots;
+    auto* ln = new juce::DynamicObject();
+    for (int l = 0; l < kLanes; ++l) { slots.add (d.slots[l]); ln->setProperty (d.slots[l], d.lane[(size_t) l]); }
+    o->setProperty ("slots", slots);            // the order every per-lane list in the snapshot is in
+    o->setProperty ("lanes", var (ln));
+    auto* fx = new juce::DynamicObject();
+    for (int l = 0; l < kLanes; ++l)
+        for (int k = 0; k < kSlots; ++k)
+            if (const int t = s.inserts[(size_t) l][(size_t) k]; t >= 0 && t < (int) d.fx.size()) fx->setProperty (d.fx[(size_t) t].first, d.fx[(size_t) t].second);
+    o->setProperty ("fx", var (fx));
+    auto* rt = new juce::DynamicObject();
+    rt->setProperty ("dub", d.dub); rt->setProperty ("space", d.space); rt->setProperty ("conv", d.conv);
+    o->setProperty ("returns", var (rt));
+    o->setProperty ("chassis", d.chassis);
+    return var (o);
+}
+
+void Session::findLibraryId (const juce::String& fromFile)
+{
+    // Sixteen hex digits, made once. Kept in a file of its own beside the session as well as in it,
+    // so a build from before this was kept, which drops it from the session, does not lose it.
+    auto good = [] (const juce::String& t) { return t.length() == 16 && t.containsOnly ("0123456789abcdef"); };
+    const auto f = stateFile().getSiblingFile ("library-id.txt");
+    const auto onDisk = useDisk && f.existsAsFile() ? f.loadFileAsString().trim() : juce::String();
+    libraryId = good (onDisk) ? onDisk : good (fromFile) ? fromFile : juce::Uuid().toString().substring (0, 16);
+    if (useDisk && onDisk != libraryId) { f.getParentDirectory().createDirectory(); f.replaceWithText (libraryId); dirty = true; }
+}
+
+void Session::sign()
+{
+    for (auto& s : library)
+        if (s.uid.isEmpty())
+        {
+            s.uid = libraryId + "-" + juce::String::toHexString (s.id);
+            if (auto* o = s.kept.getDynamicObject()) o->setProperty ("uid", s.uid);
+            dirty = true;
+        }
 }
 
 juce::File Session::clipFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".ogg"); }
@@ -309,8 +360,9 @@ juce::int64 Session::take()
         if (useDisk) keepClip (s.id, heard);
     }
     library.push_back (s);
+    sign();
     touch();
-    return s.id;
+    return library.back().id;
 }
 
 void Session::applySnapshot (const Snapshot& s, double glide)
@@ -378,7 +430,11 @@ void Session::remove (juce::int64 id)
 void Session::rename (juce::int64 id, const juce::String& name)
 {
     const int i = indexOf (id);
-    if (i >= 0 && name.trim().isNotEmpty()) { library[(size_t) i].name = name.trim().toUpperCase().substring (0, 24); touch(); }
+    if (i < 0 || name.trim().isEmpty()) return;
+    auto& s = library[(size_t) i];
+    s.name = name.trim().toUpperCase().substring (0, 24);
+    if (auto* o = s.kept.getDynamicObject()) o->setProperty ("name", s.name);
+    touch();
 }
 
 // --------------------------------------------------------------------------- patterns, inserts
@@ -519,10 +575,13 @@ static Engine::SetupState setupFromVar (const var& v)
 
 static var snapToVar (const Snapshot& s, const Engine& e)
 {
+    if (s.kept.isObject()) return s.kept;           // as it was read: nothing in it is lost (Session.h)
     auto* o = new juce::DynamicObject();
     o->setProperty ("id", s.id);
+    if (s.uid.isNotEmpty()) o->setProperty ("uid", s.uid);
     o->setProperty ("name", s.name);
     o->setProperty ("time", s.time.toMilliseconds());
+    if (! s.made.isVoid()) o->setProperty ("made", s.made);
     if (s.profile.has) o->setProperty ("profile", s.profile.toVar());
     auto* vals = new juce::DynamicObject();
     for (int i = 0; i < cx::kCount && i < (int) s.values.size(); ++i)
@@ -576,7 +635,10 @@ static var snapToVar (const Snapshot& s, const Engine& e)
 static Snapshot snapFromVar (const var& v, const Engine& e)
 {
     Snapshot s;
+    s.kept = v;
     s.id = (juce::int64) v.getProperty ("id", 0);
+    s.uid = v.getProperty ("uid", "").toString();
+    s.made = v.getProperty ("made", var());
     s.name = v.getProperty ("name", "SNAP").toString();
     s.time = juce::Time ((juce::int64) v.getProperty ("time", 0));
     s.profile = Profile::fromVar (v.getProperty ("profile", var()));
@@ -633,19 +695,30 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
 void Session::save()
 {
     dirty = false;
+    if (notSavingWhy.isNotEmpty()) return;          // a newer build's file is on the disk: it stays as it is
+    sign();
     auto* root = new juce::DynamicObject();
-    root->setProperty ("sf000", 1);
+    root->setProperty ("sf000", kFormat);
+    {
+        auto* w = new juce::DynamicObject();
+        w->setProperty ("app", juce::String (JUCE_APPLICATION_VERSION_STRING) + " " + SF000_COMMIT);
+        w->setProperty ("at", juce::Time::currentTimeMillis());
+        root->setProperty ("wrote", var (w));
+    }
+    root->setProperty ("libraryId", libraryId);
 
     Snapshot b = capture();
     for (int i = 0; i < kMorphEnd; ++i)
         if (engine.control (i).morph && b.values[(size_t) i] >= 0.0f) b.values[(size_t) i] = juce::jlimit (0.0f, 1.0f, base[(size_t) i]);
     b.name = "BASE";
+    b.kept = var(); b.uid.clear();
     root->setProperty ("base", snapToVar (b, engine));
     root->setProperty ("baseId", baseId);
 
     auto* other = new juce::DynamicObject();        // what a snapshot leaves alone: tempo, glide, master, the snapshot knobs
     for (int i = 0; i < cx::kCount; ++i)
         if (engine.control (i).used && ! engine.control (i).snapshot) other->setProperty (engine.control (i).id, engine.target (i));
+    for (auto& m : controlsMore) if (! other->hasProperty (m.name)) other->setProperty (m.name, m.value);
     root->setProperty ("controls", var (other));
     root->setProperty ("activeLane", activeLane);
     juce::Array<var> fl;
@@ -679,10 +752,20 @@ void Session::save()
         juce::Array<var> ids;
         for (auto id : k.snaps) ids.add (id);
         o->setProperty ("snaps", ids);
+        for (auto& m : k.more) o->setProperty (m.name, m.value);
         kn.add (var (o));
     }
     root->setProperty ("library", lib);
     root->setProperty ("knobs", kn);
+    // The definitions: every one the file has held, and this build's own. Never pruned: a snapshot
+    // made long ago still finds what it was made with.
+    {
+        auto* d = new juce::DynamicObject();
+        for (auto& e : defsKept) d->setProperty (e.first, e.second);
+        for (auto& e : engine.defs().all) if (! d->hasProperty (e.first)) d->setProperty (e.first, e.second);
+        root->setProperty ("defs", var (d));
+    }
+    for (auto& m : rootMore) if (! root->hasProperty (m.name)) root->setProperty (m.name, m.value);
 
     const auto f = stateFile();
     f.getParentDirectory().createDirectory();
@@ -710,7 +793,36 @@ bool Session::load()
     if (! f.existsAsFile()) return false;
     backUp();
     const var root = juce::JSON::parse (f);
-    if (! root.isObject() || (int) root.getProperty ("sf000", 0) != 1) return false;
+    const int format = root.isObject() ? (int) root.getProperty ("sf000", 0) : 0;
+    if (format > kFormat)
+    {
+        // From a newer SF-000, in a format this build cannot read. It is left exactly as it is, and
+        // nothing is written this time, so going back to the newer build finds everything in place.
+        notSavingWhy = "This session was saved by a newer SF-000 (format " + juce::String (format) + "; this build reads format " + juce::String (kFormat)
+                       + "). It has been left exactly as it is, and nothing will be saved this time: snapshots taken now are gone when SF-000 closes. Open it with the newer build.";
+        useDisk = false;
+        return false;
+    }
+    if (format < 1)
+    {
+        // Not a session (cut short, or something else). It is about to be replaced by a fresh one:
+        // a copy is put aside first, and is not one of the twenty backups that come and go.
+        if (f.getSize() > 0) f.copyFileTo (f.getSiblingFile ("session-unreadable-" + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S") + ".json"));
+        return false;
+    }
+
+    // What this build does not know is carried, not dropped: the next save writes it back.
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs" };
+    rootMore.clear(); controlsMore.clear(); defsKept.clear();
+    for (auto& p : root.getDynamicObject()->getProperties())
+    {
+        bool is = false;
+        for (auto* k : known) is = is || p.name == juce::Identifier (k);
+        if (! is) rootMore.set (p.name, p.value);
+    }
+    if (auto* d = root.getProperty ("defs", var()).getDynamicObject())
+        for (auto& p : d->getProperties()) defsKept.push_back ({ p.name.toString(), p.value });
+    idInFile = root.getProperty ("libraryId", "").toString();
 
     library.clear();
     if (auto* lib = root.getProperty ("library", var()).getArray())
@@ -724,12 +836,17 @@ bool Session::load()
             knobs[(size_t) k].snaps.clear();
             if (auto* ids = o.getProperty ("snaps", var()).getArray())
                 for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) knobs[(size_t) k].snaps.push_back ((juce::int64) id);
+            knobs[(size_t) k].more.clear();
+            if (auto* ko = o.getDynamicObject())
+                for (auto& p : ko->getProperties())
+                    if (p.name != juce::Identifier ("name") && p.name != juce::Identifier ("depth") && p.name != juce::Identifier ("snaps")) knobs[(size_t) k].more.set (p.name, p.value);
         }
     if (auto* other = root.getProperty ("controls", var()).getDynamicObject())
         for (auto& p : other->getProperties())
         {
             const int i = engine.find (p.name.toString());
             if (i >= 0 && ! engine.control (i).snapshot) { engine.set (i, (float) p.value); base[(size_t) i] = engine.target (i); }
+            if (i < 0) controlsMore.set (p.name, p.value);
         }
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
     if (const var fl = root.getProperty ("files", var()); fl.isArray())
@@ -793,7 +910,8 @@ void Session::ensureCleanSlate()
     s.hasSetup = true;
     s.hasInsFiles = true;
     const int at = indexOf (kCleanSlateId);
-    if (at >= 0) { s.name = library[(size_t) at].name; s.time = library[(size_t) at].time; library[(size_t) at] = s; }
+    s.made = madeNow (s);
+    if (at >= 0) { s.name = library[(size_t) at].name; s.time = library[(size_t) at].time; s.uid = library[(size_t) at].uid; library[(size_t) at] = s; }
     else { library.insert (library.begin(), s); dirty = true; }
 }
 

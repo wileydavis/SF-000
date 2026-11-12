@@ -10,6 +10,10 @@
 
 namespace sf0
 {
+// The way a profile is worked out. Raise it when the measures or their scales change: a profile
+// says which made it, so an older one can be told apart and worked out again from its clip.
+constexpr int kProfileVersion = 1;
+
 struct Profile
 {
     bool has = false;

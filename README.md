@@ -216,6 +216,9 @@ meters when a bar has moved, the playing step.
 | `Source/Engine.*` | clock, lanes, inserts, returns, lane EQ, master chain, delay compensation |
 | `Source/Sequencer.h` | patterns, ties, ratchets, the generators, MIDI on the sample |
 | `Source/Session.*` | base scene, snapshot library, snapshot knobs and their morph, the saved file |
+| `Source/Defs.cpp` | every lane, effect and return written out as data, with a print of each: what a snapshot was made with |
+| `FORMAT.md` | the session file: what is in it, and the rules it grows by |
+| `tests/fixtures/` | a session file as an older build wrote it, for the check that old files still open |
 | `Source/Screen.*` | the three screens |
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |
@@ -226,7 +229,8 @@ meters when a bar has moved, the playing step.
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
-scene, each snapshot's profile), `clips/` (each snapshot's four bars), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
+scene, each snapshot's profile; its layout and the rules that keep old files readable are in
+`FORMAT.md`), `library-id.txt` (this library's own id), `clips/` (each snapshot's four bars), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
@@ -240,6 +244,8 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
 - A recall between two snapshots with different effects on a lane swaps the effects at once: the
   chains do not yet cross over the GLIDE time.
+- Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound;
+  the online library (snapshots sent as they are taken). The session file is ready for both: `FORMAT.md`.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.
 - Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).
 - Crash recovery beyond the saved session; the 8-hour soak test.

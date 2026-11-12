@@ -40,11 +40,20 @@ option(SF000_SPLIT_PAINT "Draw each changed part of the window on its own (macOS
 # first, so they need no wait: 0. (512 builds them as the suite does, to compare.)
 set(SF000_POCKET_LATENCY 0 CACHE STRING "Samples the suite's pocket holds each module's sound back (the suite's own: 512)")
 
+# The commit this is built from, for the line a session file keeps of what wrote it. In a header of
+# its own, written only when it changes, so a new commit recompiles one file and not all of them.
+execute_process(COMMAND git describe --always --dirty WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE SF000_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT SF000_COMMIT)
+    set(SF000_COMMIT "unknown")
+endif()
+configure_file(${CMAKE_SOURCE_DIR}/cmake/Build.h.in ${CMAKE_BINARY_DIR}/gen/Build.h @ONLY)
+
 file(GLOB SF_SUITE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/suite/core/*.cpp ${CMAKE_SOURCE_DIR}/suite/modules/*.cpp)
 file(GLOB SF_APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/Source/*.cpp)
 
 target_sources(SF000 PRIVATE ${SF_SUITE_SOURCES} ${SF_APP_SOURCES})
-target_include_directories(SF000 PRIVATE ${CMAKE_SOURCE_DIR}/suite ${CMAKE_SOURCE_DIR}/suite/third_party ${CMAKE_SOURCE_DIR}/Source)
+target_include_directories(SF000 PRIVATE ${CMAKE_SOURCE_DIR}/suite ${CMAKE_SOURCE_DIR}/suite/third_party ${CMAKE_SOURCE_DIR}/Source ${CMAKE_BINARY_DIR}/gen)
 target_compile_definitions(SF000 PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
@@ -56,6 +65,7 @@ target_compile_definitions(SF000 PRIVATE
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SF000,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SF000,JUCE_VERSION>"
     SF_MODULE_ID="SF000"
+    SF000_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     SF_POCKET_LATENCY=${SF000_POCKET_LATENCY})
 target_link_libraries(SF000
     PRIVATE

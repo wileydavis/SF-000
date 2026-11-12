@@ -64,6 +64,20 @@ public:
     Engine();
     ~Engine() override;
 
+    // What this build's lanes, effects and returns are, each written out in full with a print of it
+    // (a hash of the definition). A snapshot says which prints it was made with, and the session
+    // file keeps the definitions, so a stored value can always be read for what it meant.
+    // Message thread; worked out once.
+    struct Defs
+    {
+        juce::StringArray slots;                                    // the lanes' slugs, in order
+        std::array<juce::String, kLanes> lane;                      // each lane's print
+        std::vector<std::pair<juce::String, juce::String>> fx;      // each effect: its name, its print
+        juce::String dub, space, conv, chassis;
+        std::vector<std::pair<juce::String, juce::var>> all;        // every definition by its print (the sound engines' too)
+    };
+    const Defs& defs() const;
+
     // Message thread, with the audio stopped (the device callback does it before it starts).
     void prepare (double sampleRate, int maxBlock);
     // One block: out has 2 channels and at most maxBlock samples. The audio thread, or a test.
@@ -294,6 +308,7 @@ private:
     void collectRetired (bool all);
 
     std::vector<Control> controls;
+    mutable std::unique_ptr<Defs> defsMade;
     std::array<Bind, cx::kCount> bind {};
     std::array<std::atomic<float>, cx::kCount> targetV, shownV, glideV;
     std::array<std::atomic<uint32_t>, cx::kCount> seqV;

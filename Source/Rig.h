@@ -11,6 +11,10 @@ constexpr int kLanes = 11;
 constexpr int kLaneKnobs = 12;    // 8 sound places, then DECAY or GATE, DENSITY, FILTER, LEVEL
 constexpr int kSlots = 3;         // insert effects per lane
 constexpr int kCells = 8;         // controls per insert effect
+// The lane strip's own controls (the sends, the three-band EQ, the generator's knobs) and what a
+// stored value of each means. Raise it when one of them changes its meaning (a new EQ curve, a new
+// send law): snapshots say which they were made with.
+constexpr int kChassisVersion = 1;
 
 // kind: u knob, b bipolar knob (centre = off), m list knob (a menu), t switch, h hold key.
 // lo..hi: the part of the parameter's travel the knob covers (0..1 = all of it).

@@ -932,6 +932,10 @@ void Engine::prepare (double rate, int block)
 {
     prepared = false;
     sr = rate; maxBlock = std::max (16, block);
+    // The suite's bus is shared memory: it outlives an engine, and the app. A kick reported on it
+    // by an earlier one stays "alive" for four seconds by the clock on the wall, which made the
+    // start of a render depend on what had run just before it. An engine starts with none.
+    { auto& bd = sf::Bus::get().d(); bd.kickWrite = 0; bd.kickSeenMs = 0; }
     auto prep = [this] (SFProcessor& p) { p.setRateAndBufferSizeDetails (sr, maxBlock); p.prepareToPlay (sr, maxBlock); };
     for (auto& ln : lane)
     {

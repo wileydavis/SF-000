@@ -490,6 +490,48 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      the energy has been), the map drawn on the screen, more finders by named trait, and showing
      on the main screen what is in the headphones.
 
+## Twelfth build (Nov 11): the session file made to last
+
+135. **Slots keep their roles** (your word): a slot is for a kind of part, and takes the modules
+     made for that kind. The module format, when it comes, is built on that.
+136. **The snapshot format only ever adds** (you asked for one that can grow and still read the
+     old). `FORMAT.md` is the contract: a key keeps its name and meaning for good, new things are
+     new keys, and the format number stays at 1 for every change of that kind.
+137. **A library snapshot is written back exactly as it was read.** Mine. It is the simplest way
+     to be sure nothing a newer build or another tool put in a snapshot is ever dropped, at any
+     depth. It leans on a snapshot never changing after it is taken, bar its name; if that ever
+     stops being true this has to change with it. It costs memory: the parsed file is kept, about
+     fifty kilobytes a snapshot. When the library moves to a file per snapshot this cost goes.
+138. **Every snapshot says what it was made with, and the file keeps the definitions.** Mine. Each
+     lane, effect and return of the build is written out in full (what plays, what is fixed, which
+     knob drives which parameter over what part of its travel, and every parameter's range), and a
+     snapshot names each by a print, a hash of the definition. Prints are worked out, not
+     maintained: change a lane's line in `Rig.h` and its print changes by itself. The one number
+     kept by hand is `kChassisVersion` (the sends, the EQ, the generator knobs), to be raised
+     when one of those changes what a stored value means. Today nothing reads the prints: they are
+     for the day a slot can hold different modules, and for any tool that wants to know what a
+     value was a position of without SF-000's source. 35 definitions, about 87 KB in the file.
+139. **A snapshot's uid is the library's id, then its own.** *proposed.* For the online library a
+     snapshot needs a name that is its own everywhere. It is made from two things that already
+     last (a sixteen-digit id made once for the library, and the snapshot's id), so a build that
+     drops it gives back the same one. The library's id is also kept in `library-id.txt`.
+140. **A session in a newer format is left alone, and nothing is saved that time.** Mine. The
+     other way was to put it aside and start a fresh file; then going back to the newer build
+     finds a fresh library and the real one has to be put back by hand. This way nothing moves.
+     The cost: snapshots taken in that sitting are lost, and a notice says so when the app opens.
+141. **A session that will not parse is copied aside before it is replaced**, as
+     `session-unreadable-<date>.json`, outside the twenty backups that come and go.
+142. **An engine starts with no kick reports on the suite's bus.** The bus is shared memory and
+     outlives an engine; a kick reported by an earlier one stayed "alive" for four seconds by the
+     wall clock, so the first moments of a render depended on what had run just before. It showed
+     as a check that failed now and then (two engines side by side, compared to the bit), and was
+     there before this build; the build's changes to timing brought it out.
+143. **Noted, not built:** the chassis (lanes as modules that load, an instrument fading as an
+     effect will), each module's descriptor (declared and measured), the outbox and the online
+     library, logging every recall as it is played (what follows what, for suggestions and an
+     auto mode), and the rendered instrument: plates and strips of frames from your model, with
+     the layout in one file both the renderer and the app read.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -501,4 +543,7 @@ same: a clip kept at every save, and a profile from the clip and from what the r
 - Not yet heard on the Mac: the rig without the suite's look-ahead (seventh build), recording
   (eighth), a snapshot's clip and profile (ninth), cue on outputs 3 + 4 (tenth), and the library's
   E16 scene (eleventh), which has not met an E16.
+- The session file's changes (twelfth) are checked here against a file the eleventh build wrote.
+  On the Mac the first launch saves your session again with a uid on every snapshot and the
+  definitions added; the copy in `backups/` is the file as it was.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

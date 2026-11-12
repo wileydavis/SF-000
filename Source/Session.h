@@ -27,6 +27,14 @@ struct Snapshot
     // what it sounded like when it was taken, worked out from the bars kept with it (has: false if
     // nothing was playing, or it was taken before profiles were kept)
     Profile profile;
+    // Its name everywhere, for good: this library's own id, then the snapshot's (FORMAT.md).
+    juce::String uid;
+    // What it was made with: the build, and the print of each lane, effect and return (Engine::defs).
+    juce::var made;
+    // As it was read from the session file, whole. A snapshot in the library is written back as it
+    // was read, so whatever a newer build or another tool put in it is carried, at any depth. Only
+    // its name changes here; anything else that comes to change one has to change this too.
+    juce::var kept;
 };
 
 constexpr juce::int64 kCleanSlateId = 999;
@@ -38,6 +46,7 @@ struct MacroKnob
     juce::String name;
     std::vector<juce::int64> snaps;
     float depth = 1.0f;
+    juce::NamedValueSet more;           // what the file says of it that this build does not know: carried
 };
 
 class Session : private juce::Timer
@@ -103,7 +112,12 @@ public:
     void nudgeLane (int lane, int dir);
     void stepInsert (int lane, int slot);
 
-    // ---- disk
+    // ---- disk (the file's layout and the rules it keeps to: FORMAT.md)
+    static constexpr int kFormat = 1;   // rises only for a change an older build could not read past
+    // Why nothing is written to the disk this time: the session file is from a newer SF-000, in a
+    // format this build cannot read, and is left exactly as it is. Empty: all is kept as usual.
+    juce::String notSavingWhy;
+    juce::String libraryId;             // this library's own id: every snapshot's uid begins with it
     void touch()                        { dirty = true; }
     void save();
     bool load();
@@ -120,6 +134,13 @@ private:
     void makeFactory();
     void ensureCleanSlate();
     void warmInserts();                 // every file-holding insert the library's snapshots name, read ahead
+    void findLibraryId (const juce::String& fromFile);
+    void sign();                        // a snapshot with no uid is given its own
+    juce::var madeNow (const Snapshot&) const;
+    // carried through a save: what the file held that this build does not know
+    juce::NamedValueSet rootMore, controlsMore;
+    std::vector<std::pair<juce::String, juce::var>> defsKept;      // every definition the file has held, by print
+    juce::String idInFile;
     std::array<Engine::SetupState, 2> retInit;
     double glideBeats() const;
 
