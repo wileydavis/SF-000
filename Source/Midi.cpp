@@ -642,7 +642,14 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     if (ch == e16::kSnapChannel)
     {
         if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; if (val >= 1 && val <= e16::kSnapPage) pageUp = val; return; }
-        if (num == e16::kGlideCc) { glideFromE16 = fromE16; glideIn = val; ses.moved (cx::kGlide, fromE16 ? 1 : 2); return; }
+        if (num == e16::kGlideCc)
+        {
+            // GLIDE is taken up at once, from this thread, as a lane's knob is: a knob sent just
+            // after it travels by it. (It waited for the message thread, and the knob did not.)
+            engine.set (cx::kGlide, e16::from7 (engine.control (cx::kGlide), val));
+            glideFromE16 = fromE16; glideIn = val; ses.moved (cx::kGlide, fromE16 ? 1 : 2);
+            return;
+        }
         if (num >= e16::kPressCc && num < e16::kPressCc + 16) { if (val >= 64) presses[(size_t) (num - e16::kPressCc)].fetch_add (1); return; }
         if (num >= ccx::kRecall && num < ccx::kRecall + 16)
         {
@@ -652,8 +659,22 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
             return;
         }
     }
-    // (an insert's place is whatever effect is in it when the message thread comes to it)
-    if (const int extra = ccx::extraFor (ch, num); extra >= 0) { exBy[(size_t) extra] = fromE16 ? 1 : 2; exLatest[(size_t) extra] = val; return; }
+    if (const int extra = ccx::extraFor (ch, num); extra >= 0)
+    {
+        // A key (MUTE, SOLO, a lane's sequencer muted, a hold like THROW or FREEZE) acts at once,
+        // from this thread: on the next block of sound, not when the screen's thread next comes
+        // round (up to 25 ms, more if it is busy). Every other address waits for that thread (an
+        // insert's place is whatever effect is in it when it comes), but in the order they came
+        // and with nothing dropped; it also keeps the session's own record of the keys.
+        const int ctl = ccx::controlFor (extra, engine.spaceModel());
+        const auto& c = engine.control (ctl);
+        const bool key = c.used && (c.kind == Kind::Toggle || c.kind == Kind::Hold);
+        if (key) engine.set (ctl, val >= 64 ? 1.0f : 0.0f);
+        const juce::SpinLock::ScopedLockType g (exLock);
+        if (exN < kExQ) exQ[(size_t) exN++] = { (juce::uint16) extra, (juce::uint8) val, (juce::uint8) (fromE16 ? 1 : 2), key };
+        else { exBy[(size_t) extra] = fromE16 ? 1 : 2; exLatest[(size_t) extra] = val; }
+        return;
+    }
     const int slot = e16::slotFor (ch, num);
     if (slot < 0) return;
     const int ctl = e16::controlFor (slot);
@@ -695,6 +716,31 @@ void Midi::service()
     const auto now = juce::Time::getMillisecondCounter();
     takeGlide();
     takeRecalls();
+    {
+        // what came on the other addresses, in the order it came. A knob's last place is the one
+        // that counts; a key's every press and letting go is kept (they are already in the sound:
+        // only the last is put to the engine again, so that a recall made meanwhile is answered).
+        std::array<ExEvent, kExQ> batch;
+        int nb = 0;
+        {
+            const juce::SpinLock::ScopedLockType g (exLock);
+            nb = exN; exN = 0;
+            std::copy (exQ.begin(), exQ.begin() + nb, batch.begin());
+        }
+        std::array<int, ccx::kExtras> lastAt; lastAt.fill (-1);
+        for (int i = 0; i < nb; ++i) lastAt[batch[(size_t) i].extra] = i;
+        for (int i = 0; i < nb; ++i)
+        {
+            const auto& e = batch[(size_t) i];
+            const int ctl = ccx::controlFor (e.extra, engine.spaceModel());
+            const auto& c = engine.control (ctl);
+            if (! c.used) continue;                                 // an empty place
+            const bool key = c.kind == Kind::Toggle || c.kind == Kind::Hold, last = lastAt[e.extra] == i;
+            if (! key && ! last) continue;
+            ses.moved (ctl, e.by);
+            ses.userSet (ctl, key ? (e.val >= 64 ? 1.0f : 0.0f) : e16::from7 (c, e.val), key && e.done && ! last);
+        }
+    }
     for (int extra = 0; extra < ccx::kExtras; ++extra)
     {
         const int v = exLatest[(size_t) extra].exchange (-1);

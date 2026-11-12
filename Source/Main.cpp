@@ -1590,6 +1590,56 @@ static int uiTest()
         tmp.getChildFile ("sf000_ui_test").deleteRecursively();
         ir.deleteFile(); ir2.deleteFile();
     }
+    // ---- quitting while the library on the web has stopped answering: the send is called off, the app leaves
+    {
+        // a library that takes the call and then says nothing, for as long as it is left to
+        struct Mute : juce::Thread
+        {
+            Mute() : juce::Thread ("mute library") { ok = listener.createListener (0, "127.0.0.1"); port = listener.getBoundPort(); startThread(); }
+            ~Mute() override { signalThreadShouldExit(); listener.close(); stopThread (4000); }
+            void run() override
+            {
+                while (! threadShouldExit())
+                    if (auto* c = listener.waitForNextConnection()) { held.add (c); ++calls; }
+            }
+            juce::StreamingSocket listener; juce::OwnedArray<juce::StreamingSocket> held;
+            std::atomic<int> calls { 0 }; int port = 0; bool ok = false;
+        };
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_quit_test");
+        for (int way = 0; way < 2; ++way)
+        {
+            tmp.deleteRecursively();
+            Session::stateFileForTests = tmp.getChildFile ("session.json");
+            Online::systemClientForTests = way == 1;
+            Mute mute;
+            Engine e2;
+            e2.prepare (48000.0, 128);
+            Session s2 (e2, true);
+            juce::AudioBuffer<float> b2 (2, 128);
+            for (int k = 0; k < 400; ++k) e2.render (b2);
+            s2.take(); s2.finishTakes (true);
+            double tookMs = -1.0; int calls = 0;
+            {
+                auto on = std::make_unique<Online> (s2);
+                Online::Setup st; st.url = "http://127.0.0.1:" + juce::String (mute.port); st.clientId = "id"; st.clientSecret = "secret"; st.on = true;
+                on->setSetup (st);
+                on->startSending();
+                // (the sender reads the session under the message thread's lock: this thread keeps answering)
+                for (int i = 0; i < 300 && mute.calls.load() == 0; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (150);       // it has asked, and is waiting on an answer that will not come
+                calls = mute.calls.load();
+                const double t0 = juce::Time::getMillisecondCounterHiRes();
+                on.reset();
+                tookMs = juce::Time::getMillisecondCounterHiRes() - t0;
+            }
+            check (mute.ok && calls >= 1 && tookMs >= 0.0 && tookMs < 1500.0,
+                   (juce::String (way == 0 ? "quitting with a send stalled (the library took the call and never answered): the send is called off and the sender is gone in "
+                                          : "the same through the system's own client, as https goes: gone in ") + juce::String ((int) std::lround (tookMs)) + " ms (it waited 8 s and was then killed by force)").toRawUTF8());
+        }
+        Online::systemClientForTests = false;
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+    }
     std::printf (bad == 0 ? "ALL SCREEN CHECKS PASSED\n" : "%d SCREEN CHECK(S) FAILED\n", bad);
     return bad;
 }
@@ -1992,6 +2042,35 @@ static int midiTest()
         double lo = 1e9, hi = 0.0;
         for (size_t i = 2; i + 1 < turned.size(); ++i) { const double d = turned[i].dueMs - turned[i - 1].dueMs; lo = std::min (lo, d); hi = std::max (hi, d); }
         check (lo > tick - 0.05 && hi < 60000.0 / (90.0 * 24.0) + 0.05, "a tempo change slows the ticks without a gap or a burst (" + juce::String (lo, 2) + " to " + juce::String (hi, 2) + " ms)");
+        // faster, with a long LEAD (the head start is then more beats: it was made up at once, with a tick due before the one sent ahead of it)
+        std::vector<Engine::ClockMsg> faster;
+        kickAt (true, 40.0f, &faster, 200.0);
+        lo = 1e9; hi = 0.0;
+        for (size_t i = 2; i + 1 < faster.size(); ++i) { const double d = faster[i].dueMs - faster[i - 1].dueMs; lo = std::min (lo, d); hi = std::max (hi, d); }
+        const double tick200 = 60000.0 / (200.0 * 24.0);
+        check (lo > tick200 * 0.5 - 0.05 && hi < tick + 0.05, "a jump to 200 with LEAD at 40 ms: every tick after the one before it, never nearer than half a tick (" + juce::String (lo, 2) + " to " + juce::String (hi, 2) + " ms)");
+        // the clock switched on while it runs, and the audio started again while it runs
+        {
+            Engine e;
+            e.prepare (48000.0, 128);
+            e.solo = 0;
+            juce::AudioBuffer<float> b (2, 128);
+            Engine::ClockMsg m;
+            e.setRunning (true);
+            for (int i = 0; i < 1000; ++i) e.render (b);               // 2.7 seconds in, no clock
+            e.setClockOut (true, 4.0f);
+            e.render (b);
+            int first = 0, starts = 0; std::vector<Engine::ClockMsg> after;
+            while (e.nextClock (m)) { ++first; if (m.byte != 0xF8) ++starts; after.push_back (m); }
+            for (int i = 0; i < 400; ++i) { e.render (b); while (e.nextClock (m)) after.push_back (m); }
+            double w = 0.0;
+            for (size_t i = 1; i < after.size(); ++i) w = std::max (w, std::abs ((after[i].dueMs - after[i - 1].dueMs) - tick));
+            check (first <= 2 && starts == 0 && after.size() > 50 && w < 0.02, "the clock switched on with the rig running takes up from where the rig is: " + juce::String (first) + " in its first block (142 before, every tick since bar 1), then one every " + juce::String (tick, 3) + " ms");
+            e.prepare (48000.0, 128);                                  // the audio stops and starts under it
+            e.render (b);
+            int again = 0; while (e.nextClock (m)) ++again;
+            check (again <= 3, "and the audio started again under a running clock sends no burst (" + juce::String (again) + " in the first block)");
+        }
     }
 
     // 3b. following an outside clock: its START, STOP and CONTINUE, its tempo, its beat
@@ -2395,6 +2474,34 @@ static int midiTest()
             check (second && notAgain && afterNone && noNinth && s3.baseId == c && std::abs (glideBarsFor (e3.target (cx::kGlide)) - 1.0) < 1.0e-9
                        && e3.isGliding (cut) && std::abs (e3.target (cut) - 0.8f) < 1.0e-4f,
                    "RECALL (CC 80-95 on channel 16) recalls the nth snapshot a snapshot knob holds: at once with GLIDE off; a value said again does nothing; 0 then the value does; a number past the end does nothing; and a GLIDE sent with it is taken first, so the recall travels by it");
+
+            // ---- what must not wait for the screen's thread, or be lost between two of its visits
+            const int mute = cx::lane (2, cx::kMute), freeze = cx::ins (0, 0, 5);
+            m3.incoming (cc (3, 56, 127), false);                       // MUTE pressed
+            const bool onAtOnce = e3.target (mute) > 0.5f;              // (no visit from the message thread yet)
+            m3.incoming (cc (3, 56, 0), false);                         // and let go, before one
+            const bool offAtOnce = e3.target (mute) < 0.5f;
+            m3.incoming (cc (3, 56, 127), false);                       // and pressed again
+            m3.incoming (cc (1, 37, 127), false);                       // the insert's FREEZE held
+            const bool heldAtOnce = e3.target (freeze) > 0.5f;
+            m3.service();
+            check (onAtOnce && offAtOnce && heldAtOnce && e3.target (mute) > 0.5f && e3.target (freeze) > 0.5f,
+                   "a key from a sequencer (MUTE, an insert's FREEZE) acts as it arrives, not when the screen's thread next comes round; pressed, let go and pressed again between two of its visits, each is heard");
+            m3.incoming (cc (3, 56, 0), false); m3.incoming (cc (1, 37, 0), false); m3.service();
+            // GLIDE and then a knob, with no visit between: the knob travels by the new GLIDE
+            m3.incoming (cc (16, 30, 0), false);                        // GLIDE: OFF
+            m3.incoming (cc (6, 18, 20), false);
+            const bool jumps = ! e3.isGliding (cut);
+            m3.incoming (cc (16, 30, 64), false);                       // GLIDE: some bars
+            m3.incoming (cc (6, 18, 100), false);
+            const bool travels = e3.isGliding (cut) && glideBarsFor (e3.target (cx::kGlide)) > 0.0;
+            m3.service();
+            check (jumps && travels && e3.isGliding (cut), "GLIDE sent just before a knob is taken up before it: the knob travels by it (it went at once, by the GLIDE there was before)");
+            // more than the list holds between two visits: the last value of each address still arrives
+            for (int i = 0; i < 3000; ++i) m3.incoming (cc (16, 61, i % 100), false);
+            m3.incoming (cc (16, 61, 77), false);
+            m3.service();
+            check (std::abs (e3.target (cx::kRet + 1) - 77.0f / 127.0f) < 1.0e-6f, "three thousand moves of one knob between two visits: the last is where it stands");
         }
 
         const int tune = cx::lane (0, 0), punch = cx::lane (0, 5);

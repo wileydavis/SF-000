@@ -1108,7 +1108,8 @@ void Engine::prepare (double rate, int block)
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
     tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
     liveMidi.ensureSize (8192);
-    wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0;
+    wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0; clkWas = false;
+    ghostMidi.ensureSize (4096);            // (a voice leaving is given its lane's notes: room for them before the audio starts)
     fol = Follow();
     loud->m.prepare (sr);
     prepared = true;
@@ -1279,15 +1280,27 @@ void Engine::render (juce::AudioBuffer<float>& out)
         const double base = blockMs + durMs;
         if (starting) { clkPpq = 0.0; pushClock (0xFA, base - 1.0, samplesDone); }       // START, a millisecond before its first tick
         if (stopping) pushClock (0xFC, base, samplesDone);
-        const double c0 = clkPpq, c1 = run ? std::max (clkPpq, ppq + beats + lookBeats) : clkPpq;
-        for (auto k = (juce::int64) std::ceil (c0 * 24.0 - 1e-9); (double) k / 24.0 < c1 - 1e-12; ++k)
+        // Switched on with the rig already running (SEND pressed, a sequencer plugged in, the audio
+        // started again): the clock takes up where the rig is now. It used to begin at bar 1 and
+        // send every tick since at once. The follower is sent no START here: it joins at the next.
+        if (! clkWas && ! starting) clkPpq = ppq + lookBeats;
+        // Where the clock should be by the end of this block, and how far it goes toward it: at
+        // most twice the tempo, so a jump of tempo (whose head start is then more beats) is made up
+        // over a few blocks and not as two ticks at once.
+        const double want = ppq + beats + lookBeats;
+        const double c0 = clkPpq, c1 = run ? std::max (clkPpq, std::min (want, clkPpq + 2.0 * beats + 1.0e-9)) : clkPpq;
+        // The ticks of [c0, c1) lie evenly across this block's own stretch of time, so no tick is
+        // ever due before one already sent (at a steady tempo this is what it always was).
+        const double span = c1 - c0;
+        for (auto k = (juce::int64) std::ceil (c0 * 24.0 - 1e-9); span > 1.0e-12 && (double) k / 24.0 < c1 - 1e-12; ++k)
         {
-            const double off = ((double) k / 24.0 - c0) * spb;
+            const double off = ((double) k / 24.0 - c0) / span * (double) n;
             pushClock (0xF8, base + off * 1000.0 / sr, samplesDone + (juce::int64) std::llround (off));
         }
         clkPpq = c1;
     }
     else clkPpq = 0.0;
+    clkWas = clk;
 
     // Where a bar line falls in this buffer, noted against the tape: its sound leaves the master
     // chain that much later than it is made.

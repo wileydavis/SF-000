@@ -144,7 +144,14 @@ private:
     std::atomic<bool> glideFromE16 { false };                   // the GLIDE that came in was the E16's own (it knows it; anyone else's it is told)
     int pageNow = 0, pageWait = 0, glideSent = -1;              // message thread
     juce::uint32 glideHeardAt = 0;
-    std::array<std::atomic<int>, ccx::kExtras> exLatest;         // the addresses that are not the E16's
+    // The addresses that are not the E16's, in the order they came, every one of them: a key
+    // pressed and let go between two visits of the message thread is two events, not none.
+    struct ExEvent { juce::uint16 extra = 0; juce::uint8 val = 0, by = 0; bool done = false; };     // done: a key, already put to the engine from the MIDI thread
+    static constexpr int kExQ = 1024;
+    juce::SpinLock exLock;
+    std::array<ExEvent, kExQ> exQ;
+    int exN = 0;
+    std::array<std::atomic<int>, ccx::kExtras> exLatest;         // (when that list is full: the last value of each, as it used to be)
     std::array<std::atomic<int>, ccx::kExtras> exBy;             // and whose port each last came in on (1 the E16's, 2 another)
     std::array<std::atomic<int>, 16> recallHeard, recallIn;     // RECALL: the value last said; the one to act on
     // the library's scene

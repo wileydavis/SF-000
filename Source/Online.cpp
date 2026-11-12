@@ -20,10 +20,20 @@ Online::Online (Session& s) : juce::Thread ("SF-000 online"), ses (s)
 
 Online::~Online()
 {
+    // a send under way is called off: the thread is back in a moment, whatever the library is doing.
+    // (The wait is longer than any request's own patience, so that even one that could not be called
+    // off has given up by itself before JUCE would kill the thread.)
+    callOff.off = true;
+    {
+        const juce::ScopedLock sl (callOff.lock);
+        if (callOff.stream != nullptr) callOff.stream->cancel();
+    }
     signalThreadShouldExit();
     notify();
-    stopThread (8000);                      // a send under way is let finish, or gives up
+    stopThread (35000);
 }
+
+bool Online::systemClientForTests = false;
 
 void Online::startSending() { startThread (juce::Thread::Priority::low); }
 void Online::poke()         { notify(); }
@@ -161,8 +171,10 @@ void Online::writeLedger() const
 // to match, which a library reading JSON or a clip does not forgive. https, the real thing, goes
 // through the system's client below (on the Mac, NSURLSession).
 static bool plainHttp (const juce::URL& url, const String& method, const String& target, const String& headers,
-                       const juce::MemoryBlock* body, int timeoutMs, int& status, String& text)
+                       const juce::MemoryBlock* body, int timeoutMs, int& status, String& text, const std::atomic<bool>* off)
 {
+    // (waits are taken a tenth of a second at a time, so that being called off is noticed)
+    auto called = [off] { return off != nullptr && off->load(); };
     juce::StreamingSocket sock;
     const int port = url.getPort() > 0 ? url.getPort() : 80;
     if (! sock.connect (url.getDomain(), port, juce::jmin (timeoutMs, 5000))) return false;
@@ -174,7 +186,9 @@ static bool plainHttp (const juce::URL& url, const String& method, const String&
     const auto* data = static_cast<const char*> (req.getData());
     for (size_t sent = 0; sent < req.getDataSize();)
     {
-        if (sock.waitUntilReady (false, timeoutMs) != 1) return false;
+        int ready = 0;
+        for (int waited = 0; ready == 0 && waited < timeoutMs && ! called(); waited += 100) ready = sock.waitUntilReady (false, 100);
+        if (ready != 1) return false;
         const int n = sock.write (data + sent, (int) juce::jmin ((size_t) 65536, req.getDataSize() - sent));
         if (n <= 0) return false;
         sent += (size_t) n;
@@ -183,7 +197,10 @@ static bool plainHttp (const juce::URL& url, const String& method, const String&
     char buf[16384];
     for (;;)
     {
-        if (sock.waitUntilReady (true, timeoutMs) != 1) break;
+        int ready = 0;
+        for (int waited = 0; ready == 0 && waited < timeoutMs && ! called(); waited += 100) ready = sock.waitUntilReady (true, 100);
+        if (called()) return false;
+        if (ready != 1) break;
         const int n = sock.read (buf, (int) sizeof (buf), false);
         if (n <= 0) break;
         got.append (buf, (size_t) n);
@@ -210,16 +227,17 @@ static bool plainHttp (const juce::URL& url, const String& method, const String&
     return true;
 }
 
-Online::Reply Online::http (const Setup& s, const String& method, const String& path, const juce::MemoryBlock* body, const String& contentType, int timeoutMs)
+Online::Reply Online::http (const Setup& s, const String& method, const String& path, const juce::MemoryBlock* body, const String& contentType, int timeoutMs, CallOff* co)
 {
-    if (s.url.startsWithIgnoreCase ("http://"))
+    if (co != nullptr && co->off.load()) return {};
+    if (s.url.startsWithIgnoreCase ("http://") && ! systemClientForTests)
     {
         Reply r;
         String h = "CF-Access-Client-Id: " + s.clientId + "\r\nCF-Access-Client-Secret: " + s.clientSecret + "\r\n";
         if (contentType.isNotEmpty()) h << "Content-Type: " << contentType << "\r\n";
         const juce::URL base (s.url);
         const auto under = base.getSubPath();
-        if (! plainHttp (base, method, (under.isNotEmpty() ? "/" + under : String()) + path, h, body, timeoutMs, r.status, r.body)) r.status = 0;
+        if (! plainHttp (base, method, (under.isNotEmpty() ? "/" + under : String()) + path, h, body, timeoutMs, r.status, r.body, co != nullptr ? &co->off : nullptr)) r.status = 0;
         return r;
     }
     juce::URL url (s.url + path);
@@ -227,10 +245,25 @@ Online::Reply Online::http (const Setup& s, const String& method, const String& 
     String headers = "CF-Access-Client-Id: " + s.clientId + "\r\nCF-Access-Client-Secret: " + s.clientSecret + "\r\n";
     if (contentType.isNotEmpty()) headers << "Content-Type: " << contentType << "\r\n";
     Reply r;
-    const auto in = url.createInputStream (juce::URL::InputStreamOptions (body != nullptr ? juce::URL::ParameterHandling::inPostData : juce::URL::ParameterHandling::inAddress)
-                                               .withExtraHeaders (headers).withConnectionTimeoutMs (timeoutMs).withStatusCode (&r.status)
-                                               .withHttpRequestCmd (method).withNumRedirectsToFollow (0));
-    if (in != nullptr) r.body = in->readEntireStreamAsString();
+    // (the stream is made here and not by URL::createInputStream, which does just this, so that it
+    // can be reached while it waits: cancel() ends a connect or a read under way)
+    juce::WebInputStream in (url, body != nullptr);
+    in.withExtraHeaders (headers).withConnectionTimeout (timeoutMs).withCustomRequestCommand (method).withNumRedirectsToFollow (0);
+    if (co != nullptr)
+    {
+        const juce::ScopedLock sl (co->lock);
+        if (co->off.load()) return {};
+        co->stream = &in;
+    }
+    const bool ok = in.connect (nullptr);
+    r.status = in.getStatusCode();
+    if (ok && ! in.isError()) r.body = in.readEntireStreamAsString();
+    if (co != nullptr)
+    {
+        const juce::ScopedLock sl (co->lock);
+        co->stream = nullptr;
+        if (co->off.load()) return {};
+    }
     return r;
 }
 
@@ -337,7 +370,7 @@ bool Online::pass()
         const auto text = juce::JSON::toString (var (q), true);
         const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
         ++asked;
-        const auto r = http (s, "POST", "/api/have", &mb, "application/json", 8000);
+        const auto r = http (s, "POST", "/api/have", &mb, "application/json", 8000, &callOff);
         const var have = juce::JSON::parse (r.body).getProperty ("have", var());
         if (r.status != 200 || ! have.isObject()) return fail (r);
         for (auto& it : items)
@@ -382,7 +415,7 @@ bool Online::pass()
                 if (text.isEmpty()) break;                                  // deleted here meanwhile
                 const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
                 ++asked;
-                const auto r = http (s, "POST", "/api/snapshots", &mb, "application/json", 15000);
+                const auto r = http (s, "POST", "/api/snapshots", &mb, "application/json", 15000, &callOff);
                 if (r.status == 400 || r.status == 413) { e.refused = true; changed = true; break; }       // this one alone will not go: the rest are not held up
                 const var a = juce::JSON::parse (r.body);
                 if (r.status != 200 || ! (bool) a.getProperty ("ok", false)) return fail (r);
@@ -402,7 +435,7 @@ bool Online::pass()
             juce::MemoryBlock mb;
             if (! it.clip.loadFileAsData (mb) || mb.getSize() == 0) continue;
             ++asked;
-            const auto r = http (s, "PUT", "/api/clips/" + juce::URL::addEscapeChars (it.uid, true), &mb, "audio/ogg", 30000);
+            const auto r = http (s, "PUT", "/api/clips/" + juce::URL::addEscapeChars (it.uid, true), &mb, "audio/ogg", 30000, &callOff);
             if (r.status == 404) { e.snap = false; changed = true; soon = true; continue; }                 // it lost the snapshot: again next pass
             if (r.status == 400 || r.status == 413) { e.refused = true; changed = true; continue; }
             if (r.status != 200) return fail (r);

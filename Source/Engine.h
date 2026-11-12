@@ -437,6 +437,7 @@ private:
     std::atomic<float> clockLead { 0.0f }, lateMs { 0.0f };
     std::atomic<int> lateCount { 0 };
     double wallMs = -1.0, virtualMs = 0.0, blockMs = 0.0, prevBlockMs = 0.0, lastDurMs = 0.0, clkPpq = 0.0;
+    bool clkWas = false;                // the clock was being sent in the block before this one
     bool wallValid = false;
 
     std::atomic<bool> running { false }, panicNow { false };

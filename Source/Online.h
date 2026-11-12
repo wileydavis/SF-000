@@ -45,6 +45,7 @@ public:
     // Ask the library whether these settings are let in. Empty: yes. Else what went wrong.
     static juce::String check (const Setup&);
     int requests() const                    { return asked.load(); }        // sends made so far (the checks)
+    static bool systemClientForTests;       // the checks: plain http through the system's client too, as https goes
     void showForTests (State st, int waiting, int sent, const juce::String& note = {}) { say (st, waiting, sent, note); }
 
     static juce::File setupFile();
@@ -55,8 +56,18 @@ public:
 private:
     void run() override;
     struct Reply { int status = 0; juce::String body; };       // status 0: no answer at all
+    // A request under way can be called off from another thread: quitting must not wait on a
+    // library that has stopped answering (it waited 8 s, then the thread was killed by force
+    // with the request still open, which can take the app down as it leaves).
+    struct CallOff
+    {
+        std::atomic<bool> off { false };
+        juce::CriticalSection lock;
+        juce::WebInputStream* stream = nullptr;         // the https request being made, under the lock
+    };
+    CallOff callOff;
     static Reply http (const Setup&, const juce::String& method, const juce::String& path,
-                       const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000);
+                       const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000, CallOff* = nullptr);
     struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false; juce::String name; };
     void readSetup();
     void writeSetup() const;
