@@ -11,6 +11,7 @@
 #include "Screen.h"
 #include "Midi.h"
 #include "Recorder.h"
+#include "Online.h"
 #include <set>
 
 static void dumpModules()
@@ -905,6 +906,35 @@ static int uiTest()
         tmp.deleteRecursively();
     }
 
+    // 2e. ONLINE: the key lights and goes out, says what it needs, and SET UP asks for the panel
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_online_ui_test");
+        tmp.deleteRecursively();
+        const auto was = Session::stateFileForTests;
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        {
+            Online on (ses);
+            sc.online = &on;
+            bool asked = false;
+            sc.onOnlineSetup = [&asked] { asked = true; };
+            sc.setPage (Screen::pLibrary); draw();
+            juce::Point<float> key, setUp; int found = 0;
+            for (auto& h : sc.testHits()) { if (Screen::testIsOnline (h, false)) { key = h.r.getCentre(); ++found; } if (Screen::testIsOnline (h, true)) { setUp = h.r.getCentre(); ++found; } }
+            const bool offFirst = ! on.on() && on.status().state == Online::State::off;
+            click (key); draw();
+            const bool lit = on.on() && on.status().state == Online::State::notSetUp && on.line().contains ("SET UP");
+            const bool kept = (bool) juce::JSON::parse (Online::setupFile()).getProperty ("on", false);
+            click (setUp);
+            click (key); draw();
+            const bool out = ! on.on() && on.status().state == Online::State::off;
+            check (found == 2 && offFirst && lit && kept && asked && out, "ONLINE: the key lights and goes out and is remembered, says it needs setting up, and SET UP asks for its panel");
+            sc.online = nullptr; sc.onOnlineSetup = nullptr;
+            sc.setPage (Screen::pMain); draw();
+        }
+        Session::stateFileForTests = was;
+        tmp.deleteRecursively();
+    }
+
     // 3. snapshots and the knobs, on a fresh rig
     {
         Engine e2; e2.prepare (48000.0, 512);
@@ -1296,10 +1326,24 @@ static int shot (const juce::StringArray& args)
     rec.root = recDir;
     sc.recorder = &rec;
     if (args.contains ("--rec")) { rec.start(); for (int i = 0; i < 94 * 75; ++i) e.render (b); }
+    // --online off|setup|sending|sent|waiting|refused: the library's strip with ONLINE as it would stand
+    std::unique_ptr<Online> online;
+    const auto onlineDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_shot_online");
+    if (args.contains ("--online"))
+    {
+        Session::stateFileForTests = onlineDir.getChildFile ("session.json");
+        online = std::make_unique<Online> (ses);
+        const auto how = arg ("--online", "off");
+        online->showForTests (how == "setup" ? Online::State::notSetUp : how == "sending" ? Online::State::working : how == "sent" ? Online::State::upToDate
+                              : how == "waiting" ? Online::State::waiting : how == "refused" ? Online::State::refused : Online::State::off,
+                              how == "sending" || how == "waiting" || how == "off" ? 3 : 0, how == "sent" ? 41 : 12, how == "refused" ? "403" : "");
+        sc.online = online.get();
+    }
     const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
     sc.setSize ((int) Screen::kW, (int) Screen::kH);
     const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
     rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
+    sc.online = nullptr; online = nullptr; Session::stateFileForTests = juce::File(); onlineDir.deleteRecursively();
     juce::File f (arg ("--shot", "sf000.png"));
     f.deleteFile();
     juce::FileOutputStream out (f);
@@ -2463,6 +2507,229 @@ static int shotSetup (const juce::StringArray& args)
     return 0;
 }
 
+// ONLINE against a snapshot library that is running: the site's own `npm run dev`.
+//   SF-000 --onlinetest http://127.0.0.1:8787 [http://127.0.0.1:8788]
+// The second address, if given, is a library that lets nobody in (the turned-away path).
+static int onlineTest (const juce::String& base, const juce::String& refusing)
+{
+    using namespace sf0;
+    using juce::var;
+    int bad = 0;
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    struct Got { int status = 0; juce::MemoryBlock bytes; var json; };
+    auto ask = [&base] (const juce::String& method, const juce::String& path)
+    {
+        Got g;
+        const auto in = juce::URL (base + path).createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                                                                     .withStatusCode (&g.status).withHttpRequestCmd (method).withConnectionTimeoutMs (10000));
+        if (in != nullptr) { in->readIntoMemoryBlock (g.bytes); g.json = juce::JSON::parse (g.bytes.toString()); }
+        return g;
+    };
+    std::printf ("SF-000 online test (%s)\n", base.toRawUTF8());
+    if (ask ("GET", "/api/health").status != 200) { std::printf ("  no snapshot library answers there: start the site's `npm run dev` first\n"); return 1; }
+
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_online_test");
+    tmp.deleteRecursively();
+    Session::stateFileForTests = tmp.getChildFile ("session.json");
+    juce::StringArray ours;
+    {
+        Engine e;
+        e.prepare (48000.0, 128);
+        Session ses (e, true);
+        juce::AudioBuffer<float> b (2, 128);
+        auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 128.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+        auto take = [&] { const auto id = ses.take(); const auto uid = ses.findSnap (id)->uid; ours.add (uid); return std::make_pair (id, uid); };
+        auto there = [&] (const juce::String& uid) { return ask ("GET", "/api/snapshots/" + uid); };
+        for (int k = 0; k < 400; ++k) e.render (b);
+        e.setRunning (true);
+        bars (5.2);
+
+        Online::Setup st;
+        st.url = base; st.clientId = "sf-000-test.access"; st.clientSecret = "not-a-real-secret";
+        {
+            Online on (ses);
+            // 1. ONLINE out: a snapshot stays at home, and is counted
+            const auto a = take();
+            ses.waitForClips();
+            on.pass();
+            check (on.status().state == Online::State::off && on.status().waiting == 1 && on.requests() == 0 && there (a.second).status == 404,
+                   "with ONLINE out a snapshot taken stays at home, counted as waiting, and nothing is asked of the library");
+            on.setOn (true);
+            on.pass();
+            check (on.status().state == Online::State::notSetUp && on.requests() == 0, "lit with nothing set up, it says so and asks nothing");
+
+            // 2. set up: the one that waited goes, whole, with its clip and what it was made with
+            check (Online::check (st).isEmpty(), "CHECK: the library answers for these settings");
+            st.on = true;
+            on.setSetup (st);
+            on.pass();
+            auto g = there (a.second);
+            const var snap = g.json["snapshot"];
+            const auto lanePrint = snap["made"]["lanes"]["kick"].toString();
+            const var defs = ask ("GET", "/api/defs?prints=" + lanePrint + "," + snap["made"]["chassis"].toString() + "," + snap["made"]["fx"]["DELAY"].toString()).json["defs"];
+            juce::MemoryBlock local;
+            ses.clipFile (a.first).loadFileAsData (local);
+            const auto clip = ask ("GET", "/api/clips/" + a.second);
+            const bool whole = g.status == 200 && snap["uid"].toString() == a.second && (juce::int64) snap["id"] == a.first && snap["values"].getDynamicObject() != nullptr
+                               && snap["values"].getDynamicObject()->getProperties().size() > 200 && (bool) g.json["has_clip"] && (bool) g.json["has_profile"];
+            const bool defined = defs[juce::Identifier (lanePrint)]["kind"].toString() == "lane" && defs[juce::Identifier (defs[juce::Identifier (lanePrint)]["engine"].toString())]["kind"].toString() == "engine"
+                                 && defs[juce::Identifier (snap["made"]["chassis"].toString())]["kind"].toString() == "chassis" && defs[juce::Identifier (snap["made"]["fx"]["DELAY"].toString())]["kind"].toString() == "fx";
+            check (whole && defined && local.getSize() > 1000 && clip.status == 200 && clip.bytes == local && on.status().state == Online::State::upToDate && on.status().sent == 1 && on.status().waiting == 0,
+                   "set up and lit, the snapshot that waited goes: whole, its clip to the byte (" + juce::String ((int) (local.getSize() / 1024)) + " KB), and every definition it names, a lane's sound engine too");
+            check (there (ses.libraryId + "-3e8").status == 404 && there (ses.libraryId + "-3e7").status == 404, "the snapshots the rig came with stay at home");
+
+            // 3. taken while lit: the snapshot at once, its clip as soon as it is written
+            bars (2.0);
+            const auto bSnap = take();
+            on.pass();
+            const bool atOnce = there (bSnap.second).status == 200;
+            ses.waitForClips();
+            on.pass();
+            check (atOnce && (bool) there (bSnap.second).json["has_clip"] && on.status().state == Online::State::upToDate && on.status().sent == 2,
+                   "one taken while lit goes at once, and its clip follows when it has been written");
+            const int before = on.requests();
+            on.pass(); on.pass();
+            check (on.requests() == before, "with nothing new, a pass asks the library nothing");
+
+            // 4. no answer: it waits, and later sends only what is missing
+            auto dead = st; dead.url = "http://127.0.0.1:9";
+            on.setSetup (dead);
+            bars (2.0);
+            const auto c = take();
+            ses.waitForClips();
+            on.pass();
+            const bool waits = on.status().state == Online::State::waiting && on.status().waiting >= 1 && on.line().contains ("TRIES AGAIN") && there (c.second).status == 404;
+            on.setSetup (st);
+            const int was = on.requests();
+            on.pass();
+            check (waits && (bool) there (c.second).json["has_clip"] && on.requests() - was == 3 && on.status().state == Online::State::upToDate && on.status().sent == 3,
+                   "with no answer it waits and says so; when the library is back it asks what is held and sends only the one that is missing (3 requests: the question, the snapshot, its clip)");
+
+            // 5. renamed here: its name there follows
+            ses.rename (a.first, "roller");
+            on.pass();
+            check (there (a.second).json["name"].toString() == "ROLLER" && (bool) there (a.second).json["has_clip"], "a snapshot renamed here is renamed there, and keeps its clip");
+
+            // 6. removed there: it is not sent again
+            ask ("DELETE", "/api/snapshots/" + bSnap.second);
+        }
+        {
+            Online again (ses);                                 // (as the app opening another day)
+            const bool remembered = again.on() && again.setup().url == base && again.setup().clientSecret == st.clientSecret;
+            again.pass();
+            const int one = again.requests();
+            again.pass();
+            check (remembered && one == 1 && again.requests() == 1 && there (ours[1]).status == 404 && again.status().state == Online::State::upToDate && again.status().waiting == 0,
+                   "opened again it remembers its settings and what was sent (one question, nothing resent), and one removed from the library is not sent back");
+
+            // 7. turned away
+            if (refusing.isNotEmpty())
+            {
+                auto shut = st; shut.url = refusing;
+                const auto said = Online::check (shut);
+                again.setSetup (shut);
+                again.pass();
+                check (said.contains ("DID NOT LET") && again.status().state == Online::State::refused && again.line().contains ("DID NOT LET"),
+                       "a library that does not know the strings turns it away, and it says so (" + juce::String (again.status().note) + ")");
+            }
+        }
+        const auto perms = Online::setupFile().existsAsFile();
+        check (perms && ! juce::File (Online::setupFile()).loadFileAsString().contains ("\"secret\": \"\""), "the settings are kept in online.json beside the session");
+    }
+    for (auto& uid : ours) ask ("DELETE", "/api/snapshots/" + uid + "?forget=1");
+    Session::stateFileForTests = juce::File();
+    tmp.deleteRecursively();
+    std::printf (bad == 0 ? "ALL ONLINE CHECKS PASSED\n" : "%d ONLINE CHECK(S) FAILED\n", bad);
+    return bad == 0 ? 0 : 1;
+}
+
+// ONLINE's settings: where the snapshot library is, and the two strings that let SF-000 in. Typed
+// or pasted here once; kept in online.json beside the session, for this user only.
+class OnlinePanel : public juce::Component
+{
+public:
+    explicit OnlinePanel (sf0::Online& o) : online (o)
+    {
+        const auto s = online.setup();
+        auto row = [this] (juce::Label& l, const char* name, juce::TextEditor& e, const juce::String& value, const char* hint)
+        {
+            addAndMakeVisible (l); addAndMakeVisible (e);
+            l.setText (name, juce::dontSendNotification);
+            l.setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
+            l.setFont (juce::FontOptions (14.0f));
+            e.setFont (juce::FontOptions (14.0f));
+            e.setText (value, false);
+            e.setTextToShowWhenEmpty (hint, juce::Colour (0xff8D9794));
+            e.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xffE8E5E1));
+            e.setColour (juce::TextEditor::textColourId, juce::Colour (0xff2B2B28));
+            e.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff2B2B28));
+            e.onTextChange = [this] { note.setText ({}, juce::dontSendNotification); };
+        };
+        row (lUrl, "ADDRESS", url, s.url, "https://...");
+        row (lId, "CLIENT ID", id, s.clientId, "the service token's Client ID");
+        secret.setPasswordCharacter (0x2022);
+        row (lSecret, "CLIENT SECRET", secret, s.clientSecret, "the service token's Client Secret");
+        for (auto* b : { &check, &keep })
+        {
+            addAndMakeVisible (*b);
+            b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4D514E));
+            b->setColour (juce::TextButton::textColourOffId, juce::Colour (0xffE8E5E1));
+        }
+        check.setButtonText ("CHECK");
+        keep.setButtonText ("KEEP");
+        addAndMakeVisible (note);
+        note.setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
+        note.setFont (juce::FontOptions (14.0f));
+        note.setJustificationType (juce::Justification::topLeft);
+        note.setText ("The address of your snapshot library, and the two strings Cloudflare showed when the service token was made. "
+                      "CHECK asks the library whether they let SF-000 in. KEEP stores them on this Mac, readable by you only.", juce::dontSendNotification);
+        // CHECK asks from a thread of its own, so the window stays alive while the network answers
+        check.onClick = [this]
+        {
+            const auto s = entered();
+            note.setText ("ASKING...", juce::dontSendNotification);
+            juce::Component::SafePointer<OnlinePanel> me (this);
+            juce::Thread::launch ([me, s]
+            {
+                const auto said = sf0::Online::check (s);
+                juce::MessageManager::callAsync ([me, said] { if (me != nullptr) me->note.setText (said.isEmpty() ? juce::String ("THE LIBRARY LET SF-000 IN.") : said, juce::dontSendNotification); });
+            });
+        };
+        keep.onClick = [this]
+        {
+            online.setSetup (entered());
+            note.setText ("KEPT. " + juce::String (online.on() ? "ONLINE IS LIT: SNAPSHOTS GO AS THEY ARE TAKEN." : "LIGHT THE ONLINE KEY IN THE LIBRARY TO START SENDING."), juce::dontSendNotification);
+        };
+        setSize (560, 250);
+    }
+
+    void resized() override
+    {
+        int y = 14;
+        for (auto pair : std::initializer_list<std::pair<juce::Label*, juce::TextEditor*>> { { &lUrl, &url }, { &lId, &id }, { &lSecret, &secret } })
+        {
+            pair.first->setBounds (14, y, 120, 26);
+            pair.second->setBounds (138, y, getWidth() - 152, 26);
+            y += 34;
+        }
+        check.setBounds (138, y + 2, 90, 28);
+        keep.setBounds (236, y + 2, 90, 28);
+        note.setBounds (14, y + 42, getWidth() - 28, getHeight() - y - 50);
+    }
+
+private:
+    sf0::Online::Setup entered() const
+    {
+        auto s = online.setup();                // (ONLINE stays lit or out as it was)
+        s.url = url.getText().trim(); s.clientId = id.getText().trim(); s.clientSecret = secret.getText().trim();
+        return s;
+    }
+    sf0::Online& online;
+    juce::Label lUrl, lId, lSecret, note;
+    juce::TextEditor url, id, secret;
+    juce::TextButton check, keep;
+};
+
 class SF000App : public juce::JUCEApplication
 {
 public:
@@ -2485,6 +2752,12 @@ public:
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
+        if (args.contains ("--onlinetest"))
+        {
+            const int i = args.indexOf ("--onlinetest");
+            setApplicationReturnValue (onlineTest (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("http://127.0.0.1:8787"), i + 2 < args.size() ? args[i + 2].unquoted() : juce::String()));
+            quit(); return;
+        }
         if (args.contains ("--miditest")) { setApplicationReturnValue (midiTest()); quit(); return; }
         if (args.contains ("--profiles")) { setApplicationReturnValue (profiles()); quit(); return; }
         if (args.contains ("--perf")) { setApplicationReturnValue (perf()); quit(); return; }
@@ -2499,10 +2772,16 @@ public:
         midi = std::make_unique<sf0::Midi> (*engine, *session);
         recorder = std::make_unique<sf0::Recorder> (*engine);
         recorder->stateAtStart = [this] { session->save(); return sf0::Session::stateFile(); };
+        // ONLINE: snapshots go to the library on the web as they are taken (if it is lit and set up)
+        online = std::make_unique<sf0::Online> (*session);
+        session->onLibrary = [this] { if (online != nullptr) online->poke(); };
+        online->startSending();
 
         auto* screen = new sf0::Screen (*session);
         screen->recorder = recorder.get();
         screen->onAudioSetup = [this] { audioSetup(); };
+        screen->online = online.get();
+        screen->onOnlineSetup = [this] { onlineSetup(); };
         screen->onFullScreen = [this]
         {
             auto& d = juce::Desktop::getInstance();
@@ -2525,8 +2804,10 @@ public:
         }
         juce::Desktop::getInstance().setKioskModeComponent (nullptr, false);
         setup.deleteAndZero();              // the setup dialog, if it is still up: it reads the MIDI object
+        onlineDialog.deleteAndZero();
         window = nullptr;
         midi = nullptr;
+        online = nullptr;                   // before the session it reads: a send under way finishes or times out
         session = nullptr;
         engine = nullptr;
         sf0::Screen::releaseFonts();        // while JUCE is still up (left to the end of the process they abort the quit)
@@ -2552,9 +2833,24 @@ private:
         setup = o.launchAsync();
     }
 
+    void onlineSetup()
+    {
+        if (onlineDialog != nullptr) { onlineDialog->toFront (true); return; }
+        juce::DialogWindow::LaunchOptions o;
+        o.content.setOwned (new OnlinePanel (*online));
+        o.dialogTitle = "SF-000 ONLINE";
+        o.dialogBackgroundColour = juce::Colour (0xff2B2B28);
+        o.escapeKeyTriggersCloseButton = true;
+        o.useNativeTitleBar = true;
+        o.resizable = false;
+        onlineDialog = o.launchAsync();
+    }
+
     juce::AudioDeviceManager devices;
     std::unique_ptr<sf0::Engine> engine;
     std::unique_ptr<sf0::Session> session;
+    std::unique_ptr<sf0::Online> online;
+    juce::Component::SafePointer<juce::DialogWindow> onlineDialog;
     std::unique_ptr<sf0::Midi> midi;
     std::unique_ptr<sf0::Recorder> recorder;
     std::unique_ptr<MainWindow> window;

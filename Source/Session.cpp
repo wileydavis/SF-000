@@ -362,6 +362,7 @@ juce::int64 Session::take()
     library.push_back (s);
     sign();
     touch();
+    if (onLibrary) onLibrary();
     return library.back().id;
 }
 
@@ -435,6 +436,7 @@ void Session::rename (juce::int64 id, const juce::String& name)
     s.name = name.trim().toUpperCase().substring (0, 24);
     if (auto* o = s.kept.getDynamicObject()) o->setProperty ("name", s.name);
     touch();
+    if (onLibrary) onLibrary();
 }
 
 // --------------------------------------------------------------------------- patterns, inserts
@@ -630,6 +632,15 @@ static var snapToVar (const Snapshot& s, const Engine& e)
         o->setProperty ("setup", var (su));
     }
     return var (o);
+}
+
+juce::var Session::written (const Snapshot& s) const { return snapToVar (s, engine); }
+
+juce::var Session::definition (const juce::String& print) const
+{
+    for (auto& e : engine.defs().all) if (e.first == print) return e.second;
+    for (auto& e : defsKept) if (e.first == print) return e.second;
+    return {};
 }
 
 static Snapshot snapFromVar (const var& v, const Engine& e)

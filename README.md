@@ -108,6 +108,25 @@ movement from bar to bar, and how wet (the returns' share). `SF-000 --profiles` 
 snapshots the rig comes with and some plain cases. A snapshot taken with the clock stopped, or
 from before this build, has no sound kept: its card shows how busy each lane's pattern is, as before.
 
+### ONLINE: the library on the web
+
+With **ONLINE** lit (the library screen's strip), every snapshot you take goes to your snapshot
+library on the web in the background: the snapshot whole, its four bars, and the definitions it
+names. Nothing waits on it. With ONLINE out, or no network, a snapshot simply has not gone yet; it
+goes when ONLINE is lit and the library answers. The lamp: green when the library holds every
+snapshot taken, yellow while sending, amber when it waits (no answer, or not set up), red when
+the library turned SF-000 away. The line beside it says which, and how many wait.
+
+**SET UP** takes the library's address and the two strings of its service token (Client ID,
+Client Secret). CHECK asks the library whether they let SF-000 in; KEEP stores them in
+`online.json` beside the session, readable by you only. Neither the address nor the strings are in
+the code.
+
+- A snapshot renamed here is renamed there. One deleted here stays there.
+- One removed in the web library is not sent again.
+- The snapshots the rig came with (INIT and the rest, CLEAN SLATE) stay at home.
+- Each time it connects it asks the library what it holds, so the two never drift.
+
 ### Recording
 
 REC writes a take to `Music/SF-000/`, in a folder named for the moment it began. It starts at once,
@@ -195,6 +214,7 @@ build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
+build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapshot library running on this machine (its `npm run dev`)
 build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
@@ -225,12 +245,13 @@ meters when a bar has moved, the playing step.
 | `controllers/oxi-one/` | the OXI One MkII project, and a checker for your own |
 | `Source/Profile.*` | what a snapshot sounded like, worked out from the bars kept with it |
 | `Source/Recorder.*` | takes: the set, the lanes and the returns to disk, off the audio thread |
+| `Source/Online.*` | ONLINE: snapshots sent to the library on the web in the background, and what has gone |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
 scene, each snapshot's profile; its layout and the rules that keep old files readable are in
-`FORMAT.md`), `library-id.txt` (this library's own id), `clips/` (each snapshot's four bars), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
+`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 
@@ -244,8 +265,9 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
 - A recall between two snapshots with different effects on a lane swaps the effects at once: the
   chains do not yet cross over the GLIDE time.
-- Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound;
-  the online library (snapshots sent as they are taken). The session file is ready for both: `FORMAT.md`.
+- Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound.
+  The session file is ready for it: `FORMAT.md`.
+- ONLINE the other way: loading a library file, buckets and snapshot knobs made in the web library.
 - PA and cue outputs with room EQ; the second display mode for a dark stage.
 - Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).
 - Crash recovery beyond the saved session; the 8-hour soak test.

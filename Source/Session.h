@@ -125,6 +125,10 @@ public:
     static inline juce::File stateFileForTests;     // tests: the session is kept here instead
     static void backUp();               // a dated copy of the session as it was found, the last twenty kept
     std::function<void()> onChange;
+    // ---- for the online library (the message thread, or with its lock)
+    std::function<void()> onLibrary;                    // a snapshot was taken or renamed
+    juce::var written (const Snapshot&) const;          // a snapshot as the session file holds it
+    juce::var definition (const juce::String& print) const;    // void: not one this session knows
 
 private:
     void timerCallback() override;

@@ -532,6 +532,35 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      auto mode), and the rendered instrument: plates and strips of frames from your model, with
      the layout in one file both the renderer and the app read.
 
+## Thirteenth build (Nov 11): ONLINE
+
+144. **The web library is at an address you set** (you: snapshots.drosaka.com; its code is the
+     repo `snapshot-library`). The address and the service token's two strings are settings,
+     typed into SET UP and kept in `online.json`; nothing of them is in this repo.
+145. **The strings are kept in a file only you can read** (mode 600), not the Keychain. Mine: JUCE
+     has no Keychain call, and the token opens this one library and nothing else. The Keychain
+     can come if you want it.
+146. **ONLINE is a key on the library screen, with SET UP beside it.** *proposed.* The lamp says
+     how it stands; a line says how many wait. It is not on the main screen: nothing about it
+     needs a hand while playing.
+147. **What has gone is what the library says it holds.** On each connection SF-000 asks the
+     library which of its snapshots are there and which have their clip, and sends the rest. So
+     "buffered for later" needs no queue of its own: a snapshot not yet acknowledged is the queue,
+     whether ONLINE was out, the network was down, or the app was shut.
+148. **The rig's own snapshots stay at home** (INIT and the five that come with it, CLEAN SLATE).
+     Mine: they are the same on every rig and you did not take them. Say if you want them there.
+149. **Deleting here does not delete there; removing there stops it being sent again.** Mine. The
+     web library is the long memory; the instrument's library is what you carry.
+150. **Definitions go once.** A snapshot's first send carries the definitions it names that the
+     library has not had; the library says if it is missing any, and they are sent again.
+151. **Sending never touches the audio thread, and reads the session only under the message
+     thread's lock**, for the moment it takes to write one snapshot out. If the app is quit while
+     a send hangs on a dead network, quitting can take up to eight seconds.
+152. **Plain http is sent over a socket of SF-000's own; https by the system.** JUCE's Linux
+     client puts a stray line break before a request's body, so the checks here (which talk to a
+     library on this machine over http) could not use it. On the Mac, https goes through
+     NSURLSession. That path is the one thing in ONLINE the checks here do not run.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -546,4 +575,8 @@ same: a clip kept at every save, and a profile from the clip and from what the r
 - The session file's changes (twelfth) are checked here against a file the eleventh build wrote.
   On the Mac the first launch saves your session again with a uid on every snapshot and the
   definitions added; the copy in `backups/` is the file as it was.
+- ONLINE (thirteenth) is checked here end to end against the web library's code running on this
+  machine: sending, clips to the byte, waiting with no answer, catching up, renames, being turned
+  away. Not checked: https from the Mac through Cloudflare Access with your service token, and
+  the SET UP window itself (it is built and compiles; nothing here can press its keys).
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

@@ -1,5 +1,6 @@
 #include "Screen.h"
 #include "Recorder.h"
+#include "Online.h"
 #include "BinaryData.h"
 #include "core/Processor.h"
 #include <map>
@@ -879,7 +880,17 @@ void Screen::drawLibrary (G& g)
     const String help = ! cueMode ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE."
                       : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES: TICK THEM IN AUDIO."
                       : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
-    text (g, help, R (x0 + 540, ky, 1100, 40), fLbl, col::black, juce::Justification::centredLeft);
+    if (online == nullptr) { text (g, help, R (x0 + 540, ky, 1100, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
+    // ONLINE: each snapshot goes to the library on the web as it is taken. The lamp: green when the
+    // library holds them all, yellow while sending, amber when it waits (no network, or not set up), red when turned away.
+    const auto st = online->status().state;
+    onlineStamp = online->stamp();
+    const Colour lamp = st == Online::State::off ? col::putty : st == Online::State::upToDate ? col::green : st == Online::State::working ? col::yellow
+                      : st == Online::State::refused ? col::red : col::amber;
+    actKey (g, aOnline, x0 + 546, ky, 64, "ONLINE", lamp, 5);
+    actKey (g, aOnlineSetup, x0 + 612, ky, 64, "SET UP", col::white, 5);
+    text (g, online->line(), R (x0 + 700, ky, 960, 20), fLbl, col::black, juce::Justification::centredLeft);
+    text (g, help, R (x0 + 700, ky + 20, 960, 20), fLbl, col::black, juce::Justification::centredLeft);
 }
 
 // ------------------------------------------------------------------------------ macro designer
@@ -997,6 +1008,8 @@ void Screen::act (int a)
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
         case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
+        case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
+        case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
         case aRecallCue:
             if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr) { selSnap = id; ses.recall (id); ses.cue (0); }
             break;
@@ -1381,6 +1394,7 @@ void Screen::timerCallback()
     if (recorder != nullptr)
         if (const bool r = recorder->recording(); r != recWas) { recWas = r; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter(); }
     if (barNow() != barSig) dirty (R (8, 12, 1712, 52));          // RUN and TEMPO, when an outside clock moves them; REC's time
+    if (online != nullptr && page == pLibrary && online->stamp() != onlineStamp) dirty (R (23, 980, 1682, 110));    // what ONLINE has to say
     const float want = cfgOpen && page == pMain ? 1.0f : 0.0f;
     if (cfgT != want)
     {

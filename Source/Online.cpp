@@ -1,0 +1,423 @@
+#include "Online.h"
+#if ! JUCE_WINDOWS
+ #include <sys/stat.h>
+#endif
+
+namespace sf0
+{
+using juce::String;
+using juce::var;
+
+juce::File Online::setupFile()  { return Session::stateFile().getSiblingFile ("online.json"); }
+juce::File Online::ledgerFile() { return Session::stateFile().getSiblingFile ("online-sent.json"); }
+
+Online::Online (Session& s) : juce::Thread ("SF-000 online"), ses (s)
+{
+    readSetup();
+    readLedger();
+    say (! now.on ? State::off : ! now.complete() ? State::notSetUp : State::working, 0, 0);
+}
+
+Online::~Online()
+{
+    signalThreadShouldExit();
+    notify();
+    stopThread (8000);                      // a send under way is let finish, or gives up
+}
+
+void Online::startSending() { startThread (juce::Thread::Priority::low); }
+void Online::poke()         { notify(); }
+
+// ------------------------------------------------------------------------------------- settings
+Online::Setup Online::setup() const
+{
+    const juce::ScopedLock g (lock);
+    return now;
+}
+
+void Online::setSetup (const Setup& s)
+{
+    {
+        const juce::ScopedLock g (lock);
+        now = s;
+        now.url = now.url.trim().trimCharactersAtEnd ("/");
+        now.clientId = now.clientId.trim(); now.clientSecret = now.clientSecret.trim();
+        writeSetup();
+    }
+    say (! s.on ? State::off : ! s.complete() ? State::notSetUp : State::working, 0, 0);
+    poke();
+}
+
+void Online::setOn (bool on)
+{
+    auto s = setup();
+    s.on = on;
+    setSetup (s);
+}
+
+void Online::readSetup()
+{
+    const var v = juce::JSON::parse (setupFile());
+    now.url = v.getProperty ("url", "").toString().trim().trimCharactersAtEnd ("/");
+    now.clientId = v.getProperty ("id", "").toString().trim();
+    now.clientSecret = v.getProperty ("secret", "").toString().trim();
+    now.on = (bool) v.getProperty ("on", false);
+}
+
+void Online::writeSetup() const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("url", now.url);
+    o->setProperty ("id", now.clientId);
+    o->setProperty ("secret", now.clientSecret);
+    o->setProperty ("on", now.on);
+    const auto f = setupFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText (juce::JSON::toString (var (o)));
+   #if ! JUCE_WINDOWS
+    ::chmod (f.getFullPathName().toRawUTF8(), 0600);         // the secret is in it: this user only
+   #endif
+}
+
+// --------------------------------------------------------------------------------------- status
+void Online::say (State st, int waiting, int sent, const String& note)
+{
+    const juce::ScopedLock g (lock);
+    if (stat.state == st && stat.waiting == waiting && stat.sent == sent && stat.note == note) return;
+    stat.state = st; stat.waiting = waiting; stat.sent = sent; stat.note = note;
+    ++changes;
+}
+
+Online::Status Online::status() const
+{
+    const juce::ScopedLock g (lock);
+    return stat;
+}
+
+String Online::line() const
+{
+    const auto s = status();
+    const auto n = [] (int k, const char* one, const char* many) { return String (k) + " " + (k == 1 ? one : many); };
+    switch (s.state)
+    {
+        case State::off:      return s.waiting > 0 ? "ONLINE IS OFF. " + n (s.waiting, "SNAPSHOT WAITS", "SNAPSHOTS WAIT") + " TO GO." : String ("ONLINE IS OFF. SNAPSHOTS TAKEN NOW GO WHEN IT IS LIT.");
+        case State::notSetUp: return "ONLINE NEEDS ITS ADDRESS AND THE TWO STRINGS: SET UP.";
+        case State::working:  return s.waiting > 0 ? "SENDING: " + n (s.waiting, "SNAPSHOT", "SNAPSHOTS") + " TO GO." : String ("ASKING THE LIBRARY WHAT IT HOLDS.");
+        case State::upToDate: return s.sent == 0 ? String ("ONLINE. NOTHING TAKEN YET TO SEND.") : "ONLINE. THE LIBRARY HOLDS " + (s.sent == 1 ? String ("THE ONE SNAPSHOT TAKEN.") : "ALL " + String (s.sent) + " SNAPSHOTS TAKEN.");
+        case State::waiting:  return "NO ANSWER FROM THE LIBRARY" + (s.note.isNotEmpty() ? " (" + s.note + ")" : String()) + ". " + n (s.waiting, "SNAPSHOT WAITS", "SNAPSHOTS WAIT") + "; IT TRIES AGAIN BY ITSELF.";
+        case State::refused:  return "THE LIBRARY DID NOT LET SF-000 IN" + (s.note.isNotEmpty() ? " (" + s.note + ")" : String()) + ". CHECK THE TWO STRINGS IN SET UP.";
+    }
+    return {};
+}
+
+// --------------------------------------------------------------------------------------- ledger
+void Online::readLedger()
+{
+    const var v = juce::JSON::parse (ledgerFile());
+    sentTo = v.getProperty ("url", "").toString();
+    ledger.clear(); defsSent.clear();
+    if (sentTo != now.url) { sentTo = now.url; return; }                    // another library: it is asked afresh
+    if (auto* o = v.getProperty ("sent", var()).getDynamicObject())
+        for (auto& p : o->getProperties())
+        {
+            Entry e;
+            e.snap = (bool) p.value.getProperty ("snap", false); e.clip = (bool) p.value.getProperty ("clip", false);
+            e.gone = (bool) p.value.getProperty ("gone", false); e.refused = (bool) p.value.getProperty ("refused", false);
+            e.name = p.value.getProperty ("name", "").toString();
+            ledger[p.name.toString()] = e;
+        }
+    if (auto* a = v.getProperty ("defs", var()).getArray()) for (auto& d : *a) defsSent.insert (d.toString());
+}
+
+void Online::writeLedger() const
+{
+    auto* sent = new juce::DynamicObject();
+    for (auto& kv : ledger)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("snap", kv.second.snap); o->setProperty ("clip", kv.second.clip);
+        if (kv.second.gone) o->setProperty ("gone", true);
+        if (kv.second.refused) o->setProperty ("refused", true);
+        o->setProperty ("name", kv.second.name);
+        sent->setProperty (kv.first, var (o));
+    }
+    juce::Array<var> defs;
+    for (auto& d : defsSent) defs.add (d);
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("url", sentTo);
+    root->setProperty ("sent", var (sent));
+    root->setProperty ("defs", defs);
+    const auto f = ledgerFile();
+    f.getParentDirectory().createDirectory();
+    const auto tmp = f.getSiblingFile ("online-sent.tmp");
+    if (tmp.replaceWithText (juce::JSON::toString (var (root), true))) tmp.moveFileTo (f);
+}
+
+// ----------------------------------------------------------------------------------------- http
+// Plain http (a library on this machine, as the checks use) is asked over a socket here. JUCE's
+// own client on Linux puts a stray line break in front of a request's body and cuts its end off
+// to match, which a library reading JSON or a clip does not forgive. https, the real thing, goes
+// through the system's client below (on the Mac, NSURLSession).
+static bool plainHttp (const juce::URL& url, const String& method, const String& target, const String& headers,
+                       const juce::MemoryBlock* body, int timeoutMs, int& status, String& text)
+{
+    juce::StreamingSocket sock;
+    const int port = url.getPort() > 0 ? url.getPort() : 80;
+    if (! sock.connect (url.getDomain(), port, juce::jmin (timeoutMs, 5000))) return false;
+    juce::MemoryOutputStream req;
+    req << method << " " << target << " HTTP/1.1\r\nHost: " << url.getDomain() << ":" << port << "\r\nConnection: close\r\n" << headers;
+    if (body != nullptr) req << "Content-Length: " << (juce::int64) body->getSize() << "\r\n";
+    req << "\r\n";
+    if (body != nullptr) req << *body;
+    const auto* data = static_cast<const char*> (req.getData());
+    for (size_t sent = 0; sent < req.getDataSize();)
+    {
+        if (sock.waitUntilReady (false, timeoutMs) != 1) return false;
+        const int n = sock.write (data + sent, (int) juce::jmin ((size_t) 65536, req.getDataSize() - sent));
+        if (n <= 0) return false;
+        sent += (size_t) n;
+    }
+    juce::MemoryBlock got;
+    char buf[16384];
+    for (;;)
+    {
+        if (sock.waitUntilReady (true, timeoutMs) != 1) break;
+        const int n = sock.read (buf, (int) sizeof (buf), false);
+        if (n <= 0) break;
+        got.append (buf, (size_t) n);
+    }
+    const String all = String::fromUTF8 (static_cast<const char*> (got.getData()), (int) got.getSize());
+    const int cut = all.indexOf ("\r\n\r\n");
+    if (cut < 0 || ! all.startsWith ("HTTP/")) return false;
+    status = all.fromFirstOccurrenceOf (" ", false, false).getIntValue();
+    text = all.substring (cut + 4);
+    if (all.substring (0, cut).toLowerCase().contains ("transfer-encoding: chunked"))
+    {
+        String whole;                                           // sizes in hex, each followed by that many bytes (the replies here are plain ASCII JSON)
+        for (int at = 0; at < text.length();)
+        {
+            const int eol = text.indexOf (at, "\r\n");
+            if (eol < 0) break;
+            const int n = text.substring (at, eol).upToFirstOccurrenceOf (";", false, false).trim().getHexValue32();
+            if (n <= 0) break;
+            whole << text.substring (eol + 2, eol + 2 + n);
+            at = eol + 2 + n + 2;
+        }
+        text = whole;
+    }
+    return true;
+}
+
+Online::Reply Online::http (const Setup& s, const String& method, const String& path, const juce::MemoryBlock* body, const String& contentType, int timeoutMs)
+{
+    if (s.url.startsWithIgnoreCase ("http://"))
+    {
+        Reply r;
+        String h = "CF-Access-Client-Id: " + s.clientId + "\r\nCF-Access-Client-Secret: " + s.clientSecret + "\r\n";
+        if (contentType.isNotEmpty()) h << "Content-Type: " << contentType << "\r\n";
+        const juce::URL base (s.url);
+        const auto under = base.getSubPath();
+        if (! plainHttp (base, method, (under.isNotEmpty() ? "/" + under : String()) + path, h, body, timeoutMs, r.status, r.body)) r.status = 0;
+        return r;
+    }
+    juce::URL url (s.url + path);
+    if (body != nullptr) url = url.withPOSTData (*body);
+    String headers = "CF-Access-Client-Id: " + s.clientId + "\r\nCF-Access-Client-Secret: " + s.clientSecret + "\r\n";
+    if (contentType.isNotEmpty()) headers << "Content-Type: " << contentType << "\r\n";
+    Reply r;
+    const auto in = url.createInputStream (juce::URL::InputStreamOptions (body != nullptr ? juce::URL::ParameterHandling::inPostData : juce::URL::ParameterHandling::inAddress)
+                                               .withExtraHeaders (headers).withConnectionTimeoutMs (timeoutMs).withStatusCode (&r.status)
+                                               .withHttpRequestCmd (method).withNumRedirectsToFollow (0));
+    if (in != nullptr) r.body = in->readEntireStreamAsString();
+    return r;
+}
+
+// Access turns away what it does not know with a 401 or 403, or by sending it to a sign-in page.
+static bool turnedAway (int status) { return status == 401 || status == 403 || (status >= 300 && status < 400); }
+
+String Online::check (const Setup& given)
+{
+    Setup s = given;
+    s.url = s.url.trim().trimCharactersAtEnd ("/");
+    if (! s.complete()) return "THE ADDRESS AND BOTH STRINGS ARE NEEDED.";
+    if (! (s.url.startsWithIgnoreCase ("https://") || s.url.startsWithIgnoreCase ("http://"))) return "THE ADDRESS BEGINS https://";
+    const auto r = http (s, "GET", "/api/health", nullptr, {}, 10000);
+    if (r.status == 200 && (bool) juce::JSON::parse (r.body).getProperty ("ok", false)) return {};
+    if (r.status == 0) return "NO ANSWER FROM THAT ADDRESS.";
+    if (turnedAway (r.status)) return "IT ANSWERED, AND DID NOT LET SF-000 IN: CHECK THE TWO STRINGS, AND THAT THE TOKEN HAS A SERVICE AUTH POLICY.";
+    return "IT ANSWERED " + String (r.status) + ": NOT THE SNAPSHOT LIBRARY?";
+}
+
+// -------------------------------------------------------------------------------- what to send
+// A snapshot as the session file holds it, and the definitions it names that the library has not
+// got (a lane's, effect's or return's sound engine with it). With the message lock.
+String Online::body (const String& uid, const std::set<String>& forced, juce::StringArray& sending) const
+{
+    const Snapshot* s = nullptr;
+    for (auto& x : ses.library) if (x.uid == uid) { s = &x; break; }
+    if (s == nullptr) return {};
+    const var snap = ses.written (*s);
+    auto* defs = new juce::DynamicObject();
+    auto want = [&] (const String& print)
+    {
+        if (print.length() != 16 || sending.contains (print) || (defsSent.count (print) != 0 && forced.count (print) == 0)) return var();
+        const var d = ses.definition (print);
+        if (d.isObject()) { defs->setProperty (print, d); sending.add (print); }
+        return d;
+    };
+    const var made = snap.getProperty ("made", var());
+    for (auto* group : { "lanes", "fx", "returns" })
+        if (auto* o = made.getProperty (group, var()).getDynamicObject())
+            for (auto& p : o->getProperties())
+            {
+                const var d = want (p.value.toString());
+                if (d.isObject()) want (d.getProperty ("engine", "").toString());
+                else if (const var known = ses.definition (p.value.toString()); known.isObject()) want (known.getProperty ("engine", "").toString());
+            }
+    want (made.getProperty ("chassis", "").toString());
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("snapshot", snap);
+    root->setProperty ("defs", var (defs));
+    return juce::JSON::toString (var (root), true);
+}
+
+// ------------------------------------------------------------------------------------ one pass
+bool Online::pass()
+{
+    const Setup s = setup();
+    struct Item { String uid, name; juce::int64 id = 0; bool clipDue = false; juce::File clip; };
+    std::vector<Item> items;
+    {
+        // the library is the message thread's: read with its lock (given up at once if this thread is asked to stop)
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        const auto nowMs = juce::Time::currentTimeMillis();
+        for (auto& x : ses.library)
+            if (x.id >= kFirstTaken && x.uid.isNotEmpty())
+                items.push_back ({ x.uid, x.name, x.id, x.profile.has && nowMs - x.time.toMilliseconds() < 60000, ses.clipFile (x.id) });
+    }
+    auto left = [&]
+    {
+        int n = 0;
+        for (auto& it : items)
+        {
+            const auto e = ledger.find (it.uid);
+            if (e != ledger.end() && (e->second.gone || e->second.refused)) continue;
+            if (e == ledger.end() || ! e->second.snap || e->second.name != it.name || (! e->second.clip && it.clip.existsAsFile())) ++n;
+        }
+        return n;
+    };
+    auto held = [&] { int n = 0; for (auto& it : items) { const auto e = ledger.find (it.uid); if (e != ledger.end() && e->second.snap) ++n; } return n; };
+
+    if (! s.on)          { say (State::off, left(), held()); return false; }
+    if (! s.complete())  { say (State::notSetUp, left(), held()); return false; }
+    if (sentTo != s.url) { ledger.clear(); defsSent.clear(); sentTo = s.url; asksFirst = true; }
+
+    bool changed = false;
+    auto fail = [&] (const Reply& r)
+    {
+        ++failures;
+        asksFirst = true;                                   // on the way back, ask again what it holds
+        if (changed) writeLedger();
+        if (turnedAway (r.status)) say (State::refused, left(), held(), String (r.status));
+        else say (State::waiting, left(), held(), r.status == 0 ? String() : String (r.status));
+        return false;
+    };
+
+    // 1. once per connection: what does the library hold of ours? Its word replaces the ledger's.
+    if (asksFirst)
+    {
+        say (State::working, left(), held());
+        juce::Array<var> uids;
+        for (auto& it : items) uids.add (it.uid);
+        auto* q = new juce::DynamicObject();
+        q->setProperty ("uids", uids);
+        const auto text = juce::JSON::toString (var (q), true);
+        const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+        ++asked;
+        const auto r = http (s, "POST", "/api/have", &mb, "application/json", 8000);
+        const var have = juce::JSON::parse (r.body).getProperty ("have", var());
+        if (r.status != 200 || ! have.isObject()) return fail (r);
+        for (auto& it : items)
+        {
+            const var h = have.getProperty (juce::Identifier (it.uid), var());
+            auto& e = ledger[it.uid];
+            const Entry was = e;
+            if (! h.isObject()) { e.snap = false; e.clip = false; e.gone = false; }             // not there: it goes (again)
+            else if ((bool) h.getProperty ("gone", false)) { e.gone = true; }                 // removed there: not sent again
+            else { e.snap = true; e.clip = (bool) h.getProperty ("clip", false); e.gone = false; if (was.name.isEmpty()) e.name = it.name; }
+            changed = changed || was.snap != e.snap || was.clip != e.clip || was.gone != e.gone || was.name != e.name;
+        }
+        asksFirst = false;
+    }
+
+    // 2. send what it lacks, oldest first
+    std::sort (items.begin(), items.end(), [] (const Item& a, const Item& b) { return a.id < b.id; });
+    bool soon = false;
+    for (auto& it : items)
+    {
+        if (threadShouldExit()) break;
+        auto& e = ledger[it.uid];
+        if (e.gone || e.refused) continue;
+        if (! e.snap || e.name != it.name)
+        {
+            say (State::working, left(), held());
+            std::set<String> forced;
+            for (int attempt = 0; attempt < 2; ++attempt)
+            {
+                juce::StringArray sending;
+                String text;
+                {
+                    const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+                    if (! mm.lockWasGained()) { if (changed) writeLedger(); return false; }
+                    text = body (it.uid, forced, sending);
+                }
+                if (text.isEmpty()) break;                                  // deleted here meanwhile
+                const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+                ++asked;
+                const auto r = http (s, "POST", "/api/snapshots", &mb, "application/json", 15000);
+                if (r.status == 400 || r.status == 413) { e.refused = true; changed = true; break; }       // this one alone will not go: the rest are not held up
+                const var a = juce::JSON::parse (r.body);
+                if (r.status != 200 || ! (bool) a.getProperty ("ok", false)) return fail (r);
+                failures = 0; changed = true;
+                for (auto& p : sending) defsSent.insert (p);
+                if ((bool) a.getProperty ("gone", false)) { e.gone = true; break; }
+                e.snap = true; e.name = it.name; e.clip = e.clip || (bool) a.getProperty ("clip", false);
+                forced.clear();
+                if (auto* miss = a.getProperty ("missingDefs", var()).getArray()) for (auto& m : *miss) forced.insert (m.toString());
+                if (forced.empty()) break;                                  // (else once more, with the definitions it asked for)
+            }
+            if (e.gone || e.refused || ! e.snap) continue;
+        }
+        if (! e.clip)
+        {
+            if (! it.clip.existsAsFile()) { soon = soon || it.clipDue; continue; }          // still being written: back in a moment
+            juce::MemoryBlock mb;
+            if (! it.clip.loadFileAsData (mb) || mb.getSize() == 0) continue;
+            ++asked;
+            const auto r = http (s, "PUT", "/api/clips/" + juce::URL::addEscapeChars (it.uid, true), &mb, "audio/ogg", 30000);
+            if (r.status == 404) { e.snap = false; changed = true; soon = true; continue; }                 // it lost the snapshot: again next pass
+            if (r.status == 400 || r.status == 413) { e.refused = true; changed = true; continue; }
+            if (r.status != 200) return fail (r);
+            failures = 0; changed = true;
+            if (! (bool) juce::JSON::parse (r.body).getProperty ("gone", false)) e.clip = true; else e.gone = true;
+        }
+    }
+    if (changed) writeLedger();
+    const int n = left();
+    say (n > 0 ? State::working : State::upToDate, n, held());
+    return soon || n > 0;
+}
+
+void Online::run()
+{
+    while (! threadShouldExit())
+    {
+        const bool more = pass();
+        const auto st = status().state;
+        // a clip on its way: soon. Trouble: a little longer each time, two minutes at most. Else: when poked, or every so often.
+        const int ms = more && failures == 0 ? 1500 : failures > 0 ? juce::jmin (120000, 5000 * (1 << juce::jmin (5, failures - 1))) : (st == State::upToDate ? 20000 : 60000);
+        wait (ms);
+    }
+}
+} // namespace sf0

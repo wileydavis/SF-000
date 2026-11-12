@@ -8,6 +8,7 @@
 namespace sf0
 {
 class Recorder;
+class Online;
 class Screen : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
 {
 public:
@@ -16,7 +17,8 @@ public:
 
     enum Page { pMain, pLibrary, pMacros };
     void setPage (Page);
-    std::function<void()> onAudioSetup, onFullScreen;
+    std::function<void()> onAudioSetup, onFullScreen, onOnlineSetup;
+    Online* online = nullptr;                   // the ONLINE key's; none: the key is not drawn
     Recorder* recorder = nullptr;               // the REC key's; none: the key does nothing
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
@@ -37,13 +39,14 @@ public:
     // For the offline screen test: every control's place (screen units), kind and index, as last drawn.
     struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
     std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
-    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec); }
+    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec || h.a == aOnline || h.a == aOnlineSetup); }
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsControl (const TestHit& h, int ctl) { return (h.kind == hKnob || h.kind == hRead) && h.a == ctl; }
     static bool testIsToggle (const TestHit& h, int ctl) { return h.kind == hToggle && h.a == ctl; }
     static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
+    static bool testIsOnline (const TestHit& h, bool setUp) { return h.kind == hAct && h.a == (setUp ? aOnlineSetup : aOnline); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     static bool testIsSnapKnob (const TestHit& h, int k) { return h.kind == hSnapKnob && h.a == k; }
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
@@ -58,7 +61,7 @@ private:
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue };
+               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup };
 
     void timerCallback() override;
     void dirty (R);
@@ -120,6 +123,7 @@ private:
     bool wasRunning = false;
     juce::uint64 barSig = 0;
     bool recWas = false;
+    juce::uint32 onlineStamp = 0;               // the online status last drawn
     bool cueMode = false;                       // the library: a tap is heard in the headphones, not recalled
     juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
     juce::uint32 recNoteAt = 0;
