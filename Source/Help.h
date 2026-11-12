@@ -1,0 +1,201 @@
+#pragma once
+// What each control does, in a line or two. Shown when INFO is on (I on the keyboard) and a
+// control is pointed at. The wording follows the suite's manual, cut to what a lane's knob or an
+// effect's does here. A test holds every knob of every lane and effect to having a line.
+#include "Rig.h"
+#include <cstring>
+
+namespace sf0
+{
+namespace help
+{
+struct Line { const char* module; const char* param; const char* text; };       // module nullptr: wherever that parameter is
+
+inline const char* param (const char* module, const char* id)
+{
+    static const Line lines[] = {
+        // ---- every lane
+        { nullptr, "density", "GHOST NOTES. UP TO HALF WAY, ONE ECHO OF EVERY NOTE FADES IN ONE ECHO SPACE LATER (1/8 HATS BECOME 1/16S). PAST HALF, TWO MORE AT HALF THAT SPACING. EACH IS QUIETER, DARKER AND SHORTER THAN THE LAST." },
+        { nullptr, "filter", "A DJ FILTER ON THE LANE. MIDDLE: OPEN. LEFT SWEEPS A LOW-PASS DOWN, RIGHT A HIGH-PASS UP. A FULL SWEEP NEVER JUMPS IN LEVEL." },
+        { nullptr, "level", "THE LANE'S LEVEL." },
+        { nullptr, "echo_space", "HOW FAR APART DENSITY'S GHOST NOTES ARE. 1/8 LANDS ON THE OFF-BEAT; 1/8D IS A DUB GALLOP." },
+        { nullptr, "echo_swing", "PUSHES THE FIRST GHOST NOTE LATE, BY UP TO A THIRD OF ECHO SPACE, SO FILLS SIT LOOSER." },
+        { nullptr, "echo_prob", "THE CHANCE EACH GHOST NOTE PLAYS. BELOW FULL THE FILLS TURN IRREGULAR, LIKE A DRUMMER'S." },
+        { nullptr, "pocket_depth", "HOW DEEP THE LANE DUCKS ROUND THE KICK. AT NOUGHT IT DOES NOT." },
+        { nullptr, "pocket_shape", "HOW IT DUCKS ROUND THE KICK. LEFT: A NARROW CUT THAT FOLLOWS THE KICK'S PITCH, FELT MORE THAN HEARD. MIDDLE: THE LOWS DUCK FOR THE KICK'S LENGTH. RIGHT: ALL OF IT PUMPS." },
+        { nullptr, "gate", "NOTE LENGTH. NOUGHT: CLIPPED SHORT. MIDDLE: AS PLAYED. FULL: HELD LONG." },
+        { nullptr, "tune", "PITCH, IN SEMITONES EITHER WAY. MIDDLE: AS PLAYED." },
+        { nullptr, "drive", "SATURATION." },
+        // ---- the kick
+        { "KICK", "tune", "THE KICK'S PITCH, IN SEMITONES ROUND ITS OWN (ABOUT 44 TO 55 HZ)." },
+        { "KICK", "layer", "HOW MUCH OF THE 808'S BODY PLAYS UNDER THE 909 (IT TAKES THE LOWS). THE TWO ALWAYS ADD UP TO ONE KICK'S LEVEL." },
+        { "KICK", "pitch_time", "HOW FAST THE PITCH SWEEP FALLS. SHORT: SNAPPY. LONG: A LASER." },
+        { "KICK", "punch", "HOW FAR THE PITCH SWEEPS. MORE: A HARDER HIT. LESS: ROUNDER." },
+        { "KICK", "click", "THE CLICK ON THE ATTACK." },
+        { "KICK", "drive", "SATURATION ON THE KICK, ON TOP OF THE MODEL'S OWN." },
+        { "KICK", "decay", "THE BODY'S LENGTH: A QUARTER TO FOUR TIMES THE MODEL'S OWN." },
+        // ---- hats and the clap
+        { "PERC", "tune", "PITCH, UP TO 24 SEMITONES EITHER WAY." },
+        { "PERC", "spread", "THROWS DENSITY'S GHOST NOTES LEFT AND RIGHT IN TURN." },
+        { "PERC", "accent", "HOW MUCH A HARD STEP STANDS OUT. AT NOUGHT ALL HITS ARE EQUAL." },
+        { "PERC", "tone", "BRIGHTNESS: ON A HAT, WHERE ITS BAND SITS." },
+        { "PERC", "drive", "SATURATION ON EACH HIT." },
+        { "PERC", "decay", "EACH HIT'S LENGTH, A QUARTER TO FOUR TIMES THE MODEL'S OWN: CLOSED TO OPEN." },
+        // ---- the struck object
+        { "STRIKE", "tune", "PITCH, UP TO 24 SEMITONES EITHER WAY." },
+        { "STRIKE", "size", "THE OBJECT'S SIZE, WHICH IS ITS PITCH: SMALL AND HIGH TO LARGE AND LOW." },
+        { "STRIKE", "position", "WHERE IT IS STRUCK. NEAR A NODE, THE MODES THAT REST THERE ARE MUTED: THE COLOUR CHANGES." },
+        { "STRIKE", "distance", "HOW FAR OFF THE BLAST IS. FURTHER: QUIETER, LONGER, DARKER." },
+        { "STRIKE", "spread", "SPREADS ITS MODES ACROSS THE STEREO FIELD." },
+        { "STRIKE", "tension", "HOW SHARP A HARD HIT SOUNDS BEFORE IT SETTLES: THE PITCH GLIDES DOWN AFTER THE BLAST." },
+        { "STRIKE", "material", "WOOD TO GLASS: HOW LONG THE HIGH MODES RING AGAINST THE LOW ONES." },
+        { "STRIKE", "power", "THE SIZE OF THE CHARGE. A HARD STEP IS A BIGGER ONE. NEAR THE TOP THE OBJECT BREAKS UP." },
+        { "STRIKE", "decay", "HOW LONG IT RINGS." },
+        // ---- the synth lanes (bass, lead, chord, pad)
+        { "SYNTH", "glide", "SLIDE BETWEEN NOTES." },
+        { "SYNTH", "layer", "HOW MUCH OF THE LAYER MODEL PLAYS UNDER THE MAIN ONE." },
+        { "BASS", "layer", "HOW MUCH OF THE SINE SUB PLAYS UNDER THE BASS." },
+        { "SYNTH", "res", "THE FILTER'S RESONANCE. ON THE 303 THIS IS THE SQUELCH." },
+        { "SYNTH", "decay", "THE FILTER ENVELOPE'S LENGTH (AND THE NOTE'S, ON MOST MODELS). SHORT: PLUCKY. LONG: SWEEPING." },
+        { "SYNTH", "env_amt", "HOW FAR THE ENVELOPE OPENS THE FILTER ON EACH NOTE. ACCENTED NOTES OPEN IT FURTHER." },
+        { "SYNTH", "cutoff", "THE FILTER'S CUTOFF." },
+        { "SYNTH", "drive", "SATURATION BEFORE THE FILTER: WEIGHT AT FIRST, THEN GRIT." },
+        { "SYNTH", "tune", "PITCH, UP TO 24 SEMITONES EITHER WAY." },
+        { "SYNTH", "accent", "HOW MUCH A HARD STEP STANDS OUT: LOUDER, BRIGHTER, WITH A SHORTER FILTER DECAY." },
+        { "SYNTH", "color", "THE MODEL'S OWN TONE CONTROL." },
+        { "LEAD", "color", "THE MODEL'S OWN TONE CONTROL. ON THE 303: A SAW BELOW THE MIDDLE, A SQUARE ABOVE." },
+        { "PAD", "color", "THE MODEL'S OWN TONE CONTROL. ON THE DUB WASH: THE SECOND OSCILLATOR'S PULSE WIDTH." },
+        { "SYNTH", "detune", "THE SPREAD BETWEEN OSCILLATORS AND VOICES." },
+        { "SYNTH", "attack", "ADDS ATTACK TIME. UP FOR SWELLS." },
+        { "SYNTH", "space", "ENSEMBLE CHORUS." },
+        // ---- the rumble
+        { "RUMBLE", "tune", "THE THUMP'S PITCH AGAINST THE KICK'S." },
+        { "RUMBLE", "size", "THE BED'S SIZE: ITS REVERB." },
+        { "RUMBLE", "pump", "HOW FAR THE BED DUCKS UNDER EACH KICK." },
+        { "RUMBLE", "width", "THE BED'S STEREO WIDTH." },
+        { "RUMBLE", "predelay", "A DELAY BEFORE THE REVERB: NONE, 1/32, 1/16 OR 1/8." },
+        { "RUMBLE", "dark", "A LOW-PASS ON THE BED: 600 HZ DOWN TO 70 HZ." },
+        { "RUMBLE", "grit", "DISTORTION ON THE BED." },
+        { "RUMBLE", "gate", "CUTS THE TAIL AFTER EACH KICK. FULL: NO GATE. LOWER: SHORTER." },
+        // ---- the voice
+        { "VOICE", "tune", "PLAYBACK PITCH (THE TAPE'S SPEED), IN SEMITONES. WITH NO PHRASE LOADED IT HAS NOTHING TO ACT ON." },
+        { "VOICE", "signal", "HOW CLEAR THE RADIO LINK IS, FROM LOST TO CLEAR. WITH NO PHRASE LOADED IT HAS NOTHING TO ACT ON." },
+        { "VOICE", "echo_time", "THE BUILT-IN ECHO'S TIME, IN STEP WITH THE TEMPO." },
+        { "VOICE", "echo_fb", "HOW MANY TIMES THE ECHO REPEATS." },
+        { "VOICE", "echo", "HOW MUCH GOES INTO THE BUILT-IN DUB ECHO." },
+        { "VOICE", "tone", "THE MODEL'S OWN TONE CONTROL (A VOWEL, A PITCH)." },
+        { "VOICE", "drive", "SATURATION ON THE VOICE." },
+        { "VOICE", "gate", "EACH SLICE'S LENGTH. LOW VALUES CLIP IT SHORT. WITH NO PHRASE LOADED IT HAS NOTHING TO ACT ON." },
+        // ---- the effects
+        { "DELAY", "time", "THE DELAY'S TIME, IN STEP WITH THE TEMPO. CHANGING IT BENDS THE PITCH, AS A TAPE HEAD MOVING DOES." },
+        { "DELAY", "feedback", "HOW MANY REPEATS. PAST FULL, THE LOOP SATURATES AND DOES NOT RUN AWAY." },
+        { "DELAY", "tone", "A FILTER INSIDE THE LOOP. LEFT: EACH REPEAT DARKER. RIGHT: EACH THINNER." },
+        { "DELAY", "drive", "SATURATION INSIDE THE LOOP: EACH REPEAT DIRTIER THAN THE LAST." },
+        { "DELAY", "throw", "HOLD TO SEND INTO THE DELAY." },
+        { "DELAY", "freeze", "LOOPS THE REPEATS AS THEY ARE, FOR AS LONG AS IT IS LIT. THE INPUT IS SHUT WHILE IT HOLDS." },
+        { "DELAY", "mix", "THE WET LEVEL." },
+        { "DELAY", "width", "THE REPEATS' STEREO WIDTH." },
+        { "REVERB", "size", "THE ROOM'S SIZE." },
+        { "REVERB", "decay", "HOW LONG THE LOWS RING: 0.3 TO 30 SECONDS." },
+        { "REVERB", "dark", "DAMPING: THE HIGHS DIE SOONER, SO THE TAIL DARKENS WITHOUT GETTING SHORTER." },
+        { "REVERB", "predelay", "A DELAY BEFORE THE REVERB, IN STEP WITH THE TEMPO." },
+        { "REVERB", "duck", "DUCKS THE TAIL UNDER THE KICK AND WHILE THE DRY SOUND PLAYS, SO IT BLOOMS IN THE GAPS." },
+        { "REVERB", "freeze", "HOLDS THE SPACE FOR AS LONG AS IT IS LIT. THE INPUT IS SHUT WHILE IT HOLDS." },
+        { "REVERB", "throw", "HOLD TO SEND INTO THE REVERB." },
+        { "REVERB", "mix", "THE WET LEVEL." },
+        { "TERROIR", "size", "THE SAME PLACE BIGGER (SLOWER AND LOWER) OR SMALLER." },
+        { "TERROIR", "decay", "SHORTENS THE TAIL. FULL: AS THE PLACE WAS CAPTURED." },
+        { "TERROIR", "dark", "THE TAIL DARKENS AS IT GOES. NOUGHT: AS CAPTURED." },
+        { "TERROIR", "predelay", "A DELAY BEFORE THE REVERB, IN STEP WITH THE TEMPO." },
+        { "TERROIR", "duck", "DUCKS THE TAIL UNDER THE KICK AND WHILE THE DRY SOUND PLAYS." },
+        { "TERROIR", "freeze", "HOLDS THE WET SOUND AS AN ENDLESS TEXTURE WHILE THE TAIL DIES AWAY. THE INPUT IS SHUT WHILE IT HOLDS." },
+        { "TERROIR", "throw", "HOLD TO SEND INTO THE REVERB." },
+        { "TERROIR", "mix", "THE WET LEVEL." },
+        { "DRIVE", "drive", "HOW HARD IT IS DRIVEN: UP TO 36 DB INTO THE SHAPER." },
+        { "DRIVE", "character", "WHAT KIND: TAPE, THEN TUBE, THEN FUZZ, THEN INDUSTRIAL (A WAVEFOLDER)." },
+        { "DRIVE", "tone", "TILTS THE SOUND ROUND 800 HZ. LEFT: DARKER. RIGHT: BRIGHTER." },
+        { "DRIVE", "low_keep", "BELOW THIS FREQUENCY THE SOUND STAYS CLEAN. NOUGHT: OFF." },
+        { "DRIVE", "mix", "DRY AGAINST DRIVEN, IN PHASE." },
+        { "DRIVE", "level", "THE EFFECT'S OUTPUT LEVEL." },
+        { "DRIVE", "auto_gain", "HOLDS THE DRIVEN SOUND NEAR THE LOUDNESS IT CAME IN AT." },
+        { "GLUE", "push", "COMPRESSION AND MAKE-UP GAIN TOGETHER, ON ONE KNOB." },
+        { "GLUE", "attack", "HOW FAST IT CLAMPS: 0.1 TO 30 MS." },
+        { "GLUE", "release", "HOW FAST IT LETS GO: 0.1 TO 1.2 S, OR AUTO." },
+        { "GLUE", "ratio", "2:1, 4:1 OR 10:1." },
+        { "GLUE", "sc_hpf", "A HIGH-PASS ON WHAT THE COMPRESSOR LISTENS TO, SO THE LOWS DO NOT DRIVE IT." },
+        { "GLUE", "mix", "PARALLEL COMPRESSION: DRY AGAINST COMPRESSED." },
+        { "GLUE", "level", "THE EFFECT'S OUTPUT LEVEL." },
+        { "RADIO", "signal", "ONE KNOB FROM LOST TO CLEAR: THE BAND, THE NOISE, THE DROPOUTS AND THE DIRT ALL FOLLOW IT." },
+        { "RADIO", "band", "THE MIDDLE OF THE BAND THAT GETS THROUGH." },
+        { "RADIO", "width", "HOW WIDE THAT BAND IS." },
+        { "RADIO", "noise", "STATIC. IT RIDES ON THE SOUND: A SILENT LANE HAS NONE." },
+        { "RADIO", "dropout", "HOW OFTEN THE SIGNAL DROPS OUT (MORE WHEN SIGNAL IS LOW)." },
+        { "RADIO", "squelch", "A SQUEAL AS EACH DROPOUT ENDS." },
+        { "RADIO", "ring", "RING MODULATION, FOR A METALLIC VOICE." },
+        { "RADIO", "mix", "DRY AGAINST WET." },
+        // ---- the lane strip, the master
+        { "LANE", "send_a", "HOW MUCH OF THE LANE GOES TO RETURN A, THE DUB DELAY." },
+        { "LANE", "send_b", "HOW MUCH OF THE LANE GOES TO RETURN B, THE SPACE." },
+        { "LANE", "eq_low", "THE LANE'S LOWS, CUT OR LIFTED. MIDDLE: FLAT." },
+        { "LANE", "eq_mid", "THE LANE'S MIDS, CUT OR LIFTED. MIDDLE: FLAT." },
+        { "LANE", "eq_high", "THE LANE'S HIGHS, CUT OR LIFTED. MIDDLE: FLAT." },
+        { "LANE", "mute", "MUTE. ON AN INSERT IT PASSES THE EFFECT BY." },
+        { "LANE", "solo", "SOLO. ON AN INSERT IT PLAYS ONLY WHAT THE EFFECT ADDS." },
+        { "LANE", "seq_mute", "MUTES THE LANE'S OWN SEQUENCER. ITS STEPS STAY, DRAWN GREY, AND GO UNPLAYED. NOTES FROM MIDI STILL SOUND." },
+        { "LANE", "hits", "THE GENERATOR: HOW MANY STEPS IT LIGHTS. IT REWRITES THE PATTERN WHILE RANDOM OR EUCLID IS LIT." },
+        { "LANE", "rotate", "THE GENERATOR: TURNS THE PATTERN ROUND, A STEP AT A TIME." },
+        { "LANE", "accents", "THE GENERATOR: HOW MANY OF ITS STEPS ARE HARD ONES." },
+        { "LANE", "seed", "THE GENERATOR: WHICH PATTERN OF THE MANY THAT FIT. THE SAME SEED IS ALWAYS THE SAME PATTERN." },
+        { "MASTER", "tape", "TAPE SATURATION ON THE WHOLE MIX." },
+        { "MASTER", "comp", "THE BUS COMPRESSOR: COMPRESSION AND MAKE-UP GAIN TOGETHER." },
+        { "MASTER", "limit", "THE LOUDNESS THE LIMITER AIMS FOR. IT TRIMS ITS OWN INPUT UNTIL THE LOUDEST PASSAGE SITS THERE, AND NEVER LETS A PEAK PAST ITS CEILING." },
+    };
+    const bool synth = module != nullptr && (std::strcmp (module, "BASS") == 0 || std::strcmp (module, "LEAD") == 0 || std::strcmp (module, "PAD") == 0);
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        const char* want = pass == 0 ? module : pass == 1 ? (synth ? "SYNTH" : nullptr) : nullptr;
+        if (pass < 2 && want == nullptr) continue;
+        for (const auto& l : lines)
+        {
+            if (std::strcmp (l.param, id) != 0) continue;
+            if (want == nullptr ? l.module == nullptr : (l.module != nullptr && std::strcmp (l.module, want) == 0)) return l.text;
+        }
+    }
+    return nullptr;
+}
+
+// What a lane is.
+inline const char* lane (int l)
+{
+    static const char* const what[kLanes] = {
+        "A ROUND 909 WITH AN 808'S BODY UNDER IT. EVERY HIT IS TOLD TO THE OTHER LANES, WHICH DUCK ROUND IT.",
+        "THE CLOSED HAT.",
+        "THE OPEN HAT.",
+        "THE CLAP.",
+        "A STRUCK MEMBRANE: SIZE, TENSION AND MATERIAL TAKE IT FROM A TOM TO A PIPE TO A SHEET OF GLASS.",
+        "A ROLLING LADDER BASS WITH A SINE SUB UNDER IT. THE KICK'S POCKET IS CUT FOR IT.",
+        "THE LOW BED, MADE FROM THE KICK ITSELF: IT NEEDS NO NOTES (ITS OWN STEPS ADD TO IT, IF ANY ARE LIT).",
+        "THE 303 CIRCUIT. A GATE THAT REACHES THE NEXT STEP SLIDES; A HARD STEP IS THE ACCENT.",
+        "THE DUB STAB: ONE NOTE PLAYS THE CHORD.",
+        "A DRIFTING DUB WASH THAT PLAYS A MINOR SEVENTH FROM ONE NOTE.",
+        "A VOICE OVER A BAD RADIO LINK. WITH NO PHRASE LOADED IT SINGS A CHOIR FROM THE NOTES; DROP AN AUDIO FILE ON THE LANE TO GIVE IT A PHRASE.",
+    };
+    return l >= 0 && l < kLanes ? what[l] : "";
+}
+
+// What an effect is, by the name on its panel.
+inline const char* effect (const char* name)
+{
+    static const Line lines[] = {
+        { "DELAY", nullptr, "A TAPE-STYLE DUB DELAY. ITS REPEATS DUCK ROUND THE KICK." },
+        { "REVERB", nullptr, "A DARK REVERB WITH FREEZE AND THROW. ITS TAIL DUCKS SO IT BLOOMS IN THE GAPS." },
+        { "CONVOLUTION", nullptr, "A REAL PLACE, FROM AN IMPULSE RESPONSE DROPPED ON IT." },
+        { "DISTORTION", nullptr, "SATURATION, FROM SMOOTH TAPE TO A WAVEFOLDER." },
+        { "COMPRESSOR", nullptr, "A BUS COMPRESSOR WITH ONE PUSH KNOB." },
+        { "RADIO", nullptr, "A BAD TRANSMISSION: A NARROW BAND, DIRT, STATIC, DROPOUTS." },
+    };
+    for (const auto& l : lines) if (std::strcmp (l.module, name) == 0) return l.text;
+    return "";
+}
+} // namespace help
+} // namespace sf0

@@ -57,6 +57,8 @@ First run:
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
+| **I** | INFO: every control MIDI reaches shows its CC number, a panel its channel, and a control the mouse rests on says what it does. **I** again puts it away |
+| **H** | PHONES: headphones on the one pair of outputs. While a cue plays, the set is in the left ear and the cue in the right (see The library, below) |
 | **D** | the dark instrument, or the light one |
 | **L** | the lit skin, or the flat drawing it replaced |
 
@@ -143,6 +145,13 @@ the headphones, on outputs 3 + 4, looped. While the clock runs they play in time
 and at the rig's tempo (so the pitch moves with the tempo's ratio to the clip's own). The set
 itself is not touched. Tap the card again to stop, another to hear that one, **RECALL** to take the
 one in the headphones to the set. Outputs 3 + 4 have to be ticked in AUDIO once.
+
+**PHONES** (beside CUE, or **H** on any screen) is for playing on headphones with only one pair of
+outputs. While a cue plays, outputs 1 + 2 carry the set in the left ear (both its sides, summed)
+and the cue in the right; when the cue stops, the set is back in both, over 10 ms. With no cue
+playing nothing is different. The AUDIO key at the top turns green and reads PHONES while it is
+on. A recording, the meters and a snapshot's kept bars are the set itself whichever way it is.
+It is off every time SF-000 opens, so it cannot be left on for a PA.
 
 Also kept, and not drawn yet: weight (the low end's share), density, tone against texture,
 movement from bar to bar, and how wet (the returns' share). `SF-000 --profiles` prints them for the
@@ -258,12 +267,44 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
 - **The E16's second scene, the library** (`controllers/e16/SF-000-LIBRARY.oxie16`, SF-LIB). Page 1
   is the **MAP**: the grid of knobs is the library laid out by sound, energy up the rows (bottom
   row calm, top row peak) and brightness along them (dark at the left, bright at the right). Each
-  knob holds the snapshots in its square. **Turn** it to go through them, each heard in the
-  headphones in time with the set; **press** it and that one is recalled to the set, over the
-  GLIDE time. Page 2 is **FIND**: RECENT (the newest first), FITS NOW (nearest in sound to what is
+  knob holds the snapshots in its square. **Turn** it to step through them (four clicks to the
+  next), each heard in the headphones in time with the set; it stays on the one it has come to
+  until it is turned again; **press** it and that one is recalled to the set, over the GLIDE
+  time. Page 2 is **FIND**: RECENT (the newest first), FITS NOW (nearest in sound to what is
   playing), MORE and LESS (a step up or down in energy from what is playing, nearest step first),
   and knob 16 is GLIDE. A ring shows where its knob is among what it holds; an empty square's
   ring sits at nought.
+- **A sequencer can play all of it.** Every address below is heard on any port, so the ONE's
+  modulation lanes can turn knobs, set GLIDE and recall snapshots. **I** on the keyboard shows
+  each control's number on the screen.
+
+| WHAT | CHANNEL | CC |
+|---|---|---|
+| a lane's twelve knobs, in the screen's order | the lane's number | 12 to 23 |
+| its SEND A, SEND B, LOW, HIGH, MID | the lane's number | 24, 25, 26, 27, 28 |
+| its three inserts' eight places (whatever effect is in the slot) | the lane's number | 32 to 39, 40 to 47, 48 to 55 |
+| its MUTE, SOLO, and the mute of its own sequencer (64 and over: on) | the lane's number | 56, 57, 58 |
+| the sixteen snapshot knobs: a turn | 16 | 12 to 27 |
+| GLIDE | 16 | 30 |
+| a snapshot knob's press: recall its nearest (64 and over) | 16 | 44 to 59 |
+| the DUB return's four knobs, the SPACE return's four | 16 | 60 to 63, 64 to 67 |
+| TAPE, COMP, LIMIT | 16 | 68, 69, 70 |
+| **RECALL** from snapshot knob 1 to 16 | 16 | 80 to 95 |
+
+  - **RECALL** is for arranging. A snapshot knob's snapshots (the MACRO designer fills it) are a
+    numbered set: the CC's value says which one, 1 the first. It is recalled as from the library:
+    sound knobs travel over the GLIDE time, patterns change on the bar. A sequencer says a value
+    again on every step, so only a new value acts; 0 is none, and makes the next value new. A
+    number past the last it holds does nothing.
+  - **GLIDE** by value: 0 OFF, 12 a quarter bar, 23 half, 35 one bar, 46 two, 58 four, 69 eight,
+    81 sixteen, 92 thirty-two, 104 sixty-four, 115 a hundred and twenty-eight, 127 two hundred and
+    fifty-six. Sent in the same step as a RECALL, it is taken first.
+  - A knob turned by CC travels over the GLIDE time like one turned by hand: for a sequencer's
+    own curve to be heard as drawn, GLIDE is OFF. A bipolar knob's middle is 64. A menu's values
+    are spread evenly (INFO lists them). Insert, return, master and mute addresses are taken up
+    forty times a second; a lane's own knobs and a RECALL at once.
+  - Not on MIDI: tempo, key, the generator's four knobs, a step's keys, an insert's or a return's
+    C, M and S.
 - **The E16.** Load `controllers/e16/SF-000.oxie16` (see `controllers/e16/README.md`). Pages 1-11
   are the lanes: the twelve knobs where the screen has them, then SEND A, SEND B, LOW and HIGH. Press
   knob 16 and it is MID (its ring turns pink); press again for HIGH. Press knob 1 and it is GLIDE
@@ -286,7 +327,7 @@ build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapsho
 build/.../SF-000 --shot setup.png --setup follow  # draw the AUDIO AND MIDI panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing)
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```
 
@@ -309,6 +350,7 @@ meters when a bar has moved, the playing step.
 | `FORMAT.md` | the session file: what is in it, and the rules it grows by |
 | `tests/fixtures/` | a session file as an older build wrote it, for the check that old files still open |
 | `Source/Screen.*` | the three screens |
+| `Source/Help.h` | what each control does, in a line or two: INFO's boxes |
 | `Source/Skin.*` | the lit skin: surfaces as heights and finishes (the 3D model's), lit into pictures the screen is put together from |
 | `Source/Midi.*` | notes in, the E16 (addresses, rings, the scene file), the clock's sender, the clock followed |
 | `controllers/e16/` | the E16 scene and its script |

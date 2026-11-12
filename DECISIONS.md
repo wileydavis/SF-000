@@ -702,6 +702,55 @@ same: a clip kept at every save, and a profile from the clip and from what the r
 182. **The spec's display mode for a dark stage** is not this, though this is a start: nothing is
      dimmed, enlarged or simplified for distance. *proposed:* say if the dark instrument is enough.
 
+## Nineteenth build (Nov 12): a sequencer's addresses, INFO, PHONES, and the E16's library knobs
+
+183. **What the ONE could already reach** (you asked): a lane's twelve knobs, its sends and EQ
+     (the lane's channel, CC 12 to 28), the snapshot knobs' turn and press and GLIDE (channel 16).
+     Any port, as notes are. Not the inserts, the returns or the master, and no way to recall a
+     named snapshot.
+184. **RECALL: a snapshot knob's snapshots are the bucket** (you: put snapshots in a bucket, then
+     send CC to set the glide and to set the snapshot from the bucket). CC 80 to 95 on channel 16,
+     one for each snapshot knob; the value is which of its snapshots, 1 the first. *Mine:* the
+     bucket is the snapshot knob's own list, because the MACRO designer already fills and orders
+     it; the value is the number itself and not a share of 0 to 127, so a step's value does not
+     depend on how many the knob holds; only a new value acts, because a sequencer's lane says its
+     value on every step; 0 is none. A GLIDE that arrives with it is taken first. It is acted on
+     as it arrives, not at the forty-a-second look at the rest.
+185. **More addresses** *Mine:* an insert's eight places by slot (CC 32 to 55 on the lane's
+     channel, whatever effect is in the slot), a lane's MUTE, SOLO and sequencer mute (56 to 58),
+     the returns' knobs and the master's (channel 16, 60 to 70). So that a knob the screen shows
+     is a knob a sequencer can turn. Nothing is sent back for them and the E16's scenes are
+     unchanged. Still not on MIDI: tempo, key, the generator's knobs, an insert's or return's C M S.
+186. **INFO is I** (you: an info toggle, the MIDI channel info, and what a control does when you
+     hover). With it on, a control's CC is on the control, a panel's channel is a teal plate in
+     its header, and the top bar says the rest. The mouse resting on a control brings a box under
+     it: where it is, what it does, its channel and number, and what its values mean (a menu's
+     choices each with its value, a bipolar knob's middle, a switch's threshold). *Mine:* the
+     words are the suite manual's, cut to what the knob does in SF-000 (`Source/Help.h`); a check
+     holds every lane knob and effect place to having a line. CONFIG's own controls do not answer
+     yet.
+187. **PHONES is H, and a key beside CUE** (you: on headphones with one output, cue to the right
+     and PA to the left, only while a cue plays). While a cue plays or fades, output 1 is the set
+     (both sides summed) and output 2 the cue (both sides summed); otherwise the outputs are the
+     set, untouched. It comes and goes over 10 ms. *Mine:* only outputs 1 and 2 change (a
+     recording, the meters and a snapshot's bars stay the set); the AUDIO key turns green and
+     reads PHONES while it is on; and **it is not kept between runs**, because left on at a PA it
+     would put the set in one speaker during every cue. *proposed*, that last.
+188. **The E16's library knobs step, and stay put** (you: the knob kept changing its number, like
+     it was fighting me; they should scroll through the snapshots, play the one they are on in
+     cue, not move unless turned, and apply on a press). The cause: a knob's number was the place
+     (128 values shared out among what it held), and when the hand paused SF-000 put the number
+     back to the middle of its share. A slow turn, a click at a time, was undone at every pause.
+     Now a turn is counted in clicks from wherever the knob is, four to the next snapshot; the
+     ring is still put where that snapshot stands, but that no longer counts as a turn. What a
+     knob holds is worked out when a hand comes to it and stays put while the hand is there (this
+     was so for FITS NOW, MORE and LESS; now for the map and RECENT too). A check turns one a
+     click at a time with the ring put back between clicks.
+189. **I read "bucket/snapshot knobs" as the library scene's knobs** (MAP and FIND), which is
+     where snapshots are previewed. The main scene's sixteen snapshot knobs are unchanged: a turn
+     pushes the rig toward their snapshots, a press recalls the nearest. *proposed:* say if you
+     want those to browse and cue as well; the two ways cannot share one knob.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -727,6 +776,11 @@ same: a clip kept at every save, and a profile from the clip and from what the r
   thing itself: whether a knob's first turn still jumps, and whether the press on knob 1 swaps to
   GLIDE as the scene file says, need the hardware. Both scenes must be loaded onto the E16 again.
   ONLINE's https from the Mac has since been reported working (a snapshot arrived).
+- The nineteenth build's MIDI is checked with made-up messages: no ONE has sent SF-000 a control
+  change, and what I say of its modulation lanes is from OXI's descriptions (whether a lane can
+  send on another channel than its sequencer's, I could not find). The E16's stepping knobs are
+  checked against a mock E16 that moves its knob when told a value, as the real one is believed
+  to. PHONES is checked on the engine's buffers, not by ear.
 - The lit skin (seventeenth) and its dark instrument (eighteenth) have been looked at here only
   as pictures the app drew to a file (the main screen, a glide, CONFIG open, the library, the
   macro designer), and their checks run in software. Not seen: the Mac's own drawing of it (how it looks on the display, what it costs

@@ -1,6 +1,8 @@
 #include "Screen.h"
 #include "Recorder.h"
 #include "Online.h"
+#include "Midi.h"
+#include "Help.h"
 #include "BinaryData.h"
 #include "core/Processor.h"
 #include <map>
@@ -295,6 +297,12 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
         else if (c.kind == Kind::Hold) key (g, kr, col::yellow, v > 0.5f ? 8.0f : 2.0f);
         else if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
         else knob (g, cxm, cym, size, v, c.kind, c.steps(), litCol);
+        if (info)
+        {
+            if (c.kind == Kind::Toggle) number (g, ctl, kr, inkOn (cap (v > 0.5f ? col::green : col::putty), col::black));
+            else if (c.kind == Kind::Hold) number (g, ctl, kr, col::black);
+            else number (g, ctl, R (cxm - 14, cym - 10 - (lit ? (size >= 40 ? 3.0f : 2.0f) : 0.0f), 28, 20), col::lit);       // (lit, the cap's top stands a little up the screen)
+        }
         legend (g, cxm, y + (legendH < 20.0f ? 45.0f : 43.0f), c.label);
     }
     hit (kr.expanded (4, 2), c.kind == Kind::Toggle ? hToggle : c.kind == Kind::Hold ? hHold : hKnob, ctl, 0);
@@ -311,7 +319,9 @@ void Screen::headKeys (G& g, float right, float y, int kind, int lane, int slot,
         const R kr (right - 72.0f + (float) k * 25.0f, y, 22, 22);
         if (vis (g, kr))
         {
-            key (g, kr, fills[k]); textRaw (g, letters[k], kr, fLbl, inkOn (cap (fills[k]), k == 0 && open ? col::lit : col::black));
+            String letter (letters[k]);
+            if (int ch = 0, num = 0; info && k > 0 && ccx::addressOf (k == 1 ? muteCtl : soloCtl, ch, num)) letter = String (num);      // INFO: its number
+            key (g, kr, fills[k]); textRaw (g, letter, kr, fLbl, inkOn (cap (fills[k]), k == 0 && open ? col::lit : col::black));
             if (k == 1 && seen (g, kr)) lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
             if (k == 2 && seen (g, kr)) lastShown[(size_t) soloCtl] = eng.shown (soloCtl);
         }
@@ -332,6 +342,258 @@ void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const Strin
     hit (kr.expanded (3), hAct, a, 0);
 }
 
+// ----------------------------------------------------------------------------------------- INFO
+void Screen::number (G& g, int ctl, R on, Colour ink)
+{
+    int ch = 0, num = 0;
+    if (ccx::addressOf (ctl, ch, num)) textRaw (g, String (num), on, fLbl, ink);
+}
+
+float Screen::chan (G& g, float x, float y, int channel)
+{
+    if (! info) return 0.0f;
+    return plate (g, x, y, "CH " + String (channel), fNote, 6, col::teal, col::lit);
+}
+
+juce::StringArray Screen::wrap (const String& s, const juce::Font& f, float width) const
+{
+    juce::StringArray lines, words;
+    words.addTokens (s, " ", "");
+    String line;
+    for (auto& w : words)
+    {
+        const String longer = line.isEmpty() ? w : line + " " + w;
+        if (line.isNotEmpty() && juce::GlyphArrangement::getStringWidth (f, longer) > width) { lines.add (line); line = w; }
+        else line = longer;
+    }
+    if (line.isNotEmpty()) lines.add (line);
+    return lines;
+}
+
+// A control: where it is, its name, what it does.
+bool Screen::describe (int ctl, String& where, String& label, const char*& what) const
+{
+    what = nullptr;
+    if (ctl < 0 || ctl >= cx::kCount) return false;
+    label = eng.control (ctl).label;
+    if (ctl >= cx::kSnap) return false;
+    if (ctl == cx::kGlide)
+    {
+        label = "GLIDE";
+        what = "HOW LONG A TURNED KNOB OR A RECALL TAKES TO GET THERE. SOUND KNOBS TRAVEL OVER THIS TIME, SETTING OFF ON THE NEXT BEAT WHILE THE CLOCK RUNS. OFF: AT ONCE.";
+        return true;
+    }
+    if (ctl == cx::kTempo) { label = "TEMPO"; what = "60 TO 200 BPM: DRAG IT. FOLLOWING AN OUTSIDE CLOCK, THE TEMPO IS THAT CLOCK'S."; return true; }
+    if (ctl == cx::kKey) { label = "KEY"; what = "THE KEY EVERY PITCHED LANE FOLLOWS: DRAG IT. PARTS ARE WRITTEN IN C."; return true; }
+    if (ctl >= cx::kMaster)
+    {
+        static const char* const ids[3] = { "tape", "comp", "limit" };
+        where = "MASTER"; what = help::param ("MASTER", ids[ctl - cx::kMaster]);
+        return true;
+    }
+    if (ctl >= cx::kRetMS) { where = ctl - cx::kRetMS < 2 ? "RETURN A, THE DUB DELAY" : "RETURN B, THE SPACE"; what = help::param ("LANE", (ctl - cx::kRetMS) % 2 == 0 ? "mute" : "solo"); return true; }
+    if (ctl >= cx::kRet)
+    {
+        const int j = ctl - cx::kRet;
+        const auto& fx = j < 4 ? returnA() : returnB ((j - 4) / 4);
+        const auto& cell = fx.cells[j < 4 ? j : (j - 4) % 4];
+        where = j < 4 ? "RETURN A, THE DUB DELAY" : "RETURN B, THE SPACE";
+        if (cell.param != nullptr) what = help::param (fx.module, cell.param);
+        return true;
+    }
+    const int l = ctl / cx::kPerLane, j = ctl % cx::kPerLane;
+    const auto& d = lanes()[(size_t) l];
+    where = String (l + 1) + " " + d.name;
+    if (j < kLaneKnobs) what = help::param (d.module, d.knobs[j].param);
+    else if (j == cx::kSendA) what = help::param ("LANE", "send_a");
+    else if (j == cx::kSendB) what = help::param ("LANE", "send_b");
+    else if (j == cx::kEqLow) what = help::param ("LANE", "eq_low");
+    else if (j == cx::kEqMid) what = help::param ("LANE", "eq_mid");
+    else if (j == cx::kEqHigh) what = help::param ("LANE", "eq_high");
+    else if (j < cx::kGen)
+    {
+        const int slot = (j - cx::kIns) / kCells, cell = (j - cx::kIns) % kCells, type = eng.insertType (l, slot);
+        if (type < 0) return false;
+        const auto& fx = effects()[(size_t) type];
+        where << ", " << fx.name;
+        if (fx.cells[cell].param != nullptr) what = help::param (fx.module, fx.cells[cell].param);
+    }
+    else if (j < cx::kMute) { static const char* const ids[4] = { "hits", "rotate", "accents", "seed" }; what = help::param ("LANE", ids[j - cx::kGen]); }
+    else if (j == cx::kMute) { label = "MUTE"; what = "SILENCES THE LANE."; }
+    else if (j == cx::kSolo) { label = "SOLO"; what = "ONLY THE SOLOED LANES PLAY."; }
+    else if (j < cx::kSeqMute)
+    {
+        const int slot = (j - cx::kInsMS) / 2, type = eng.insertType (l, slot);
+        if (type >= 0) where << ", " << effects()[(size_t) type].name;
+        label = (j - cx::kInsMS) % 2 == 0 ? "MUTE" : "SOLO";
+        what = (j - cx::kInsMS) % 2 == 0 ? "PASSES THE EFFECT BY." : "PLAYS ONLY WHAT THE EFFECT ADDS.";
+    }
+    else { label = "SEQUENCER MUTE"; what = help::param ("LANE", "seq_mute"); }
+    return true;
+}
+
+// Where MIDI finds a control, and what its values mean.
+String Screen::midiOf (int ctl) const
+{
+    int ch = 0, num = 0;
+    if (! ccx::addressOf (ctl, ch, num)) return "NOT ON MIDI.";
+    const auto& c = eng.control (ctl);
+    String s = "MIDI: CHANNEL " + String (ch) + ", CC " + String (num) + ".";
+    if (c.kind == Kind::Bipolar) s << " 64 IS THE MIDDLE.";
+    else if (c.kind == Kind::Toggle || c.kind == Kind::Hold) s << " 64 AND OVER IS ON.";
+    else if (c.kind == Kind::List && c.steps() >= 2 && c.steps() <= 16)
+    {
+        s << " VALUES:";
+        for (int i = 0; i < c.steps(); ++i) s << (i > 0 ? ", " : " ") << juce::roundToInt ((float) i * 127.0f / (float) (c.steps() - 1)) << " " << c.choices[i];
+        s << ".";
+    }
+    return s;
+}
+
+Screen::Tip Screen::tipFor (const Hit& h) const
+{
+    Tip t;
+    String body, midi;
+    bool below = false;                                 // a knob has its name under it: the box goes under that
+    const int l = ses.activeLane;
+    switch (h.kind)
+    {
+        case hKnob: case hToggle: case hHold: case hRead:
+        {
+            String where, label; const char* what = nullptr;
+            if (! describe (h.a, where, label, what)) return t;
+            t.title = where.isEmpty() ? label : where + ": " + label;
+            if (what != nullptr) body = what;
+            midi = midiOf (h.a);
+            below = h.kind != hRead && h.a != cx::kGlide;
+            break;
+        }
+        case hSnapKnob:
+        {
+            const auto& kn = ses.knobs[(size_t) h.a];
+            int held = 0;
+            for (auto id : kn.snaps) if (ses.findSnap (id) != nullptr) ++held;
+            t.title = "SNAPSHOT KNOB " + String (h.a + 1) + (kn.name.isNotEmpty() ? ": " + kn.name : String());
+            body = "TURN IT TO PUSH THE RIG FROM WHERE IT IS TOWARD THE " + String (held) + " SNAPSHOTS IT HOLDS, IN THE ORDER THE MACRO DESIGNER SHOWS. DOUBLE-CLICK: RECALL THE NEAREST AS THE NEW BASE SCENE.";
+            midi = "MIDI: CHANNEL 16. CC " + String (e16::kKnobCc + h.a) + " TURNS IT. CC " + String (e16::kPressCc + h.a) + " (64 AND OVER) RECALLS ITS NEAREST. CC " + String (ccx::kRecall + h.a)
+                 + " RECALLS THE ONE ITS VALUE NAMES: 1 THE FIRST IT HOLDS, " + String (std::max (2, held)) + " THE LAST. A VALUE SAID AGAIN DOES NOTHING; 0 IS NONE.";
+            below = true;
+            break;
+        }
+        case hLane:
+            t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name;
+            body = String (help::lane (h.a)) + " CLICK THE NAME TO MAKE IT THE ACTIVE LANE: THE INSERTS AND THE SEQUENCER STRIP SHOW IT.";
+            midi = "MIDI: NOTES ON CHANNEL " + String (h.a + 1) + " PLAY IT, FROM ANY PORT. ITS KNOBS AND ITS INSERTS ARE ON THAT CHANNEL TOO.";
+            break;
+        case hConfig:
+            t.title = "CONFIG";
+            body = "OPENS THE PANEL OF WHAT IS SET ONCE: THE MODEL AND THE REST OF ITS SETTINGS. C AGAIN, X OR ESC CLOSES IT.";
+            break;
+        case hInsHead:
+        {
+            const int type = eng.insertType (l, h.a);
+            t.title = "INSERT " + String (h.a + 1) + " OF " + String (l + 1) + " " + lanes()[(size_t) l].name + ": " + (type >= 0 ? effects()[(size_t) type].name : "EMPTY");
+            body = (type >= 0 ? String (help::effect (effects()[(size_t) type].name)) + " " : String()) + "CLICK THE NAME TO STEP THE SLOT THROUGH DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO AND EMPTY.";
+            midi = "MIDI: CHANNEL " + String (l + 1) + ", CC " + String (ccx::kIns + h.a * kCells) + " TO " + String (ccx::kIns + h.a * kCells + kCells - 1) + ": ITS EIGHT PLACES, WHATEVER EFFECT IS IN IT.";
+            break;
+        }
+        case hStep:
+            t.title = "STEP " + String (h.a + 1);
+            body = "CLICK: LIGHT AND SELECT IT; LIT AND SELECTED, PUT IT OUT. DRAG UP OR DOWN: VELOCITY. DRAG LEFT OR RIGHT: GATE (PAST THE STEP'S EDGE IT RUNS ON, AND TIES INTO THE NEXT LIT STEP).";
+            break;
+        case hPageSel:
+            t.title = "STEPS " + String (h.a * 16 + 1) + " TO " + String (h.a * 16 + 16);
+            body = "A PAGE OF THE PATTERN. CLICK TO SEE ITS 16 STEPS (THE LEFT AND RIGHT ARROW KEYS TOO).";
+            break;
+        case hLen:
+            t.title = "LENGTH";
+            body = "THE PATTERN'S LENGTH, 1 TO 128 STEPS.";
+            below = true;
+            break;
+        case hAct:
+        {
+            struct A { int a; const char* title; const char* body; };
+            static const A acts[] = {
+                { aRun, "RUN", "STARTS AND STOPS THE CLOCK (THE SPACE BAR TOO)." },
+                { aPanic, "PANIC", "SILENCES EVERY VOICE AND TAIL." },
+                { aAudio, "AUDIO AND MIDI", "THE INTERFACE, ITS OUTPUTS, THE BUFFER AND THE CLOCK: SET ONCE, BEFORE THE SET. (THE KEY IS GREEN AND READS PHONES WHILE PHONES IS ON.)" },
+                { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
+                { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
+                { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
+                { aMacros, "MACROS", "THE MACRO DESIGNER: WHICH SNAPSHOTS EACH SNAPSHOT KNOB HOLDS, IN SWEEP ORDER. A KNOB'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
+                { aMain, "MAIN", "BACK TO THE MAIN SCREEN." },
+                { aNudgeL, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP EARLIER." },
+                { aNudgeR, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP LATER." },
+                { aRatchet, "RATCHET", "THE SELECTED STEP PLAYS ONE TO FOUR HITS." },
+                { aNote, "NOTE", "THE SELECTED STEP'S NOTE." },
+                { aOctave, "OCTAVE", "THE SELECTED STEP'S OCTAVE." },
+                { aGen0, "RANDOM", "WRITES A PATTERN AT ONCE. WHILE IT IS LIT, HITS, ROTATE, ACCENTS AND SEED REWRITE IT." },
+                { aGen1, "EUCLID", "WRITES A PATTERN WITH ITS HITS SPREAD EVENLY. WHILE IT IS LIT, HITS, ROTATE, ACCENTS AND SEED REWRITE IT." },
+                { aRename, "RENAME", "NAMES THE CHOSEN SNAPSHOT." },
+                { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
+                { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
+                { aClearKnob, "CLEAR", "TAKES EVERY SNAPSHOT OFF THIS KNOB." },
+                { aCfgClose, "X", "CLOSES CONFIG." },
+                { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
+                { aCue, "CUE", "WHILE IT IS LIT, A TAPPED SNAPSHOT'S BARS ARE HEARD IN THE HEADPHONES, IN TIME WITH THE CLOCK, AND THE SET IS LEFT ALONE." },
+                { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
+                { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
+                { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
+                { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A CUE PLAYS, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO. IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
+            };
+            for (const auto& a : acts) if (a.a == h.a) { t.title = a.title; body = a.body; }
+            if (t.title.isEmpty()) return t;
+            below = true;
+            break;
+        }
+        default: return t;
+    }
+    const float W = 340.0f, inner = W - 22.0f;
+    if (body.isNotEmpty()) t.body = wrap (body, fLbl, inner);
+    if (midi.isNotEmpty()) t.midi = wrap (midi, fLbl, inner);
+    const float H = 12.0f + 22.0f + (float) t.body.size() * 16.0f + (t.midi.isEmpty() ? 0.0f : 5.0f + (float) t.midi.size() * 16.0f) + 8.0f;
+    float y = h.r.getBottom() + (below ? 34.0f : 8.0f);
+    if (y + H > kH - 16.0f) y = h.r.getY() - H - 8.0f;
+    t.box = R (juce::jlimit (14.0f, kW - W - 14.0f, h.r.getCentreX() - W * 0.5f), std::max (14.0f, y), W, H);
+    t.any = true;
+    return t;
+}
+
+// The mouse rests somewhere: what is there, and its box.
+void Screen::point (juce::Point<float> p)
+{
+    Hit found; Tip now;
+    if (info && ! mouseIsDown)
+        for (size_t i = hits.size(); i-- > 0;)
+        {
+            if (! hits[i].r.contains (p)) continue;
+            now = tipFor (hits[i]);
+            if (now.any) { found = hits[i]; break; }
+            if (hits[i].kind == hBlock) break;                  // (CONFIG covers what is under it)
+        }
+    if (now.any == hovering && (! now.any || (found.kind == hover.kind && found.a == hover.a && found.b == hover.b && found.r == hover.r))) return;
+    if (hovering) dirty (tipRect);
+    hovering = now.any; hover = found; tip = now; tipRect = now.any ? now.box.expanded (2.0f) : R();
+    if (hovering) dirty (tipRect);
+}
+
+void Screen::mouseMove (const juce::MouseEvent& e) { if (info) point (logical (e.position)); }
+void Screen::mouseExit (const juce::MouseEvent&) { if (hovering) { hovering = false; dirty (tipRect); tipRect = {}; } }
+
+void Screen::drawTip (G& g)
+{
+    const R b = tip.box;
+    if (! g.clipRegionIntersects (tipRect.getSmallestIntegerContainer())) return;
+    g.setColour (Colour (0xf4181918)); g.fillRoundedRectangle (b, 5.0f);
+    g.setColour (col::yellow); g.drawRoundedRectangle (b.reduced (0.5f), 5.0f, 1.0f);
+    float y = b.getY() + 8.0f;
+    textRaw (g, tip.title, R (b.getX() + 11, y, b.getWidth() - 22, 20), fLegend, col::lit, juce::Justification::centredLeft);
+    y += 24.0f;
+    for (auto& s : tip.body) { textRaw (g, s, R (b.getX() + 11, y, b.getWidth() - 22, 16), fLbl, col::putty, juce::Justification::centredLeft); y += 16.0f; }
+    if (! tip.midi.isEmpty()) y += 5.0f;
+    for (auto& s : tip.midi) { textRaw (g, s, R (b.getX() + 11, y, b.getWidth() - 22, 16), fLbl, col::yellow, juce::Justification::centredLeft); y += 16.0f; }
+}
+
 // ------------------------------------------------------------------------------------ the pages
 void Screen::paint (G& g)
 {
@@ -349,6 +611,7 @@ void Screen::paint (G& g)
     if (page == pMain) drawMain (g);
     else if (page == pLibrary) drawLibrary (g);
     else drawMacros (g);
+    if (info && hovering && ! mouseIsDown) drawTip (g);
 }
 
 void Screen::drawBar (G& g)
@@ -368,6 +631,11 @@ void Screen::drawBar (G& g)
             text (g, "SF-000", R (23, 17.5f, w, 40), fFlag, col::lit);
         }
         if (page != pMain) title (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : "MACRO DESIGNER");
+        else if (info)
+        {
+            text (g, "INFO (I): THE NUMBER ON A CONTROL IS ITS MIDI CC. A LANE'S NUMBER IS ITS CHANNEL, AND ITS INSERTS ARE ON IT TOO.", R (23 + w + 16, 20, 760, 17), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "THE RETURNS, THE MASTER, GLIDE AND THE SNAPSHOT KNOBS ARE ON CHANNEL 16. REST THE MOUSE ON A CONTROL FOR WHAT IT DOES.", R (23 + w + 16, 38, 760, 17), fLbl, col::black, juce::Justification::centredLeft);
+        }
         // REC: press to start a take, hold to end it. The time it has run stands in for its name.
         {
             const bool on = recorder != nullptr && recorder->recording();
@@ -379,10 +647,11 @@ void Screen::drawBar (G& g)
             if (page == pMain && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000)
                 plate (g, 940.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
         }
-        text (g, "AUDIO", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
+        // (PHONES lit: this output is split while a cue plays, and the key says so wherever one is)
+        text (g, eng.phones() ? "PHONES" : "AUDIO", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "RUN", R (1222, 17.5f, 40, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "PANIC", R (1314, 17.5f, 56, 40), fLegend, col::black, juce::Justification::centredLeft);
-        key (g, R (1070, 17.5f, 40, 40), col::white);
+        key (g, R (1070, 17.5f, 40, 40), eng.phones() ? col::green : col::white);
         key (g, R (1176, 17.5f, 40, 40), eng.isRunning() ? col::green : col::putty);
         key (g, R (1268, 17.5f, 40, 40), col::red, mouseIsDown && drag.kind == hAct && drag.a == aPanic ? 6.0f : 2.0f);
         // following an outside clock, the tempo is that clock's and says so
@@ -390,6 +659,7 @@ void Screen::drawBar (G& g)
         barSig = barNow();
         readout (g, R (1487, 17.5f, 72, 40), "KEY", eng.valueText (cx::kKey));
         knob (g, 1597, 37.5f, 40, eng.shown (cx::kGlide), Kind::List, 12, col::lit);
+        if (info) number (g, cx::kGlide, R (1597 - 14, 37.5f - 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
         readout (g, R (1621, 17.5f, 84, 40), "GLIDE", eng.valueText (cx::kGlide));
         if (seen (g, bar)) lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
     }
@@ -608,12 +878,14 @@ void Screen::drawLane (G& g, int l, R r)
             textRaw (g, d.name, R (x0 + 32, y0, 92, 26), fLegend, active ? col::black : col::lit, juce::Justification::centredLeft);
         }
         hit (dr, hLane, l, 0);
+        chan (g, x0 + 129, y0, l + 1);
     }
     else
     {
         tag (g, R (x0, y0, wTag, 26), num);
         const float wn = plate (g, x0 + wTag, y0, d.name, fLegend, 8, active ? col::black : col::white, active ? col::lit : col::black);
         hit (R (x0, y0, wTag + wn, 26), hLane, l, 0);
+        if (wTag + wn + 54 < 190) chan (g, x0 + wTag + wn + 2, y0, l + 1);
     }
     headKeys (g, r.getRight() - 5, y0 + 2, 0, l, 0, cx::lane (l, cx::kMute), cx::lane (l, cx::kSolo));
     for (int k = 0; k < kLaneKnobs; ++k)
@@ -631,7 +903,8 @@ void Screen::drawSnapPanel (G& g, R r)
     if (vis (g, R (x0, y0, 262, 26)))
     {
         const float w = title (g, x0, y0, "SNAPSHOTS");
-        plate (g, x0 + w + 2, y0, "PAGE 1", fNote, 6, col::white, col::black);
+        if (info) chan (g, x0 + w + 2, y0, e16::kSnapChannel);
+        else plate (g, x0 + w + 2, y0, "PAGE 1", fNote, 6, col::white, col::black);
         const String last = "LAST " + ses.lastTakenAt;
         plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, last)) + 12), y0, last, fNote, 6, col::white, col::black);
     }
@@ -646,6 +919,7 @@ void Screen::drawSnapPanel (G& g, R r)
             {
                 if (seen (g, lit ? kr : R (cxm - 40, y, 80, 58))) lastShown[(size_t) (cx::kSnap + k)] = v;
                 knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, col::teal);
+                if (info) number (g, cx::kSnap + k, R (cxm - 14, y + 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
                 text (g, ses.knobs[(size_t) k].name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
             hit (kr.expanded (4, 2), hSnapKnob, k, 0);
@@ -674,6 +948,7 @@ void Screen::drawInsert (G& g, int slot, R r)
     const String name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
     const float w = title (g, x0, y0, name);
     hit (R (x0, y0, w, 26), hInsHead, slot, 0);
+    if (t >= 0 && w + 54 < 190) chan (g, x0 + w + 2, y0, l + 1);
     if (t >= 0) headKeys (g, r.getRight() - 5, y0 + 2, 1, l, slot, cx::insMute (l, slot), cx::insSolo (l, slot));
     for (int c = 0; c < kCells; ++c) control (g, cx::ins (l, slot, c), x0 + (float) (c % 4) * 66, body + (float) (c / 4) * 77, 64, col::lit);
 }
@@ -707,7 +982,8 @@ void Screen::drawMaster (G& g, R r)
     meterSig = metersNow();
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     panel (g, r, col::grey);
-    title (g, x0, y0, "MASTER");
+    const float wTitle = title (g, x0, y0, "MASTER");
+    chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
     if (! vis (g, R (x0, body + 60, 544, 100))) return;
     // FAULT, gain reduction, loudness
@@ -780,7 +1056,9 @@ void Screen::drawSequencer (G& g, R r)
     if (vis (g, mk))
     {
         key (g, mk, seqOff ? col::amber : col::putty);
-        textRaw (g, "M", mk, fLbl, inkOn (cap (seqOff ? col::amber : col::putty), col::black));
+        String letter ("M");
+        if (int ch = 0, num = 0; info && ccx::addressOf (muteCtl, ch, num)) letter = String (num);
+        textRaw (g, letter, mk, fLbl, inkOn (cap (seqOff ? col::amber : col::putty), col::black));
         if (seen (g, mk)) lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
     }
     hit (mk.expanded (1), hToggle, muteCtl);
@@ -1005,21 +1283,24 @@ void Screen::drawLibrary (G& g)
     // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
     actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5);
     actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
+    // PHONES: one pair of outputs with headphones on it. While a cue plays: the set left, the cue right.
+    actKey (g, aPhones, x0 + 518, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5);
     const String help = ! cueMode ? (night() ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE LIT NAME IS THE BASE SCENE."
                                              : "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.")
-                      : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES: TICK THEM IN AUDIO."
+                      : eng.phones() ? "CUE WITH PHONES LIT: WHILE A SNAPSHOT'S BARS PLAY, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET."
+                      : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES (TICK THEM IN AUDIO), OR PHONES LIT: THEN THIS OUTPUT CARRIES THE SET LEFT AND THE CUE RIGHT."
                       : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
-    if (online == nullptr) { text (g, help, R (x0 + 540, ky, 1100, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
+    if (online == nullptr) { text (g, help, R (x0 + 606, ky, 1040, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
     // ONLINE: each snapshot goes to the library on the web as it is taken. The lamp: green when the
     // library holds them all, yellow while sending, amber when it waits (no network, or not set up), red when turned away.
     const auto st = online->status().state;
     onlineStamp = online->stamp();
     const Colour lamp = st == Online::State::off ? col::putty : st == Online::State::upToDate ? col::green : st == Online::State::working ? col::yellow
                       : st == Online::State::refused ? col::red : col::amber;
-    actKey (g, aOnline, x0 + 546, ky, 64, "ONLINE", lamp, 5);
-    actKey (g, aOnlineSetup, x0 + 612, ky, 64, "SET UP", col::white, 5);
-    text (g, online->line(), R (x0 + 700, ky, 960, 20), fLbl, col::black, juce::Justification::centredLeft);
-    text (g, help, R (x0 + 700, ky + 20, 960, 20), fLbl, col::black, juce::Justification::centredLeft);
+    actKey (g, aOnline, x0 + 612, ky, 64, "ONLINE", lamp, 5);
+    actKey (g, aOnlineSetup, x0 + 678, ky, 64, "SET UP", col::white, 5);
+    text (g, online->line(), R (x0 + 766, ky, 894, 20), fLbl, col::black, juce::Justification::centredLeft);
+    text (g, help, R (x0 + 766, ky + 20, 894, 20), fLbl, col::black, juce::Justification::centredLeft);
 }
 
 // ------------------------------------------------------------------------------ macro designer
@@ -1132,6 +1413,7 @@ void Screen::act (int a)
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
         case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
+        case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
         case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
         case aRecallCue:
@@ -1196,6 +1478,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
     const auto* h = hitAt (p);
     drag = {};
     mouseIsDown = true;
+    if (hovering) { hovering = false; dirty (tipRect); tipRect = {}; }      // (the box is out of the hand's way)
     if (h == nullptr) return;
     drag.kind = h->kind; drag.a = h->a; drag.b = h->b; drag.start = p; drag.t0 = juce::Time::getMillisecondCounter();
     switch (h->kind)
@@ -1403,6 +1686,8 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     }
     if (k.getTextCharacter() == 'f' || k.getTextCharacter() == 'F') { if (onFullScreen) onFullScreen(); return true; }
     if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { setLit (! lit); if (onLook) onLook(); return true; }
+    if (k.getTextCharacter() == 'i' || k.getTextCharacter() == 'I') { setInfo (! info); return true; }
+    if (k.getTextCharacter() == 'h' || k.getTextCharacter() == 'H') { act (aPhones); return true; }
     if (k.getTextCharacter() == 'd' || k.getTextCharacter() == 'D')
     {
         // the dark instrument, which is the lit skin's: from the flat drawing D goes to it

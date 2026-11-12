@@ -1,6 +1,6 @@
 // SF-000: the app. A window on the screens, the audio device, and three command-line tools:
 //   SF-000 --test [--wav file]                 offline audio and timing checks
-//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat|--dark]   draw a screen to a PNG
+//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat|--dark] [--info [--point x,y]] [--phones]   draw a screen to a PNG
 //   SF-000 --dump                              every hosted module's parameters and presets
 //   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
 //   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
@@ -13,6 +13,7 @@
 #include "Midi.h"
 #include "Recorder.h"
 #include "Online.h"
+#include "Help.h"
 #include <set>
 
 static void dumpModules()
@@ -1060,6 +1061,72 @@ static int uiTest()
         }
     }
 
+    // 2b'. INFO: what MIDI reaches is numbered, and what is pointed at says what it is
+    {
+        Engine ei; ei.prepare (48000.0, 512);
+        Session si (ei, false);
+        Screen sci (si);
+        sci.setSize ((int) Screen::kW, (int) Screen::kH);
+        juce::Image img (juce::Image::RGB, (int) Screen::kW, (int) Screen::kH, true);
+        auto whole = [&] { juce::Graphics g (img); sci.paintEntireComponent (g, true); };
+        whole();
+        int lines = 0, missing = 0;
+        for (auto& ln : lanes()) for (auto& k : ln.knobs) { ++lines; if (help::param (ln.module, k.param) == nullptr) ++missing; }
+        for (auto& fx : effects()) for (auto& c : fx.cells) if (c.param != nullptr) { ++lines; if (help::param (fx.module, c.param) == nullptr) ++missing; }
+        for (auto* fx : { &returnA(), &returnB (0), &returnB (1) }) for (auto& c : fx->cells) if (c.param != nullptr) { ++lines; if (help::param (fx->module, c.param) == nullptr) ++missing; }
+        check (missing == 0 && lines > 180, (juce::String (lines) + " knobs and places (every lane's twelve, every effect's, the returns') each have a line saying what they do").toRawUTF8());
+
+        sci.testPointAt ({ 60.0f, 134.0f });
+        const bool quiet = sci.testTip().isEmpty();
+        sci.keyPressed (juce::KeyPress ('i', juce::ModifierKeys(), 'i'));
+        whole();
+        int asked = 0, silent = 0, onMidi = 0;
+        for (auto& h : sci.testHits())
+        {
+            if (! Screen::testAnswers (h)) continue;
+            sci.testPointAt (h.r.getCentre());
+            const auto tip = sci.testTip();
+            ++asked;
+            if (tip.trim().isEmpty()) ++silent;
+            if (tip.contains ("MIDI: CHANNEL")) ++onMidi;
+        }
+        check (sci.isInfo() && quiet && asked > 250 && silent == 0 && onMidi > 180,
+               ("I on the keyboard turns INFO on: off, pointing says nothing; on, each of the " + juce::String (asked) + " knobs, keys and names on the main screen says what it is, "
+                   + juce::String (onMidi) + " of them with a MIDI channel and number").toRawUTF8());
+
+        // with a box showing, a part painted on its own is still the picture a whole paint gives
+        juce::Rectangle<float> aKnob;
+        for (auto& h : sci.testHits()) if (Screen::testIsControl (h, cx::lane (6, 8))) aKnob = h.r;
+        sci.testPointAt (aKnob.getCentre());
+        const auto box = sci.testTipRect();
+        whole();
+        const auto all = img.createCopy();
+        for (auto r : { box, aKnob.getSmallestIntegerContainer().expanded (14, 6), box.withTrimmedLeft (box.getWidth() / 2), juce::Rectangle<int> (1151, 782, 554, 190) })
+        {
+            juce::Graphics g (img);
+            g.reduceClipRegion (r);
+            sci.paintEntireComponent (g, true);
+        }
+        int rowsOff = 0;
+        {
+            const juce::Image::BitmapData x (all, juce::Image::BitmapData::readOnly), y (img, juce::Image::BitmapData::readOnly);
+            for (int row = 0; row < all.getHeight(); ++row)
+            {
+                const auto* p = x.getLinePointer (row); const auto* q = y.getLinePointer (row);
+                bool off = false;
+                for (int k = 0; k < all.getWidth() * x.pixelStride && ! off; ++k) off = std::abs ((int) p[k] - (int) q[k]) > 6;
+                if (off) ++rowsOff;
+            }
+        }
+        check (! box.isEmpty() && sci.testTip().contains ("RUMBLE") && sci.testTip().contains ("CC 20") && rowsOff == 0,
+               "pointed at RUMBLE's GATE, the box says so and gives channel 7, CC 20; parts of the screen painted on their own (the box, the knob under it, the meters) leave the picture as a whole paint gives it");
+
+        sci.keyPressed (juce::KeyPress ('h', juce::ModifierKeys(), 'h'));
+        const bool phonesOn = ei.phones();
+        sci.keyPressed (juce::KeyPress ('h', juce::ModifierKeys(), 'h'));
+        check (phonesOn && ! ei.phones(), "H on the keyboard lights PHONES and puts it out");
+    }
+
     // 2c. a part of the screen drawn on its own leaves the picture exactly as drawing all of it would:
     // with the lit skin (whose pictures reach past their own edges: shade, glow) and with the flat drawing
     for (int look = 0; look < 3; ++look)
@@ -1598,6 +1665,13 @@ static int shot (const juce::StringArray& args)
     sc.setSize ((int) Screen::kW, (int) Screen::kH);
     if (args.contains ("--flat")) sc.setLit (false);            // the flat drawing the lit skin replaced
     if (args.contains ("--dark")) sc.setDark (true);            // the lit skin's dark instrument
+    if (args.contains ("--info")) sc.setInfo (true);            // INFO: the MIDI numbers
+    if (args.contains ("--phones")) e.setPhones (true);
+    if (const auto pt = arg ("--point", ""); pt.isNotEmpty())   // the mouse resting at x,y (screen units), with INFO on: its box
+    {
+        (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
+        sc.testPointAt ({ pt.upToFirstOccurrenceOf (",", false, false).getFloatValue(), pt.fromFirstOccurrenceOf (",", false, false).getFloatValue() });
+    }
     const auto img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
     rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
     sc.online = nullptr; online = nullptr; Session::stateFileForTests = juce::File(); onlineDir.deleteRecursively();
@@ -2205,6 +2279,74 @@ static int midiTest()
                "GLIDE is turned from the E16 (CC 30 on channel 16) with nothing sent back, and a GLIDE set on the screen is sent to it");
         out.clear();
 
+        // ---- a sequencer's addresses (the ONE's modulation lanes), on a rig of their own
+        {
+            Engine e3; e3.prepare (48000.0, 512);
+            Session s3 (e3, false);
+            Midi m3 (e3, s3, false);
+            std::vector<juce::MidiMessage> back;
+            m3.toE16 = [&back] (const juce::MidiMessage& m) { back.push_back (m); };
+            m3.service(); m3.service();
+            for (int k = 0; k < 20; ++k) m3.service();          // (a fresh E16 has been told everything)
+            back.clear();
+
+            // every control that has an address is reached by it
+            int reached = 0; bool right = true;
+            for (int ctl = 0; ctl < cx::kCount; ++ctl)
+            {
+                int ch = 0, num = 0;
+                if (! ccx::addressOf (ctl, ch, num)) continue;
+                ++reached;
+                const int slot = e16::slotFor (ch, num), extra = ccx::extraFor (ch, num);
+                right = right && (slot >= 0 ? e16::controlFor (slot) == ctl
+                                : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl)
+                                : (ctl == cx::kGlide && ch == 16 && num == e16::kGlideCc));
+            }
+            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 3) + 4 + 4 * kSpaceModels + 3 + 1 + 16;
+            check (right && reached == expected, (juce::String (reached) + " controls have a MIDI address, and each address reaches its own control").toRawUTF8());
+
+            // an insert's places, the returns, the master, a lane's MUTE
+            while (e3.insertType (0, 0) != 0) s3.stepInsert (0, 0);     // DELAY in the kick's first slot
+            m3.incoming (cc (1, 33, 100), false);                       // its FEEDBACK
+            m3.incoming (cc (1, 37, 127), false);                       // its FREEZE (a switch)
+            m3.incoming (cc (16, 61, 90), false);                       // DUB FDBK
+            m3.incoming (cc (16, 64, 30), false);                       // SPACE SIZE
+            m3.incoming (cc (16, 68, 50), false);                       // TAPE
+            m3.incoming (cc (3, 56, 127), false);                       // OPEN HAT's MUTE
+            m3.service();
+            const bool placed = std::abs (e3.target (cx::ins (0, 0, 1)) - 100.0f / 127.0f) < 1.0e-6f && e3.target (cx::ins (0, 0, 5)) > 0.5f
+                             && std::abs (e3.target (cx::kRet + 1) - 90.0f / 127.0f) < 1.0e-6f && std::abs (e3.target (cx::space (e3.spaceModel(), 0)) - 30.0f / 127.0f) < 1.0e-6f
+                             && std::abs (e3.target (cx::kMaster) - 50.0f / 127.0f) < 1.0e-6f && e3.target (cx::lane (2, cx::kMute)) > 0.5f;
+            m3.incoming (cc (1, 37, 0), false); m3.incoming (cc (3, 56, 0), false);
+            m3.service();
+            check (placed && e3.target (cx::ins (0, 0, 5)) < 0.5f && e3.target (cx::lane (2, cx::kMute)) < 0.5f && back.empty(),
+                   "a sequencer reaches an insert's places (CC 32-55 on the lane's channel), the returns and the master (CC 60-70 on channel 16) and a lane's MUTE (CC 56), with nothing sent to the E16 for them");
+
+            // RECALL: the nth snapshot a snapshot knob holds
+            const int cut = cx::lane (5, 6);
+            s3.userSet (cx::kGlide, 0.0f);
+            s3.userSet (cut, 0.2f); const auto a = s3.take();
+            s3.userSet (cut, 0.5f); const auto b = s3.take();
+            s3.userSet (cut, 0.8f); const auto c = s3.take();
+            s3.finishTakes (true);
+            s3.knobs[1].snaps = { a, b, c };
+            m3.incoming (cc (16, 81, 2), false); m3.service();
+            const bool second = s3.baseId == b && std::abs (e3.target (cut) - 0.5f) < 1.0e-4f && ! e3.isGliding (cut);
+            s3.recall (a);
+            m3.incoming (cc (16, 81, 2), false); m3.service();          // said again: a lane says its value on every step
+            const bool notAgain = s3.baseId == a;
+            m3.incoming (cc (16, 81, 0), false); m3.incoming (cc (16, 81, 2), false); m3.service();
+            const bool afterNone = s3.baseId == b;
+            m3.incoming (cc (16, 81, 9), false); m3.service();          // it holds no ninth
+            const bool noNinth = s3.baseId == b;
+            m3.incoming (cc (16, 30, 35), false);                       // GLIDE: 1 BAR
+            m3.incoming (cc (16, 81, 3), false);
+            m3.service();
+            check (second && notAgain && afterNone && noNinth && s3.baseId == c && std::abs (glideBarsFor (e3.target (cx::kGlide)) - 1.0) < 1.0e-9
+                       && e3.isGliding (cut) && std::abs (e3.target (cut) - 0.8f) < 1.0e-4f,
+                   "RECALL (CC 80-95 on channel 16) recalls the nth snapshot a snapshot knob holds: at once with GLIDE off; a value said again does nothing; 0 then the value does; a number past the end does nothing; and a GLIDE sent with it is taken first, so the recall travels by it");
+        }
+
         const int tune = cx::lane (0, 0), punch = cx::lane (0, 5);
         midi.incoming (cc (1, 12, 100), true);
         const bool atOnce = std::abs (e.target (tune) - e16::from7 (e.control (tune), 100)) < 1e-6f;
@@ -2338,7 +2480,8 @@ static int midiTest()
             Session ses (e, true);
             Midi m (e, ses, false);
             std::vector<juce::MidiMessage> out;
-            m.toE16 = [&out] (const juce::MidiMessage& msg) { out.push_back (msg); };
+            std::map<std::pair<int, int>, int> knobAt;                  // the E16's own knobs: where each stands (it moves them when told a value)
+            m.toE16 = [&] (const juce::MidiMessage& msg) { out.push_back (msg); if (msg.isController()) knobAt[{ msg.getChannel(), msg.getControllerNumber() }] = msg.getControllerValue(); };
             juce::AudioBuffer<float> b (2, 256);
             auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 256.0); for (int k = 0; k < blocks; ++k) e.render (b); };
             auto state = [&] (std::initializer_list<int> keep)
@@ -2353,19 +2496,53 @@ static int midiTest()
             ses.waitForClips();
             auto prof = [&] (juce::int64 id) { return ses.library[(size_t) ses.indexOf (id)].profile; };
             auto knobOf = [&] (juce::int64 id) { const auto p = prof (id); return (3 - Session::energyRow (p)) * 4 + Session::brightCol (p); };
-            auto turn = [&] (int ch, int knob, int v) { m.incoming (juce::MidiMessage::controllerEvent (ch, e16::kKnobCc + knob, v), true); m.service(); };
+            // a knob of the E16 turned so many clicks from where it stands (it stops at its ends)
+            auto turn = [&] (int ch, int knob, int clicks)
+            {
+                auto& at = knobAt[{ ch, e16::kKnobCc + knob }];
+                const int step = clicks > 0 ? 1 : -1;
+                for (int k = 0; k != clicks; k += step)
+                {
+                    if (at + step < 0 || at + step > 127) break;
+                    at += step;
+                    m.incoming (juce::MidiMessage::controllerEvent (ch, e16::kKnobCc + knob, at), true);
+                }
+                m.service();
+            };
             auto press = [&] (int ch, int knob) { m.incoming (juce::MidiMessage::controllerEvent (ch, e16::kPressCc + knob, 127), true); m.service(); };
+            auto perStep = [] (int n) { return n > 1 ? juce::jlimit (1, 4, 119 / (n - 1)) : 4; };
+            m.service();                                                // (a fresh E16 is told where every knob stands)
 
             // the map: each snapshot is under the knob for its energy and brightness
             bool placed = knobOf (all) < 8 && knobOf (hats) % 4 == 3 && knobOf (kick) % 4 == 0 && knobOf (pads) >= 8 && knobOf (all) != knobOf (kick) && knobOf (all) != knobOf (hats);
             const auto cell = ses.mapCell (Session::energyRow (prof (hats)), Session::brightCol (prof (hats)));
             const int where = (int) (std::find (cell.begin(), cell.end(), hats) - cell.begin());
-            turn (e16::kMapChannel, knobOf (hats), juce::jlimit (0, 127, (where * 128 + 64) / std::max (1, (int) cell.size())));
-            const bool heard = ses.cueing() == hats && ses.baseId != hats;
+            turn (e16::kMapChannel, knobOf (hats), 1);                  // a first click: the first it holds
+            const bool first = ses.cueing() == cell.front();
+            turn (e16::kMapChannel, knobOf (hats), where * perStep ((int) cell.size()));
+            const bool heard = first && ses.cueing() == hats && ses.baseId != hats;
             for (int k = 0; k < 8; ++k) e.render (b);
             const bool sounding = e.cueBlock().getMagnitude (0, 256) > 0.01f;
+
+            // PHONES: one pair of outputs. While a cue plays, the set is in the left ear and the cue in the right.
+            juce::AudioBuffer<float> o (2, 256);
+            auto outputs = [&] { e.render (b); o.makeCopyOf (b); e.phonesSplit (o.getWritePointer (0), o.getWritePointer (1), 256); };
+            auto asTheSet = [&] { bool is = true; for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 256; ++i) is = is && o.getSample (ch, i) == b.getSample (ch, i); return is; };
+            outputs();
+            const bool offLeavesIt = asTheSet();
+            e.setPhones (true);
+            for (int k = 0; k < 6; ++k) outputs();                     // (it comes in over 10 ms)
+            bool split = b.getMagnitude (0, 256) > 0.01f && e.cueBlock().getMagnitude (0, 256) > 0.01f;
+            for (int i = 0; i < 256; ++i)
+                split = split && std::abs (o.getSample (0, i) - 0.5f * (b.getSample (0, i) + b.getSample (1, i))) < 1.0e-6f
+                              && std::abs (o.getSample (1, i) - 0.5f * (e.cueBlock().getSample (0, i) + e.cueBlock().getSample (1, i))) < 1.0e-6f;
+
             press (e16::kMapChannel, knobOf (hats));
             const bool recalled = ses.baseId == hats && ses.cueing() == 0;
+            for (int k = 0; k < 12; ++k) outputs();                    // the cue fades away, and the split with it
+            check (offLeavesIt && split && asTheSet(),
+                   "PHONES: with it off the outputs are the set; lit, while a cue plays the left output is the set (both its sides) and the right is the cue; when the cue has gone the outputs are the set again");
+            e.setPhones (false);
             check (placed && heard && sounding && recalled,
                    "the map: the whole rig sits in the upper rows, the hats at the bright edge, the kick at the dark edge, pads low (knobs "
                        + juce::String (knobOf (all) + 1) + ", " + juce::String (knobOf (hats) + 1) + ", " + juce::String (knobOf (kick) + 1) + ", " + juce::String (knobOf (pads) + 1)
@@ -2375,7 +2552,7 @@ static int midiTest()
             int empty = -1;
             for (int k = 0; k < 16 && empty < 0; ++k) if (ses.mapCell (3 - k / 4, k % 4).empty()) empty = k;
             const auto baseWas = ses.baseId;
-            if (empty >= 0) { turn (e16::kMapChannel, empty, 90); press (e16::kMapChannel, empty); }
+            if (empty >= 0) { turn (e16::kMapChannel, empty, 40); press (e16::kMapChannel, empty); }
             const bool nothing = empty < 0 || (ses.cueing() == 0 && ses.baseId == baseWas);
             juce::Thread::sleep (170);
             for (int k = 0; k < 21; ++k) m.service();
@@ -2387,22 +2564,50 @@ static int midiTest()
                     if (empty >= 0 && msg.getControllerNumber() == e16::kKnobCc + empty) emptyRing = msg.getControllerValue();
                 }
             const int kickN = (int) ses.mapCell (Session::energyRow (prof (kick)), Session::brightCol (prof (kick))).size();
-            check (nothing && kickRing == 64 / std::max (1, kickN) && (empty < 0 || emptyRing == 0),
-                   "an empty square's knob does nothing and its ring is sent to nought; a knob not yet turned shows the first of what it holds (" + juce::String (kickRing) + " of " + juce::String (kickN) + ")");
+            check (nothing && kickRing == (kickN == 1 ? 64 : 8) && (empty < 0 || emptyRing == 0),
+                   "an empty square's knob does nothing and its ring is sent to nought; a knob not yet turned shows the first of what it holds (its ring at " + juce::String (kickRing) + ", holding " + juce::String (kickN) + ")");
 
             // the finders: RECENT newest first; MORE and LESS a step up and down from what is playing
-            turn (e16::kFindChannel, 0, 0);
+            turn (e16::kFindChannel, 0, 1);
             const bool newest = ses.cueing() == drums;
             turn (e16::kFindChannel, 0, 127);
             const bool oldest = ses.cueing() == all;
+
+            // The knob stays on its snapshot. Its ring is put where that snapshot stands among the
+            // others, and that is all that moves: turned slowly afterwards, a click at a time with
+            // the ring put back between clicks, it still gets to the next one.
+            const int recentN = (int) ses.recent (32).size(), per = perStep (recentN);
+            // (the audio runs on meanwhile, as it does in life: a clip the headphones have left is let go of)
+            auto rest = [&] { for (int k = 0; k < 8; ++k) e.render (b); juce::Thread::sleep (170); m.service(); for (int k = 0; k < 8; ++k) e.render (b); };
+            turn (e16::kFindChannel, 0, -127);                          // back to the newest
+            rest();
+            turn (e16::kFindChannel, 0, per);                           // the second
+            const auto second = ses.cueing();
+            rest();                                                     // the hand is off it: its ring is put in the second's place
+            const int ringAt = knobAt[{ e16::kFindChannel, e16::kKnobCc }];
+            for (int k = 0; k < 30; ++k) m.service();
+            const bool stays = ses.cueing() == second && second != drums && second != 0 && ringAt == 8 + (119 + (recentN - 1) / 2) / std::max (1, recentN - 1);
+            bool early = false;
+            for (int k = 0; k < per; ++k)
+            {
+                turn (e16::kFindChannel, 0, 1);
+                if (k < per - 1) early = early || ses.cueing() != second;
+                rest();                                                 // (between clicks the ring is put back in place)
+            }
+            const auto third = ses.cueing();
+            check (stays && ! early && third != second && third != drums && third != 0,
+                   ("a knob stays on the snapshot it was turned to: its ring is put in that snapshot's place (" + juce::String (ringAt) + " for the second of " + juce::String (recentN)
+                       + ") and nothing else moves; turned on a click at a time, with the ring put back between clicks, the next snapshot comes after " + juce::String (per) + " clicks").toRawUTF8());
+            turn (e16::kFindChannel, 0, -127);
+            rest();
             state ({ 0 });                                              // the kick alone playing now
             juce::Thread::sleep (1600);                                 // (what is playing is profiled every second and a half)
             const auto now = ses.heardNow();
-            turn (e16::kFindChannel, 2, 0);
+            turn (e16::kFindChannel, 2, 1);
             const auto up = ses.cueing();
-            turn (e16::kFindChannel, 3, 0);
+            turn (e16::kFindChannel, 3, 1);
             const auto down = ses.cueing();
-            turn (e16::kFindChannel, 1, 0);
+            turn (e16::kFindChannel, 1, 1);
             const auto like = ses.cueing();
             const bool steps = up != 0 && prof (up).energy > now.energy + 0.03f && down != 0 && prof (down).energy < now.energy - 0.03f && like == kick
                                && prof (up).energy <= prof (all).energy && up != all;       // (the nearest step up, not the furthest)

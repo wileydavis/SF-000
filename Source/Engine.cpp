@@ -470,6 +470,23 @@ void Engine::renderCue (int n, bool run, double ppq0, double beats)
     }
 }
 
+// PHONES: the set to the left ear and the cue to the right while a cue plays (or is fading away),
+// coming in and going out over 10 ms.
+void Engine::phonesSplit (float* left, float* right, int n)
+{
+    const float target = phonesOn.load() && (cueWant.load() != nullptr || cueNow != nullptr) ? 1.0f : 0.0f;
+    if (target <= 0.0f && splitGain <= 0.0f) return;
+    const float step = 1.0f / (float) (0.01 * sr);
+    const float* cl = cueBuf.getReadPointer (0); const float* cr = cueBuf.getReadPointer (1);
+    for (int i = 0; i < n; ++i)
+    {
+        splitGain = target > splitGain ? std::min (target, splitGain + step) : std::max (target, splitGain - step);
+        const float set = 0.5f * (left[i] + right[i]), cue = 0.5f * (cl[i] + cr[i]);
+        left[i] += (set - left[i]) * splitGain;
+        right[i] = right[i] * (1.0f - splitGain) + cue * splitGain;
+    }
+}
+
 // The last bars from the tape. Read behind the audio thread's place: what is copied here was
 // written whole buffers ago and is not written again for many seconds.
 bool Engine::lastHeard (Heard& h, int wantBars) const                          { return heard (h, wantBars, false, 0); }
@@ -1087,7 +1104,7 @@ void Engine::prepare (double rate, int block)
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf }) b->setSize (2, maxBlock, false, true, false);
-    cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0;
+    cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
     tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
     liveMidi.ensureSize (8192);
@@ -1643,6 +1660,7 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const*, int, float* 
                 else if (ch < 4) juce::FloatVectorOperations::copy (outData[ch] + done, cueBuf.getReadPointer (ch - 2), n);     // the headphones
                 else juce::FloatVectorOperations::clear (outData[ch] + done, n);
             }
+        if (numOut >= 2 && outData[0] != nullptr && outData[1] != nullptr) phonesSplit (outData[0] + done, outData[1] + done, n);
         cueOuts = numOut >= 4 && outData[2] != nullptr && outData[3] != nullptr;
         done += n;
     }

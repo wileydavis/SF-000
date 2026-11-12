@@ -28,6 +28,10 @@ public:
     void setDark (bool on) { dark = on; skin.setDark (on); warm = false; repaint(); }
     bool isDark() const { return dark; }
     std::function<void()> onLook;               // L or D was pressed: the look to keep for next time
+    // INFO (I on the keyboard): every control that MIDI reaches shows its CC number, a panel its
+    // channel, and a control the mouse rests on says what it does and where MIDI finds it.
+    void setInfo (bool on) { info = on; hovering = false; tipRect = {}; repaint(); }
+    bool isInfo() const { return info; }
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
@@ -37,6 +41,8 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     bool keyPressed (const juce::KeyPress&) override;
     bool isInterestedInFileDrag (const juce::StringArray&) override { return true; }
@@ -56,6 +62,13 @@ public:
     static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
     static bool testIsOnline (const TestHit& h, bool setUp) { return h.kind == hAct && h.a == (setUp ? aOnlineSetup : aOnline); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
+    void testPointAt (juce::Point<float> p) { point (p); }      // the mouse resting there (screen units)
+    juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
+    juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
+    static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
+    // the kinds of thing that say what they are when pointed at with INFO on
+    static bool testAnswers (const TestHit& h) { return h.kind == hKnob || h.kind == hToggle || h.kind == hHold || h.kind == hRead || h.kind == hSnapKnob || h.kind == hLane || h.kind == hConfig
+                                                     || h.kind == hInsHead || h.kind == hStep || h.kind == hPageSel || h.kind == hLen || h.kind == hAct; }
     static bool testIsSnapKnob (const TestHit& h, int k) { return h.kind == hSnapKnob && h.a == k; }
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
     static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
@@ -69,7 +82,7 @@ private:
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup };
+               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones };
 
     void timerCallback() override;
     void dirty (R);
@@ -100,6 +113,16 @@ private:
     float title (G&, float x, float y, const juce::String&);    // a panel's name
     void card (G&, R, bool selected);
     bool off (G& g, R r) const { return ! collect && ! vis (g, r); }       // a part-paint that does not touch it
+    // INFO
+    struct Tip { juce::String title; juce::StringArray body, midi; R box; bool any = false; };
+    Tip tipFor (const Hit&) const;
+    bool describe (int ctl, juce::String& where, juce::String& label, const char*& what) const;
+    juce::String midiOf (int ctl) const;
+    juce::StringArray wrap (const juce::String&, const juce::Font&, float width) const;
+    void point (juce::Point<float>);
+    void drawTip (G&);
+    void number (G&, int ctl, R on, juce::Colour ink);          // a control's CC number, on it
+    float chan (G&, float x, float y, int channel);             // a panel's channel; the width it took (none with INFO off)
     void lamp (G&, float cx, float cy, juce::Colour fill, float d = 12.0f);
     void readout (G&, R, const juce::String& label, const juce::String& value);
     void panel (G&, R, juce::Colour ground);
@@ -130,6 +153,10 @@ private:
     Engine& eng;
     Skin skin;
     bool lit = true, dark = false, warm = false;      // warm: the plates that are not on the first screen have been made
+    bool info = false, hovering = false;
+    Hit hover;
+    Tip tip;
+    R tipRect;
     Page page = pMain;
     juce::AffineTransform xf;
     std::vector<Hit> hits;

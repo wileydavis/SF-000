@@ -96,6 +96,9 @@ public:
     juce::int64 cueing() const          { return cueId; }
     void turnSnapKnob (int k, float v);
     void pressSnapKnob (int k);         // recall the knob's nearest snapshot as the new base; the knob goes home
+    // Recall the nth (1 the first) of the snapshots a snapshot knob holds, as a recall from the
+    // library is: an arrangement's way in, from a sequencer. False: it holds no such one.
+    bool recallFromKnob (int k, int n);
     Snapshot capture() const;
     juce::int64 take();                 // the SNAPSHOT key
     // A snapshot's sound is the bars the rig held its state through. Taken while something had just

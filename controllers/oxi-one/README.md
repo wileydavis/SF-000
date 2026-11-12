@@ -134,3 +134,54 @@ LATENCY in AUDIO AND MIDI is the figure, to a tenth of a millisecond, for the bu
   the buffer size is changed.
 - NOTES IN LAND in the panel shows the gap between the ONE's notes and SF-000's own steps as you
   change either side.
+
+## THE ONE PLAYING SF-000'S KNOBS, GLIDE AND SNAPSHOTS
+
+SF-000 takes control changes on any port, by channel and number. Press **I** in SF-000: every
+control shows its number and every panel its channel, and a control the mouse rests on says what
+it does and what its values mean. The whole table is in the main README (MIDI and the E16).
+
+What I know of the ONE here is from OXI's own descriptions of its modulation lanes (eight to a
+sequencer, each with a MIDI CC as its destination, a minimum and maximum, a time division and a
+smoothing). I have not had one in hand. What I could not find out: whether a lane can send on a
+channel other than its sequencer's. What follows assumes it sends on the sequencer's channel.
+
+### A KNOB
+
+A lane's knobs, its sends and EQ, its inserts and its MUTE are on the lane's own channel, the one
+its sequencer already plays notes on. Give a modulation lane of that sequencer the knob's CC (the
+number INFO shows on it) and draw.
+
+- **With GLIDE on in SF-000, a knob turned by CC travels there over the GLIDE time**, as one
+  turned by hand does. For the lane's own curve to be heard as drawn, GLIDE is OFF.
+- A bipolar knob (TUNE, FILTER, an EQ band) is off at 64.
+- A menu (ECHO SPACE, an effect's TIME) has its choices spread evenly over 0 to 127: INFO lists
+  each choice's value. Set the lane's smoothing off for one.
+- A switch or a held key (FREEZE, THROW, MUTE) is on at 64 and over.
+
+### GLIDE AND A SNAPSHOT: AN ARRANGEMENT
+
+GLIDE and RECALL are on **channel 16**, which no lane plays. Set a spare sequencer to it (SF000's
+project has 7 and 8 spare, on 12A and 13A: change one to **16A**) and use two of its lanes.
+
+1. **Fill a bucket in SF-000.** MACROS: pick a snapshot knob and tap snapshots onto it, in the
+   order you want to count them. The knob's first snapshot is 1, the next 2.
+2. **One lane to CC 80** (snapshot knob 1; knob 2 is CC 81, up to knob 16 on CC 95), smoothing
+   off. Its value is the number of the snapshot to recall. If the lane's minimum and maximum can be
+   set to 0 and the number the knob holds, each level of the lane is one snapshot.
+3. **One lane to CC 30**, smoothing off: GLIDE. 0 OFF, 12 a quarter bar, 23 half a bar, 35 one
+   bar, 46 two, 58 four, 69 eight, 81 sixteen, 92 thirty-two, 104 sixty-four, 115 and 127 the two
+   longest.
+4. Put a snapshot's number on the step where it should begin, and the GLIDE it should take on
+   the same step or before. SF-000 takes the GLIDE first whichever order they arrive in.
+
+- **Only a new value recalls.** A lane that says 2 on every step recalls snapshot 2 once. To
+  recall the same one again (after turning knobs by hand, say), send 0 and then its number.
+- A number past the last snapshot the knob holds does nothing, and so does 0.
+- With GLIDE OFF the recall is at once: within a few thousandths of a second of the message,
+  so a recall on a bar's first step can land just after that step's notes. Put it a step
+  early, or use a short GLIDE.
+- Patterns in a snapshot change on the next bar line while the clock runs, as with any recall.
+- This is separate from the snapshot knobs' own turn (CC 12 to 27), which pushes the rig toward
+  the knob's snapshots without recalling, and from their press (CC 44 to 59), which recalls the
+  nearest.

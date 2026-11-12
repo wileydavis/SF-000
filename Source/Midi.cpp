@@ -58,6 +58,63 @@ float from7 (const Control& c, int v)
     return (float) v / 127.0f;
 }
 
+} // namespace e16
+
+// ------------------------------------------------------------- the addresses not on the E16's scene
+namespace ccx
+{
+int extraFor (int ch, int num)
+{
+    if (ch >= 1 && ch <= kLanes)
+    {
+        if (num >= kIns && num < kIns + kSlots * kCells) return (ch - 1) * kPerLane + (num - kIns);
+        if (num >= kMute && num <= kSeqMute) return (ch - 1) * kPerLane + kSlots * kCells + (num - kMute);
+    }
+    else if (ch == e16::kSnapChannel && num >= kDub && num < kMaster + 3) return kLanes * kPerLane + (num - kDub);
+    return -1;
+}
+
+int controlFor (int extra, int spaceModel)
+{
+    if (extra >= kLanes * kPerLane)
+    {
+        const int j = extra - kLanes * kPerLane;
+        return j < 4 ? cx::kRet + j : j < 8 ? cx::space (spaceModel, j - 4) : cx::kMaster + (j - 8);
+    }
+    const int l = extra / kPerLane, j = extra % kPerLane;
+    if (j < kSlots * kCells) return cx::ins (l, j / kCells, j % kCells);
+    static const int tail[] = { cx::kMute, cx::kSolo, cx::kSeqMute };
+    return l * cx::kPerLane + tail[j - kSlots * kCells];
+}
+
+bool addressOf (int ctl, int& ch, int& num)
+{
+    if (ctl < 0 || ctl >= cx::kCount) return false;
+    ch = e16::kSnapChannel;
+    if (ctl >= cx::kSnap) { num = e16::kKnobCc + (ctl - cx::kSnap); return true; }
+    if (ctl == cx::kGlide) { num = e16::kGlideCc; return true; }
+    if (ctl >= cx::kMaster && ctl < cx::kMaster + 3) { num = kMaster + (ctl - cx::kMaster); return true; }
+    if (ctl >= cx::kRet && ctl < cx::kRet + cx::kRetKnobs) { const int j = ctl - cx::kRet; num = j < 4 ? kDub + j : kSpace + (j - 4) % 4; return true; }
+    if (ctl >= cx::kRet) return false;
+    const int j = ctl % cx::kPerLane;
+    ch = ctl / cx::kPerLane + 1;
+    if (j < kLaneKnobs) num = e16::kKnobCc + j;
+    else if (j == cx::kSendA) num = e16::kKnobCc + 12;
+    else if (j == cx::kSendB) num = e16::kKnobCc + 13;
+    else if (j == cx::kEqLow) num = e16::kKnobCc + 14;
+    else if (j == cx::kEqHigh) num = e16::kKnobCc + 15;
+    else if (j == cx::kEqMid) num = e16::kMidCc;
+    else if (j >= cx::kIns && j < cx::kIns + kSlots * kCells) num = kIns + (j - cx::kIns);
+    else if (j == cx::kMute) num = kMute;
+    else if (j == cx::kSolo) num = kSolo;
+    else if (j == cx::kSeqMute) num = kSeqMute;
+    else return false;
+    return true;
+}
+} // namespace ccx
+
+namespace e16
+{
 // ------------------------------------------------------------------------------- the scene file
 // Written as the OXI App 2.x exports a scene (learned by SF Live Suite's controllers/e16/make_scene.py
 // from the App's own files): every key in the App's order, compact, ASCII. Turns are CC Abs (type 3)
@@ -391,6 +448,10 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
     for (auto& v : libSent) v = -1;
     for (auto& v : libPresses) v = 0;
     for (auto& v : libHeardAt) v = 0;
+    for (auto& v : libTurn) v = 0;
+    for (auto& v : exLatest) v = -1;
+    for (auto& v : recallHeard) v = -1;
+    for (auto& v : recallIn) v = 0;
     ringLast.fill (0); ringSentAt.fill (0.0);
     if (useDevices)
     {
@@ -403,6 +464,7 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
 
 Midi::~Midi()
 {
+    cancelPendingUpdate();
     stopTimer();
     engine.setClockOut (false, leadMs);
     if (useDevices) stopThread (500);
@@ -568,7 +630,10 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         if (num >= e16::kKnobCc && num < e16::kKnobCc + 16)
         {
             const auto k = (size_t) (base + num - e16::kKnobCc);
-            libLatest[k] = val; libSent[k] = val; libHeardAt[k] = juce::Time::getMillisecondCounter();
+            // how far it was turned, from where the knob was (its number is the E16's own business:
+            // SF-000 moves it to show a place, and that must not count as a turn)
+            if (const int was = libSent[k].exchange (val); was >= 0) libTurn[k].fetch_add (val - was);
+            libLatest[k] = val; libHeardAt[k] = juce::Time::getMillisecondCounter();
         }
         else if (num >= e16::kPressCc && num < e16::kPressCc + 16 && val >= 64) libPresses[(size_t) (base + num - e16::kPressCc)].fetch_add (1);
         return;
@@ -578,7 +643,16 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; if (val >= 1 && val <= e16::kSnapPage) pageUp = val; return; }
         if (num == e16::kGlideCc) { glideIn = val; return; }
         if (num >= e16::kPressCc && num < e16::kPressCc + 16) { if (val >= 64) presses[(size_t) (num - e16::kPressCc)].fetch_add (1); return; }
+        if (num >= ccx::kRecall && num < ccx::kRecall + 16)
+        {
+            // RECALL: which of the snapshots a snapshot knob holds. Only a new value acts.
+            const auto k = (size_t) (num - ccx::kRecall);
+            if (recallHeard[k].exchange (val) != val && val > 0) { recallIn[k] = val; if (useDevices) triggerAsyncUpdate(); }
+            return;
+        }
     }
+    // (an insert's place is whatever effect is in it when the message thread comes to it)
+    if (const int extra = ccx::extraFor (ch, num); extra >= 0) { exLatest[(size_t) extra] = val; return; }
     const int slot = e16::slotFor (ch, num);
     if (slot < 0) return;
     const int ctl = e16::controlFor (slot);
@@ -617,11 +691,16 @@ void Midi::service()
         if (presses[(size_t) k].exchange (0) > 0) ses.pressSnapKnob (k);
     if (const int f = focus.exchange (0); f > 0) ses.selectLane (f - 1);
     const auto now = juce::Time::getMillisecondCounter();
-    // GLIDE from the E16 (knob 1 of a lane's page, pressed; knob 16 of the library's FIND)
-    if (const int g = glideIn.exchange (-1); g >= 0)
+    takeGlide();
+    takeRecalls();
+    for (int extra = 0; extra < ccx::kExtras; ++extra)
     {
-        ses.userSet (cx::kGlide, e16::from7 (engine.control (cx::kGlide), g));
-        glideSent = g; glideHeardAt = now;
+        const int v = exLatest[(size_t) extra].exchange (-1);
+        if (v < 0) continue;
+        const int ctl = ccx::controlFor (extra, engine.spaceModel());
+        const auto& c = engine.control (ctl);
+        if (! c.used) continue;                                 // an empty place
+        ses.userSet (ctl, c.kind == Kind::Toggle || c.kind == Kind::Hold ? (v >= 64 ? 1.0f : 0.0f) : e16::from7 (c, v));
     }
     // A page that has just come up is told its values again, a moment after it has settled.
     if (const int pg = pageUp.exchange (0); pg > 0) { pageNow = pg; pageWait = 2; }
@@ -660,6 +739,25 @@ void Midi::service()
     rings (juce::Time::getMillisecondCounterHiRes());
 }
 
+// GLIDE from outside (the E16: knob 1 of a lane's page, pressed, or knob 16 of the library's FIND; a sequencer)
+void Midi::takeGlide()
+{
+    if (const int g = glideIn.exchange (-1); g >= 0)
+    {
+        ses.userSet (cx::kGlide, e16::from7 (engine.control (cx::kGlide), g));
+        glideSent = g; glideHeardAt = juce::Time::getMillisecondCounter();
+    }
+}
+
+// RECALL from a sequencer. A GLIDE sent with it is taken first, so the recall travels by it.
+void Midi::takeRecalls()
+{
+    for (int k = 0; k < 16; ++k)
+        if (const int n = recallIn[(size_t) k].exchange (0); n > 0) { takeGlide(); ses.recallFromKnob (k, n); }
+}
+
+void Midi::handleAsyncUpdate() { takeRecalls(); }
+
 // The snapshots a knob of the library's scene holds.
 std::vector<juce::int64> Midi::libFor (int k)
 {
@@ -680,18 +778,33 @@ void Midi::serviceLibrary()
     {
         const auto i = (size_t) k;
         const int v = libLatest[i].exchange (-1);
+        const int turned = libTurn[i].exchange (0);
         const bool pressed = libPresses[i].exchange (0) > 0;
-        // What FITS NOW, MORE and LESS hold is worked out when a hand comes to the knob, and stays
-        // put while it is there: the list does not shift under it as the music moves.
-        const bool fresh = k >= 17 ? ((v >= 0 || pressed) && now - libTouched[i] > 4000) || (refresh && now - libTouched[i] > 4000)
-                                   : (v >= 0 || pressed || refresh);
-        if (fresh) libList[i] = libFor (k);
+        // What a knob holds is worked out when a hand comes to it, and stays put while the hand
+        // is there: the list does not shift under it as the music moves or a snapshot is taken.
+        // (A knob no hand has been on for a while is looked at again twice a second, for its ring.)
+        const bool away = now - libTouched[i] > 4000;
+        if (away && (v >= 0 || pressed || refresh)) libList[i] = libFor (k);
         if (v >= 0 || pressed) libTouched[i] = now == 0 ? 1u : now;
         const auto& list = libList[i];
         const int n = (int) list.size();
-        if (v >= 0)
+        if (v >= 0 && n > 0)
         {
-            const juce::int64 id = n > 0 ? list[(size_t) juce::jlimit (0, n - 1, v * n / 128)] : 0;
+            // so many clicks to a step; the snapshot it is on stays until a step is made
+            const int per = n > 1 ? juce::jlimit (1, 4, 119 / (n - 1)) : 4;
+            libRest[i] += turned;
+            const int steps = libRest[i] / per;
+            libRest[i] -= steps * per;
+            const auto at = std::find (list.begin(), list.end(), libPick[i]);
+            int idx = at != list.end() ? (int) (at - list.begin()) : -1;
+            if (idx < 0) { idx = 0; libRest[i] = 0; }                          // it held none of these: the first
+            else if (steps != 0)
+            {
+                const int to = juce::jlimit (0, n - 1, idx + steps);
+                if (to != idx + steps) libRest[i] = 0;                         // (the end of them)
+                idx = to;
+            }
+            const juce::int64 id = list[(size_t) idx];
             if (id != libPick[i] || ses.cueing() != id) { libPick[i] = id; ses.cue (id); }
         }
         if (pressed)
@@ -708,8 +821,10 @@ void Midi::serviceLibrary()
         const auto& list = libList[i];
         const int n = (int) list.size();
         const auto at = std::find (list.begin(), list.end(), libPick[i]);
+        if (at == list.end() && libPick[i] != 0) continue;                 // what it is on is not among these now: its ring stays where it is
         const int idx = at != list.end() ? (int) (at - list.begin()) : 0;
-        const int want = n > 0 ? juce::jlimit (0, 127, (idx * 128 + 64) / n) : 0;
+        // where it stands among them: the first a little up from nought (nought is an empty knob), the last at the top; one alone, the middle
+        const int want = n > 1 ? juce::jlimit (0, 127, 8 + (idx * 119 + (n - 1) / 2) / (n - 1)) : n == 1 ? 64 : 0;
         if (want == libSent[i].load() || now - libHeardAt[i].load() < 150u) continue;
         sendE16 (juce::MidiMessage::controllerEvent (k < 16 ? e16::kMapChannel : e16::kFindChannel, e16::kKnobCc + k % 16, want));
         libSent[i] = want;

@@ -92,15 +92,21 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 pages 3-12: empty
 ```
 
-- **Turn** a knob: it goes through the snapshots it holds, and each is heard in the headphones
-  (outputs 3 + 4), in time with the set. The set is not touched.
+- **Turn** a knob: it steps through the snapshots it holds, and each is heard in the headphones
+  (outputs 3 + 4, or the right ear with PHONES lit), in time with the set. The set is not touched.
+- **It steps, four clicks to the next** (fewer where it holds more than thirty), counted from
+  wherever the knob is, and it stays on the snapshot it has come to until it is turned again.
+  The first click on a knob that was on nothing plays the first it holds.
 - **Press** it: the snapshot it is on is recalled to the set, over the GLIDE time, and the
   headphones go quiet.
-- A knob's 128 places are shared out among what it holds: with four snapshots in a square, each has
-  a quarter of the turn. The ring sits in the middle of the one it is on.
+- **The ring shows where that snapshot stands among the others**: the first a little up from
+  nought, the last at the top, one alone in the middle. SF-000 puts it there a moment after your
+  hand stops, which changes the knob's number on the E16 and nothing else. (Until the nineteenth
+  build the number was the place: put back to the middle of its share whenever the hand paused,
+  it undid a slow turn, and the knob fought the hand.)
 - A square with nothing in it does nothing, and its ring sits at nought.
-- FITS NOW, MORE and LESS are worked out from what is playing when your hand comes to the knob, and
-  stay put while it is there.
+- What a knob holds is worked out when your hand comes to it (FITS NOW, MORE and LESS from what
+  is playing then), and stays put while it is there.
 - Only snapshots taken while the clock ran have a sound kept, so only those are on the map.
 
 | WHAT | CHANNEL | NUMBER |

@@ -118,6 +118,16 @@ void Session::pressSnapKnob (int k)
     recall (id);
 }
 
+bool Session::recallFromKnob (int k, int n)
+{
+    if (k < 0 || k >= 16) return false;
+    std::vector<juce::int64> ids;
+    for (auto id : knobs[(size_t) k].snaps) if (findSnap (id) != nullptr) ids.push_back (id);
+    if (n < 1 || n > (int) ids.size()) return false;
+    recall (ids[(size_t) (n - 1)]);
+    return true;
+}
+
 std::vector<int> Session::knobScope (int k) const
 {
     std::vector<int> out;

@@ -556,7 +556,7 @@ void Skin::window (G& g, R r, Colour glass)
     g.setColour (juce::Colours::white.withAlpha (dark ? 0.16f : 0.50f));       // (a dark plate's edge catches less)
     g.fillRect (R (r.getX() + 1.5f, r.getBottom() + 0.3f, r.getWidth() - 2.0f, 0.9f));
     g.fillRect (R (r.getRight() + 0.3f, r.getY() + 1.5f, 0.9f, r.getHeight() - 2.0f));
-    g.setColour (deep ? glass.darker (0.35f) : glass.interpolatedWith (Colour (0xffD3D6CB), 0.35f));
+    g.setColour (deep ? glass.darker (0.35f) : glass.getPerceivedBrightness() > 0.8f ? glass.interpolatedWith (Colour (0xffD3D6CB), 0.35f) : glass);      // (a coloured pane keeps its colour)
     g.fillRoundedRectangle (r, 1.4f);
     const float top = std::min (6.0f, r.getHeight() * 0.3f), left = std::min (4.0f, r.getWidth() * 0.2f);
     g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (deep ? 0.55f : 0.30f), 0.0f, r.getY(), juce::Colours::transparentBlack, 0.0f, r.getY() + top, false));

@@ -32,6 +32,10 @@ namespace e16
     // left). Page 2 is the finders, on channel 14: RECENT, FITS NOW, MORE, LESS. On both, a knob
     // in place p sends CC 11 + p and its press CC 43 + p. Turning a knob goes through the
     // snapshots it holds and plays each in the headphones; pressing it recalls that one to the set.
+    // The knob steps: so many of its clicks to the next snapshot (four, fewer where it holds more
+    // than its travel has room for), counted from wherever the knob is. Its ring is then put where
+    // that snapshot stands among the others, which moves the knob's number and nothing else: the
+    // snapshot it is on stays until it is turned.
     constexpr int kMapChannel = 15, kFindChannel = 14, kLibKnobs = 32;      // 0-15 the map, 16-31 the finders
     constexpr int kPerLane = 17;                                // 12 knobs, SEND A, SEND B, LOW, HIGH, MID
     constexpr int kSlots = kLanes * kPerLane + 16;              // every address that carries a value
@@ -49,7 +53,29 @@ namespace e16
     juce::String libraryText();                                 // the library's scene
 }
 
-class Midi : private juce::MidiInputCallback, private juce::Timer, private juce::Thread
+// More addresses, for a sequencer to play (the OXI ONE's modulation lanes). They are on no page of
+// the E16's scenes and nothing is sent back for them. Like every address, they are heard on any port.
+namespace ccx
+{
+    // On a lane's channel: its three inserts' eight places (32-39, 40-47, 48-55, whatever effect is
+    // in the slot), and MUTE, SOLO and the mute of its own sequencer (64 and over: on).
+    constexpr int kIns = 32, kMute = 56, kSolo = 57, kSeqMute = 58;
+    // On channel 16: the DUB return's four knobs, the SPACE return's four, TAPE COMP LIMIT.
+    constexpr int kDub = 60, kSpace = 64, kMaster = 68;
+    // On channel 16, one for each snapshot knob (80-95): RECALL. The value says which of the
+    // snapshots the knob holds (1 the first) and that one is recalled, as from the library: sound
+    // knobs travel over the GLIDE time (CC 30, sent first), patterns change on the bar. A sequencer
+    // says a value again and again: only a new value acts. 0 is none (and makes the next one new).
+    constexpr int kRecall = 80;
+    constexpr int kPerLane = kSlots * kCells + 3;
+    constexpr int kExtras = kLanes * kPerLane + 4 + 4 + 3;
+    int extraFor (int channel, int number);                     // -1: not one of them
+    int controlFor (int extra, int spaceModel);
+    // Any control's address, on the E16's scene or above. False: it has none.
+    bool addressOf (int control, int& channel, int& number);
+}
+
+class Midi : private juce::MidiInputCallback, private juce::Timer, private juce::Thread, private juce::AsyncUpdater
 {
 public:
     // devices false: no ports, no timer, no thread (tests drive incoming() and service() themselves)
@@ -87,6 +113,9 @@ public:
 private:
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
     void timerCallback() override;
+    void handleAsyncUpdate() override;          // a recall has come in: it is not kept waiting for the timer
+    void takeGlide();
+    void takeRecalls();
     void run() override;                        // the clock's own thread
     void scan();
     void sendE16 (const juce::MidiMessage&);
@@ -114,8 +143,11 @@ private:
     std::atomic<int> pageUp { 0 }, glideIn { -1 };
     int pageNow = 0, pageWait = 0, glideSent = -1;              // message thread
     juce::uint32 glideHeardAt = 0;
+    std::array<std::atomic<int>, ccx::kExtras> exLatest;         // the addresses that are not the E16's
+    std::array<std::atomic<int>, 16> recallHeard, recallIn;     // RECALL: the value last said; the one to act on
     // the library's scene
-    std::array<std::atomic<int>, e16::kLibKnobs> libLatest, libSent, libPresses;
+    std::array<std::atomic<int>, e16::kLibKnobs> libLatest, libSent, libPresses, libTurn;      // libTurn: the clicks turned since last looked at
+    std::array<int, e16::kLibKnobs> libRest {};                 // clicks turned that have not yet made a step
     std::array<std::atomic<juce::uint32>, e16::kLibKnobs> libHeardAt;
     std::array<juce::int64, e16::kLibKnobs> libPick {};         // the snapshot each knob holds now
     std::array<std::vector<juce::int64>, e16::kLibKnobs> libList;

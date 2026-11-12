@@ -174,6 +174,14 @@ public:
     // Silence at once, and the audio thread has let go of every clip when this returns (before clips are destroyed).
     void dropCue()                              { const juce::SpinLock::ScopedLockType g (cueLock); cueWant = nullptr; cueNow = nullptr; cueGain = 0.0f; }
     bool hasCueOutput() const                   { return cueOuts.load(); }       // the device has outputs 3 and 4 open
+    // PHONES: one pair of outputs, and headphones on it. While a cue plays, the set is on the left
+    // ear (both its sides) and the cue on the right; with none playing the set is as it always
+    // is. Only what goes to outputs 1 and 2 changes: a recording, the meters and a snapshot's
+    // bars are the set itself.
+    void setPhones (bool on)                    { phonesOn = on; }
+    bool phones() const                         { return phonesOn.load(); }
+    bool cueIsHeard() const                     { return cueOuts.load() || phonesOn.load(); }
+    void phonesSplit (float* left, float* right, int n);        // this buffer's outputs 1 and 2, in place (the device callback; tests)
     const juce::AudioBuffer<float>& cueBlock() const { return cueBuf; }          // the last buffer's cue (the device callback; tests)
 
     // ---- recording: what the audio thread hands on, a buffer at a time. Track 0 is the set (the
@@ -462,7 +470,8 @@ private:
     double cuePos = 0.0;
     float cueGain = 0.0f;
     juce::AudioBuffer<float> cueBuf;
-    std::atomic<bool> cueOuts { false };
+    std::atomic<bool> cueOuts { false }, phonesOn { false };
+    float splitGain = 0.0f;                     // audio thread: how far the split is in
     juce::SpinLock cueLock;
     void renderCue (int n, bool run, double ppq0, double beats);
     juce::SpinLock recLock;
