@@ -27,9 +27,11 @@ public:
     void setLit (bool on) { lit = on; warm = false; repaint(); }
     bool isLit() const { return lit; }
     // The lit skin's dark instrument: a graphite case and dark plates, light print, the same lights. D on the keyboard changes over.
-    void setGlow (float hue, float bright) { glowHue = hue; glowBright = bright; if (stage != nullptr) stage->setGlow (hue, bright); }
+    void setGlow (float hue, float bright, float pulse) { glowHue = hue; glowBright = bright; glowPulse = pulse; if (stage != nullptr) stage->setGlow (hue, bright, pulse); }
+    void setGlow (float hue, float bright) { setGlow (hue, bright, glowPulse); }
     float glowHueNow() const { return glowHue; }
     float glowBrightNow() const { return glowBright; }
+    float glowPulseNow() const { return glowPulse; }
     void setDark (bool on) { dark = on; skin.setDark (on); if (stage != nullptr) stage->setDark (on); warm = false; repaint(); }
     bool isDark() const { return dark; }
     // The 3D stage (3 on the keyboard): the instrument as a solid thing, lit, seen through an eye
@@ -64,6 +66,8 @@ public:
     // channel, and a control the mouse rests on says what it does and where MIDI finds it.
     void setInfo (bool on) { info = on; hovering = false; tipRect = {}; repaint(); }
     bool isInfo() const { return info; }
+    bool testKeysShown() const { return info && keysDrawn; }
+    juce::Rectangle<float> testKeysBox() const { return keysBox(); }
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
@@ -163,7 +167,7 @@ private:
     std::array<bool, cx::kCount> bySequencer {};
     juce::uint32 followAt = 0;
     juce::uint32 startingSince = 0;             // when the stage was first seen still starting, in front
-    float glowHue = Stage::kGlowHue, glowBright = Stage::kGlowBright;
+    float glowHue = Stage::kGlowHue, glowBright = Stage::kGlowBright, glowPulse = 0.0f;
     bool settledSaid = true;
     void settled();
     bool watchStart (juce::uint32 now, bool inFront);
@@ -179,6 +183,11 @@ private:
     juce::String tagsWere, sayText;
     juce::uint32 sayAt = 0, tagStamp = 1;
     juce::Point<float> hoverAt;
+    // INFO also lists the keyboard's keys: at the foot of the screen on the left, and on the right
+    // while the pointer is where that would be (so nothing under it is out of INFO's reach)
+    bool keysRight = false, keysDrawn = false;
+    juce::Rectangle<float> keysBox() const;
+    void drawKeys (G&, juce::Rectangle<float> box, bool onStage);
     std::vector<int> tagsUp;
     double printMs = 0.0, sendMs = 0.0;         // the last printing of the sheet: drawing it, and handing it to the stage
     juce::Point<float> logical (juce::Point<float> p) const { return p.transformedBy (xf.inverted()); }

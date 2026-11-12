@@ -143,8 +143,10 @@ key's gate and anything else that follows the hand is wherever the pointer is on
 - **Typing a name** (a snapshot's, a snapshot knob's) happens in a small box over the stage.
 - **D** is the dark instrument here too.
 
-The glow under the case is set in SETUP: two knobs, its colour (round the wheel) and its
-brightness (none to four times what it comes with). Double-click a knob for what it came with.
+The glow under the case is set in SETUP: three knobs. COLOUR (round the wheel), BRIGHTNESS (none
+to four times what it comes with) and PULSE: how much it beats with the kick, from none (steady,
+as it comes) to intense (nearly out between hits, three times as bright on one). It follows the
+kick lane's own meter, so a muted kick does not pulse. Double-click a knob for what it came with.
 
 If OpenGL cannot start on a machine, the lit skin stays, the top bar says why for a few seconds,
 and the reason is written to `3d.log` beside the session. The same if it starts and its first
@@ -190,7 +192,8 @@ back at the other. The sequencer stays where it is.
   folders and sound files in the panel itself: a click goes into a folder, UP comes out, a click
   on a file loads it as a drop would. No window of the system's is opened, so it works full
   screen, while playing. It opens where the last file came from.
-- **INFO** (I) answers for every CONFIG control too.
+- **INFO** (I) answers for every CONFIG control too. While INFO is on, the keyboard's keys are
+  listed at the foot of the screen; the list steps to the other side when the pointer comes to it.
 - **SPACE (return B) is one of two reverbs.** MODEL, first in its CONFIG, chooses REVERB (the
   algorithmic one it starts as) or CONVOLUTION. The convolution holds eight places; PLACE (or a
   click on the numbered boxes in its display) chooses one, and a dropped file fills the place it
@@ -409,7 +412,7 @@ build/.../SF-000 --shot setup.png --setup follow  # draw the SETUP panel: --setu
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
-build/.../SF-000 --icon raw.png                   # the picture the app's icon is made from (then: python3 tools/icon.py raw.png assets/icon.png)
+python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```

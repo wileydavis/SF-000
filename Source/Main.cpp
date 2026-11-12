@@ -1262,8 +1262,24 @@ static int uiTest()
 
         sci.testPointAt ({ 60.0f, 134.0f });
         const bool quiet = sci.testTip().isEmpty();
+        const bool noKeysYet = ! sci.testKeysShown();
         sci.keyPressed (juce::KeyPress ('i', juce::ModifierKeys(), 'i'));
         whole();
+        {
+            // INFO also lists the keyboard's keys, at the foot of the screen; it steps to the other side when pointed at
+            const auto left = sci.testKeysBox();
+            const bool shown = sci.testKeysShown() && left.getX() < 100.0f && left.getBottom() > Screen::kH - 40.0f;
+            const auto in = left.getCentre();
+            sci.mouseMove (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), in, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                             &sci, &sci, juce::Time::getCurrentTime(), in, juce::Time::getCurrentTime(), 1, false));
+            whole();
+            const bool aside = sci.testKeysShown() && sci.testKeysBox().getX() > Screen::kW * 0.5f;
+            const juce::Point<float> away (700.0f, 300.0f);
+            sci.mouseMove (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), away, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                             &sci, &sci, juce::Time::getCurrentTime(), away, juce::Time::getCurrentTime(), 1, false));
+            whole();
+            check (noKeysYet && shown && aside && sci.testKeysBox().getX() < 100.0f, "INFO lists the keyboard's keys at the foot of the screen, and the list steps to the other side while it is pointed at");
+        }
         int asked = 0, silent = 0, onMidi = 0;
         for (auto& h : sci.testHits())
         {
@@ -3099,62 +3115,6 @@ static int perf()
 // The 3D stage, played: SF-000 --stagetest. It needs a display to open a window on (xvfb will do)
 // and OpenGL 3.2 (a software driver will do: this is about what is drawn and what the hand
 // reaches, not how fast).
-// The app's icon is one of the instrument's own modules: a square plate with a 4 x 4 field of
-// knobs, some lit, drawn by the 3D stage from straight above. (--icon file.png; tools/icon.py
-// then gives it the corners and margins a Mac icon has.)
-static int iconShot (const juce::String& path)
-{
-    using namespace sf0;
-    Engine e;
-    juce::Component host;
-    host.setOpaque (true);
-    host.setSize (1024, 1024);
-    host.addToDesktop (0); host.setVisible (true);
-    Stage st (e);
-    Stage::Pose pose; pose.view = 0; pose.turn = 0.0f; pose.tilt = 89.9f;
-    st.setHome (pose, false);
-    st.setGlow (Stage::kGlowHue, 0.0f);
-    st.setDark (true);                              // (the dark instrument: its plates near black, its lights the brighter for it)
-    st.attachTo (host);
-    auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
-    for (int i = 0; i < 400 && st.state() == Stage::State::starting; ++i) pump (25);
-    if (st.state() != Stage::State::running) { std::printf ("the 3D stage did not start: %s\n", st.whyNot().toRawUTF8()); return 1; }
-    Parts p;
-    const float cx = Screen::kW * 0.5f, cy = Screen::kH * 0.5f, pitch = 58.0f, half = 138.0f;
-    p.dark = true;
-    p.plates.push_back ({ { cx - half - 60, cy - half - 60, 2 * half + 120, 2 * half + 120 }, 0xff1A1C1B, {}, 0.0f });       // something darker under it, for the plate's edge to be found against
-    p.plates.push_back ({ { cx - half, cy - half, 2 * half, 2 * half }, 0xff3B3C3A, {}, 0.0f });                              // the dark instrument's plate
-    // what each knob shows: how far round its lights go, and their colour (white, as most; a gate's red, a level's blue, one on its way in green)
-    const float lit[16] = { 0.50f, 0.72f, 0.30f, 0.86f,   0.64f, 0.22f, 0.94f, 0.42f,   0.58f, 0.80f, 0.36f, 0.70f,   0.46f, 0.90f, 0.28f, 0.62f };
-    const juce::uint32 white = 0xffF6F6F6, red = 0xffE8443C, blue = 0xff3D9BE9, green = 0xff3FD35C;
-    const juce::uint32 light[16] = { white, white, white, white,   white, green, white, white,   red, white, white, blue,   blue, blue, white, white };
-    for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 4; ++c)
-        {
-            Parts::Knob k;
-            k.cx = cx + ((float) c - 1.5f) * pitch; k.cy = cy + ((float) r - 1.5f) * pitch;
-            k.big = true; k.ctl = -1; k.kind = 0; k.steps = 0; k.light = light[r * 4 + c]; k.a = 0.0f; k.b = lit[r * 4 + c]; k.mark = -1.0f;
-            p.knobs.push_back (k);
-        }
-    p.settle();
-    st.setParts (p);
-    st.sheet().clear (st.sheet().getBounds(), juce::Colours::transparentBlack);
-    st.sheetChanged (st.sheet().getBounds());
-    const juce::Rectangle<float> box (cx - half - 8, cy - half - 8, 2 * half + 16, 2 * half + 16);
-    st.lookAt (&box);
-    pump (200);
-    st.settle();
-    const auto img = st.capture();
-    st.detach();
-    juce::PNGImageFormat png;
-    const juce::File f = juce::File::getCurrentWorkingDirectory().getChildFile (path);
-    f.deleteFile();
-    bool ok = false;
-    if (img.isValid()) if (auto out = f.createOutputStream()) ok = png.writeImageToStream (img, *out);
-    std::printf (ok ? "wrote %s (%d x %d)\n" : "could not write %s\n", f.getFullPathName().toRawUTF8(), img.getWidth(), img.getHeight());
-    return ok ? 0 : 1;
-}
-
 // The 3D stage is started with a note left beside the session, and the note is taken away once
 // the stage is up and has drawn (or has said why it is not, or the app has left in good order).
 // A note still there at launch means the last start never finished: the app died, or was
@@ -3516,7 +3476,10 @@ static int stageTest()
         sc.mouseMove (ev (p, p, false)); sc.testTick();
         const auto tags = sc.testTags();
         check (std::find (tags.begin(), tags.end(), -1) != tags.end() && sc.testTip().contains ("RUMBLE"), "INFO: a knob pointed at says what it is, in a box by the pointer");
+        check (std::find (tags.begin(), tags.end(), -3) != tags.end(), "and the list of the keyboard's keys is up with it, at the foot of the window");
         sc.setInfo (false); fresh();
+        const auto after = sc.testTags();
+        check (std::find (after.begin(), after.end(), -3) == after.end(), "INFO off: the list is gone");
     }
 
     {
@@ -3537,6 +3500,26 @@ static int stageTest()
         const auto none = fresh();
         sc.setGlow (Stage::kGlowHue, Stage::kGlowBright);
         const auto back = fresh();
+        // the pulse: with the kick's meter up the glow is brighter than it is steady, and with it down, dimmer
+        auto lightOf = [] (const juce::Image& x)
+        {
+            if (! x.isValid()) return 0.0;
+            const juce::Image::BitmapData a (x, juce::Image::BitmapData::readOnly);
+            double sum = 0.0;
+            for (int yy = 0; yy < a.height; yy += 4) for (int xx = 0; xx < a.width; xx += 4) { const auto* q = a.getPixelPointer (xx, yy); sum += q[0] + q[1] + q[2]; }
+            return sum;
+        };
+        sc.setGlow (Stage::kGlowHue, Stage::kGlowBright, 1.0f);
+        e.laneDb[0] = -6.0f; fresh();
+        const double onTheHit = lightOf (fresh());
+        e.laneDb[0] = -70.0f; fresh();
+        const double between = lightOf (fresh());
+        sc.setGlow (Stage::kGlowHue, Stage::kGlowBright, 0.0f);
+        const double steady = lightOf (fresh());
+        check (onTheHit > steady * 1.01 && between < steady * 0.995, "PULSE: the glow is brighter on the kick and dimmer between hits than it is steady (the picture's light: "
+                   + juce::String (onTheHit / steady, 3) + " and " + juce::String (between / steady, 3) + " of steady)");
+        const auto back2 = fresh();
+        check (rowsApart (asItComes, back2) == 0, "and with PULSE at none the picture is as it was");
         const int toBlue = rowsApart (asItComes, blue), toNone = rowsApart (asItComes, none), again = rowsApart (asItComes, back);
         check (toBlue > 100 && toNone > 100 && again == 0, "the glow under the case takes SETUP's colour and brightness (" + juce::String (toBlue) + " rows of the picture change for blue and bright, " + juce::String (toNone) + " for none), and put back it is as it was (" + juce::String (again) + ")");
     }
@@ -3671,15 +3654,24 @@ public:
             l->setFont (juce::FontOptions (14.0f));
         }
         lookLabel.setText ("LOOK", juce::dontSendNotification);
-        hueLabel.setText ("UNDERGLOW COLOUR", juce::dontSendNotification);
-        brightLabel.setText ("UNDERGLOW BRIGHTNESS", juce::dontSendNotification);
-        for (auto* k : { &glowHue, &glowBright })
+        for (auto* l : { &glowLabel, &pulseLabel })
+        {
+            addAndMakeVisible (*l);
+            l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
+            l->setFont (juce::FontOptions (14.0f));
+        }
+        glowLabel.setText ("UNDERGLOW", juce::dontSendNotification);
+        hueLabel.setText ("COLOUR", juce::dontSendNotification);
+        brightLabel.setText ("BRIGHTNESS", juce::dontSendNotification);
+        pulseLabel.setText ("PULSE (KICK)", juce::dontSendNotification);
+        glowPulse.setDoubleClickReturnValue (true, 0.0);
+        for (auto* k : { &glowHue, &glowBright, &glowPulse })
         {
             addAndMakeVisible (*k);
             k->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
             k->setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
             k->setRange (0.0, 1.0);
-            k->onValueChange = [this] { if (onGlow) onGlow ((float) glowHue.getValue(), (float) glowBright.getValue()); };
+            k->onValueChange = [this] { if (onGlow) onGlow ((float) glowHue.getValue(), (float) glowBright.getValue(), (float) glowPulse.getValue()); };
         }
         glowHue.setDoubleClickReturnValue (true, sf0::Stage::kGlowHue);
         glowBright.setDoubleClickReturnValue (true, sf0::Stage::kGlowBright);
@@ -3722,16 +3714,21 @@ public:
         fullScreen.setBounds (top.removeFromLeft (147));
         look.removeFromTop (6);
         auto knobs = look;
-        knobs.removeFromLeft (110);
-        glowHue.setBounds (knobs.removeFromLeft (56));
-        hueLabel.setBounds (knobs.removeFromLeft (150));
-        glowBright.setBounds (knobs.removeFromLeft (56));
-        brightLabel.setBounds (knobs);
+        glowLabel.setBounds (knobs.removeFromLeft (110).removeFromTop (26));
+        glowHue.setBounds (knobs.removeFromLeft (52));
+        hueLabel.setBounds (knobs.removeFromLeft (66));
+        glowBright.setBounds (knobs.removeFromLeft (52));
+        brightLabel.setBounds (knobs.removeFromLeft (92));
+        glowPulse.setBounds (knobs.removeFromLeft (52));
+        pulseLabel.setBounds (knobs);
     }
     // the look row: where its knobs stand, and what turning them or pressing FULL SCREEN does
-    std::function<void (float hue, float bright)> onGlow;
+    std::function<void (float hue, float bright, float pulse)> onGlow;
     std::function<void()> onFull;
-    void setGlow (float hue, float bright) { glowHue.setValue (hue, juce::dontSendNotification); glowBright.setValue (bright, juce::dontSendNotification); }
+    void setGlow (float hue, float bright, float pulse)
+    {
+        glowHue.setValue (hue, juce::dontSendNotification); glowBright.setValue (bright, juce::dontSendNotification); glowPulse.setValue (pulse, juce::dontSendNotification);
+    }
     void paint (juce::Graphics& g) override
     {
         g.setColour (juce::Colour (0xff4D514E));
@@ -3795,8 +3792,8 @@ private:
     juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel;
     juce::TextButton off, send, follow, onBeat, withNotes;
     juce::Slider lead, trim;
-    juce::Label lookLabel, hueLabel, brightLabel;
-    juce::Slider glowHue, glowBright;
+    juce::Label lookLabel, glowLabel, hueLabel, brightLabel, pulseLabel;
+    juce::Slider glowHue, glowBright, glowPulse;
     juce::TextButton fullScreen;
 };
 
@@ -4162,7 +4159,6 @@ public:
             setApplicationReturnValue (selfTest (w >= 0 && w + 1 < args.size() ? args[w + 1].unquoted() : juce::String(), nb >= 0 && nb + 1 < args.size() ? args[nb + 1].getDoubleValue() : 16.0));
             quit(); return;
         }
-        if (args.contains ("--icon")) { const int i = args.indexOf ("--icon"); setApplicationReturnValue (iconShot (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("icon.png"))); quit(); return; }
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
@@ -4236,7 +4232,8 @@ public:
                 screen->setLoadFolder (true, look.getProperty ("load_fx", juce::var()).toString());
             }
             if (look.isObject())
-                screen->setGlow ((float) (double) look.getProperty ("glow_hue", sf0::Stage::kGlowHue), juce::jlimit (0.0f, 1.0f, (float) (double) look.getProperty ("glow_bright", sf0::Stage::kGlowBright)));
+                screen->setGlow ((float) (double) look.getProperty ("glow_hue", sf0::Stage::kGlowHue), juce::jlimit (0.0f, 1.0f, (float) (double) look.getProperty ("glow_bright", sf0::Stage::kGlowBright)),
+                                 juce::jlimit (0.0f, 1.0f, (float) (double) look.getProperty ("glow_pulse", 0.0)));
             screen->onLook = [screen]
             {
                 auto* o = new juce::DynamicObject();
@@ -4249,7 +4246,7 @@ public:
                 v->setProperty ("x", e.pose.tx); v->setProperty ("y", e.pose.ty); v->setProperty ("z", e.pose.tz);
                 v->setProperty ("locked", e.locked); v->setProperty ("follow", e.follow);
                 o->setProperty ("eye", juce::var (v));
-                o->setProperty ("glow_hue", screen->glowHueNow()); o->setProperty ("glow_bright", screen->glowBrightNow());
+                o->setProperty ("glow_hue", screen->glowHueNow()); o->setProperty ("glow_bright", screen->glowBrightNow()); o->setProperty ("glow_pulse", screen->glowPulseNow());
                 o->setProperty ("load_lane", screen->loadFolder (false)); o->setProperty ("load_fx", screen->loadFolder (true));
                 lookFile().replaceWithText (juce::JSON::toString (juce::var (o)));
                 // if the 3D stage could not start, why is kept beside the session
@@ -4309,8 +4306,8 @@ private:
         auto* sel = new SetupPanel (devices, *engine, *midi);
         if (auto* screen = window != nullptr ? dynamic_cast<sf0::Screen*> (window->getContentComponent()) : nullptr)
         {
-            sel->setGlow (screen->glowHueNow(), screen->glowBrightNow());
-            sel->onGlow = [screen] (float hue, float bright) { screen->setGlow (hue, bright); if (screen->onLook) screen->onLook(); };
+            sel->setGlow (screen->glowHueNow(), screen->glowBrightNow(), screen->glowPulseNow());
+            sel->onGlow = [screen] (float hue, float bright, float pulse) { screen->setGlow (hue, bright, pulse); if (screen->onLook) screen->onLook(); };
             sel->onFull = [screen] { if (screen->onFullScreen) screen->onFullScreen(); };
         }
         juce::DialogWindow::LaunchOptions o;

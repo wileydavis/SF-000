@@ -570,7 +570,10 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     juce::String why, driverName;
     std::atomic<bool> away { false }, gotFrame { false }, sheetOverflow { false };
     std::atomic<int> frameCount { 0 }, buildCount { 0 };
-    std::atomic<float> glowHue { Stage::kGlowHue }, glowGain { 1.0f };
+    std::atomic<float> glowHue { Stage::kGlowHue }, glowGain { 1.0f }, glowPulse { 0.0f };
+    // the kick, as the drawing thread follows it for the glow: the loudest its meter has lately been, and how near it is to that now
+    float kickTop = -100.0f, kickEnv = 0.0f, kickShown = 0.0f;
+    float glowNow() const { const float p = glowPulse.load(); return glowGain.load() * ((1.0f - 0.75f * p) + 2.75f * p * kickShown); }
     std::atomic<bool> glowMoved { false };
     // a colour of full strength at a place on the wheel, washed out by 1 - sat
     static V3 wheel (float hue, float sat)
@@ -1106,7 +1109,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         glUniformMatrix4fv (loc ("uShadowVP"), 1, GL_FALSE, sunVP.m);
         glUniform1f (loc ("uShadowTexel"), 1.0f / (float) kShadow);
         {
-            const float hue = glowHue.load(), gain = glowGain.load();
+            const float hue = glowHue.load(), gain = glowNow();
             const V3 c = wheel (hue + 0.0202f, 0.90f);
             glUniform3f (loc ("uWarm"), c.x * 0.13f * gain, c.y * 0.13f * gain, c.z * 0.13f * gain);
         }
@@ -1171,6 +1174,19 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const float dt = lastFrameAt > 0.0 ? (float) juce::jlimit (0.0, 0.1, (now - lastFrameAt) * 0.001) : 0.016f;
         lastFrameAt = now;
         if (snap) { curEye = softEye = goalEye; curAt = softAt = goalAt; sceneStale = true; }
+        // The glow beats with the kick, if SETUP says so. The kick's meter is the engine's own (it
+        // falls 30 dB a second): how near it stands to the loudest it has lately been is the beat,
+        // full on a hit and gone 9 dB (0.3 s) later. Only a pulse that has moved draws the scene again.
+        bool pulsing = false;
+        if (glowPulse.load() > 0.001f)
+        {
+            const float db = eng.laneDb[0].load();
+            kickTop = std::max (db, kickTop - 3.0f * dt);
+            const float near = db < -55.0f ? 0.0f : juce::jlimit (0.0f, 1.0f, 1.0f - (kickTop - db) / 9.0f);
+            kickEnv = near * near;
+            if (std::abs (kickEnv - kickShown) > 0.004f) { kickShown = kickEnv; sceneStale = true; pulsing = true; }
+        }
+        else if (kickShown != 0.0f) { kickShown = 0.0f; kickTop = -100.0f; sceneStale = true; }
         const float gap = curEye.distance (goalEye) + curAt.distance (goalAt);
         if (gap > 0.05f)
         {
@@ -1241,9 +1257,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         lastMs = juce::Time::getMillisecondCounterHiRes() - t0;
        #if ! JUCE_MAC
         // (on a Mac the display itself calls for each frame; elsewhere this thread keeps itself going while anything moves)
-        if (eyeMoving || tagsMoving || juce::Time::getMillisecondCounter() - lastMoveMs < 400) context.triggerRepaint();
+        if (eyeMoving || tagsMoving || pulsing || juce::Time::getMillisecondCounter() - lastMoveMs < 400) context.triggerRepaint();
        #else
-        juce::ignoreUnused (tagsMoving);
+        juce::ignoreUnused (tagsMoving, pulsing);
        #endif
     }
 
@@ -1331,7 +1347,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             glUniform4f (glGetUniformLocation (id, "uPlane"), 0.0f, 0.0f, kW * 1.1f, kH * 1.35f);
             glUniform1f (glGetUniformLocation (id, "uY"), -Parts::kCase - 80.0f);
             glUniform4f (glGetUniformLocation (id, "uBox"), 0.0f, 0.0f, kW * 0.5f * 0.9f, kH * 0.5f * 0.86f);
-            const float gain = glowGain.load();
+            const float gain = glowNow();
             const V3 c = wheel (glowHue.load(), 0.973f);                    // (as it comes: warm, and dim: it is felt more than seen)
             glUniform3f (glGetUniformLocation (id, "uGlow"), c.x * 0.115f * gain, c.y * 0.115f * gain, c.z * 0.115f * gain);
             glUniform1f (glGetUniformLocation (id, "uSoft"), 190.0f);
@@ -1528,10 +1544,11 @@ void Stage::setParts (const Parts& p)
     impl->kick();
 }
 
-void Stage::setGlow (float hue, float bright)
+void Stage::setGlow (float hue, float bright, float pulse)
 {
     const float b = juce::jlimit (0.0f, 1.0f, bright);
     impl->glowHue = hue - std::floor (hue);
+    impl->glowPulse = juce::jlimit (0.0f, 1.0f, pulse);
     impl->glowGain = 4.0f * b * b;
     impl->glowMoved = true;
     impl->kick();

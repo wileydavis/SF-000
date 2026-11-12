@@ -617,7 +617,66 @@ void Screen::point (juce::Point<float> p)
     if (hovering) dirty (tipRect);
 }
 
-void Screen::mouseMove (const juce::MouseEvent& e) { pressAt = hoverAt = e.position; if (info) point (where (e)); }
+void Screen::mouseMove (const juce::MouseEvent& e)
+{
+    pressAt = hoverAt = e.position;
+    if (! info) return;
+    const auto at = where (e);
+    // the list of keys steps aside: to the right while the pointer is where it stands on the left
+    // (on the 3D stage it is a tag at the foot of the window, so the window's own points are what count there)
+    const auto kb = keysBox();
+    const R left (16.0f, (three ? (float) getHeight() : kH) - 16.0f - kb.getHeight(), kb.getWidth(), kb.getHeight());
+    if (const bool right = left.expanded (12.0f).contains (three ? e.position : at); right != keysRight) { keysRight = right; repaint(); }
+    point (at);
+}
+
+// ---- the keyboard's keys, listed while INFO is on
+namespace
+{
+const char* const kKeys[][2] = {
+    { "SPACE", "RUN AND STOP" },
+    { "I", "INFO: WHAT A CONTROL IS, AND THIS LIST" },
+    { "F", "FULL SCREEN" },
+    { "ESC", "BACK OUT: OF LOAD'S LIST, CONFIG, THE LIBRARY, FULL SCREEN" },
+    { "H", "PHONES" },
+    { "UP  DOWN", "THE ACTIVE LANE" },
+    { "LEFT  RIGHT", "THE SEQUENCER'S PAGE OF STEPS" },
+    { "3", "THE 3D STAGE, OR THE LIT SKIN" },
+    { "V", "3D: THE NEXT VIEW" },
+    { "K", "3D: UNLOCK THE VIEW, AND LOCK IT WHERE IT IS PUT" },
+    { "M", "3D: THE EYE FOLLOWS THE CONTROLLER, OR STAYS HOME" },
+    { "D", "THE DARK INSTRUMENT" },
+    { "L", "THE LIT SKIN, OR THE FLAT DRAWING" },
+};
+constexpr int kKeyCount = (int) (sizeof (kKeys) / sizeof (kKeys[0]));
+}
+
+juce::Rectangle<float> Screen::keysBox() const
+{
+    const float w = 500.0f, h = 40.0f + 17.0f * (float) kKeyCount + 8.0f;
+    return { keysRight ? kW - 16.0f - w : 16.0f, kH - 16.0f - h, w, h };
+}
+
+void Screen::drawKeys (G& g, juce::Rectangle<float> b, bool onStage)
+{
+    if (! onStage && ! g.clipRegionIntersects (b.getSmallestIntegerContainer())) return;
+    g.setColour (Colour (0xf4181918)); g.fillRoundedRectangle (b, 5.0f);
+    g.setColour (col::yellow); g.drawRoundedRectangle (b.reduced (0.5f), 5.0f, 1.0f);
+    auto line = [&] (const String& t, R r, const juce::Font& f, Colour c)
+    {
+        g.setColour (c); g.setFont (f);
+        g.drawText (t, r, juce::Justification::centredLeft, false);
+    };
+    float y = b.getY() + 8.0f;
+    line ("KEYS", R (b.getX() + 11, y, b.getWidth() - 22, 20), fLegend, col::lit);
+    y += 26.0f;
+    for (int i = 0; i < kKeyCount; ++i)
+    {
+        line (kKeys[i][0], R (b.getX() + 11, y, 92, 16), fLbl, col::yellow);
+        line (kKeys[i][1], R (b.getX() + 108, y, b.getWidth() - 119, 16), fLbl, col::putty);
+        y += 17.0f;
+    }
+}
 void Screen::mouseExit (const juce::MouseEvent&) { if (hovering) { hovering = false; dirty (tipRect); tipRect = {}; } }
 
 void Screen::drawTip (G& g)
@@ -657,6 +716,8 @@ void Screen::drawAll (G& g)
     if (page == pMain) drawMain (g);
     else if (page == pLibrary) drawLibrary (g);
     else drawMacros (g);
+    keysDrawn = false;
+    if (info && ! three && ! recording && ! printing) { drawKeys (g, keysBox(), false); keysDrawn = true; }      // (in 3D it is a tag at the foot of the window: see the timer)
     if (info && hovering && ! mouseIsDown && ! three) drawTip (g);      // (in 3D the box floats by the pointer: see the timer)
 }
 
@@ -2103,7 +2164,7 @@ void Screen::setThree (bool on)
         lit = true;
         if (stage == nullptr) { stage = std::make_unique<Stage> (eng); stage->onState = [this] { stageState(); }; }
         stage->setDark (dark);
-        stage->setGlow (glowHue, glowBright);
+        stage->setGlow (glowHue, glowBright, glowPulse);
         stage->setHome (eyePose, false);
         stage->attachTo (*this);
         stageState();
@@ -2341,6 +2402,30 @@ void Screen::showTags()
         t.id = 2; t.image = pic.image; t.stamp = pic.stamp; t.place = Stage::Tag::fixed; t.px = { (float) getWidth() * 0.5f, (float) getHeight() - 22.0f };
         sig << "say:" << (int) t.stamp << " ";
         tagsUp.push_back (-2);
+        out.push_back (std::move (t));
+    }
+    // the keyboard's keys, while INFO is on: a tag at the foot of the window, left or right
+    if (info)
+    {
+        auto& pic = tagPics[-3];
+        const auto kb = keysBox();
+        if (! pic.image.isValid())
+        {
+            const float s = stage->tagScale();
+            juce::Image img (juce::Image::ARGB, juce::roundToInt (kb.getWidth() * s), juce::roundToInt (kb.getHeight() * s), true, juce::SoftwareImageType());
+            {
+                G g (img);
+                g.addTransform (juce::AffineTransform::scale (s));
+                drawKeys (g, kb.withZeroOrigin(), true);
+            }
+            pic.key = "keys"; pic.image = img; pic.stamp = ++tagStamp;
+        }
+        Stage::Tag t;
+        t.id = 3; t.image = pic.image; t.stamp = pic.stamp; t.place = Stage::Tag::fixed;
+        const float half = kb.getWidth() * 0.5f + 16.0f;
+        t.px = { keysRight ? (float) getWidth() - half : half, (float) getHeight() - 16.0f };
+        sig << "keys:" << (keysRight ? 1 : 0) << " ";
+        tagsUp.push_back (-3);
         out.push_back (std::move (t));
     }
     if (sig == tagsWere) return;        // nothing new: the stage has them

@@ -1,56 +1,64 @@
 #!/usr/bin/env python3
-"""The app's icon, from the instrument's own picture of a 4 x 4 module.
+"""The app's icon: the instrument's own tag. White condensed letters on the tag's black, nothing else.
 
-    build/.../SF-000 --icon /tmp/icon_raw.png      (on Linux: under xvfb-run, as the 3D checks)
-    python3 tools/icon.py /tmp/icon_raw.png assets/icon.png
+    python3 tools/icon.py assets/icon.png [one|two]
 
-The raw picture is the module from straight above, as the 3D stage draws it. This cuts it to
-the plate, gives it the rounded square a Mac icon has (824 of 1024, the corners a superellipse)
-and a soft shadow under it.
+"two" (the default) stacks SF over 000, which still reads at the size of a Dock or a list;
+"one" is the tag as it is on the case, SF-000 on a single line. The shape is a Mac icon's:
+a rounded square 824 of 1024 across, its corners a superellipse, on nothing.
 """
-import sys
-from PIL import Image, ImageDraw, ImageFilter
+import os, sys
+from PIL import Image, ImageDraw, ImageFont
 
-raw, out = sys.argv[1], sys.argv[2]
-src = Image.open(raw).convert("RGB")
-W = src.size[0]
-# the plate: where the picture stops being the case's colour, from each side along the middle
-case = src.getpixel((4, W // 2))
-def edge(points):
-    for p in points:
-        c = src.getpixel(p)
-        if max(abs(c[i] - case[i]) for i in range(3)) > 18:
-            return p
-    return points[-1]
-left = edge([(x, W // 2 + 40) for x in range(W)])[0]
-right = edge([(x, W // 2 + 40) for x in range(W - 1, 0, -1)])[0]
-top = edge([(W // 2 + 40, y) for y in range(W)])[1]
-bottom = edge([(W // 2 + 40, y) for y in range(W - 1, 0, -1)])[1]
-inset = 10                                  # inside the plate's own edge and corner
-plate = src.crop((left + inset, top + inset, right - inset, bottom - inset))
-S, BODY = 1024, 824
-body = plate.resize((BODY * 2, BODY * 2), Image.LANCZOS)
-# the shape: |x|^n + |y|^n = 1, n = 5
-n, M = 5.0, BODY * 2
-mask = Image.new("L", (M, M), 0)
-px = mask.load()
-for y in range(M):
-    v = abs((y + 0.5) / M * 2 - 1) ** n
-    if v >= 1.0:
-        continue
-    half = (1.0 - v) ** (1.0 / n)
-    x0, x1 = int(round((1 - half) * M / 2)), int(round((1 + half) * M / 2))
-    for x in range(x0, x1):
-        px[x, y] = 255
-mask = mask.resize((BODY, BODY), Image.LANCZOS)
+out = sys.argv[1]
+lines = ["SF-000"] if len(sys.argv) > 2 and sys.argv[2] == "one" else ["SF", "000"]
+here = os.path.dirname(os.path.abspath(__file__))
+font_file = os.path.join(here, "..", "assets", "fonts", "BarlowCondensed-SemiBold.ttf")
+BLACK, WHITE, EDGE = (0x2B, 0x2B, 0x28), (0xE8, 0xE5, 0xE1), (0x4D, 0x51, 0x4E)     # the instrument's own
+S, BODY, K = 1024, 824, 4                   # drawn K times the size and brought down, for clean edges
+
+def squircle(size, inset=0.0, n=5.0):
+    """A filled superellipse |x|^n + |y|^n = 1, inset from the square's edge by that many pixels."""
+    m = Image.new("L", (size, size), 0)
+    d = ImageDraw.Draw(m)
+    r = size / 2.0 - inset
+    for y in range(size):
+        v = abs((y + 0.5 - size / 2.0) / r) ** n
+        if v < 1.0:
+            half = r * (1.0 - v) ** (1.0 / n)
+            d.line([(size / 2.0 - half, y), (size / 2.0 + half, y)], fill=255)
+    return m
+
+B = BODY * K
+body = Image.new("RGB", (B, B), BLACK)
+# the tag's edge: one thin line just inside, as a stamped plate has
+edge = Image.new("RGB", (B, B), EDGE)
+ring = Image.composite(edge, body, squircle(B, 26 * K))
+body = Image.composite(body, ring, squircle(B, 32 * K))
+# the letters, as wide as the plate allows, the lines to a common left edge
+d = ImageDraw.Draw(body)
+want = B * (0.74 if len(lines) == 1 else 0.55)
+size = 100
+while True:
+    f = ImageFont.truetype(font_file, size + 8)
+    if max(d.textbbox((0, 0), t, font=f)[2] - d.textbbox((0, 0), t, font=f)[0] for t in lines) > want:
+        break
+    size += 8
+f = ImageFont.truetype(font_file, size)
+boxes = [d.textbbox((0, 0), t, font=f) for t in lines]
+cap = d.textbbox((0, 0), "0", font=f)
+cap_h = cap[3] - cap[1]
+gap = cap_h * 0.24
+total = cap_h * len(lines) + gap * (len(lines) - 1)
+width = max(b[2] - b[0] for b in boxes)
+x0 = (B - width) / 2.0
+y = (B - total) / 2.0
+for t, b in zip(lines, boxes):
+    d.text((x0 - b[0], y - cap[1]), t, font=f, fill=WHITE)
+    y += cap_h + gap
 body = body.resize((BODY, BODY), Image.LANCZOS)
+mask = squircle(BODY * K).resize((BODY, BODY), Image.LANCZOS)
 icon = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-shadow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-off = (S - BODY) // 2
-shadow.paste((0, 0, 0, 110), (off, off + 10), mask)
-icon = Image.alpha_composite(icon, shadow.filter(ImageFilter.GaussianBlur(14)))
-layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-layer.paste(body.convert("RGBA"), (off, off), mask)
-icon = Image.alpha_composite(icon, layer)
+icon.paste(body, ((S - BODY) // 2, (S - BODY) // 2), mask)
 icon.save(out)
 print("wrote", out, icon.size)

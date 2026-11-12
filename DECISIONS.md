@@ -963,9 +963,21 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
 232. **AUDIO is SETUP**, and holds what is set once: the interface, MIDI and the clock as before,
      FULL SCREEN, and two knobs for the glow under the case, its colour and its brightness
      (you had asked where the dimmer was). As it comes, the glow is exactly what it was.
-233. **The icon is a module of the dark instrument**: a plate with a 4 x 4 field of knobs, some
-     lit in the instrument's colours, drawn by the 3D stage itself from straight above
-     (`--icon`, then `tools/icon.py` for a Mac icon's corners). *proposed:* which knobs are lit.
+233. **The icon is the instrument's tag** (you: first a 4 x 4 module, then the dark instrument's,
+     then "based off the SF-000 label tag instead, something very utilitarian"). White letters in
+     the tag's own face on the tag's black, one thin line inside the edge, nothing else.
+     *proposed:* SF over 000, stacked, because SF-000 on one line cannot be read at the size of
+     a Dock icon; `python3 tools/icon.py assets/icon.png one` makes the single line if you want it.
+234. **INFO lists the keyboard's keys** (you: "have info toggle show key command menu when
+     activated"). At the foot of the screen, left; it steps to the right while the pointer is on
+     it, so that nothing under it is out of INFO's reach. On the 3D stage it is a tag at the foot
+     of the window. *proposed:* that it stays up for as long as INFO is on.
+235. **PULSE, the underglow's third knob** (you: "from none to intense", "driven by kick"). The
+     drawing thread follows the kick lane's own meter: full on a hit, gone 0.3 s later. At none
+     the glow is steady and the picture is, bit for bit, what it was. At intense it falls to a
+     quarter between hits and rises to three times on one. While it pulses the whole scene is
+     drawn again for every frame that the pulse has moved in; with PULSE at none, never for this.
+     *Mine:* it follows what is heard, so a muted kick does not pulse.
 
 ## Not verified
 
