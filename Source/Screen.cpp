@@ -955,7 +955,7 @@ void Screen::drawConfig (G& g, R r)
     // The controls, in boxes by what they belong to. A box goes in the first row with room for
     // it; one longer than a row runs on into the next; MOTION's two have rows of their own, last.
     const int cols = 6, total = (int) cfgParams.size();
-    const float cellW = 90.0f, rowH = 118.0f, titleH = 17.0f;
+    const float cellW = 90.0f, rowH = 126.0f, titleH = 17.0f;         // (a row's box is 106 tall: 20 between one box and the next below)
     struct Seg { int first, count, row, col; bool head; };
     std::vector<Seg> segs;
     std::vector<int> used;                                  // columns taken in each row
@@ -984,14 +984,20 @@ void Screen::drawConfig (G& g, R r)
     {
         if (sg.row < cfgScroll || sg.row >= cfgScroll + rowsVis) continue;
         const float bx = x0 + (float) sg.col * cellW, by = y + (float) (sg.row - cfgScroll) * rowH;
-        const R box (bx + 1, by + 7, (float) sg.count * cellW - 2, rowH - 12);
+        const R box (bx + 4, by + 7, (float) sg.count * cellW - 8, 106.0f);          // (8 between one box and the next beside it)
         const String title = cfgParams[(size_t) sg.first].group;
         if (title.isNotEmpty() && vis (g, box.expanded (2, 8)))
         {
-            // the box, and its name on the box's upper edge (a box run on from the row above has none)
-            g.setColour (tone (col::black).withAlpha (0.30f));
-            g.drawRoundedRectangle (box, 5.0f, 1.0f);
-            if (sg.head) plate (g, bx + 8, by, title, fLbl, 5, col::black, col::white, 15);
+            // the box, and its name on the box's upper edge (a box run on from the row above has none).
+            // The line stops either side of the name: it does not run under it.
+            const R chip (bx + 12, by, std::ceil (tw (fLbl, title)) + 10.0f, 15.0f);
+            {
+                const juce::Graphics::ScopedSaveState state (g);
+                if (sg.head) g.excludeClipRegion (chip.expanded (5.0f, 3.0f).getSmallestIntegerContainer());
+                g.setColour (tone (col::black).withAlpha (0.30f));
+                g.drawRoundedRectangle (box, 5.0f, 1.0f);
+            }
+            if (sg.head) plate (g, chip.getX(), chip.getY(), title, fLbl, 5, col::black, col::white, 15);
         }
         for (int q = 0; q < sg.count; ++q)
         {
@@ -1007,10 +1013,12 @@ void Screen::drawConfig (G& g, R r)
                 legend (g, cxl + 45, cy + 43, sp.name);
                 if (sp.kind == Kind::List)
                 {
-                    const R vr (cxl + 2, cy + 73, 86, 16);
+                    // (inside its box with room to spare; a long name is drawn narrower before it is cut short)
+                    const bool first = q == 0, last = q == sg.count - 1;
+                    const R vr (cxl + (first ? 9.0f : 3.0f), cy + 73, 84.0f - (first ? 6.0f : 0.0f) - (last ? 6.0f : 0.0f), 16);
                     if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
                     g.setColour (tone (col::black)); g.setFont (fLbl);
-                    g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
+                    g.drawFittedText (sp.text.toUpperCase(), vr.reduced (2, 0).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.72f);
                 }
             }
             hit (kr.expanded (4, 2), hSetup, i, 0);

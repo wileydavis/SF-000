@@ -943,7 +943,9 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
 226. **CONFIG's boxes**: SOUND, LAYER, SAMPLE, WAVETABLE, FM 4-OP, POCKET, ECHO, RIG, MOTION 1,
      MOTION 2 (EFFECT on an insert or a return). The groups are the suite's own where it has them
      and the control's name where it does not. A small box shares a row with others; MOTION's two
-     have rows of their own, last. *proposed.*
+     have rows of their own, last. *proposed.* (You, on seeing it: the box's line must not run
+     under its label, and the boxes want more room between them. The line now stops either side
+     of the label; boxes stand 8 apart side by side and 20 one above another.)
 227. **A model's own controls show only while that model plays** (FM 4-OP's thirteen, WAVETABLE's
      table, a sample's four where SAMPLE is one model among others). The lead's CONFIG was 38
      controls in seven rows; as an acid line it is 18 and MOTION, with nothing to scroll.
