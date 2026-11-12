@@ -1114,6 +1114,35 @@ static int uiTest()
         draw(); audio (4);
     }
     check (cfgClicks > 150, (juce::String (cfgClicks) + " CONFIG controls clicked, dragged and double-clicked on 15 panels").toRawUTF8());
+    // LOAD: a sound file taken from a list in CONFIG's own panel (no window of the system's, so none of it leaves full screen)
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_load_test");
+        tmp.deleteRecursively();
+        const auto phrase = tmp.getChildFile ("phrases").getChildFile ("spoken.wav");
+        phrase.getParentDirectory().createDirectory();
+        tmp.getChildFile ("notes.txt").replaceWithText ("not a sound");
+        {
+            juce::AudioBuffer<float> w (2, 48000);
+            for (int i = 0; i < 48000; ++i) { const float v = 0.4f * (float) std::sin (0.03 * (double) i); w.setSample (0, i, v); w.setSample (1, i, v); }
+            juce::WavAudioFormat wav;
+            if (auto out = phrase.createOutputStream())
+                if (std::unique_ptr<juce::AudioFormatWriter> wr { wav.createWriterFor (out.get(), 48000.0, 2, 16, {}, 0) }) { out.release(); wr->writeFromAudioSampleBuffer (w, 0, 48000); }
+        }
+        sc.setLoadFolder (false, tmp.getFullPathName());
+        sc.setPage (Screen::pMain);
+        sc.showConfig ({ 0, 10, 0 }); draw();                           // VOICE
+        auto first = [&] (bool (*is) (const Screen::TestHit&)) { for (auto& h : sc.testHits()) if (is (h)) return h.r.getCentre(); return juce::Point<float>(); };
+        auto count = [&] (bool (*is) (const Screen::TestHit&)) { int n = 0; for (auto& h : sc.testHits()) if (is (h)) ++n; return n; };
+        const bool keyThere = count (Screen::testIsLoadKey) == 1 && e.laneFile (10).isEmpty();
+        click (first (Screen::testIsLoadKey)); draw();
+        const bool listed = sc.testLoadOpen() && count (Screen::testIsFile) == 1;      // one folder, and the text file is not offered
+        click (first (Screen::testIsFile)); draw();     // into the folder
+        const bool inside = sc.testLoadOpen() && count (Screen::testIsFile) == 1;
+        click (first (Screen::testIsFile)); draw();     // the file
+        const bool loaded = ! sc.testLoadOpen() && juce::File (e.laneFile (10)) == phrase && sc.loadFolder (false) == phrase.getParentDirectory().getFullPathName();
+        check (keyThere && listed && inside && loaded, "LOAD on a lane that takes a file lists folders and sound files in CONFIG's own panel; a click goes into a folder, a click on a file loads it, and it opens there next time");
+        tmp.deleteRecursively();
+    }
     audio (200);
     draw();
     bool finite = true;
@@ -1847,6 +1876,7 @@ static int shot (const juce::StringArray& args)
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
     else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
+    if (cfg.isNotEmpty() && args.contains ("--load")) sc.showLoad (arg ("--load", ""));         // LOAD's list, open on that folder
     // --rec: a take under way (in a folder of the system's temporary ones, gone again afterwards)
     const auto recDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_shot_rec");
     Recorder rec (e);
@@ -1893,6 +1923,11 @@ static int shot (const juce::StringArray& args)
         if (args.contains ("--turn")) eye.pose.turn = arg ("--turn", "0").getFloatValue();
         if (args.contains ("--tilt")) eye.pose.tilt = arg ("--tilt", "56").getFloatValue();
         sc.setEye (eye);
+        if (const int gi = args.indexOf ("--glow"); gi >= 0 && gi + 1 < args.size())
+        {
+            const auto hb = juce::StringArray::fromTokens (args[gi + 1], ",", "");
+            if (hb.size() == 2) sc.setGlow (hb[0].getFloatValue(), hb[1].getFloatValue());
+        }
         sc.setThree (true);
         for (int i = 0; i < 400 && sc.isThree() && ! sc.threeShowing(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
         if (! sc.threeShowing()) { std::printf ("the 3D stage did not start: %s\n", sc.threeNote().toRawUTF8()); return 1; }
@@ -3550,7 +3585,30 @@ public:
         trim.setValue (midi.trim(), juce::dontSendNotification);
         trim.setDoubleClickReturnValue (true, 0.0);
         trim.onValueChange = [this] { midi.setTrim ((float) trim.getValue()); };
-        setSize (520, 750);
+        // ---- the look: full screen, and the glow under the case (the 3D stage)
+        for (auto* l : { &lookLabel, &hueLabel, &brightLabel })
+        {
+            addAndMakeVisible (*l);
+            l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
+            l->setFont (juce::FontOptions (14.0f));
+        }
+        lookLabel.setText ("LOOK", juce::dontSendNotification);
+        hueLabel.setText ("UNDERGLOW COLOUR", juce::dontSendNotification);
+        brightLabel.setText ("UNDERGLOW BRIGHTNESS", juce::dontSendNotification);
+        for (auto* k : { &glowHue, &glowBright })
+        {
+            addAndMakeVisible (*k);
+            k->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            k->setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+            k->setRange (0.0, 1.0);
+            k->onValueChange = [this] { if (onGlow) onGlow ((float) glowHue.getValue(), (float) glowBright.getValue()); };
+        }
+        glowHue.setDoubleClickReturnValue (true, sf0::Stage::kGlowHue);
+        glowBright.setDoubleClickReturnValue (true, sf0::Stage::kGlowBright);
+        addAndMakeVisible (fullScreen);
+        fullScreen.setButtonText ("FULL SCREEN");
+        fullScreen.onClick = [this] { if (onFull) onFull(); };
+        setSize (520, 850);
         show();
         startTimerHz (4);
     }
@@ -3578,8 +3636,24 @@ public:
         knobLabel.setBounds (row.removeFromLeft (110));
         lead.setBounds (row); trim.setBounds (row);
         r.removeFromTop (2);
+        auto look = r.removeFromBottom (96);
         late.setBounds (r);
+        look.removeFromTop (8);
+        auto top = look.removeFromTop (26);
+        lookLabel.setBounds (top.removeFromLeft (110));
+        fullScreen.setBounds (top.removeFromLeft (147));
+        look.removeFromTop (6);
+        auto knobs = look;
+        knobs.removeFromLeft (110);
+        glowHue.setBounds (knobs.removeFromLeft (56));
+        hueLabel.setBounds (knobs.removeFromLeft (150));
+        glowBright.setBounds (knobs.removeFromLeft (56));
+        brightLabel.setBounds (knobs);
     }
+    // the look row: where its knobs stand, and what turning them or pressing FULL SCREEN does
+    std::function<void (float hue, float bright)> onGlow;
+    std::function<void()> onFull;
+    void setGlow (float hue, float bright) { glowHue.setValue (hue, juce::dontSendNotification); glowBright.setValue (bright, juce::dontSendNotification); }
     void paint (juce::Graphics& g) override
     {
         g.setColour (juce::Colour (0xff4D514E));
@@ -3643,6 +3717,9 @@ private:
     juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel;
     juce::TextButton off, send, follow, onBeat, withNotes;
     juce::Slider lead, trim;
+    juce::Label lookLabel, hueLabel, brightLabel;
+    juce::Slider glowHue, glowBright;
+    juce::TextButton fullScreen;
 };
 
 // What the profile makes of the rig in a few states: each snapshot it comes with, and some plain
@@ -4042,10 +4119,14 @@ public:
         screen->onAudioSetup = [this] { audioSetup(); };
         screen->online = online.get();
         screen->onOnlineSetup = [this] { onlineSetup(); };
-        screen->onFullScreen = [this]
+        screen->onFullScreen = [this, screen]
         {
-            auto& d = juce::Desktop::getInstance();
-            d.setKioskModeComponent (d.getKioskModeComponent() == nullptr ? window.get() : nullptr, false);
+            // The window's own full screen, which goes both ways. (JUCE's kiosk mode did not: on the
+            // Mac, with the system's title bar, it asks for full screen on the way out as on the
+            // way in, so F and Esc could enter and nothing but quitting could leave.)
+            if (window == nullptr) return;
+            window->setFullScreen (! window->isFullScreen());
+            juce::Timer::callAfterDelay (400, [safe = juce::Component::SafePointer<sf0::Screen> (screen)] { if (safe != nullptr) safe->grabKeyboardFocus(); });
         };
         // The look last chosen (L: the lit skin or the flat drawing; D: its dark instrument) is kept between runs.
         {
@@ -4069,6 +4150,13 @@ public:
                 }
             }
             screen->setEye (eye);
+            if (look.isObject())
+            {
+                screen->setLoadFolder (false, look.getProperty ("load_lane", juce::var()).toString());
+                screen->setLoadFolder (true, look.getProperty ("load_fx", juce::var()).toString());
+            }
+            if (look.isObject())
+                screen->setGlow ((float) (double) look.getProperty ("glow_hue", sf0::Stage::kGlowHue), juce::jlimit (0.0f, 1.0f, (float) (double) look.getProperty ("glow_bright", sf0::Stage::kGlowBright)));
             screen->onLook = [screen]
             {
                 auto* o = new juce::DynamicObject();
@@ -4081,6 +4169,8 @@ public:
                 v->setProperty ("x", e.pose.tx); v->setProperty ("y", e.pose.ty); v->setProperty ("z", e.pose.tz);
                 v->setProperty ("locked", e.locked); v->setProperty ("follow", e.follow);
                 o->setProperty ("eye", juce::var (v));
+                o->setProperty ("glow_hue", screen->glowHueNow()); o->setProperty ("glow_bright", screen->glowBrightNow());
+                o->setProperty ("load_lane", screen->loadFolder (false)); o->setProperty ("load_fx", screen->loadFolder (true));
                 lookFile().replaceWithText (juce::JSON::toString (juce::var (o)));
                 // if the 3D stage could not start, why is kept beside the session
                 if (screen->threeNote().isNotEmpty())
@@ -4137,9 +4227,15 @@ private:
         if (setup != nullptr) { setup->toFront (true); return; }
         // Set once, before the set: which interface, which outputs, the buffer size.
         auto* sel = new SetupPanel (devices, *engine, *midi);
+        if (auto* screen = window != nullptr ? dynamic_cast<sf0::Screen*> (window->getContentComponent()) : nullptr)
+        {
+            sel->setGlow (screen->glowHueNow(), screen->glowBrightNow());
+            sel->onGlow = [screen] (float hue, float bright) { screen->setGlow (hue, bright); if (screen->onLook) screen->onLook(); };
+            sel->onFull = [screen] { if (screen->onFullScreen) screen->onFullScreen(); };
+        }
         juce::DialogWindow::LaunchOptions o;
         o.content.setOwned (sel);
-        o.dialogTitle = "SF-000 AUDIO AND MIDI";
+        o.dialogTitle = "SF-000 SETUP";
         o.dialogBackgroundColour = juce::Colour (0xff2B2B28);
         o.escapeKeyTriggersCloseButton = true;
         o.useNativeTitleBar = true;

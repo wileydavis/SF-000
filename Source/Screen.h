@@ -26,6 +26,9 @@ public:
     void setLit (bool on) { lit = on; warm = false; repaint(); }
     bool isLit() const { return lit; }
     // The lit skin's dark instrument: a graphite case and dark plates, light print, the same lights. D on the keyboard changes over.
+    void setGlow (float hue, float bright) { glowHue = hue; glowBright = bright; if (stage != nullptr) stage->setGlow (hue, bright); }
+    float glowHueNow() const { return glowHue; }
+    float glowBrightNow() const { return glowBright; }
     void setDark (bool on) { dark = on; skin.setDark (on); if (stage != nullptr) stage->setDark (on); warm = false; repaint(); }
     bool isDark() const { return dark; }
     // The 3D stage (3 on the keyboard): the instrument as a solid thing, lit, seen through an eye
@@ -48,6 +51,10 @@ public:
     // it is not, or was put away. (The app keeps a note between the two: see StageGuard.)
     std::function<void()> onThreeStarting, onThreeSettled;
     void sayOnBar (const juce::String& words);  // a few words on the top bar, for a few seconds
+    juce::String loadFolder (bool fx) const     { return (fx ? loadFxDir : loadLaneDir).getFullPathName(); }
+    void setLoadFolder (bool fx, const juce::String& path) { (fx ? loadFxDir : loadLaneDir) = path.isNotEmpty() ? juce::File (path) : juce::File(); }
+    bool testLoadOpen() const                   { return loadOpen; }
+    void showLoad (const juce::String& folder)  { setLoadFolder (cfg.kind != 0, folder); openLoad(); repaint(); }     // (the pictures: LOAD's list, open on that folder)
     bool testWatch (juce::uint32 now, bool inFront) { return watchStart (now, inFront); }
     // (these stand in front of the component's own: in 3D a repaint is the sheet and the parts brought up to date)
     void repaint();
@@ -82,6 +89,8 @@ public:
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
+    static bool testIsFile (const TestHit& h)   { return h.kind == hFile; }
+    static bool testIsLoadKey (const TestHit& h){ return h.kind == hAct && h.a == aLoad; }
     static bool testIsControl (const TestHit& h, int ctl) { return (h.kind == hKnob || h.kind == hRead) && h.a == ctl; }
     static bool testIsToggle (const TestHit& h, int ctl) { return h.kind == hToggle && h.a == ctl; }
     static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
@@ -119,9 +128,9 @@ private:
     using G = juce::Graphics;
     using R = juce::Rectangle<float>;
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
-    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx };
+    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones };
+               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp };
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -153,6 +162,7 @@ private:
     std::array<bool, cx::kCount> bySequencer {};
     juce::uint32 followAt = 0;
     juce::uint32 startingSince = 0;             // when the stage was first seen still starting, in front
+    float glowHue = Stage::kGlowHue, glowBright = Stage::kGlowBright;
     bool settledSaid = true;
     void settled();
     bool watchStart (juce::uint32 now, bool inFront);
@@ -281,6 +291,16 @@ private:
     float cfgT = 0.0f;
     int cfgScroll = 0, cfgAge = 0;
     std::vector<Engine::SetupParam> cfgParams;
+    // LOAD: a list of folders and sound files in CONFIG's own panel, for a lane, an effect or a
+    // return that takes a file. No window of the system's is opened, so nothing leaves full screen.
+    bool loadOpen = false;
+    juce::File loadDir, loadLaneDir, loadFxDir;     // where it is looking; where a lane's file and an effect's were last taken from
+    juce::Array<juce::File> loadFolders, loadFiles;
+    int loadScroll = 0;
+    void openLoad();
+    void readLoad();
+    void pickLoad (int index);
+    void drawLoad (G&, R area);
     juce::String cfgName, cfgNote, cfgStatus;
     R cfgDisplay, cfgRect;
     std::unique_ptr<juce::TextEditor> editor;

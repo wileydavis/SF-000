@@ -37,6 +37,10 @@ public:
     // ---- what it draws
     void setParts (const Parts&);               // a whole new record
     void setDark (bool);
+    // The glow under the case and the warm light up its sides: its colour (round the wheel, 0 to 1)
+    // and how bright (0 none, 0.5 as it comes, 1 four times that).
+    static constexpr float kGlowHue = 0.0279f, kGlowBright = 0.5f;
+    void setGlow (float hue, float bright);
     // The sheet: kW x kH units at sheetScale() pixels to the unit, transparent where nothing is
     // printed. Draw into it, then say which pixels changed.
     juce::Image& sheet();

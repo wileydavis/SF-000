@@ -570,6 +570,17 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     juce::String why, driverName;
     std::atomic<bool> away { false }, gotFrame { false }, sheetOverflow { false };
     std::atomic<int> frameCount { 0 }, buildCount { 0 };
+    std::atomic<float> glowHue { Stage::kGlowHue }, glowGain { 1.0f };
+    std::atomic<bool> glowMoved { false };
+    // a colour of full strength at a place on the wheel, washed out by 1 - sat
+    static V3 wheel (float hue, float sat)
+    {
+        const float h = (hue - std::floor (hue)) * 6.0f;
+        const float x = 1.0f - std::abs (std::fmod (h, 2.0f) - 1.0f);
+        const V3 c = h < 1 ? V3 { 1, x, 0 } : h < 2 ? V3 { x, 1, 0 } : h < 3 ? V3 { 0, 1, x } : h < 4 ? V3 { 0, x, 1 } : h < 5 ? V3 { x, 0, 1 } : V3 { 1, 0, x };
+        const float m = 1.0f - sat;
+        return { m + c.x * sat, m + c.y * sat, m + c.z * sat };
+    }
     std::atomic<int> lookSpread { -1 };         // how far apart the darkest and brightest points of the first picture were (-1: not looked at yet)
     std::atomic<double> lastMs { 0.0 };
     // what the eye last saw through, for finding the pointer's place (under the lock)
@@ -1094,7 +1105,11 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         glUniform1i (loc ("uShadow"), 1);
         glUniformMatrix4fv (loc ("uShadowVP"), 1, GL_FALSE, sunVP.m);
         glUniform1f (loc ("uShadowTexel"), 1.0f / (float) kShadow);
-        glUniform3f (loc ("uWarm"), 1.0f * 0.13f, 0.36f * 0.13f, 0.10f * 0.13f);
+        {
+            const float hue = glowHue.load(), gain = glowGain.load();
+            const V3 c = wheel (hue + 0.0202f, 0.90f);
+            glUniform3f (loc ("uWarm"), c.x * 0.13f * gain, c.y * 0.13f * gain, c.z * 0.13f * gain);
+        }
         glUniform1f (loc ("uCaseDepth"), Parts::kCase);
     }
 
@@ -1149,6 +1164,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             sceneStale = true; gotSheet = true;
         }
         if (rings (false)) { sceneStale = true; lastMoveMs = juce::Time::getMillisecondCounter(); }
+        if (glowMoved.exchange (false)) sceneStale = true;
 
         // ---- the eye: toward where it is going, easing off and easing in
         const double now = juce::Time::getMillisecondCounterHiRes();
@@ -1315,7 +1331,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             glUniform4f (glGetUniformLocation (id, "uPlane"), 0.0f, 0.0f, kW * 1.1f, kH * 1.35f);
             glUniform1f (glGetUniformLocation (id, "uY"), -Parts::kCase - 80.0f);
             glUniform4f (glGetUniformLocation (id, "uBox"), 0.0f, 0.0f, kW * 0.5f * 0.9f, kH * 0.5f * 0.86f);
-            glUniform3f (glGetUniformLocation (id, "uGlow"), 1.0f * 0.115f, 0.19f * 0.115f, 0.027f * 0.115f);        // (warm, and dim: it is felt more than seen)
+            const float gain = glowGain.load();
+            const V3 c = wheel (glowHue.load(), 0.973f);                    // (as it comes: warm, and dim: it is felt more than seen)
+            glUniform3f (glGetUniformLocation (id, "uGlow"), c.x * 0.115f * gain, c.y * 0.115f * gain, c.z * 0.115f * gain);
             glUniform1f (glGetUniformLocation (id, "uSoft"), 190.0f);
         }
         glDrawArrays (GL_TRIANGLES, 0, 6);
@@ -1507,6 +1525,15 @@ void Stage::setParts (const Parts& p)
         const juce::ScopedLock sl (impl->lock);
         impl->pending.parts = p; impl->pending.hasParts = true;
     }
+    impl->kick();
+}
+
+void Stage::setGlow (float hue, float bright)
+{
+    const float b = juce::jlimit (0.0f, 1.0f, bright);
+    impl->glowHue = hue - std::floor (hue);
+    impl->glowGain = 4.0f * b * b;
+    impl->glowMoved = true;
     impl->kick();
 }
 

@@ -556,7 +556,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             static const A acts[] = {
                 { aRun, "RUN", "STARTS AND STOPS THE CLOCK (THE SPACE BAR TOO)." },
                 { aPanic, "PANIC", "SILENCES EVERY VOICE AND TAIL." },
-                { aAudio, "AUDIO AND MIDI", "THE INTERFACE, ITS OUTPUTS, THE BUFFER AND THE CLOCK: SET ONCE, BEFORE THE SET. (THE KEY IS GREEN AND READS PHONES WHILE PHONES IS ON.)" },
+                { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (THE KEY IS GREEN AND READS PHONES WHILE PHONES IS ON.)" },
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
                 { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
@@ -694,7 +694,7 @@ void Screen::drawBar (G& g)
                 plate (g, 940.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
         }
         // (PHONES lit: this output is split while a cue plays, and the key says so wherever one is)
-        text (g, eng.phones() ? "PHONES" : "AUDIO", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
+        text (g, eng.phones() ? "PHONES" : "SETUP", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "RUN", R (1222, 17.5f, 40, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "PANIC", R (1314, 17.5f, 56, 40), fLegend, col::black, juce::Justification::centredLeft);
         key (g, R (1070, 17.5f, 40, 40), eng.phones() ? col::green : col::white);
@@ -781,7 +781,7 @@ void Screen::openConfig (Engine::Target t)
 {
     const bool same = cfgOpen && cfg.kind == t.kind && cfg.slot == t.slot && (t.kind == 2 || cfg.lane == t.lane);
     if (same) { cfgOpen = false; return; }
-    cfg = t; cfgOpen = true; cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {};
+    cfg = t; cfgOpen = true; cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false;
     if (t.kind == 0 && ses.activeLane != t.lane) { ses.activeLane = t.lane; ses.selStep = -1; ses.page = 0; }
 }
 
@@ -867,15 +867,29 @@ void Screen::drawConfig (G& g, R r)
     else if (cfg.kind != 0 && eng.acceptsFiles (cfg) && status.isEmpty())
         status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");
     if (cfgNote.isNotEmpty()) status = cfgNote;
-    if (status.isNotEmpty())
+    const bool takesFile = eng.acceptsFiles (cfg);
+    if (status.isNotEmpty() || takesFile)
     {
         status = status.toUpperCase();
-        const R sr (x0, y, std::min (544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
-        window (g, sr, col::white);
-        g.setColour (tone (col::black)); g.setFont (fNote);
-        g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
+        if (status.isNotEmpty())
+        {
+            const R sr (x0, y, std::min (takesFile ? 468.0f : 544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
+            window (g, sr, col::white);
+            g.setColour (tone (col::black)); g.setFont (fNote);
+            g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
+        }
+        if (takesFile)
+        {
+            // LOAD: the same as dropping a file here, from a list in this panel (so with the window full screen too)
+            const R lr (x0 + 474, y - 1, 70, 24);
+            key (g, lr, loadOpen ? col::green : col::yellow);
+            text (g, "LOAD", lr, fLbl, col::black);
+            hit (lr.expanded (2), hAct, aLoad, 0);
+        }
         y += 28;
     }
+    if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
+    loadOpen = false;
 
     // The controls, in boxes by what they belong to. A box goes in the first row with room for
     // it; one longer than a row runs on into the next; MOTION's two have rows of their own, last.
@@ -946,6 +960,83 @@ void Screen::drawConfig (G& g, R r)
         const String more = "ROWS " + String (cfgScroll + 1) + " TO " + String (cfgScroll + rowsVis) + " OF " + String (rows) + ": SCROLL";
         plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, more)) + 12), r.getBottom() - 27, more, fNote, 6, col::white, col::black, 22);
     }
+}
+
+// ---- LOAD: folders and sound files, in CONFIG's panel
+void Screen::openLoad()
+{
+    const bool fx = cfg.kind != 0;
+    juce::File start = fx ? loadFxDir : loadLaneDir;
+    if (! start.isDirectory() && cfg.kind == 0) start = juce::File (eng.laneFile (cfg.lane)).getParentDirectory();
+    if (! start.isDirectory()) start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+    if (! start.isDirectory()) start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    loadDir = start; loadScroll = 0; loadOpen = true;
+    readLoad();
+}
+
+void Screen::readLoad()
+{
+    loadFolders = loadDir.findChildFiles (juce::File::findDirectories | juce::File::ignoreHiddenFiles, false);
+    loadFiles = loadDir.findChildFiles (juce::File::findFiles | juce::File::ignoreHiddenFiles, false, "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.m4a;*.caf");
+    struct ByName { static int compareElements (const juce::File& a, const juce::File& b) { return a.getFileName().compareNatural (b.getFileName()); } } byName;
+    loadFolders.sort (byName); loadFiles.sort (byName);
+}
+
+void Screen::pickLoad (int i)
+{
+    if (i < 0) return;
+    if (i < loadFolders.size()) { loadDir = loadFolders[i]; loadScroll = 0; readLoad(); repaint(); return; }
+    i -= loadFolders.size();
+    if (i >= loadFiles.size()) return;
+    const juce::File f = loadFiles[i];
+    const bool ok = eng.loadFiles (cfg, juce::StringArray (f.getFullPathName()));
+    if (ok)
+    {
+        (cfg.kind != 0 ? loadFxDir : loadLaneDir) = loadDir;        // (next time it opens where this one was)
+        loadOpen = false; cfgNote = {}; cfgStale = true;
+        ses.touch();
+        if (onLook) onLook();
+    }
+    else cfgNote = "COULD NOT READ " + f.getFileName().toUpperCase() + ". IF MACOS ASKED FOR ACCESS TO THE FOLDER, ALLOW IT AND LOAD IT AGAIN.";
+    repaint();
+}
+
+void Screen::drawLoad (G& g, R a)
+{
+    // where it is looking, and the way up
+    const R up (a.getX(), a.getY(), 44, 24), path (a.getX() + 50, a.getY() + 1, a.getWidth() - 50, 22);
+    key (g, up, col::white);
+    text (g, "UP", up, fLbl, col::black);
+    hit (up.expanded (2), hAct, aLoadUp, 0);
+    window (g, path, col::white);
+    g.setColour (tone (col::black)); g.setFont (fNote);
+    g.drawText (loadDir.getFullPathName().toUpperCase(), path.reduced (6, 0), juce::Justification::centredRight, true);
+    // the folders, then the files it can read
+    const R list (a.getX(), a.getY() + 30, a.getWidth(), a.getHeight() - 30);
+    window (g, list, col::white);
+    const float lineH = 24.0f;
+    const int total = loadFolders.size() + loadFiles.size();
+    const int lines = std::max (1, (int) ((list.getHeight() - 26) / lineH));
+    loadScroll = juce::jlimit (0, std::max (0, total - lines), loadScroll);
+    for (int n = 0; n < lines; ++n)
+    {
+        const int i = loadScroll + n;
+        if (i >= total) break;
+        const bool folder = i < loadFolders.size();
+        const juce::File f = folder ? loadFolders[i] : loadFiles[i - loadFolders.size()];
+        const R line (list.getX() + 4, list.getY() + 3 + (float) n * lineH, list.getWidth() - 8, lineH);
+        if (vis (g, line))
+        {
+            g.setColour (tone (col::black).withAlpha (folder ? 1.0f : 0.82f)); g.setFont (fNote);
+            g.drawText ((folder ? "> " : "   ") + f.getFileName().toUpperCase(), line.reduced (6, 0), juce::Justification::centredLeft, true);
+        }
+        hit (line, hFile, i, 0);
+    }
+    const String foot = total == 0 ? String ("NO FOLDERS AND NO SOUND FILES HERE")
+                      : total > lines ? String (loadScroll + 1) + " TO " + String (std::min (total, loadScroll + lines)) + " OF " + String (total) + ": SCROLL"
+                      : String (loadFiles.size()) + " SOUND FILES.  CLICK ONE TO LOAD IT";
+    g.setColour (tone (col::black).withAlpha (0.6f)); g.setFont (fNote);
+    g.drawText (foot, R (list.getX() + 10, list.getBottom() - 24, list.getWidth() - 20, 22), juce::Justification::centredRight, true);
 }
 
 void Screen::drawLane (G& g, int l, R r)
@@ -1503,6 +1594,8 @@ void Screen::act (int a)
             break;
         case aAudio:    if (onAudioSetup) onAudioSetup(); break;
         case aFull:     if (onFullScreen) onFullScreen(); break;
+        case aLoad:     if (loadOpen) loadOpen = false; else openLoad(); repaint(); break;
+        case aLoadUp:   if (loadDir.getParentDirectory() != loadDir) { loadDir = loadDir.getParentDirectory(); loadScroll = 0; readLoad(); } repaint(); break;
         case aCfgClose: cfgOpen = false; break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
@@ -1597,6 +1690,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             if (cfgOpen && cfg.kind != 2) { cfg.lane = h->a; cfgStale = true; cfgScroll = 0; }
             break;
         case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
+        case hFile:     pickLoad (h->a); break;
         case hSetup:
             if (h->a < (int) cfgParams.size())
             {
@@ -1781,6 +1875,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     if (page != pMain) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
     if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     const auto* h = hitAt (where (e));
     if (three && ! eyeLocked && stage != nullptr && (h == nullptr || ! (h->kind == hKnob || h->kind == hSnapKnob || h->kind == hRead)))
@@ -1847,6 +1942,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k == juce::KeyPress::escapeKey)
     {
         if (page != pMain) setPage (pMain);
+        else if (cfgOpen && loadOpen) { loadOpen = false; repaint(); }
         else if (cfgOpen) { cfgOpen = false; repaint(); }
         else if (onFullScreen) onFullScreen();
         return true;
@@ -2007,6 +2103,7 @@ void Screen::setThree (bool on)
         lit = true;
         if (stage == nullptr) { stage = std::make_unique<Stage> (eng); stage->onState = [this] { stageState(); }; }
         stage->setDark (dark);
+        stage->setGlow (glowHue, glowBright);
         stage->setHome (eyePose, false);
         stage->attachTo (*this);
         stageState();
