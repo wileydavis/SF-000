@@ -75,6 +75,7 @@ public:
     sf::Module& mod() { return *module; }
     const std::vector<sf::ParamSpec>& allSpecs() const { return specs; }
     int numModuleParams() const { return numModParams; }
+    const std::vector<int>& motionTargetParams() const { return motionTargets; }     // (SF-000) the module parameter MOTION's TARGET choice k+1 moves
     juce::RangedAudioParameter* param (int i) { return params[(size_t) i]; }
     int paramIndex (const std::string& id) const;
     float currentValue (int i) const { return cur[(size_t) i]; }     // what the module hears (glide, macro, motion)

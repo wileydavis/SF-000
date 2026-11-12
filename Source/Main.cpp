@@ -631,6 +631,61 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                     std::printf ("  %s: a sample already read is shared, not read again (%.1f ms the first time, %.3f ms the second), and outlives its file while a voice holds it\n", shared && gone ? "ok  " : "FAIL", t1 - t0, t2 - t1);
                     if (! (shared && gone)) ++bad;
                 }
+                // MOTION: a wave moving one of an instrument's knobs, set in its CONFIG and kept in snapshots
+                {
+                    Engine e7; e7.prepare (48000.0, 128);
+                    Session s7 (e7, false);
+                    juce::AudioBuffer<float> b7 (2, 128);
+                    const Engine::Target bass { 0, 5, 0 };
+                    auto* pr = e7.processorFor (bass);
+                    const int cutoff = pr->paramIndex ("cutoff");
+                    auto params = [&] { return e7.setupParams (bass); };
+                    auto find = [&] (const juce::String& id) { for (auto& sp : params()) if (sp.id == id) return sp; return Engine::SetupParam(); };
+                    auto choose = [&] (const juce::String& id, const juce::String& name)
+                    {
+                        const auto sp = find (id);
+                        const int at = sp.choices.indexOf (name);
+                        if (at >= 0 && sp.choices.size() > 1) e7.setSetup (bass, id, (float) at / (float) (sp.choices.size() - 1));
+                        return at >= 0 && find (id).text.toUpperCase() == name;
+                    };
+                    auto spread = [&] (int blocks)
+                    {
+                        float lo = 1.0e9f, hi = -1.0e9f;
+                        for (int n7 = 0; n7 < blocks; ++n7) { e7.render (b7); const float v = pr->currentValue (cutoff); lo = std::min (lo, v); hi = std::max (hi, v); }
+                        return hi - lo;                                             // (CUTOFF as the instrument hears it, 0 to 1)
+                    };
+                    e7.setRunning (true);
+                    const float still = spread (400);
+                    const auto t0 = find ("m1_target");
+                    const bool listed = t0.group == "MOTION 1" && t0.name == "TARGET" && t0.choices.size() > 12 && t0.choices[0] == "OFF" && t0.choices[1] == juce::String (lanes()[5].knobs[0].label);
+                    const bool set = choose ("m1_src", "SINE") && choose ("m1_rate", "1/4") && choose ("m1_target", "CUTOFF");
+                    e7.setSetup (bass, "m1_depth", 1.0f);
+                    const float moving = spread (800);
+                    // kept in a snapshot, and brought back by it; a snapshot from before MOTION says nothing of it and means it off
+                    const auto with = s7.take();
+                    s7.finishTakes (true);
+                    e7.setSetup (bass, "m1_src", 0.0f);
+                    const float off = spread (400);
+                    s7.recall (with);
+                    for (int n7 = 0; n7 < 400; ++n7) e7.render (b7);
+                    pr = e7.processorFor (bass);                                    // (the recall crossed the voice over: its instrument is another)
+                    const float back = spread (800);
+                    const bool wave = find ("m1_src").text.toUpperCase() == "SINE" && find ("m1_target").text.toUpperCase() == "CUTOFF";
+                    for (auto& snap : s7.library)
+                        if (snap.id == with)
+                        {
+                            auto& st = snap.setup[5];
+                            st.erase (std::remove_if (st.begin(), st.end(), [] (const auto& kv) { return Engine::isMotionId (kv.first); }), st.end());
+                        }
+                    s7.recall (with);
+                    for (int n7 = 0; n7 < 400; ++n7) e7.render (b7);
+                    pr = e7.processorFor (bass);
+                    const float before = spread (400);
+                    const bool ok7 = listed && set && still < 0.01f && moving > 0.3f && off < 0.01f && back > 0.3f && wave && before < 0.01f && find ("m1_src").text.toUpperCase() == "OFF";
+                    std::printf ("  %s: MOTION: a sine set on the bass's CUTOFF in its CONFIG moves what the instrument hears (it travels %.2f of its range with no motion, %.2f with it, %.2f switched off), is kept in a snapshot and brought back by it (%.2f), and a snapshot from before MOTION puts it off (%.2f)\n",
+                                 ok7 ? "ok  " : "FAIL", still, moving, off, back, before);
+                    if (! ok7) { ++bad; std::printf ("    (listed %d set %d wave %d: %s)\n", (int) listed, (int) set, (int) wave, t0.choices.joinIntoString (", ").toRawUTF8()); }
+                }
             }
         }
         sf::Bus::testClock = nullptr;
@@ -1148,6 +1203,32 @@ static int uiTest()
         for (auto& ln : lanes()) for (auto& k : ln.knobs) { ++lines; if (help::param (ln.module, k.param) == nullptr) ++missing; }
         for (auto& fx : effects()) for (auto& c : fx.cells) if (c.param != nullptr) { ++lines; if (help::param (fx.module, c.param) == nullptr) ++missing; }
         for (auto* fx : { &returnA(), &returnB (0), &returnB (1) }) for (auto& c : fx->cells) if (c.param != nullptr) { ++lines; if (help::param (fx->module, c.param) == nullptr) ++missing; }
+        // CONFIG's controls too: everything an instrument, an effect or a return has that is not on its panel
+        int cfgLines = 0, cfgMissing = 0;
+        {
+            Engine ec; ec.prepare (48000.0, 128);
+            auto all = [&] (Engine::Target t, const char* module)
+            {
+                auto* p = ec.processorFor (t);
+                if (p == nullptr) return;
+                juce::StringArray ids;
+                for (int i = 0; i < p->numModuleParams(); ++i) if (p->allSpecs()[(size_t) i].id != "alloc" && ! p->allSpecs()[(size_t) i].hidden) ids.add (p->allSpecs()[(size_t) i].id);
+                for (auto& sp : ec.setupParams (t)) ids.addIfNotAlreadyThere (sp.id);
+                for (auto& id : ids)
+                {
+                    ++cfgLines;
+                    if (help::param (module, id.toRawUTF8()) == nullptr) { ++cfgMissing; std::printf ("    no line: %s | %s | %s\n", module, id.toRawUTF8(), p->allSpecs()[(size_t) std::max (0, p->paramIndex (id.toStdString()))].name.c_str()); }
+                }
+            };
+            for (int l = 0; l < kLanes; ++l) all ({ 0, l, 0 }, lanes()[(size_t) l].module);
+            for (int ty = 0; ty < (int) effects().size(); ++ty) { ec.setInsertType (0, 0, ty); all ({ 1, 0, 0 }, effects()[(size_t) ty].module); }
+            all ({ 2, 0, 0 }, returnA().module);
+            for (int m = 0; m < kSpaceModels; ++m) { ec.setSpaceModel (m); all ({ 2, 0, 1 }, returnB (m).module); }
+        }
+
+        check (missing == 0 && lines > 180, (juce::String (lines) + " knobs and places (every lane's twelve, every effect's, the returns') each have a line saying what they do").toRawUTF8());
+        check (cfgMissing == 0 && cfgLines > 150, (juce::String (cfgLines) + " CONFIG controls (every instrument's, effect's and return's, MOTION's too) each have a line as well").toRawUTF8());
+
         check (missing == 0 && lines > 180, (juce::String (lines) + " knobs and places (every lane's twelve, every effect's, the returns') each have a line saying what they do").toRawUTF8());
 
         sci.testPointAt ({ 60.0f, 134.0f });

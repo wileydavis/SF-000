@@ -505,6 +505,21 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             below = true;
             break;
         }
+        case hSetup:
+        {
+            // a CONFIG control: what it is, in the box it is in
+            if (h.a >= (int) cfgParams.size()) return t;
+            const auto& sp = cfgParams[(size_t) h.a];
+            const char* module = cfg.kind == 0 ? lanes()[(size_t) cfg.lane].module
+                               : cfg.kind == 1 ? (eng.insertType (cfg.lane, cfg.slot) >= 0 ? effects()[(size_t) eng.insertType (cfg.lane, cfg.slot)].module : nullptr)
+                               : (cfg.slot == 0 ? returnA() : returnB (eng.spaceModel())).module;
+            t.title = (sp.group.isNotEmpty() && sp.group != "SOUND" && sp.group != "EFFECT" ? sp.group + ": " : String()) + sp.name;
+            if (const char* what = module != nullptr ? help::param (module, sp.id.toRawUTF8()) : nullptr) body = what;
+            body << (body.isEmpty() ? "" : " ") << (sp.kind == Kind::Toggle ? "CLICK TO SWITCH IT." : sp.kind == Kind::Hold ? "HOLD IT DOWN." : "DRAG UP AND DOWN (SHIFT: FINELY). DOUBLE-CLICK: BACK TO WHERE IT STARTS.");
+            midi = "KEPT IN SNAPSHOTS. NOT ON THE E16.";
+            below = true;
+            break;
+        }
         case hLane:
             t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name;
             body = String (help::lane (h.a)) + " CLICK THE NAME TO MAKE IT THE ACTIVE LANE: THE INSERTS AND THE SEQUENCER STRIP SHOW IT.";
@@ -799,9 +814,9 @@ void Screen::drawConfig (G& g, R r)
     if (cfgStale || ++cfgAge > 12) { cfgParams = p != nullptr ? eng.setupParams (cfg) : std::vector<Engine::SetupParam>(); cfgStale = false; cfgAge = 0; }
     // the parameter last touched, with its value
     for (auto& sp : cfgParams)
-        if (sp.name == cfgName)
+        if (sp.id == cfgName)
         {
-            const String v = sp.name + "   " + sp.text.toUpperCase();
+            const String v = (sp.group.startsWith ("MOTION") ? sp.group + " " : String()) + sp.name + "   " + sp.text.toUpperCase();
             plate (g, cr.getX() - 8 - (std::ceil (tw (fNote, v)) + 12), y0, v, fNote, 6, col::white, col::black);
             break;
         }
@@ -862,32 +877,69 @@ void Screen::drawConfig (G& g, R r)
         y += 28;
     }
 
-    const int cols = 6, total = (int) cfgParams.size(), rows = (total + cols - 1) / cols;
-    const float rowH = 96.0f;
-    const int rowsVis = std::max (1, (int) ((r.getBottom() - 8 - y) / rowH));
-    cfgScroll = juce::jlimit (0, std::max (0, rows - rowsVis), cfgScroll);
-    for (int n = 0; n < rowsVis * cols; ++n)
+    // The controls, in boxes by what they belong to. A box goes in the first row with room for
+    // it; one longer than a row runs on into the next; MOTION's two have rows of their own, last.
+    const int cols = 6, total = (int) cfgParams.size();
+    const float cellW = 90.0f, rowH = 118.0f, titleH = 17.0f;
+    struct Seg { int first, count, row, col; bool head; };
+    std::vector<Seg> segs;
+    std::vector<int> used;                                  // columns taken in each row
+    for (int i = 0; i < total;)
     {
-        const int i = cfgScroll * cols + n;
-        if (i >= total) break;
-        const auto& sp = cfgParams[(size_t) i];
-        const float cxl = x0 + 2 + (float) (n % cols) * 90, cy = y + (float) (n / cols) * rowH;
-        const R kr (cxl + 25, cy, 40, 40);
-        if (vis (g, R (cxl - 16, cy, 122, rowH)))
+        int n = 1;
+        while (i + n < total && cfgParams[(size_t) (i + n)].group == cfgParams[(size_t) i].group) ++n;
+        const bool own = cfgParams[(size_t) i].ownRow;
+        for (int done = 0; done < n;)
         {
-            if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty);
-            else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
-            else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
-            legend (g, cxl + 45, cy + 43, sp.name);
-            if (sp.kind == Kind::List)
-            {
-                const R vr (cxl + 1, cy + 73, 88, 16);
-                if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
-                g.setColour (tone (col::black)); g.setFont (fLbl);
-                g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
-            }
+            const int take = std::min (cols, n - done);
+            int row = -1;
+            if (! own && n <= cols) for (size_t q = 0; q < used.size() && row < 0; ++q) if (used[q] + take <= cols) row = (int) q;
+            if (row < 0 && ! own && done > 0 && ! used.empty() && used.back() == 0) row = (int) used.size() - 1;
+            if (row < 0) { row = (int) used.size(); used.push_back (0); }
+            segs.push_back ({ i + done, take, row, used[(size_t) row], done == 0 });
+            used[(size_t) row] = own ? cols : used[(size_t) row] + take;
+            done += take;
         }
-        hit (kr.expanded (4, 2), hSetup, i, 0);
+        i += n;
+    }
+    const int rows = (int) used.size();
+    const int rowsVis = std::max (1, (int) ((r.getBottom() - 6 - y) / rowH));
+    cfgScroll = juce::jlimit (0, std::max (0, rows - rowsVis), cfgScroll);
+    for (const auto& sg : segs)
+    {
+        if (sg.row < cfgScroll || sg.row >= cfgScroll + rowsVis) continue;
+        const float bx = x0 + (float) sg.col * cellW, by = y + (float) (sg.row - cfgScroll) * rowH;
+        const R box (bx + 1, by + 7, (float) sg.count * cellW - 2, rowH - 12);
+        const String title = cfgParams[(size_t) sg.first].group;
+        if (title.isNotEmpty() && vis (g, box.expanded (2, 8)))
+        {
+            // the box, and its name on the box's upper edge (a box run on from the row above has none)
+            g.setColour (tone (col::black).withAlpha (0.30f));
+            g.drawRoundedRectangle (box, 5.0f, 1.0f);
+            if (sg.head) plate (g, bx + 8, by, title, fLbl, 5, col::black, col::white, 15);
+        }
+        for (int q = 0; q < sg.count; ++q)
+        {
+            const int i = sg.first + q;
+            const auto& sp = cfgParams[(size_t) i];
+            const float cxl = bx + (float) q * cellW, cy = by + titleH + 3;
+            const R kr (cxl + 25, cy, 40, 40);
+            if (vis (g, R (cxl - 16, cy, 122, rowH - titleH)))
+            {
+                if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty);
+                else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
+                else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
+                legend (g, cxl + 45, cy + 43, sp.name);
+                if (sp.kind == Kind::List)
+                {
+                    const R vr (cxl + 2, cy + 73, 86, 16);
+                    if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
+                    g.setColour (tone (col::black)); g.setFont (fLbl);
+                    g.drawText (sp.text.toUpperCase(), vr.reduced (2, 0), juce::Justification::centred, true);
+                }
+            }
+            hit (kr.expanded (4, 2), hSetup, i, 0);
+        }
     }
     if (rows > rowsVis)
     {
@@ -1549,7 +1601,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             if (h->a < (int) cfgParams.size())
             {
                 const auto& sp = cfgParams[(size_t) h->a];
-                cfgName = sp.name;
+                cfgName = sp.id;
                 drag.v0 = sp.value;
                 if (sp.kind == Kind::Toggle) eng.setSetup (cfg, sp.id, sp.value > 0.5f ? 0.0f : 1.0f);
                 else if (sp.kind == Kind::Hold) eng.setSetup (cfg, sp.id, 1.0f);

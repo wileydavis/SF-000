@@ -997,10 +997,9 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
     }
     const auto bound = boundIds (t);
     const auto& specs = p->allSpecs();
-    for (int i = 0; i < p->numModuleParams(); ++i)
+    auto made = [&] (int i)
     {
         const auto& s = specs[(size_t) i];
-        if (std::find (bound.begin(), bound.end(), s.id) != bound.end()) continue;
         auto* prm = p->param (i);
         SetupParam sp;
         sp.id = s.id; sp.name = s.name; sp.value = prm->getValue(); sp.def = prm->getDefaultValue(); sp.text = prm->getCurrentValueAsText();
@@ -1008,9 +1007,103 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         else if (s.type == sf::PType::Toggle) sp.kind = Kind::Toggle;
         else if (s.type == sf::PType::Momentary) sp.kind = Kind::Hold;
         else sp.kind = s.unit == "BIP" || (s.min < 0.0f && s.max > 0.0f && std::abs (s.min + s.max) < 1e-3f) ? Kind::Bipolar : Kind::Knob;
-        out.push_back (sp);
-    }
+        return sp;
+    };
+    // Which box each control belongs in. A model's own controls (FM 4-OP's operators, WAVETABLE's
+    // table) and a sample's are listed only while that model plays, as the lane's model or its
+    // layer's: what is on the panel does something. (Everything is still kept in snapshots.)
+    auto textOf = [&] (const char* id) { const int i = p->paramIndex (id); return i >= 0 ? p->param (i)->getCurrentValueAsText().toUpperCase() : juce::String(); };
+    const juce::String model = textOf ("model"), layerModel = textOf ("layer_model");
+    auto plays = [&] (const char* name) { return model == name || layerModel == name; };
+    bool sampleIsAModel = false;
+    if (const int mi = p->paramIndex ("model"); mi >= 0) for (auto& c : specs[(size_t) mi].choices) sampleIsAModel = sampleIsAModel || c == "SAMPLE";
+    const bool tableFromSample = plays ("WAVETABLE") && textOf ("table") == "SAMPLE";
+    const bool phraseIsTheSource = t.kind == 0 && juce::String (lanes()[(size_t) t.lane].module) == "VOICE";      // (every model of VOICE plays the phrase)
+    const juce::String plain = t.kind == 0 ? "SOUND" : "EFFECT";
+    auto groupOf = [&] (const sf::ParamSpec& s) -> juce::String
+    {
+        const juce::String id (s.id);
+        if (id.startsWith ("fm_")) return plays ("FM 4-OP") ? "FM 4-OP" : juce::String();
+        if (id == "table") return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
+        if (s.inEngine) return "ENGINE";
+        if (s.inSample) return phraseIsTheSource || ! sampleIsAModel || plays ("SAMPLE") || tableFromSample ? "SAMPLE" : juce::String();
+        if (s.inLayer) return "LAYER";
+        if (id.startsWith ("pocket_")) return "POCKET";
+        if (id.startsWith ("echo_")) return "ECHO";
+        if (id == "alloc") return {};                       // (the rig has no ALLOC: the switch would do nothing)
+        if (s.setup) return "RIG";
+        return plain;
+    };
+    for (auto& sp : out) sp.group = plain;                  // (SPACE's MODEL, put in above)
+    for (const char* g : { "SOUND", "EFFECT", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "ENGINE", "POCKET", "ECHO", "RIG" })
+        for (int i = 0; i < p->numModuleParams(); ++i)
+        {
+            const auto& s = specs[(size_t) i];
+            if (std::find (bound.begin(), bound.end(), s.id) != bound.end() || groupOf (s) != g) continue;
+            auto sp = made (i);
+            sp.group = g;
+            out.push_back (sp);
+        }
+    // MOTION, on an instrument: two rows of their own, last
+    if (t.kind == 0)
+        for (int k = 1; k <= SFProcessor::kMotions; ++k)
+        {
+            static const char* const tail[4] = { "_src", "_rate", "_target", "_depth" };
+            static const char* const names[4] = { "WAVE", "SPEED", "TARGET", "AMOUNT" };
+            for (int j = 0; j < 4; ++j)
+            {
+                const int i = p->paramIndex ("m" + std::to_string (k) + tail[j]);
+                if (i < 0) continue;
+                auto sp = made (i);
+                sp.name = names[j]; sp.group = "MOTION " + juce::String (k); sp.ownRow = j == 0;
+                if (j == 2)
+                {
+                    // what it moves: the lane's own knobs first, as the panel has them, then the rest of the instrument's
+                    juce::StringArray shown;
+                    const auto order = motionOrder (t.lane, *p, &shown);
+                    const int now = (int) std::lround (p->param (i)->convertFrom0to1 (p->param (i)->getValue()));
+                    int at = 0;
+                    for (size_t q = 0; q < order.size(); ++q) if (order[q] == now) at = (int) q + 1;
+                    sp.choices.clear(); sp.choices.add ("OFF"); sp.choices.addArray (shown);
+                    sp.value = order.empty() ? 0.0f : (float) at / (float) order.size(); sp.def = 0.0f; sp.text = sp.choices[at];
+                }
+                out.push_back (sp);
+            }
+        }
     return out;
+}
+
+bool Engine::isMotionId (const juce::String& id)
+{
+    return id.length() >= 5 && id[0] == 'm' && (id[1] == '1' || id[1] == '2') && id[2] == '_'
+        && (id.endsWith ("_src") || id.endsWith ("_rate") || id.endsWith ("_target") || id.endsWith ("_depth"));
+}
+
+std::vector<int> Engine::motionOrder (int l, SFProcessor& p, juce::StringArray* names) const
+{
+    const auto& targets = p.motionTargetParams();           // TARGET's choice c (1 on) moves module parameter targets[c - 1]
+    const auto& specs = p.allSpecs();
+    const auto& d = lanes()[(size_t) l];
+    std::vector<int> order;
+    auto add = [&] (int choice, const juce::String& name) { if (std::find (order.begin(), order.end(), choice) == order.end()) { order.push_back (choice); if (names != nullptr) names->add (name); } };
+    for (int k = 0; k < kLaneKnobs; ++k)
+        if (d.knobs[k].param != nullptr)
+        {
+            const int pi = p.paramIndex (d.knobs[k].param);
+            for (size_t c = 0; c < targets.size(); ++c) if (targets[c] == pi) add ((int) c + 1, d.knobs[k].label);
+        }
+    for (size_t c = 0; c < targets.size(); ++c) add ((int) c + 1, juce::String (specs[(size_t) targets[c]].name));
+    return order;
+}
+
+Engine::SetupState Engine::motionOff (int l) const
+{
+    SetupState st;
+    if (auto* p = processorFor ({ 0, l, 0 }))
+        for (int k = 1; k <= SFProcessor::kMotions; ++k)
+            for (const char* tail : { "_src", "_rate", "_target", "_depth" })
+                if (const int i = p->paramIndex ("m" + std::to_string (k) + tail); i >= 0) st.push_back ({ juce::String ("m" + std::to_string (k) + tail), p->param (i)->getDefaultValue() });
+    return st;
 }
 
 void Engine::setSetup (Target t, const juce::String& id, float v)
@@ -1024,8 +1117,17 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
     if (auto* p = processorFor (t))
     {
         const int i = p->paramIndex (id.toStdString());
-        if (i < 0 || i >= p->numModuleParams()) return;
-        p->param (i)->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, v));
+        const bool motion = t.kind == 0 && isMotionId (id);
+        if (i < 0 || (i >= p->numModuleParams() && ! motion)) return;
+        v = juce::jlimit (0.0f, 1.0f, v);
+        if (motion && id.endsWith ("_target"))
+        {
+            // (CONFIG lists what it moves in its own order: back to the instrument's)
+            const auto order = motionOrder (t.lane, *p);
+            const int at = juce::jlimit (0, (int) order.size(), (int) std::lround (v * (float) order.size()));
+            v = p->param (i)->convertTo0to1 (at == 0 ? 0.0f : (float) order[(size_t) at - 1]);
+        }
+        p->param (i)->setValueNotifyingHost (v);
         updateLatency();
     }
 }
@@ -1042,6 +1144,10 @@ Engine::SetupState Engine::getSetup (Target t) const
         for (int i = 0; i < p->numModuleParams(); ++i)
             if (std::find (bound.begin(), bound.end(), specs[(size_t) i].id) == bound.end())
                 st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
+        // an instrument's MOTION with it
+        if (t.kind == 0)
+            for (int i = p->numModuleParams(); i < (int) specs.size(); ++i)
+                if (isMotionId (specs[(size_t) i].id)) st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
     }
     return st;
 }
@@ -1051,7 +1157,7 @@ void Engine::applySetupTo (SFProcessor& p, const std::vector<std::string>& bound
     for (auto& kv : st)
     {
         const int i = p.paramIndex (kv.first.toStdString());
-        if (i < 0 || i >= p.numModuleParams() || std::find (bound.begin(), bound.end(), kv.first.toStdString()) != bound.end()) continue;
+        if (i < 0 || (i >= p.numModuleParams() && ! isMotionId (kv.first)) || std::find (bound.begin(), bound.end(), kv.first.toStdString()) != bound.end()) continue;
         auto* prm = p.param (i);
         if (std::abs (prm->getValue() - kv.second) > 1e-6f) prm->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, kv.second));
     }

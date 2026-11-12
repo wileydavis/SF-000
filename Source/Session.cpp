@@ -438,11 +438,20 @@ static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState&
     return false;
 }
 
+// A lane's setup as a snapshot holds it, whole: one taken before MOTION could be set says nothing
+// of it, and means the two of them off (as they were then).
+static Engine::SetupState withMotion (const Engine& engine, int l, Engine::SetupState st)
+{
+    for (auto& kv : st) if (Engine::isMotionId (kv.first)) return st;
+    for (auto& kv : engine.motionOff (l)) st.push_back (kv);
+    return st;
+}
+
 // A lane's instrument is to change in a way that cannot travel: something CONFIG sets (its model,
 // its layer, a sample's ends), or one of its knobs that is a menu or a switch.
 bool Session::laneJumps (const Snapshot& s, int l) const
 {
-    if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), s.setup[(size_t) l])) return true;
+    if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), withMotion (engine, l, s.setup[(size_t) l]))) return true;
     for (int k = 0; k < kLaneKnobs; ++k)
     {
         const int i = cx::lane (l, k);
@@ -516,7 +525,7 @@ void Session::applySnapshot (const Snapshot& s, double glide)
         genType[(size_t) l] = s.gen[(size_t) l];
         if (s.hasSetup)
         {
-            engine.applySetup ({ 0, l, 0 }, s.setup[(size_t) l]);
+            engine.applySetup ({ 0, l, 0 }, withMotion (engine, l, s.setup[(size_t) l]));
             for (int k = 0; k < kSlots; ++k) engine.applySetup ({ 1, l, k }, s.insSetup[(size_t) l][(size_t) k]);
         }
     }
