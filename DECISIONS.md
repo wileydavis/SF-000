@@ -751,6 +751,12 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      pushes the rig toward their snapshots, a press recalls the nearest. *proposed:* say if you
      want those to browse and cue as well; the two ways cannot share one knob.
 
+190. **What a sequencer turns, the E16 shows** (you asked). A lane knob or a snapshot knob turned
+     by CC from another port is sent on to the E16, so its knob's number and ring follow; this
+     was already so. A GLIDE set from another port was not sent on (it was taken to be the E16's
+     own): now it is. The addresses that are on no E16 page (inserts, returns, master, mutes)
+     have nothing there to update.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley

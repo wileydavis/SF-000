@@ -2322,6 +2322,20 @@ static int midiTest()
             check (placed && e3.target (cx::ins (0, 0, 5)) < 0.5f && e3.target (cx::lane (2, cx::kMute)) < 0.5f && back.empty(),
                    "a sequencer reaches an insert's places (CC 32-55 on the lane's channel), the returns and the master (CC 60-70 on channel 16) and a lane's MUTE (CC 56), with nothing sent to the E16 for them");
 
+            // what a sequencer turns, the E16 is told: its knob and ring follow
+            m3.incoming (cc (6, 18, 90), false);                        // BASS CUTOFF, from the ONE
+            m3.incoming (cc (16, 30, 46), false);                       // GLIDE, from the ONE
+            m3.service();
+            bool knobTold = false, glideTold = false;
+            for (auto& msg : back)
+                if (msg.isController())
+                {
+                    knobTold = knobTold || (msg.getChannel() == 6 && msg.getControllerNumber() == 18 && msg.getControllerValue() == 90);
+                    glideTold = glideTold || (msg.getChannel() == 16 && msg.getControllerNumber() == 30 && msg.getControllerValue() == 46);
+                }
+            check (knobTold && glideTold, "a knob a sequencer turns (and a GLIDE it sets) is sent on to the E16, so the E16's own knob and ring follow");
+            back.clear();
+
             // RECALL: the nth snapshot a snapshot knob holds
             const int cut = cx::lane (5, 6);
             s3.userSet (cx::kGlide, 0.0f);

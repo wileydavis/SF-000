@@ -141,6 +141,7 @@ private:
     std::array<std::atomic<int>, 16> presses;
     std::atomic<int> focus { 0 };
     std::atomic<int> pageUp { 0 }, glideIn { -1 };
+    std::atomic<bool> glideFromE16 { false };                   // the GLIDE that came in was the E16's own (it knows it; anyone else's it is told)
     int pageNow = 0, pageWait = 0, glideSent = -1;              // message thread
     juce::uint32 glideHeardAt = 0;
     std::array<std::atomic<int>, ccx::kExtras> exLatest;         // the addresses that are not the E16's

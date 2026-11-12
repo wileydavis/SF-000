@@ -641,7 +641,7 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     if (ch == e16::kSnapChannel)
     {
         if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; if (val >= 1 && val <= e16::kSnapPage) pageUp = val; return; }
-        if (num == e16::kGlideCc) { glideIn = val; return; }
+        if (num == e16::kGlideCc) { glideFromE16 = fromE16; glideIn = val; return; }
         if (num >= e16::kPressCc && num < e16::kPressCc + 16) { if (val >= 64) presses[(size_t) (num - e16::kPressCc)].fetch_add (1); return; }
         if (num >= ccx::kRecall && num < ccx::kRecall + 16)
         {
@@ -745,7 +745,7 @@ void Midi::takeGlide()
     if (const int g = glideIn.exchange (-1); g >= 0)
     {
         ses.userSet (cx::kGlide, e16::from7 (engine.control (cx::kGlide), g));
-        glideSent = g; glideHeardAt = juce::Time::getMillisecondCounter();
+        if (glideFromE16.load()) { glideSent = g; glideHeardAt = juce::Time::getMillisecondCounter(); }       // (a sequencer's GLIDE goes on to the E16)
     }
 }
 
