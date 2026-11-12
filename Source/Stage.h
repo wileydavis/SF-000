@@ -31,6 +31,7 @@ public:
     enum class State { starting, running, failed };
     State state() const;
     juce::String whyNot() const;                // failed: what the driver said
+    void giveUp (const juce::String& why);      // failed, for a reason seen from outside (it never began)
     std::function<void()> onState;              // running or failed, told on the message thread
 
     // ---- what it draws
@@ -87,6 +88,7 @@ public:
     juce::Image capture (int timeoutMs = 20000);        // the next frame, as drawn
     double frameMs() const;                     // how long the last frame took to draw
     int frames() const;                         // how many have been drawn in full
+    int builds() const;                         // how many times its shapes were built and sent to the card
     int firstPictureSpread() const;             // darkest to brightest point of the first picture, of 255 (under 6 it is blank; -1: not looked at yet; -2: it could not be read back)
     juce::String driver() const;
 

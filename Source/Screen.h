@@ -44,6 +44,11 @@ public:
     void setEye (const Eye&);
     void refreshNow() { cancelPendingUpdate(); refreshStage(); }       // the stage brought up to date at once (tests, screenshots)
     std::function<void()> onLook;               // the look was changed from the keyboard or by the hand: keep it for next time
+    // The 3D stage is about to be started; and: it is up and has drawn a picture, or has said why
+    // it is not, or was put away. (The app keeps a note between the two: see StageGuard.)
+    std::function<void()> onThreeStarting, onThreeSettled;
+    void sayOnBar (const juce::String& words);  // a few words on the top bar, for a few seconds
+    bool testWatch (juce::uint32 now, bool inFront) { return watchStart (now, inFront); }
     // (these stand in front of the component's own: in 3D a repaint is the sheet and the parts brought up to date)
     void repaint();
     void repaint (juce::Rectangle<int>);
@@ -147,6 +152,10 @@ private:
     std::array<float, cx::kCount> followWas {};
     std::array<bool, cx::kCount> bySequencer {};
     juce::uint32 followAt = 0;
+    juce::uint32 startingSince = 0;             // when the stage was first seen still starting, in front
+    bool settledSaid = true;
+    void settled();
+    bool watchStart (juce::uint32 now, bool inFront);
     bool followOn = false;
     R followBox;
     // The tags over the stage: a moved knob's name and value beside it, INFO's box by the pointer,

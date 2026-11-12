@@ -9,6 +9,7 @@
 #include "core/Processor.h"
 #include "core/Registry.h"
 #include "core/Bus.h"
+#include "core/Sample.h"
 #include "Screen.h"
 #include "Midi.h"
 #include "Recorder.h"
@@ -558,6 +559,79 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             const bool off = pk > 0.1f && after == 0.0f && ses.cueing() == 0 && ! ses.cue (ses.library.front().id);       // (CLEAN SLATE has no clip)
             std::printf ("  %s: with the clock stopped it plays on as it was kept; taken away it is silent within a few buffers; a snapshot with no sound kept gives none\n", off ? "ok  " : "FAIL");
             if (! off) ++bad;
+            {
+                // a clip kept at another rate (the interface ran at 96 kHz then, 48 now): stopped, it plays at its own speed
+                Engine e4; e4.prepare (48000.0, 128);
+                Engine::CueClip c4; c4.rate = 96000.0; c4.audio.setSize (2, 96000);
+                for (int i = 0; i < 96000; ++i) { const float v = 0.5f * (float) std::sin (juce::MathConstants<double>::twoPi * 440.0 * (double) i / 96000.0); c4.audio.setSample (0, i, v); c4.audio.setSample (1, i, v); }
+                e4.setCue (&c4);
+                juce::AudioBuffer<float> b4 (2, 128);
+                for (int k4 = 0; k4 < 20; ++k4) e4.render (b4);
+                int crossings = 0; float was = 0.0f;
+                for (int k4 = 0; k4 < 375; ++k4)                        // one second
+                {
+                    e4.render (b4);
+                    for (int i = 0; i < 128; ++i) { const float v = e4.cueBlock().getSample (0, i); if (was <= 0.0f && v > 0.0f) ++crossings; was = v; }
+                }
+                e4.setCue (nullptr);
+                for (int k4 = 0; k4 < 20; ++k4) e4.render (b4);
+                const bool pitch = std::abs (crossings - 440) <= 1;
+                std::printf ("  %s: a clip kept at 96 kHz, played stopped on an interface at 48: an A at 440 is heard at %d (it was an octave down)\n", pitch ? "ok  " : "FAIL", crossings);
+                if (! pitch) ++bad;
+            }
+            {
+                // four bars at 96 kHz and 90: more than the tape used to hold (a snapshot's bars then never came)
+                Engine e5; e5.prepare (96000.0, 128);
+                e5.set (cx::kTempo, tempoToValue (90.0));
+                juce::AudioBuffer<float> b5 (2, 128);
+                e5.setRunning (true);
+                const int blocks = (int) (7.3 * 4.0 * 60.0 / 90.0 * 96000.0 / 128.0);       // (the first bars after RUN are not yet held still)
+                for (int k5 = 0; k5 < blocks; ++k5) e5.render (b5);
+                Engine::Heard h5;
+                const bool some = e5.heldHeard (h5, e5.stateStamp());
+                const bool four = some && h5.bars == 4 && h5.most == 4 && h5.audio.getNumSamples() == 1024000;
+                std::printf ("  %s: at 96 kHz and 90 a snapshot's four bars are all on the tape (%d bars, %d samples; the tape held 983040)\n", four ? "ok  " : "FAIL", h5.bars, h5.audio.getNumSamples());
+                if (! four) ++bad;
+                // a recording under way when the audio starts again at another rate is fed nothing more
+                struct Count : Engine::RecSink { void begin (int n) noexcept override { frames += n; } void track (int, const float*, const float*, int) noexcept override {} void end (int) noexcept override {} int frames = 0; } sink;
+                e5.setRecSink (&sink);
+                for (int k5 = 0; k5 < 10; ++k5) e5.render (b5);
+                const int before = sink.frames;
+                e5.prepare (96000.0, 128);                              // the same rate: it carries on
+                for (int k5 = 0; k5 < 10; ++k5) e5.render (b5);
+                const int same = sink.frames;
+                e5.prepare (48000.0, 128);                              // another: let go of
+                for (int k5 = 0; k5 < 10; ++k5) e5.render (b5);
+                const bool rec = before == 1280 && same == 2560 && sink.frames == 2560 && ! e5.hasRecSink();
+                std::printf ("  %s: a recording is fed nothing once the audio has started again at another rate (%d frames, then %d, then %d): no stretch of it plays at the wrong speed\n", rec ? "ok  " : "FAIL", before, same, sink.frames);
+                if (! rec) ++bad;
+                e5.setRecSink (nullptr);
+                // a sample already read and still held is shared, not read from the disk again; and is not lost with the disk
+                {
+                    const auto f6 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_shared_sample.wav");
+                    f6.deleteFile();
+                    {
+                        juce::AudioBuffer<float> w6 (2, 96000);
+                        for (int i = 0; i < 96000; ++i) { const float v = 0.4f * (float) std::sin (0.02 * (double) i); w6.setSample (0, i, v); w6.setSample (1, i, v); }
+                        juce::WavAudioFormat wav;
+                        if (auto out = f6.createOutputStream())
+                            if (std::unique_ptr<juce::AudioFormatWriter> wr { wav.createWriterFor (out.get(), 48000.0, 2, 16, {}, 0) }) { out.release(); wr->writeFromAudioSampleBuffer (w6, 0, 96000); }
+                    }
+                    const double t0 = juce::Time::getMillisecondCounterHiRes();
+                    auto a6 = sf::loadSampleFile (f6, 48000.0, 300.0);
+                    const double t1 = juce::Time::getMillisecondCounterHiRes();
+                    auto b6 = sf::loadSampleFile (f6, 48000.0, 300.0);
+                    const double t2 = juce::Time::getMillisecondCounterHiRes();
+                    auto other = sf::loadSampleFile (f6, 44100.0, 300.0);            // (at another rate it is another sample)
+                    f6.deleteFile();
+                    auto c6 = sf::loadSampleFile (f6, 48000.0, 300.0);                // the file gone, the sample still held
+                    const bool shared = a6 != nullptr && a6.get() == b6.get() && c6.get() == a6.get() && other != nullptr && other.get() != a6.get();
+                    a6.reset(); b6.reset(); c6.reset();
+                    const bool gone = sf::loadSampleFile (f6, 48000.0, 300.0) == nullptr;       // held by no one now, and no file: nothing
+                    std::printf ("  %s: a sample already read is shared, not read again (%.1f ms the first time, %.3f ms the second), and outlives its file while a voice holds it\n", shared && gone ? "ok  " : "FAIL", t1 - t0, t2 - t1);
+                    if (! (shared && gone)) ++bad;
+                }
+            }
         }
         sf::Bus::testClock = nullptr;
         Session::stateFileForTests = juce::File();
@@ -2909,6 +2983,20 @@ static int perf()
 // The 3D stage, played: SF-000 --stagetest. It needs a display to open a window on (xvfb will do)
 // and OpenGL 3.2 (a software driver will do: this is about what is drawn and what the hand
 // reaches, not how fast).
+// The 3D stage is started with a note left beside the session, and the note is taken away once
+// the stage is up and has drawn (or has said why it is not, or the app has left in good order).
+// A note still there at launch means the last start never finished: the app died, or was
+// killed, while the stage was coming up. 3D is then left off for that launch, and says so, so
+// that a stage which takes the app down cannot take it down at every launch. (JUCE on the Mac
+// walks into an OpenGL context it failed to make, before anything of SF-000's can answer.)
+struct StageGuard
+{
+    juce::File note;
+    bool lastStartDied() const  { return note.existsAsFile(); }
+    void starting() const       { note.getParentDirectory().createDirectory(); note.replaceWithText (juce::Time::getCurrentTime().toString (true, true)); }
+    void settled() const        { note.deleteFile(); }
+};
+
 static int stageTest()
 {
     using namespace sf0;
@@ -2955,9 +3043,45 @@ static int stageTest()
         unsetenv ("SF000_3D_FAIL");
         sc.removeFromDesktop();
     }
+    {
+        // 0c. a context that is made and never draws: six seconds in front of the player, and the lit skin is back
+        setenv ("SF000_3D_FAIL", "stall", 1);
+        Screen sc (ses);
+        sc.setSize (864, 558);
+        sc.addToDesktop (0); sc.setVisible (true);
+        int began = 0, ended = 0;
+        sc.onThreeStarting = [&began] { ++began; };
+        sc.onThreeSettled = [&ended] { ++ended; };
+        sc.setThree (true);
+        pump (500);
+        const bool waiting = sc.isThree() && ! sc.threeShowing() && began == 1 && ended == 0;
+        const auto now = juce::Time::getMillisecondCounter();
+        sc.testWatch (now, true);
+        const bool notYet = ! sc.testWatch (now + 3000, true) && ! sc.testWatch (now + 3500, false);      // (out of sight, the count starts over)
+        sc.testWatch (now + 4000, true);
+        const bool stillNot = ! sc.testWatch (now + 9000, true);
+        const bool gaveUp = sc.testWatch (now + 10500, true);
+        check (waiting && notYet && stillNot && gaveUp && ! sc.isThree() && sc.threeNote().contains ("six seconds") && ended == 1,
+               "a stage that is made and never draws is given six seconds in front of the player, then the lit skin comes back (" + sc.threeNote() + ")");
+        unsetenv ("SF000_3D_FAIL");
+        sc.removeFromDesktop();
+        // the note left while a stage starts: still there at the next launch if the app died meanwhile
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_stage_guard");
+        tmp.deleteRecursively();
+        const StageGuard g { tmp.getChildFile ("3d-starting") };
+        const bool clean = ! g.lastStartDied();
+        g.starting();
+        const bool died = StageGuard { tmp.getChildFile ("3d-starting") }.lastStartDied();
+        g.settled();
+        check (clean && died && ! g.lastStartDied(), "a start that never finished leaves its note for the next launch to find; one that did takes it away");
+        tmp.deleteRecursively();
+    }
     Screen sc (ses);
     sc.setSize (1296, 838);
     sc.addToDesktop (0); sc.setVisible (true);
+    int began = 0, ended = 0;
+    sc.onThreeStarting = [&began] { ++began; };
+    sc.onThreeSettled = [&ended] { ++ended; };
     sc.setThree (true);
     for (int i = 0; i < 400 && sc.isThree() && ! sc.threeShowing(); ++i) pump (25);
     check (sc.threeShowing(), "the 3D stage starts" + (sc.threeShowing() ? " (" + sc.stageOrNull()->driver() + ")" : ": " + sc.threeNote()));
@@ -3100,6 +3224,38 @@ static int stageTest()
         }
         else differ = -1;
         check (differ == 0, "a part of the sheet printed again gives the picture a whole printing gives (" + juce::String (differ) + " rows differ)");
+        check (began == 1 && ended == 1, "the stage said it was starting, and that it was up once it had drawn");
+
+        // 3b. nothing is built again that has not changed
+        fresh();
+        const int b0 = st->builds();
+        sc.repaint(); fresh();                                          // all of the sheet printed again: no part differs
+        ses.userSet (cx::kMaster, 0.31f); audio (20); fresh(); fresh(); // the meters move
+        const int b1 = st->builds();
+        const auto before = st->sheet().createCopy();
+        const auto picBefore = fresh();
+        for (int l = 0; l < 6; ++l) for (int k = 0; k < 12; ++k) { e.set (cx::lane (l, k), 0.83f); ses.moved (cx::lane (l, k), 2); ses.userSet (cx::lane (l, k), 0.83f, true); }      // 72 knobs, as a sequencer or a snapshot moves them
+        audio (30); fresh();
+        const auto picAfter = fresh();
+        int lightRows = 0;
+        if (picBefore.isValid() && picAfter.isValid() && picBefore.getBounds() == picAfter.getBounds())
+        {
+            const juce::Image::BitmapData a (picBefore, juce::Image::BitmapData::readOnly), c (picAfter, juce::Image::BitmapData::readOnly);
+            for (int y = 0; y < a.height; ++y) if (std::memcmp (a.getLinePointer (y), c.getLinePointer (y), (size_t) a.width * 4) != 0) ++lightRows;
+        }
+        const int b2 = st->builds();
+        sc.repaint(); fresh();                                          // and all of the sheet printed with them there: is it what it was?
+        int sheetRows = 0;
+        {
+            const juce::Image::BitmapData a (before, juce::Image::BitmapData::readOnly), c (st->sheet(), juce::Image::BitmapData::readOnly);
+            for (int y = 0; y < a.height; ++y) if (std::memcmp (a.getLinePointer (y), c.getLinePointer (y), (size_t) a.width * 4) != 0) ++sheetRows;
+        }
+        ses.userSet (cx::lane (1, cx::kMute), 1.0f); audio (4); fresh();
+        const int b3 = st->builds();
+        ses.userSet (cx::lane (1, cx::kMute), 0.0f); audio (4); fresh();
+        check (b1 == b0 && b2 == b0 && sheetRows == 0 && b3 == b0 + 1 && lightRows > 50,
+               "the shapes are built and sent to the card only when a part changes: not for a refresh with nothing new, the meters, or 72 knobs travelling (" + juce::String (b1 - b0) + ", " + juce::String (b2 - b0)
+                   + " builds; the sheet under the knobs is as it was, " + juce::String (sheetRows) + " rows differ; their lights did move in the picture, over " + juce::String (lightRows) + " rows), and once for a key (" + juce::String (b3 - b0) + ")");
     }
 
     // 4. the eye
@@ -3849,7 +4005,18 @@ public:
                 if (screen->threeNote().isNotEmpty())
                     lookFile().getSiblingFile ("3d.log").appendText (juce::Time::getCurrentTime().toString (true, true) + "  " + screen->threeNote() + "\n");
             };
-            if (three) screen->setThree (true);
+            stageGuard.note = lookFile().getSiblingFile ("3d-starting");
+            const bool died = stageGuard.lastStartDied();
+            stageGuard.settled();
+            screen->onThreeStarting = [this] { stageGuard.starting(); };
+            screen->onThreeSettled = [this] { stageGuard.settled(); };
+            if (three && died)
+            {
+                const juce::String why = "the 3D stage did not finish starting last time: it is left off (3 tries it again)";
+                lookFile().getSiblingFile ("3d.log").appendText (juce::Time::getCurrentTime().toString (true, true) + "  " + why + "\n");
+                screen->sayOnBar ("3D DID NOT FINISH STARTING LAST TIME: LEFT OFF.  3 TRIES IT AGAIN");
+            }
+            else if (three) screen->setThree (true);
         }
         window = std::make_unique<MainWindow> (screen);
         screen->grabKeyboardFocus();
@@ -3859,6 +4026,7 @@ public:
 
     void shutdown() override
     {
+        stageGuard.settled();               // (leaving in good order, even with the stage still coming up, is not a start that died)
         recorder = nullptr;                 // a take under way is finished and kept
         if (engine != nullptr)
         {
@@ -3919,6 +4087,7 @@ private:
     std::unique_ptr<sf0::Midi> midi;
     std::unique_ptr<sf0::Recorder> recorder;
     std::unique_ptr<MainWindow> window;
+    StageGuard stageGuard;
     juce::Component::SafePointer<juce::DialogWindow> setup;
 };
 

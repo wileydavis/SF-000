@@ -569,7 +569,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     std::atomic<int> stateNow { (int) State::starting };
     juce::String why, driverName;
     std::atomic<bool> away { false }, gotFrame { false }, sheetOverflow { false };
-    std::atomic<int> frameCount { 0 };
+    std::atomic<int> frameCount { 0 }, buildCount { 0 };
     std::atomic<int> lookSpread { -1 };         // how far apart the darkest and brightest points of the first picture were (-1: not looked at yet)
     std::atomic<double> lastMs { 0.0 };
     // what the eye last saw through, for finding the pointer's place (under the lock)
@@ -579,6 +579,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
 
     // ---- the message thread's own
     Parts partsMsg;
+    bool partsGiven = false;
     juce::Image sheetImg;
     static constexpr int kTile = 64;            // the sheet is compared and sent in squares of this many pixels
     juce::HeapBlock<juce::uint8> sentPx;        // the sheet as the drawing thread last had it
@@ -743,6 +744,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         { const juce::ScopedLock sl (lock); driverName = juce::String ((const char*) glGetString (GL_RENDERER)) + ", OpenGL " + juce::String ((const char*) glGetString (GL_VERSION)); }
         const auto askedToFail = juce::SystemStats::getEnvironmentVariable ("SF000_3D_FAIL", "");
         blankForTest = askedToFail == "blank";          // (for the checks: it starts, and then draws nothing)
+        if (askedToFail == "stall") return;             // (for the checks: a context that is made and never draws)
         if (askedToFail.isNotEmpty() && ! blankForTest) { fail ("asked not to start (SF000_3D_FAIL is set)"); return; }
         if (glVertexAttribDivisor == nullptr || glDrawElementsInstanced == nullptr || glBlitFramebuffer == nullptr || glRenderbufferStorageMultisample == nullptr || glGenVertexArrays == nullptr)
         { fail ("this OpenGL (" + driverName + ") is older than 3.2"); return; }
@@ -1135,6 +1137,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         {
             needBuild = false;
             build();
+            ++buildCount;
             if (const auto s = parts.shape(); s != shapeWas) { shapeWas = s; shadowStale = true; }
             sceneStale = true;
         }
@@ -1456,6 +1459,7 @@ Stage::~Stage() { detach(); }
 void Stage::attachTo (juce::Component& c)
 {
     if (impl->context.isAttached()) return;
+    impl->context.detach();             // (an attachment whose context was never made is not "attached", but is in the way of another try)
     impl->comp = &c;
     impl->stateNow = (int) State::starting;
     impl->context.setRenderer (impl.get());
@@ -1476,7 +1480,7 @@ void Stage::attachTo (juce::Component& c)
 
 void Stage::detach()
 {
-    if (impl->context.isAttached()) impl->context.detach();
+    impl->context.detach();             // (whether or not its context was ever made)
     impl->comp = nullptr;
     impl->gotFrame = false;
 }
@@ -1484,10 +1488,20 @@ void Stage::detach()
 bool Stage::attached() const { return impl->context.isAttached(); }
 Stage::State Stage::state() const { return (State) impl->stateNow.load(); }
 juce::String Stage::whyNot() const { const juce::ScopedLock sl (impl->lock); return impl->why; }
+void Stage::giveUp (const juce::String& why)
+{
+    { const juce::ScopedLock sl (impl->lock); impl->why = why; }
+    impl->stateNow = (int) State::failed;
+    juce::Logger::writeToLog ("SF-000 3D: " + why);
+}
 juce::String Stage::driver() const { const juce::ScopedLock sl (impl->lock); return impl->driverName; }
 
 void Stage::setParts (const Parts& p)
 {
+    // the same as it has: nothing is handed over, built or sent (the screen records itself again at
+    // every refresh, and most refreshes, a meter moving, change no part)
+    if (impl->partsGiven && impl->partsMsg.same (p)) return;
+    impl->partsGiven = true;
     impl->partsMsg = p;
     {
         const juce::ScopedLock sl (impl->lock);
@@ -1732,5 +1746,6 @@ juce::Image Stage::capture (int timeoutMs)
 
 double Stage::frameMs() const { return impl->lastMs.load(); }
 int Stage::frames() const { return impl->frameCount.load(); }
+int Stage::builds() const { return impl->buildCount.load(); }
 int Stage::firstPictureSpread() const { return impl->lookSpread.load(); }
 } // namespace sf0

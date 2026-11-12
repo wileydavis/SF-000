@@ -461,7 +461,12 @@ void Engine::renderCue (int n, bool run, double ppq0, double beats)
             pos = q / span * (double) len;
             cuePos = pos;
         }
-        else { cuePos += 1.0; if (cuePos >= (double) len) cuePos -= (double) len; }
+        else
+        {
+            // as it was kept: at its own speed, whatever rate the interface runs at now (a clip kept at 96 kHz played an octave down at 48)
+            cuePos += cueNow->rate > 1.0 ? cueNow->rate / sr : 1.0;
+            while (cuePos >= (double) len) cuePos -= (double) len;
+        }
         const int i0 = juce::jlimit (0, len - 1, (int) pos), i1 = i0 + 1 < len ? i0 + 1 : 0;
         const float f = (float) (pos - (double) i0);
         const float* l = a.getReadPointer (0); const float* r = a.getReadPointer (a.getNumChannels() > 1 ? 1 : 0);
@@ -492,6 +497,7 @@ void Engine::phonesSplit (float* left, float* right, int n)
 bool Engine::lastHeard (Heard& h, int wantBars) const                          { return heard (h, wantBars, false, 0); }
 bool Engine::heldHeard (Heard& h, juce::uint32 stamp, int wantBars) const      { return heard (h, wantBars, true, stamp); }
 
+
 bool Engine::heard (Heard& h, int wantBars, bool heldOnly, juce::uint32 stamp) const
 {
     h = Heard();
@@ -514,9 +520,14 @@ bool Engine::heard (Heard& h, int wantBars, bool heldOnly, juce::uint32 stamp) c
         if (last >= 1 && (! heldOnly || held (last)))
         {
             const auto& e1 = marks[(size_t) (last % kMarks)];
+            // (how many bars of this length the tape can hold: fewer than four are then all there will ever be)
+            const juce::int64 barLen = e1.sample - marks[(size_t) ((last - 1) % kMarks)].sample;
+            if (barLen > 0) h.most = juce::jlimit (1, 4, (int) ((kTape - 65536) / barLen));
             int k = 0;
+            // (as many bars as the tape still holds: it is long enough for four at any tempo of the rig's own)
             while (k < wantBars && last - (k + 1) >= 0 && last - (k + 1) > count - kMarks
-                   && marks[(size_t) ((last - (k + 1)) % kMarks)].run == e1.run && (! heldOnly || held (last - k))) ++k;
+                   && marks[(size_t) ((last - (k + 1)) % kMarks)].run == e1.run && (! heldOnly || held (last - k))
+                   && end - marks[(size_t) ((last - (k + 1)) % kMarks)].sample <= kTape - 65536) ++k;
             // whole bars, if the last of them ended within the last eight seconds (the clock runs, or has only just stopped)
             if (k >= 1 && (heldOnly || end - e1.sample < (juce::int64) (sr * 8.0)))
             {
@@ -1066,6 +1077,11 @@ void Engine::applySetup (Target t, const SetupState& st)
 void Engine::prepare (double rate, int block)
 {
     prepared = false;
+    {
+        // a recording being made at another rate stops being fed here: nothing at the new rate goes into its files
+        const juce::SpinLock::ScopedLockType g (recLock);
+        if (recSink != nullptr && std::abs (recSinkRate - rate) > 0.5) recSink = nullptr;
+    }
     sr = rate; maxBlock = std::max (16, block);
     // The suite's bus is shared memory: it outlives an engine, and the app. A kick reported on it
     // by an earlier one stays "alive" for four seconds by the clock on the wall, which made the
@@ -1105,6 +1121,7 @@ void Engine::prepare (double rate, int block)
     for (auto& m : master) prep (*m);
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf }) b->setSize (2, maxBlock, false, true, false);
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
+    kTape = std::max (1 << 20, juce::nextPowerOfTwo ((int) std::ceil (sr * 16.0) + 65536 + maxBlock));
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
     tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
     liveMidi.ensureSize (8192);

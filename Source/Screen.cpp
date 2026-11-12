@@ -1927,12 +1927,31 @@ juce::uint64 Screen::metersNow() const
 }
 
 // ---------------------------------------------------------------------------------- the 3D stage
+void Screen::settled() { if (! settledSaid) { settledSaid = true; if (onThreeSettled) onThreeSettled(); } }
+void Screen::sayOnBar (const juce::String& words) { recNote = words; recNoteAt = juce::Time::getMillisecondCounter(); juce::Component::repaint(); }
+
+// Asked for, in front of the player, and still not up after six seconds: it is not coming (a
+// context that was made and never drew would otherwise be a black window for good). The lit
+// skin comes back and says so. True: it gave up just now.
+bool Screen::watchStart (juce::uint32 now, bool inFront)
+{
+    if (! wantThree || three || stage == nullptr || stage->state() != Stage::State::starting) { startingSince = 0; return false; }
+    if (! inFront) { startingSince = 0; return false; }
+    if (startingSince == 0) { startingSince = now; return false; }
+    if (now - startingSince <= 6000) return false;
+    stage->giveUp ("OpenGL did not start within six seconds");
+    stageState();
+    return true;
+}
+
 void Screen::setThree (bool on)
 {
     wantThree = on;
     stageNote = {};
     if (on)
     {
+        settledSaid = false; startingSince = 0;
+        if (onThreeStarting) onThreeStarting();
         lit = true;
         if (stage == nullptr) { stage = std::make_unique<Stage> (eng); stage->onState = [this] { stageState(); }; }
         stage->setDark (dark);
@@ -1945,6 +1964,7 @@ void Screen::setThree (bool on)
         three = false;
         cancelPendingUpdate();
         if (stage != nullptr) stage->detach();
+        settled();
         warm = false;
         setOpaque (true);
         juce::Component::repaint();
@@ -1964,6 +1984,7 @@ void Screen::stageState()
         warm = false;
         juce::Component::repaint();
         if (onLook) onLook();
+        settled();
         return;
     }
     if (stage->state() == Stage::State::running && three)
@@ -2225,6 +2246,8 @@ void Screen::refreshStage()
 void Screen::timerCallback()
 {
     if (three) { followMoves(); showTags(); }
+    if (three && ! settledSaid && stage != nullptr && stage->firstPictureSpread() != -1) settled();       // it is up and has drawn
+    watchStart (juce::Time::getMillisecondCounter(), isShowing() && juce::Process::isForegroundProcess());
     if (lit && ! three && skin.settled()) { warm = false; repaint(); }     // the window has a new size and has held it: the pictures are made again for its pixels
     if (lit && ! three && ! warm && skin.ready() && ! mouseIsDown)
     {
@@ -2235,13 +2258,21 @@ void Screen::timerCallback()
         skin.makePanel (272, 216, tone (col::putty));
     }
     // repaint what moved on its own: gliding knobs, the meters, the step that is playing
+    bool ringsMoved = false;
     for (auto& h : hits)
         if (h.kind == hKnob || h.kind == hSnapKnob || h.kind == hToggle || h.kind == hHold)
         {
             const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
             if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl])
+            {
+                // (on the 3D stage a knob's lights are the drawing thread's own business, read from
+                // the engine: nothing of the sheet or the record changes when one travels, so none
+                // of either is made again. A snapshot gliding moves a hundred at once.)
+                if (three && h.kind == hKnob) { lastShown[(size_t) ctl] = eng.shown (ctl); ringsMoved = true; continue; }
                 dirty (ctl == cx::lane (ses.activeLane, cx::kSeqMute) ? seqRect : h.r.expanded (14, 6));       // a sequencer's mute greys its steps
+            }
         }
+    if (ringsMoved && stage != nullptr) stage->kick();
     // a take that ended by itself (the disk) says so
     if (recorder != nullptr)
         if (const bool r = recorder->recording(); r != recWas) { recWas = r; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter(); }

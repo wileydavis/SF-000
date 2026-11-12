@@ -71,6 +71,29 @@ struct Parts
         for (auto& b : badges) b.base = on (b.r.getCentreX(), b.r.getCentreY());
     }
 
+    // The same instrument, to the last light? Every field of every thing is compared, so a field
+    // added to one of them is added here too. (shape(), below, is only for the shadows: it leaves
+    // out colours, lamps, hollows and more.) The stage builds nothing again when this says yes.
+    bool same (const Parts& o) const
+    {
+        auto clip = [] (const Clip& a, const Clip& b) { return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1; };
+        auto all = [] (const auto& a, const auto& b, auto eq)
+        {
+            if (a.size() != b.size()) return false;
+            for (size_t i = 0; i < a.size(); ++i) if (! eq (a[i], b[i])) return false;
+            return true;
+        };
+        return body == o.body && dark == o.dark
+            && all (plates, o.plates, [&] (const Plate& a, const Plate& b) { return a.r == b.r && a.ground == b.ground && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (knobs, o.knobs, [&] (const Knob& a, const Knob& b) { return a.cx == b.cx && a.cy == b.cy && a.big == b.big && a.ctl == b.ctl && a.kind == b.kind && a.steps == b.steps
+                                                                             && a.light == b.light && a.a == b.a && a.b == b.b && a.mark == b.mark && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (keys, o.keys, [&] (const Key& a, const Key& b) { return a.r == b.r && a.colour == b.colour && a.down == b.down && a.glows == b.glows && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (lamps, o.lamps, [&] (const Lamp& a, const Lamp& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.colour == b.colour && a.on == b.on && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (hollows, o.hollows, [&] (const Hollow& a, const Hollow& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.round == b.round && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (panes, o.panes, [&] (const Pane& a, const Pane& b) { return a.r == b.r && a.glass == b.glass && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (badges, o.badges, [] (const Badge& a, const Badge& b) { return a.r == b.r && a.base == b.base; });
+    }
+
     // A number that changes when anything that casts a shadow has moved (not when a light has).
     juce::uint64 shape() const
     {

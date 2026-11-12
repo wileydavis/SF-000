@@ -455,7 +455,10 @@ void Skin::recordKnob (float cx, float cy, int size, int ctl, int kind, int step
 {
     if (rec == nullptr || mode != Mode::record) return;
     Parts::Knob k;
-    k.cx = cx + shift; k.cy = cy; k.big = size >= 40; k.ctl = ctl; k.kind = kind; k.steps = steps; k.light = light.getARGB(); k.a = a; k.b = b; k.mark = mark; k.clip = clip;
+    k.cx = cx + shift; k.cy = cy; k.big = size >= 40; k.ctl = ctl; k.kind = kind; k.steps = steps; k.light = light.getARGB(); k.clip = clip;
+    // (a knob of the engine's has its lights read from the engine on the drawing thread: where they
+    // stand now is no part of what is recorded, so a knob travelling leaves the record as it was)
+    if (ctl < 0) { k.a = a; k.b = b; k.mark = mark; }
     rec->knobs.push_back (k);
 }
 

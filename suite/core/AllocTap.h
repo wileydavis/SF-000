@@ -92,27 +92,39 @@ public:
         // Analysis (pre-cut, so ALLOC sees what the source wants to play): the mean of the two
         // channels' band energies, so wide or out-of-phase stereo counts (a mono sum cancels it).
         // Mono material reads the same as its mono sum.
-        float acc[kBands] {};
-        const int nc = std::min (2, numCh);
-        for (int k = 0; k < nc; ++k)
-            for (int i = 0; i < n; ++i)
-            {
-                const float x = ch[k][i];
-                for (int b = 0; b < kBands; ++b)
-                {
-                    const float y = analysis[k][b].tickBP (x);
-                    acc[b] += y * y;
-                }
-            }
-        if (nc == 2) for (auto& a : acc) a *= 0.5f;
-        // Fast attack (40 ms), quick release (80 ms): a band frees up soon after a source stops.
-        const float upCoef = std::pow (std::exp (-1.0f / (float) (0.04 * sr)), (float) n);
-        const float downCoef = std::pow (std::exp (-1.0f / (float) (0.08 * sr)), (float) n);
-        for (int b = 0; b < kBands; ++b)
+        // (SF-000) With no SF ALLOC up anywhere on the bus there is no one to read this: the ten
+        // bands are not worked out for nobody (they were, on every lane, though the standalone rig
+        // has no ALLOC). One started later finds them within its own 40 ms.
+        if (bus.allocAlive())
         {
-            const float m = acc[b] / (float) std::max (1, n);
-            ms[b] = m + (m > ms[b] ? upCoef : downCoef) * (ms[b] - m);
-            s.energy[b] = 10.0f * std::log10 (ms[b] + 1.0e-12f) + 3.0f;
+            unheard = false;
+            float acc[kBands] {};
+            const int nc = std::min (2, numCh);
+            for (int k = 0; k < nc; ++k)
+                for (int i = 0; i < n; ++i)
+                {
+                    const float x = ch[k][i];
+                    for (int b = 0; b < kBands; ++b)
+                    {
+                        const float y = analysis[k][b].tickBP (x);
+                        acc[b] += y * y;
+                    }
+                }
+            if (nc == 2) for (auto& a : acc) a *= 0.5f;
+            // Fast attack (40 ms), quick release (80 ms): a band frees up soon after a source stops.
+            const float upCoef = std::pow (std::exp (-1.0f / (float) (0.04 * sr)), (float) n);
+            const float downCoef = std::pow (std::exp (-1.0f / (float) (0.08 * sr)), (float) n);
+            for (int b = 0; b < kBands; ++b)
+            {
+                const float m = acc[b] / (float) std::max (1, n);
+                ms[b] = m + (m > ms[b] ? upCoef : downCoef) * (ms[b] - m);
+                s.energy[b] = 10.0f * std::log10 (ms[b] + 1.0e-12f) + 3.0f;
+            }
+        }
+        else if (! unheard)
+        {
+            unheard = true;
+            for (int b = 0; b < kBands; ++b) { ms[b] = 0.0f; s.energy[b] = -117.0f; }
         }
 
         // Cuts: glide toward ALLOC's request at ~60 dB/s.
@@ -155,6 +167,7 @@ private:
     Svf analysis[2][kBands];
     Biquad eq[2][kBands];
     float ms[kBands] {}, applied[kBands] {};
+    bool unheard = false;           // no ALLOC is listening: the analysis is at rest
     float msCoef = 0.0f;
 };
 } // namespace sf

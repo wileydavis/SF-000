@@ -349,6 +349,7 @@ bool Session::cue (juce::int64 id)
                     clip->audio.setSize (2, (int) r->lengthInSamples);
                     r->read (&clip->audio, 0, (int) r->lengthInSamples, 0, true, true);
                     clip->bars = s->profile.has ? s->profile.bars : 0;
+                    clip->rate = r->sampleRate;
                 }
         }
     }
@@ -415,7 +416,7 @@ void Session::finishTakes (bool all)
         const bool some = indexOf (w.id) >= 0 && engine.heldHeard (h, w.stamp);
         const bool moved = engine.stateStamp() != w.stamp || ! engine.isRunning();
         if (indexOf (w.id) < 0) {}                                              // deleted meanwhile
-        else if (some && h.bars >= 4) { settle (w.id, h, true); any = true; }
+        else if (some && h.bars >= h.most) { settle (w.id, h, true); any = true; }       // four bars (fewer only if the tape cannot hold four: an outside clock slower than 60)
         else if (! (moved || all)) { ++k; continue; }                           // not yet: it is still holding
         else if (some) { settle (w.id, h, true); any = true; }                  // it moved on: the bars that were held, fewer than four
         else if (w.hasBefore) { settle (w.id, w.before, false); any = true; }   // none were: the bars it was taken over

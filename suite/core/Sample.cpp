@@ -251,9 +251,32 @@ static SamplePtr readFrom (juce::AudioFormatReader* r, double targetSr, const ju
     return makeSample (std::move (b), reader->sampleRate, targetSr, name, encode);
 }
 
+// (SF-000) A file already read, and still held by something (the voice that is leaving, another
+// lane), is shared and not read again: a sample never changes once it is made. A recall that
+// crossed a voice over used to read its file from the disk again, a third of a second for a
+// minute of sound, on the thread the screen runs on; and lost the sample if the disk had gone.
 SamplePtr loadSampleFile (const juce::File& f, double targetSr, double maxSeconds)
 {
-    return readFrom (formats().createReaderFor (f), targetSr, f.getFileNameWithoutExtension(), true, maxSeconds);
+    struct Kept { juce::String path; double sr = 0.0, most = 0.0; juce::int64 size = 0; juce::Time changed; std::weak_ptr<const SampleData> data; };
+    static std::mutex lock;
+    static std::vector<Kept> kept;
+    const auto path = f.getFullPathName();
+    {
+        const std::lock_guard<std::mutex> g (lock);
+        kept.erase (std::remove_if (kept.begin(), kept.end(), [] (const Kept& k) { return k.data.expired(); }), kept.end());
+        for (auto& k : kept)
+            if (k.path == path && k.sr == targetSr && k.most == maxSeconds)
+                if (auto held = k.data.lock())
+                    // the file as it was when it was read, or gone from where it was: what is held is it
+                    if (! f.existsAsFile() || (f.getSize() == k.size && f.getLastModificationTime() == k.changed)) return held;
+    }
+    auto s = readFrom (formats().createReaderFor (f), targetSr, f.getFileNameWithoutExtension(), true, maxSeconds);
+    if (s != nullptr)
+    {
+        const std::lock_guard<std::mutex> g (lock);
+        kept.push_back ({ path, targetSr, maxSeconds, f.getSize(), f.getLastModificationTime(), s });
+    }
+    return s;
 }
 
 SamplePtr loadSampleFlac (const juce::MemoryBlock& mb, const juce::String& name, double targetSr, float gain)

@@ -150,6 +150,7 @@ public:
         juce::AudioBuffer<float> audio;         // the output: whole bars from a bar line, if the clock was running
         double sampleRate = 48000.0, bpm = 0.0;
         int bars = 0;                           // 0: no bar lines to go by (the last seconds, as they were)
+        int most = 4;                           // as many bars as the tape can hold at the tempo it was going (four, unless an outside clock is slower than 60)
         std::array<float, kLanes> laneDb {};    // each lane's level into the mix over those bars (-100: silent or not known)
         std::array<float, 2> retDb {};          // the two returns'
         float mixDb = -100.0f;                  // all of them together: what the master chain was given
@@ -168,7 +169,7 @@ public:
     // clock runs it plays in time: its bars on the rig's bars, at the rig's tempo (so its pitch
     // moves with the tempo's ratio to its own). Stopped, it plays as it was kept. A change of clip
     // fades over 10 ms each way.
-    struct CueClip { juce::AudioBuffer<float> audio; int bars = 0; };
+    struct CueClip { juce::AudioBuffer<float> audio; int bars = 0; double rate = 0.0; };       // rate: the one it was kept at (0: taken to be the engine's)
     // Message thread. The clip must outlive its use: keep it a second past replacing it (nullptr: silence).
     void setCue (const CueClip* c)              { cueWant = c; }
     // Silence at once, and the audio thread has let go of every clip when this returns (before clips are destroyed).
@@ -197,7 +198,9 @@ public:
         virtual void end (int n) noexcept = 0;
     };
     // Message thread. Returns once the audio thread has let go of the sink there was (nullptr: none).
-    void setRecSink (RecSink* s)                { const juce::SpinLock::ScopedLockType g (recLock); recSink = s; }
+    // (A sink is fed at the rate the engine had when it was given. If the audio starts again at another, the engine lets go of it there and then.)
+    void setRecSink (RecSink* s)                { const juce::SpinLock::ScopedLockType g (recLock); recSink = s; recSinkRate = sr; }
+    bool hasRecSink() const                     { const juce::SpinLock::ScopedLockType g (recLock); return recSink != nullptr; }
     int masterLatency() const                   { return masterLat.load(); }      // samples the master chain holds the set back
 
     // ---- inserts: -1 empty, else an index into effects()
@@ -449,7 +452,9 @@ private:
     std::atomic<uint64_t> blockCount { 0 };
     std::atomic<int> maxLat { 0 };
     int holdLat = 0;                            // what every lane is held to, whatever is on it
-    static constexpr int kTape = 1 << 20, kMarks = 64;
+    // The tape: the last sixteen seconds and a little more of the set, whatever the rate (four bars at 60, the slowest). Its length is a power of two.
+    static constexpr int kMarks = 64;
+    int kTape = 1 << 20;
     std::array<std::vector<float>, 2> tape;
     juce::int64 tapePos = 0;                    // audio thread
     std::atomic<juce::int64> tapeEnd { 0 };
@@ -475,8 +480,9 @@ private:
     float splitGain = 0.0f;                     // audio thread: how far the split is in
     juce::SpinLock cueLock;
     void renderCue (int n, bool run, double ppq0, double beats);
-    juce::SpinLock recLock;
+    mutable juce::SpinLock recLock;
     RecSink* recSink = nullptr;
+    double recSinkRate = 0.0;
     juce::AudioBuffer<float> recBuf;
     struct Loud;
     std::unique_ptr<Loud> loud;
