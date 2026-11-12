@@ -146,7 +146,10 @@ key's gate and anything else that follows the hand is wherever the pointer is on
 If OpenGL cannot start on a machine, the lit skin stays, the top bar says why for a few seconds,
 and the reason is written to `3d.log` beside the session. The same if it starts and its first
 picture comes out blank: the stage reads that picture back, and gives way to the lit skin
-rather than show nothing. 3D is tried again at the next launch, or with **3**.
+rather than show nothing. 3D is tried again at the next launch, or with **3**. A stage that
+is made and never draws is given six seconds in front of you. And if the app dies while the
+stage is coming up, the next launch leaves 3D off and says so (**3** tries it again): a stage
+that takes the app down cannot do it at every launch.
 
 How it is made: the lit skin's drawing calls are a list of solid parts (a plate here, a knob
 there, a key held down), and in 3D the skin writes that list down instead of drawing pictures.
@@ -306,6 +309,8 @@ Open AUDIO (now AUDIO AND MIDI) to see what is connected. Nothing needs choosing
   CLOCK LEAD is how long the follower takes to answer: play a plain sixteenth pattern from it into a
   lane, read NOTES IN LAND x MS LATE in the panel, and put that number on CLOCK LEAD. With the clock
   on, RUN waits two blocks and LEAD (a few ms) before the first sound.
+  Switched on while it is already running (or a sequencer plugged in then), the clock takes up
+  where the rig is, with no START: the follower joins at the next RUN.
 - **FOLLOW.** The OXI One (or any sender) is the clock: its START, STOP and CONTINUE are the
   transport and its tempo is the rig's. The TEMPO readout says CLOCK IN and shows the sender's tempo.
   SF-000 sends no clock while it follows. RUN still works by hand: stopped and started here while the
@@ -393,8 +398,8 @@ SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit ski
 On Linux the two 3D lines need a display and OpenGL 3.2; a software driver will do:
 `xvfb-run -a -s "-screen 0 2000x1300x24" build/.../SF-000 --stagetest`. `SF000_SHEET=2` (or 3)
 sets how fine the sheet is, `SF000_SAMPLES=0` turns edge smoothing off, `SF000_3D_FAIL=1` makes
-the stage refuse to start and `SF000_3D_FAIL=blank` makes it start and draw nothing (to see the
-falling back from each). The checks first tell the X server the names of a window manager's
+the stage refuse to start, `SF000_3D_FAIL=blank` makes it start and draw nothing, and
+`SF000_3D_FAIL=stall` makes it start and never draw (to see the falling back from each). The checks first tell the X server the names of a window manager's
 properties: on a server with none (Xvfb), JUCE's asking after them raised errors that could
 lock the screen's thread and the drawing thread against each other.
 
@@ -435,7 +440,7 @@ meters when a bar has moved, the playing step.
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
 scene, each snapshot's profile; its layout and the rules that keep old files readable are in
-`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `look.json` (the look: 3D, lit or flat, light or dark, and where the 3D stage's eye is kept), `3d.log` (why the 3D stage could not start, if it ever could not), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
+`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `look.json` (the look: 3D, lit or flat, light or dark, and where the 3D stage's eye is kept), `3d.log` (why the 3D stage could not start, if it ever could not), `3d-starting` (there only while the stage is coming up: found at launch, the last start never finished), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
 opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
 back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
 

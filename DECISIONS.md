@@ -843,6 +843,82 @@ sequencer), and that if in the app is best for performance and reliability, to d
      after), and the test has run seventeen times in a row since. The Mac has no X server and no
      Xlib: this was the test bench, not the instrument.
 
+## Twenty-first build (Nov 12): an outside audit
+
+You sent an audit of 006242a made with ChatGPT ("assess if any changes need to be made"). I
+checked each finding against the source before believing it. It was good work: twelve of
+fourteen hold, and four of those were mine from this week. What follows is finding by
+finding. Numbers in brackets are the audit's.
+
+207. **[1] The clock switched on with the rig running sent every tick since bar 1 at once.**
+     True: SEND pressed two minutes in, a sequencer plugged in mid-set, or the audio starting
+     again, and the follower got hundreds of ticks in one burst. It now takes up where the rig
+     is. *proposed:* the follower is sent no START then, so it joins at the next RUN; the other
+     way would be a START on the next bar line. Say if you want that.
+208. **[2] A tempo jump could put a tick before the one already sent.** True, and small (3 ms,
+     two ticks). The ticks of a block now lie evenly across that block, and a jump is made up
+     at twice the tempo at most.
+209. **[3] MIDI keys and GLIDE waited for the screen's thread** (25 ms, more if it was busy), and
+     a key pressed and let go between two of its visits was never heard. True. MUTE, SOLO, a
+     lane's sequencer muted and a hold (THROW, FREEZE) now act from the MIDI thread, as lane
+     knobs always did, on the next block of sound; GLIDE too, so a knob sent straight after it
+     travels by it. Everything else still waits for that thread, but in the order it came with
+     nothing dropped. *Not done, on purpose:* the audit's full answer is a timestamped command
+     queue read by the audio thread. That is sample-exact where this is block-exact (2.7 ms at
+     128), and a larger change than the fault called for. Snapshot knobs and recalls stay on
+     the screen's thread: they touch the whole session.
+210. **[4] Quitting with an upload stalled waited 8 s, then killed the thread by force.** True,
+     and it can take the app down as it leaves. A request under way is now called off; the
+     sender is gone in a few ms. Checked here against a library that takes the call and never
+     answers, both through SF-000's own socket and through JUCE's client. Not checked: the
+     Mac's own client (NSURLSession) being called off, which is the path https takes.
+211. **[5] A recall that crosses a voice over read its sample from the disk again** (a third of
+     a second for a minute of sound, with the screen stopped), and lost the sample if the disk
+     had gone. True. A sample already read and still held is now shared: 0.004 ms. *Not done:*
+     a snapshot's profile is still worked out on the screen's thread (30 to 60 ms); moving it to
+     a worker is right and is not small.
+212. **[6] One allocation on the audio thread at the first voice crossfade.** True. Reserved.
+213. **[7] An insert swap publishes its state in several steps.** True as a matter of form: a
+     tool for finding races would flag it. I can find no way for it to do more than fade one
+     block of one swap wrongly, in a window a few millionths of a second wide. *No change.* It
+     wants a sanitizer run on the Mac before anyone rewrites the handoff.
+214. **[8] A recording under way when the sample rate changes** got up to a second of sound at
+     the new rate in a file marked with the old. True, rare. The engine lets go of the recording
+     the moment the audio starts again at another rate.
+215. **[9] At 96 kHz below 94 bpm a snapshot's four bars never came.** True: the tape held 20 s
+     at 48 kHz and half that at 96. It is now sized by the rate (four bars at 60, the slowest),
+     and takes as many bars as it holds if an outside clock is slower still. 48 kHz is as it was.
+216. **[10] A replaced sample stays in memory until the next is dropped on that lane.** True and
+     bounded: one sample per lane at most, and only for samples swapped by hand. *No change.*
+217. **[11] The 3D stage rebuilt and re-sent every shape at every refresh.** True, and against
+     what I told you in 201. Unchanged parts are now neither handed over, built nor sent; a
+     knob travelling changes no part and prints nothing (a snapshot gliding moved a hundred
+     patches of the sheet thirty times a second for nothing). *Not done:* the whole sheet is
+     still printed again for a tempo drag, a snapshot knob under the mouse and CONFIG. That is
+     a matter of naming the right patch at each place; I would rather see it on your Mac first.
+218. **[12] If macOS refuses an OpenGL context, JUCE walks into it before SF-000 can answer.**
+     True in JUCE's source; I cannot make it happen and it is very unlikely on your Mac today.
+     Three things for the day it does: a start that never finished is not tried again at the
+     next launch (a note, `3d-starting`, is left while the stage comes up, and found if the app
+     died meanwhile: 3D is left off, the bar says so, **3** tries again); a stage that is made
+     and never draws is given six seconds in front of you, then the lit skin; and a failed
+     attachment is always cleared before another try. *Not done:* asking macOS beforehand
+     whether it will give a context. That is Mac-only code I cannot compile here, and a build
+     that breaks on your Mac is worse than the fault it guards against.
+219. **[13] The ALLOC analysis ran on all eleven lanes with no ALLOC to read it.** True. It rests
+     unless an SF ALLOC is on the bus (in Live beside it, say). About two points of the engine's
+     39 here, which is near what the measurement itself wanders by. This is in the suite's own
+     code (`suite/core/AllocTap.h`, marked): the other chat should take it too. *Not done:* the
+     pocket's scan of kick reports, which is in the sound's inner loop; not without ears.
+220. **[14] A cue clip played at the wrong pitch if the interface's rate had changed since it
+     was taken.** True, rare. It plays at its own speed.
+221. **Not changed, and why.** *Memory:* the audit puts the 3D stage at about 750 MB at full
+     screen on your display, most of it the smoothed picture. That is its sum of the formats, not
+     a measurement, and it is right. On your machine it is affordable; two-times smoothing in
+     place of four would save some 180 MB and I cannot judge the look from here. *MIDI times:*
+     notes are stamped when they reach SF-000, not when the Mac received them. The difference
+     is under a millisecond as a rule and nobody has measured it here. Both want your Mac.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -887,6 +963,11 @@ sequencer), and that if in the app is best for performance and reliability, to d
   the window between displays. If it does not start, or starts and draws a blank picture, the
   lit skin comes up and `3d.log` says why: send me that line. The study did run on your Mac at 120 frames a second in a browser, with more
   triangles than this draws.
+- **The audit's fixes (twenty-first) are checked here, each with a check of its own**, and none
+  on the Mac or on hardware. To try: SEND switched on while it runs (the ONE should stay
+  stopped and join at the next RUN, with no burst); a MUTE and a THROW sequenced from the ONE
+  (tight, not late); quitting with ONLINE on and the network pulled (it should simply quit); a
+  recall that changes VOICE's model with a long sample in it (no pause of the screen).
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.
