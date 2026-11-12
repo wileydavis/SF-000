@@ -108,6 +108,12 @@ movement from bar to bar, and how wet (the returns' share). `SF-000 --profiles` 
 snapshots the rig comes with and some plain cases. A snapshot taken with the clock stopped, or
 from before this build, has no sound kept: its card shows how busy each lane's pattern is, as before.
 
+The bars kept are ones the rig held the snapshot's state through: nothing changed in them and
+nothing was still travelling. Press SNAPSHOT on a state you have been listening to and its sound
+is there at once. Press it the moment you arrive (or while a knob glides) and the snapshot is taken
+at once, but its card fills in a few bars later, once four bars of that state have played. If you
+move on first, it keeps the bars that were held; if there were none, the bars it was taken over.
+
 ### ONLINE: the library on the web
 
 With **ONLINE** lit (the library screen's strip), every snapshot you take goes to your snapshot

@@ -561,6 +561,24 @@ same: a clip kept at every save, and a profile from the clip and from what the r
      library on this machine over http) could not use it. On the Mac, https goes through
      NSURLSession. That path is the one thing in ONLINE the checks here do not run.
 
+## Fourteenth build (Nov 11): a snapshot's sound is the state it holds
+
+153. **The clip is bars the rig held the snapshot's state through** (you heard a clip with what
+     came before the snapshot in it). It used to be the last four whole bars before SNAPSHOT was
+     pressed, whatever had happened in them. Now a bar counts only if nothing a snapshot holds
+     changed in it, no lane or effect was muted or soloed in it, nothing was still gliding, and a
+     bar has passed since any of that (for the tails of what went before).
+154. **Held for four bars already, its sound is there at once. Otherwise it waits for them.** The
+     snapshot itself is taken the moment the key is pressed, as before; its card fills in a few
+     bars later, and ONLINE sends the snapshot at once and its sound when it has come. A knob set
+     off on a 64-bar glide is waited for: the sound kept is the rig once it has arrived.
+155. **If the rig moves on first, it keeps what was held** (one to three bars), **and if nothing
+     was, the bars it was taken over**, marked in its profile (`"steady": false`). Mine: a clip of
+     the moment is worth more than none.
+156. **Tempo, GLIDE, the master's knobs and the snapshot knobs are not changes** for this (what a
+     snapshot knob moves is). Notes from outside cannot be seen to change: if the One starts
+     playing something else on a lane, the bars still count as held.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley

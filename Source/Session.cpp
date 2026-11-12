@@ -24,6 +24,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 Session::~Session()
 {
     stopTimer();
+    finishTakes (true);
     engine.dropCue();                   // before the clips go
     waitForClips();
     if (useDisk) save();
@@ -31,8 +32,11 @@ Session::~Session()
 
 void Session::timerCallback()
 {
-    if (dirty) save();
+    finishTakes();
+    // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
+    if (const auto now = juce::Time::getMillisecondCounter(); useDisk && dirty && now - savedAt >= 2900) { savedAt = now; save(); }
     pruneCues();
+    if (waiting.empty()) { if (useDisk) startTimer (3000); else stopTimer(); }
 }
 
 double Session::glideBeats() const { return glideBarsFor (engine.target (cx::kGlide)) * 4.0; }
@@ -352,18 +356,63 @@ juce::int64 Session::take()
     while (taken (nameFor (n))) ++n;
     s.name = nameFor (n);
     lastTakenAt = s.time.formatted ("%H:%M:%S");
-    // its sound: the bars just played are profiled here and kept as a clip, with nothing asked
+    // Its sound, with nothing asked: the bars the rig has held this state through, profiled and kept
+    // as a clip. Held for four bars already: those. Something has just moved, or is still on its
+    // way: it waits for them (finishTakes), so the clip is the snapshot and not the road to it.
+    const auto id = s.id;
+    const auto stamp = engine.stateStamp();
     Engine::Heard heard;
-    if (engine.lastHeard (heard))
-    {
-        s.profile = profileOf (heard);
-        if (useDisk) keepClip (s.id, heard);
-    }
+    const bool heldNow = engine.heldHeard (heard, stamp) && heard.bars >= 4;
     library.push_back (s);
     sign();
+    if (heldNow) settle (id, heard, true);
+    else if (engine.isRunning())
+    {
+        Waiting w;
+        w.id = id; w.stamp = stamp;
+        w.hasBefore = engine.lastHeard (w.before);
+        waiting.push_back (std::move (w));
+        startTimer (400);
+    }
+    else if (engine.lastHeard (heard)) settle (id, heard, false);     // the clock is stopped: what was last heard, if anything
     touch();
     if (onLibrary) onLibrary();
-    return library.back().id;
+    return id;
+}
+
+void Session::settle (juce::int64 id, const Engine::Heard& heard, bool steady)
+{
+    const int i = indexOf (id);
+    if (i < 0) return;
+    auto& s = library[(size_t) i];
+    s.profile = profileOf (heard);
+    s.profile.steady = steady;
+    if (useDisk) keepClip (id, heard);
+    touch();
+}
+
+void Session::finishTakes (bool all)
+{
+    if (waiting.empty()) return;
+    bool any = false;
+    for (size_t k = 0; k < waiting.size();)
+    {
+        auto& w = waiting[k];
+        Engine::Heard h;
+        const bool some = indexOf (w.id) >= 0 && engine.heldHeard (h, w.stamp);
+        const bool moved = engine.stateStamp() != w.stamp || ! engine.isRunning();
+        if (indexOf (w.id) < 0) {}                                              // deleted meanwhile
+        else if (some && h.bars >= 4) { settle (w.id, h, true); any = true; }
+        else if (! (moved || all)) { ++k; continue; }                           // not yet: it is still holding
+        else if (some) { settle (w.id, h, true); any = true; }                  // it moved on: the bars that were held, fewer than four
+        else if (w.hasBefore) { settle (w.id, w.before, false); any = true; }   // none were: the bars it was taken over
+        waiting.erase (waiting.begin() + (long) k);
+    }
+    if (any)
+    {
+        if (onChange) onChange();
+        if (onLibrary) onLibrary();
+    }
 }
 
 void Session::applySnapshot (const Snapshot& s, double glide)
@@ -420,6 +469,7 @@ void Session::remove (juce::int64 id)
     const int i = indexOf (id);
     if (i < 0) return;
     library.erase (library.begin() + i);
+    waiting.erase (std::remove_if (waiting.begin(), waiting.end(), [id] (const Waiting& w) { return w.id == id; }), waiting.end());
     if (cueId == id) cue (0);
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); }
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());

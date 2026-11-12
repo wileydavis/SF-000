@@ -204,6 +204,7 @@ juce::var Profile::toVar() const
     set ("energy", energy); set ("weight", weight); set ("bright", bright); set ("density", density);
     set ("tone", tone); set ("movement", movement); set ("wet", wet); set ("bpm", bpm);
     o->setProperty ("bars", bars);
+    if (! steady) o->setProperty ("steady", false);
     o->setProperty ("bands", bytes (bands.data(), (int) bands.size()));
     o->setProperty ("pulse", bytes (pulse.data(), (int) pulse.size()));
     o->setProperty ("lanes", bytes (lanes.data(), (int) lanes.size()));
@@ -218,6 +219,7 @@ Profile Profile::fromVar (const juce::var& v)
     p.energy = get ("energy"); p.weight = get ("weight"); p.bright = get ("bright"); p.density = get ("density");
     p.tone = get ("tone"); p.movement = get ("movement"); p.wet = get ("wet"); p.bpm = get ("bpm");
     p.bars = (int) v.getProperty ("bars", 0);
+    p.steady = (bool) v.getProperty ("steady", true);
     unbytes (v.getProperty ("bands", {}), p.bands.data(), (int) p.bands.size());
     unbytes (v.getProperty ("pulse", {}), p.pulse.data(), (int) p.pulse.size());
     unbytes (v.getProperty ("lanes", {}), p.lanes.data(), (int) p.lanes.size());

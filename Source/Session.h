@@ -98,6 +98,12 @@ public:
     void pressSnapKnob (int k);         // recall the knob's nearest snapshot as the new base; the knob goes home
     Snapshot capture() const;
     juce::int64 take();                 // the SNAPSHOT key
+    // A snapshot's sound is the bars the rig held its state through. Taken while something had just
+    // moved (or was still travelling), it waits for four such bars; this looks whether they have
+    // come. If the rig moves on first it takes what was held, or failing that the bars it was taken
+    // over. all: do not wait any longer. (The timer calls it; so do the checks.)
+    void finishTakes (bool all = false);
+    int takesWaiting() const            { return (int) waiting.size(); }
     void recall (juce::int64 id);       // it becomes the base scene; sound knobs travel by GLIDE
     const Snapshot* findSnap (juce::int64 id) const;
     int indexOf (juce::int64 id) const;
@@ -158,5 +164,9 @@ private:
     std::vector<std::pair<std::unique_ptr<Engine::CueClip>, juce::uint32>> cueKept;
     void pruneCues();
     void keepClip (juce::int64 id, const Engine::Heard&);
+    struct Waiting { juce::int64 id = 0; juce::uint32 stamp = 0; bool hasBefore = false; Engine::Heard before; };
+    std::vector<Waiting> waiting;       // snapshots whose sound has not settled yet
+    void settle (juce::int64 id, const Engine::Heard&, bool steady);
+    juce::uint32 savedAt = 0;
 };
 } // namespace sf0

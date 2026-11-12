@@ -155,6 +155,14 @@ public:
         float mixDb = -100.0f;                  // all of them together: what the master chain was given
     };
     bool lastHeard (Heard&, int bars = 4) const;      // message thread. false: there was nothing but silence
+    // The sound's state: a number that moves whenever anything a snapshot holds is changed (a knob,
+    // a step, an effect, a model, a file), or a lane is muted or soloed. Two moments with the same
+    // number are the same rig.
+    juce::uint32 stateStamp() const             { return stateStampV.load(); }
+    // The latest whole bars over which the rig held that state: nothing changed in them, nothing was
+    // still travelling, and a bar had passed since it last did (for the tails of what went before).
+    // Up to `bars` of them, the newest; h.bars says how many. False: none (or they are off the tape).
+    bool heldHeard (Heard& h, juce::uint32 stamp, int bars = 4) const;
 
     // ---- cue: a clip played to the headphones (outputs 3 and 4), apart from the set. While the
     // clock runs it plays in time: its bars on the rig's bars, at the rig's tempo (so its pitch
@@ -397,10 +405,18 @@ private:
     std::array<std::vector<float>, 2> tape;
     juce::int64 tapePos = 0;                    // audio thread
     std::atomic<juce::int64> tapeEnd { 0 };
-    struct Mark { juce::int64 sample = 0; int run = 0; std::array<double, kLanes + 2> sq {}; };
+    // steady, stamp: of the bar that ended at this line (steady: it was held, see heldHeard)
+    struct Mark { juce::int64 sample = 0; int run = 0; std::array<double, kLanes + 2> sq {}; juce::uint32 stamp = 0; bool steady = false; };
     std::array<Mark, kMarks> marks;             // the bar lines, where their sound leaves on the tape
     std::atomic<int> markCount { 0 };
     int runCount = 0;
+    std::atomic<juce::uint32> stateStampV { 1 };
+    void stateMoved()                           { stateStampV.fetch_add (1); }
+    bool heard (Heard&, int bars, bool heldOnly, juce::uint32 stamp) const;
+    // audio thread: whether the bar being played has been held so far
+    juce::uint32 stampSeen = 0;
+    bool barMoved = true, settling = true, glidingNow = false;
+    int movedFor = 0;                           // samples a change still colours (the lanes' hold, the master's)
     std::array<double, 2> retSq {};
     std::atomic<const CueClip*> cueWant { nullptr };
     const CueClip* cueNow = nullptr;            // audio thread

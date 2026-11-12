@@ -124,6 +124,7 @@ void Online::readLedger()
             e.snap = (bool) p.value.getProperty ("snap", false); e.clip = (bool) p.value.getProperty ("clip", false);
             e.gone = (bool) p.value.getProperty ("gone", false); e.refused = (bool) p.value.getProperty ("refused", false);
             e.name = p.value.getProperty ("name", "").toString();
+            e.prof = (bool) p.value.getProperty ("prof", false);
             ledger[p.name.toString()] = e;
         }
     if (auto* a = v.getProperty ("defs", var()).getArray()) for (auto& d : *a) defsSent.insert (d.toString());
@@ -138,6 +139,7 @@ void Online::writeLedger() const
         o->setProperty ("snap", kv.second.snap); o->setProperty ("clip", kv.second.clip);
         if (kv.second.gone) o->setProperty ("gone", true);
         if (kv.second.refused) o->setProperty ("refused", true);
+        if (kv.second.prof) o->setProperty ("prof", true);
         o->setProperty ("name", kv.second.name);
         sent->setProperty (kv.first, var (o));
     }
@@ -285,7 +287,7 @@ String Online::body (const String& uid, const std::set<String>& forced, juce::St
 bool Online::pass()
 {
     const Setup s = setup();
-    struct Item { String uid, name; juce::int64 id = 0; bool clipDue = false; juce::File clip; };
+    struct Item { String uid, name; juce::int64 id = 0; bool clipDue = false; juce::File clip; bool prof = false; };
     std::vector<Item> items;
     {
         // the library is the message thread's: read with its lock (given up at once if this thread is asked to stop)
@@ -294,7 +296,7 @@ bool Online::pass()
         const auto nowMs = juce::Time::currentTimeMillis();
         for (auto& x : ses.library)
             if (x.id >= kFirstTaken && x.uid.isNotEmpty())
-                items.push_back ({ x.uid, x.name, x.id, x.profile.has && nowMs - x.time.toMilliseconds() < 60000, ses.clipFile (x.id) });
+                items.push_back ({ x.uid, x.name, x.id, x.profile.has && nowMs - x.time.toMilliseconds() < 120000, ses.clipFile (x.id), x.profile.has });
     }
     auto left = [&]
     {
@@ -303,7 +305,7 @@ bool Online::pass()
         {
             const auto e = ledger.find (it.uid);
             if (e != ledger.end() && (e->second.gone || e->second.refused)) continue;
-            if (e == ledger.end() || ! e->second.snap || e->second.name != it.name || (! e->second.clip && it.clip.existsAsFile())) ++n;
+            if (e == ledger.end() || ! e->second.snap || e->second.name != it.name || (it.prof && ! e->second.prof) || (! e->second.clip && it.clip.existsAsFile())) ++n;
         }
         return n;
     };
@@ -345,7 +347,12 @@ bool Online::pass()
             const Entry was = e;
             if (! h.isObject()) { e.snap = false; e.clip = false; e.gone = false; }             // not there: it goes (again)
             else if ((bool) h.getProperty ("gone", false)) { e.gone = true; }                 // removed there: not sent again
-            else { e.snap = true; e.clip = (bool) h.getProperty ("clip", false); e.gone = false; if (was.name.isEmpty()) e.name = it.name; }
+            else
+            {
+                e.snap = true; e.clip = (bool) h.getProperty ("clip", false); e.gone = false;
+                if (was.name.isEmpty()) e.name = it.name;
+                e.prof = e.prof || e.clip;                      // (a clip and a profile arrive together)
+            }
             changed = changed || was.snap != e.snap || was.clip != e.clip || was.gone != e.gone || was.name != e.name;
         }
         asksFirst = false;
@@ -359,7 +366,7 @@ bool Online::pass()
         if (threadShouldExit()) break;
         auto& e = ledger[it.uid];
         if (e.gone || e.refused) continue;
-        if (! e.snap || e.name != it.name)
+        if (! e.snap || e.name != it.name || (it.prof && ! e.prof))    // new, renamed, or its sound has arrived since it went
         {
             say (State::working, left(), held());
             std::set<String> forced;
@@ -382,7 +389,7 @@ bool Online::pass()
                 failures = 0; changed = true;
                 for (auto& p : sending) defsSent.insert (p);
                 if ((bool) a.getProperty ("gone", false)) { e.gone = true; break; }
-                e.snap = true; e.name = it.name; e.clip = e.clip || (bool) a.getProperty ("clip", false);
+                e.snap = true; e.name = it.name; e.prof = it.prof; e.clip = e.clip || (bool) a.getProperty ("clip", false);
                 forced.clear();
                 if (auto* miss = a.getProperty ("missingDefs", var()).getArray()) for (auto& m : *miss) forced.insert (m.toString());
                 if (forced.empty()) break;                                  // (else once more, with the definitions it asked for)

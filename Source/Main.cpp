@@ -288,6 +288,69 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
+    // A snapshot's sound is the state it holds, not the road to it. Taken as something moves, it
+    // waits for bars the rig held still through; the bars before the press are no part of it.
+    {
+        Engine e;
+        e.prepare (48000.0, 128);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, 128);
+        auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 128.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+        auto only = [&] (std::initializer_list<int> keep) { for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), std::find (keep.begin(), keep.end(), l) != keep.end() ? 0.0f : 1.0f); };
+        auto prof = [&] (juce::int64 id) -> const Profile& { return ses.library[(size_t) ses.indexOf (id)].profile; };
+        for (int k = 0; k < 400; ++k) e.render (b);
+        e.setRunning (true);
+        bars (6.3);
+        // held for six bars: its sound is there at once, as before
+        const auto a = ses.take();
+        const bool atOnce = prof (a).has && prof (a).steady && prof (a).bars == 4 && ses.takesWaiting() == 0 && prof (a).lanes[1] > 0.1f;
+        // everything but the kick muted and SNAPSHOT pressed in the same breath: the last four bars were the whole rig
+        only ({ 0 });
+        const auto k = ses.take();
+        const bool waits = ! prof (k).has && ses.takesWaiting() == 1;
+        bars (2.0); ses.finishTakes();
+        const bool still = ! prof (k).has && ses.takesWaiting() == 1;
+        bars (4.6); ses.finishTakes();
+        const bool kickOnly = prof (k).has && prof (k).steady && prof (k).bars == 4 && prof (k).lanes[0] > 0.5f && prof (k).lanes[1] < 0.05f && prof (k).lanes[5] < 0.05f
+                              && prof (k).weight > 0.8f && ses.takesWaiting() == 0;
+        std::printf ("  %s: a snapshot taken the moment the rig changes waits for four bars held in its state (kick alone: kick %.2f, hat %.2f, bass %.2f; the bars before the press had hat %.2f); one taken after six held bars has its sound at once\n",
+                     atOnce && waits && still && kickOnly ? "ok  " : "FAIL", prof (k).lanes[0], prof (k).lanes[1], prof (k).lanes[5], prof (a).lanes[1]);
+        if (! (atOnce && waits && still && kickOnly)) ++bad;
+
+        // moved on after a few bars: what was held of it, fewer than four
+        only ({ 1, 2 });
+        const auto h = ses.take();
+        bars (3.4);
+        only ({ 0 });
+        bars (0.3); ses.finishTakes();
+        const bool part = prof (h).has && prof (h).steady && prof (h).bars >= 1 && prof (h).bars < 4 && prof (h).lanes[1] > 0.1f && prof (h).lanes[0] < 0.05f && ses.takesWaiting() == 0;
+        // moved on at once: nothing of it was held, so the bars it was taken over, marked as such
+        bars (6.0);
+        only ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+        const auto m = ses.take();
+        bars (0.2);
+        only ({ 0 });
+        bars (0.2); ses.finishTakes();
+        const bool fell = prof (m).has && ! prof (m).steady && ses.takesWaiting() == 0;
+        std::printf ("  %s: if the rig moves on before four bars are held, the snapshot takes the bars that were (%d, the hats alone); if none were, the bars it was taken over, and it says so\n",
+                     part && fell ? "ok  " : "FAIL", prof (h).bars);
+        if (! (part && fell)) ++bad;
+
+        // a knob still travelling when SNAPSHOT is pressed: the sound kept is where it arrives
+        only ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+        bars (6.0);
+        const int steps = e.control (cx::kGlide).steps();
+        for (int i = 0; i < steps; ++i) if (glideBarsFor ((float) i / (float) (steps - 1)) == 2.0) ses.userSet (cx::kGlide, (float) i / (float) (steps - 1));
+        const auto before = ses.take();
+        ses.userSet (cx::lane (1, kLaneKnobs - 1), 0.0f);          // the closed hat's LEVEL, down over two bars
+        const auto g = ses.take();
+        bars (9.5); ses.finishTakes();
+        const bool arrived = prof (before).has && prof (before).lanes[1] > 0.1f && prof (g).has && prof (g).steady && prof (g).lanes[1] < 0.05f && prof (g).lanes[0] > 0.5f && ses.takesWaiting() == 0;
+        std::printf ("  %s: taken as a knob sets off on a two-bar glide, the sound kept is the rig once it has arrived (the hat's lane %.2f before, %.2f kept)\n",
+                     arrived ? "ok  " : "FAIL", prof (before).lanes[1], prof (g).lanes[1]);
+        if (! arrived) ++bad;
+    }
+
     // Cue: a snapshot's clip in the headphones, in time with the clock, and the set untouched by it.
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_cue_test");

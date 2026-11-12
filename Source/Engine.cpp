@@ -240,7 +240,11 @@ int Engine::find (const juce::String& id) const
 void Engine::set (int i, float v, double glideBeats)
 {
     if (i < 0 || i >= cx::kCount) return;
-    targetV[(size_t) i] = juce::jlimit (0.0f, 1.0f, v);
+    v = juce::jlimit (0.0f, 1.0f, v);
+    // what a snapshot holds, and the mutes and solos (they are not held, but they change what is heard)
+    const bool muteLike = i < cx::kRet ? (i % cx::kPerLane) >= cx::kMute : (i >= cx::kRetMS && i < cx::kRetMS + 4);
+    if (targetV[(size_t) i].load() != v && (controls[(size_t) i].snapshot || muteLike)) stateMoved();
+    targetV[(size_t) i] = v;
     glideV[(size_t) i] = (float) glideBeats;
     seqV[(size_t) i].fetch_add (1);
     if (! prepared) { shownV[(size_t) i] = targetV[(size_t) i].load(); }
@@ -293,6 +297,7 @@ Pattern Engine::pattern (int l) const
 
 void Engine::setPattern (int l, const Pattern& p, bool onBarLine)
 {
+    stateMoved();
     auto& ln = lane[(size_t) l];
     {
         const juce::SpinLock::ScopedLockType g (patLock);
@@ -453,7 +458,10 @@ void Engine::renderCue (int n, bool run, double ppq0, double beats)
 
 // The last bars from the tape. Read behind the audio thread's place: what is copied here was
 // written whole buffers ago and is not written again for many seconds.
-bool Engine::lastHeard (Heard& h, int wantBars) const
+bool Engine::lastHeard (Heard& h, int wantBars) const                          { return heard (h, wantBars, false, 0); }
+bool Engine::heldHeard (Heard& h, juce::uint32 stamp, int wantBars) const      { return heard (h, wantBars, true, stamp); }
+
+bool Engine::heard (Heard& h, int wantBars, bool heldOnly, juce::uint32 stamp) const
 {
     h = Heard();
     h.sampleRate = sr;
@@ -469,20 +477,24 @@ bool Engine::lastHeard (Heard& h, int wantBars) const
     {
         int last = count - 1;
         if (marks[(size_t) (last % kMarks)].sample > end) --last;          // (that bar line's sound has not left the master chain yet)
-        if (last >= 1)
+        auto held = [&] (int line) { const auto& m = marks[(size_t) (line % kMarks)]; return m.steady && m.stamp == stamp; };
+        // held bars only: back to the newest bar that was held in that state
+        if (heldOnly) while (last >= 1 && last - 1 > count - kMarks && ! held (last)) --last;
+        if (last >= 1 && (! heldOnly || held (last)))
         {
             const auto& e1 = marks[(size_t) (last % kMarks)];
             int k = 0;
             while (k < wantBars && last - (k + 1) >= 0 && last - (k + 1) > count - kMarks
-                   && marks[(size_t) ((last - (k + 1)) % kMarks)].run == e1.run) ++k;
+                   && marks[(size_t) ((last - (k + 1)) % kMarks)].run == e1.run && (! heldOnly || held (last - k))) ++k;
             // whole bars, if the last of them ended within the last eight seconds (the clock runs, or has only just stopped)
-            if (k >= 1 && end - e1.sample < (juce::int64) (sr * 8.0))
+            if (k >= 1 && (heldOnly || end - e1.sample < (juce::int64) (sr * 8.0)))
             {
                 m1 = &e1; m0 = &marks[(size_t) ((last - k) % kMarks)];
                 bars = k; from = m0->sample; to = e1.sample;
             }
         }
     }
+    if (bars == 0 && heldOnly) return false;
     if (bars == 0) { to = end; from = std::max<juce::int64> (0, end - (juce::int64) (sr * 8.0)); }
     const juce::int64 len64 = to - from;
     if (len64 < (juce::int64) (sr * 0.5) || len64 > kTape - 65536 || end - from > kTape - 65536) return false;
@@ -573,6 +585,7 @@ void Engine::gatherNotes (int n, double spb)
 // -------------------------------------------------------------------------------------- inserts
 void Engine::setInsertType (int l, int slot, int type, bool defaults, const SetupState* setup)
 {
+    stateMoved();
     type = juce::jlimit (-1, (int) effects().size() - 1, type);
     auto& ln = lane[(size_t) l];
     collectRetired (false);
@@ -737,6 +750,7 @@ static int placeOf (SFProcessor& p)
 bool Engine::loadFiles (Target t, const juce::StringArray& paths)
 {
     if (! acceptsFiles (t)) return false;
+    stateMoved();
     // unreadable (macOS has not been allowed into that folder yet, or the file is gone): say so
     juce::StringArray ok;
     for (auto& path : paths)
@@ -793,6 +807,7 @@ const std::vector<Engine::FileRef>& Engine::heldFiles (Target t) const
 
 void Engine::setHeldFiles (Target t, const std::vector<FileRef>& refs)
 {
+    stateMoved();
     if (t.kind == 2 && t.slot == 1) { spaceFiles = refs; replayFiles (*space[1], refs); }
     else if (t.kind == 1)
     {
@@ -812,6 +827,7 @@ void Engine::setSpaceModel (int model)
 {
     model = juce::jlimit (0, kSpaceModels - 1, model);
     if (model == spaceWant.load()) return;
+    stateMoved();
     spaceWant = model;
     if (! prepared) spaceNow = model;
 }
@@ -870,6 +886,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
 
 void Engine::setSetup (Target t, const juce::String& id, float v)
 {
+    stateMoved();
     if (id == kModelId)
     {
         if (t.kind == 2 && t.slot == 1) setSpaceModel ((int) std::lround (juce::jlimit (0.0f, 1.0f, v) * (float) (kSpaceModels - 1)));
@@ -985,6 +1002,7 @@ juce::Optional<juce::AudioPlayHead::PositionInfo> Engine::getPosition() const
 void Engine::advanceControls (double beats)
 {
     gClock += beats;
+    glidingNow = false;
     for (int i = 0; i < cx::kCount; ++i)
     {
         const auto s = (size_t) i;
@@ -1006,6 +1024,7 @@ void Engine::advanceControls (double beats)
         }
         if (gliding[s])
         {
+            glidingNow = true;
             const double t = (gClock - gStart[s]) / gLen[s];
             if (t >= 1.0) { cur[s] = gTo[s]; gliding[s] = false; }
             else if (t > 0.0) cur[s] = gFrom[s] + (gTo[s] - gFrom[s]) * (float) t;
@@ -1137,7 +1156,14 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     // Where a bar line falls in this buffer, noted against the tape: its sound leaves the master
     // chain that much later than it is made.
-    if (starting || again) ++runCount;
+    if (starting || again) { ++runCount; barMoved = true; }
+    // Has the rig held still? A change colours the sound for as long as the lanes and the master
+    // hold it back; a knob still travelling is a change all the way.
+    const juce::uint32 stampNow = stateStampV.load();
+    if (stampNow != stampSeen) { stampSeen = stampNow; movedFor = maxLat.load() + masterLat.load() + n; }
+    const bool movingNow = movedFor > 0 || glidingNow;
+    if (movedFor > 0) movedFor -= n;
+    if (movingNow) barMoved = true;
     if (run)
     {
         const double bar = std::ceil (ppq / 4.0 - 1e-9) * 4.0;
@@ -1146,6 +1172,11 @@ void Engine::render (juce::AudioBuffer<float>& out)
             auto& m = marks[(size_t) (markCount.load() % kMarks)];
             m.sample = tapePos + (juce::int64) std::llround ((bar - ppq) * spb) + maxLat.load() + masterLat.load();
             m.run = runCount;
+            // the bar that ends here: held if nothing moved in it, and counted from the second such in a row
+            m.stamp = stampNow;
+            m.steady = ! barMoved && ! settling;
+            settling = barMoved;
+            barMoved = movingNow;                   // (what moved in this buffer may be the new bar's)
             for (int l = 0; l < kLanes; ++l) m.sq[(size_t) l] = laneSq[(size_t) l];
             m.sq[(size_t) kLanes] = retSq[0]; m.sq[(size_t) kLanes + 1] = retSq[1];
             markCount.fetch_add (1);

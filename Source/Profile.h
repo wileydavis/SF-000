@@ -30,6 +30,9 @@ struct Profile
     std::array<float, kLanes> lanes {};         // how much of each lane
     float bpm = 0.0f;
     int bars = 0;
+    // The bars it was worked out from were ones the rig held this state through. False: it moved on
+    // before a whole bar of it had been held, and these are the bars it was taken over instead.
+    bool steady = true;
 
     juce::var toVar() const;
     static Profile fromVar (const juce::var&);

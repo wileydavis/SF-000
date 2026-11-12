@@ -130,6 +130,7 @@ A menu (`m`) at `v` is choice `round(v * (n - 1))`; a switch (`t`) is on from 0.
 ```
 "profile": { "v": 1, "energy", "weight", "bright", "density", "tone", "movement", "wet",   each 0..1
              "bpm", "bars",
+             "steady": false,           only when false: see below
              "bands": [16 x 0..255],    the spectrum's shape, 30 Hz to 16 kHz
              "pulse": [32 x 0..255],    where the hits fall in the bar: the low end's sixteen steps, then the top's
              "lanes": [0..255 per lane] }
@@ -137,6 +138,11 @@ A menu (`m`) at `v` is choice `round(v * (n - 1))`; a switch (`t`) is on from 0.
 
 `v` is the way it was worked out (`kProfileVersion`); absent means 1. A profile is worked out
 from the clip and the rig's own levels, so a later version can be worked out again from the clip.
+
+The clip and the profile are of bars the rig held the snapshot's state through (nothing changed,
+nothing still gliding). `bars` says how many, four at most. `"steady": false` marks the exception:
+the rig moved on before a whole bar had been held, and these are the bars it was taken over. A
+snapshot taken while something moves has no profile at first; it is added when the bars have come.
 
 ## For a tool that writes snapshots
 

@@ -57,7 +57,7 @@ private:
     struct Reply { int status = 0; juce::String body; };       // status 0: no answer at all
     static Reply http (const Setup&, const juce::String& method, const juce::String& path,
                        const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000);
-    struct Entry { bool snap = false, clip = false, gone = false, refused = false; juce::String name; };
+    struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false; juce::String name; };
     void readSetup();
     void writeSetup() const;
     void readLedger();
