@@ -1,5 +1,7 @@
 #include "Bus.h"
+#include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <new>
 #include <random>
@@ -23,17 +25,55 @@ static constexpr uint32_t kVersion = 12;
 // Short name: macOS limits POSIX shm names to 31 chars. Bump with kVersion.
 static constexpr const char* kShmName = "/sf_000_bus_v1";
 
-double Bus::nowSec()
+// (SF-000) The clock: the wall's, plus what renders have put it ahead or behind (clockSkew); held
+// while one runs (clockHeld: it moves as the render says). See Bus.h, renderClockBegin.
+static std::atomic<bool> clockHolding { false };
+static std::atomic<double> clockHeld { 0.0 }, clockSkew { 0.0 };
+static double wallSec()
 {
-    if (testClock != nullptr) return testClock();
     using namespace std::chrono;
     return duration<double> (steady_clock::now().time_since_epoch()).count();
 }
+static double clockSec() { return clockHolding.load (std::memory_order_acquire) ? clockHeld.load (std::memory_order_acquire) : wallSec() + clockSkew.load (std::memory_order_acquire); }
 
-int64_t Bus::nowMs()
+double Bus::nowSec()
 {
-    using namespace std::chrono;
-    return duration_cast<milliseconds> (steady_clock::now().time_since_epoch()).count();
+    if (testClock != nullptr) return testClock();
+    return clockSec();
+}
+
+int64_t Bus::nowMs() { return (int64_t) std::llround (clockSec() * 1000.0); }
+
+void Bus::renderClockBegin()
+{
+    clockHeld.store (clockSec(), std::memory_order_release);
+    clockHolding.store (true, std::memory_order_release);
+    get().forgetKicks();
+}
+void Bus::renderClockAdvance (double seconds)
+{
+    if (clockHolding.load (std::memory_order_acquire) && seconds > 0.0) clockHeld.store (clockHeld.load (std::memory_order_acquire) + seconds, std::memory_order_release);
+}
+void Bus::renderClockEnd()
+{
+    if (! clockHolding.load (std::memory_order_acquire)) return;
+    clockSkew.store (clockHeld.load (std::memory_order_acquire) - wallSec(), std::memory_order_release);
+    clockHolding.store (false, std::memory_order_release);
+    get().forgetKicks();
+}
+// Every report made so far is from long ago, and no kick has been seen: for a rig that starts
+// where another left off (its own song position, its own time).
+void Bus::forgetKicks()
+{
+    for (int i = 0; i < kKickRing; ++i)
+    {
+        auto& s = data->kicks[i];
+        const uint32_t q = s.seq.load();
+        s.seq.store (q | 1u);
+        s.wall = -1.0e12;
+        s.seq.store ((q | 1u) + 1u);
+    }
+    data->kickSeenMs = (int64_t) -1.0e15;
 }
 
 Bus& Bus::get()

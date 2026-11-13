@@ -9,6 +9,11 @@ Changes made to the copy:
 - `core/Bus.cpp`: the shared-memory name is `/sf_000_bus_v1`, so SF-000 never shares a bus with
   the suite's plugins running in Live on the same Mac.
 
+- `core/Bus.cpp`, `core/Bus.h`: the bus's clock can be a render's own (`renderClockBegin`,
+  `renderClockAdvance`, `renderClockEnd`, `forgetKicks`), and `nowMs` is the same clock as
+  `nowSec`. A PRINT runs the rig faster than it is heard, and held up for a third of a second
+  it lost the duck under a kick (a kick's report is "current" by the wall). Marked `(SF-000)`.
+  See DECISIONS 370.
 - `core/Pocket.h`: `kLatency` is `SF_POCKET_LATENCY` if that is defined, 512 if not. SF-000's
   build defines it 0 (`SF000_POCKET_LATENCY` in `CMakeLists.txt`): its engine plays the kick's lane
   first in every buffer, so no module has to wait for the kick's reports. See DECISIONS 100-103.

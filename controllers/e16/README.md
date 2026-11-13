@@ -147,6 +147,7 @@ page 8   SEQ      the active lane's sequencer
                     5 RATCH     6 NOTE                       7 OCT       8 -
                     9 HITS [press: RANDOM]   10 ROTATE [press: EUCLID]   11 ACCENTS   12 SEED
                     15 [press]: nudge a step earlier        16 [press]: a step later
+                    (RANDOM: a new pattern at every press; SEED's every click is a pattern of its own)
 page 9   CFG 1    CONFIG's controls in the order its panel has them, twelve to a page
 page 10  CFG 2      15 [press]: the page before   16 [press]: the next
 page 11  CFG 3

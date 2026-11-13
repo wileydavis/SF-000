@@ -66,6 +66,7 @@ public:
     void setMode (Mode m, Parts* into = nullptr) { mode = m; rec = into; }
     bool recording() const { return mode == Mode::record; }
     bool printing() const { return mode == Mode::print; }
+    const Parts::Clip& clipNow() const { return clip; }
     void setClip (const R* r) { clip = Parts::Clip(); if (r != nullptr) clip = { r->getX(), r->getY(), r->getRight(), r->getBottom() }; }      // what is being recorded shows only inside this
     void setShift (float dx) { shift = dx; }                        // and stands this far to the right of where it is drawn
     // A knob, whole: which of the engine's controls it shows (or -1), and what is lit if none.

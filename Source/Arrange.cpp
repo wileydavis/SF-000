@@ -3,6 +3,7 @@
 #include "Session.h"
 #include "Recorder.h"
 #include "core/Loudness.h"
+#include "core/Bus.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 
 namespace sf0
@@ -276,6 +277,7 @@ String Session::printBegin (const juce::File& root)
 
     if (arrOn) arrStop();
     if (audioPause) audioPause();                       // one rig sounds at a time: this one waits
+    sf::Bus::renderClockBegin();                        // (and the bus goes by the print's own time, not the wall's: DECISIONS 370)
     auto p = std::make_shared<Print>();
     p->dir = dir; p->began = began;
     p->rate = engine.sampleRate(); p->tempo = engine.tempo();
@@ -324,6 +326,7 @@ bool Session::printStep (double msToSpend)
     {
         p.buf.setSize (2, n, false, false, true);
         p.eng->render (p.buf);
+        sf::Bus::renderClockAdvance ((double) n / p.rate);
     };
     while (juce::Time::getMillisecondCounterHiRes() - t0 < msToSpend)
     {
@@ -361,6 +364,7 @@ void Session::printEnd (bool keep, const String& why)
     auto p = print;
     p->eng->setRecSink (nullptr);
     p->eng->setRunning (false);
+    sf::Bus::renderClockEnd();
     if (keep && p->writers[0] != nullptr && p->eng->masterLatency() > 0)
     {
         // (the set began the master chain's wait later than its parts: that much silence at its end, and all the files are one length)

@@ -139,6 +139,25 @@ public:
     static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
     static bool testIsPick (const TestHit& h, int index) { return h.kind == hPick && h.a == index; }
     int testSelPart() const { return selPart; }
+    // Legends that are not wholly on the plate they are printed on, as last recorded for the stage (none: as it should be).
+    int testLegendCount() const { return (int) legendRects.size(); }
+    std::vector<juce::Rectangle<float>> testLegendsOff() const
+    {
+        std::vector<juce::Rectangle<float>> off;
+        for (const auto& l : legendRects)
+        {
+            const juce::Point<float> at (l.getCentreX(), l.getY() + 3.0f);
+            bool on = false, seen = false;
+            for (const auto& pl : recorded.plates)
+            {
+                if (! pl.clip.has (at.x, at.y)) continue;
+                seen = true;
+                if (pl.r.expanded (0.5f).contains (l)) { on = true; break; }
+            }
+            if (seen && ! on) off.push_back (l);
+        }
+        return off;
+    }
     void testPickPart (int part) { selPart = part; }
     static bool testIsLearnKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aLearn : which == 1 ? aLearnKeep : aLearnDrop); }     // LEARN, KEEP, DROP
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
@@ -284,6 +303,8 @@ private:
     juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
     juce::String arrSig;
     int selPart = -1, arrScroll = 0;
+    bool oneLine = false;               // legends drawn now stay on one line (there is no room on the plate under them for two)
+    std::vector<R> legendRects;         // where every legend was printed, at the last record of the parts (the checks)
     bool arrLit = false;
     juce::String motionSig() const;     // MOTION's strip, as words
     juce::String motSig;

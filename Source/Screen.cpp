@@ -167,13 +167,24 @@ float Screen::plate (G& g, float x, float y, const String& s, const juce::Font& 
 
 void Screen::legend (G& g, float cx, float y, const String& label)
 {
+    // A long legend of two words takes two lines, where there is a second line's room under it on
+    // its plate (oneLine: there is not, as on the strips at the foot of a page: it stays on one).
     const int sp = label.indexOfChar (' ');
-    if (label.length() > 7 && sp > 0)
+    const bool two = ! oneLine && label.length() > 7 && sp > 0;
+    if (two)
     {
         text (g, label.substring (0, sp), R (cx - 60, y, 120, 14), fLbl, col::black);
         text (g, label.substring (sp + 1), R (cx - 60, y + 14, 120, 14), fLbl, col::black);
     }
     else text (g, label, R (cx - 60, y, 120, 14), fLbl, col::black);
+    if (recording)
+    {
+        // (for the checks: where its letters are, to be held against the plate it is printed on)
+        // (one that has slid out of sight, past the edge of what shows, is not printed anywhere)
+        const float w = two ? std::max (tw (fLbl, label.substring (0, sp)), tw (fLbl, label.substring (sp + 1))) : tw (fLbl, label);
+        const R at = R (cx - w * 0.5f, y + 1.0f, w, two ? 26.0f : 12.0f).translated (shift, 0.0f);
+        if (skin.clipNow().has (at.getCentreX(), at.getY() + 3.0f)) legendRects.push_back (at);
+    }
 }
 
 void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int steps, Colour litCol, float target)
@@ -650,8 +661,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRatchet, "RATCHET", "THE SELECTED STEP PLAYS ONE TO FOUR HITS." },
                 { aNote, "NOTE", "THE SELECTED STEP'S NOTE." },
                 { aOctave, "OCTAVE", "THE SELECTED STEP'S OCTAVE." },
-                { aGen0, "RANDOM", "WRITES A PATTERN AT ONCE. WHILE IT IS LIT, HITS, ROTATE, ACCENTS AND SEED REWRITE IT." },
-                { aGen1, "EUCLID", "WRITES A PATTERN WITH ITS HITS SPREAD EVENLY. WHILE IT IS LIT, HITS, ROTATE, ACCENTS AND SEED REWRITE IT." },
+                { aGen0, "RANDOM", "WRITES A NEW PATTERN AT EVERY PRESS (SEED GOES TO A NEW PLACE). WHILE IT IS LIT, HITS, ROTATE, ACCENTS AND SEED REWRITE IT. A RHYTHM CHANGED BY HAND IS YOURS: THE KEY GOES OUT, AND THE KNOBS LET GO." },
+                { aGen1, "EUCLID", "WRITES A PATTERN WITH ITS HITS SPREAD EVENLY. WHILE IT IS LIT, HITS, ROTATE AND ACCENTS REWRITE IT; PRESSED AGAIN, OR ONCE THE RHYTHM IS CHANGED BY HAND, IT LETS GO." },
                 { aRename, "RENAME", "NAMES THE CHOSEN SNAPSHOT." },
                 { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
                 { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
@@ -1697,13 +1708,14 @@ void Screen::drawLibrary (G& g)
     const R strip (23, 980, 1682, 110);
     panel (g, strip, col::putty);
     const float x0 = strip.getX() + 5, y0 = strip.getY() + 5, ky = y0 + 40;
+    const juce::ScopedValueSetter<bool> onOneLine (oneLine, true);      // (no room under these keys for a second line: a legend that ran on went off the plate)
     title (g, x0, y0, String (total) + (total == 1 ? " SNAPSHOT" : " SNAPSHOTS"));
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aMacros, x0 + 66, ky, 64, "MACROS", col::white, 5);
     actKey (g, aSnapshot, x0 + 160, ky, 64, "SNAPSHOT", col::yellow, 5);
     const bool has = ses.findSnap (selSnap) != nullptr;
     actKey (g, aRename, x0 + 226, ky, 64, "RENAME", col::yellow, 5, has);
-    actKey (g, aDelete, x0 + 292, ky, 64, "HOLD: DELETE", col::red, 5, has);
+    actKey (g, aDelete, x0 + 308, ky, 64, "HOLD: DELETE", col::red, 5, has);
     // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
     actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5, true, cueMode);
     actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
@@ -1999,6 +2011,7 @@ void Screen::drawMacros (G& g)
     const R strip (23, 980, 1682, 110);
     panel (g, strip, col::putty);
     const float x0 = strip.getX() + 5, y0 = strip.getY() + 5, ky = y0 + 40;
+    const juce::ScopedValueSetter<bool> onOneLine (oneLine, true);      // (no room under these keys for a second line: a legend that ran on went off the plate)
     title (g, x0, y0, "KNOB " + String (selKnob + 1));
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
@@ -2128,6 +2141,7 @@ void Screen::drawArrange (G& g)
     panel (g, strip, col::putty);
     const float x0 = strip.getX() + 5, y0 = strip.getY() + 5, ky = y0 + 40;
     const bool pr = ses.printing(), play = ses.arrPlaying();
+    const juce::ScopedValueSetter<bool> onOneLine (oneLine, true);      // (no room under these keys for a second line)
     title (g, x0, y0, "ARRANGEMENT");
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
@@ -2136,7 +2150,7 @@ void Screen::drawArrange (G& g)
     actKey (g, aArrEarlier, x0 + 320, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
     actKey (g, aArrLater, x0 + 386, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
     actKey (g, aArrRemove, x0 + 452, ky, 64, "REMOVE", col::yellow, 5, selPart >= 0);
-    actKey (g, aArrClear, x0 + 518, ky, 64, "HOLD: CLEAR", col::red, 5, n > 0);
+    actKey (g, aArrClear, x0 + 534, ky, 64, "HOLD: CLEAR", col::red, 5, n > 0);
     actKey (g, aArrPrint, x0 + 612, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
     if (vis (g, strip))
     {
@@ -2434,7 +2448,7 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             const int ctl = drag.kind == hSnapKnob ? cx::kSnap + drag.a : drag.a;
             const auto& c = eng.control (ctl);
             float v;
-            if (c.kind == Kind::List && c.steps() > 1) v = drag.v0 + std::round (dy / 14.0f) / (float) (c.steps() - 1);
+            if (c.kind == Kind::List && c.steps() > 1) v = drag.v0 + std::round (dy / (c.steps() > 24 ? 3.0f : 14.0f)) / (float) (c.steps() - 1);       // (a long list: three pixels a place)
             else if (ctl == cx::kTempo) v = drag.v0 + dy * (e.mods.isShiftDown() ? 0.1f : 0.5f) / 140.0f;       // half a bpm a pixel
             else v = drag.v0 + dy / (e.mods.isShiftDown() ? 800.0f : 160.0f);
             ses.userSet (ctl, v);
@@ -3114,6 +3128,7 @@ void Screen::refreshStage()
         G g (none);
         g.reduceClipRegion (juce::Rectangle<int>());
         recorded.clear();
+        legendRects.clear();
         recorded.dark = dark;
         recording = true; collect = true;
         skin.setMode (Skin::Mode::record, &recorded);

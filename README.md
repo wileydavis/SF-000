@@ -48,7 +48,8 @@ First run:
 | < NUDGE, NUDGE > | move the whole pattern one step |
 | Drag the LENGTH knob | 1 to 128 steps. Click a page above the steps to see its 16 |
 | **M** in the sequencer strip | mute the active lane's own sequencer. Its steps stay, drawn grey, and go unplayed; the note it was holding is let go. Notes from MIDI in still sound on the lane. Press again and it comes back on its next lit step |
-| RANDOM, EUCLID | write a pattern at once; while the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite it |
+| RANDOM | a new pattern at every press: SEED goes to a new one of its 128 places, so the four knobs still say what plays. While the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite the pattern. Change the rhythm by hand (a step lit or put out, a velocity, a gate, a ratchet, a nudge) and the key goes out: the pattern is yours, and the knobs leave it alone. A note or an octave is not rhythm, and the key stays lit |
+| EUCLID | a pattern with its hits spread evenly, at once; while the key is lit, HITS, ROTATE and ACCENTS rewrite it. Press it again, or change the rhythm by hand, and it lets go |
 | **REC** (top bar) | press: start a take. Its key turns red and its name becomes the time it has run. **Hold** the key to end it. See Recording, below |
 | SNAPSHOT | keep everything on the main screen as a new snapshot. If the clock is running, the last four bars are kept with it as a clip and it is given a profile: nothing to name or tag (see The library, below) |
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
@@ -73,7 +74,7 @@ First run:
 | **K** | 3D: unlock the view (drag off the controls to turn it, shift-drag or right-drag to slide it, scroll or pinch to come nearer), and lock it where it is put |
 | **M** | 3D: whether the eye goes to what the controller moves |
 | **D** | the dark instrument, or the light one |
-| **L** | the lit skin, or the flat drawing it replaced |
+| **L** | the lit skin, or the flat drawing it replaced (neither is where new work goes: from the thirty-seventh build on a page is made for the 3D stage, and the lit skin is what stands in if 3D cannot start) |
 
 The screen never asks a question while it plays. PANIC silences every voice and tail.
 
@@ -500,8 +501,11 @@ whole of it is one travel from the snapshot before.
   and the time each begins.
   - It is made on **a rig of its own**, built there and then from the session as it stands, with
     every module starting from its beginning. So the rig you are playing is not touched, and
-    printing the same arrangement twice gives the same file to the byte. The sound stops while
-    it is made (one rig sounds at a time) and comes back when it is done.
+    printing the same arrangement twice gives the same file to the byte, however busy the
+    computer is meanwhile (the print goes by its own time, sample for sample, not the wall
+    clock's: before the thirty-seventh build a print held up by the computer could lose the duck
+    under a kick). The sound stops while it is made (one rig sounds at a time) and comes back
+    when it is done.
   - Each part brings its own notes, whatever NOTES says: nothing outside is playing. So what the
     ONE was playing has to be in the snapshots (it is, if they were taken while it played: see
     What a snapshot holds of the playing). No clock is sent or followed, and notes played in

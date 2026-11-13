@@ -904,13 +904,15 @@ static void arrangementTest (int& bad)
         if (! (began && done && putBack && files)) std::printf ("        (began %d [%s], done %d [%s], rose %d, steps %d, put back %d, files %d [%d %d bit])\n", began, err.toRawUTF8(), done, ses.printNote.toRawUTF8(), rose, steps, putBack, files, setBits, kickBits);
         if (files) dir.getChildFile ("00 SET.wav").loadFileAsData (firstSet);
         // twice is the same, to the byte
+        // (and the second is held up as a busy computer holds one up: six times, for longer than a
+        // kick's report stays current by the wall. A print goes by its own time, so it is no different.)
         const juce::String err2 = ses.printBegin (tmp.getChildFile ("prints"));
-        while (ses.printStep (50.0)) {}
+        for (int step = 0; ses.printStep (50.0); ++step) if (step % 9 == 4 && step < 54) juce::Thread::sleep (450);
         juce::MemoryBlock again;
         ses.printFolder.getChildFile ("00 SET.wav").loadFileAsData (again);
         juce::MemoryBlock kick1, kick2;
         dir.getChildFile ("01 KICK.wav").loadFileAsData (kick1); ses.printFolder.getChildFile ("01 KICK.wav").loadFileAsData (kick2);
-        say (err2.isEmpty() && ses.printFolder != dir && firstSet.getSize() > 1000 && firstSet == again && kick1 == kick2, "printed again, the files are the same to the byte");
+        say (err2.isEmpty() && ses.printFolder != dir && firstSet.getSize() > 1000 && firstSet == again && kick1 == kick2, "printed again, and held up six times for 450 ms on the way, the files are the same to the byte");
         if (! (firstSet == again))
             for (int t = 0; t < Engine::kRecTracks; ++t)
             {
@@ -3565,6 +3567,55 @@ static int uiTest()
         s2.pressGenerator (0, 1);
         int hits = 0; for (int i = 0; i < 16; ++i) hits += s2.pattern (0).steps[(size_t) i].on ? 1 : 0;
         check (hits == 5 && s2.genType[0] == 1, "EUCLID writes five hits on the kick and stays armed");
+        {
+            // RANDOM: a new pattern at every press
+            bool fresh = true, armed = true, seedMoved = true;
+            std::set<juce::String> seen;
+            auto says = [] (const Pattern& p) { juce::String t; for (int i = 0; i < p.length; ++i) t << (p.steps[(size_t) i].on ? (p.steps[(size_t) i].vel > 0.9f ? "X" : "x") : "."); return t; };
+            for (int n = 0; n < 12; ++n)
+            {
+                const Pattern was = s2.pattern (1);
+                const float seedWas = e2.target (cx::gen (1, 3));
+                s2.pressGenerator (1, 0);
+                fresh = fresh && ! sameRhythm (was, s2.pattern (1));
+                armed = armed && s2.genType[1] == 0;
+                seedMoved = seedMoved && std::abs (e2.target (cx::gen (1, 3)) - seedWas) > 0.5f / 127.0f;
+                seen.insert (says (s2.pattern (1)));
+            }
+            check (fresh && armed && seedMoved && seen.size() >= 10, ("RANDOM writes a new pattern at every press: twelve presses, each a rhythm that was not the one before ("
+                                                                         + juce::String ((int) seen.size()) + " different), SEED at a new place each time, and the key still lit").toRawUTF8());
+            // the knobs say what plays: the same four knobs write the same pattern again
+            const Pattern made = s2.pattern (1);
+            s2.userSet (cx::gen (1, 0), e2.target (cx::gen (1, 0)) + 0.25f); s2.userSet (cx::gen (1, 0), e2.target (cx::gen (1, 0)) - 0.25f);
+            check (sameRhythm (made, s2.pattern (1)), "and its four knobs say what it wrote: HITS turned up and back is the same pattern again");
+            // a rhythm changed by hand is the hand's: the generator lets go, and HITS no longer writes over it
+            Pattern mine = s2.pattern (1);
+            int freeStep = 0; while (freeStep < 15 && mine.steps[(size_t) freeStep].on) ++freeStep;
+            Pattern noted = mine; noted.steps[0].note = (noted.steps[0].note + 5) % 12; noted.steps[0].octave += 1;
+            s2.setPattern (1, noted);
+            const bool noteKeeps = s2.genType[1] == 0;
+            Pattern longer = noted; longer.length = 12;
+            s2.setPattern (1, longer); longer.length = 16; s2.setPattern (1, longer);
+            const bool lengthKeeps = s2.genType[1] == 0;
+            Pattern hand = noted; hand.steps[(size_t) freeStep].on = true;
+            s2.setPattern (1, hand);
+            const bool letGo = s2.genType[1] == -1;
+            s2.userSet (cx::gen (1, 0), 0.9f);
+            const bool kept = sameRhythm (hand, s2.pattern (1));
+            check (noteKeeps && lengthKeeps && letGo && kept, "a step lit by hand makes the generator let go, and HITS then leaves the pattern alone (a note, an octave or the length changed does not: the key stays lit)");
+            s2.pressGenerator (1, 1);
+            const bool e1 = s2.genType[1] == 1;
+            s2.pressGenerator (1, 1);
+            const bool e0 = s2.genType[1] == -1;
+            s2.pressGenerator (1, 1); s2.nudgeLane (1, 1);
+            check (e1 && e0 && s2.genType[1] == -1, "EUCLID lit is pressed out again; and a pattern moved a step lets its generator go");
+            // SEED: 128 places, each its own; the sixteen it had keep their patterns
+            std::set<int> seeds; bool olds = true;
+            for (int i = 0; i < 128; ++i) seeds.insert (seedAt ((float) i / 127.0f));
+            for (int k = 0; k < 16; ++k) olds = olds && seedAt ((float) k / 15.0f) == k;
+            check (seeds.size() == 128 && olds && e2.control (cx::gen (0, 3)).steps() == 128, "SEED has 128 places, each a pattern of its own, and the sixteen it had before write what they wrote");
+            s2.userSet (cx::gen (1, 0), 0.31f);
+        }
         s2.recall (mine);
         hits = 0; for (int i = 0; i < 16; ++i) hits += s2.pattern (0).steps[(size_t) i].on ? 1 : 0;
         check (std::abs (e2.target (res) - 0.2f) < 0.01f && hits == 4, "recalling the snapshot brings back its knobs and its pattern");
@@ -5434,7 +5485,9 @@ static int midiTest()
             press (13, e16::kNudgeKey); ticks (1);
             const bool back = ses.pattern (ln).steps[9].on && ! ses.pattern (ln).steps[10].on;
             press (13, e16::kGenKey); ticks (1);
-            const bool random = ses.genType[(size_t) ln] == 0;
+            const Pattern rnd1 = ses.pattern (ln);
+            press (13, e16::kGenKey); ticks (1);                                // (a new pattern at every press, and still lit)
+            const bool random = ses.genType[(size_t) ln] == 0 && ! sameRhythm (rnd1, ses.pattern (ln));
             press (13, e16::kGenKey + 1); ticks (1);
             const bool euclid = ses.genType[(size_t) ln] == 1;
             press (13, e16::kGenKey + 1); ticks (1);
@@ -6519,6 +6572,32 @@ static int stageTest()
         pump (200); fresh();
         check (near (tapped, Parts::kKeyDown) && near (after, ran ? Parts::kKey : Parts::kKeyOn) && near (st->keyTopNow (rk.x, rk.y), ran ? Parts::kKeyOn : Parts::kKey) && e.isRunning() == ran,
                "the space bar is seen on RUN: its key goes in, then stands where its state says (" + juce::String (tapped / Parts::kU, 2) + ", " + juce::String (after / Parts::kU, 2) + ", " + juce::String (st->keyTopNow (rk.x, rk.y) / Parts::kU, 2) + " mm)");
+    }
+
+    // 3e. every legend is on the plate it is printed on, on every page (one of two lines used to run off the strips at the foot)
+    {
+        juce::String offAt; int looked = 0;
+        auto look = [&] (const char* name)
+        {
+            fresh();
+            looked += sc.testLegendCount();
+            const auto off = sc.testLegendsOff();
+            if (! off.empty()) offAt << name << ": " << (int) off.size() << " (the first at " << off[0].toString() << ")  ";
+        };
+        while (! ses.arrangement.empty()) ses.arrRemove (0);
+        for (int i = 1; i <= 3 && i < (int) ses.library.size(); ++i) ses.arrAdd (ses.library[(size_t) i].id);
+        sc.setPage (Screen::pMain); look ("MAIN");
+        sc.showConfig ({ 0, 5, 0 }); look ("CONFIG");
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)); fresh();
+        sc.setPage (Screen::pLibrary); fresh();
+        click (find ([] (const Screen::TestHit& h) { return Screen::testIsCard (h); })); look ("LIBRARY");
+        sc.setPage (Screen::pMacros); look ("MACROS");
+        sc.setPage (Screen::pPockets); look ("POCKETS");
+        sc.setPage (Screen::pArrange); sc.testPickPart (1); look ("ARRANGE");
+        while (! ses.arrangement.empty()) ses.arrRemove (0);
+        sc.setPage (Screen::pMain); fresh();
+        check (offAt.isEmpty() && looked > 300, "every legend is on the plate it is printed on, on the main screen, CONFIG, the library, the macro designer, POCKETS and the arrangement (" + juce::String (looked) + " legends)"
+                                                    + (offAt.isEmpty() ? juce::String() : ": OFF ITS PLATE: " + offAt));
     }
 
     // 4. the eye

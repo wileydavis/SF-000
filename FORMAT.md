@@ -102,7 +102,8 @@ this build does not have is written back as it was read.
 
 - **`values`**: every stored control by id. A lane's knob is `<slot>.<param>`; an insert's cell
   is `<slot>.i<insert>.c<cell>` (by place: what the place is depends on the effect in `inserts`);
-  the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on; the returns are
+  the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on (`.gen_seed` has 128
+  places from the thirty-seventh build on; the sixteen it had, at fifteenths, write what they wrote); the returns are
   `ret.dub_*`, `ret.space_*`, `ret.conv_*`; the drum bus's four are `bus.drive`, `bus.crunch`,
   `bus.punch`, `bus.boom`; POCKETS' are `<slot>.pk_home`, `.pk_width`, `.pk_hold`, `.pk_yield`
   on every lane and `pk.amount`, `pk.clear`, `pk.speed`, `pk.returns` for the rig (thirty-first

@@ -178,6 +178,16 @@ public:
     static int64_t nowMs();
     static double nowSec();
     static inline double (*testClock)() = nullptr;    // offline tests: simulated time
+    // (SF-000) The bus's clock while a rig is rendered and not heard (a PRINT). What the bus goes by
+    // "how long ago" for (a kick's report still current, a part alive) is then the render's own
+    // time, sample for sample, and not the wall's: a render that the computer holds up for half a
+    // second no longer loses the duck under a kick, and two renders are the same. The clock never
+    // steps back: when the render ends it runs on with the wall from where the render left it.
+    // Begin and End also forget the kicks reported so far, which were another rig's.
+    static void renderClockBegin();
+    static void renderClockAdvance (double seconds);
+    static void renderClockEnd();
+    void forgetKicks();
 
     BusData& d() { return *data; }
     bool shared() const { return isShared; }

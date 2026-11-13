@@ -208,7 +208,7 @@ Engine::Engine()
         for (int k = 0; k < 4; ++k)
         {
             auto& c = named (cx::gen (l, k), slug + "." + gi[k], gn[k], k == 1 ? Kind::Bipolar : k == 3 ? Kind::List : Kind::Knob, gd[k], true, false);
-            if (k == 3) for (int q = 1; q <= 16; ++q) c.choices.add (juce::String (q));
+            if (k == 3) for (int q = 1; q <= 128; ++q) c.choices.add (juce::String (q));     // (a place for each place of a controller's knob: Sequencer.h, seedAt)
         }
     }
 

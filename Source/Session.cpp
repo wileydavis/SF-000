@@ -29,6 +29,8 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 Session::~Session()
 {
     stopTimer();
+    // (a print still going when the app shuts: its rig and its part-made files go, and the bus has its clock back)
+    if (print != nullptr) { onChange = nullptr; audioResume = nullptr; printCancel(); }
     finishTakes (true);
     engine.dropCue();                   // before the clips go
     waitForClips();
@@ -318,7 +320,7 @@ void Session::userSet (int i, float v, bool sounding)
     {
         // a generator knob rewrites the pattern while its generator is armed
         const int l = i / cx::kPerLane, k = i % cx::kPerLane;
-        if (k >= cx::kGen && genType[(size_t) l] >= 0) regenerate (l);
+        if (k >= cx::kGen && k < cx::kGen + 4 && genType[(size_t) l] >= 0) regenerate (l);
     }
     touch();
 }
@@ -1197,6 +1199,15 @@ void Session::rename (juce::int64 id, const juce::String& name)
 // --------------------------------------------------------------------------- patterns, inserts
 void Session::setPattern (int l, const Pattern& p)
 {
+    // A rhythm changed by hand is the hand's from then on: the generator lets go of it, so that a
+    // turn of HITS does not write over what was just made. (A note or an octave is not rhythm, and
+    // nor is the pattern's length: the generator stays.)
+    if (genType[(size_t) l] >= 0)
+    {
+        Pattern was = engine.pattern (l);
+        was.length = p.length;
+        if (! sameRhythm (was, p)) genType[(size_t) l] = -1;
+    }
     engine.setPattern (l, p);
     touch();
 }
@@ -1309,8 +1320,33 @@ juce::String Session::stepSays() const
 
 void Session::pressGenerator (int l, int type)
 {
-    // A press writes the pattern at once and arms the knobs; a press on the lit key lets go of them.
-    if (genType[(size_t) l] == type) genType[(size_t) l] = -1;
+    // RANDOM: a new pattern at every press. SEED goes to a new place, so the four knobs still say
+    // what is playing, and it stays armed.
+    // EUCLID: a press writes the pattern at once and arms the knobs; a press on the lit key lets go
+    // of them (it has nothing new to write).
+    if (type == 0)
+    {
+        genType[(size_t) l] = 0;
+        // (any of SEED's other 127 places; and one whose rhythm is not the one playing, if HITS
+        // leaves it a choice: with no hits, or every step, there is only the one)
+        const Pattern was = engine.pattern (l);
+        GenParams g;
+        g.type = 0;
+        g.hits = engine.target (cx::gen (l, 0)); g.rotate = engine.target (cx::gen (l, 1)); g.accents = engine.target (cx::gen (l, 2));
+        const int at = juce::jlimit (0, 127, (int) std::lround (engine.target (cx::gen (l, 3)) * 127.0f));
+        int next = at;
+        for (int tries = 0; tries < 32; ++tries)
+        {
+            next = juce::Random::getSystemRandom().nextInt (127);
+            if (next >= at) ++next;
+            Pattern p = was;
+            g.seed = (float) next / 127.0f;
+            generate (p, g);
+            if (! sameRhythm (was, p)) break;
+        }
+        userSet (cx::gen (l, 3), (float) next / 127.0f);        // (armed: this writes the pattern)
+    }
+    else if (genType[(size_t) l] == type) genType[(size_t) l] = -1;
     else { genType[(size_t) l] = type; regenerate (l); }
     touch();
 }
@@ -1319,6 +1355,7 @@ void Session::nudgeLane (int l, int dir)
 {
     Pattern p = engine.pattern (l);
     nudge (p, dir);
+    genType[(size_t) l] = -1;                   // (moved by hand: the generator lets go, as for any rhythm made by hand)
     engine.setPattern (l, p);
     if (l == activeLane && selStep >= 0 && selStep < p.length) selStep = (((selStep + dir) % p.length) + p.length) % p.length;
     touch();

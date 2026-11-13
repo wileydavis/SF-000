@@ -1754,7 +1754,70 @@ many."
 360. **The display's title says the step** (`BAS SEQ 7 D#3`), since the E16 has no other way to
      show which of 128 it is on; and the screen's page of sixteen follows STEP.
 
+## Thirty-seventh build (Nov 13): legends that stay on their plates, and RANDOM at every press
+
+361. **You:** "Anywhere there's a button label that wraps, it projects off the faceplate. Hold
+     clear on arrange view, for example."
+362. **A legend takes two lines only where its plate has a second line's room.** The strips at
+     the foot of the library, the macro designer and the arrangement have none: there a legend
+     stays on one line, as HOLD: CLEAR, HOLD: DELETE and the rest now do. *Mine:* that it is
+     settled by where the key is (the three foot strips) and not key by key, so a key added to
+     one of those strips later cannot run off it.
+363. **And it is checked, not looked for.** The stage's checks now hold every legend against the
+     plate it is printed on, on the main screen, CONFIG, the library, the macro designer,
+     POCKETS and the arrangement (514 legends). Put back as it was, the check fails on the
+     arrangement's two.
+364. **You:** "On the sequencer, pressing random should generate a new random sequence every
+     time rather than just once."
+365. **RANDOM writes a new pattern at every press, and stays lit.** It was a latch: the first
+     press wrote, the second let go. Now each press sends SEED to another place and writes; it
+     looks for a place whose rhythm is not the one playing (with no hits, or every step lit,
+     there is only the one). The four knobs still say what plays: the same four write the same
+     pattern again.
+366. **SEED has 128 places where it had sixteen.** *Mine.* Sixteen patterns for a setting of
+     HITS would come round again within a few presses; 128 is a pattern for every place a
+     controller's knob has. The sixteen places it had keep the patterns they had, so a
+     snapshot taken with RANDOM lit still says what it plays. On the screen it now moves three
+     pixels a place; on the E16 every click is a pattern.
+367. **A rhythm changed by hand is the hand's.** *Mine,* and it follows from 365: with RANDOM
+     staying lit, the next turn of HITS would have written over a step just lit by hand. A step
+     lit or put out, a velocity, a gate, a ratchet or a nudge puts the generator's key out and
+     its knobs leave the pattern alone; a note, an octave or the length does not. To have the
+     generator back, press its key. EUCLID is as it was: pressed lit, it lets go.
+368. **You:** "I don't plan on ever using the flat non-3d view ever again. so if it helps for
+     you to not have to draw it, there's no need to. I'm all in on the 3d virtual instruemnts,
+     so much nicer to play."
+369. **Nothing is taken out; new pages are made for the stage.** *Mine.* The lit skin is what
+     the stage's parts and print are recorded from, what the checks press, and what stands in
+     when OpenGL will not start, so it stays and stays right. What changes is where a page is
+     designed: for the stage first, with no flat drawing kept in step with it (**L** still
+     shows the old one, which gets nothing new).
+
+370. **A print goes by its own time, not the wall's.** Found while checking this build: with
+     the computer busy, two prints of one arrangement differed, and not by a little (the rumble
+     28 dB under itself, the set 38 dB, one print 1,280 samples longer). The suite's modules
+     tell each other where the kick is over a bus, and a report counts as current for as long
+     by the wall clock as the music has moved on, plus a third of a second. That is right for
+     a rig being heard. A print runs as fast as the computer lets it, and held up for longer
+     than that between two blocks (a disk, another program) every lane ducking under the kick
+     lost that kick's duck. So the bus now has a clock a render can drive: while a print runs
+     it moves by exactly the samples rendered, and when the print ends it runs on with the
+     wall from where it stands, so nothing on it ever sees time step back. The kicks reported
+     before a print, and by it, are forgotten at each end: they were another rig's. *Mine:*
+     this is an edit to SF-000's copy of the suite's bus (`suite/PORTING.md`); the suite in
+     Live is not touched, and does not print this way.
+371. **The check now holds a print up on purpose.** The second of the two prints is stopped six
+     times for 450 ms on its way; the files must still be the same to the byte. On the wall
+     clock that fails every time; it was passing before only because nothing here was busy.
+     What this means for prints made before today: one made while the Mac was hard at work
+     elsewhere may have a kick or two with no duck under it. Print again to be sure of it.
+
 ## Not verified
+
+- **The thirty-seventh build's two fixes are checked by measurement**: every legend against its
+  plate, and RANDOM by the patterns twelve presses write. Not seen on a Mac. One thing to tell
+  me: whether a step edited by hand putting RANDOM's key out is what you want, or whether the
+  key should stay lit and only the knobs let go.
 
 - **The SEQ page (thirty-sixth) is checked against the scene file and a made-up E16.** Not on
   the E16: whether STEP's eight clicks to a step feel right at 16 steps and usable at 64,

@@ -52,12 +52,21 @@ inline float seqHash (int a, int b)
     return (float) ((double) (h ^ (h >> 16)) / 4294967296.0);
 }
 
+// SEED has 128 places, one for every place a controller's knob has, and each is a pattern of its
+// own. The sixteen it had before (at fifteenths of the knob) keep the patterns they had then, so a
+// snapshot from before still says what it plays.
+inline int seedAt (float v)
+{
+    const int at = juce::jlimit (0, 127, (int) std::lround (v * 127.0f)), old = juce::jlimit (0, 15, (int) std::lround (v * 15.0f));
+    return (int) std::lround ((float) old / 15.0f * 127.0f) == at ? old : 16 + at;
+}
+
 inline void generate (Pattern& p, const GenParams& g)
 {
     const int len = juce::jlimit (1, kMaxSteps, p.length);
     const int H = juce::jlimit (0, len, (int) std::lround (g.hits * (float) len));
     const int R = (int) std::lround ((g.rotate - 0.5f) * 16.0f);
-    const int seed = (int) std::lround (g.seed * 15.0f);
+    const int seed = seedAt (g.seed);
     const int A = juce::jlimit (0, H, (int) std::lround (g.accents * (float) H));
     bool hit[kMaxSteps] = {}, acc[kMaxSteps] = {};
     if (g.type == 1)
@@ -86,6 +95,19 @@ inline void generate (Pattern& p, const GenParams& g)
             auto& s = p.steps[(size_t) ((((i + R) % len) + len) % len)];
             s.on = true; s.vel = acc[i] ? 1.0f : 0.75f;
         }
+}
+
+// Is the rhythm the same: which steps are lit, and each lit step's velocity, gate and hits? (Notes
+// are not rhythm: a generator leaves them where they are.)
+inline bool sameRhythm (const Pattern& a, const Pattern& b)
+{
+    if (a.length != b.length) return false;
+    for (int i = 0; i < juce::jlimit (1, kMaxSteps, a.length); ++i)
+    {
+        const auto& x = a.steps[(size_t) i]; const auto& y = b.steps[(size_t) i];
+        if (x.on != y.on || (x.on && (x.vel != y.vel || x.gate != y.gate || x.ratchet != y.ratchet))) return false;
+    }
+    return true;
 }
 
 // The whole pattern one step earlier (-1) or later (+1), notes and all.
