@@ -586,7 +586,8 @@ void Midi::load()
     pcCh = juce::jlimit (0, 16, (int) v.getProperty ("e16_pc_channel", e16::kPcChannel));
     sceneSlots[0] = juce::jlimit (1, 16, (int) v.getProperty ("e16_scene", 1));
     sceneSlots[1] = juce::jlimit (1, 16, (int) v.getProperty ("e16_scene_fx", 2));
-    bankAlways = (bool) v.getProperty ("e16_bank_always", true);
+    pageFirst = juce::jlimit (0, 1, (int) v.getProperty ("e16_page_first", 0));
+    sceneAlways = (bool) v.getProperty ("e16_scene_always", false);         // (not "e16_bank_always", which was true in every file written before the scene was left out of a turn within it)
 }
 
 void Midi::save() const
@@ -601,7 +602,8 @@ void Midi::save() const
     o->setProperty ("e16_pc_channel", pcCh);
     o->setProperty ("e16_scene", sceneSlots[0]);
     o->setProperty ("e16_scene_fx", sceneSlots[1]);
-    o->setProperty ("e16_bank_always", bankAlways);
+    o->setProperty ("e16_scene_always", sceneAlways);
+    o->setProperty ("e16_page_first", pageFirst);
     file().getParentDirectory().createDirectory();
     file().replaceWithText (juce::JSON::toString (juce::var (o)));
 }
@@ -689,6 +691,7 @@ void Midi::scan()
         ringOn.fill (false);
         e16At = {};                             // (and which page it is on is not known until it says, or is sent to one)
         syncWanted = true;
+        settling = false; againLeft = 0; e16Speaks = false; strayed = {};
         for (auto& v : bSent) v = -1;
         wheelAddr = -1; wheelHeard = -1; wheelTold = -1;
         namesSaid = {};
@@ -954,7 +957,7 @@ void Midi::service()
         if (presses[(size_t) k].exchange (0) > 0) ses.pressSnapKnob (k);
     const auto now = juce::Time::getMillisecondCounter();
     if (const int said = pageUp.exchange (0); said > 0) { pageHeard = 0; pageCame (said, now); }
-    else if (const int on = pageHeard.exchange (0); on > 0 && now - turnedAt > 300u)
+    else if (const int on = pageHeard.exchange (0); on > 0 && now - turnedAt > 300u && ! (settling && sceneTurn))
     {
         // A knob turned on the E16 is on a page: if that is not the page it was taken to be on
         // (it has not said, or its script does not say), it is on that one. Nothing comes to the
@@ -1061,6 +1064,7 @@ void Midi::service()
         if (first) { pageWait = 0; bWait = 0; }                 // (it is being told every value as it is)
     }
     syncWanted = false;
+    settle (now);
     // The E16's rings follow the rig: a value that changed here (a recall, the mouse, a snapshot
     // knob's push) is sent to its address. A knob the hand is on is left alone for a moment.
     // No more than a couple of dozen at a time (a fresh E16 is told some two hundred, and a burst
@@ -1127,15 +1131,35 @@ void Midi::pageCame (int said, juce::uint32 now)
 {
     using S = Session;
     const Where at = said > e16::kFocusB ? Where { 1, said - e16::kFocusB } : Where { 0, said };
-    if (now - turnedAt < 300u && at != asked)
+    e16Speaks = true;
+    if (settling && at == asked)
     {
-        // It was just sent to a page and says another: the two do not agree about scenes or pages
-        // (its PC Receive Channel, its PC Mode, the scene slots in SETUP). Nothing follows it there.
-        pcNote = "ASKED FOR " + pageName (asked) + ", IT WENT TO " + pageName (at);
+        // Its answer: it is there. Never a hand's turn, whatever has come to the front since
+        // (something else may have, and the E16 is about to be sent on to it).
+        settling = false; againLeft = 0; pcNote = {};
         arrived (at);
         return;
     }
-    if (now - turnedAt < 300u) pcNote = {};
+    if (settling && (juce::int32) (now - settleUntil) < 0)
+    {
+        // It was just sent somewhere and says it is somewhere else. Nothing follows it there: it
+        // is its answer to being sent (or to having been sent somewhere a moment before, with
+        // this turn still on its way), not a hand's turn.
+        if (at.scene == asked.scene && pageTries < 3)
+        {
+            // The scene is right and the page is not. A scene that loads puts its first page up,
+            // and a Program Change that comes with the Bank Select can be lost in the loading (or
+            // be acted on before it): now that the scene's script is talking, the page again, by
+            // itself (settle() sends it: at once the first time, a moment later after that, in
+            // case it is a knob still held down that is in the way).
+            againLeft = 1; againAt = now + (pageTries == 0 ? 0u : 200u);
+            ++pageTries;
+            turnedAt = now; settleUntil = now + 700; answerBy = now + 900;
+        }
+        strayed = at;                               // (settle() says so in SETUP if it never comes round)
+        return;
+    }
+    settling = false;                               // (a hand has turned it since)
     // (its answer to being sent somewhere, or its script starting again on the page it was on: it
     // is where what is in front has it, and nothing comes to the front a second time for that)
     const bool there = at == whereNow();
@@ -1170,21 +1194,58 @@ juce::String Midi::pageName (Where w)
     return w.scene == 1 ? "SF-FX " + String (b[w.page - 1]) : "SF-000 PAGE " + String (w.page);
 }
 
-// Bank Select says the scene (by the slot it is in on the E16: controller 32, the one Ableton calls
-// Sub, which is what the E16's manual says picks the scene; controller 0 goes with it as nought),
-// Program Change the page. Both every time, so that it does not matter what the E16's own PC Mode
-// is set to (a Program Change by itself is a scene or a page according to that). With
-// "e16_bank_always" false in midi.json the scene is said only when it changes.
+// Within a scene a Program Change by itself says the page (the E16's PC Mode must be Page: by
+// itself a Program Change is a page or a scene according to that). To another scene, Bank Select
+// first (by the slot the scene is in on the E16: controller 32, the one Ableton calls Sub, which
+// is what the E16's manual says picks the scene; controller 0 goes with it as nought) and the
+// Program Change with it, as the manual has it.
+//
+// The scene is not said for a page of the scene it is already in: on Wiley's E16 every turn sent
+// with a Bank Select ended on the scene's first page (KICK's), whatever page was asked for. A
+// scene that is selected is loaded, the one it is in included, and comes up on its first page;
+// the Program Change sent with it does not survive that. So after a change of scene the page is
+// said again by itself: when the scene's script says which page is up and it is not the one
+// (pageCame), and twice unasked in case the script says nothing (settle).
+// "e16_scene_always" true in midi.json says the scene with every page, as before.
 void Midi::turnTo (Where w, juce::uint32 now)
 {
-    if (bankAlways || w.scene != e16At.scene)
+    const bool scene = sceneAlways || w.scene != e16At.scene;
+    if (scene)
     {
         sendE16 (juce::MidiMessage::controllerEvent (pcCh, 0, 0));
         sendE16 (juce::MidiMessage::controllerEvent (pcCh, 32, sceneSlots[(size_t) juce::jlimit (0, 1, w.scene)] - 1));
     }
-    sendE16 (juce::MidiMessage::programChange (pcCh, w.page - 1));
+    sendE16 (juce::MidiMessage::programChange (pcCh, w.page - 1 + pageFirst));
     turnedAt = now; asked = w;
+    settling = true; sceneTurn = scene; pageTries = 0; strayed = {};
+    settleUntil = now + (scene ? 2500u : 300u);     // (until then a page it says is its answer to this, not a hand's turn)
+    answerBy = now + (scene ? 2500u : 1100u);
+    againLeft = 2; againAt = now + (scene ? 400u : 250u);
     arrived (w);
+}
+
+// A turn it has not answered: the page is said again by itself, a moment later and once more
+// after that (after a change of scene its script may not be there to say the scene is up; within
+// a scene the first may have come at a bad moment). An E16 that answers is sent nothing twice.
+// Left unanswered by one whose script does speak, SETUP's E16 line says so.
+void Midi::settle (juce::uint32 now)
+{
+    if (! settling) return;
+    if (againLeft > 0 && (juce::int32) (now - againAt) >= 0)
+    {
+        sendE16 (juce::MidiMessage::programChange (pcCh, asked.page - 1 + pageFirst));
+        --againLeft; againAt = now + (sceneTurn ? 800u : 450u);
+        if (sceneTurn) arrived (asked);             // (and its values and names again: what was sent while the scene loaded did not arrive either)
+    }
+    if ((juce::int32) (now - answerBy) < 0) return;
+    settling = false; againLeft = 0;
+    if (strayed.scene >= 0)
+    {
+        pcNote = "ASKED FOR " + pageName (asked) + ", IT WENT TO " + pageName (strayed);
+        if (! sceneTurn && strayed.scene != asked.scene) pcNote += " (THE E16'S PC MODE MUST BE PAGE)";       // (a Program Change by itself changed its scene)
+        arrived (strayed);
+    }
+    else if (e16Speaks) pcNote = "ASKED FOR " + pageName (asked) + ": NO ANSWER (E16 PC RECEIVE CHANNEL " + String (pcCh) + ", PC MODE PAGE?)";
 }
 
 // OPEN (knob 14 pressed): CONFIG for what is in front, and shut again; behind the snapshot knobs

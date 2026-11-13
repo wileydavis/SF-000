@@ -1050,7 +1050,8 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      a page the E16 turned to itself (that module comes to the front here, and the E16 is already
      there), and nothing is sent at start-up: only a change made here turns it. The scene is said
      with every page, so that the E16's PC Mode does not matter (`e16_bank_always` in `midi.json`
-     says it only when it changes). The scene is controller 32 with the slot less one, the page
+     says it only when it changes). (That was the fault of 262: the scene is now said only to
+     change it, and PC Mode matters.) The scene is controller 32 with the slot less one, the page
      the Program Change with the page less one: the manual gives the first by way of Ableton's
      "Sub" and does not give the counting. The slots are SETUP's (E16 PAGES), 1 and 2 to begin.
 243. **Pages for the effects** (you: "I'd also create them for the effects"). The first scene's
@@ -1189,6 +1190,40 @@ You: "works but needs some small fixes."
      and that used to count as a page turned to from the controller, which under 258 would have
      fetched the eye for every click of the mouse.
 
+## Twenty-fifth build (Nov 12): the E16 went to KICK's page whatever was chosen
+
+262. **You:** "the zoom and select works but the e16 page goes to kick, even when something else
+     is selected." Every turn was sent as a Bank Select and a Program Change together (242, "so
+     that the E16's PC Mode does not matter"). What your E16 does with that, as far as I can
+     tell from here: the Bank Select loads the scene it names, the one it is already in
+     included; a scene that loads comes up on its first page, which is KICK's; and the Program
+     Change sent with it does not survive the loading. So:
+     - **within a scene the page is a Program Change by itself.** No scene is loaded. **This
+       makes the E16's PC Mode matter: it must be Page** (on Scene a Program Change by itself
+       loads another scene);
+     - **to the other scene, Bank Select and Program Change as before, and then the page again
+       by itself** when the scene's script says it is up on another page, or 0.4 and 1.2 seconds
+       later if the script says nothing.
+     This is very likely what 259 was as well: with the E16 on KICK's page the wheel's knob was
+     KICK's SEND A, at nought, with nothing to send when turned back. **I was wrong in the
+     last build's notes** to write that Bank Select with Program Change had been tried on your
+     E16 and turned it as sent: I read that into "works but needs some small fixes". Both
+     places are corrected.
+263. **A turn is watched until the E16 answers it** *Mine:* its script says the page that is up.
+     Until it says the page asked for (0.3 s within a scene, up to 2.5 s across scenes), a page
+     it says is its answer and not a hand's turn: nothing on the screen follows it there (a scene
+     coming up on its first page would otherwise have opened the library, and an answer that
+     came after the E16 had been sent on would have brought the last module back). A wrong page
+     in the right scene gets the page said again, up to three times; no answer gets it said
+     twice more. An E16 that answers at once is sent nothing twice.
+264. **SETUP's E16 line says what happened** when it did not come round: `ASKED FOR SF-000 PAGE 5,
+     IT WENT TO SF-000 PAGE 1`, or `NO ANSWER`, or that PC Mode must be Page when a turn within a
+     scene ended in the other scene. *Mine.* That line is what to send me if this is still wrong.
+265. **Two settings in `midi.json`** *Mine:* `e16_page_first` (0; 1 if every turn lands one page
+     short: the manual does not say how the E16 counts a Program Change) and `e16_scene_always`
+     (false; true says the scene with every page as before). `e16_bank_always` is no longer read:
+     every `midi.json` written so far has it set to true, which would have kept the fault.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -1249,14 +1284,18 @@ You: "works but needs some small fixes."
   JUCE's source, not reproduced; the fix uses a call I can only run on Linux), the SETUP window's
   new row, the icon in the Dock (the Finder may show the old one until it forgets it), and how
   MOTION sounds on each wave, which is the suite's code unchanged but has not been heard here.
-- **The twenty-third build has met your E16 once** ("works but needs some small fixes"): Bank
-  Select (controller 32, the slot less one) and Program Change (the page less one) on channel 12
-  turn it to the scene and page meant. Still only checked with made-up messages and a mock
-  written from the E16's manual for OS 1.3.0: how quick a change of scene is (a lane to one of
-  its inserts is one); whether it loads a scene again when told the one it is in; whether the
-  script hears of a page turned that way (it looks every 50 ms in case not); the press of a knob
-  whose turn is off; the names SF-000 sends showing in place of the scene's.
+- **What your E16 has shown** (twenty-third and twenty-fourth builds): its knobs, presses and
+  the wheel reach SF-000, and a turn sent with a Bank Select ends on the scene's first page.
+  Still only checked with made-up messages and a mock written from the E16's manual for OS
+  1.3.0: how quick a change of scene is (a lane to one of its inserts is one); whether the
+  script hears of a page turned by Program Change (it looks every 50 ms in case not); the press
+  of a knob whose turn is off; the names SF-000 sends showing in place of the scene's.
   `controllers/e16/README.md` ends with what to do about each.
+- **The twenty-fifth build's way of turning the E16 has not been on it**: a Program Change by
+  itself for a page (with PC Mode on Page), and the page said again after a scene loads. It is
+  checked against a made-up E16 that comes up on a scene's first page, one that says nothing,
+  one that says another page, and one whose answer comes late. If the real one still ends on
+  the wrong page, SETUP's E16 line says what it asked for and what it was told (264).
 - **The twenty-fourth build's wheel is checked against a made-up E16 that does and does not take
   the numbers it is sent.** Whether the real one sticks or leaps again is for your hands (259).
   The scenes and the script are unchanged: nothing needs loading onto the E16 again.

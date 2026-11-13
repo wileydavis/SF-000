@@ -436,7 +436,8 @@ Open SETUP to see what is connected. Nothing needs choosing.
   whichever scene it is. Turn the E16 to a page yourself and that module comes to the front on
   the screen (a lane's page makes it the active lane, as before); SF-000 never answers that by
   turning the E16 again. An E16 plugged in, or there when SF-000 starts, is turned to the page of
-  what is in front.
+  what is in front. (The E16's own PC Mode must be Page and its PC Receive Channel 12. If it ends
+  on another page than the one in front, SETUP's E16 line says what was asked and what it said.)
 - **Knob 13 pressed is the pointer's wheel, on every page: press, turn, press.** The first press
   (on the snapshot page and the library's map, where a press recalls, hold it for half a second)
   takes the pointer up: a yellow frame round the module in front, and the 3D eye home so the

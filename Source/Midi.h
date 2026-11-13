@@ -140,7 +140,8 @@ public:
     int sceneSlot (int which) const             { return sceneSlots[(size_t) juce::jlimit (0, 1, which)]; }
     void setSceneSlot (int which, int slot);
     bool wheelInUse() const                     { return wheelMode.load(); }
-    void setBankAlways (bool on)                { bankAlways = on; }    // (midi.json's "e16_bank_always"; tests)
+    void setSceneAlways (bool on)               { sceneAlways = on; }   // (midi.json's "e16_scene_always"; tests)
+    void setPageFirst (int n)                   { pageFirst = juce::jlimit (0, 1, n); }     // (midi.json's "e16_page_first"; tests)
     juce::String pageNote() const               { return pcNote; }      // set when the E16 went somewhere other than where it was sent
 
     // A message as if it had come in (the inputs call this; so do tests). Any thread.
@@ -226,9 +227,17 @@ private:
     Where e16At, whereWas, asked;
     bool whereKnown = false, cfgWasOpen = false;
     juce::uint32 turnedAt = 0;
-    juce::String pcNote;                                        // it was sent to one page and said it was on another
+    juce::String pcNote;                                        // it was sent to one page and said it was on another, or said nothing
     int pcCh = e16::kPcChannel;
-    bool bankAlways = true;
+    bool sceneAlways = false;
+    int pageFirst = 0;                                          // the Program Change number that is the first page (midi.json's "e16_page_first": 0, or 1 if every turn lands a page short)
+    // a turn it has not answered yet
+    bool settling = false, sceneTurn = false;                   // it was sent somewhere (to another scene), and has not said it is there
+    juce::uint32 settleUntil = 0, answerBy = 0, againAt = 0;    // until then what it says is its answer; by then it should have said; when the page is said again unasked
+    int pageTries = 0, againLeft = 0;                           // the page said again by itself: because it said another, and without its saying anything
+    Where strayed;                                              // where it said it was instead (a page of the scene it was leaving)
+    bool e16Speaks = false;                                     // its script has said a page since it came: a turn left unanswered is worth a note
+    void settle (juce::uint32 now);
     std::array<int, 2> sceneSlots { { 1, 2 } };
     int cfgPage = 0;
     Engine::Target cfgWas;

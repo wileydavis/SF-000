@@ -10,10 +10,10 @@ always on the page of whatever is in front on the screen.
 SF-000 writes both itself from the rig (`SF-000 --e16 SF-000.oxie16`), in the form the suite's PERF
 scene has, so the screen and the E16 cannot drift apart. `rings.lua` is the script inside both.
 
-**None of this has been on an E16.** The scenes are checked against the suite's PERF scene object
-by object, the script against a mock of the E16 (`tests/e16_scene_test.py`), and SF-000's side
-with made-up messages (`SF-000 --miditest`). What only the hardware can say is at the foot of
-this page.
+**I have no E16: Wiley's is the only one this has met.** The scenes are checked against the
+suite's PERF scene object by object, the script against a mock of the E16
+(`tests/e16_scene_test.py`), and SF-000's side with made-up messages (`SF-000 --miditest`). What
+his has shown so far, and what only the hardware can say, is at the foot of this page.
 
 ## Load them, and three settings
 
@@ -22,8 +22,9 @@ this page.
    place of SF-LIB, the library's scene of before: drag it onto that slot.)
 2. **On the E16**, system config (knob 8 on the home screen) > MIDI:
    - **PC Receive Channel: 12.** This is how SF-000 turns the E16's page.
-   - **PC Mode: Page.** (SF-000 says the scene with every page, so this should not matter; it is
-     the setting that is right if `midi.json`'s `e16_bank_always` is ever set to false.)
+   - **PC Mode: Page. This one matters.** From one page to another of the same scene SF-000
+     sends a Program Change by itself, and the E16 takes that as a page only with PC Mode on
+     Page (on Scene it would load another scene).
    - As before: **Auto Transmit off** (scene and global) and **MIDI Thru off**.
 3. **In SF-000**, SETUP > E16 PAGES: the channel (12), then the numbers of the two slots the
    scenes are in on the E16 (SF-000's, then SF-FX's: 1 and 2 until you say otherwise). OFF in
@@ -31,7 +32,8 @@ this page.
 4. Open SF-000. SETUP should read `E16: OXI E16 ...`. Every ring jumps to the rig's values.
 
 If the E16 goes to the wrong scene or page when something is brought to the front, SETUP's E16
-line says which page SF-000 asked for and which the E16 said it went to.
+line says which page SF-000 asked for and which the E16 said it went to, or that it did not
+answer (`ASKED FOR SF-000 PAGE 5, IT WENT TO SF-000 PAGE 1`). That line is the thing to send me.
 
 SF-000 listens to the E16's first USB port only (the E16 sends everything on each of its ports)
 and sends to the same port.
@@ -194,7 +196,8 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | the same place pressed | 13 | CC 39 + 8 s + p (40-63) |
 | the active lane's LENGTH; HITS, ROTATE, ACCENTS, SEED | 13 | CC 70; CC 71-74 |
 | CONFIG's control n (1-36) | 13 | CC 75 + n (76-95), then CC 81 + n (102-117) |
-| **to the E16**: the scene, then the page | 12 | CC 0 = 0 and CC 32 = the scene's slot less one; Program Change = the page less one |
+| **to the E16**: a page of the scene it is in | 12 | Program Change = the page less one, by itself |
+| **to the E16**: a page of the other scene | 12 | CC 0 = 0 and CC 32 = the scene's slot less one, then Program Change = the page less one; the Program Change again when the scene says it is up |
 
 A knob with a centre (TUNE, FILTER, LOW, MID, HIGH) is centred at 64 exactly. Nothing is on a
 number MIDI keeps for itself (0, 6, 32, 38, 96 to 101, 120 and over), except Bank Select itself on
@@ -226,8 +229,25 @@ the second scene's bottom row are pink.
 
 ## What only the E16 can say
 
-Tried on Wiley's E16: Bank Select (controller 32, the slot less one) with Program Change (the page
-less one) turns it to the scene and the page as sent.
+**Seen on Wiley's E16:** with a Bank Select sent before every Program Change (every build up to
+the twenty-fourth) the E16 ended on KICK's page, the scene's first, whatever page was asked for.
+The knobs, their presses and the wheel reach SF-000.
+
+**How SF-000 turns it now**, reasoned from that and from the manual, not yet tried:
+
+- **Within a scene, a Program Change by itself.** No Bank Select, so the scene is not loaded
+  again. This needs PC Mode on Page.
+- **To the other scene, Bank Select and the Program Change, then the Program Change again.** A
+  scene that loads comes up on its first page; its script says which page is up as soon as it
+  runs, and if that is not the page asked for SF-000 says the page again by itself. If the
+  script says nothing, the page is said again anyway 0.4 and 1.2 seconds later.
+- **Any turn the E16 does not answer is said twice more** (a quarter and three quarters of a
+  second later within a scene), and a page it says in answer that is not the one asked for is
+  not followed on the screen.
+- **Two numbers in `midi.json`** (beside the session; quit SF-000 before editing it):
+  `"e16_page_first": 1` if every turn lands one page short (SF-000 sends the page less one, as a
+  Program Change usually counts, and the manual does not say); `"e16_scene_always": true` to say
+  the scene with every page as before.
 
 Read from the E16's manual for OS 1.3.0 (docs.oxiinstruments.com, MIDI In and Lua Scripting), not
 tried:
@@ -241,9 +261,6 @@ tried:
   is what happened: pause for a moment and it should free itself; say so if it does not.
 - **How quick a change of scene is.** A lane's page to one of its inserts is a change of scene.
   If it is slow or untidy in the middle of a set, the pages can be dealt out differently.
-- **Whether the E16 loads a scene again when it is told the scene it is already in.** SF-000 says
-  the scene with every page. If turning from lane to lane is slow for that, set
-  `"e16_bank_always": false` in `midi.json` (beside the session) and set PC Mode to Page.
 - **Whether the script is told of a page turned by Program Change.** It looks at the page on
   every update (50 ms) in case it is not, so either way it says the page and names it.
 - **The press of a knob with no turn of its own** (OPEN on the second scene's pages): written as

@@ -2800,7 +2800,9 @@ static int midiTest()
                "a fresh E16 is turned to the page of what is in front and told every value once (" + juce::String ((int) out.size()) + " messages: the scene and the page, " + juce::String (e16::kSlots) + " knobs, GLIDE and the library scene's "
                + juce::String (e16::kLibKnobs) + " rings), two dozen knobs at a time (" + juce::String (firstGo) + " in the first go)");
         out.clear();
-        juce::Thread::sleep (310);                  // (what it says within a moment of being sent somewhere is taken as its answer to that)
+        midi.incoming (cc (16, 119, ses.activeLane + 1), true);         // (its script says it is where it was sent)
+        for (int k = 0; k < 4; ++k) midi.service();
+        out.clear();
 
         // a page that comes up is told its sixteen values again, whatever the E16 made of them meanwhile
         midi.incoming (cc (16, 119, 6), true);
@@ -3039,11 +3041,33 @@ static int midiTest()
         std::vector<juce::MidiMessage> out;
         midi.toE16 = [&] (const juce::MidiMessage& m) { out.push_back (m); };
         auto cc = [] (int ch, int num, int v) { return juce::MidiMessage::controllerEvent (ch, num, v); };
-        auto ticks = [&] (int n) { for (int k = 0; k < n; ++k) midi.service(); };
+        // A made-up E16 on the other end, as far as pages go: sent a Bank Select it is in that scene, sent a Program Change it
+        // is on that page, and its script says so (CC 119 on channel 16), which SF-000 hears the next time round.
+        int mockScene = -1;
+        bool mockAnswers = true;
+        auto ticks = [&] (int n)
+        {
+            for (int k = 0; k < n; ++k)
+            {
+                size_t seen = out.size();
+                midi.service();
+                int page = 0;
+                for (; seen < out.size(); ++seen)
+                {
+                    const auto& m = out[seen];
+                    if (midi.pcChannel() <= 0 || m.getChannel() != midi.pcChannel()) continue;
+                    if (m.isController() && m.getControllerNumber() == 32) mockScene = m.getControllerValue() == midi.sceneSlot (1) - 1 ? 1 : m.getControllerValue() == midi.sceneSlot (0) - 1 ? 0 : -1;
+                    if (m.isProgramChange()) page = m.getProgramChangeNumber() + 1;
+                }
+                if (page > 0 && mockAnswers && mockScene >= 0) midi.incoming (cc (16, e16::kFocusCc, (mockScene == 1 ? e16::kFocusB : 0) + page), true);
+            }
+        };
         auto in = [&] (int ch, int num, int v) { midi.incoming (cc (ch, num, v), true); };
         auto press = [&] (int ch, int num) { in (ch, num, 127); in (ch, num, 0); };
         // the E16 turning its own page (a third of a second after anything sent to it: sooner than that, a page it says is taken for its answer to being sent)
         auto turnsTo = [&] (int says) { juce::Thread::sleep (310); in (16, e16::kFocusCc, says); };
+        // the E16's script saying the page that is up, as it does when it has been sent to one
+        auto answers = [&] (int says) { in (16, e16::kFocusCc, says); ticks (1); };
         // the page turns sent: Bank Select's two numbers and the Program Change, as "B0=0 B32=1 P3"
         auto turns = [&]
         {
@@ -3081,29 +3105,66 @@ static int midiTest()
         ticks (14);
         const juce::String atStart = turns();                           // (an E16 newly here is turned to what is in front, once: LEAD)
         out.clear();
-        // brought to the front here: the E16 is turned there. The scene by Bank Select (its slot less one), the page by Program Change (the page less one).
+        // brought to the front here: the E16 is turned there. Within a scene the page by Program Change alone (the page less one); to the other scene, Bank Select (its slot less one) first.
         ses.bringLane (2, 0); ticks (1);
-        const juce::String t1 = turns(); out.clear();
+        const juce::String t1 = turns(); out.clear(); ticks (1);
         ses.bringLane (5, 1); ticks (1);
-        const juce::String t2 = turns(); out.clear();
+        const juce::String t2 = turns(); out.clear(); ticks (1);
         ses.bring ({ Session::fInsert, 1 }, 1); ticks (1);
-        const juce::String t3 = turns(); out.clear();
+        const juce::String t3 = turns(); out.clear(); ticks (1);
         ses.bring ({ Session::fMaster, 0 }, 0); ticks (1);
-        const juce::String t4 = turns(); out.clear();
+        const juce::String t4 = turns(); out.clear(); ticks (1);
         ses.bring ({ Session::fSnap, 0 }, 0); ticks (1);
-        const juce::String t5 = turns(); out.clear();
-        check (atStart == "B0=0 B32=0 P7" && t1 == "B0=0 B32=0 P2" && t2 == "B0=0 B32=0 P5" && t3 == "B0=0 B32=1 P3" && t4 == "B0=0 B32=1 P6" && t5 == "B0=0 B32=0 P11",
-               "a module brought to the front is the E16's page, the scene said by Bank Select and the page by Program Change: an E16 newly here is turned to what is in front (" + atStart + "); OPEN HAT (" + t1 + "), BASS (" + t2 + "), its second insert in the other scene (" + t3
-                   + "), the master (" + t4 + "), the snapshot knobs (" + t5 + ")");
-        // (midi.json's "e16_bank_always" false: the scene is said only when it changes)
-        midi.setBankAlways (false);
-        ses.bringLane (1, 0); ticks (1);
-        const juce::String a1 = turns(); out.clear();
+        const juce::String t5 = turns(); out.clear(); ticks (1);
+        const bool noNote = midi.pageNote().isEmpty();
+        out.clear();
+        check (atStart == "B0=0 B32=0 P7" && t1 == "P2" && t2 == "P5" && t3 == "B0=0 B32=1 P3" && t4 == "P6" && t5 == "B0=0 B32=0 P11" && noNote,
+               "a module brought to the front is the E16's page: an E16 newly here is sent the scene and the page of what is in front (" + atStart + "); within a scene the page is a Program Change by itself, OPEN HAT (" + t1 + "), BASS (" + t2
+                   + "); Bank Select only to go to the other scene, BASS's second insert (" + t3 + "), then the master in that scene (" + t4 + "), and back for the snapshot knobs (" + t5 + ")");
+
+        // A scene that is selected loads, and comes up on its first page whatever page came with the Bank Select: when its
+        // script says so, the page is said again by itself. (Wiley's E16: every turn sent with a Bank Select ended on KICK's page.)
+        {
+            mockAnswers = false;                                         // (what this E16 says is written out below)
+            const int frontWas = ses.frontCount;
+            ses.bring ({ Session::fInsert, 2 }, 1); ticks (1);
+            const juce::String sent1 = turns(); out.clear();
+            juce::Thread::sleep (320);                                   // (the scene takes its time)
+            ticks (1);
+            answers (e16::kFocusB + e16::pgMap);                         // "the second scene, its first page"
+            const juce::String again = turns(); out.clear();
+            const bool notFollowed = ses.showing == 0 && ses.wantShowing != 1 && ses.front == Session::Front { Session::fInsert, 2 } && ses.frontCount == frontWas + 1;
+            answers (e16::kFocusB + e16::pgIns + 2);
+            const bool settled = midi.pageNote().isEmpty() && turns().isEmpty();
+            juce::Thread::sleep (450); ticks (2);
+            check (sent1 == "B0=0 B32=1 P4" && again == "P4" && notFollowed && settled && turns().isEmpty(),
+                   "sent to another scene (" + sent1 + ") an E16 that comes up on that scene's first page is not followed there (the library does not open): the page is said again by itself (" + again + "), and when it says it is there nothing more is sent");
+            out.clear();
+            // one whose script says nothing: the page again a moment later, and once more
+            ses.bringLane (1, 0); ticks (1);
+            const juce::String back = turns(); out.clear();
+            juce::Thread::sleep (420); ticks (1);
+            const juce::String blind1 = turns(); out.clear();
+            juce::Thread::sleep (820); ticks (1);
+            const juce::String blind2 = turns(); out.clear();
+            juce::Thread::sleep (1400); ticks (2);
+            check (back == "B0=0 B32=0 P1" && blind1 == "P1" && blind2 == "P1" && turns().isEmpty() && midi.pageNote().contains ("NO ANSWER"),
+                   "back to the first scene (" + back + ") with no answer from the E16: the page is said again by itself twice (" + blind1 + ", " + blind2 + "), and SETUP's E16 line says it did not answer");
+            answers (2);                                                 // (it is there after all)
+            mockAnswers = true;
+            out.clear();
+        }
+        // (midi.json's "e16_scene_always": the scene said with every page, as it was)
+        midi.setSceneAlways (true);
+        ses.bringLane (3, 0); ticks (1);
+        const juce::String a1 = turns(); out.clear(); ticks (1);
+        midi.setSceneAlways (false);
         ses.bring ({ Session::fSeq, 0 }, 0); ticks (1);
-        const juce::String a2 = turns(); out.clear();
+        const juce::String a2 = turns(); out.clear(); ticks (1);
         ses.bring ({ Session::fMaster, 0 }, 0); ticks (1);
-        const juce::String a3 = turns(); out.clear();
-        check (a1 == "P1" && a2 == "B0=0 B32=1 P7" && a3 == "P6", "with the scene said only when it changes: " + a1 + ", " + a2 + ", " + a3);
+        const juce::String a3 = turns(); out.clear(); ticks (1);
+        check (a1 == "B0=0 B32=0 P3" && a2 == "B0=0 B32=1 P7" && a3 == "P6", "with \"e16_scene_always\" the scene is said with a page of the scene it is in: " + a1 + "; without: " + a2 + ", " + a3);
+        out.clear();
 
         // the slots the scenes are in, and off
         midi.setSceneSlot (0, 5); midi.setSceneSlot (1, 9);
@@ -3351,8 +3412,10 @@ static int midiTest()
         out.clear();
 
         // a knob turned on a page the E16 never said it was on: it is taken to be there, and nothing comes to the front
+        ticks (1);                                                      // (its answer to the last turn is in)
         juce::Thread::sleep (310);
         const int frontWas = ses.frontCount;
+        mockScene = 0;                                                  // (turned by hand to the first scene's ninth page, with no script to say so)
         in (9, e16::kKnobCc + 2, 70); ticks (4);
         const bool quiet = ccOut (9, e16::kKnobCc + 2) < 0 && turns().isEmpty() && ses.frontCount == frontWas;
         ses.bringLane (8, 0); ticks (2);                                // (the module of that page, brought to the front on the screen: the E16 is there already)
@@ -3402,16 +3465,57 @@ static int midiTest()
         check (again && namesBack && ! midi.wheelInUse() && notYet && recalled && heldIs && noRecall && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "B0=0 B32=0 P11",
                "on the snapshot page knob 13 held for half a second is the wheel, and a press let go before that still recalls (as it is let go); knob 14 held there opens the library (" + toMap + ") and held in the library shuts it (" + fromMap + ")");
 
-        // the E16 sent to one page says it is on another: nothing follows it there, and SETUP says so
+        // the E16 sent to one page says it is on another: nothing follows it there, the page is said again, and SETUP says so if it never comes round
+        ticks (2);
         juce::Thread::sleep (310);
+        mockAnswers = false;
+        out.clear();
         ses.bringLane (2, 0); ticks (1);
         in (16, e16::kFocusCc, 4); ticks (1);
+        const juce::String twice = turns();
+        const bool noNoteYet = ses.activeLane == 2 && midi.pageNote().isEmpty();
+        juce::Thread::sleep (920); ticks (1);
         const bool noted = ses.activeLane == 2 && midi.pageNote().contains ("ASKED FOR SF-000 PAGE 3") && midi.pageNote().contains ("PAGE 4");
         ses.bringLane (6, 0); ticks (1);
         const int countWas = ses.frontCount;
         in (16, e16::kFocusCc, 7); ticks (1);
-        check (noted && midi.pageNote().isEmpty() && ses.activeLane == 6 && ses.frontCount == countWas && ses.frontBy == 0,
-               "an E16 that goes somewhere other than where it was sent is not followed there, and SETUP says which page was asked for and which it went to; one that agrees clears it, and brings nothing to the front a second time");
+        const bool cleared = midi.pageNote().isEmpty() && ses.activeLane == 6 && ses.frontCount == countWas && ses.frontBy == 0;
+        // one answer late: the E16 says the page it was sent to a moment ago, when it has since been sent on. It is not followed back.
+        ses.bringLane (9, 0); ticks (1);
+        ses.bringLane (10, 0); ticks (1);
+        in (16, e16::kFocusCc, 10); ticks (1);                           // (its answer to the first of the two)
+        const bool notBack = ses.activeLane == 10;
+        in (16, e16::kFocusCc, 11); ticks (1);
+        const bool onward = ses.activeLane == 10 && midi.pageNote().isEmpty();
+        // one that says nothing to a turn within its scene (a knob held down, a message lost): the page again, twice, and then SETUP says so
+        out.clear();
+        ses.bringLane (4, 0); ticks (1);
+        juce::Thread::sleep (260); ticks (1);
+        juce::Thread::sleep (460); ticks (1);
+        const juce::String thrice = turns();
+        const bool quietYet = midi.pageNote().isEmpty();
+        juce::Thread::sleep (420); ticks (1);
+        const bool unanswered = midi.pageNote().contains ("ASKED FOR SF-000 PAGE 5: NO ANSWER") && turns() == thrice && ses.activeLane == 4;
+        // one whose PC Mode is Scene: a Program Change by itself took it to the other scene. Not followed, and SETUP says what to set.
+        ses.bringLane (7, 0); ticks (1);
+        in (16, e16::kFocusCc, e16::kFocusB + e16::pgMap); ticks (1);
+        juce::Thread::sleep (1120); ticks (1);
+        const bool pcModeSaid = midi.pageNote().contains ("IT WENT TO SF-FX MAP") && midi.pageNote().contains ("PC MODE MUST BE PAGE") && ses.activeLane == 7 && ses.showing == 0 && ses.wantShowing != 1;
+        // (midi.json's "e16_page_first": 1 for an E16 that counts its pages from one in a Program Change)
+        out.clear();
+        midi.setPageFirst (1);
+        ses.bringLane (5, 0); ticks (1);
+        const juce::String oneUp = turns();
+        midi.setPageFirst (0);
+        in (16, e16::kFocusCc, 6); ticks (1);
+        mockAnswers = true;
+        check (thrice == "P4 P4 P4" && quietYet && unanswered && pcModeSaid && oneUp == "B0=0 B32=0 P6" && midi.pageNote().isEmpty(),
+               "a turn within the scene that is not answered is said twice more (" + thrice + "), and then SETUP says it was not answered; one that ends in the other scene is not followed, and SETUP says the E16's PC Mode must be Page; "
+               "an answer clears that; with \"e16_page_first\" 1 the page's own number is sent (" + oneUp + ")");
+        check (twice == "P2 P2" && noNoteYet && noted && cleared && notBack && onward,
+               "an E16 that goes somewhere other than where it was sent is not followed there: the page is said again (" + twice + "), and if it never comes round SETUP says which page was asked for and which it went to; one that agrees clears it, and brings nothing to the front a second time; "
+               "an answer that comes after it has been sent on does not bring the last module back");
+        out.clear();
     }
 
     // 5. a recalled pattern waits for the bar line; an edit does not
