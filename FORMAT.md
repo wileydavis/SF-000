@@ -52,6 +52,7 @@ The uid comes back the same (see below); `made` does not.
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ] } x 16 ],
+  "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
   "defs":      { "<print>": definition, ... }
 }
 ```
@@ -107,6 +108,12 @@ this build does not have is written back as it was read.
   on every lane and `pk.amount`, `pk.clear`, `pk.speed`, `pk.returns` for the rig (thirty-first
   build on; what a value of each means is in the `pockets` definition). A control missing from a
   snapshot is left where it is: a snapshot from before there were pockets leaves them alone.
+- **`arrangement`** (thirty-fifth build on): `parts`, in the order they play. Each is a snapshot
+  by its `snap` id, how many `bars` it lasts (1 to 256), and its `morph`: how long the way into
+  it takes from its first bar, **in bars** (0: cut; 0.25, 0.5, 1, 2 ... 256), which a build
+  reads as the longest length it has that is not over it, and plays as no longer than the part.
+  A part whose snapshot is not in the library is dropped on reading. What a build does not know
+  of a part, or of the arrangement, is carried.
 - **`controls`** (the session's own, beside `base`): what a snapshot leaves alone, by id.
   `g.tempo`, `g.glide`, `mst.*`, the mutes, the snapshot knobs `snap.k1` ... `snap.k16`, and
   (thirty-fourth build on) MOTION on the snapshot knobs: `mot.1_wave`, `mot.1_speed`,

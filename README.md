@@ -57,6 +57,7 @@ First run:
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
+| ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform. SF-000 keeps its own copy (see Where everything is kept) |
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
@@ -463,6 +464,51 @@ With GLIDE OFF the crossing takes a fiftieth of a second: enough not to click. W
 crosses, that lane runs both, so a long glide between very different snapshots costs more of the
 processor until it is over.
 
+A switch that cannot travel and has nothing to cross (the key every lane follows, a lane's
+sequencer muted or not) goes over on that same beat when the recall travels, all at once: it
+used to go at once, ahead of the knobs. With GLIDE OFF it still does.
+
+### The arrangement: snapshots in a line
+
+**ARRANGE** on the main screen (under the snapshot knobs), or **A**. An arrangement is parts in a
+line. Each part is a snapshot, how many **BARS** it lasts, and its **MORPH**: how long the way
+into it takes, from its first bar. CUT: it is simply there. A morph as long as the part: the
+whole of it is one travel from the snapshot before.
+
+- **Making it.** Tap a snapshot in the library at the right: it becomes a part, after the one
+  that is chosen (a part comes in as the one before it is: the same bars, the same morph). Drag
+  a part's BARS (1 to 256) and its MORPH (the GLIDE list's own lengths; never longer than the
+  part). A double-click puts either back (eight bars; cut). EARLIER and LATER move the chosen
+  part, REMOVE takes it out, CLEAR (held) empties the line. Up to 64 parts.
+- **The line** along the top is the whole of it to scale: each part as long as its bars, with
+  the bar it begins on above it, and its morph as a slope. The part playing is green.
+- **PLAY.** From stopped: the first part is recalled at once and the clock starts from the top.
+  With the clock running: it comes in on the next bar line. FROM HERE plays from the chosen part.
+  Each part after is recalled inside the beat before its bar line, so that everything in it sets
+  off on the line: the knobs travel over the morph, patterns change on the bar, and what cannot
+  travel is crossed over, exactly as in any recall. A cut lands on its line too (it is a travel
+  of a few hundredths of a beat). At the end the clock stops. RUN stopped by hand puts the
+  arrangement down; a recall made by hand while it plays is yours, and the next part still comes.
+- **What plays over it.** The snapshot knobs, where they stand, and MOTION: an arrangement is
+  the scenes, and those are what you play on top. So is anything you turn while it plays.
+- **PRINT** renders it to files, for a release: faster than it plays, and the same every time.
+  A folder `PRINT <date>` where takes go (SETUP's folder for them), holding `00 SET.wav`, the
+  track (24-bit, after the limiter, bar 1 on its first sample, and what rings on after the last
+  bar kept until it has died away), every lane, the two returns and the drum bus beside it as a
+  take has them (32-bit float, in step with it, silent ones left out), and `PRINT.txt`: its
+  length, its loudness (integrated LUFS and the highest sample), and the parts with the bar
+  and the time each begins.
+  - It is made on **a rig of its own**, built there and then from the session as it stands, with
+    every module starting from its beginning. So the rig you are playing is not touched, and
+    printing the same arrangement twice gives the same file to the byte. The sound stops while
+    it is made (one rig sounds at a time) and comes back when it is done.
+  - Each part brings its own notes, whatever NOTES says: nothing outside is playing. So what the
+    ONE was playing has to be in the snapshots (it is, if they were taken while it played: see
+    What a snapshot holds of the playing). No clock is sent or followed, and notes played in
+    meanwhile are not part of it.
+  - The page says how far it has got. PRINT again, or Esc, stops it and leaves no files.
+- The arrangement is kept in the session file. A snapshot deleted takes its parts with it.
+
 ### ONLINE: the library on the web
 
 With **ONLINE** lit (the library screen's strip), every snapshot you take goes to your snapshot
@@ -727,7 +773,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
@@ -742,6 +788,7 @@ build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page librar
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work
+build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
@@ -774,6 +821,7 @@ meters when a bar has moved, the playing step.
 | `Source/Engine.*` | clock, lanes, inserts, returns, lane EQ, POCKETS, the drum bus, master chain, delay compensation |
 | `Source/Sequencer.h` | patterns, ties, ratchets, the generators, MIDI on the sample |
 | `Source/Session.*` | base scene, snapshot library, snapshot knobs and their morph, the saved file |
+| `Source/Arrange.cpp` | the arrangement (the session's own): its parts, playing it from the clock, printing it to files on a rig of its own |
 | `Source/Defs.cpp` | every lane, effect and return written out as data, with a print of each: what a snapshot was made with |
 | `FORMAT.md` | the session file: what is in it, and the rules it grows by |
 | `tests/fixtures/` | a session file as an older build wrote it, for the check that old files still open |
@@ -863,6 +911,12 @@ Delete `session.json` to start again from the factory rig.
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP
   and DROP are on the screen and the keyboard only.
+- The arrangement: one of them; no tempo of its own and no change of tempo along it (it is printed at
+  the tempo that stands); no loop of a stretch of it; a part cannot be a part of a snapshot (some
+  lanes and not others); what is turned by hand while it plays is not kept, so a print is the scenes,
+  the snapshot knobs as they stand and MOTION, and no performance. It is made with the mouse: nothing
+  of it is on the E16 but the snapshot knobs, which the E16 turns to while its page is up. A print
+  is at the audio's own sample rate, with no dither and no choice of file type.
 - Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC;
   a snapshot keeps the notes of its last bars, not a performance).
 - Playing a snapshot's notes from outside exactly as they came (kept in it, unused so far): the

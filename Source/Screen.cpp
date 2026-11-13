@@ -665,6 +665,14 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
+                { aArrange, "ARRANGE", "THE ARRANGEMENT: SNAPSHOTS IN A LINE, EACH FOR SO MANY BARS, EACH REACHED BY A MORPH FROM THE ONE BEFORE. PLAYED FROM THE CLOCK, AND PRINTED TO FILES FOR A RELEASE. A ON THE KEYBOARD TOO. LIT GREEN WHILE IT PLAYS." },
+                { aArrPlay, "PLAY", "PLAYS THE ARRANGEMENT FROM ITS FIRST PART. FROM STOPPED: THAT PART IS RECALLED AT ONCE AND THE CLOCK STARTS FROM THE TOP. WITH THE CLOCK RUNNING: IT COMES IN ON THE NEXT BAR LINE. EACH PART AFTER IS RECALLED SO AS TO SET OFF ON ITS OWN BAR LINE; AT THE END THE CLOCK STOPS. PRESSED WHILE IT PLAYS: STOP." },
+                { aArrHere, "FROM HERE", "PLAYS IT FROM THE PART THAT IS CHOSEN." },
+                { aArrEarlier, "EARLIER", "MOVES THE CHOSEN PART ONE PLACE EARLIER." },
+                { aArrLater, "LATER", "MOVES THE CHOSEN PART ONE PLACE LATER." },
+                { aArrRemove, "REMOVE", "TAKES THE CHOSEN PART OUT OF THE ARRANGEMENT. ITS SNAPSHOT STAYS IN THE LIBRARY." },
+                { aArrClear, "HOLD: CLEAR", "HELD: TAKES EVERY PART OUT." },
+                { aArrPrint, "PRINT", "RENDERS THE ARRANGEMENT TO FILES, FASTER THAN IT PLAYS AND THE SAME EVERY TIME: THE TRACK (24-BIT, BAR 1 ON ITS FIRST SAMPLE, WHAT RINGS ON AFTER THE LAST BAR KEPT) AND EVERY LANE AND RETURN BESIDE IT, IN A FOLDER OF ITS OWN WHERE TAKES GO. IT IS MADE ON A RIG OF ITS OWN FROM THE SESSION AS IT STANDS, SO THIS ONE IS NOT TOUCHED; THE SOUND STOPS UNTIL IT IS DONE. EACH PART BRINGS ITS OWN NOTES; THE SNAPSHOT KNOBS STAND WHERE THEY ARE AND MOTION RUNS. PRESSED WHILE IT PRINTS: STOP." },
                 { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER BESIDE IT IS AMOUNT." },
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
@@ -810,6 +818,7 @@ void Screen::drawAll (G& g)
     if (page == pMain) drawMain (g);
     else if (page == pLibrary) drawLibrary (g);
     else if (page == pPockets) drawPockets (g);
+    else if (page == pArrange) drawArrange (g);
     else drawMacros (g);
     keysDrawn = false;
     if (info && ! three && ! recording && ! printing) { drawKeys (g, keysBox(), false); keysDrawn = true; }      // (in 3D it is a tag at the foot of the window: see the timer)
@@ -832,7 +841,7 @@ void Screen::drawBar (G& g)
             g.fillRect (R (23, 17.5f, w, 40));
             text (g, "SF-000", R (23, 17.5f, w, 40), fFlag, col::lit);
         }
-        if (page != pMain) title (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : page == pPockets ? "POCKETS" : "MACRO DESIGNER");
+        if (page != pMain) title (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : page == pPockets ? "POCKETS" : page == pArrange ? "ARRANGEMENT" : "MACRO DESIGNER");
         else if (ses.learning >= 0)
         {
             // LEARN: which knob is being taught, how many knobs it has been shown, and the two ways out
@@ -1315,15 +1324,16 @@ void Screen::drawSnapPanel (G& g, R r)
         else if (vis (g, kr)) hollow (g, cxm, y + 20, 40, true);
     }
     const float ky = r.getBottom() - 62;
-    const R bar (x0, ky, 130, 40);
+    const R bar (x0, ky, 84, 40);
     if (vis (g, R (x0, ky, 262, 60)))
     {
         key (g, bar, col::yellow, pressed (aSnapshot) ? 6.0f : 2.0f);
-        text (g, "SNAPSHOT", R (x0, ky + 43, 130, 14), fLbl, col::black);
+        text (g, "SNAPSHOT", R (x0, ky + 43, 84, 14), fLbl, col::black);
     }
     hit (bar, hAct, aSnapshot, 0);
-    actKey (g, aLibrary, x0 + 132, ky, 64, "LIBRARY", col::white);
-    actKey (g, aMacros, x0 + 198, ky, 64, "MACROS", col::white);
+    actKey (g, aLibrary, x0 + 88, ky, 56, "LIBRARY", col::white);
+    actKey (g, aMacros, x0 + 146, ky, 56, "MACROS", col::white);
+    actKey (g, aArrange, x0 + 204, ky, 56, "ARRANGE", ses.arrPlaying() ? col::green : col::white);
 }
 
 void Screen::drawInsert (G& g, int slot, R r)
@@ -2020,6 +2030,141 @@ void Screen::drawMacros (G& g)
     g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1180, (int) y0 + 2, 490, 94), juce::Justification::centredLeft, 6, 0.85f);
 }
 
+// The arrangement: snapshots in a line. Along the top, the line itself: each part as long as its
+// bars, the way into it a slope. Under it the parts as cards (their bars and their morph are
+// dragged); beside them the library to take from; at the foot, PLAY and PRINT.
+void Screen::drawArrange (G& g)
+{
+    const int n = (int) ses.arrangement.size();
+    selPart = n == 0 ? -1 : juce::jlimit (-1, n - 1, selPart);
+    const int total = std::max (1, ses.arrBars()), playing = ses.arrPart();
+    const double tempo = eng.tempo();
+    auto hms = [] (double sec) { const auto t = (juce::int64) std::llround (sec); return String (t / 60) + ":" + String (t % 60).paddedLeft ('0', 2); };
+    auto fitted = [this] (String t, const juce::Font& f, float room) { while (t.length() > 1 && tw (f, t) > room) t = t.dropLastCharacters (1); return t; };
+    arrSig = arrangeSig();
+    const R line (23, 78, 1118, 98);
+    panel (g, line, col::putty);
+    {
+        const float x0 = line.getX() + 8, w = line.getWidth() - 16, y0 = line.getY() + 24, h = 46;
+        const R glass (x0, y0, w, h);
+        window (g, glass, col::black);
+        if (n == 0 && vis (g, glass)) text (g, "NOTHING IN IT YET. TAP SNAPSHOTS ON THE RIGHT: EACH BECOMES A PART, AFTER THE ONE THAT IS CHOSEN.", glass, fLbl, col::lit);
+        for (int i = 0; i < n; ++i)
+        {
+            const auto& p = ses.arrangement[(size_t) i];
+            const float bx = x0 + w * (float) ses.arrBarsBefore (i) / (float) total, bw = w * (float) p.bars / (float) total;
+            const R br (bx, y0, bw, h);
+            hit (br, hArrPart, i, 0);
+            if (! vis (g, R (bx, line.getY(), bw, line.getHeight()))) continue;
+            // the way into it: a slope as long as its morph, then level (the first part has no way in: it is simply there)
+            const float mw = i == 0 ? 0.0f : bw * (float) (ses.arrMorphBars (i) / (double) p.bars);
+            juce::Path way;
+            way.startNewSubPath (bx + 1.0f, y0 + h - 3.0f); way.lineTo (bx + 1.0f + std::max (0.0f, mw - 2.0f), y0 + 7.0f); way.lineTo (bx + bw - 1.0f, y0 + 7.0f); way.lineTo (bx + bw - 1.0f, y0 + h - 3.0f);
+            way.closeSubPath();
+            g.setColour (i == playing ? col::green : i == selPart ? col::yellow : Colour (0xffB9B4AA));
+            g.fillPath (way);
+            text (g, String (ses.arrBarsBefore (i) + 1), R (bx + 2, line.getY() + 6, std::max (34.0f, bw), 16), fNote, col::black, juce::Justification::centredLeft);
+            if (bw > 44.0f) if (auto* sn = ses.findSnap (p.snap))
+            {
+                // its name: on the level stretch where there is room for it, else over the slope (light, on the glass)
+                const float level = bw - mw - 10.0f;
+                if (level >= std::min (tw (fLbl, sn->name), 60.0f)) text (g, fitted (sn->name, fLbl, level), R (bx + mw + 5, y0 + 9, level + 4, h - 14), fLbl, col::black, juce::Justification::centredLeft);
+                else text (g, fitted (sn->name, fLbl, bw * 0.55f), R (bx + 6, y0 + 5, bw * 0.6f, 16), fLbl, col::lit, juce::Justification::centredLeft);
+            }
+        }
+        if (n > 0 && vis (g, line))
+        {
+            if (ses.arrPlaying())
+            {
+                // where it is
+                const float px = x0 + w * (float) juce::jlimit (0.0, 1.0, ses.arrPos() / ((double) total * 4.0));
+                g.setColour (col::lit); g.fillRect (R (px - 1.0f, y0 - 2.0f, 2.0f, h + 4.0f));
+            }
+            text (g, String (total) + (total == 1 ? " BAR  " : " BARS  ") + hms ((double) total * 4.0 * 60.0 / tempo) + " AT " + eng.valueText (cx::kTempo), R (x0, y0 + h + 4, w, 16), fNote, col::black, juce::Justification::centredRight);
+            text (g, "THE LINE: EACH PART AS LONG AS ITS BARS. THE SLOPE IS ITS MORPH.", R (x0, y0 + h + 4, w, 16), fNote, col::black, juce::Justification::centredLeft);
+        }
+    }
+    // the parts
+    const int rows = 8;
+    arrScroll = juce::jlimit (0, std::max (0, (n - 1) / 4 - (rows - 1)), arrScroll);
+    for (int q = 0; q < rows * 4; ++q)
+    {
+        const int i = arrScroll * 4 + q;
+        if (i >= n) break;
+        const auto& p = ses.arrangement[(size_t) i];
+        const R r (23.0f + (float) (q % 4) * 282, 184.0f + (float) (q / 4) * 98, 272, 92);
+        hit (r, hArrPart, i, 0);
+        const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+        const R br (x0, y0 + 34, 66, 40), mr (x0 + 70, y0 + 34, 108, 40);
+        if (i > 0 || true) { hit (br, hArrBars, i, 0); if (i > 0) hit (mr, hArrMorph, i, 0); }
+        if (! vis (g, r)) continue;
+        card (g, r, i == selPart);
+        const String num (i + 1);
+        const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+        tag (g, R (x0, y0, wTag, 24), num);
+        const auto* sn = ses.findSnap (p.snap);
+        const bool on = i == playing;
+        plate (g, x0 + wTag, y0, fitted (sn != nullptr ? sn->name : String ("GONE"), fLegend, 150.0f), fLegend, 8, on ? col::green : col::white, col::black, 24);
+        const String from = "BAR " + String (ses.arrBarsBefore (i) + 1);
+        plate (g, r.getRight() - 6 - (std::ceil (tw (fNote, from)) + 12), y0, from, fNote, 6, col::white, col::black, 24);
+        readout (g, br, "BARS", String (p.bars));
+        // (a morph longer than the part is the whole of the part)
+        const bool whole = glideBarsFor ((float) p.morph / 11.0f) > (double) p.bars;
+        readout (g, mr, i == 0 ? "COMES IN" : "MORPH", i == 0 ? String ("AT ONCE") : whole ? String ("ALL OF IT") : Session::morphName (p.morph));
+        text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 34, 76, 20), fLbl, col::black, juce::Justification::centredRight);
+        text (g, "FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 54, 76, 20), fLbl, col::black, juce::Justification::centredRight);
+    }
+    // the library, to take from
+    const int lib = (int) ses.library.size();
+    libScroll = juce::jlimit (0, std::max (0, (lib - 1) / 2 - 11), libScroll);
+    for (int q = 0; q < 24; ++q)
+    {
+        const int i = libScroll * 2 + q;
+        if (i >= lib) break;
+        drawSnapCard (g, ses.library[(size_t) i], i, R (1151.0f + (float) (q % 2) * 282, 78.0f + (float) (q / 2) * 74, 272, 66), false, hPick);
+    }
+    const R strip (23, 980, 1682, 110);
+    panel (g, strip, col::putty);
+    const float x0 = strip.getX() + 5, y0 = strip.getY() + 5, ky = y0 + 40;
+    const bool pr = ses.printing(), play = ses.arrPlaying();
+    title (g, x0, y0, "ARRANGEMENT");
+    actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
+    actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
+    actKey (g, aArrPlay, x0 + 160, ky, 64, play ? "STOP" : "PLAY", play ? col::green : col::putty, 5, n > 0, play);
+    actKey (g, aArrHere, x0 + 226, ky, 64, "FROM HERE", col::yellow, 5, selPart >= 0);
+    actKey (g, aArrEarlier, x0 + 320, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
+    actKey (g, aArrLater, x0 + 386, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
+    actKey (g, aArrRemove, x0 + 452, ky, 64, "REMOVE", col::yellow, 5, selPart >= 0);
+    actKey (g, aArrClear, x0 + 518, ky, 64, "HOLD: CLEAR", col::red, 5, n > 0);
+    actKey (g, aArrPrint, x0 + 612, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
+    if (vis (g, strip))
+    {
+        String now;
+        if (pr) now = "PRINTING: " + String (juce::roundToInt (ses.printDone() * 100.0f)) + " OF 100. THE SOUND IS STOPPED UNTIL IT IS DONE. PRINT AGAIN, OR ESC, STOPS IT.";
+        else if (play && playing >= 0)
+        {
+            const auto* sn = ses.findSnap (ses.arrangement[(size_t) playing].snap);
+            now = "PLAYING PART " + String (playing + 1) + " OF " + String (n) + (sn != nullptr ? ": " + sn->name : String()) + ".  BAR " + String (juce::jlimit (1, total, (int) std::floor (std::max (0.0, ses.arrPos()) / 4.0) + 1)) + " OF " + String (total) + ".";
+        }
+        else if (play) now = "COMES IN ON THE NEXT BAR LINE.";
+        else now = ses.printNote;
+        g.setColour (tone (col::black)); g.setFont (fLegend);
+        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 700, (int) y0, 970, 24), juce::Justification::centredLeft, 1, 0.7f);
+        const String help = "TAP A SNAPSHOT ON THE RIGHT TO ADD IT AFTER THE CHOSEN PART. DRAG A PART'S BARS, AND ITS MORPH: HOW LONG THE WAY INTO IT TAKES, FROM ITS FIRST BAR (CUT: IT IS SIMPLY THERE). "
+                            "THE KNOBS TRAVEL OVER THE MORPH, PATTERNS CHANGE ON THE BAR, AND WHAT CANNOT TRAVEL IS CROSSED OVER, AS IN ANY RECALL. THE SNAPSHOT KNOBS AND THEIR MOTION PLAY OVER IT. "
+                            "PRINT RENDERS IT TO FILES: THE TRACK AND ITS PARTS, IN THE FOLDER TAKES GO TO.";
+        g.setFont (fLbl);
+        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 700, (int) y0 + 28, 970, 68), juce::Justification::topLeft, 4, 0.85f);
+    }
+}
+
+String Screen::arrangeSig() const
+{
+    String s;
+    s << ses.arrPart() << "|" << (ses.arrPlaying() ? (int) std::floor (ses.arrPos()) : -9) << "|" << (ses.printing() ? juce::roundToInt (ses.printDone() * 100.0f) : -1) << "|" << ses.printNote << "|" << (int) ses.arrangement.size();
+    return s;
+}
+
 // What MOTION's strip says in words: when it differs, the strip is drawn again.
 juce::String Screen::motionSig() const
 {
@@ -2058,6 +2203,21 @@ void Screen::act (int a)
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
         case aNotes:    ses.setRecallNotes (! ses.recallNotes); repaint(); break;
         case aPockets:  setPage (page == pPockets ? pMain : pPockets); break;
+        case aArrange:  setPage (page == pArrange ? pMain : pArrange); break;
+        case aArrPlay:  if (ses.arrPlaying()) ses.arrStop(); else ses.arrPlay (0); break;
+        case aArrHere:  ses.arrPlay (std::max (0, selPart)); break;
+        case aArrEarlier: if (selPart > 0) { ses.arrMove (selPart, -1); --selPart; } break;
+        case aArrLater: if (selPart >= 0 && selPart < (int) ses.arrangement.size() - 1) { ses.arrMove (selPart, 1); ++selPart; } break;
+        case aArrRemove: if (selPart >= 0) { ses.arrRemove (selPart); selPart = std::min (selPart, (int) ses.arrangement.size() - 1); } break;
+        case aArrPrint:
+            if (ses.printing()) ses.printCancel();
+            else
+            {
+                // (where takes go: the folder set in SETUP, or the usual one if that is not there)
+                const juce::File root = recorder == nullptr ? Session::recordingsDir() : recorder->root.isDirectory() ? recorder->root : recorder->usual;
+                if (const String err = ses.printBegin (root); err.isNotEmpty()) ses.printNote = err;
+            }
+            break;
         case aPkAuto:
         {
             const int n = ses.pocketsAuto();
@@ -2147,6 +2307,12 @@ void Screen::mouseDown (const juce::MouseEvent& e)
     drag = {};
     pressAt = eyeLast = e.position;
     eyeDrag = 0;
+    if (ses.printing())
+    {
+        // a print is being made: nothing is touched meanwhile but its own key, which stops it
+        if (h != nullptr && h->kind == hAct && h->a == aArrPrint) { ses.printCancel(); repaint(); }
+        return;
+    }
     if (three && ! eyeLocked && (h == nullptr || e.mods.isRightButtonDown() || e.mods.isAltDown()))
     {
         // the view is unlocked and the hand is off the controls (or the right button is down): it moves the eye
@@ -2206,7 +2372,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             break;
         }
         case hAct:
-            if (h->a == aDelete || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these two are held
+            if (h->a == aDelete || h->a == aArrClear || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these are held
             act (h->a);
             drag.fired = true;                  // (the press that starts a take is not also the hold that ends it)
             if (h->a == aRec) repaint();
@@ -2225,8 +2391,18 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             if (h->b < (int) sn.size()) { sn.erase (sn.begin() + h->b); ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
             break;
         }
+        case hArrPart:  selPart = h->a; break;
+        case hArrBars:  selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].bars; break;
+        case hArrMorph: selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].morph; break;
         case hPick:
         {
+            if (page == pArrange)
+            {
+                // a snapshot tapped: a part after the one that is chosen (with none chosen, at the end)
+                const int n = (int) ses.arrangement.size(), at = selPart >= 0 && selPart + 1 < n ? selPart + 1 : -1;
+                if (ses.arrAdd (ses.library[(size_t) h->a].id, at)) selPart = at >= 0 ? at : n;
+                break;
+            }
             auto& sn = ses.knobs[(size_t) selKnob].snaps;
             if (sn.size() < 10) { sn.push_back (ses.library[(size_t) h->a].id); ses.turnSnapKnob (selKnob, ses.value (cx::kSnap + selKnob)); }
             break;
@@ -2299,6 +2475,12 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             ses.turnSnapKnob (drag.a, ses.value (cx::kSnap + drag.a));
             repaint();
             break;
+        case hArrBars:      // (ten points of the hand to a bar)
+            if (drag.a < (int) ses.arrangement.size()) { ses.arrSet (drag.a, juce::jlimit (1, Session::kArrMaxBars, (int) std::lround (drag.v0 + dy / 10.0f)), -1); repaint(); }
+            break;
+        case hArrMorph:
+            if (drag.a < (int) ses.arrangement.size()) { ses.arrSet (drag.a, -1, juce::jlimit (0, 11, (int) std::lround (drag.v0 + dy / 22.0f))); repaint(); }
+            break;
         case hLen:
         {
             Pattern pat = ses.pattern (ses.activeLane);
@@ -2363,6 +2545,8 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
+        else if (h->kind == hArrBars) ses.arrSet (h->a, 8, -1);            // (eight bars; cut)
+        else if (h->kind == hArrMorph) ses.arrSet (h->a, -1, 0);
         else if (h->kind == hSetup && h->a < (int) cfgParams.size())
         {
             const auto& sp = cfgParams[(size_t) h->a];
@@ -2374,7 +2558,8 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
-    if (page == pLibrary || page == pMacros) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (page == pArrange && where (e).x < 1146.0f) { arrScroll = std::max (0, arrScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }      // (its parts; the library beside them, below)
+    if (page == pLibrary || page == pMacros || page == pArrange) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
     if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     const auto* h = hitAt (where (e));
@@ -2409,6 +2594,7 @@ void Screen::mouseMagnify (const juce::MouseEvent&, float by)
 
 bool Screen::keyPressed (const juce::KeyPress& k)
 {
+    if (ses.printing()) { if (k == juce::KeyPress::escapeKey) { ses.printCancel(); repaint(); } return true; }      // (a print is being made: nothing else is taken)
     if (k == juce::KeyPress::spaceKey) { act (aRun); return true; }
     // The 3D stage. 3: on and off. V: the next view (from above, the player's, from the corner).
     // K: unlock the view, so that a drag off the controls turns it, and lock it where it is put.
@@ -2455,6 +2641,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k.getTextCharacter() == 'h' || k.getTextCharacter() == 'H') { act (aPhones); return true; }
     if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { act (aNotes); return true; }
     if (k.getTextCharacter() == 'p' || k.getTextCharacter() == 'P') { act (aPockets); return true; }
+    if (k.getTextCharacter() == 'a' || k.getTextCharacter() == 'A') { act (aArrange); return true; }
     if (k.getTextCharacter() == 'd' || k.getTextCharacter() == 'D')
     {
         // the dark instrument, which is the lit skin's: from the flat drawing D goes to it
@@ -2689,7 +2876,7 @@ juce::Point<float> Screen::where (const juce::MouseEvent& e) const
     if (! three || stage == nullptr) return logical (e.position);
     // A knob in the hand turns by how far the hand has moved, as on the flat screen, however near
     // the eye is. Anything else is wherever the pointer is on the instrument.
-    if (mouseIsDown && (drag.kind == hKnob || drag.kind == hRead || drag.kind == hSnapKnob || drag.kind == hDepth || drag.kind == hLen || drag.kind == hSetup))
+    if (mouseIsDown && (drag.kind == hKnob || drag.kind == hRead || drag.kind == hSnapKnob || drag.kind == hDepth || drag.kind == hLen || drag.kind == hSetup || drag.kind == hArrBars || drag.kind == hArrMorph))
         return drag.start + (e.position - pressAt) / std::max (0.05f, pointsPerUnit());
     return stage->unitsAt (e.position);
 }
@@ -2962,7 +3149,9 @@ void Screen::refreshStage()
 void Screen::timerCallback()
 {
     // what a controller asked for: another screen; CONFIG opened, shut, or moved to another panel
-    if (ses.wantShowing >= 0) { const int w = ses.wantShowing; ses.wantShowing = -1; if (w != (int) page && w <= (int) pPockets) setPage ((Page) w); }
+    if (ses.wantShowing >= 0) { const int w = ses.wantShowing; ses.wantShowing = -1; if (w != (int) page && w <= (int) pArrange) setPage ((Page) w); }
+    // A print: rendered here, a slice at a time, so the page can say how far it has got.
+    if (ses.printing()) { ses.printStep (22.0); repaint(); }
     if (cfgOpen != cfgOpenSeen || cfg.kind != cfgSeen.kind || cfg.lane != cfgSeen.lane || cfg.slot != cfgSeen.slot)
     {
         if (cfgOpen) { cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false; }
@@ -3023,6 +3212,8 @@ void Screen::timerCallback()
         slideX = slideFrom + (slideTo - slideFrom) * slideT * slideT * (3.0f - 2.0f * slideT);
         repaint();
     }
+    if (page == pArrange && arrangeSig() != arrSig) repaint();      // the part playing, the beat it is on, what the print last said
+    if (page == pMain && ses.arrPlaying() != arrLit) { arrLit = ses.arrPlaying(); repaint(); }
     if (page == pMacros && motionSig() != motSig) repaint();       // MOTION turned from a controller: its words, and the marks on the knobs' cards
     if (page == pPockets)
     {
@@ -3057,6 +3248,13 @@ void Screen::timerCallback()
         drag.fired = true;
         recorder->stop();
         recWas = false; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter();
+        repaint();
+    }
+    if (mouseIsDown && drag.kind == hAct && drag.a == aArrClear && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)
+    {
+        drag.fired = true;
+        while (! ses.arrangement.empty()) ses.arrRemove ((int) ses.arrangement.size() - 1);
+        selPart = -1;
         repaint();
     }
     if (mouseIsDown && drag.kind == hAct && drag.a == aDelete && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)

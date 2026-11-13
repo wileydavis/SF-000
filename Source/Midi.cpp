@@ -1163,6 +1163,7 @@ Midi::Where Midi::whereNow() const
     // (the snapshot knobs are the twelfth page of both scenes: the one it is in, so no scene is loaded for them)
     const int snapScene = e16At.scene == 1 ? 1 : 0;
     if ((ses.showing == 2 || ses.macrosUp()) && ! ses.motionUp) return { snapScene, e16::kSnapPage };
+    if (ses.showing == 4) return { snapScene, e16::kSnapPage };       // (the arrangement: the snapshot knobs are what is played over it)
     if (cfgUp()) return { 1, e16::pgCfg + juce::jlimit (0, e16::kCfgPages - 1, cfgPage) };
     switch (ses.front.kind)
     {

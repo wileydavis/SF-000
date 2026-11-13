@@ -221,6 +221,14 @@ public:
     void setRecSink (RecSink* s)                { const juce::SpinLock::ScopedLockType g (recLock); recSink = s; recSinkRate = sr; }
     bool hasRecSink() const                     { const juce::SpinLock::ScopedLockType g (recLock); return recSink != nullptr; }
     int masterLatency() const                   { return masterLat.load(); }      // samples the master chain holds the set back
+    int laneLatency() const                     { return maxLat.load(); }         // samples every lane is held back, to keep them in step
+    // How many times the clock has set off, as the audio thread has seen it: after RUN is pressed,
+    // the song position is the new run's once this has moved.
+    int starts() const                          { return startsV.load(); }
+    // A print: every module renders as in a bounce (what it would build on another thread, it builds
+    // there and then, so a render is the same every time). Message thread, with the audio stopped.
+    void setOffline (bool);
+    bool isOffline() const                      { return offline; }
 
     // ---- inserts: -1 empty, else an index into effects()
     int insertType (int lane, int slot) const   { return insType[(size_t) lane][(size_t) slot]; }
@@ -240,6 +248,7 @@ public:
     // How far a lane's fades have got: 1 when nothing is leaving. stage: 0 to kSlots - 1 an insert, kSlots the instrument.
     float fadeShown (int lane, int stage) const { return this->lane[(size_t) lane].fadeAt[stage].load(); }
     bool isPrepared() const                     { return prepared; }
+    int blockSize() const                       { return maxBlock; }              // the largest block it was prepared for
     int leaving() const;                        // instruments and effects still on their way out (or waiting to be let go)
 
     // ---- what a CONFIG panel, a dropped file or a setup change is aimed at
@@ -541,6 +550,8 @@ private:
     bool wallValid = false;
 
     std::atomic<bool> running { false }, panicNow { false };
+    std::atomic<int> startsV { 0 };
+    bool offline = false;
     bool wasRunning = false;
     double ppq = 0.0, gClock = 0.0, blockBpm = 132.0;
     double devBufMs = 0.0;                      // the device's buffer; 0 with no device (a test: the block it renders)

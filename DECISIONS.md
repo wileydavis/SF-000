@@ -1679,8 +1679,64 @@ many."
      If it should be somewhere else, say where.
 343. **Addresses for a sequencer: channel 16, CC 102 to 113.**
 
+## Thirty-fifth build (Nov 13): the arrangement, and a print of it
+
+344. **You:** "Maybe some kind of arrangement tool where snapshots could be added to a linear
+     flow that morph from one to the other. Some kind of good way to create an arrangement for
+     output as an official track release."
+345. **A part is a snapshot, its bars, and its MORPH: the way into it, from its first bar.**
+     *Mine:* that the morph belongs to the part it leads into and begins on that part's bar
+     line, and does not reach back into the part before. It is what a recall with GLIDE does
+     now, so an arrangement sounds as the same recalls made by hand would; and a part's length
+     is then simply its bars, with no overlap to reckon. A morph as long as the part makes the
+     whole part one travel, which is the "morph from one to the other" with nothing held.
+346. **Played, it is recalls, each made inside the beat before its bar line.** A recall's knobs
+     already set off on the next beat, its patterns change on the bar and its effects cross
+     from that beat. So nothing new plays the arrangement: the session asks for each part half
+     a beat early, and the engine puts it on the line. CUT is a travel of 0.08 of a beat, the
+     least that still waits for the line.
+347. **A recall that travels now takes its switches over on the beat too** (the key, a lane's
+     sequencer muted or not). They went at once, half a beat ahead of the sound they belong to;
+     in an arrangement that is a lane's old pattern heard for two sixteenths before its part.
+     *Mine,* and it changes a recall made by hand with GLIDE on: those two now wait for the
+     beat with the knobs. With GLIDE OFF nothing is different.
+348. **PRINT is made on a rig of its own.** *Mine,* and not where I began. The first print
+     rendered on the rig being played and put it back afterwards; two prints of one arrangement
+     then differed, because a module that has been playing does not start from its beginning
+     again (an oscillator's phase, what a hat draws at random). A release has to be the same
+     file each time it is made. So a second rig is built from the session as it stands, the
+     arrangement is played on that, and it is let go. It costs a second or two and some memory;
+     the rig in your hands is never touched, and a print cannot leave it changed.
+349. **The sound stops while it prints.** The suite's bus (the kick's hits, the key) is one for
+     the whole app, so two rigs cannot sound at once. The audio device is left running and
+     silent, and takes the rig back when the print is done.
+350. **What a print is:** the track at 24 bits after the limiter, bar 1 on the first sample
+     (each file leaves out the time the rig holds its sound back by), the last bar's ringing
+     kept until it has been below -90 dB for half a second (a minute at most), and the parts
+     beside it as a take has them, all one length. Its page gives the loudness, integrated,
+     and the highest sample. *Mine:* all of these figures, and that the tail is kept (a hard
+     end at the last bar line is a trim away; a tail that was never printed is not).
+351. **Each part brings its notes in a print, whatever NOTES says.** Nothing outside is
+     playing, so a part without its notes would be silent lanes. In PLAY, NOTES is as you set
+     it: the ONE may be playing.
+352. **The snapshot knobs and MOTION are part of a print; what the hand turns while it plays is
+     not.** The arrangement is the scenes, the knobs as they stand and the waves on them. A
+     performance over it is recorded with REC, as a set is.
+353. **ARRANGE took a place beside LIBRARY and MACROS**, and the SNAPSHOT key gave up a third of
+     its width for it. *Mine.*
+354. *Not built, and the next thing I would do here:* a tempo for the arrangement and a change
+     of it along the line; the hand's moves kept with it (so a print could be a performance);
+     the E16 on its parts.
+
 ## Not verified
 
+- **The arrangement (thirty-fifth) is checked by where the knobs are at each bar line, and a
+  print by what is in its files**: the kick's hits on the beats they belong to, bar 1 on the
+  first sample, two prints the same to the byte. Not heard, and not made on a Mac: how long a
+  print of a real set takes there, whether the audio comes back cleanly on the Babyface when
+  it is done, where its folder lands. And the thing only you can say: whether a morph that
+  begins on a part's first bar is how you think of a transition, or whether it should arrive
+  there instead.
 - **MOTION on the snapshot knobs (thirty-fourth) is checked by where the knobs are**, block by
   block, against the knob turned by hand. Not heard. Things for your ears: fast waves (a
   sixteenth, a SQUARE) on knobs whose modules smooth a change over 30 ms, which rounds them;

@@ -229,6 +229,53 @@ public:
     void finishTakes (bool all = false);
     int takesWaiting() const            { return (int) waiting.size(); }
     void recall (juce::int64 id);       // it becomes the base scene; sound knobs travel by GLIDE
+    void recallOver (juce::int64 id, double beats, bool notes);     // the same, travelling over that long whatever GLIDE says
+
+    // ---- the arrangement: snapshots in a line. Each part is a snapshot, how many bars it lasts,
+    // and how long the way into it takes from its first bar (its MORPH: the GLIDE list's own
+    // lengths, CUT to 256 bars, and never longer than the part). Played, each is recalled so as
+    // to set off on its bar line: the knobs travel over the morph, patterns change on the bar,
+    // and what cannot travel is crossed over, as in any recall. Printed, the whole of it is
+    // rendered to files faster than it plays, the same every time.
+    struct ArrPart
+    {
+        juce::int64 snap = 0;
+        int bars = 8;
+        int morph = 0;
+        juce::NamedValueSet more;       // what the file says of it that this build does not know: carried
+    };
+    std::vector<ArrPart> arrangement;
+    static constexpr int kArrMost = 64, kArrMaxBars = 256;
+    static juce::String morphName (int morph);          // CUT, 1/4 BAR ... 256 BARS
+    int arrBarsBefore (int part) const;                 // the bars before that part begins
+    int arrBars() const                 { return arrBarsBefore ((int) arrangement.size()); }
+    double arrMorphBars (int part) const;               // its morph in bars, as it will be played (no longer than the part)
+    double arrSeconds() const           { return (double) arrBars() * 4.0 * 60.0 / engine.tempo(); }
+    bool arrAdd (juce::int64 snap, int before = -1);    // at the end, or before that part; false: there is no room, or no such snapshot
+    void arrRemove (int part);
+    void arrMove (int part, int by);                    // earlier (-1) or later (1)
+    void arrSet (int part, int bars, int morph);        // (either below 0: as it is)
+    // Playing it. From stopped: its first part (or `from`) is recalled at once and the clock sets
+    // off from the top. While the clock runs: that part comes in on the next bar line. At its end
+    // the clock stops. RUN stopped by hand puts the arrangement down.
+    void arrPlay (int from = 0);
+    void arrStop();
+    bool arrPlaying() const             { return arrOn; }
+    int arrPart() const                 { return arrOn ? arrAt : -1; }      // the part playing (-1: none yet, or not playing)
+    double arrPos() const;              // where it is, in beats from the arrangement's start (below 0: it has not come in yet)
+    void arrTick();                     // (the timer's while it plays; the checks')
+    // Printing it: to a folder of its own under `root`, the set (24-bit) and every lane, return
+    // and the drum bus as a take has them. The audio must be stopped while it runs: audioPause
+    // and audioResume are called for that (the app sets them; a check has no device). printBegin
+    // returns what is wrong, or nothing; then printStep is called until it says no more.
+    std::function<void()> audioPause, audioResume;
+    juce::String printBegin (const juce::File& root);
+    bool printStep (double msToSpend);                  // false: it is over (finished, or it failed: printNote says)
+    void printCancel();
+    bool printing() const               { return print != nullptr; }
+    float printDone() const;                            // 0 to 1
+    juce::String printNote;                             // the last thing worth telling: where it went, how loud it is, why it stopped
+    juce::File printFolder;                             // the last print's folder
     // A recall of part of it: the lanes that are chosen, the returns, the drum bus, the key come
     // from the snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo,
     // GLIDE and the master's three knobs are the rig's and no snapshot's.)
@@ -280,6 +327,9 @@ public:
     void touch()                        { dirty = true; }
     void save();
     bool load();
+    juce::var stateVar();               // all the file holds, as it stands
+    void takeState (const juce::var&);  // made what that says
+    bool printRig = false;              // this is a print's own rig: its parts bring their notes, and the print says when it ends
     static juce::File stateFile();
     static inline juce::File stateFileForTests;     // tests: the session is kept here instead
     // ---- where things are kept
@@ -352,6 +402,19 @@ private:
     juce::var madeNow (const Snapshot&) const;
     // carried through a save: what the file held that this build does not know
     juce::NamedValueSet rootMore, controlsMore;
+    // the arrangement, playing
+    bool arrOn = false, arrWait = false;
+    int arrAt = -1, arrStarts = 0, arrTicks = 0;
+    double arrZero = 0.0;               // the song position at which the arrangement's first bar begins
+    double glideOver = -1.0;            // a recall travelling over a time of its own (below 0: by GLIDE)
+    double recallGlide() const          { return glideOver >= 0.0 ? glideOver : glideBeats(); }
+    void arrRecall (int part, double beats);
+    juce::var arrToVar() const;
+    void arrFromVar (const juce::var&);
+    juce::NamedValueSet arrMore;
+    struct Print;
+    std::shared_ptr<Print> print;       // (shared: it is let go where it is not known in full)
+    void printEnd (bool keep, const juce::String& why);
     std::vector<std::pair<juce::String, juce::var>> defsKept;      // every definition the file has held, by print
     juce::String idInFile;
     std::array<Engine::SetupState, 2> retInit;

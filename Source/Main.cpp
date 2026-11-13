@@ -731,6 +731,229 @@ static void knobMotionTest (int& bad)
     }
 }
 
+// The arrangement: snapshots in a line, played from the clock and printed to files.
+static void arrangementTest (int& bad)
+{
+    using namespace sf0;
+    using juce::var;
+    const double SR = 48000.0;
+    const int block = 128;
+    auto say = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_arrange_test");
+    tmp.deleteRecursively(); tmp.createDirectory();
+    Session::stateFileForTests = tmp.getChildFile ("session.json");
+    const int cut = cx::lane (5, 6), hatLevel = cx::lane (1, 11);
+    juce::int64 A = 0, B = 0, C = 0;
+    juce::MemoryBlock firstSet;
+    {
+        Engine e; e.prepare (SR, block);
+        Session ses (e, true);
+        juce::AudioBuffer<float> b (2, block);
+        const double beat = 60.0 / e.tempo(), spb = beat * SR;
+        auto run = [&] (int blocks) { for (int i = 0; i < blocks; ++i) e.render (b); };
+        ses.userSet (cx::kGlide, 0.0f);
+        // three scenes: the bass's filter in three places, the key off, D and off; a kick on every beat in the first two and none in the third
+        auto kick = [&] (bool on) { Pattern p = ses.pattern (0); for (int i = 0; i < (int) p.steps.size(); ++i) p.steps[(size_t) i].on = on && i % 4 == 0 && i < p.length; ses.setPattern (0, p); };
+        kick (true); ses.userSet (cut, 0.20f); ses.userSet (hatLevel, 0.30f); ses.userSet (cx::kKey, 0.0f); run (30);
+        A = ses.take();
+        ses.userSet (cut, 0.80f); ses.userSet (hatLevel, 0.60f); ses.userSet (cx::kKey, 3.0f / 12.0f); run (30);
+        B = ses.take();
+        kick (false); ses.userSet (cut, 0.40f); ses.userSet (cx::kKey, 0.0f); run (30);
+        C = ses.take();
+        ses.finishTakes (true);
+        ses.recall (A); run (30);
+        const bool none = ses.arrBars() == 0 && ! ses.arrPlaying();
+        ses.arrPlay();                                  // (nothing in it: nothing happens)
+        const bool nothing = ! ses.arrPlaying() && ! e.isRunning();
+        const bool added = ses.arrAdd (A) && ses.arrAdd (B) && ses.arrAdd (C) && ! ses.arrAdd (123456789);
+        ses.arrSet (0, 2, 0); ses.arrSet (1, 2, 3); ses.arrSet (2, 1, 0);          // A two bars; B two, morphing in over one; C one, cut
+        say (none && nothing && added && ses.arrangement.size() == 3 && ses.arrBars() == 5 && ses.arrBarsBefore (2) == 4 && ses.arrMorphBars (1) == 1.0 && Session::morphName (3) == "1 BAR"
+                 && std::abs (ses.arrSeconds() - 20.0 * beat) < 1.0e-9,
+             "an arrangement is parts in a line, each a snapshot, its bars and its way in: three of them make five bars (" + juce::String (ses.arrSeconds(), 2) + " s), and a snapshot that is not there cannot be a part");
+
+        // ---- played: each part comes in on its bar line
+        ses.recall (C); run (30);                       // (somewhere else first: PLAY brings the first part)
+        ses.arrPlay();
+        const bool atOnce = ses.baseId == A && std::abs (e.target (cut) - 0.20f) < 1.0e-6f && ses.arrPlaying() && ses.arrPart() == 0 && e.isRunning();
+        float before8 = -1.0f, at9 = -1.0f, at10 = -1.0f, at12 = -1.0f, before16 = -1.0f, after16 = -1.0f, keyBefore8 = -1.0f, keyAfter8 = -1.0f;
+        double recalledB = -1.0, recalledC = -1.0, stoppedAt = -1.0;
+        bool patB = false;
+        for (int i = 0; i < (int) (22.0 * spb / block) && (ses.arrPlaying() || i < 10); ++i)
+        {
+            const double p0 = e.songPos();
+            e.render (b);
+            ses.arrTick();
+            const double p1 = e.songPos();
+            if (recalledB < 0.0 && ses.baseId == B) recalledB = p1;
+            if (recalledC < 0.0 && ses.baseId == C) recalledC = p1;
+            auto crossed = [&] (double at) { return p0 < at && p1 >= at; };
+            if (crossed (7.97)) { before8 = e.shown (cut); keyBefore8 = e.shown (cx::kKey); }
+            if (crossed (8.1)) keyAfter8 = e.shown (cx::kKey);
+            if (crossed (9.0)) at9 = e.shown (cut);
+            if (crossed (10.0)) at10 = e.shown (cut);
+            if (crossed (12.05)) { at12 = e.shown (cut); patB = ses.pattern (0).steps[0].on; }
+            if (crossed (15.97)) before16 = e.shown (cut);
+            if (crossed (16.2)) after16 = e.shown (cut);
+            if (stoppedAt < 0.0 && ! e.isRunning()) stoppedAt = p1;
+        }
+        const bool onTheBar = recalledB > 7.4 && recalledB < 8.0 && std::abs (before8 - 0.20f) < 0.004f && keyBefore8 == 0.0f && std::abs (keyAfter8 - 0.25f) < 1.0e-6f;
+        const bool travels = std::abs (at9 - 0.35f) < 0.012f && std::abs (at10 - 0.50f) < 0.012f && std::abs (at12 - 0.80f) < 1.0e-4f && patB;
+        const bool cuts = recalledC > 15.4 && recalledC < 16.0 && std::abs (before16 - 0.80f) < 1.0e-4f && std::abs (after16 - 0.40f) < 1.0e-4f && ! ses.pattern (0).steps[0].on;
+        const bool ends = ! ses.arrPlaying() && ! e.isRunning() && stoppedAt > 19.9 && stoppedAt < 20.0 + 1.0e-6 && ses.arrPart() == -1;
+        say (atOnce && onTheBar && travels && cuts && ends,
+             "PLAY from stopped brings its first part at once and starts the clock. The second is recalled inside the beat before its bar (at beat " + juce::String (recalledB, 2) + ") and nothing moves until the bar line: the filter is where it was at 7.97 ("
+                 + juce::String (before8, 3) + "), the key goes over on the line, and the filter travels its bar (" + juce::String (at9, 3) + " a beat in, " + juce::String (at10, 3) + " at half, " + juce::String (at12, 3)
+                 + " when it is done). A part that cuts is there on its line (" + juce::String (before16, 3) + " before, " + juce::String (after16, 3) + " after). At its end the clock stops, short of the next bar (beat " + juce::String (stoppedAt, 3) + ")");
+        if (! (atOnce && onTheBar && travels && cuts && ends)) std::printf ("        (at once %d, on the bar %d [B at %.3f, key %.3f then %.3f], travels %d [pattern %d], cuts %d [C at %.3f], ends %d)\n", atOnce, onTheBar, recalledB, keyBefore8, keyAfter8, travels, patB, cuts, recalledC, ends);
+
+        // ---- with the clock running, a part comes in on the next bar line; RUN stopped by hand puts it down
+        ses.recall (A); run (10);
+        e.setRunning (true); e.render (b);
+        while (e.songPos() < 5.3) e.render (b);
+        ses.arrPlay (1);
+        double bAt = -1.0; float cutAt8 = -1.0f, cutBefore = -1.0f;
+        while (e.songPos() < 12.5)
+        {
+            const double p0 = e.songPos();
+            e.render (b); ses.arrTick();
+            if (bAt < 0.0 && ses.baseId == B) bAt = e.songPos();
+            if (p0 < 7.97 && e.songPos() >= 7.97) cutBefore = e.shown (cut);
+            if (p0 < 10.0 && e.songPos() >= 10.0) cutAt8 = e.shown (cut);
+        }
+        const bool joined = bAt > 7.4 && bAt < 8.0 && std::abs (cutBefore - 0.20f) < 0.004f && std::abs (cutAt8 - 0.50f) < 0.012f && ses.arrPlaying() && ses.arrPart() == 1 && std::abs (ses.arrPos() - (e.songPos() - 0.0)) < 1.0e-9;
+        e.setRunning (false); e.render (b); ses.arrTick();
+        const bool putDown = ! ses.arrPlaying();
+        say (joined && putDown, "started while the clock runs (at beat 5.3, from its second part), that part comes in on the next bar line (recalled at " + juce::String (bAt, 2) + ", half way at beat 10: " + juce::String (cutAt8, 3) + "); RUN stopped by hand puts the arrangement down");
+
+        // ---- a recall with a time of its own: a switch that cannot travel goes over on the beat, not before
+        ses.recall (A); run (10);
+        e.setRunning (true); e.render (b);
+        while (e.songPos() < 2.4) e.render (b);
+        ses.recallOver (B, 4.0, true);
+        e.render (b);
+        const float keyNow = e.shown (cx::kKey);
+        const bool said = std::abs (e.target (cx::kKey) - 0.25f) < 1.0e-6f;
+        while (e.songPos() < 3.05) e.render (b);
+        const float keyThen = e.shown (cx::kKey);
+        ses.userSet (cx::kGlide, 0.0f);
+        ses.recall (A); e.render (b);
+        const float keyCut = e.shown (cx::kKey);
+        e.setRunning (false); run (4);
+        say (said && keyNow == 0.0f && std::abs (keyThen - 0.25f) < 1.0e-6f && keyCut == 0.0f, "a recall that travels takes the key over on the beat its knobs set off on (asked for at beat 2.4: still the old key then, the new one after beat 3); with GLIDE off it is there at once");
+
+        // ---- printed
+        ses.recall (B); run (20);
+        ses.userSet (cx::kSnap + 15, 0.0f);
+        const float cutWas = e.target (cut);
+        std::vector<float> rigWas; for (int i = 0; i < cx::kCount; ++i) rigWas.push_back (e.target (i));
+        const auto blocksWas = e.starts();
+        int paused = 0, resumed = 0;
+        ses.audioPause = [&paused] { ++paused; };
+        ses.audioResume = [&resumed] { ++resumed; };
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        const juce::String err = ses.printBegin (tmp.getChildFile ("prints"));
+        const bool began = err.isEmpty() && ses.printing() && ! e.isOffline() && paused == 1;
+        int steps = 0; float most = 0.0f; bool rose = true;
+        while (ses.printStep (20.0)) { ++steps; rose = rose && ses.printDone() >= most; most = std::max (most, ses.printDone()); }
+        const double took = (juce::Time::getMillisecondCounterHiRes() - t0) * 0.001;
+        const auto dir = ses.printFolder;
+        const bool done = ! ses.printing() && ! e.isOffline() && resumed == 1 && ! e.isRunning() && ! ses.arrPlaying() && ses.printNote.startsWith ("PRINTED");
+        bool untouched = e.starts() == blocksWas;
+        for (int i = 0; i < cx::kCount; ++i) untouched = untouched && e.target (i) == rigWas[(size_t) i];
+        const bool putBack = untouched && ses.baseId == B && std::abs (e.target (cut) - cutWas) < 1.0e-6f && std::abs (e.target (cx::kKey) - 0.25f) < 1.0e-6f && ses.pattern (0).steps[0].on;
+        // what is in the files
+        juce::WavAudioFormat wav;
+        auto read = [&] (const juce::String& name, juce::AudioBuffer<float>& into, int& bits)
+        {
+            std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (dir.getChildFile (name).createInputStream().release(), true));
+            if (r == nullptr) return false;
+            into.setSize (2, (int) r->lengthInSamples);
+            r->read (&into, 0, (int) r->lengthInSamples, 0, true, true);
+            bits = (int) r->bitsPerSample;
+            return std::abs (r->sampleRate - SR) < 0.5;
+        };
+        juce::AudioBuffer<float> set, kickStem;
+        int setBits = 0, kickBits = 0;
+        const bool files = read ("00 SET.wav", set, setBits) && read ("01 KICK.wav", kickStem, kickBits) && setBits == 24 && kickBits == 32 && dir.getChildFile ("PRINT.txt").existsAsFile();
+        const auto total = (juce::int64) std::llround (20.0 * spb);
+        auto peakIn = [] (const juce::AudioBuffer<float>& a, juce::int64 from, juce::int64 to) { from = juce::jlimit ((juce::int64) 0, (juce::int64) a.getNumSamples(), from); to = juce::jlimit (from, (juce::int64) a.getNumSamples(), to); return to > from ? a.getMagnitude ((int) from, (int) (to - from)) : 0.0f; };
+        const float kickTop = files ? peakIn (kickStem, 0, kickStem.getNumSamples()) : 0.0f;
+        // bar 1 begins on the first sample: the kick's first hit is there, in its own file and in the set
+        int kickAt = -1, setAt = -1;
+        if (files) for (int i = 0; i < kickStem.getNumSamples() && kickAt < 0; ++i) if (std::abs (kickStem.getSample (0, i)) > 0.02f * kickTop) kickAt = i;
+        if (files) for (int i = 0; i < set.getNumSamples() && setAt < 0; ++i) if (std::abs (set.getSample (0, i)) > 0.02f * peakIn (set, 0, (juce::int64) spb)) setAt = i;
+        // a hit on every beat of the first four bars, and none in the fifth
+        int hits = 0, late = 0;
+        for (int k = 0; files && k < 20; ++k)
+        {
+            const auto at = (juce::int64) std::llround ((double) k * spb);
+            const bool hit = peakIn (kickStem, at, at + 480) > 3.0f * peakIn (kickStem, at - 600, at - 60) + 0.01f * kickTop;
+            if (hit && k < 16) ++hits;
+            if (hit && k >= 16) ++late;
+        }
+        const double len = files ? (double) set.getNumSamples() / SR : 0.0;
+        const bool inStep = files && set.getNumSamples() == kickStem.getNumSamples();
+        const bool tail = files && set.getNumSamples() > total && len < 20.0 * beat + 60.5 && peakIn (set, set.getNumSamples() - 4800, set.getNumSamples()) < 1.0e-4f;
+        const juce::String notes = dir.getChildFile ("PRINT.txt").loadFileAsString();
+        const bool noted = notes.contains ("5 bars at 132.0") && notes.contains ("BAR    3") && notes.contains ("MORPH 1 BAR") && notes.contains ("LUFS");
+        if (std::getenv ("SF000_SHOW_PRINT") != nullptr) std::printf ("%s\n", notes.toRawUTF8());
+        say (began && done && rose && steps > 2 && putBack && files && kickAt >= 0 && kickAt < 96 && setAt >= 0 && setAt < 96 && hits == 16 && late == 0 && inStep && tail && noted,
+             "PRINT renders it to a folder, the audio stopped for it and started again, in " + juce::String (took, 1) + " s for " + juce::String (len, 1) + " s of sound: the set (24-bit) and the parts it was made of (32-bit float, as long as it), "
+                 "bar 1 on the first sample (the kick's first hit " + juce::String (kickAt) + " samples in, in its own file, and " + juce::String (setAt) + " in the set), " + juce::String (hits) + " kicks on the beats of the four bars that have them and "
+                 + juce::String (late) + " in the fifth, what rings on after the last bar kept (" + juce::String (len - 20.0 * beat, 1) + " s), and a page saying what is in it. It is rendered on a rig of its own: the one being played is not touched");
+        if (! (began && done && putBack && files)) std::printf ("        (began %d [%s], done %d [%s], rose %d, steps %d, put back %d, files %d [%d %d bit])\n", began, err.toRawUTF8(), done, ses.printNote.toRawUTF8(), rose, steps, putBack, files, setBits, kickBits);
+        if (files) dir.getChildFile ("00 SET.wav").loadFileAsData (firstSet);
+        // twice is the same, to the byte
+        const juce::String err2 = ses.printBegin (tmp.getChildFile ("prints"));
+        while (ses.printStep (50.0)) {}
+        juce::MemoryBlock again;
+        ses.printFolder.getChildFile ("00 SET.wav").loadFileAsData (again);
+        juce::MemoryBlock kick1, kick2;
+        dir.getChildFile ("01 KICK.wav").loadFileAsData (kick1); ses.printFolder.getChildFile ("01 KICK.wav").loadFileAsData (kick2);
+        say (err2.isEmpty() && ses.printFolder != dir && firstSet.getSize() > 1000 && firstSet == again && kick1 == kick2, "printed again, the files are the same to the byte");
+        if (! (firstSet == again))
+            for (int t = 0; t < Engine::kRecTracks; ++t)
+            {
+                juce::AudioBuffer<float> x, y; int bx = 0;
+                const juce::String name = Recorder::trackName (t) + ".wav";
+                if (! dir.getChildFile (name).existsAsFile() || ! ses.printFolder.getChildFile (name).existsAsFile()) { std::printf ("        [%s: in one only]\n", name.toRawUTF8()); continue; }
+                read (name, x, bx);
+                { std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (ses.printFolder.getChildFile (name).createInputStream().release(), true)); y.setSize (2, (int) r->lengthInSamples); r->read (&y, 0, (int) r->lengthInSamples, 0, true, true); }
+                int first = -1; double d = 0.0, a = 0.0;
+                for (int i = 0; i < std::min (x.getNumSamples(), y.getNumSamples()); ++i) { const double q = x.getSample (0, i) - y.getSample (0, i); if (q != 0.0 && first < 0) first = i; d += q * q; a += (double) x.getSample (0, i) * x.getSample (0, i); }
+                std::printf ("        [%s: %d and %d samples, first differs at %d (beat %.2f), %.1f dB]\n", name.toRawUTF8(), x.getNumSamples(), y.getNumSamples(), first, first / spb, 10.0 * std::log10 (d / (a + 1e-30) + 1e-30));
+            }
+        // stopped part way: nothing is left, and the rig is as it was
+        const juce::String err3 = ses.printBegin (tmp.getChildFile ("prints"));
+        for (int i = 0; i < 3; ++i) ses.printStep (10.0);
+        const auto dir3 = ses.printFolder;
+        ses.printCancel();
+        say (err3.isEmpty() && ! dir3.exists() && ! ses.printing() && ! e.isOffline() && ses.baseId == B && std::abs (e.target (cut) - cutWas) < 1.0e-6f && ses.printNote == "PRINT STOPPED" && paused == 3 && resumed == 3,
+             "a print stopped part way leaves no files, and the rig as it was");
+
+        // ---- parts moved, a snapshot deleted, and the file
+        ses.arrMove (2, -1);
+        const bool moved = ses.arrangement[1].snap == C && ses.arrangement[2].snap == B && ses.arrBarsBefore (2) == 3;
+        ses.arrMove (1, 1);
+        ses.arrangement[1].more.set ("colour", "red");
+        ses.save();
+        const var root = juce::JSON::parse (Session::stateFile().loadFileAsString());
+        const bool inFile = root["arrangement"]["parts"].size() == 3 && (juce::int64) root["arrangement"]["parts"][1]["snap"] == B && (int) root["arrangement"]["parts"][1]["bars"] == 2
+                         && std::abs ((double) root["arrangement"]["parts"][1]["morph"] - 1.0) < 1.0e-9 && root["arrangement"]["parts"][1]["colour"].toString() == "red";
+        say (moved && inFile, "a part is moved earlier or later; the session file holds the arrangement (each part's snapshot, its bars, its way in as bars), and what it does not know of a part is carried");
+    }
+    {
+        Engine e; e.prepare (SR, block);
+        Session ses (e, true);
+        const bool back = ses.arrangement.size() == 3 && ses.arrangement[0].snap == A && ses.arrangement[1].snap == B && ses.arrangement[1].bars == 2 && ses.arrangement[1].morph == 3
+                       && ses.arrangement[1].more["colour"].toString() == "red" && ses.arrangement[2].snap == C && ses.arrangement[2].bars == 1 && ses.arrangement[2].morph == 0;
+        ses.remove (B);
+        say (back && ses.arrangement.size() == 2 && ses.arrangement[1].snap == C && ses.arrBars() == 3, "it is there when the app opens; a snapshot deleted takes its parts with it");
+    }
+    Session::stateFileForTests = juce::File();
+    tmp.deleteRecursively();
+}
+
 // The convolution's BANDS: three places across the spectrum. Its response to one click is taken
 // (with the module rendering as it does offline, so each change is built before the click), and
 // looked at band by band: how much is there, and how much of that is late.
@@ -923,7 +1146,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -1630,6 +1853,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     pocketsTest (bad);
     convolutionBandsTest (bad);
     knobMotionTest (bad);
+    arrangementTest (bad);
 
     // Recording: the set and its parts go to disk as they are played.
     {
@@ -3511,6 +3735,73 @@ static int uiTest()
                ("MOTION is in the macro designer: three rows of WAVE, SPEED, KNOB, AMOUNT (" + juce::String (there) + " knobs), dragged like any knob (a wave with no amount is not on; with one it is, and the knob's card says so), each with its help, and a double-click puts one back").toRawUTF8());
         sc.setPage (Screen::pMain); draw();
     }
+    // 3e. the arrangement's page: parts added from the library, their bars and morph dragged, moved, played, printed
+    {
+        auto key = [&] (int which) { for (auto& h : sc.testHits()) if (Screen::testIsArrKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto part = [&] (int i, int what) { for (auto& h : sc.testHits()) if (Screen::testIsArrPart (h, i, what)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto pick = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPick (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_arrange_ui");
+        tmp.deleteRecursively(); tmp.createDirectory();
+        Recorder rec (ses.engine);
+        rec.root = tmp;
+        sc.recorder = &rec;
+        while (! ses.arrangement.empty()) ses.arrRemove (0);
+        ses.engine.setRunning (false); audio (4);
+        sc.setPage (Screen::pMain); draw();
+        const bool onMain = key (0).x >= 0.0f && key (1).x < 0.0f;
+        click (key (0)); draw();
+        const bool opened = sc.testPage() == Screen::pArrange && key (1).x < 0.0f && key (7).x < 0.0f;       // (nothing in it: nothing to play or print)
+        const auto first = ses.library[1].id, second = ses.library[2].id, third = ses.library[3].id;
+        click (pick (1)); draw(); click (pick (2)); draw();
+        const bool added = ses.arrangement.size() == 2 && ses.arrangement[0].snap == first && ses.arrangement[1].snap == second && sc.testSelPart() == 1;
+        click (part (0, 0)); draw();
+        click (pick (3)); draw();                                                   // (after the one chosen: between the two)
+        const bool between = ses.arrangement.size() == 3 && ses.arrangement[1].snap == third && sc.testSelPart() == 1;
+        dragBy (part (1, 1), 0.0f, -40.0f); draw();
+        const int bars = ses.arrangement[1].bars;
+        dragBy (part (1, 2), 0.0f, -70.0f); draw();
+        const int morph = ses.arrangement[1].morph;
+        const bool firstHasNoMorph = part (0, 2).x < 0.0f;
+        { const auto p = part (1, 1); sc.mouseDoubleClick (ev (p, p, false)); } draw();
+        const bool dragged = bars > 8 && bars <= 16 && morph >= 2 && ses.arrangement[1].bars == 8 && firstHasNoMorph;
+        click (key (4)); draw();                                                    // LATER
+        const bool later = ses.arrangement[2].snap == third && sc.testSelPart() == 2;
+        click (key (3)); draw();                                                    // EARLIER
+        const bool earlier = ses.arrangement[1].snap == third && sc.testSelPart() == 1;
+        click (key (5)); draw();                                                    // REMOVE
+        const bool removed = ses.arrangement.size() == 2 && ses.arrangement[1].snap == second;
+        ses.arrSet (0, 1, 0); ses.arrSet (1, 1, 2);
+        click (key (1)); draw(); audio (8); ses.arrTick();
+        const bool plays = ses.arrPlaying() && ses.engine.isRunning() && ses.baseId == first;
+        click (key (1)); draw(); audio (8);
+        const bool stops = ! ses.arrPlaying() && ! ses.engine.isRunning();
+        // PRINT: the page renders it a slice at a time; nothing else is taken meanwhile; Esc stops it
+        click (key (7)); draw();
+        const bool printing = ses.printing();
+        click (key (0)); click (pick (4)); draw();                                  // (ignored)
+        const bool locked = sc.testPage() == Screen::pArrange && ses.arrangement.size() == 2 && ses.printing();
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)); draw();
+        const bool escaped = ! ses.printing() && ses.printNote == "PRINT STOPPED" && tmp.getNumberOfChildFiles (juce::File::findDirectories) == 0;
+        click (key (7)); draw();
+        int ticks = 0;
+        while (ses.printing() && ticks < 4000) { sc.testTick(); ++ticks; }
+        const bool printed = ! ses.printing() && ses.printNote.startsWith ("PRINTED") && ses.printFolder.getChildFile ("00 SET.wav").existsAsFile() && ses.printFolder.getParentDirectory() == tmp && ticks > 2;
+        draw();
+        // HOLD: CLEAR
+        { const auto p = key (6); sc.mouseDown (ev (p, p, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (p, p, false)); } draw();
+        const bool cleared = ses.arrangement.empty() && sc.testSelPart() == -1;
+        sc.keyPressed (juce::KeyPress ('a', juce::ModifierKeys(), 'a')); draw();
+        const bool shut = sc.testPage() == Screen::pMain;
+        check (onMain && opened && added && between && dragged && later && earlier && removed && plays && stops && printing && locked && escaped && printed && cleared && shut,
+               ("the ARRANGE key opens the arrangement's page; a snapshot tapped there becomes a part after the one chosen; a part's BARS and MORPH are dragged (" + juce::String (bars) + " bars, " + Session::morphName (morph)
+                    + "; a double-click: eight again); EARLIER, LATER and REMOVE; PLAY and STOP; PRINT is rendered by the page a slice at a time (" + juce::String (ticks) + " of them), takes nothing else meanwhile and stops for Esc; CLEAR, held, empties it; A shuts it").toRawUTF8());
+        if (! (onMain && opened && added && between && dragged && later && earlier && removed && plays && stops && printing && locked && escaped && printed && cleared && shut))
+            std::printf ("        (main %d opened %d added %d between %d dragged %d [%d bars, morph %d, first %d] later %d earlier %d removed %d plays %d stops %d printing %d locked %d escaped %d printed %d [%s] cleared %d shut %d)\n",
+                         onMain, opened, added, between, dragged, bars, morph, firstHasNoMorph, later, earlier, removed, plays, stops, printing, locked, escaped, printed, ses.printNote.toRawUTF8(), cleared, shut);
+        sc.recorder = nullptr;
+        tmp.deleteRecursively();
+        sc.setPage (Screen::pMain); draw();
+    }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
         Engine e3; e3.prepare (48000.0, 512);
@@ -3906,7 +4197,18 @@ static int shot (const juce::StringArray& args)
     if (args.contains ("--seqmute")) { ses.userSet (cx::lane (ses.activeLane, cx::kSeqMute), 1.0f); for (int i = 0; i < 8; ++i) e.render (b); }
     Screen sc (ses);
     const auto page = arg ("--page", "main");
-    sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : Screen::pMain);
+    sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : page == "arrange" ? Screen::pArrange : Screen::pMain);
+    if (page == "arrange")
+    {
+        // an arrangement made of the snapshots it comes with, caught playing a little way into its third part
+        static const int bars[] = { 8, 16, 8, 32, 16, 8, 16 }, morph[] = { 0, 5, 0, 7, 4, 0, 6 };
+        for (int i = 0; i < 7 && i + 1 < (int) ses.library.size(); ++i) { ses.arrAdd (ses.library[(size_t) (1 + (i * 3) % ((int) ses.library.size() - 1))].id); ses.arrSet (i, bars[i], morph[i]); }
+        ses.arrPlay (2);
+        const int blocks = (int) ((14.0 * 60.0 / e.tempo()) * 48000.0 / 512.0);
+        for (int i = 0; i < blocks; ++i) { e.render (b); ses.arrTick(); }
+        sc.testPickPart (3);
+        sc.testTick();
+    }
     if (page == "pockets")
     {
         // POCKETS at work: AMOUNT up (--amount, in hundredths: 60 unless said), a bar and a half played with the page up, caught on a kick
@@ -7182,6 +7484,9 @@ public:
         recorder = std::make_unique<sf0::Recorder> (*engine);
         recorder->root = sf0::Session::recordingsDir();
         recorder->stateAtStart = [this] { session->save(); return sf0::Session::stateFile(); };
+        // a print renders on a rig of its own: this one's audio waits meanwhile (one rig sounds at a time)
+        session->audioPause = [this] { devices.removeAudioCallback (engine.get()); };
+        session->audioResume = [this] { devices.addAudioCallback (engine.get()); };
         // ONLINE: snapshots go to the library on the web as they are taken (if it is lit and set up)
         online = std::make_unique<sf0::Online> (*session);
         session->onLibrary = [this] { if (online != nullptr) online->poke(); };

@@ -77,7 +77,25 @@ std::unique_ptr<SFProcessor> Engine::makeProc (const char* module, const std::ve
         prm->setValueNotifyingHost (prm->convertTo0to1 (f.value));
     }
     p->setPlayHead (this);
+    if (offline) p->setNonRealtime (true);
     return p;
+}
+
+void Engine::setOffline (bool on)
+{
+    offline = on;
+    auto set = [on] (SFProcessor* p) { if (p != nullptr) p->setNonRealtime (on); };
+    for (auto& ln : lane)
+    {
+        if (auto* v = ln.voice.load()) set (v->proc.get());
+        if (auto* v = ln.voiceOut.load()) set (v->proc.get());
+        for (auto& i : ln.ins) if (auto* in = i.load()) set (in->proc.get());
+        for (auto& i : ln.out) if (auto* in = i.load()) set (in->proc.get());
+    }
+    for (auto* in : parked) set (in->proc.get());
+    set (retA.get()); set (busProc.get());
+    for (auto& sp : space) set (sp.get());
+    for (auto& m : master) set (m.get());
 }
 
 Engine::Bind Engine::makeBind (SFProcessor& p, const KnobDef& k, Control* c)
@@ -679,6 +697,13 @@ int Engine::takeHeardNotes (HeardNote* into, int most)
 void Engine::gatherNotes (int n, double spb)
 {
     liveMidi.clear();
+    if (offline)
+    {
+        // a print: what is played in from outside meanwhile is not part of it
+        noteKeptN = 0;
+        for (;;) { const auto r = noteFifo.read (1); if (r.blockSize1 <= 0) break; }
+        return;
+    }
     const double span = std::max (0.05, blockMs - prevBlockMs);
     auto place = [&] (const NoteEv& e) -> bool
     {
@@ -1457,6 +1482,13 @@ void Engine::advanceControls (double beats, int n)
                 gStart[s] = gliding[s] ? std::max (now, std::min (gStart[s], fresh)) : fresh;
                 gLen[s] = len; gliding[s] = true;
             }
+            else if (len > 0.0f && wasRunning)
+            {
+                // A switch or a list that cannot travel, sent with a recall whose knobs do: it goes
+                // over on the beat they set off on, all at once, and not before.
+                gStart[s] = gClock - beats + (std::ceil (ppq - 1e-9) - ppq);
+                gLen[s] = 1.0e-9; gliding[s] = true;
+            }
             else { cur[s] = gTo[s]; gliding[s] = false; }
         }
         if (gliding[s])
@@ -1548,7 +1580,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
     // An outside clock, if one is followed: its START and STOP are the transport's, its tempo the
     // rig's. The rig's own steps are played ahead of it by that time (or not), and by TRIM.
     const double ahead = (followBeat.load() ? waitNow + (double) outMs.load() + insideNow : 0.0) + (double) followTrim.load();
-    const bool led = followClock (ahead);
+    const bool led = ! offline && followClock (ahead);      // (a print goes by its own clock, whatever is plugged in)
     const bool run = running.load();
     blockBpm = led ? fol.bpmSaid : tempoFor (cur[(size_t) cx::kTempo]);
     double beats = (double) n * blockBpm / 60.0 / sr;
@@ -1560,7 +1592,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
     // time, one for the note's way in) and LEAD, the follower's own delay. RUN waits that long.
     // Ticks go out only while it runs, as Live's did: the OXI One is set up for a clock that
     // starts with START, and falls back to its own when there is none. None while following.
-    const bool clk = clockOn.load() && ! followOn.load();
+    const bool clk = clockOn.load() && ! followOn.load() && ! offline;      // (and sends none)
     const double lookBeats = clk ? (2.0 * durMs + (double) clockLead.load()) * blockBpm / 60000.0 : 0.0;
     if (starting) ppq = -lookBeats;
     if (led && run)
@@ -1616,6 +1648,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     // Where a bar line falls in this buffer, noted against the tape: its sound leaves the master
     // chain that much later than it is made.
+    if (starting) startsV.fetch_add (1);
     if (starting || again) { ++runCount; barMoved = true; pushHeard ({ ppq, 0, 0, 0, 2 }); }
     // Has the rig held still? A change colours the sound for as long as the lanes and the master
     // hold it back; a knob still travelling is a change all the way.

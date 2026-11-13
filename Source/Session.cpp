@@ -37,6 +37,10 @@ Session::~Session()
 
 void Session::timerCallback()
 {
+    if (printRig) return;                           // (a print's own rig: the print does its looking)
+    // The arrangement, while it plays: looked at often, for the part that is next. The rest of
+    // what this does is slower work, done about once a second meanwhile.
+    if (arrOn) { arrTick(); if (arrOn && ++arrTicks % 64 != 0) return; }
     finishTakes();
     engine.tidy();
     pullHeard();
@@ -44,7 +48,8 @@ void Session::timerCallback()
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
     if (const auto now = juce::Time::getMillisecondCounter(); useDisk && dirty && now - savedAt >= 2900) { savedAt = now; save(); }
     pruneCues();
-    if (waiting.empty()) { if (useDisk) startTimer (3000); else stopTimer(); }
+    if (arrOn) { if (useDisk) startTimer (15); }
+    else if (waiting.empty()) { if (useDisk) startTimer (3000); else stopTimer(); }
 }
 
 double Session::glideBeats() const { return glideBarsFor (engine.target (cx::kGlide)) * 4.0; }
@@ -1076,7 +1081,8 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
         const int k = i < cx::kRet ? i % cx::kPerLane : -1;
         const bool cell = k >= cx::kIns && k < cx::kGen;
         const bool travels = cell && engine.control (i).glides && stays[(size_t) (i / cx::kPerLane)][(size_t) ((k - cx::kIns) / kCells)];
-        engine.set (i, v, travels ? glide : 0.0);
+        // (the key every lane follows goes over on the beat the knobs set off on: with the sound, not ahead of it)
+        engine.set (i, v, travels || i == cx::kKey ? glide : 0.0);
     }
     for (int l = 0; l < kLanes; ++l)
     {
@@ -1086,7 +1092,7 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
             // runs. A snapshot that says what was sounding sets the sequencer's mute to match.
             engine.setPattern (l, played (s, l), true);
             genType[(size_t) l] = s.gen[(size_t) l];
-            if (s.hasPlayed) engine.set (cx::lane (l, cx::kSeqMute), ! s.heardOn[(size_t) l] && s.seqMuted[(size_t) l] ? 1.0f : 0.0f);
+            if (s.hasPlayed) engine.set (cx::lane (l, cx::kSeqMute), ! s.heardOn[(size_t) l] && s.seqMuted[(size_t) l] ? 1.0f : 0.0f, glide);      // (on that beat too)
         }
         if (s.hasSetup)
         {
@@ -1114,7 +1120,7 @@ void Session::recallWhole (juce::int64 id)
     if (auto* s = findSnap (id))
     {
         const Snapshot copy = *s;
-        applySnapshot (copy, glideBeats());
+        applySnapshot (copy, recallGlide());
         baseId = id;
         selStep = -1;
         touch();
@@ -1154,7 +1160,7 @@ void Session::recall (juce::int64 id, const Scope& scope)
     if (! scope.returns) { keep (cx::kRet, cx::kBus); if (m.hasSetup) m.retSetup = now.retSetup; }
     if (! scope.bus) { keep (cx::kBus, cx::kRetMS); m.hasBus = false; }
     if (! scope.master) keep (cx::kMaster, cx::kSnap);
-    applySnapshot (m, glideBeats(), &notes);
+    applySnapshot (m, recallGlide(), &notes);
     baseId = id;
     selStep = -1;
     touch();
@@ -1170,6 +1176,7 @@ void Session::remove (juce::int64 id)
     if (cueId == id) cue (0);
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); }
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
+    arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
     if (baseId == id) baseId = 0;
     applyMorph (0.0);
     sweepSamples();                     // the samples only it held go with it
@@ -1743,6 +1750,17 @@ void Session::save()
 {
     dirty = false;
     if (notSavingWhy.isNotEmpty()) return;          // a newer build's file is on the disk: it stays as it is
+    const var root = stateVar();
+    const auto f = stateFile();
+    f.getParentDirectory().createDirectory();
+    const auto tmp = f.getSiblingFile ("session.tmp");
+    if (tmp.replaceWithText (juce::JSON::toString (root))) tmp.moveFileTo (f);
+}
+
+// Everything the session file holds, as it stands now (the file is this, written out; a print's
+// own rig is made from it).
+var Session::stateVar()
+{
     sign();
     auto* root = new juce::DynamicObject();
     root->setProperty ("sf000", kFormat);
@@ -1827,6 +1845,7 @@ void Session::save()
     }
     root->setProperty ("library", lib);
     root->setProperty ("knobs", kn);
+    if (! arrangement.empty() || arrMore.size() > 0) root->setProperty ("arrangement", arrToVar());
     // The definitions: every one the file has held, and this build's own. Never pruned: a snapshot
     // made long ago still finds what it was made with.
     {
@@ -1836,11 +1855,7 @@ void Session::save()
         root->setProperty ("defs", var (d));
     }
     for (auto& m : rootMore) if (! root->hasProperty (m.name)) root->setProperty (m.name, m.value);
-
-    const auto f = stateFile();
-    f.getParentDirectory().createDirectory();
-    const auto tmp = f.getSiblingFile ("session.tmp");
-    if (tmp.replaceWithText (juce::JSON::toString (var (root)))) tmp.moveFileTo (f);
+    return var (root);
 }
 
 void Session::backUp()
@@ -1880,9 +1895,15 @@ bool Session::load()
         if (f.getSize() > 0) f.copyFileTo (f.getSiblingFile ("session-unreadable-" + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S") + ".json"));
         return false;
     }
+    takeState (root);
+    return true;
+}
 
+// The session made what a file's contents say (see stateVar).
+void Session::takeState (const var& root)
+{
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "samples" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "samples", "arrangement" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -1898,6 +1919,7 @@ bool Session::load()
     library.clear();
     if (auto* lib = root.getProperty ("library", var()).getArray())
         for (auto& v : *lib) library.push_back (snapFromVar (v, engine));
+    arrFromVar (root.getProperty ("arrangement", var()));
     if (auto* kn = root.getProperty ("knobs", var()).getArray())
         for (int k = 0; k < 16 && k < kn->size(); ++k)
         {
@@ -1980,7 +2002,6 @@ bool Session::load()
     }
     motionLaws();
     warmInserts();
-    return true;
 }
 
 void Session::warmInserts()

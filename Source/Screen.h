@@ -17,7 +17,7 @@ public:
     explicit Screen (Session&);
     ~Screen() override;
 
-    enum Page { pMain, pLibrary, pMacros, pPockets };
+    enum Page { pMain, pLibrary, pMacros, pPockets, pArrange };
     void setPage (Page);
     std::function<void()> onAudioSetup, onFullScreen, onOnlineSetup;
     std::function<void()> onLeaveFullScreen;    // Esc, with nothing else open: out of full screen (never into it)
@@ -95,7 +95,7 @@ public:
     // For the offline screen test: every control's place (screen units), kind and index, as last drawn.
     struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
     std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
-    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec || h.a == aOnline || h.a == aOnlineSetup); }
+    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec || h.a == aOnline || h.a == aOnlineSetup || h.a == aArrPrint); }
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay || h.kind == hPocket; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
@@ -134,6 +134,12 @@ public:
     static bool testIsRun (const TestHit& h) { return h.kind == hAct && h.a == aRun; }
     bool testDescribe (int ctl, juce::String& where, juce::String& label, const char*& what) const { return describe (ctl, where, label, what); }      // what INFO's box says of a control
     static bool testIsPanic (const TestHit& h) { return h.kind == hAct && h.a == aPanic; }
+    // the arrangement's page: its key (0), PLAY, FROM HERE, EARLIER, LATER, REMOVE, CLEAR, PRINT; a part's card, its BARS, its MORPH
+    static bool testIsArrKey (const TestHit& h, int which) { return h.kind == hAct && h.a == aArrange + which; }
+    static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
+    static bool testIsPick (const TestHit& h, int index) { return h.kind == hPick && h.a == index; }
+    int testSelPart() const { return selPart; }
+    void testPickPart (int part) { selPart = part; }
     static bool testIsLearnKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aLearn : which == 1 ? aLearnKeep : aLearnDrop); }     // LEARN, KEEP, DROP
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
     static bool testIsConfigKey (const TestHit& h, int lane) { return h.kind == hConfig && h.a == 0 && h.b == lane * 8; }
@@ -157,10 +163,12 @@ private:
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
                    hFront,          // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
-                   hPocket };       // POCKETS: a lane's pocket on the map (a: the lane): dragged, left and right its HOME, up and down its WIDTH
+                   hPocket,         // POCKETS: a lane's pocket on the map (a: the lane): dragged, left and right its HOME, up and down its WIDTH
+                   hArrPart, hArrBars, hArrMorph };     // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
-               aPockets, aPkAuto, aPkReset };
+               aPockets, aPkAuto, aPkReset,
+               aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint };
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -272,6 +280,11 @@ private:
     void drawSequencer (G&, R);
     void drawLibrary (G&);
     void drawMacros (G&);
+    void drawArrange (G&);
+    juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
+    juce::String arrSig;
+    int selPart = -1, arrScroll = 0;
+    bool arrLit = false;
     juce::String motionSig() const;     // MOTION's strip, as words
     juce::String motSig;
     void drawPockets (G&);
