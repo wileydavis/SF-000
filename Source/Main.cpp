@@ -685,6 +685,42 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                     std::printf ("  %s: MOTION: a sine set on the bass's CUTOFF in its CONFIG moves what the instrument hears (it travels %.2f of its range with no motion, %.2f with it, %.2f switched off), is kept in a snapshot and brought back by it (%.2f), and a snapshot from before MOTION puts it off (%.2f)\n",
                                  ok7 ? "ok  " : "FAIL", still, moving, off, back, before);
                     if (! ok7) { ++bad; std::printf ("    (listed %d set %d wave %d: %s)\n", (int) listed, (int) set, (int) wave, t0.choices.joinIntoString (", ").toRawUTF8()); }
+                    // an effect has the same two: a DELAY on the kick, the second knob of its panel moved by a sine
+                    {
+                        while (e7.insertType (0, 0) != 0) s7.stepInsert (0, 0);
+                        const Engine::Target fx { 1, 0, 0 };
+                        auto* fp = e7.processorFor (fx);
+                        const auto& cell = effects()[0].cells[1];
+                        const int pi = fp->paramIndex (cell.param);
+                        auto fxFind = [&] (const juce::String& id) { for (auto& sp : e7.setupParams (fx)) if (sp.id == id) return sp; return Engine::SetupParam(); };
+                        auto fxChoose = [&] (const juce::String& id, const juce::String& name)
+                        {
+                            const auto sp = fxFind (id);
+                            const int at = sp.choices.indexOf (name);
+                            if (at >= 0 && sp.choices.size() > 1) e7.setSetup (fx, id, (float) at / (float) (sp.choices.size() - 1));
+                            return at >= 0;
+                        };
+                        auto fxSpread = [&] (int blocks)
+                        {
+                            float lo = 1.0e9f, hi = -1.0e9f;
+                            for (int n7 = 0; n7 < blocks; ++n7) { e7.render (b7); const float v = fp->param (pi)->convertTo0to1 (fp->currentValue (pi)); lo = std::min (lo, v); hi = std::max (hi, v); }
+                            return hi - lo;
+                        };
+                        const auto tg = fxFind ("m1_target");
+                        const bool there = tg.group == "MOTION 1" && tg.choices.size() > 2 && tg.choices[1] == juce::String (cell.label) && fxFind ("m1_src").choices.contains ("INPUT");      // (TIME, its first knob, is a list of note values: not something a wave can move)
+                        const float fxStill = fxSpread (300);
+                        const bool fxSet = fxChoose ("m1_src", "SINE") && fxChoose ("m1_rate", "1/4") && fxChoose ("m1_target", cell.label);
+                        e7.setSetup (fx, "m1_depth", 1.0f);
+                        const float fxMoving = fxSpread (800);
+                        const auto keep = s7.take(); s7.finishTakes (true);
+                        e7.setSetup (fx, "m1_src", 0.0f);
+                        s7.recall (keep);
+                        for (int n7 = 0; n7 < 300; ++n7) e7.render (b7);
+                        fp = e7.processorFor (fx);
+                        const bool fxOk = there && fxSet && fxStill < 0.01f && fxMoving > 0.3f && fp != nullptr && fxFind ("m1_src").text.toUpperCase() == "SINE";
+                        std::printf ("  %s: MOTION on an effect: a sine on a DELAY's %s moves it (%.2f of its range still, %.2f with it), INPUT is among its waves, and a snapshot brings it back\n", fxOk ? "ok  " : "FAIL", cell.label, fxStill, fxMoving);
+                        if (! fxOk) { ++bad; std::printf ("    (there %d set %d wave now %s; targets: %s)\n", (int) there, (int) fxSet, fxFind ("m1_src").text.toRawUTF8(), tg.choices.joinIntoString (", ").toRawUTF8()); }
+                    }
                 }
             }
         }

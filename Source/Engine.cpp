@@ -1044,8 +1044,8 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
             sp.group = g;
             out.push_back (sp);
         }
-    // MOTION, on an instrument: two rows of their own, last
-    if (t.kind == 0)
+    // MOTION, on an instrument, an effect or a return: two rows of their own, last
+    {
         for (int k = 1; k <= SFProcessor::kMotions; ++k)
         {
             static const char* const tail[4] = { "_src", "_rate", "_target", "_depth" };
@@ -1060,7 +1060,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
                 {
                     // what it moves: the lane's own knobs first, as the panel has them, then the rest of the instrument's
                     juce::StringArray shown;
-                    const auto order = motionOrder (t.lane, *p, &shown);
+                    const auto order = motionOrder (t, *p, &shown);
                     const int now = (int) std::lround (p->param (i)->convertFrom0to1 (p->param (i)->getValue()));
                     int at = 0;
                     for (size_t q = 0; q < order.size(); ++q) if (order[q] == now) at = (int) q + 1;
@@ -1070,6 +1070,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
                 out.push_back (sp);
             }
         }
+    }
     return out;
 }
 
@@ -1079,27 +1080,31 @@ bool Engine::isMotionId (const juce::String& id)
         && (id.endsWith ("_src") || id.endsWith ("_rate") || id.endsWith ("_target") || id.endsWith ("_depth"));
 }
 
-std::vector<int> Engine::motionOrder (int l, SFProcessor& p, juce::StringArray* names) const
+std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArray* names) const
 {
     const auto& targets = p.motionTargetParams();           // TARGET's choice c (1 on) moves module parameter targets[c - 1]
     const auto& specs = p.allSpecs();
-    const auto& d = lanes()[(size_t) l];
+    // the knobs on its own panel: a lane's twelve, an effect's or a return's cells
+    const KnobDef* defs = nullptr; int count = 0;
+    if (t.kind == 0) { defs = lanes()[(size_t) t.lane].knobs; count = kLaneKnobs; }
+    else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) { defs = effects()[(size_t) ty].cells; count = kCells; } }
+    else { defs = (t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells; count = kCells; }
     std::vector<int> order;
     auto add = [&] (int choice, const juce::String& name) { if (std::find (order.begin(), order.end(), choice) == order.end()) { order.push_back (choice); if (names != nullptr) names->add (name); } };
-    for (int k = 0; k < kLaneKnobs; ++k)
-        if (d.knobs[k].param != nullptr)
+    for (int k = 0; k < count; ++k)
+        if (defs[k].param != nullptr && defs[k].label != nullptr)
         {
-            const int pi = p.paramIndex (d.knobs[k].param);
-            for (size_t c = 0; c < targets.size(); ++c) if (targets[c] == pi) add ((int) c + 1, d.knobs[k].label);
+            const int pi = p.paramIndex (defs[k].param);
+            for (size_t c = 0; c < targets.size(); ++c) if (targets[c] == pi) add ((int) c + 1, defs[k].label);
         }
     for (size_t c = 0; c < targets.size(); ++c) add ((int) c + 1, juce::String (specs[(size_t) targets[c]].name));
     return order;
 }
 
-Engine::SetupState Engine::motionOff (int l) const
+Engine::SetupState Engine::motionOff (Target t) const
 {
     SetupState st;
-    if (auto* p = processorFor ({ 0, l, 0 }))
+    if (auto* p = processorFor (t))
         for (int k = 1; k <= SFProcessor::kMotions; ++k)
             for (const char* tail : { "_src", "_rate", "_target", "_depth" })
                 if (const int i = p->paramIndex ("m" + std::to_string (k) + tail); i >= 0) st.push_back ({ juce::String ("m" + std::to_string (k) + tail), p->param (i)->getDefaultValue() });
@@ -1117,13 +1122,13 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
     if (auto* p = processorFor (t))
     {
         const int i = p->paramIndex (id.toStdString());
-        const bool motion = t.kind == 0 && isMotionId (id);
+        const bool motion = isMotionId (id);
         if (i < 0 || (i >= p->numModuleParams() && ! motion)) return;
         v = juce::jlimit (0.0f, 1.0f, v);
         if (motion && id.endsWith ("_target"))
         {
             // (CONFIG lists what it moves in its own order: back to the instrument's)
-            const auto order = motionOrder (t.lane, *p);
+            const auto order = motionOrder (t, *p);
             const int at = juce::jlimit (0, (int) order.size(), (int) std::lround (v * (float) order.size()));
             v = p->param (i)->convertTo0to1 (at == 0 ? 0.0f : (float) order[(size_t) at - 1]);
         }
@@ -1144,10 +1149,11 @@ Engine::SetupState Engine::getSetup (Target t) const
         for (int i = 0; i < p->numModuleParams(); ++i)
             if (std::find (bound.begin(), bound.end(), specs[(size_t) i].id) == bound.end())
                 st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
-        // an instrument's MOTION with it
-        if (t.kind == 0)
+        // its MOTION with it
+        {
             for (int i = p->numModuleParams(); i < (int) specs.size(); ++i)
                 if (isMotionId (specs[(size_t) i].id)) st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
+        }
     }
     return st;
 }

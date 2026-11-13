@@ -260,7 +260,7 @@ public:
     // MOTION: the two modulators every instrument has (the suite's own): a wave, a speed, one of
     // the instrument's knobs to move, and how far. Set in a lane's CONFIG, kept in snapshots.
     static bool isMotionId (const juce::String& id);
-    SetupState motionOff (int lane) const;      // the two of them as they are when never set: a snapshot from before they could be set means this
+    SetupState motionOff (Target) const;        // the two of them as they are when never set: a snapshot from before they could be set means this
     SFProcessor* processorFor (Target) const;
     std::vector<SetupParam> setupParams (Target) const;
     void setSetup (Target, const juce::String& id, float v);
@@ -407,7 +407,7 @@ private:
     std::array<SetupState, kLanes> initSetup;
     std::array<juce::String, kLanes> files;
     std::vector<std::string> boundIds (Target) const;
-    std::vector<int> motionOrder (int lane, SFProcessor&, juce::StringArray* names = nullptr) const;     // TARGET's choices as CONFIG lists them: the lane's own knobs first
+    std::vector<int> motionOrder (Target, SFProcessor&, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
     juce::MidiBuffer noMidi;
 

@@ -980,6 +980,11 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      quarter between hits and rises to three times on one. While it pulses the whole scene is
      drawn again for every frame that the pulse has moved in; with PULSE at none, never for this.
      *Mine:* it follows what is heard, so a muted kick does not pulse.
+236. **MOTION is in the effects' CONFIG too** (you: "can we add the motion system to the configs
+     of the effects as well"): every insert and both returns, the same two rows, kept in
+     snapshots the same way. TARGET lists the effect's own panel first. Among its waves INPUT,
+     the level coming in, stands where an instrument has NOTES. This replaces "instruments only"
+     in 223.
 
 ## Not verified
 

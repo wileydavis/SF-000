@@ -440,10 +440,10 @@ static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState&
 
 // A lane's setup as a snapshot holds it, whole: one taken before MOTION could be set says nothing
 // of it, and means the two of them off (as they were then).
-static Engine::SetupState withMotion (const Engine& engine, int l, Engine::SetupState st)
+static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, Engine::SetupState st)
 {
     for (auto& kv : st) if (Engine::isMotionId (kv.first)) return st;
-    for (auto& kv : engine.motionOff (l)) st.push_back (kv);
+    for (auto& kv : engine.motionOff (t)) st.push_back (kv);
     return st;
 }
 
@@ -451,7 +451,7 @@ static Engine::SetupState withMotion (const Engine& engine, int l, Engine::Setup
 // its layer, a sample's ends), or one of its knobs that is a menu or a switch.
 bool Session::laneJumps (const Snapshot& s, int l) const
 {
-    if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), withMotion (engine, l, s.setup[(size_t) l]))) return true;
+    if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), withMotion (engine, { 0, l, 0 }, s.setup[(size_t) l]))) return true;
     for (int k = 0; k < kLaneKnobs; ++k)
     {
         const int i = cx::lane (l, k);
@@ -470,7 +470,7 @@ bool Session::insertStays (const Snapshot& s, int l, int k) const
     const auto& refs = s.insFiles[(size_t) l][(size_t) k];
     if (! (s.hasInsFiles ? engine.insertHolds (l, k, type, refs) : engine.insertType (l, k) == type)) return false;
     if (type < 0) return true;
-    if (s.hasSetup && setupDiffers (engine.getSetup ({ 1, l, k }), s.insSetup[(size_t) l][(size_t) k])) return false;
+    if (s.hasSetup && setupDiffers (engine.getSetup ({ 1, l, k }), withMotion (engine, { 1, l, k }, s.insSetup[(size_t) l][(size_t) k]))) return false;
     for (int c = 0; c < kCells; ++c)
     {
         const int i = cx::ins (l, k, c);
@@ -525,11 +525,11 @@ void Session::applySnapshot (const Snapshot& s, double glide)
         genType[(size_t) l] = s.gen[(size_t) l];
         if (s.hasSetup)
         {
-            engine.applySetup ({ 0, l, 0 }, withMotion (engine, l, s.setup[(size_t) l]));
-            for (int k = 0; k < kSlots; ++k) engine.applySetup ({ 1, l, k }, s.insSetup[(size_t) l][(size_t) k]);
+            engine.applySetup ({ 0, l, 0 }, withMotion (engine, { 0, l, 0 }, s.setup[(size_t) l]));
+            for (int k = 0; k < kSlots; ++k) engine.applySetup ({ 1, l, k }, withMotion (engine, { 1, l, k }, s.insSetup[(size_t) l][(size_t) k]));
         }
     }
-    if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, s.retSetup[(size_t) r]);
+    if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, withMotion (engine, { 2, 0, r }, s.retSetup[(size_t) r]));
     applyMorph (glide);
 }
 void Session::recall (juce::int64 id)

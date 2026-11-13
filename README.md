@@ -182,7 +182,9 @@ back at the other. The sequencer stays where it is.
   ECHO, POCKET, RIG, and on an instrument MOTION 1 and MOTION 2. A model's own controls (FM 4-OP's
   operators, WAVETABLE's table) and a sample's are there only while that model plays, as the
   lane's model or its layer's: what is on the panel does something. More rows than fit: scroll.
-- **MOTION** moves one of the instrument's knobs by itself. Each lane has two: WAVE (sine,
+- **MOTION** moves one of the instrument's knobs by itself (an effect's and a return's CONFIG has
+  the same two, moving that effect's knobs, with INPUT, the level coming in, in place of NOTES).
+  Each lane has two: WAVE (sine,
   triangle, square, ramps, random, drift, steps, an envelope, the kick's hits, the lane's own
   notes), SPEED (a sixteenth to 64 bars, locked to the bars), TARGET (the lane's own knobs first,
   as on its panel, then the rest of the instrument's) and AMOUNT (either way, up to the whole
