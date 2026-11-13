@@ -503,16 +503,27 @@ String fxText (const Engine& eng, const juce::StringArray& snapNames)
         add ("MASTER", kSnapChannel, encs);
     }
     {
-        static const char* const names[5] = { "LENGTH", "HITS", "ROTATE", "ACCENTS", "SEED" };
-        static const char* const abbrs[5] = { "LEN", "HITS", "ROT", "ACNT", "SEED" };
+        // The sequencer strip. Top row: LENGTH, and the step under the hand (STEP goes through the
+        // pattern; pressed, it lights that step or puts it out), its VEL and GATE. Second row: its
+        // RATCH, NOTE and OCT. Third: the generator's four, as the screen has them (HITS pressed is
+        // RANDOM, ROTATE pressed EUCLID). Knobs 15 and 16 pressed nudge the pattern.
+        struct S { int place; const char* name; const char* abbr; int number, colour, def, press; };
+        static const S seq[] = { { 1, "LENGTH", "LEN", kLenCc, kWhite, 15, 0 },
+                                 { 2, "STEP", "STEP", kStepCc, kGreen, 0, kStepKey }, { 3, "VELOCITY", "VEL", kStepCc + 1, kRed, 95, 0 }, { 4, "GATE", "GATE", kStepCc + 2, kRed, 64, 0 },
+                                 { 5, "RATCHET", "RTCH", kStepCc + 3, kWhite, 0, 0 }, { 6, "NOTE", "NOTE", kStepCc + 4, kWhite, 0, 0 }, { 7, "OCTAVE", "OCT", kStepCc + 5, kWhite, 64, 0 },
+                                 { 9, "HITS", "HITS", kGenCc, kLightBlue, 0, kGenKey }, { 10, "ROTATE", "ROT", kGenCc + 1, kLightBlue, 0, kGenKey + 1 },
+                                 { 11, "ACCENTS", "ACNT", kGenCc + 2, kLightBlue, 0, 0 }, { 12, "SEED", "SEED", kGenCc + 3, kLightBlue, 0, 0 } };
         std::vector<Enc> encs (16);
-        for (int p = 1; p <= 5; ++p)
+        for (const auto& q : seq)
         {
-            Enc& e = encs[(size_t) (p - 1)];
-            e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = p == 1 ? kWhite : kLightBlue;
-            e.channel = kFxChannel; e.number = p == 1 ? kLenCc : kGenCc + (p - 2); e.def = p == 1 ? 15 : 0;
+            Enc& e = encs[(size_t) (q.place - 1)];
+            e.name = q.name; e.abbr = q.abbr; e.colour = q.colour;
+            e.channel = kFxChannel; e.number = q.number; e.def = q.def;
+            if (q.press != 0) { e.press = 1; e.pressChannel = kFxChannel; e.pressNumber = q.press; }
         }
         encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
+        encs[14] = key ("NUDGE -", "NDG-", kNudgeKey); encs[14].pressChannel = kFxChannel;
+        encs[15] = key ("NUDGE +", "NDG+", kNudgeKey + 1); encs[15].pressChannel = kFxChannel;
         add ("SEQ", kFxChannel, encs);
     }
     for (int c = 0; c < kCfgPages; ++c)
@@ -594,6 +605,8 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
     for (auto& v : bSent) v = -1;
     for (auto& v : bHeardAt) v = 0;
     for (auto& v : genIn) v = -1;
+    for (auto& v : stepIn) v = -1;
+    for (auto& v : seqKeys) v = 0;
     for (auto& v : cfgIn) v = -1;
     laneNow = ses.activeLane;
     ringLast.fill (0); ringSentAt.fill (0.0);
@@ -940,7 +953,10 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
             else if (c.used && c.kind == Kind::Toggle && val >= 64) takeExtra (extra, engine.target (ctl) > 0.5f ? 0 : 127, fromE16);
         }
         else if (num == e16::kLenCc) { lenIn = val; if (fromE16) { bMark (0, val, nowMs); pageHeard = e16::kFocusB + e16::pgSeq; } }
-        else if (num >= e16::kGenCc && num < e16::kGenCc + 4) { genIn[(size_t) (num - e16::kGenCc)] = val; if (fromE16) { bMark (1 + num - e16::kGenCc, val, nowMs); pageHeard = e16::kFocusB + e16::pgSeq; } }
+        else if (num >= e16::kGenCc && num < e16::kGenCc + 4) { genIn[(size_t) (num - e16::kGenCc)] = val; if (fromE16) { bMark (8 + num - e16::kGenCc, val, nowMs); pageHeard = e16::kFocusB + e16::pgSeq; } }
+        // the chosen step's knobs; and the strip's keys (STEP pressed, RANDOM, EUCLID, the two nudges)
+        else if (num >= e16::kStepCc && num < e16::kStepCc + Session::kStepKnobs) { stepIn[(size_t) (num - e16::kStepCc)] = val; if (fromE16) { bMark (1 + num - e16::kStepCc, val, nowMs); pageHeard = e16::kFocusB + e16::pgSeq; } }
+        else if (num >= e16::kStepKey && num < e16::kStepKey + 5) { if (val >= 64) seqKeys[(size_t) (num - e16::kStepKey)].fetch_add (1); if (fromE16) pageHeard = e16::kFocusB + e16::pgSeq; }
         else if (const int n = e16::cfgAt (num); n >= 0)
         {
             cfgIn[(size_t) n] = val;
@@ -1065,6 +1081,12 @@ void Midi::service()
             ses.moved (ctl, 1);
             ses.userSet (ctl, e16::from7 (engine.control (ctl), v));
         }
+    // the chosen step: STEP first (the others are that step's), then what it holds; then the keys
+    for (int j = 0; j < Session::kStepKnobs; ++j)
+        if (const int v = stepIn[(size_t) j].exchange (-1); v >= 0) ses.setStepKnob (j, v);
+    for (int n = seqKeys[0].exchange (0); n > 0; --n) ses.stepPress();
+    for (int t = 0; t < 2; ++t) for (int n = seqKeys[(size_t) (1 + t)].exchange (0); n > 0; --n) { ses.pressGenerator (ses.activeLane, t); if (ses.onChange) ses.onChange(); }
+    for (int d = 0; d < 2; ++d) for (int n = seqKeys[(size_t) (3 + d)].exchange (0); n > 0; --n) { ses.nudgeLane (ses.activeLane, d == 0 ? -1 : 1); if (ses.onChange) ses.onChange(); }
     if (ses.cfgOpen != cfgWasOpen || ses.cfg.kind != cfgWas.kind || ses.cfg.lane != cfgWas.lane || ses.cfg.slot != cfgWas.slot || ses.pocketsUp() != pocketsWereUp || ses.macrosUp() != macrosWereUp)
     {
         // CONFIG opened, shut or moved to another panel (or POCKETS or the macro designer came up, or went): its first page, and its controls looked at afresh
@@ -1500,7 +1522,9 @@ std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
     else if (page == e16::pgSeq)
     {
         k[0] = { e16::kFxChannel, e16::kLenCc, juce::jlimit (0, 127, ses.pattern (l).length - 1) };
-        for (int j = 0; j < 4; ++j) control (1 + j, e16::kFxChannel, e16::kGenCc + j, cx::gen (l, j));
+        // (the step under the hand: a knob of shares, STEP or a note, is left where the hand has it while that is the right share)
+        for (int j = 0; j < Session::kStepKnobs; ++j) k[(size_t) (1 + j)] = { e16::kFxChannel, e16::kStepCc + j, ses.stepKnob (j, bSent[(size_t) (1 + j)].load()) };
+        for (int j = 0; j < 4; ++j) control (8 + j, e16::kFxChannel, e16::kGenCc + j, cx::gen (l, j));
     }
     else if (page >= e16::pgCfg && page < e16::pgCfg + e16::kCfgPages)
         for (int i = 0; i < e16::kCfgPer; ++i)
@@ -1564,7 +1588,12 @@ void Midi::sayNames()
             nm[(size_t) c] = abbr;
         }
     }
-    else if (e16At.scene == 1 && pg == e16::pgSeq) title = String (e16::laneCodes[l]) + " SEQUENCER";
+    else if (e16At.scene == 1 && pg == e16::pgSeq)
+    {
+        // (the step under the hand, in the title: its number, and its note on a lane that has one)
+        const String step = ses.stepSays();
+        title = String (e16::laneCodes[l]) + (step.isEmpty() ? String (" SEQUENCER") : " SEQ " + step);
+    }
     else if (e16At.scene == 1 && pg >= e16::pgCfg && pg < e16::pgCfg + e16::kCfgPages)
     {
         const int c = pg - e16::pgCfg, pages = cfgPagesNow();

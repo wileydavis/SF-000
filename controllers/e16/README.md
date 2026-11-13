@@ -142,7 +142,11 @@ page 5   INS 3      5 6 7 8              THROW FREEZE MIX WIDTH)
 page 6   RETURNS  1-4 DUB TIME, FDBK, TONE, DRIVE; 5-8 SPACE SIZE, DECAY, DARK, DUCK
 page 7   MASTER   1 TAPE, 2 COMP, 3 LIMIT; 5 to 8 the drum bus's DRIVE, CRUNCH, PUNCH, BOOM;
                   9 to 12 POCKETS' AMOUNT, CLEAR, SPEED, RETURNS
-page 8   SEQ      1 LENGTH, 2 HITS, 3 ROTATE, 4 ACCENTS, 5 SEED (the active lane's)
+page 8   SEQ      the active lane's sequencer
+                    1 LENGTH    2 STEP [press: lit / out]    3 VEL       4 GATE
+                    5 RATCH     6 NOTE                       7 OCT       8 -
+                    9 HITS [press: RANDOM]   10 ROTATE [press: EUCLID]   11 ACCENTS   12 SEED
+                    15 [press]: nudge a step earlier        16 [press]: a step later
 page 9   CFG 1    CONFIG's controls in the order its panel has them, twelve to a page
 page 10  CFG 2      15 [press]: the page before   16 [press]: the next
 page 11  CFG 3
@@ -156,7 +160,19 @@ on pages 2 to 11: 13 the pointer's wheel (pressed or not), 14 [press] OPEN
   knob is held down, FREEZE switches. (Turned past the middle, a key is on, too.) An empty slot's
   knobs read `-` and do nothing.
 - **SEQ.** LENGTH's number and one is the steps (1 to 128). The generator's four rewrite the
-  pattern while RANDOM or EUCLID is lit, as on the screen.
+  pattern while RANDOM or EUCLID is lit, as on the screen; HITS pressed is RANDOM and ROTATE
+  pressed is EUCLID (pressed again, it lets go).
+  - **STEP is the step under the hand.** Turned, it goes through the pattern's steps (16 steps:
+    eight clicks to the next; 128: one), the screen's page of sixteen goes with it, and the
+    display's title says which and what it holds (`BAS SEQ 7 D#3`; `KCK SEQ 12`; `... OUT` for a
+    step that is not lit). Pressed, it lights that step, or puts it out.
+  - **VEL, GATE, RATCH, NOTE and OCT are that step's**, and are told what it holds each time
+    STEP comes to another. VEL: 15 to 100 hundredths. GATE: up to the whole step at the knob's
+    middle; past it the gate runs on, to the next lit step's edge and a little over at the
+    knob's top (legato into it: a slide on ACID). RATCH: one to four hits. NOTE and OCT: on
+    lanes that take notes; nothing elsewhere. VEL and GATE light a step that is out, as dragging
+    it on the screen does; RATCH wants it lit.
+  - Knobs 15 and 16 pressed nudge the whole pattern a step earlier and later.
 - **CONFIG's pages** hold whatever CONFIG is open on: an instrument's, an effect's, a return's,
   MOTION's two at the end. SF-000 sends each knob's name (four letters) and a title
   (`BAS CFG 1/3`). INFO on the screen shows each control's number, and resting the mouse on one
@@ -223,6 +239,8 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | the active lane's insert, slot s (0-2), place p (1-8) | 13 | CC 7 + 8 s + p (8-31) |
 | the same place pressed | 13 | CC 39 + 8 s + p (40-63) |
 | the active lane's LENGTH; HITS, ROTATE, ACCENTS, SEED | 13 | CC 70; CC 71-74 |
+| the step under the hand: STEP, VEL, GATE, RATCH, NOTE, OCT | 13 | CC 64-69 |
+| STEP pressed; HITS pressed (RANDOM), ROTATE pressed (EUCLID); the nudges | 13 | CC 33; CC 34, 35; CC 36, 37 (127 down, 0 up) |
 | CONFIG's control n (1-36) | 13 | CC 75 + n (76-95), then CC 81 + n (102-117) |
 | **to the E16**: a page of the scene it is in | 12 | Program Change = the page less one, by itself |
 | **to the E16**: a page of the other scene | 12 | CC 0 = 0 and CC 32 = the scene's slot less one, then Program Change = the page less one; the Program Change again when the scene says it is up |

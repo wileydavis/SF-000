@@ -739,7 +739,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
   holds what the first has no room for: the active lane's three inserts (INS 1 to 3: the eight
   places where the screen has them; a key among them, THROW or FREEZE, is its knob's press), the
   RETURNS, the MASTER (TAPE, COMP, LIMIT; on its second row the drum bus's four, on its third
-  POCKETS' four), the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
+  POCKETS' four), the sequencer strip (SEQ: LENGTH, the step under the hand as six knobs, STEP
+  to go through the pattern and that step's VEL, GATE, RATCH, NOTE and OCT, the generator's four,
+  and the nudges: see `controllers/e16/README.md`), CONFIG (CFG 1 to
   3: its controls in the order its panel has them, twelve to a page; with POCKETS up, every
   lane's pocket), and the library's two pages.
   Its page 12 is the snapshot knobs again, as the first scene's page 12: they are on the same page
@@ -909,6 +911,8 @@ Delete `session.json` to start again from the factory rig.
   no AMOUNT knob on the master's face, only its figure beside the key.
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.
+- The E16's SEQ page edits one step at a time, the one STEP is on: there is no page of sixteen
+  knobs that are sixteen steps' velocities, and the steps are not on the E16's own keys.
 - The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP
   and DROP are on the screen and the keyboard only.
 - The arrangement: one of them; no tempo of its own and no change of tempo along it (it is printed at

@@ -46,7 +46,11 @@ namespace e16
     //   page 6      RETURNS: DUB's four and SPACE's four, at the addresses a sequencer has (channel 16, CC 60-67)
     //   page 7      MASTER: TAPE COMP LIMIT (channel 16, CC 68-70), on knobs 5 to 8 the drum bus's DRIVE CRUNCH PUNCH BOOM (CC 71-74),
     //               and on knobs 9 to 12 POCKETS' AMOUNT CLEAR SPEED RETURNS (CC 75-78)
-    //   page 8      SEQ: LENGTH (CC 70: the value and one is the steps), HITS ROTATE ACCENTS SEED (71-74)
+    //   page 8      SEQ, the active lane's sequencer. Its top row: LENGTH (CC 70: the value and one is the steps), and the
+    //               step under the hand: STEP (CC 64: through the pattern's steps; pressed, CC 33: that step lit, or put
+    //               out), VEL (65), GATE (66). Its second: RATCH (67), NOTE (68), OCT (69). Its third: the generator's HITS
+    //               ROTATE ACCENTS SEED (71-74; HITS pressed, CC 34, is RANDOM, and ROTATE pressed, CC 35, EUCLID).
+    //               Knobs 15 and 16 pressed (CC 36, 37) nudge the pattern a step earlier and later.
     //   pages 9-11  CONFIG's controls in the order its panel has them, twelve to a page: CC 76 to 95,
     //               then 102 to 117 (96 to 101 are MIDI's own, as 0, 6, 32 and 38 are: nothing here is on those)
     //               While POCKETS (the master's page) is up, these pages are its knobs instead: the
@@ -56,6 +60,7 @@ namespace e16
     // The bottom row is the same on all of them: 13 the pointer's wheel, 14 OPEN, and on CONFIG's
     // pages 15 and 16 the page before and the next.
     constexpr int kFxChannel = 13, kInsCc = 8, kInsPressCc = 40, kLenCc = 70, kGenCc = 71, kCfgCc = 76, kCfgPer = 12, kCfgPages = 3;
+    constexpr int kStepCc = 64, kStepKey = 33, kGenKey = 34, kNudgeKey = 36;      // (all on the FX channel: the chosen step's six knobs; STEP's press; RANDOM, EUCLID; earlier, later)
     constexpr int cfgCc (int n)         { return n < 20 ? kCfgCc + n : 102 + (n - 20); }       // CONFIG's nth control (0 to 35)
     constexpr int cfgAt (int number)    { return number >= kCfgCc && number < kCfgCc + 20 ? number - kCfgCc : number >= 102 && number < 102 + kCfgPer * kCfgPages - 20 ? 20 + number - 102 : -1; }
     enum { pgMap = 1, pgFind = 2, pgIns = 3, pgRet = 6, pgMaster = 7, pgSeq = 8, pgCfg = 9 };
@@ -264,6 +269,8 @@ private:
     std::atomic<int> laneNow { 0 };                             // the active lane, for the inputs' threads
     std::atomic<int> lenIn { -1 };
     std::array<std::atomic<int>, 4> genIn;
+    std::array<std::atomic<int>, Session::kStepKnobs> stepIn;      // the chosen step's knobs, turned (-1: not)
+    std::array<std::atomic<int>, 5> seqKeys;                       // STEP pressed, RANDOM, EUCLID, earlier, later: how many times
     std::array<std::atomic<int>, e16::kCfgPer * e16::kCfgPages> cfgIn;
     std::vector<Engine::SetupParam> cfgCache;
     int cfgCacheAge = 0;

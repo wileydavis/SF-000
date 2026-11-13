@@ -342,13 +342,17 @@ if os.path.exists(lib_path):
         ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in pg["encoders"][8:12])
     ok = ok and [turn(e) for e in pages[5]["encoders"][:8]] == [(16, 60 + i) for i in range(8)] and all(e["push_action"]["type"] == 0 for e in pages[5]["encoders"][:12])
     ok = ok and [turn(e) for e in pages[6]["encoders"][:4]] == [(16, 68), (16, 69), (16, 70), None] and [e["name"] for e in pages[6]["encoders"][:3]] == ["TAPE", "COMP", "LIMIT"]
-    ok = ok and [turn(e) for e in pages[7]["encoders"][:6]] == [(13, 70), (13, 71), (13, 72), (13, 73), (13, 74), None] and pages[7]["encoders"][0]["name"] == "LENGTH"
+    seq = pages[7]["encoders"]
+    ok = ok and [turn(e) for e in seq[:12]] == [(13, 70), (13, 64), (13, 65), (13, 66), (13, 67), (13, 68), (13, 69), None, (13, 71), (13, 72), (13, 73), (13, 74)]
+    ok = ok and [e["name"] for e in seq[:7]] == ["LENGTH", "STEP", "VELOCITY", "GATE", "RATCHET", "NOTE", "OCTAVE"] and [e["name"] for e in seq[8:12]] == ["HITS", "ROTATE", "ACCENTS", "SEED"]
+    ok = ok and push(seq[1]) == (13, 33) and push(seq[8]) == (13, 34) and push(seq[9]) == (13, 35) and push(seq[14]) == (13, 36) and push(seq[15]) == (13, 37)
+    ok = ok and all(e["push_action"]["type"] == 0 for i, e in enumerate(seq[:12]) if i not in (1, 8, 9)) and turn(seq[14]) is None and turn(seq[15]) is None
     for c in range(3):
         pg = pages[8 + c]
         ok = ok and all(turn(e) == (13, (76 + n if n < 20 else 102 + n - 20)) and e["push_action"]["type"] == 0 for n, e in enumerate(pg["encoders"][:12], c * 12))
         ok = ok and [push(e) for e in pg["encoders"][14:]] == [(16, 35), (16, 36)] and all(turn(e) is None for e in pg["encoders"][13:])
     check(ok, "INS 1-3: an insert's eight places on channel 13 (CC 8 + 8 for each slot; pressed, CC 40 + ...); RETURNS and MASTER at the addresses a sequencer has (channel 16, CC 60-70); "
-              "SEQ: LENGTH and the generator's four (channel 13, CC 70-74); CFG 1-3: CONFIG's controls, twelve to a page (CC 76-95, then 102-117), with PAGE - and PAGE + on 15 and 16")
+              "SEQ: LENGTH (CC 70), the step under the hand (STEP VEL GATE RATCH NOTE OCT, CC 64-69; STEP pressed, CC 33), the generator's four in a row of their own (CC 71-74; HITS and ROTATE pressed are RANDOM and EUCLID, CC 34 and 35), and the nudges on 15 and 16 (CC 36, 37), all on channel 13; CFG 1-3: CONFIG's controls, twelve to a page (CC 76-95, then 102-117), with PAGE - and PAGE + on 15 and 16")
     ok = all(turn(pg["encoders"][12]) == (16, 31) and push(pg["encoders"][12]) == (16, 33) and pg["encoders"][12]["name"] == "SELECT"
              and turn(pg["encoders"][13]) is None and push(pg["encoders"][13]) == (16, 34) for pg in pages[1:11])
     check(ok, "on pages 2 to 11, knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 14 pressed is OPEN (CC 34)")

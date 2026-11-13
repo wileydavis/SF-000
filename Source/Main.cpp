@@ -5248,6 +5248,8 @@ static int midiTest()
             for (int j = 0; j < kSlots * kCells; ++j) clean = clean && seen.insert (e16::kFxChannel * 128 + e16::kInsCc + j).second && seen.insert (e16::kFxChannel * 128 + e16::kInsPressCc + j).second;
             clean = clean && seen.insert (e16::kFxChannel * 128 + e16::kLenCc).second;         // (the generator's four are in already: every lane's are the same four, the active lane's)
             for (int j = 0; j < 4; ++j) clean = clean && seen.count (e16::kFxChannel * 128 + e16::kGenCc + j) == 1;
+            for (int j = 0; j < Session::kStepKnobs; ++j) clean = clean && seen.insert (e16::kFxChannel * 128 + e16::kStepCc + j).second;        // the chosen step's knobs
+            for (int j = 0; j < 5; ++j) clean = clean && seen.insert (e16::kFxChannel * 128 + e16::kStepKey + j).second;                      // STEP pressed, RANDOM, EUCLID, the two nudges
             for (int j = 0; j < e16::kCfgPer * e16::kCfgPages; ++j) clean = clean && seen.insert (e16::kFxChannel * 128 + e16::cfgCc (j)).second && e16::cfgAt (e16::cfgCc (j)) == j;
             // none on a number MIDI keeps for itself (Bank Select's two, Data Entry's two, the registered-parameter six, the channel-mode eight)
             for (int v : seen) { const int ch = v / 128, num = v % 128; if (ch == e16::kFxChannel || (ch == 16 && num >= e16::kWheelCc && num <= e16::kCfgNextKey)) clean = clean && num != 0 && num != 6 && num != 32 && num != 38 && ! (num >= 96 && num <= 101) && num < 120; }
@@ -5391,6 +5393,69 @@ static int midiTest()
         in (13, e16::kLenCc, 31); in (13, e16::kGenCc + 1, 64); ticks (1);
         check (ses.front.kind == Session::fSeq && seqTold && ses.pattern (8).length == 32 && std::abs (e.target (cx::gen (8, 1)) - e16::from7 (e.control (cx::gen (8, 1)), 64)) < 1.0e-6f,
                "SEQ is the active lane's sequencer strip: LENGTH (the number and one: 32 steps) and the generator's four knobs, which had no address before");
+        out.clear();
+        // the step under the hand: STEP goes through the pattern and chooses one; VEL, GATE, RATCH, NOTE and OCT are that step's
+        {
+            const int ln = ses.activeLane;
+            { Pattern p = ses.pattern (ln); for (auto& st : p.steps) clearStep (st, lanes()[(size_t) ln].octave); p.steps[9].on = true; p.steps[9].vel = 0.5f; p.steps[9].note = 4; ses.setPattern (ln, p); }
+            ticks (2); out.clear();
+            in (13, e16::kStepCc, 0); ticks (2);
+            const bool first = ses.selStep == 0 && ses.page == 0;
+            in (13, e16::kStepCc, 127); ticks (2);
+            const bool last = ses.selStep == 31 && ses.page == 1;
+            const juce::String titleLast = said (5);
+            out.clear();
+            in (13, e16::kStepCc, 20); ticks (8);                               // (a fifth of the way round 32 steps: the sixth)
+            const bool sixth = ses.selStep == 5 && ses.page == 0 && ccOut (13, e16::kStepCc) < 0;     // (STEP is left where the hand has it: that is the sixth's share)
+            const juce::String titleOut = said (5);
+            const bool toldOut = ses.stepKnob (Session::stVel) == 90;           // (an unlit step: VEL stands where it would light, 75 hundredths)
+            in (13, e16::kStepCc + 1, 127); ticks (1);
+            const bool lit = ses.pattern (ln).steps[5].on && std::abs (ses.pattern (ln).steps[5].vel - 1.0f) < 1.0e-6f;
+            in (13, e16::kStepCc + 1, 0); in (13, e16::kStepCc + 2, 32); ticks (1);
+            const bool soft = std::abs (ses.pattern (ln).steps[5].vel - 0.15f) < 1.0e-6f && std::abs (ses.pattern (ln).steps[5].gate - 0.575f) < 1.0e-4f;
+            in (13, e16::kStepCc + 2, 64); ticks (1);
+            const bool whole = ses.pattern (ln).steps[5].gate == 1.0f;
+            in (13, e16::kStepCc + 2, 127); ticks (1);
+            const bool tied = std::abs (ses.pattern (ln).steps[5].gate - 4.25f) < 1.0e-4f;       // (the next lit step is four on: its edge, and a little past it)
+            in (13, e16::kStepCc + 3, 127); in (13, e16::kStepCc + 4, 127); in (13, e16::kStepCc + 5, 0); ticks (6);
+            const auto st = ses.pattern (ln).steps[5];
+            const bool rest = st.ratchet == 4 && st.gate <= 1.0f && st.note == 11 && st.octave == 1;
+            const juce::String titleLit = said (5);
+            out.clear();
+            in (13, e16::kStepCc, 38); ticks (1);                               // on to the tenth: the knobs are told what that step holds
+            juce::Thread::sleep (170); ticks (7);                               // (once the hand has been off them a moment)
+            const bool toldNext = ses.selStep == 9 && ccOut (13, e16::kStepCc + 1) == (int) std::lround ((0.5f - 0.15f) / 0.85f * 127.0f) && ccOut (13, e16::kStepCc + 4) == (4 * 128 + 64) / 12;
+            press (13, e16::kStepKey); ticks (1);
+            const bool out1 = ! ses.pattern (ln).steps[9].on && ses.pattern (ln).steps[9].note == 0;
+            press (13, e16::kStepKey); ticks (1);
+            const bool on1 = ses.pattern (ln).steps[9].on && std::abs (ses.pattern (ln).steps[9].vel - 0.75f) < 1.0e-6f;
+            press (13, e16::kNudgeKey + 1); ticks (1);
+            const bool nudged = ses.pattern (ln).steps[10].on && ! ses.pattern (ln).steps[9].on;
+            press (13, e16::kNudgeKey); ticks (1);
+            const bool back = ses.pattern (ln).steps[9].on && ! ses.pattern (ln).steps[10].on;
+            press (13, e16::kGenKey); ticks (1);
+            const bool random = ses.genType[(size_t) ln] == 0;
+            press (13, e16::kGenKey + 1); ticks (1);
+            const bool euclid = ses.genType[(size_t) ln] == 1;
+            press (13, e16::kGenKey + 1); ticks (1);
+            const bool letGo = ses.genType[(size_t) ln] == -1;
+            // a lane with no pitch: NOTE and OCT are nothing there
+            ses.bringLane (0, 0); ses.bring ({ Session::fSeq, 0 }, 2); ticks (4); out.clear();
+            in (13, e16::kStepCc, 0); ticks (6);
+            const int noteWas = ses.pattern (0).steps[0].note;
+            in (13, e16::kStepCc + 4, 127); ticks (2);
+            const bool noPitch = ses.pattern (0).steps[0].note == noteWas && ses.stepKnob (Session::stNote) < 0 && ccOut (13, e16::kStepCc + 4) < 0;
+            ses.bringLane (ln, 0); ses.bring ({ Session::fSeq, 0 }, 2); ticks (4);
+            check (first && last && sixth && toldOut && lit && soft && whole && tied && rest && toldNext && out1 && on1 && nudged && back && random && euclid && letGo && noPitch
+                       && titleLast.endsWith ("SEQ 32 OUT") && titleOut.endsWith ("SEQ 6 OUT") && titleLit.endsWith ("SEQ 6 B1"),
+                   "the step under the hand, on SEQ: STEP goes through the pattern's steps (the first, the last, the sixth: " + titleOut + "); VEL lights an unlit one, GATE runs to the step's edge at the knob's middle and on to the next lit step at its top, "
+                       "RATCH, NOTE and OCT set the rest (" + titleLit + "); a step come to tells the knobs what it holds; STEP pressed puts it out and lights it; knobs 15 and 16 pressed nudge the pattern; HITS and ROTATE pressed are RANDOM and EUCLID; "
+                       "on a lane with no pitch NOTE is nothing");
+            if (! (first && last && sixth && toldOut && lit && soft && whole && tied && rest && toldNext && out1 && on1 && nudged && back && random && euclid && letGo && noPitch))
+                std::printf ("        (first %d last %d sixth %d toldOut %d [%d] lit %d soft %d whole %d tied %d [%.3f] rest %d toldNext %d out %d on %d nudged %d back %d random %d euclid %d letGo %d noPitch %d; titles '%s' '%s' '%s')\n",
+                             first, last, sixth, toldOut, ses.stepKnob (Session::stVel), lit, soft, whole, tied, ses.pattern (ln).steps[5].gate, rest, toldNext, out1, on1, nudged, back, random, euclid, letGo, noPitch,
+                             titleLast.toRawUTF8(), titleOut.toRawUTF8(), titleLit.toRawUTF8());
+        }
         out.clear();
 
         // OPEN: CONFIG for what is in front, on the E16 its controls twelve to a page, named

@@ -315,6 +315,16 @@ public:
     Pattern pattern (int lane) const    { return engine.pattern (lane); }
     void setPattern (int lane, const Pattern&);
     void pressGenerator (int lane, int type);
+    // ---- the chosen step, as knobs (a controller's SEQ page). STEP goes through the pattern's
+    // steps and chooses one; the others are what that step holds, by the laws the screen has:
+    // velocity 15 to 100 hundredths, a gate up to the step's edge at the knob's middle and on to
+    // the next lit step (and a little past it: legato) at its top, one to four hits, a note, an
+    // octave. VEL and GATE light a step that is out, as dragging it does.
+    enum { stPos = 0, stVel, stGate, stRatchet, stNote, stOctave, kStepKnobs };
+    int stepKnob (int which, int has = -1) const;       // where that knob stands, 0 to 127 (a knob of shares: `has` if that is already in the right share). -1: nothing to say
+    void setStepKnob (int which, int value7);
+    void stepPress();                                   // the chosen step lit; lit, put out (it forgets what it held)
+    juce::String stepSays() const;                      // the chosen step in a few letters: "7 D#3", "12", or nothing
     void nudgeLane (int lane, int dir);
     void stepInsert (int lane, int slot);
 

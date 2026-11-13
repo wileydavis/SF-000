@@ -621,6 +621,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
         case hStep:
             t.title = "STEP " + String (h.a + 1);
             body = "CLICK: LIGHT AND SELECT IT; LIT AND SELECTED, PUT IT OUT. DRAG UP OR DOWN: VELOCITY. DRAG LEFT OR RIGHT: GATE (PAST THE STEP'S EDGE IT RUNS ON, AND TIES INTO THE NEXT LIT STEP).";
+            midi = "ON THE E16'S SEQ PAGE THE CHOSEN STEP IS SIX KNOBS: STEP GOES THROUGH THE PATTERN (PRESSED: LIT, OR OUT), AND VEL, GATE, RATCH, NOTE AND OCT ARE THAT STEP'S. CHANNEL " + String ((int) e16::kFxChannel) + ", CC " + String ((int) e16::kStepCc) + " TO " + String ((int) e16::kStepCc + 5) + ".";
             break;
         case hPageSel:
             t.title = "STEPS " + String (h.a * 16 + 1) + " TO " + String (h.a * 16 + 16);

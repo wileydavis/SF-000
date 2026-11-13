@@ -1728,8 +1728,38 @@ many."
      of it along the line; the hand's moves kept with it (so a print could be a performance);
      the E16 on its parts.
 
+## Thirty-sixth build (Nov 13): the step under the hand, on the E16
+
+355. **You:** "And probably an e16 sequencer control scene with knobs for position, velocity,
+     gate, note, octave, etc."
+356. **It is the SEQ page there already, filled in, not a third scene.** *Mine.* Both scenes
+     have their twelve pages, and SEQ had eleven knobs doing nothing. So the page a lane's
+     sequencer already turns the E16 to is now the whole strip.
+357. **One step at a time: STEP chooses it, and five knobs are what it holds.** *Mine,* over
+     sixteen knobs that are sixteen steps. A row of sixteen velocities is one thing a step has
+     out of five, on one page of a pattern that may have eight; and the E16's knobs have no
+     keys under them to say which step is lit. One knob to walk the pattern and the rest for
+     the step it is on reaches everything, at any length, and is how the screen's own strip
+     works (a step chosen, then RATCHET, NOTE, OCTAVE).
+358. **The page, by rows:** LENGTH, STEP, VEL, GATE; RATCH, NOTE, OCT; then the generator's
+     four in a row of their own, as the screen has them (they were knobs 2 to 5: **this moves
+     them**, and the second scene has to be loaded onto the E16 again). STEP pressed lights
+     the step or puts it out; HITS pressed is RANDOM and ROTATE pressed EUCLID, which had no
+     way in from the E16 before; knobs 15 and 16 pressed are the nudges.
+359. **The laws are the screen's.** Velocity 15 to 100; a gate that stops at the step's edge
+     (the knob's middle) and at the next lit step's edge, and is legato a little past that
+     (the knob's top); VEL and GATE light an unlit step, as a drag does. *Mine:* that the
+     gate's upper half stretches to wherever the next lit step is, so its top is always "tied
+     into the next", however far that is.
+360. **The display's title says the step** (`BAS SEQ 7 D#3`), since the E16 has no other way to
+     show which of 128 it is on; and the screen's page of sixteen follows STEP.
+
 ## Not verified
 
+- **The SEQ page (thirty-sixth) is checked against the scene file and a made-up E16.** Not on
+  the E16: whether STEP's eight clicks to a step feel right at 16 steps and usable at 64,
+  whether the title is readable as it changes, and whether the knobs settle when STEP comes to
+  a step that holds something else (they are told its values 150 ms after the hand is off them).
 - **The arrangement (thirty-fifth) is checked by where the knobs are at each bar line, and a
   print by what is in its files**: the kick's hits on the beats they belong to, bar 1 on the
   first sample, two prints the same to the byte. Not heard, and not made on a Mac: how long a

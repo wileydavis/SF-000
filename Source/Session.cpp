@@ -1212,6 +1212,101 @@ void Session::regenerate (int l)
     engine.setPattern (l, p);
 }
 
+// ---- the chosen step, as knobs
+static const char* const kNoteNames[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+// a knob of n shares: which share a number is in, and the number in the middle of a share
+static int shareOf (int v7, int n)  { return juce::jlimit (0, n - 1, juce::jlimit (0, 127, v7) * n / 128); }
+static int shareMid (int i, int n)  { return juce::jlimit (0, 127, (i * 128 + 64) / n); }
+// the gate's law: to the step's own edge at the knob's middle, then on to the most it may be
+static float gateMost (const Pattern& p, int i) { return p.steps[(size_t) i].ratchet == 1 ? (float) stepsToNext (p, i) + 0.25f : 1.0f; }
+
+int Session::stepKnob (int which, int has) const
+{
+    const Pattern p = pattern (activeLane);
+    const int i = selStep;
+    if (i < 0 || i >= p.length) return -1;
+    const auto& s = p.steps[(size_t) i];
+    auto shared = [has] (int at, int n) { return has >= 0 && shareOf (has, n) == at ? has : shareMid (at, n); };
+    switch (which)
+    {
+        case stPos:     return shared (i, p.length);
+        case stVel:     return juce::jlimit (0, 127, (int) std::lround ((s.vel - 0.15f) / 0.85f * 127.0f));
+        case stGate:
+        {
+            const float most = gateMost (p, i);
+            if (s.gate <= 1.0f || most <= 1.0f) return juce::jlimit (0, 64, (int) std::lround ((s.gate - 0.15f) / 0.85f * 64.0f));
+            return juce::jlimit (64, 127, 64 + (int) std::lround ((s.gate - 1.0f) / (most - 1.0f) * 63.0f));
+        }
+        case stRatchet: return shared (juce::jlimit (1, 4, s.ratchet) - 1, 4);
+        case stNote:    return lanes()[(size_t) activeLane].pitched ? shared (juce::jlimit (0, 11, s.note), 12) : -1;
+        case stOctave:  return lanes()[(size_t) activeLane].pitched ? shared (juce::jlimit (1, 5, s.octave) - 1, 5) : -1;
+        default:        return -1;
+    }
+}
+
+void Session::setStepKnob (int which, int v7)
+{
+    const int l = activeLane;
+    Pattern p = pattern (l);
+    v7 = juce::jlimit (0, 127, v7);
+    if (which == stPos)
+    {
+        // through the pattern's steps; the screen's page of sixteen goes with it
+        const int i = shareOf (v7, std::max (1, p.length));
+        if (i == selStep) return;
+        selStep = i; page = i / 16;
+        if (onChange) onChange();
+        return;
+    }
+    const int i = selStep;
+    if (i < 0 || i >= p.length) return;
+    auto& s = p.steps[(size_t) i];
+    const bool pitched = lanes()[(size_t) l].pitched;
+    auto light = [&] { if (! s.on) { clearStep (s, lanes()[(size_t) l].octave); s.on = true; } };
+    switch (which)
+    {
+        case stVel:     light(); s.vel = 0.15f + 0.85f * (float) v7 / 127.0f; break;
+        case stGate:
+        {
+            light();
+            const float most = gateMost (p, i), dist = (float) stepsToNext (p, i);
+            float g = v7 <= 64 ? 0.15f + 0.85f * (float) v7 / 64.0f : 1.0f + (most - 1.0f) * (float) (v7 - 64) / 63.0f;
+            if (std::abs (g - dist) < 0.07f) g = dist;         // (it stops at the next lit step's edge; a little past that it is legato into it)
+            s.gate = juce::jlimit (0.15f, std::max (1.0f, most), g);
+            break;
+        }
+        case stRatchet: if (! s.on) return; s.ratchet = 1 + shareOf (v7, 4); if (s.ratchet > 1) s.gate = std::min (s.gate, 1.0f); break;
+        case stNote:    if (! pitched) return; s.note = shareOf (v7, 12); break;
+        case stOctave:  if (! pitched) return; s.octave = 1 + shareOf (v7, 5); break;
+        default:        return;
+    }
+    setPattern (l, p);
+    if (onChange) onChange();
+}
+
+void Session::stepPress()
+{
+    const int l = activeLane;
+    Pattern p = pattern (l);
+    if (selStep < 0 || selStep >= p.length) { selStep = 0; page = 0; }       // (none chosen: the first)
+    auto& s = p.steps[(size_t) selStep];
+    const int oct = lanes()[(size_t) l].octave;
+    if (! s.on) { clearStep (s, oct); s.on = true; } else clearStep (s, oct);
+    setPattern (l, p);
+    if (onChange) onChange();
+}
+
+juce::String Session::stepSays() const
+{
+    const Pattern p = pattern (activeLane);
+    if (selStep < 0 || selStep >= p.length) return {};
+    const auto& s = p.steps[(size_t) selStep];
+    juce::String t (selStep + 1);
+    if (! s.on) return t + " OUT";
+    if (lanes()[(size_t) activeLane].pitched) t << " " << kNoteNames[juce::jlimit (0, 11, s.note)] << s.octave;
+    return t;
+}
+
 void Session::pressGenerator (int l, int type)
 {
     // A press writes the pattern at once and arms the knobs; a press on the lit key lets go of them.
