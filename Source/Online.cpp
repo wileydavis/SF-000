@@ -171,7 +171,7 @@ void Online::writeLedger() const
 // to match, which a library reading JSON or a clip does not forgive. https, the real thing, goes
 // through the system's client below (on the Mac, NSURLSession).
 static bool plainHttp (const juce::URL& url, const String& method, const String& target, const String& headers,
-                       const juce::MemoryBlock* body, int timeoutMs, int& status, String& text, const std::atomic<bool>* off)
+                       const juce::MemoryBlock* body, int timeoutMs, int& status, String& text, const std::atomic<bool>* off, juce::MemoryBlock* bytes = nullptr)
 {
     // (waits are taken a tenth of a second at a time, so that being called off is noticed)
     auto called = [off] { return off != nullptr && off->load(); };
@@ -205,29 +205,39 @@ static bool plainHttp (const juce::URL& url, const String& method, const String&
         if (n <= 0) break;
         got.append (buf, (size_t) n);
     }
-    const String all = String::fromUTF8 (static_cast<const char*> (got.getData()), (int) got.getSize());
-    const int cut = all.indexOf ("\r\n\r\n");
-    if (cut < 0 || ! all.startsWith ("HTTP/")) return false;
-    status = all.fromFirstOccurrenceOf (" ", false, false).getIntValue();
-    text = all.substring (cut + 4);
-    if (all.substring (0, cut).toLowerCase().contains ("transfer-encoding: chunked"))
+    // The head is text; the body is whatever it is (a clip is not text), so it is cut by bytes.
+    const auto* raw = static_cast<const char*> (got.getData());
+    const size_t size = got.getSize();
+    size_t cut = 0;
+    while (cut + 3 < size && ! (raw[cut] == '\r' && raw[cut + 1] == '\n' && raw[cut + 2] == '\r' && raw[cut + 3] == '\n')) ++cut;
+    if (cut + 3 >= size) return false;
+    const String head = String::fromUTF8 (raw, (int) cut);
+    if (! head.startsWith ("HTTP/")) return false;
+    status = head.fromFirstOccurrenceOf (" ", false, false).getIntValue();
+    juce::MemoryBlock whole;
+    const char* b = raw + cut + 4;
+    const size_t n = size - cut - 4;
+    if (head.toLowerCase().contains ("transfer-encoding: chunked"))
     {
-        String whole;                                           // sizes in hex, each followed by that many bytes (the replies here are plain ASCII JSON)
-        for (int at = 0; at < text.length();)
+        // sizes in hex, each followed by that many bytes
+        for (size_t at = 0; at < n;)
         {
-            const int eol = text.indexOf (at, "\r\n");
-            if (eol < 0) break;
-            const int n = text.substring (at, eol).upToFirstOccurrenceOf (";", false, false).trim().getHexValue32();
-            if (n <= 0) break;
-            whole << text.substring (eol + 2, eol + 2 + n);
-            at = eol + 2 + n + 2;
+            size_t eol = at;
+            while (eol + 1 < n && ! (b[eol] == '\r' && b[eol + 1] == '\n')) ++eol;
+            if (eol + 1 >= n) break;
+            const int len = String::fromUTF8 (b + at, (int) (eol - at)).upToFirstOccurrenceOf (";", false, false).trim().getHexValue32();
+            if (len <= 0 || eol + 2 + (size_t) len > n) break;
+            whole.append (b + eol + 2, (size_t) len);
+            at = eol + 2 + (size_t) len + 2;
         }
-        text = whole;
     }
+    else whole.append (b, n);
+    text = String::fromUTF8 (static_cast<const char*> (whole.getData()), (int) whole.getSize());
+    if (bytes != nullptr) *bytes = whole;
     return true;
 }
 
-Online::Reply Online::http (const Setup& s, const String& method, const String& path, const juce::MemoryBlock* body, const String& contentType, int timeoutMs, CallOff* co)
+Online::Reply Online::http (const Setup& s, const String& method, const String& path, const juce::MemoryBlock* body, const String& contentType, int timeoutMs, CallOff* co, bool wantBytes)
 {
     if (co != nullptr && co->off.load()) return {};
     if (s.url.startsWithIgnoreCase ("http://") && ! systemClientForTests)
@@ -237,7 +247,7 @@ Online::Reply Online::http (const Setup& s, const String& method, const String& 
         if (contentType.isNotEmpty()) h << "Content-Type: " << contentType << "\r\n";
         const juce::URL base (s.url);
         const auto under = base.getSubPath();
-        if (! plainHttp (base, method, (under.isNotEmpty() ? "/" + under : String()) + path, h, body, timeoutMs, r.status, r.body, co != nullptr ? &co->off : nullptr)) r.status = 0;
+        if (! plainHttp (base, method, (under.isNotEmpty() ? "/" + under : String()) + path, h, body, timeoutMs, r.status, r.body, co != nullptr ? &co->off : nullptr, wantBytes ? &r.bytes : nullptr)) r.status = 0;
         return r;
     }
     juce::URL url (s.url + path);
@@ -257,7 +267,11 @@ Online::Reply Online::http (const Setup& s, const String& method, const String& 
     }
     const bool ok = in.connect (nullptr);
     r.status = in.getStatusCode();
-    if (ok && ! in.isError()) r.body = in.readEntireStreamAsString();
+    if (ok && ! in.isError())
+    {
+        if (wantBytes) in.readIntoMemoryBlock (r.bytes);        // (a clip: not text)
+        else r.body = in.readEntireStreamAsString();
+    }
     if (co != nullptr)
     {
         const juce::ScopedLock sl (co->lock);
@@ -449,10 +463,118 @@ bool Online::pass()
     return soon || n > 0;
 }
 
+// ------------------------------------------------------------------------------------ LOAD
+void Online::askLoad() { wantLoad = true; notify(); }
+String Online::loadLine() const { const juce::ScopedLock sl (lock); return loadSays; }
+
+String Online::load()
+{
+    const Setup s = setup();
+    auto says = [this] (const String& line) { { const juce::ScopedLock sl (lock); loadSays = line; } ++changes; return line; };
+    if (! s.complete()) return says ("LOAD: SET UP THE LIBRARY'S ADDRESS AND KEY FIRST");
+    loadBusy = true;
+    struct Done { std::atomic<bool>& b; ~Done() { b = false; } } done { loadBusy };
+    says ("LOAD: ASKING THE LIBRARY WHAT ITS TRAY HOLDS");
+    auto failed = [&] (const Reply& r) { return says (String ("LOAD: ") + (r.status == 0 ? "NO ANSWER FROM THE LIBRARY" : turnedAway (r.status) ? "THE LIBRARY TURNED SF-000 AWAY" : "THE LIBRARY SAID " + String (r.status)) + ". NOTHING WAS CHANGED"); };
+    ++asked;
+    const auto t = http (s, "GET", "/api/load", nullptr, {}, 20000, &callOff);
+    const var tray = juce::JSON::parse (t.body);
+    if (t.status != 200 || ! tray.isObject()) return failed (t);
+    // which of its chips this library lacks
+    std::set<String> here;
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+        for (auto& x : ses.library) if (x.uid.isNotEmpty()) here.insert (x.uid);
+    }
+    juce::StringArray lacking;
+    std::map<String, bool> hasClip;
+    if (auto* chips = tray.getProperty ("chips", var()).getDynamicObject())
+        for (auto& c : chips->getProperties())
+        {
+            const String uid = c.name.toString();
+            hasClip[uid] = (bool) c.value.getProperty ("clip", false);
+            if (here.count (uid) == 0) lacking.add (uid);
+        }
+    int brought = 0, lost = 0, silent = 0;
+    for (int i = 0; i < lacking.size(); ++i)
+    {
+        const String uid = lacking[i];
+        if (callOff.off.load()) return says ("LOAD: STOPPED");
+        says ("LOAD: BRINGING " + String (i + 1) + " OF " + String (lacking.size()));
+        ++asked;
+        const auto one = http (s, "GET", "/api/snapshots/" + juce::URL::addEscapeChars (uid, true), nullptr, {}, 20000, &callOff);
+        const var got = juce::JSON::parse (one.body);
+        const var snap = got.getProperty ("snapshot", var());
+        if (one.status != 200 || ! snap.isObject()) { if (one.status == 0 || turnedAway (one.status)) return failed (one); ++lost; continue; }
+        // the definitions it names that this library has not got
+        juce::StringArray want;
+        {
+            const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+            if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+            if (auto* pr = got.getProperty ("prints", var()).getArray())
+                for (auto& p : *pr) if (! ses.definition (p.toString()).isObject()) want.addIfNotAlreadyThere (p.toString());
+        }
+        auto* defs = new juce::DynamicObject();
+        const var defsVar (defs);
+        for (int at = 0; at < want.size(); at += 40)
+        {
+            juce::StringArray part;
+            for (int k = at; k < juce::jmin (want.size(), at + 40); ++k) part.add (want[k]);
+            ++asked;
+            const auto d = http (s, "GET", "/api/defs?prints=" + part.joinIntoString (","), nullptr, {}, 20000, &callOff);
+            if (d.status != 200) return failed (d);
+            if (auto* o = juce::JSON::parse (d.body).getProperty ("defs", var()).getDynamicObject())
+                for (auto& p : o->getProperties()) defs->setProperty (p.name, p.value);
+        }
+        // its four bars
+        juce::MemoryBlock clip;
+        if (hasClip[uid])
+        {
+            ++asked;
+            auto c = http (s, "GET", "/api/clips/" + juce::URL::addEscapeChars (uid, true), nullptr, {}, 30000, &callOff, true);
+            if (c.status == 200) clip = std::move (c.bytes);
+            else if (c.status == 0) return failed (c);
+        }
+        juce::int64 id = 0; juce::File clipAt; String nameHere; bool prof = false;
+        {
+            const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+            if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+            id = ses.takeFromLibrary (snap, got.getProperty ("name", "").toString(), defsVar);
+            if (id != 0)
+            {
+                clipAt = ses.clipFile (id);
+                if (const auto* sn = ses.findSnap (id)) { nameHere = sn->name; prof = sn->profile.has; }
+                if (ses.filesMissing (id) > 0) ++silent;
+            }
+        }
+        if (id == 0) { ++lost; continue; }
+        if (clip.getSize() > 0) { clipAt.getParentDirectory().createDirectory(); clipAt.replaceWithData (clip.getData(), clip.getSize()); }
+        // (the library has it: it is not to be sent back)
+        auto& e = ledger[uid];
+        e.snap = true; e.clip = clip.getSize() > 0 || ! hasClip[uid]; e.prof = prof; e.name = nameHere; e.gone = false;
+        ++brought;
+    }
+    String line;
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+        line = ses.takeTray (tray);
+        // (a chip named there is named here now: that is not a rename to send back)
+        for (auto& x : ses.library) if (const auto e = ledger.find (x.uid); e != ledger.end() && hasClip.count (x.uid) != 0) e->second.name = x.name;
+    }
+    writeLedger();
+    String out = "LOADED: " + line + (brought > 0 ? ". " + String (brought) + (brought == 1 ? " SNAPSHOT" : " SNAPSHOTS") + " NEW HERE" : String (". NO SNAPSHOT WAS NEW HERE"));
+    if (silent > 0) out << " (" << silent << (silent == 1 ? " NAMES" : " NAME") << " A SAMPLE THAT IS NOT ON THIS COMPUTER)";
+    if (lost > 0) out << ". " << lost << " COULD NOT BE BROUGHT";
+    return says (out);
+}
+
 void Online::run()
 {
     while (! threadShouldExit())
     {
+        if (wantLoad.exchange (false)) load();
         const bool more = pass();
         const auto st = status().state;
         // a clip on its way: soon. Trouble: a little longer each time, two minutes at most. Else: when poked, or every so often.

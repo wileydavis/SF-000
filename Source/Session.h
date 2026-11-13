@@ -69,6 +69,15 @@ struct MacroKnob
     juce::Array<juce::var> linksKept;   // links to knobs this build does not have, as the file had them: carried
 };
 
+// A stack made in the web library and brought down by LOAD: a named pile of snapshots, in an
+// order (kind "song": parts in a line). The library screen shows one at a time.
+struct Stack
+{
+    juce::String id, name, kind;        // (id: the web library's own for it)
+    std::vector<juce::int64> snaps;
+    juce::var kept;                     // as the file had it: what this build does not know of it is carried
+};
+
 class Session : private juce::Timer
 {
 public:
@@ -309,6 +318,17 @@ public:
     int indexOf (juce::int64 id) const;
     void remove (juce::int64 id);
     void rename (juce::int64 id, const juce::String&);
+    // ---- LOAD: what the web library's tray holds (its GET /api/load), brought here. Message thread.
+    std::vector<Stack> stacks;
+    // A snapshot as the web library keeps it: one this library has (by uid) is only given the name
+    // it has there; one it lacks is added whole, with the definitions it names. Its id here, or 0.
+    juce::int64 takeFromLibrary (const juce::var& snapshot, const juce::String& name, const juce::var& defs);
+    // The tray itself: its stacks replace the stacks loaded before; a macro goes on its knob if the
+    // knob holds nothing (or holds that macro already); a song becomes the arrangement if there is
+    // none. Nothing here is ever taken away by it. Says what it did.
+    juce::String takeTray (const juce::var& tray);
+    // Audio files a snapshot names that are not on this computer (a sample only the machine it was taken on has).
+    int filesMissing (juce::int64 id) const;
     std::vector<int> knobScope (int k) const;   // the controls a snapshot knob moves
 
     // ---- patterns and inserts

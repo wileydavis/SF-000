@@ -3123,6 +3123,28 @@ static int uiTest()
         if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));
         check (noneYet && row && out && took, "the library, a snapshot cued: fourteen keys say what RECALL takes (the lanes, the returns, the drum bus, the key); with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
         if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (CUE off again)
+        // STACK: the stacks LOAD brought, one at a time
+        {
+            const int all = (int) ses.library.size();
+            const bool noKey = countOf (Screen::testIsStackKey) == 0;
+            Stack two; two.id = "check1"; two.name = "NIGHT ROLLERS"; two.kind = "stack"; two.snaps = { ses.library[(size_t) (all - 1)].id, ses.library[1].id };
+            Stack one; one.id = "check2"; one.name = "ONE"; one.kind = "stack"; one.snaps = { ses.library[0].id };
+            ses.stacks = { two, one };
+            draw();
+            auto cardsAre = [&] { std::vector<int> v; for (auto& h : sc.testHits()) if (Screen::testIsCard (h)) v.push_back (h.a); return v; };
+            const bool everyOne = countOf (Screen::testIsStackKey) == 1 && (int) cardsAre().size() == std::min (all, 72) && sc.testLibStack() == -1;
+            click (firstOf (Screen::testIsStackKey)); draw();
+            const bool first = sc.testLibStack() == 0 && cardsAre() == std::vector<int> { all - 1, 1 };
+            click (firstOf (Screen::testIsStackKey)); draw();
+            const bool second = sc.testLibStack() == 1 && cardsAre() == std::vector<int> { 0 };
+            click (firstOf (Screen::testIsStackKey)); draw();
+            const bool back = sc.testLibStack() == -1 && (int) cardsAre().size() == std::min (all, 72);
+            click (firstOf (Screen::testIsStackKey)); draw();
+            ses.stacks.clear(); draw();                                         // (the tray emptied while one was shown: every snapshot again, and no key)
+            const bool gone = sc.testLibStack() == -1 && countOf (Screen::testIsStackKey) == 0 && (int) cardsAre().size() == std::min (all, 72);
+            check (noKey && everyOne && first && second && back && gone,
+                   "STACK steps the library screen through the stacks LOAD brought, each in its own order, and back to every snapshot; with no stacks there is no key");
+        }
         // NOTES: a key in the library and one on the snapshot module, and N on the keyboard
         {
             const bool was = ses.recallNotes;
@@ -6589,8 +6611,10 @@ static int stageTest()
         sc.setPage (Screen::pMain); look ("MAIN");
         sc.showConfig ({ 0, 5, 0 }); look ("CONFIG");
         sc.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)); fresh();
+        { Stack st; st.id = "check"; st.name = "CHECK"; st.kind = "stack"; st.snaps = { ses.library[0].id }; ses.stacks = { st }; }      // (so that the STACK key is there to be looked at)
         sc.setPage (Screen::pLibrary); fresh();
         click (find ([] (const Screen::TestHit& h) { return Screen::testIsCard (h); })); look ("LIBRARY");
+        ses.stacks.clear();
         sc.setPage (Screen::pMacros); look ("MACROS");
         sc.setPage (Screen::pPockets); look ("POCKETS");
         sc.setPage (Screen::pArrange); sc.testPickPart (1); look ("ARRANGE");
@@ -7460,6 +7484,120 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
         }
         const auto perms = Online::setupFile().existsAsFile();
         check (perms && ! juce::File (Online::setupFile()).loadFileAsString().contains ("\"secret\": \"\""), "the settings are kept in online.json beside the session");
+
+        // 8. LOAD: what the web library's tray holds, brought here
+        {
+            Online on (ses);
+            on.setSetup (st);
+            on.pass();
+            auto send = [&st] (const juce::String& method, const juce::String& path, const var& body)
+            {
+                const auto text = juce::JSON::toString (body, true);
+                const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+                juce::String reply;
+                const int status = Online::requestForTests (st, method, path, &mb, "application/json", &reply);
+                return std::make_pair (status, juce::JSON::parse (reply));
+            };
+            auto obj = [] (std::initializer_list<std::pair<const char*, var>> kv) { auto* o = new juce::DynamicObject(); for (auto& p : kv) o->setProperty (p.first, p.second); return var (o); };
+            auto list = [] (std::initializer_list<var> items) { juce::Array<var> a; for (auto& i : items) a.add (i); return var (a); };
+            // the first snapshot taken here (ours[0], renamed ROLLER) and the third (ours[2]) are in the web library; the second was removed there
+            juce::int64 first = 0, third = 0;
+            for (auto& x : ses.library) { if (x.uid == ours[0]) first = x.id; if (x.uid == ours[2]) third = x.id; }
+            // a chip this library has not got: its own first one, as another library's would be (its own uid, id and name)
+            const juce::String far = "f0e1d2c3b4a59687-far1";
+            var foreign = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (first)), true));
+            foreign.getDynamicObject()->setProperty ("uid", far);
+            foreign.getDynamicObject()->setProperty ("id", first);                // (an id this library has in use: it is given another here)
+            foreign.getDynamicObject()->setProperty ("name", "FROM AFAR");
+            ask ("DELETE", "/api/snapshots/" + far + "?forget=1");
+            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+            const bool put = send ("POST", "/api/snapshots", obj ({ { "snapshot", foreign } })).first == 200;
+            juce::MemoryBlock firstClip;
+            ses.clipFile (first).loadFileAsData (firstClip);
+            const bool clipPut = Online::requestForTests (st, "PUT", "/api/clips/" + far, &firstClip, "audio/ogg") == 200;
+            // named there, both of them
+            send ("PATCH", "/api/snapshots/" + far, obj ({ { "name", "Far Roller" } }));
+            send ("PATCH", "/api/snapshots/" + ours[2], obj ({ { "name", "Named There" } }));
+            // in the tray: a stack, a song, a macro on knob 3 and one on knob 1 (which holds something here); out of it: another stack
+            send ("POST", "/api/stacks", obj ({ { "id", "sf0teststack1" }, { "name", "Night Rollers" }, { "items", list ({ far, ours[0], ours[2] }) }, { "load", true } }));
+            send ("POST", "/api/stacks", obj ({ { "id", "sf0teststack2" }, { "name", "Not Loaded" }, { "items", list ({ ours[0] }) } }));
+            send ("POST", "/api/stacks", obj ({ { "id", "sf0testmacro1" }, { "name", "Lift" }, { "kind", "macro" }, { "items", list ({ ours[0], far }) }, { "slot", 3 }, { "depth", 0.7 } }));
+            send ("POST", "/api/stacks", obj ({ { "id", "sf0testmacro2" }, { "name", "Other" }, { "kind", "macro" }, { "items", list ({ ours[2], ours[0] }) }, { "slot", 1 } }));
+            send ("POST", "/api/stacks", obj ({ { "id", "sf0testsong01" }, { "name", "Set Piece" }, { "kind", "song" }, { "load", true },
+                                                { "items", list ({ obj ({ { "u", ours[0] }, { "bars", 16 }, { "morph", 0 } }), obj ({ { "u", far }, { "bars", 8 }, { "morph", 2 } }), obj ({ { "u", ours[0] }, { "bars", 4 }, { "morph", 1 } }) }) } }));
+
+            const int nWas = (int) ses.library.size();
+            const auto knob1Was = ses.knobs[0].snaps;
+            ses.knobs[2].snaps.clear(); ses.knobs[2].links.clear();
+            while (! ses.arrangement.empty()) ses.arrRemove (0);
+            const int askedWas = on.requests();
+            const auto said = on.load();
+            const Snapshot* got = nullptr;
+            for (auto& x : ses.library) if (x.uid == far) got = &x;
+            juce::MemoryBlock gotClip;
+            if (got != nullptr) ses.clipFile (got->id).loadFileAsData (gotClip);
+            const auto* src = ses.findSnap (first);
+            const bool same = got != nullptr && src != nullptr && got->values == src->values && got->id != first && got->id >= Online::kFirstTaken && got->name == "FAR ROLLER" && got->profile.has == src->profile.has;
+            check (put && clipPut && (int) ses.library.size() == nWas + 1 && same && gotClip.getSize() > 1000 && gotClip == firstClip && said.contains ("1 SNAPSHOT NEW HERE"),
+                   "LOAD brings the snapshot this library lacks: whole (every knob where it was), under the name it has there, with an id of its own here and its clip to the byte (" + said + ")");
+            check (ses.findSnap (third) != nullptr && ses.findSnap (third)->name == "NAMED THERE", "one this library has, named there since, is named so here");
+            const juce::int64 farId = got != nullptr ? got->id : 0;
+            const bool stacksOk = ses.stacks.size() == 2 && ses.stacks[0].name == "NIGHT ROLLERS" && ses.stacks[0].kind == "stack" && ses.stacks[0].snaps == std::vector<juce::int64> { farId, first, third }
+                                  && ses.stacks[1].name == "SET PIECE" && ses.stacks[1].kind == "song" && ses.stacks[1].snaps == std::vector<juce::int64> { first, farId, first };
+            check (stacksOk, "the stacks in the tray are here, each with its snapshots in its order; the one not in the tray is not");
+            check (ses.knobs[2].snaps == std::vector<juce::int64> { first, farId } && std::abs (ses.knobs[2].depth - 0.7f) < 1.0e-6f && ses.knobs[2].name == "LIFT"
+                   && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOB 3 FILLED") && said.contains ("KNOB 1 HOLDS SOMETHING"),
+                   "a macro goes on its knob where the knob held nothing (knob 3: its snapshots in sweep order, its depth, its name); a knob that holds something is left, and it says so");
+            const bool sung = ses.arrangement.size() == 3 && ses.arrangement[0].snap == first && ses.arrangement[0].bars == 16 && ses.arrangement[1].snap == farId && ses.arrangement[1].bars == 8
+                              && ses.arrangement[2].bars == 4 && std::abs (ses.arrMorphBars (1) - 2.0) < 1.0e-9 && ses.arrMorphBars (0) == 0.0;
+            check (sung && said.contains ("THE SONG IS THE ARRANGEMENT"), "a song in the tray is the arrangement, there being none: its parts in order, each its bars and its way in");
+
+            // what came from the library is not sent back to it, and the names given there stand
+            const int afterLoad = on.requests();
+            on.pass();
+            juce::String reply;
+            Online::requestForTests (st, "GET", "/api/snapshots/" + far, nullptr, {}, &reply);
+            const auto farThere = juce::JSON::parse (reply)["name"].toString();
+            Online::requestForTests (st, "GET", "/api/snapshots/" + ours[2], nullptr, {}, &reply);
+            check (on.requests() == afterLoad && farThere == "Far Roller" && juce::JSON::parse (reply)["name"].toString() == "Named There" && afterLoad - askedWas >= 3,
+                   "what LOAD brought is not sent back, and the names given there stand there (the pass after it asks the library nothing)");
+
+            // again: nothing is new, nothing is doubled; a knob holding that macro already is left in peace
+            const auto said2 = on.load();
+            ses.arrSet (0, 12, -1);                                             // (the arrangement changed by hand since)
+            const auto said2b = on.load();
+            check ((int) ses.library.size() == nWas + 1 && ses.stacks.size() == 2 && ses.arrangement.size() == 3 && ses.knobs[2].snaps.size() == 2
+                   && said2.contains ("NO SNAPSHOT WAS NEW HERE") && ! said2.contains ("KNOB 3") && ! said2.contains ("ARRANGEMENT")
+                   && said2b.contains ("THE ARRANGEMENT WAS LEFT") && ses.arrangement[0].bars == 12,
+                   "LOAD again brings nothing twice and has nothing to say of a knob or an arrangement that hold what the tray holds; an arrangement changed since is left as it is (" + said2b + ")");
+
+            // it is in the session file, and there when the app opens
+            {
+                Engine e2;
+                e2.prepare (48000.0, 128);
+                Session s2 (e2, false);
+                s2.takeState (ses.stateVar());
+                bool farThereToo = false;
+                for (auto& x : s2.library) farThereToo = farThereToo || (x.uid == far && x.name == "FAR ROLLER");
+                check (farThereToo && s2.stacks.size() == 2 && s2.stacks[0].id == "sf0teststack1" && s2.stacks[0].snaps == ses.stacks[0].snaps && s2.stacks[1].kind == "song"
+                       && s2.stateVar()["stacks"][0]["name"].toString() == "NIGHT ROLLERS" && s2.stateVar()["stacks"][1]["parts"].size() == 3,
+                       "the stacks are in the session file (with what the library said of each that this build does not use: carried), and there when it opens");
+            }
+            // a stack taken out of the tray there is gone here at the next LOAD; its snapshots stay. One deleted here leaves its stacks.
+            send ("PATCH", "/api/stacks/sf0teststack1", obj ({ { "load", false } }));
+            on.load();
+            const bool outOfTray = ses.stacks.size() == 1 && ses.stacks[0].kind == "song" && (int) ses.library.size() == nWas + 1;
+            ses.remove (farId);
+            check (outOfTray && ses.stacks[0].snaps == std::vector<juce::int64> { first, first } && ses.arrangement.size() == 2,
+                   "a stack taken out of the tray there is no longer here, and its snapshots are; a snapshot deleted here leaves its stacks");
+            // no answer: it says so and changes nothing
+            auto dead = st; dead.url = "http://127.0.0.1:9";
+            on.setSetup (dead);
+            const auto said3 = on.load();
+            check (said3.contains ("NO ANSWER") && said3.contains ("NOTHING WAS CHANGED") && ses.stacks.size() == 1, "with no answer LOAD says so and changes nothing (" + said3 + ")");
+            ours.add (far);
+            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+        }
     }
     for (auto& uid : ours) ask ("DELETE", "/api/snapshots/" + uid + "?forget=1");
     Session::stateFileForTests = juce::File();

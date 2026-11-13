@@ -56,7 +56,7 @@ First run:
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
 | **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
-| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
+| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** brings what the web library's tray holds, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
@@ -532,6 +532,26 @@ that travels), readable by you only. Neither the address nor the strings are in 
 - The snapshots the rig came with (INIT and the rest, CLEAN SLATE) stay at home.
 - Each time it connects it asks the library what it holds, so the two never drift.
 
+The library itself is a bench: every snapshot a chip, chips in stacks, stacks that fill
+themselves (like this one, a song from this one, a mood), macros for the snapshot knobs, and a
+**tray** for what the instrument should load (its own README, in the repo `snapshot-library`).
+
+**LOAD** (beside SET UP) brings what is in the tray:
+
+- **Its stacks.** **STACK** (it appears once there are any) steps the library screen through
+  them, each in its own order, then back to every snapshot. The title says which. A stack taken
+  out of the tray there is gone from here at the next LOAD; its snapshots stay.
+- **The snapshots this library lacks**, whole, with their four bars and the definitions they
+  name, under the name each has there. One this library has, renamed there, is renamed here.
+- **The macros on the tray's knob bays**, each onto its knob *if the knob holds nothing*. A knob
+  that holds something is left, and the line says which: CLEAR it in MACROS and LOAD again.
+- **A song**, as the arrangement, *if there is none*.
+
+LOAD takes nothing away and writes over nothing. What it brought is not sent back. With no
+answer from the library it says so and changes nothing. If a snapshot it brings names a sample
+that is not on this computer, it says how many do: the web library does not keep samples yet,
+so that lane will be silent until the file is here.
+
 ### Recording
 
 REC writes a take to `Music/SF-000/`, or to the folder set for TAKES in SETUP (an external disk,
@@ -854,7 +874,7 @@ Two places, and a third for takes.
 
 | IN IT | WHAT |
 |---|---|
-| `session.json` | the snapshots, the snapshot knobs, the rig as it was left, each snapshot's profile (its layout and the rules that keep old files readable are in `FORMAT.md`) |
+| `session.json` | the snapshots, the snapshot knobs, the arrangement, the stacks LOAD brought, the rig as it was left, each snapshot's profile (its layout and the rules that keep old files readable are in `FORMAT.md`) |
 | `clips/` | each snapshot's four bars |
 | `samples/` | SF-000's own copy of every audio file it has been given: a lane's sample or phrase, an insert's impulse responses, SPACE's. Each under its own name, in a folder named for what is in the file (`samples/3fa9c2e1/kick.wav`) |
 | `backups/` | the session as each of the last twenty launches found it. To go back, quit and copy one over `session.json` |
@@ -939,7 +959,11 @@ Delete `session.json` to start again from the factory rig.
   A model changed by hand in CONFIG changes at once. Nothing on the screen shows a crossing yet.
 - Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound.
   The session file is ready for it: `FORMAT.md`.
-- ONLINE the other way: loading a library file, buckets and snapshot knobs made in the web library.
+- LOAD: a stack narrows the library screen only (the macro designer and the arrangement still list
+  every snapshot); stacks are not on the E16 (the plan: a knob a stack on its FIND page); there is no
+  way to have LOAD write over a knob or an arrangement that holds something; and nothing is put
+  away: taking snapshots out of the instrument once they are safe online waits on the web library
+  keeping samples too.
 - PA and cue outputs with room EQ. A display mode made for a dark stage: the dark instrument (D)
   is a start on it, with nothing dimmed or enlarged for distance.
 - Menus, switches and inserts changing on a beat or bar line at a recall (they change at once; step patterns wait for the bar).

@@ -53,6 +53,7 @@ The uid comes back the same (see below); `made` does not.
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ] } x 16 ],
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
+  "stacks":    [ { "id", "name", "kind", "snaps": [ids] } ],          the stacks LOAD brought from the web library (absent: none)
   "defs":      { "<print>": definition, ... }
 }
 ```
@@ -115,6 +116,12 @@ this build does not have is written back as it was read.
   reads as the longest length it has that is not over it, and plays as no longer than the part.
   A part whose snapshot is not in the library is dropped on reading. What a build does not know
   of a part, or of the arrangement, is carried.
+- **`stacks`** (thirty-eighth build on): the stacks the web library's tray held at the last LOAD,
+  in its order. `id` is the web library's own name for the stack, `kind` is `stack` or `song`,
+  and `snaps` its snapshots by id, in the stack's order (a song may name one twice). Whatever
+  else the library said of a stack (a song's `parts`: `uid`, `bars`, `morph`) is carried beside
+  them. A snapshot that is not in the library is dropped from a stack on reading, and a stack
+  left with none is dropped.
 - **`controls`** (the session's own, beside `base`): what a snapshot leaves alone, by id.
   `g.tempo`, `g.glide`, `mst.*`, the mutes, the snapshot knobs `snap.k1` ... `snap.k16`, and
   (thirty-fourth build on) MOTION on the snapshot knobs: `mot.1_wave`, `mot.1_speed`,

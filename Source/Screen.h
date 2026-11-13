@@ -95,7 +95,7 @@ public:
     // For the offline screen test: every control's place (screen units), kind and index, as last drawn.
     struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
     std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
-    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec || h.a == aOnline || h.a == aOnlineSetup || h.a == aArrPrint); }
+    static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec || h.a == aOnline || h.a == aOnlineSetup || h.a == aArrPrint || h.a == aFetch); }
     static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay || h.kind == hPocket; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
@@ -109,6 +109,9 @@ public:
     static bool testIsToggle (const TestHit& h, int ctl) { return h.kind == hToggle && h.a == ctl; }
     static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
     static bool testIsOnline (const TestHit& h, bool setUp) { return h.kind == hAct && h.a == (setUp ? aOnlineSetup : aOnline); }
+    static bool testIsStackKey (const TestHit& h) { return h.kind == hAct && h.a == aStack; }
+    static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
+    int testLibStack() const { return libStack; }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     void testPointAt (juce::Point<float> p) { point (p); }      // the mouse resting there (screen units)
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
@@ -187,7 +190,8 @@ private:
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
-               aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint };
+               aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
+               aFetch, aStack };       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -359,6 +363,8 @@ private:
     std::array<bool, kLanes + 3> scopeOn;       // the lanes, the returns, the drum bus, the key
     juce::int64 scopeFor = 0;
     int selKnob = 0, libScroll = 0;
+    int libStack = -1;                  // the library screen shows this one of the stacks LOAD brought (-1: every snapshot)
+    std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;
     bool mouseIsDown = false;
     static constexpr juce::uint32 kTapMs = 120;

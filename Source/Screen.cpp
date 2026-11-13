@@ -677,6 +677,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
+                { aFetch, "LOAD", "BRINGS WHAT IS IN THE WEB LIBRARY'S TRAY: ITS STACKS, THE MACROS ON ITS KNOBS (ONTO KNOBS THAT HOLD NOTHING), A SONG AS THE ARRANGEMENT (IF THERE IS NONE), AND THE SNAPSHOTS THIS LIBRARY LACKS. IT TAKES NOTHING AWAY." },
+                { aStack, "STACK", "THE STACKS LOAD BROUGHT, ONE AFTER ANOTHER, THEN EVERY SNAPSHOT AGAIN." },
                 { aArrange, "ARRANGE", "THE ARRANGEMENT: SNAPSHOTS IN A LINE, EACH FOR SO MANY BARS, EACH REACHED BY A MORPH FROM THE ONE BEFORE. PLAYED FROM THE CLOCK, AND PRINTED TO FILES FOR A RELEASE. A ON THE KEYBOARD TOO. LIT GREEN WHILE IT PLAYS." },
                 { aArrPlay, "PLAY", "PLAYS THE ARRANGEMENT FROM ITS FIRST PART. FROM STOPPED: THAT PART IS RECALLED AT ONCE AND THE CLOCK STARTS FROM THE TOP. WITH THE CLOCK RUNNING: IT COMES IN ON THE NEXT BAR LINE. EACH PART AFTER IS RECALLED SO AS TO SET OFF ON ITS OWN BAR LINE; AT THE END THE CLOCK STOPS. PRESSED WHILE IT PLAYS: STOP." },
                 { aArrHere, "FROM HERE", "PLAYS IT FROM THE PART THAT IS CHOSEN." },
@@ -1693,15 +1695,32 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     }
 }
 
+// The snapshots the library screen lists: every one, or the stack chosen with STACK, in the stack's order.
+std::vector<int> Screen::listed() const
+{
+    std::vector<int> out;
+    if (libStack >= 0 && libStack < (int) ses.stacks.size())
+    {
+        for (auto id : ses.stacks[(size_t) libStack].snaps)
+            for (int i = 0; i < (int) ses.library.size(); ++i) if (ses.library[(size_t) i].id == id) { out.push_back (i); break; }
+        return out;
+    }
+    for (int i = 0; i < (int) ses.library.size(); ++i) out.push_back (i);
+    return out;
+}
+
 void Screen::drawLibrary (G& g)
 {
-    const int total = (int) ses.library.size(), perPage = 6 * 12;
+    if (libStack >= (int) ses.stacks.size()) libStack = -1;         // (the stack it showed is no longer in the tray)
+    const auto list = listed();
+    const int total = (int) list.size(), perPage = 6 * 12;
     libScroll = juce::jlimit (0, std::max (0, (total - 1) / 6 - 11), libScroll);
     selNameRect = {};
     for (int n = 0; n < perPage; ++n)
     {
-        const int i = libScroll * 6 + n;
-        if (i >= total) break;
+        const int at = libScroll * 6 + n;
+        if (at >= total) break;
+        const int i = list[(size_t) at];
         const auto& s = ses.library[(size_t) i];
         drawSnapCard (g, s, i, R (23.0f + (float) (n % 6) * 282, 78.0f + (float) (n / 6) * 74, 272, 66), s.id == selSnap, hCard);
     }
@@ -1709,7 +1728,8 @@ void Screen::drawLibrary (G& g)
     panel (g, strip, col::putty);
     const float x0 = strip.getX() + 5, y0 = strip.getY() + 5, ky = y0 + 40;
     const juce::ScopedValueSetter<bool> onOneLine (oneLine, true);      // (no room under these keys for a second line: a legend that ran on went off the plate)
-    title (g, x0, y0, String (total) + (total == 1 ? " SNAPSHOT" : " SNAPSHOTS"));
+    title (g, x0, y0, libStack >= 0 ? ses.stacks[(size_t) libStack].name + ": " + String (total) + " OF " + String ((int) ses.library.size())
+                                    : String (total) + (total == 1 ? " SNAPSHOT" : " SNAPSHOTS"));
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aMacros, x0 + 66, ky, 64, "MACROS", col::white, 5);
     actKey (g, aSnapshot, x0 + 160, ky, 64, "SNAPSHOT", col::yellow, 5);
@@ -1747,17 +1767,24 @@ void Screen::drawLibrary (G& g)
                       : eng.phones() ? "CUE WITH PHONES LIT: WHILE A SNAPSHOT'S BARS PLAY, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET."
                       : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES (TICK THEM IN SETUP), OR PHONES LIT: THEN THIS OUTPUT CARRIES THE SET LEFT AND THE CUE RIGHT."
                       : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
-    if (online == nullptr) { text (g, help, R (x0 + 672, ky, 974, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
+    // STACK: the stacks LOAD brought from the web library, one after another, then every snapshot again
+    const bool stacked = ! ses.stacks.empty();
+    if (stacked) actKey (g, aStack, x0 + 678, ky, 64, "STACK", libStack >= 0 ? col::green : col::putty, 5, true, libStack >= 0);
+    if (online == nullptr) { text (g, help, R (x0 + (stacked ? 760.0f : 672.0f), ky, stacked ? 886.0f : 974.0f, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
     // ONLINE: each snapshot goes to the library on the web as it is taken. The lamp: green when the
     // library holds them all, yellow while sending, amber when it waits (no network, or not set up), red when turned away.
     const auto st = online->status().state;
     onlineStamp = online->stamp();
     const Colour lamp = st == Online::State::off ? col::putty : st == Online::State::upToDate ? col::green : st == Online::State::working ? col::yellow
                       : st == Online::State::refused ? col::red : col::amber;
-    actKey (g, aOnline, x0 + 678, ky, 64, "ONLINE", lamp, 5, true, st != Online::State::off);
-    actKey (g, aOnlineSetup, x0 + 744, ky, 64, "SET UP", col::white, 5);
-    text (g, online->line(), R (x0 + 832, ky, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
-    text (g, help, R (x0 + 832, ky + 20, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
+    actKey (g, aOnline, x0 + 744, ky, 64, "ONLINE", lamp, 5, true, st != Online::State::off);
+    actKey (g, aOnlineSetup, x0 + 810, ky, 64, "SET UP", col::white, 5);
+    // LOAD: what the web library's tray holds, brought here (its stacks, its macros, a song, and the snapshots this library lacks)
+    const bool loading = online->loading();
+    actKey (g, aFetch, x0 + 876, ky, 64, "LOAD", loading ? col::yellow : col::white, 5, online->setup().complete(), loading);
+    const String said = online->loadLine();
+    text (g, online->line(), R (x0 + 964, ky, 696, 20), fLbl, col::black, juce::Justification::centredLeft);
+    text (g, said.isNotEmpty() ? said : help, R (x0 + 964, ky + 20, 696, 20), fLbl, col::black, juce::Justification::centredLeft);
 }
 
 // ------------------------------------------------------------------------------------- POCKETS
@@ -2243,6 +2270,8 @@ void Screen::act (int a)
         case aPkReset:  ses.pocketsReset(); pkNote = "EVERY POCKET IS WHERE THE RIG STARTS IT"; pkNoteAt = juce::Time::getMillisecondCounter(); break;
         case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
+        case aFetch:    if (online != nullptr && ! online->loading()) online->askLoad(); break;
+        case aStack:    libStack = libStack + 1 >= (int) ses.stacks.size() ? -1 : libStack + 1; libScroll = 0; break;
         case aRecallCue:
             if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr)
             {

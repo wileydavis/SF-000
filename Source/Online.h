@@ -44,8 +44,23 @@ public:
     bool pass();
     // Ask the library whether these settings are let in. Empty: yes. Else what went wrong.
     static juce::String check (const Setup&);
+    // LOAD: bring what the web library's tray holds (its stacks, the macros on its knobs, a song)
+    // with the snapshots this library lacks, their clips and the definitions they name. askLoad:
+    // the sender's thread does it next. load: on the calling thread (a check). loadLine: how the
+    // last one went, for the screen; loading: one is under way.
+    void askLoad();
+    juce::String load();
+    juce::String loadLine() const;
+    bool loading() const                    { return loadBusy.load(); }
     int requests() const                    { return asked.load(); }        // sends made so far (the checks)
     static bool systemClientForTests;       // the checks: plain http through the system's client too, as https goes
+    // The checks: one request to a library, made as SF-000 makes them. Its status (0: no answer).
+    static int requestForTests (const Setup& s, const juce::String& method, const juce::String& path, const juce::MemoryBlock* body, const juce::String& type, juce::String* reply = nullptr)
+    {
+        const auto r = http (s, method, path, body, type);
+        if (reply != nullptr) *reply = r.body;
+        return r.status;
+    }
     void showForTests (State st, int waiting, int sent, const juce::String& note = {}) { say (st, waiting, sent, note); }
 
     static juce::File setupFile();
@@ -55,7 +70,7 @@ public:
 
 private:
     void run() override;
-    struct Reply { int status = 0; juce::String body; };       // status 0: no answer at all
+    struct Reply { int status = 0; juce::String body; juce::MemoryBlock bytes; };       // status 0: no answer at all (bytes: the body as it came, where it was asked for)
     // A request under way can be called off from another thread: quitting must not wait on a
     // library that has stopped answering (it waited 8 s, then the thread was killed by force
     // with the request still open, which can take the app down as it leaves).
@@ -67,7 +82,7 @@ private:
     };
     CallOff callOff;
     static Reply http (const Setup&, const juce::String& method, const juce::String& path,
-                       const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000, CallOff* = nullptr);
+                       const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000, CallOff* = nullptr, bool wantBytes = false);
     struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false; juce::String name; };
     void readSetup();
     void writeSetup() const;
@@ -82,6 +97,8 @@ private:
     Status stat;
     std::atomic<juce::uint32> changes { 0 };
     std::atomic<int> asked { 0 };
+    std::atomic<bool> wantLoad { false }, loadBusy { false };
+    juce::String loadSays;                  // (under the lock)
     // the sender's own (one thread at a time: the thread, or a check calling pass())
     std::map<juce::String, Entry> ledger;   // what the library has said it holds, by uid
     std::set<juce::String> defsSent;        // definitions it has

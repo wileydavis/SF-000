@@ -1,4 +1,5 @@
 #include "Session.h"
+#include <map>
 #include "Build.h"
 #include <juce_cryptography/juce_cryptography.h>
 
@@ -1179,6 +1180,7 @@ void Session::remove (juce::int64 id)
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); }
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
     arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
+    for (auto& st : stacks) st.snaps.erase (std::remove (st.snaps.begin(), st.snaps.end(), id), st.snaps.end());      // (and out of the stacks LOAD brought)
     if (baseId == id) baseId = 0;
     applyMorph (0.0);
     sweepSamples();                     // the samples only it held go with it
@@ -1798,6 +1800,148 @@ juce::var Session::definition (const juce::String& print) const
     return {};
 }
 
+// ------------------------------------------------------------------------------- LOAD
+static Snapshot snapFromVar (const var& v, const Engine& e);
+// A name as this library keeps one: capitals, twenty-four letters.
+static juce::String nameHere (const juce::String& n) { return n.trim().toUpperCase().substring (0, 24); }
+
+juce::int64 Session::takeFromLibrary (const var& snap, const juce::String& name, const var& defs)
+{
+    const juce::String uid = snap.getProperty ("uid", "").toString();
+    if (! snap.isObject() || uid.isEmpty()) return 0;
+    for (auto& s : library)
+        if (s.uid == uid)
+        {
+            if (nameHere (name).isNotEmpty() && s.name != nameHere (name)) rename (s.id, name);       // (named there since: its name is the one thing that may change)
+            return s.id;
+        }
+    // What is kept is this library's own copy: its id here (its own, if that is free), its name.
+    var v = juce::JSON::parse (juce::JSON::toString (snap, true));
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return 0;
+    juce::int64 id = (juce::int64) snap.getProperty ("id", 0);
+    if (id < 1000000 || findSnap (id) != nullptr) { id = juce::Time::currentTimeMillis(); while (findSnap (id) != nullptr) ++id; }
+    o->setProperty ("id", id);
+    if (nameHere (name).isNotEmpty()) o->setProperty ("name", nameHere (name));
+    Snapshot s = snapFromVar (v, engine);
+    for (auto& f : s.laneFiles) f = pathOf (f);
+    for (auto& lane : s.insFiles) for (auto& slot : lane) for (auto& r : slot) for (auto& f : r.files) f = pathOf (f);
+    library.push_back (s);
+    if (auto* d = defs.getDynamicObject())
+        for (auto& p : d->getProperties())
+            if (! definition (p.name.toString()).isObject()) defsKept.push_back ({ p.name.toString(), p.value });
+    touch();
+    if (onLibrary) onLibrary();
+    return id;
+}
+
+int Session::filesMissing (juce::int64 id) const
+{
+    const auto* s = findSnap (id);
+    if (s == nullptr) return 0;
+    int n = 0;
+    auto miss = [&n] (const juce::String& f) { if (f.isNotEmpty() && ! juce::File (f).existsAsFile()) ++n; };
+    for (auto& f : s->laneFiles) miss (f);
+    for (auto& lane : s->insFiles) for (auto& slot : lane) for (auto& r : slot) for (auto& f : r.files) miss (f);
+    return n;
+}
+
+juce::String Session::takeTray (const var& tray)
+{
+    std::map<juce::String, juce::int64> here;
+    for (auto& s : library) if (s.uid.isNotEmpty()) here[s.uid] = s.id;
+    auto idsOf = [&here] (const var& uids)
+    {
+        std::vector<juce::int64> out;
+        if (auto* a = uids.getArray())
+            for (auto& u : *a) if (const auto f = here.find (u.toString()); f != here.end()) out.push_back (f->second);
+        return out;
+    };
+    // a chip named there since it was last here
+    int renamed = 0;
+    if (auto* chips = tray.getProperty ("chips", var()).getDynamicObject())
+        for (auto& c : chips->getProperties())
+            if (const auto f = here.find (c.name.toString()); f != here.end())
+                if (const auto* s = findSnap (f->second))
+                    if (const auto nm = nameHere (c.value.getProperty ("name", "").toString()); nm.isNotEmpty() && nm != s->name) { rename (f->second, nm); ++renamed; }
+    // the stacks: what the tray holds now is what there is (a stack taken out of the tray there is no longer here; its snapshots are)
+    std::vector<Stack> now;
+    var song;
+    if (auto* sv = tray.getProperty ("stacks", var()).getArray())
+        for (auto& v : *sv)
+        {
+            Stack st;
+            st.id = v.getProperty ("id", "").toString();
+            st.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 40);
+            st.kind = v.getProperty ("kind", "stack").toString();
+            st.snaps = idsOf (v.getProperty ("uids", var()));
+            auto* keep = new juce::DynamicObject();                     // (the list of uids is not kept twice: snaps says it)
+            if (auto* o = v.getDynamicObject()) for (auto& q : o->getProperties()) if (q.name != juce::Identifier ("uids")) keep->setProperty (q.name, q.value);
+            st.kept = var (keep);
+            if (st.snaps.empty()) continue;
+            if (st.kind == "song" && song.isVoid()) song = v;
+            now.push_back (st);
+        }
+    stacks = now;
+    // the macros: each on its knob, if the knob holds nothing
+    juce::StringArray placed, left;
+    if (auto* kn = tray.getProperty ("knobs", var()).getArray())
+        for (auto& v : *kn)
+        {
+            const int k = (int) v.getProperty ("slot", 0) - 1;
+            if (k < 0 || k >= 16) continue;
+            auto sn = idsOf (v.getProperty ("uids", var()));
+            if (sn.size() > 10) sn.resize (10);
+            if (sn.empty()) continue;
+            auto& knob = knobs[(size_t) k];
+            if (knob.snaps == sn) continue;                             // it holds that macro already
+            if (! knob.snaps.empty() || ! knob.links.empty()) { left.add (juce::String (k + 1)); continue; }
+            knob.snaps = sn;
+            knob.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 16);
+            if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) knob.depth = juce::jlimit (0.0f, 2.0f, (float) d);
+            turnSnapKnob (k, value (cx::kSnap + k));
+            placed.add (juce::String (k + 1));
+        }
+    // a song: the arrangement, if there is none
+    int sung = 0; bool songLeft = false;
+    if (auto* parts = song.getProperty ("parts", var()).getArray())
+    {
+        juce::Array<var> pv;
+        for (auto& p : *parts)
+            if (const auto f = here.find (p.getProperty ("uid", "").toString()); f != here.end())
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("snap", f->second); o->setProperty ("bars", p.getProperty ("bars", 8)); o->setProperty ("morph", p.getProperty ("morph", 0));
+                pv.add (var (o));
+            }
+        // (an arrangement that is this song already, part for part, is nothing to say anything about)
+        bool isIt = (int) arrangement.size() == pv.size() && pv.size() > 0;
+        for (int i = 0; isIt && i < pv.size(); ++i)
+            isIt = arrangement[(size_t) i].snap == (juce::int64) pv[i]["snap"] && arrangement[(size_t) i].bars == juce::jlimit (1, kArrMaxBars, (int) pv[i]["bars"]);
+        if (isIt) {}
+        else if (! arrangement.empty()) songLeft = true;
+        else
+        {
+            auto* a = new juce::DynamicObject();
+            for (auto& m : arrMore) a->setProperty (m.name, m.value);
+            a->setProperty ("parts", pv);
+            arrFromVar (var (a));
+            sung = (int) arrangement.size();
+        }
+    }
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+    auto count = [] (int n, const char* one, const char* many) { return juce::String (n) + " " + (n == 1 ? one : many); };
+    juce::String line = count ((int) stacks.size(), "STACK", "STACKS");
+    if (placed.size() > 0) line << ", " << (placed.size() == 1 ? "KNOB " : "KNOBS ") << placed.joinIntoString (", ") << " FILLED";
+    if (left.size() > 0) line << ". " << (left.size() == 1 ? "KNOB " : "KNOBS ") << left.joinIntoString (", ") << (left.size() == 1 ? " HOLDS" : " HOLD") << " SOMETHING AND " << (left.size() == 1 ? "WAS" : "WERE") << " LEFT: CLEAR IT AND LOAD AGAIN";
+    if (sung > 0) line << ". THE SONG IS THE ARRANGEMENT (" << count (sung, "PART", "PARTS") << ")";
+    if (songLeft) line << ". THE ARRANGEMENT WAS LEFT AS IT IS (CLEAR IT TO TAKE THE SONG)";
+    if (renamed > 0) line << ". " << juce::String (renamed) << " RENAMED";
+    return line;
+}
+
 static Snapshot snapFromVar (const var& v, const Engine& e)
 {
     Snapshot s;
@@ -1978,6 +2122,21 @@ var Session::stateVar()
     root->setProperty ("library", lib);
     root->setProperty ("knobs", kn);
     if (! arrangement.empty() || arrMore.size() > 0) root->setProperty ("arrangement", arrToVar());
+    if (! stacks.empty())
+    {
+        juce::Array<var> sv;
+        for (auto& st : stacks)
+        {
+            auto* o = new juce::DynamicObject();
+            if (auto* was = st.kept.getDynamicObject()) for (auto& q : was->getProperties()) o->setProperty (q.name, q.value);      // (what this build does not know of it: carried)
+            o->setProperty ("id", st.id); o->setProperty ("name", st.name); o->setProperty ("kind", st.kind);
+            juce::Array<var> ids;
+            for (auto id : st.snaps) ids.add (id);
+            o->setProperty ("snaps", ids);
+            sv.add (var (o));
+        }
+        root->setProperty ("stacks", sv);
+    }
     // The definitions: every one the file has held, and this build's own. Never pruned: a snapshot
     // made long ago still finds what it was made with.
     {
@@ -2035,7 +2194,7 @@ bool Session::load()
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "samples", "arrangement" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "samples", "arrangement", "stacks" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -2052,6 +2211,17 @@ void Session::takeState (const var& root)
     if (auto* lib = root.getProperty ("library", var()).getArray())
         for (auto& v : *lib) library.push_back (snapFromVar (v, engine));
     arrFromVar (root.getProperty ("arrangement", var()));
+    stacks.clear();
+    if (auto* sv = root.getProperty ("stacks", var()).getArray())
+        for (auto& v : *sv)
+        {
+            Stack st;
+            st.id = v.getProperty ("id", "").toString(); st.name = v.getProperty ("name", "").toString(); st.kind = v.getProperty ("kind", "stack").toString();
+            st.kept = v;
+            if (auto* ids = v.getProperty ("snaps", var()).getArray())
+                for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) st.snaps.push_back ((juce::int64) id);
+            if (! st.snaps.empty()) stacks.push_back (st);              // (its snapshots have all gone: so has the stack)
+        }
     if (auto* kn = root.getProperty ("knobs", var()).getArray())
         for (int k = 0; k < 16 && k < kn->size(); ++k)
         {

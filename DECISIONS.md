@@ -1812,8 +1812,104 @@ many."
      What this means for prints made before today: one made while the Mac was hard at work
      elsewhere may have a kick or two with no duck under it. Print again to be sure of it.
 
+## The library as a bench (Nov 13): the web library's second build
+
+The code is in the repo `snapshot-library`; what was decided is kept here with the rest.
+
+372. **You:** "To me this is the real magic in the system: a world class instrument ... that
+     easily captures the interesting sounds, then an online library and organizing tool that can
+     take thousands of collected snapshots and give tools to both manually and automatically
+     organize this information." "They feel like little chips of goodnes. So I'd like to keep
+     that tactile look." "I love the idea of the web interface being a 3d space where you can
+     organize and view these sound chips in 3d." And five things it has to do: names, tags and
+     deleting; grouping into buckets ("stacks?"); making macros; "intelligent creation of
+     dynamic stacks"; and "creating stacks to load into the instrument".
+373. **Chip, stack, macro: the three things.** A chip is a snapshot as an object: its face the
+     card the instrument draws, its edge its colour, so a pile's side shows what is in it. A
+     stack is a named pile in an order. A macro is a stack with a job, exactly what a snapshot
+     knob holds: chips in sweep order and a DEPTH. *Mine:* a chip can be in any number of
+     stacks, and a stack only names its chips (by uid), so nothing is copied and a snapshot is
+     never changed by being sorted.
+374. **The bench: a rack, a table, a tray.** Pockets cut into the body at the back, each with a
+     pile and a name plate; the open stack dealt out in front; on the right the tray, which
+     stands for the instrument (sixteen knob bays and a row of pockets). *Mine:* the pockets
+     are shallow, so three chips lie just under the rim and a fourth stands proud; a pile is
+     never taller than about fifteen chips' worth, its chips drawn thinner past that, so a
+     stack of three thousand still reads from its side; the table only ever makes the chips
+     that show (40 of 3,000), so a library of thousands costs a screenful.
+375. **What it is worked out from is what a snapshot already carries**, and the sums are plain.
+     *Mine,* all of it: LIKE THIS is the instrument's own distance. A chip's *family* is the
+     same colour whatever the energy, near the same tempo, and counts double if taken in the
+     same sitting (45 minutes without a snapshot ends one). SONG FROM THIS spreads the family
+     over in, build, drive, peak, break, build, peak, out, taking for each part the chip nearest
+     the energy the part asks for, with bars (16, 32 on the peaks) and a way in. A mood is a
+     place on the seven measures and a weight on each; MOOD FROM THEM takes the marked chips'
+     middle and weights each measure by how far they agree on it. AUTO SORT is k-means from a
+     fixed start. No model, nothing trained: the same library gives the same stacks.
+376. **KEEP and FREEZE.** What one of those gives lies on the table and is not kept. KEEP makes
+     it a stack that goes on filling itself; FREEZE an ordinary stack of what it holds now.
+     *Mine:* so the rack does not fill with every question asked of it.
+377. **The tray is what SF-000 loads**, and `GET /api/load` says it: the stacks put there, the
+     macros that have a knob, each with the chips it holds now. *Mine:* a stack that fills
+     itself is sent as what it held when the page last looked, so the instrument need not know
+     the rules.
+378. **A name has two hands on it.** A chip can be named on the bench. *Mine:* the last to
+     rename it has it: a name SF-000 sends that is not the one it sent before is a rename there,
+     and is taken; the same name sent again leaves the bench's alone.
+379. **One row a stack; additions only; and the deploy was rehearsed.** The library's tables grow
+     by `CREATE TABLE IF NOT EXISTS` and `ADD COLUMN`. The new code was run on a store exactly
+     as the code deployed today left it (62 snapshots, clips, tags): the list came back the
+     same field for field.
+380. **You:** "I'll want a dark version that matches the instrument."
+381. **The dark library is the dark instrument's own colours** (its plates, its ink, its paper,
+     its case, its room, from `Screen.cpp` and the stage): plates dark, print light, lights and
+     the yellow keys as they were. **D** switches, as there. *Mine:* the first time it is as the
+     computer is set; after that as it was left, which the browser keeps.
+382. **Putting chips away from the instrument is not built.** It waits on samples being kept
+     online, since a snapshot can name one that is only on the Mac.
+
+## Thirty-eighth build (Nov 13): LOAD
+
+383. **You:** "A way of creating stacks to load into the instrument. over time, we can't keep
+     all the chip in the instrument itself, so using the online tool to load stacks into the
+     machine's library would make sense, I think."
+384. **LOAD brings the tray; it never takes away and never writes over.** *Mine,* each part of
+     it. A snapshot this library lacks is added whole, with its clip and its definitions; one
+     it has is at most renamed. A macro goes on its knob only if the knob holds nothing: a knob
+     you set up by hand is not something a press of LOAD should cost you. A song becomes the
+     arrangement only if there is none. The line says what was left and how to take it (clear
+     it, LOAD again). *proposed:* a held LOAD that does write over, if you find you want it.
+385. **The stacks here are the tray's, as of the last LOAD.** *Mine.* Taken out of the tray
+     there, a stack is gone from here at the next LOAD, and its snapshots stay: the tray is the
+     one place that says which stacks the instrument carries, so the two cannot drift.
+386. **STACK steps through them on the library screen.** *Mine,* and the least that makes them
+     usable: one key, the stacks in turn, then every snapshot. They are not on the E16 yet (you
+     once put it as "an E16 bucket knob just runs through a bucket list": that is the next
+     step, a knob a stack on the FIND page), and the macro designer and the arrangement still
+     list everything.
+387. **A snapshot from the library keeps its uid and gets an id of its own here if its own is
+     taken.** The uid is its name everywhere; the id is only this library's handle (FORMAT.md).
+     What LOAD brought is marked as held by the library, so it is not sent straight back, and
+     a name given there is not sent back as a rename from here.
+388. **A snapshot can arrive without its sample.** The web library keeps the snapshot and its
+     four bars, not the audio files a lane or an insert was holding. LOAD counts the snapshots
+     it brought that name a file this computer has not got and says so. Today that can only
+     happen with a snapshot deleted here and brought back, or taken on another computer.
+
 ## Not verified
 
+- **LOAD (thirty-eighth) is checked end to end against the web library's own code running on
+  this machine**: a snapshot brought whole with its clip to the byte, stacks, a macro onto an
+  empty knob and not onto a full one, a song as the arrangement, nothing doubled or sent back,
+  no answer handled. Not checked: https from the Mac through Cloudflare Access with your
+  service token, and the reading of a clip there (on the Mac the request goes through the
+  system's client, here through a plain socket).
+- **The bench has been run only here**, in a browser with no window and no graphics card
+  (Chrome drawing in software). Its checks press and drag as a hand does and all pass, but: it
+  has not been opened in your browser on the Mac, behind Cloudflare Access, with your
+  snapshots. How it feels to drag, whether a chip's name is big enough on your screen, and
+  whether LIKE, SONG and the moods find what your ears would, on real profiles and not made-up
+  ones: all yours to say. The flat page is still at `/flat.html`.
 - **The thirty-seventh build's two fixes are checked by measurement**: every legend against its
   plate, and RANDOM by the patterns twelve presses write. Not seen on a Mac. One thing to tell
   me: whether a step edited by hand putting RANDOM's key out is what you want, or whether the
