@@ -83,7 +83,7 @@ namespace e16
     // The scene file's text, as the OXI App exports one. snapNames: the sixteen snapshot knobs'
     // names (an empty one is SNAP n).
     juce::String sceneText (const Engine&, const juce::StringArray& snapNames);
-    juce::String fxText (const Engine&);                        // the second scene: the library, the inserts, the returns, the master, the sequencer strip, CONFIG
+    juce::String fxText (const Engine&, const juce::StringArray& snapNames);     // the second scene: the library, the inserts, the returns, the master, the sequencer strip, CONFIG, the snapshot knobs
 }
 
 // More addresses, for a sequencer to play (the OXI ONE's modulation lanes). They are on no page of

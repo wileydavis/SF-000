@@ -5,7 +5,11 @@ always on the page of whatever is in front on the screen.
 
 - `SF-000.oxie16` (SF-000): a page for each lane, and a page for the snapshot knobs.
 - `SF-000-FX.oxie16` (SF-FX): the library's two pages, then the active lane's three inserts, the
-  returns, the master, the sequencer strip and CONFIG.
+  returns, the master, the sequencer strip and CONFIG, and the snapshot knobs again.
+
+**The snapshot knobs are page 12 of both scenes**, the same sixteen on the same addresses. Chosen
+on the screen or with the wheel, the E16 goes to page 12 of whichever scene it is in, so no scene
+is loaded for them.
 
 SF-000 writes both itself from the rig (`SF-000 --e16 SF-000.oxie16`), in the form the suite's PERF
 scene has, so the screen and the E16 cannot drift apart. `rings.lua` is the script inside both.
@@ -83,10 +87,11 @@ and sends to the same port.
   pressed there (it reads SHUT) CONFIG shuts and the E16 is back on the module's page. The returns
   have two: DUB's, SPACE's, then shut. On the snapshot knobs OPEN is the library; in the library
   it is the way back. The master and the sequencer strip have nothing behind them.
-- **On the snapshot page and the library's map every press already recalls**, so there knobs 13
-  and 14 are **held for half a second** for the wheel and OPEN. A press let go sooner recalls as
-  before (for those two knobs on those two pages the recall comes as the knob is let go, not as
-  it goes down).
+- **On the snapshot page knob 1 pressed is GLIDE and knob 13 pressed is the wheel**, as on a
+  lane's page: those two snapshot knobs are not recalled by a press on the E16 (a double-click on
+  the screen still does it). Knob 14 there, and knobs 13 and 14 on the library's map, where a
+  press already recalls, are **held for half a second** for OPEN and the wheel. A press let go
+  sooner recalls as before (the recall then comes as the knob is let go, not as it goes down).
 
 ## The first scene: SF-000
 
@@ -98,7 +103,8 @@ pages 1-11: a lane each (KCK CHH OHH CLP PRC BAS RMB LED CRD PAD VOX), on the la
 13 SEND A [press: the wheel]   14 SEND B [press: OPEN]   15 LOW   16 HIGH [press: MID]
 
 page 12: SNAP, the sixteen snapshot knobs (violet), on channel 16. Press: recall.
-         13 and 14 held: the wheel, OPEN (the library).
+         Knob 1 [press: GLIDE, green, as on a lane's page]. Knob 13 [press: the wheel].
+         Knob 14 held: OPEN (the library).
 ```
 
 - **Knob 1, pressed, is GLIDE** on every lane's page: its ring turns green and it sets how long
@@ -132,7 +138,7 @@ page 8   SEQ      1 LENGTH, 2 HITS, 3 ROTATE, 4 ACCENTS, 5 SEED (the active lane
 page 9   CFG 1    CONFIG's controls in the order its panel has them, twelve to a page
 page 10  CFG 2      15 [press]: the page before   16 [press]: the next
 page 11  CFG 3
-page 12  empty
+page 12  SNAP     the sixteen snapshot knobs, exactly as the first scene's page 12 has them
 on pages 2 to 11: 13 the pointer's wheel (pressed or not), 14 [press] OPEN
 ```
 

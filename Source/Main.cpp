@@ -2374,10 +2374,10 @@ static int writeScene (const juce::String& path)
     std::printf (ok ? "wrote %s (%d bytes): copy it into the OXI App's Scenes folder and send it to the E16\n" : "could not write %s\n",
                  f.getFullPathName().toRawUTF8(), (int) text.getNumBytesAsUTF8());
     // the second scene beside it
-    const auto lib = sf0::e16::fxText (e);
+    const auto lib = sf0::e16::fxText (e, snapKnobNames());
     const auto lf = f.getSiblingFile (f.getFileNameWithoutExtension() + "-FX" + f.getFileExtension());
     const bool ok2 = lf.replaceWithData (lib.toRawUTF8(), lib.getNumBytesAsUTF8());
-    std::printf (ok2 ? "wrote %s (%d bytes): the second scene (the library; the inserts, the returns, the master, the sequencer strip, CONFIG)\n" : "could not write %s\n", lf.getFullPathName().toRawUTF8(), (int) lib.getNumBytesAsUTF8());
+    std::printf (ok2 ? "wrote %s (%d bytes): the second scene (the library; the inserts, the returns, the master, the sequencer strip, CONFIG, the snapshot knobs)\n" : "could not write %s\n", lf.getFullPathName().toRawUTF8(), (int) lib.getNumBytesAsUTF8());
     return ok && ok2 ? 0 : 1;
 }
 
@@ -3261,13 +3261,20 @@ static int midiTest()
         const juce::String t5 = turns(); out.clear(); ticks (1);
         const bool noNote = midi.pageNote().isEmpty();
         out.clear();
-        check (atStart == "B0=0 B32=0 P7" && t1 == "P2" && t2 == "P5" && t3 == "B0=0 B32=1 P3" && t4 == "P6" && t5 == "B0=0 B32=0 P11" && noNote,
+        // (the snapshot knobs are the twelfth page of both scenes: from the lanes' scene they are its twelfth, with no scene sent)
+        ses.bringLane (9, 0); ticks (1);
+        const juce::String t6 = turns(); out.clear(); ticks (1);
+        ses.bring ({ Session::fSnap, 0 }, 0); ticks (1);
+        const juce::String t7 = turns(); out.clear(); ticks (1);
+        check (atStart == "B0=0 B32=0 P7" && t1 == "P2" && t2 == "P5" && t3 == "B0=0 B32=1 P3" && t4 == "P6" && t5 == "P11" && t6 == "B0=0 B32=0 P9" && t7 == "P11" && noNote && midi.pageNote().isEmpty(),
                "a module brought to the front is the E16's page: an E16 newly here is sent the scene and the page of what is in front (" + atStart + "); within a scene the page is a Program Change by itself, OPEN HAT (" + t1 + "), BASS (" + t2
-                   + "); Bank Select only to go to the other scene, BASS's second insert (" + t3 + "), then the master in that scene (" + t4 + "), and back for the snapshot knobs (" + t5 + ")");
+                   + "); Bank Select only to go to the other scene, BASS's second insert (" + t3 + "), then the master in that scene (" + t4 + "); the snapshot knobs are the twelfth page of whichever scene it is in (" + t5
+                   + " from the second; a lane, " + t6 + ", and " + t7 + " from the first)");
 
         // A scene that is selected loads, and comes up on its first page whatever page came with the Bank Select: when its
         // script says so, the page is said again by itself. (Wiley's E16: every turn sent with a Bank Select ended on KICK's page.)
         {
+            ses.bringLane (5, 0); ticks (3); out.clear();                // (from a lane's page, in the first scene)
             mockAnswers = false;                                         // (what this E16 says is written out below)
             const int frontWas = ses.frontCount;
             ses.bring ({ Session::fInsert, 2 }, 1); ticks (1);
@@ -3596,6 +3603,14 @@ static int midiTest()
         const bool noRecall = ses.baseId == baseThen && midi.wheelInUse();
         // OPEN on the snapshot knobs is the library; in the library it is the way back
         press (16, e16::kWheelKey); ticks (1);
+        // (the scene now has knob 13's press on the snapshot page as the wheel's own key, as on a lane's page: at once, and its turns are the pointer's)
+        const bool keyOff = ! midi.wheelInUse();
+        const float snap13 = ses.value (cx::kSnap + 12);
+        press (16, e16::kWheelKey); ticks (1);
+        const int stood = ccOut (16, e16::kKnobCc + 12);
+        for (int v = stood - 1; v >= stood - 3; --v) { in (16, e16::kKnobCc + 12, v); ticks (1); }
+        const bool byKey = keyOff && midi.wheelInUse() && ses.pointing && ses.pointAt == Session::Stop { Session::fLane, kLanes - 1, 0 } && ses.value (cx::kSnap + 12) == snap13 && ses.front.kind == Session::fSnap;
+        in (16, e16::kKnobCc + 2, 0); ticks (2);                         // (another knob: the pointer is put down)
         out.clear();
         in (16, e16::kPressCc + 13, 127); juce::Thread::sleep (420); ticks (1); in (16, e16::kPressCc + 13, 0); ticks (1);
         const bool asksLibrary = ses.wantShowing == 1;
@@ -3605,8 +3620,18 @@ static int midiTest()
         const bool asksBack = ses.wantShowing == 0;
         ses.showing = 0; ses.wantShowing = -1; ticks (1);
         const juce::String fromMap = turns(); out.clear();
-        check (again && namesBack && ! midi.wheelInUse() && notYet && recalled && heldIs && noRecall && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "B0=0 B32=0 P11",
-               "on the snapshot page knob 13 held for half a second is the wheel, and a press let go before that still recalls (as it is let go); knob 14 held there opens the library (" + toMap + ") and held in the library shuts it (" + fromMap + ")");
+        // (back from the library the snapshot knobs are that scene's own twelfth page: no scene is loaded for them)
+        in (16, e16::kKnobCc + 3, 40); ticks (2);                        // a snapshot knob turned there: still the second scene's twelfth page
+        ses.bring ({ Session::fMaster, 0 }, 0); ticks (1);
+        const juce::String toMaster = turns(); out.clear(); ticks (1);
+        answers (e16::kFocusB + e16::kSnapPage); ticks (1);              // turned to it by hand in the second scene: the snapshot knobs come to the front
+        const bool handTurn = ses.front.kind == Session::fSnap && turns().isEmpty();
+        ses.turnSnapKnob (3, 0.0f);
+        check (byKey, "on the snapshot page knob 13's press is the wheel's key too: the pointer is up at once on the snapshot knobs, a turn back takes it to VOICE, and snapshot knob 13 is not moved");
+        check (again && namesBack && ! midi.wheelInUse() && notYet && recalled && heldIs && noRecall && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "P11" && toMaster == "P6" && handTurn,
+               "on the snapshot page knob 13 held for half a second is the wheel, and a press let go before that still recalls (as it is let go); knob 14 held there opens the library (" + toMap + ") and held in the library shuts it, to that scene's own snapshot page ("
+                   + fromMap + "); a snapshot knob turned there leaves the E16 taken to be in that scene (the master next: " + toMaster + "), and its twelfth page turned to by hand brings the snapshot knobs to the front");
+        ses.bringLane (3, 0); ticks (3); out.clear();
 
         // the E16 sent to one page says it is on another: nothing follows it there, the page is said again, and SETUP says so if it never comes round
         ticks (2);
@@ -3845,7 +3870,9 @@ static int midiTest()
         }
         // the scene file
         Engine eFx;
-        const auto fxScene = e16::fxText (eFx);
+        juce::StringArray fxNames;
+        for (int k = 0; k < 16; ++k) fxNames.add (k == 0 ? "ENERGY" : k == 5 ? "OPEN UP" : "");
+        const auto fxScene = e16::fxText (eFx, fxNames);
         const auto lib = juce::JSON::parse (fxScene);
         bool form = lib.isObject() && lib["title"].toString() == "SF-FX" && lib["pages"].isArray() && lib["pages"].size() == 12;
         if (form)
@@ -3862,6 +3889,20 @@ static int midiTest()
                    && (int) find["encoders"][5]["turn_actions"][0]["type"] == 0 && lib["pages"][2]["encoders"].size() == 16;
         }
         check (form, "the second scene is written, the library first: MAP on channel 15, FIND on 14, knob p on CC 11 + p with its press on CC 43 + p");
+        {
+            // its twelfth page is the snapshot knobs, knob for knob what the first scene's twelfth is
+            const auto first = juce::JSON::parse (e16::sceneText (eFx, fxNames));
+            const auto a = first["pages"][11], b = lib["pages"][11];
+            bool same = a["title"].toString() == "SNAP" && b["title"].toString() == "SNAP" && (int) b["channel"] == e16::kSnapChannel && b["encoders"].size() == 16;
+            for (int p = 0; p < 16 && same; ++p)
+                same = juce::JSON::toString (a["encoders"][p], true) == juce::JSON::toString (b["encoders"][p], true)
+                       && (int) b["encoders"][p]["turn_actions"][0]["channel"] == e16::kSnapChannel && (int) b["encoders"][p]["turn_actions"][0]["nr1"] == e16::kKnobCc + p
+                       && (p == 0 || (int) b["encoders"][p]["push_action"]["nr1"] == (p == 12 ? (int) e16::kWheelKey : e16::kPressCc + p));
+            // (knob 1 pressed is GLIDE and knob 13 pressed the wheel, as on a lane's page)
+            same = same && (int) b["encoders"][0]["turn_actions"][1]["nr1"] == e16::kGlideCc && (int) b["encoders"][0]["turn_actions"][1]["channel"] == e16::kSnapChannel;
+            check (same && b["encoders"][5]["name"].toString() == "OPEN UP" && b["encoders"][1]["name"].toString() == "SNAP 2",
+                   "the second scene's twelfth page is the snapshot knobs too: the same sixteen, on the same addresses and with the same names, as the first scene's twelfth");
+        }
         Session::stateFileForTests = juce::File();
         tmp.deleteRecursively();
     }

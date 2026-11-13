@@ -453,7 +453,8 @@ Open SETUP to see what is connected. Nothing needs choosing.
   In the first, pages 1-11 are the lanes: the twelve knobs where the screen has them, then SEND A,
   SEND B, LOW and HIGH. Press knob 16 and it is MID (its ring turns pink); press again for HIGH.
   Press knob 1 and it is GLIDE (its ring turns green), the same GLIDE on every lane's page; press
-  again for the lane's first knob. Page 12 is the sixteen snapshot knobs; a press recalls that
+  again for the lane's first knob. Page 12 is the sixteen snapshot knobs (knob 1 pressed is GLIDE
+  there too, and knob 13 pressed the wheel); a press on any of the others recalls that
   knob's nearest snapshot. The rings follow the rig, and a travelling knob's ring walks green. A
   page that comes up is told its values again, so a knob's first turn starts where the rig is.
 - **Every knob on the screen has a page**, so nothing needs the mouse. The second scene (SF-FX)
@@ -461,6 +462,8 @@ Open SETUP to see what is connected. Nothing needs choosing.
   places where the screen has them; a key among them, THROW or FREEZE, is its knob's press), the
   RETURNS, the MASTER, the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
   3: its controls in the order its panel has them, twelve to a page), and the library's two pages.
+  Its page 12 is the snapshot knobs again, as the first scene's page 12: they are on the same page
+  whichever scene the E16 is in, and choosing them never loads a scene.
   SF-000 names an insert's and CONFIG's knobs on the E16's display as they change.
 - **The E16 is on the page of whatever is in front.** Bring a module to the front on the screen
   (a click on its plate, Tab) or open CONFIG or the library, and the E16 turns to that page, in
@@ -470,7 +473,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
   what is in front. (The E16's own PC Mode must be Page and its PC Receive Channel 12. If it ends
   on another page than the one in front, SETUP's E16 line says what was asked and what it said.)
 - **Knob 13 pressed is the pointer's wheel, on every page: press, turn, press.** The first press
-  (on the snapshot page and the library's map, where a press recalls, hold it for half a second)
+  (on the library's map, where a press recalls, hold it for half a second)
   takes the pointer up: a yellow frame round the module in front, and the 3D eye home so the
   whole rig is in view. Its turns move the frame, three clicks to the next: a lane, then those
   of its inserts that have an effect in them (the three insert panels show the lane the pointer

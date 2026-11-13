@@ -86,11 +86,19 @@ snap = scene["pages"][11]
 ok = snap["title"] == "SNAP" and snap["channel"] == 16
 for p, e in enumerate(snap["encoders"], 1):
     t, push = e["turn_actions"][0], e["push_action"]
-    ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 11 + p and e["turn_actions"][1] == TURN_OFF and e["color"] == VIOLET
-    ok = ok and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 43 + p and (push["upper"], push["lower"]) == (127, 0) and push["output"] == 0
+    t2 = e["turn_actions"][1]
+    ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 11 + p and e["color"] == VIOLET
     seen[(16, t["nr1"])] = seen.get((16, t["nr1"]), 0) + 1
-    seen[(16, push["nr1"])] = seen.get((16, push["nr1"]), 0) + 1
-check(ok, "page 12, the snapshot knobs on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up)")
+    if p == 1:
+        # GLIDE behind its press, as on a lane's page: the one GLIDE address
+        ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == 16 and t2["nr1"] == 30 and e["color2"] == GREEN
+    elif p == 13:
+        # pressed, the pointer's wheel, as on a lane's page
+        ok = ok and t2 == TURN_OFF and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 33 and (push["upper"], push["lower"]) == (127, 0)
+    else:
+        ok = ok and t2 == TURN_OFF and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 43 + p and (push["upper"], push["lower"]) == (127, 0) and push["output"] == 0
+        seen[(16, push["nr1"])] = seen.get((16, push["nr1"]), 0) + 1
+check(ok, "page 12, the snapshot knobs on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up); but knob 1 pressed swaps to GLIDE (green) and knob 13 pressed is the pointer's wheel (CC 33), as on a lane's page")
 check(all(v == 1 for v in seen.values()) and not any(num in RESERVED for _, num in seen) and not ({(16, 119), (16, 31), (16, 33), (16, 34), (16, 35), (16, 36)} & set(seen)),
       f"{len(seen)} addresses, each used once, none on a number MIDI keeps for itself; CC 119 on channel 16 is left for the page, 31 and 33 to 36 for the wheel and the keys")
 for n, row in enumerate(names, 1):
@@ -305,9 +313,10 @@ if os.path.exists(lib_path):
     ok = ok and all(list(p) == PAGE and len(p["encoders"]) == 16 and 1 <= len(p["title"]) <= 11 for p in lib["pages"])
     ok = ok and all(list(e) == ENCODER and list(e["push_action"]) == PUSH and all(list(t) == TURN for t in e["turn_actions"]) for e in encs)
     ok = ok and all(1 <= len(e["name"]) <= 8 and 1 <= len(e["abbr"]) <= 4 and e["name"] == e["name"].upper() for e in encs)
-    ok = ok and all(e["turn_actions"][1] == TURN_OFF and e["color2"] == 0 for e in encs)
+    glide_knob = lib["pages"][11]["encoders"][0]         # (the snapshot page's knob 1: GLIDE behind its press, its second turn)
+    ok = ok and all(e["turn_actions"][1] == TURN_OFF and e["color2"] == 0 for e in encs if e is not glide_knob)
     ok = ok and lib["transmitOnSceneEntry"] == 0 and lib["transmitOnPageSwitch"] == 0 and lib["transmitOnPresetLoad"] == 0
-    check(ok and lib["title"] == "SF-FX" and [p["title"] for p in lib["pages"]] == ["MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "-"],
+    check(ok and lib["title"] == "SF-FX" and [p["title"] for p in lib["pages"]] == ["MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "SNAP"],
           f"{os.path.basename(lib_path)}: the same form, twelve pages: " + ", ".join(p["title"] for p in lib["pages"]))
 
     def turn(e):
@@ -342,10 +351,12 @@ if os.path.exists(lib_path):
               "SEQ: LENGTH and the generator's four (channel 13, CC 70-74); CFG 1-3: CONFIG's controls, twelve to a page (CC 76-95, then 102-117), with PAGE - and PAGE + on 15 and 16")
     ok = all(turn(pg["encoders"][12]) == (16, 31) and push(pg["encoders"][12]) == (16, 33) and pg["encoders"][12]["name"] == "SELECT"
              and turn(pg["encoders"][13]) is None and push(pg["encoders"][13]) == (16, 34) for pg in pages[1:11])
-    ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in pages[11]["encoders"])
-    check(ok, "on every page after the map, knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 14 pressed is OPEN (CC 34); page 12 is empty")
+    check(ok, "on pages 2 to 11, knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 14 pressed is OPEN (CC 34)")
+    # page 12: the snapshot knobs, the page the first scene's twelfth is, object for object
+    check(pages[11] == scene["pages"][11] and all(turn(e) == (16, 12 + i) for i, e in enumerate(pages[11]["encoders"])),
+          "page 12 is the snapshot knobs, exactly as the first scene's page 12 has them (channel 16: knob p on CC 11 + p, its press on CC 43 + p), so they are on the same page in either scene")
     used = {}
-    for pg in pages:
+    for pg in pages[:11]:
         for e in pg["encoders"]:
             if turn(e) and turn(e) not in ((16, 31),):
                 used[turn(e)] = used.get(turn(e), 0) + 1
@@ -354,7 +365,7 @@ if os.path.exists(lib_path):
     mine = {(t["channel"], t["nr1"]) for p in scene["pages"] for e in p["encoders"] for t in e["turn_actions"] if t["type"] == 3}
     check(all(v == 1 for v in used.values()) and (set(used) & mine) == {(16, 30)} and not any(num in RESERVED or num in (0, 32) for _, num in used)
           and not any(ch == 12 for ch, _ in used) and lib["code"]["scriptName"] == scene["code"]["scriptName"],
-          f"its {len(used)} knob addresses are each one knob's, none is the first scene's but GLIDE's, and nothing is on channel 12 (where the page is turned from outside)")
+          f"its first eleven pages' {len(used)} knob addresses are each one knob's, none is the first scene's but GLIDE's, and nothing is on channel 12 (where the page is turned from outside)")
     try:
         fx = E16(script=lib["code"]["code"])
         said = fx.sent()
@@ -368,8 +379,11 @@ if os.path.exists(lib_path):
         fx.name_page(9, ["    "] * 16)
         named = fx.names()
         fx.name_page(9, ["MODL", "ATK"] + ["    "] * 14)
-        check(said == [(0, 15, 119, 21), (0, 15, 119, 23), (0, 15, 119, 29)] and named == {} and fx.names() == {1: "MODL", 2: "ATK"} and fx.rings() == {},
-              "its script says each page as 20 and the page's number (21 the map, 23 INS 1, 29 CFG 1), takes names, and walks no ring (nothing on these pages travels)")
+        got = fx.names()
+        fx.sent()
+        fx.goto(12)
+        check(said == [(0, 15, 119, 21), (0, 15, 119, 23), (0, 15, 119, 29)] and named == {} and got == {1: "MODL", 2: "ATK"} and fx.rings() == {} and fx.sent() == [(0, 15, 119, 32)],
+              "its script says each page as 20 and the page's number (21 the map, 23 INS 1, 29 CFG 1, 32 the snapshot knobs), takes names, and walks no ring (nothing on these pages travels)")
     except NameError:
         pass
 else:

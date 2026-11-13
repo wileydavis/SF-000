@@ -1273,6 +1273,29 @@ many."
      keys are the screen's and the keyboard's); editing one tie's amount without learning it
      again; an insert's knobs; a curve other than a straight line through the knob's turn.
 
+## Twenty-seventh build (Nov 13): the snapshot knobs in both scenes
+
+272. **You:** "selecting the snapshot module takes me to page 12 in the fx scene, not page 12 in
+     the sf scene", where page 12 was empty. The snapshot knobs are now page 12 of **both**
+     scenes, the same sixteen on the same addresses, and choosing them sends the E16 to page 12
+     of whichever scene it is in: a Program Change by itself, no scene loaded. *Mine:* that
+     way round and not "make the scene change work", because I cannot say from here why your
+     E16 stayed in SF-FX (SF-000 sends the scene before the page when it takes the E16 to be in
+     the other one; either it took it to be in the first scene already, or the E16 did not act
+     on the Bank Select), and this is right in both cases. A snapshot knob turned no longer says
+     which scene the E16 is in. Turned to by hand in either scene, page 12 brings the snapshot
+     knobs to the front. **SF-FX has to be loaded onto the E16 again** (SF-000 is unchanged).
+     *Not verified:* if going from an SF-FX page to a lane ever lands on an SF-FX page too, it is
+     the same fault and SETUP's E16 line will say what was asked for and where it went.
+273. **The snapshot page has GLIDE and the wheel on their usual presses** (you: "the snapshot pge
+     needs the lane select, and glide press knobs as well"). Knob 1 pressed swaps to GLIDE (its
+     ring green) and knob 13 pressed is the pointer's wheel, at once, as on a lane's page. Those
+     two snapshot knobs are no longer recalled by a press on the E16: a double-click on the
+     screen and their RECALL addresses still do it. *Mine:* knob 14 there is left as it was
+     (held for half a second: OPEN, the library; let go sooner: its recall), since you did not
+     name it; say if OPEN should be a plain press there too. Both scenes' page 12 have it, so
+     **both scenes have to be loaded onto the E16 again**.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley

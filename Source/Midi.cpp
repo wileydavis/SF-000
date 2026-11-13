@@ -254,6 +254,34 @@ String minified (const String& src)
 }
 } // namespace
 
+// The sixteen snapshot knobs: a page of their own, the twelfth, in both scenes (so they are on
+// the same page whichever scene the E16 is in). A press recalls the knob's nearest snapshot, but
+// for two that are pressed as they are on a lane's page: knob 1 is GLIDE behind its press (the
+// ring green), and knob 13 pressed is the pointer's wheel. (Those two snapshot knobs are still
+// recalled from the screen, and from their addresses.)
+static std::vector<Enc> snapEncs (const Engine& eng, const juce::StringArray& snapNames)
+{
+    std::vector<Enc> encs;
+    for (int p = 1; p <= 16; ++p)
+    {
+        Enc e;
+        const String given = cleaned (snapNames[p - 1], 8) == "-" ? String() : snapNames[p - 1];
+        e.name = given.isNotEmpty() ? cleaned (given, 8) : "SNAP " + String (p);
+        e.abbr = given.isNotEmpty() ? cleaned (given.removeCharacters (" "), 4) : "S" + String (p);
+        e.colour = kViolet;
+        e.channel = kSnapChannel; e.number = kKnobCc + p - 1; e.def = 0;
+        e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kPressCc + p - 1;
+        if (p == 1)
+        {
+            e.press = 2; e.channel2 = kSnapChannel; e.number2 = kGlideCc; e.colour2 = kGreen;
+            e.def2 = to7 (eng.control (cx::kGlide), eng.control (cx::kGlide).def);
+        }
+        else if (p == 13) e.pressNumber = kWheelKey;
+        encs.push_back (e);
+    }
+    return encs;
+}
+
 String sceneText (const Engine& eng, const juce::StringArray& snapNames)
 {
     const auto& codes = laneCodes;
@@ -304,18 +332,8 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
     {
         // page 12: the sixteen snapshot knobs; a press recalls the knob's nearest snapshot
         std::vector<std::string> encs;
-        for (int p = 1; p <= 16; ++p)
-        {
-            Enc e;
-            const String given = cleaned (snapNames[p - 1], 8) == "-" ? String() : snapNames[p - 1];
-            e.name = given.isNotEmpty() ? cleaned (given, 8) : "SNAP " + String (p);
-            e.abbr = given.isNotEmpty() ? cleaned (given.removeCharacters (" "), 4) : "S" + String (p);
-            e.colour = kViolet;
-            e.channel = kSnapChannel; e.number = kKnobCc + p - 1; e.def = 0;
-            e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kPressCc + p - 1;
-            encs.push_back (encJson (e, p));
-            map << "---";
-        }
+        const auto knobs = snapEncs (eng, snapNames);
+        for (int p = 1; p <= 16; ++p) { encs.push_back (encJson (knobs[(size_t) (p - 1)], p)); map << "---"; }
         pages.push_back (Json::obj ({ { "title", Json::str ("SNAP") }, { "output", "0" }, { "channel", Json::num (kSnapChannel) }, { "encoders", Json::arr (encs) } }));
         focus.add (String (kSnapPage));         // (not a lane: SF-000 leaves the active lane alone, and tells the page its values)
     }
@@ -350,7 +368,7 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
 // The second scene: the library's map and finders, then a page for everything the first scene has
 // none for (the active lane's inserts, the returns, the master, the sequencer strip, CONFIG). It
 // carries the same script, which says each page as it comes up and takes the names SF-000 sends.
-String fxText (const Engine& eng)
+String fxText (const Engine& eng, const juce::StringArray& snapNames)
 {
     std::vector<std::string> pages;
     String map;
@@ -483,7 +501,8 @@ String fxText (const Engine& eng)
         encs[14] = key ("PAGE -", "PG -", kCfgPrevKey); encs[15] = key ("PAGE +", "PG +", kCfgNextKey);
         add ("CFG " + String (c + 1), kFxChannel, encs);
     }
-    add ("-", 1, {});
+    // page 12: the snapshot knobs, as the first scene's twelfth has them (the same addresses)
+    add ("SNAP", kSnapChannel, snapEncs (eng, snapNames));
 
     String src = String::fromUTF8 (BinaryData::rings_lua, BinaryData::rings_luaSize).replace ("\r\n", "\n");
     src = src.replace ("@MAP@", map).replace ("@GREEN@", String (kGreen)).replace ("@FOCUS@", focus.joinIntoString (", "))
@@ -962,7 +981,8 @@ void Midi::service()
         // A knob turned on the E16 is on a page: if that is not the page it was taken to be on
         // (it has not said, or its script does not say), it is on that one. Nothing comes to the
         // front for it, and nothing is told to the knob under the hand.
-        const Where at = on > e16::kFocusB ? Where { 1, on - e16::kFocusB } : Where { 0, on };
+        Where at = on > e16::kFocusB ? Where { 1, on - e16::kFocusB } : Where { 0, on };
+        if (at.page == e16::kSnapPage && e16At.scene == 1) at.scene = 1;      // (the snapshot knobs are on both scenes' twelfth page: a turn of one does not say which)
         if (at != e16At) arrived (at, true);
     }
     takeGlide();
@@ -1101,12 +1121,14 @@ Midi::Where Midi::whereNow() const
 {
     using S = Session;
     if (ses.showing == 1) return { 1, e16At.scene == 1 && e16At.page == e16::pgFind ? (int) e16::pgFind : (int) e16::pgMap };
-    if (ses.showing == 2) return { 0, e16::kSnapPage };
+    // (the snapshot knobs are the twelfth page of both scenes: the one it is in, so no scene is loaded for them)
+    const int snapScene = e16At.scene == 1 ? 1 : 0;
+    if (ses.showing == 2) return { snapScene, e16::kSnapPage };
     if (ses.cfgOpen) return { 1, e16::pgCfg + juce::jlimit (0, e16::kCfgPages - 1, cfgPage) };
     switch (ses.front.kind)
     {
         case S::fLane:    return { 0, ses.activeLane + 1 };
-        case S::fSnap:    return { 0, e16::kSnapPage };
+        case S::fSnap:    return { snapScene, e16::kSnapPage };
         case S::fInsert:  return { 1, e16::pgIns + ses.front.slot };
         case S::fReturns: return { 1, e16::pgRet };
         case S::fMaster:  return { 1, e16::pgMaster };
@@ -1121,8 +1143,8 @@ Midi::Where Midi::whereNow() const
 void Midi::arrived (Where w, bool heard)
 {
     e16At = w;
-    if (w.scene == 0) { pageNow = w.page; if (! heard) pageWait = 2; }
-    else { bWait = 2; bHeard = heard; }
+    if (w.scene == 0 || w.page == e16::kSnapPage) { pageNow = w.page; if (! heard) pageWait = 2; }      // (the snapshot knobs' page is the same in both scenes)
+    if (w.scene != 0) { bWait = 2; bHeard = heard; }
     namesSaid = {};
 }
 
@@ -1175,6 +1197,7 @@ void Midi::pageCame (int said, juce::uint32 now)
     {
         if (ses.showing != 0) ses.wantShowing = 0;
         if (at.page >= e16::pgIns && at.page < e16::pgIns + kSlots) ses.bring ({ S::fInsert, at.page - e16::pgIns }, 2);
+        else if (at.page == e16::kSnapPage) ses.bring ({ S::fSnap, 0 }, 2);
         else if (at.page == e16::pgRet)    ses.bring ({ S::fReturns, 0 }, 2);
         else if (at.page == e16::pgMaster) ses.bring ({ S::fMaster, 0 }, 2);
         else if (at.page == e16::pgSeq)    ses.bring ({ S::fSeq, 0 }, 2);
@@ -1189,7 +1212,7 @@ void Midi::pageCame (int said, juce::uint32 now)
 
 juce::String Midi::pageName (Where w)
 {
-    static const char* const b[12] = { "MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "PAGE 12" };
+    static const char* const b[12] = { "MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "SNAP" };
     if (w.page < 1 || w.page > 12) return "NOWHERE";
     return w.scene == 1 ? "SF-FX " + String (b[w.page - 1]) : "SF-000 PAGE " + String (w.page);
 }
@@ -1340,11 +1363,16 @@ void Midi::serviceWheel (juce::uint32 now)
 bool Midi::wheelKnob (WheelKnob& k) const
 {
     k = {};
-    if (e16At.scene == 1 && e16At.page >= e16::pgFind) { k.ch = e16::kSnapChannel; k.num = e16::kWheelCc; k.own = true; }       // (a page where knob 13 is the wheel and nothing else)
-    else if (e16At.scene == 1 && e16At.page == e16::pgMap) { k.ch = e16::kMapChannel; k.num = e16::kKnobCc + 12; k.lib = true; }
-    else if (e16At.scene == 0 && e16At.page >= 1 && e16At.page <= e16::kSnapPage)
+    if ((e16At.scene == 0 || e16At.scene == 1) && e16At.page == e16::kSnapPage)
     {
-        k.slot = e16At.page == e16::kSnapPage ? kLanes * e16::kPerLane + 12 : (e16At.page - 1) * e16::kPerLane + 12;
+        k.slot = kLanes * e16::kPerLane + 12;       // (the snapshot knobs' page, in either scene: its thirteenth)
+        e16::addressOf (k.slot, k.ch, k.num);
+    }
+    else if (e16At.scene == 1 && e16At.page >= e16::pgFind) { k.ch = e16::kSnapChannel; k.num = e16::kWheelCc; k.own = true; }  // (a page where knob 13 is the wheel and nothing else)
+    else if (e16At.scene == 1 && e16At.page == e16::pgMap) { k.ch = e16::kMapChannel; k.num = e16::kKnobCc + 12; k.lib = true; }
+    else if (e16At.scene == 0 && e16At.page >= 1 && e16At.page < e16::kSnapPage)
+    {
+        k.slot = (e16At.page - 1) * e16::kPerLane + 12;
         e16::addressOf (k.slot, k.ch, k.num);
     }
     else return false;
