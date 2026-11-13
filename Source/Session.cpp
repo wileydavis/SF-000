@@ -5,7 +5,7 @@ namespace sf0
 {
 using juce::var;
 
-static const int kMorphEnd = cx::kRet + cx::kRetKnobs;      // lanes and returns: what a snapshot knob can reach
+static const int kMorphEnd = cx::kRetMS;      // lanes, returns and the drum bus: what a snapshot knob can reach
 
 Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 {
@@ -16,6 +16,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     offset.assign ((size_t) cx::kCount, 0.0f);
     for (int i = 0; i < cx::kCount; ++i) base[(size_t) i] = engine.target (i);
     for (int r = 0; r < 2; ++r) retInit[(size_t) r] = engine.getSetup ({ 2, 0, r });
+    busInit = engine.getSetup ({ 3, 0, 0 });
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
     ensureCleanSlate();
     findLibraryId (idInFile);
@@ -60,7 +61,7 @@ void Session::bringLane (int l, int by)
     front = { fLane, 0 };
     // CONFIG keeps to the lane: its instrument's, or the same slot's of this lane's inserts. (Open
     // on a return it stays there under the mouse; a controller's or the keyboard's lane takes it.)
-    if (cfgOpen && cfg.kind != 2) cfg.lane = l; else if (cfgOpen && by != 0) cfg = { 0, l, 0 };
+    if (cfgOpen && cfg.kind < 2) cfg.lane = l; else if (cfgOpen && by != 0) cfg = { 0, l, 0 };
     frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
     touch();
     if (onChange) onChange();
@@ -75,7 +76,8 @@ void Session::bring (Front f, int by)
     {
         if (f.kind == fInsert) cfg = { 1, activeLane, f.slot };
         else if (f.kind == fReturns) { if (cfg.kind != 2) cfg = { 2, 0, 0 }; }
-        else cfgOpen = false;                   // (the master, the sequencer strip, the snapshot knobs: no CONFIG)
+        else if (f.kind == fMaster) cfg = { 3, 0, 0 };          // (the master's CONFIG is its drum bus's)
+        else cfgOpen = false;                   // (the sequencer strip, the snapshot knobs: no CONFIG)
     }
     frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
     if (onChange) onChange();
@@ -129,7 +131,7 @@ void Session::bringStop (Stop s, int by)
         {
             // (an insert of another lane: that lane is the active one, and its insert is what is in front)
             activeLane = l; selStep = -1; page = 0;
-            if (cfgOpen && cfg.kind != 2) cfg.lane = l;
+            if (cfgOpen && cfg.kind < 2) cfg.lane = l;
             touch();
         }
     bring ({ s.kind, s.slot }, by);
@@ -165,7 +167,7 @@ void Session::pointOff()
 // ------------------------------------------------------------------------------------- CONFIG
 void Session::openConfig (Engine::Target t)
 {
-    const bool same = cfgOpen && cfg.kind == t.kind && cfg.slot == t.slot && (t.kind == 2 || cfg.lane == t.lane);
+    const bool same = cfgOpen && cfg.kind == t.kind && cfg.slot == t.slot && (t.kind >= 2 || cfg.lane == t.lane);
     if (same) { cfgOpen = false; if (onChange) onChange(); return; }
     cfg = t; cfgOpen = true; cfgTouched = {};
     if (t.kind == 0 && activeLane != t.lane) { activeLane = t.lane; selStep = -1; page = 0; }
@@ -180,6 +182,7 @@ bool Session::configOfFront (int by)
         case fLane:    openConfig ({ 0, activeLane, 0 }); return true;
         case fInsert:  openConfig ({ 1, activeLane, front.slot }); return true;
         case fReturns: openConfig ({ 2, 0, cfgOpen && cfg.kind == 2 && cfg.slot == 0 ? 1 : cfgOpen && cfg.kind == 2 ? cfg.slot : 0 }); return true;       // A; then B; then (B again) shut
+        case fMaster:  openConfig ({ 3, 0, 0 }); return true;                                  // (its drum bus)
         default:       if (cfgOpen) { cfgOpen = false; if (onChange) onChange(); } return false;
     }
 }
@@ -439,7 +442,9 @@ Snapshot Session::capture() const
         s.setup[(size_t) l] = engine.getSetup ({ 0, l, 0 });
     }
     for (int r = 0; r < 2; ++r) s.retSetup[(size_t) r] = engine.getSetup ({ 2, 0, r });
+    s.busSetup = engine.getSetup ({ 3, 0, 0 });
     s.hasSetup = true;
+    s.hasBus = true;
     s.hasInsFiles = true;
     s.made = madeNow (s);
     return s;
@@ -466,6 +471,7 @@ juce::var Session::madeNow (const Snapshot& s) const
     auto* rt = new juce::DynamicObject();
     rt->setProperty ("dub", d.dub); rt->setProperty ("space", d.space); rt->setProperty ("conv", d.conv);
     o->setProperty ("returns", var (rt));
+    if (s.hasBus) o->setProperty ("bus", d.bus);
     o->setProperty ("chassis", d.chassis);
     return var (o);
 }
@@ -785,6 +791,7 @@ void Session::applySnapshot (const Snapshot& s, double glide)
         }
     }
     if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, withMotion (engine, { 2, 0, r }, s.retSetup[(size_t) r]));
+    if (s.hasBus) engine.applySetup ({ 3, 0, 0 }, s.busSetup);
     if (learning >= 0) learnBase = base;            // (a recall while a knob is being taught: what it is shown is measured from the recalled scene)
     applyMorph (glide);
 }
@@ -827,7 +834,8 @@ void Session::recall (juce::int64 id, const Scope& scope)
         if (m.hasSetup) { m.setup[(size_t) l] = now.setup[(size_t) l]; m.insSetup[(size_t) l] = now.insSetup[(size_t) l]; }
         if (m.hasInsFiles) m.insFiles[(size_t) l] = now.insFiles[(size_t) l];
     }
-    if (! scope.returns) { keep (cx::kRet, cx::kMaster); if (m.hasSetup) m.retSetup = now.retSetup; }
+    if (! scope.returns) { keep (cx::kRet, cx::kBus); if (m.hasSetup) m.retSetup = now.retSetup; }
+    if (! scope.bus) { keep (cx::kBus, cx::kRetMS); m.hasBus = false; }
     if (! scope.master) keep (cx::kMaster, cx::kSnap);
     applySnapshot (m, glideBeats());
     baseId = id;
@@ -1051,6 +1059,7 @@ static var snapToVar (const Snapshot& s, const Engine& e)
         for (int r = 0; r < 2; ++r) rs.add (setupToVar (s.retSetup[(size_t) r]));
         auto* su = new juce::DynamicObject();
         su->setProperty ("lanes", ls); su->setProperty ("inserts", is); su->setProperty ("returns", rs);
+        if (s.hasBus) su->setProperty ("bus", setupToVar (s.busSetup));
         o->setProperty ("setup", var (su));
     }
     return var (o);
@@ -1109,6 +1118,7 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         }
         for (int r = 0; r < 2; ++r) if (r < rs.size()) s.retSetup[(size_t) r] = setupFromVar (rs[r]);
         s.hasSetup = true;
+        if (const var bs = su.getProperty ("bus", var()); bs.isObject()) { s.busSetup = setupFromVar (bs); s.hasBus = true; }
     }
     if (const var insf = v.getProperty ("insertFiles", var()); insf.isArray())
     {
@@ -1365,7 +1375,9 @@ void Session::ensureCleanSlate()
         s.setup[(size_t) l] = engine.initialSetup (l);
     }
     s.retSetup = retInit;
+    s.busSetup = busInit;
     s.hasSetup = true;
+    s.hasBus = true;
     s.hasInsFiles = true;
     const int at = indexOf (kCleanSlateId);
     s.made = madeNow (s);

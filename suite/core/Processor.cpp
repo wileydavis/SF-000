@@ -614,7 +614,7 @@ void SFProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuff
         if (pendingSong.load() >= 0 && pendingKey != -2) {}
         else if (keyHold > 0) { if (d.keyRoot.load() == keyUsed) keyHold = 0; else keyHold -= n; }
         else keyUsed = d.keyRoot.load();
-        c.keyRoot = keyUsed >= 0 && keyUsed < 12 && controlOn ? keyUsed : -1;
+        c.keyRoot = keyUsed >= 0 && keyUsed < 12 && (controlOn || keyFromHost.load()) ? keyUsed : -1;     // (SF-000: or the host's own key)
         c.n = n;
         c.samplePos = (int64_t) streamPos;
         processChunk (buffer, mainOut, side, start, n, c, midi, panicNow && start == 0, panicHold, start + n >= total);

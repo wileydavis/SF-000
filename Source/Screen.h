@@ -134,6 +134,7 @@ public:
     static bool testIsLearnKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aLearn : which == 1 ? aLearnKeep : aLearnDrop); }     // LEARN, KEEP, DROP
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
     static bool testIsConfigKey (const TestHit& h, int lane) { return h.kind == hConfig && h.a == 0 && h.b == lane * 8; }
+    static bool testIsBusConfigKey (const TestHit& h) { return h.kind == hConfig && h.a == 3; }      // the master's C: its drum bus's CONFIG
     Page testPage() const { return page; }
     double testPrintMs() const { return printMs; }
     double testSendMs() const { return sendMs; }
@@ -307,7 +308,7 @@ private:
     juce::int64 selSnap = 0;
     // The library, with a snapshot cued or chosen: what RECALL will take from it. All of it, unless
     // parts are put out first; and all again for the next (0 to 10: the lanes; 11: the returns; 12: the key).
-    std::array<bool, kLanes + 2> scopeOn;
+    std::array<bool, kLanes + 3> scopeOn;       // the lanes, the returns, the drum bus, the key
     juce::int64 scopeFor = 0;
     int selKnob = 0, libScroll = 0;
     R selNameRect;

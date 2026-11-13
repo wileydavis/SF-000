@@ -13,7 +13,8 @@ static const std::vector<std::pair<std::string, ModulePtr (*)()>>& table()
         { "DUCK", makeDUCK }, { "ENERGY", makeENERGY }, { "ISOLATOR", makeISOLATOR }, { "BUILD", makeBUILD },
         { "GLUE", makeGLUE }, { "TONE", makeTONE }, { "LOWEND", makeLOWEND }, { "LIMIT", makeLIMIT }, { "ROOMEQ", makeROOMEQ },
         { "ALLOC", makeALLOC }, { "TAP", makeTAP }, { "STRIP", makeSTRIP }, { "TERROIR", makeTERROIR }, { "CAPTURE", makeCAPTURE },
-        { "RESONATOR", makeRESONATOR } };
+        { "RESONATOR", makeRESONATOR },
+        { "DRUMBUS", makeDRUMBUS } };        // (SF-000)
     return t;
 }
 

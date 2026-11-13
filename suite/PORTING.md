@@ -24,3 +24,9 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   dropouts and squeals, ride on the level of the signal (all of it from -26 dBFS up, none with
   nothing; up in 5 ms, down over about a third of a second). In Live a silent track's devices are put to sleep; here everything always runs, and a
   lane that was not playing hissed and chirped on its own. Marked `[SF-000]`.
+- `core/Processor.h`, `core/Processor.cpp`: `SFProcessor::keyFromHost`. The suite's modules take
+  the key only while SF CONTROL is running; SF-000 has none and sets the key itself (its KEY), so
+  with this set the key on the bus is in force. Nothing else a CONTROL says is taken as said.
+  Marked `(SF-000)`. See DECISIONS 283.
+- `modules/FxDrums.cpp` is SF-000's own (the DRUMBUS module: the master's drum bus), with a line
+  for it in `core/Registry.h` and `core/Registry.cpp`, marked `(SF-000)`. It is not in the suite.

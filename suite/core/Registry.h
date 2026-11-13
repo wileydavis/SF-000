@@ -15,6 +15,7 @@ inline int keyOffset (int keyRoot) { return keyRoot < 0 ? 0 : (keyRoot > 5 ? key
 ModulePtr makeFILTER();  ModulePtr makeGATE();    ModulePtr makeDENSITY(); ModulePtr makeDELAY();
 ModulePtr makeREVERB();  ModulePtr makeREPEAT();  ModulePtr makeDRIVE();   ModulePtr makeRADIO();
 ModulePtr makeDUCK();    ModulePtr makeENERGY();  ModulePtr makeISOLATOR(); ModulePtr makeBUILD();
+ModulePtr makeDRUMBUS();     // (SF-000: its own drum bus, modules/FxDrums.cpp)
 ModulePtr makeGLUE();    ModulePtr makeLOWEND();  ModulePtr makeLIMIT();   ModulePtr makeROOMEQ();
 ModulePtr makeCONTROL(); ModulePtr makeALLOC();   ModulePtr makeTAP();     ModulePtr makeSTRIP();
 ModulePtr makeKICK();    ModulePtr makePERC();    ModulePtr makeRUMBLE();  ModulePtr makeBASS();

@@ -144,6 +144,20 @@ const Engine::Defs& Engine::defs() const
     d->dub = ret (returnA(), "ret.dub_");
     d->space = ret (returnB (0), "ret.space_");
     d->conv = ret (returnB (1), "ret.conv_");
+    // the drum bus: as a return, with its four knobs by full id (the rest of it is in setup.bus)
+    {
+        const auto& fd = drumBus();
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", "bus");
+        o->setProperty ("name", juce::String (fd.name));
+        o->setProperty ("engineId", juce::String (fd.module));
+        o->setProperty ("engine", engine (fd.module));
+        o->setProperty ("fixed", fixedVar (fd.fixed));
+        juce::Array<var> knobs;
+        for (int k = 0; k < kBusKnobs; ++k) knobs.add (knobVar (fd.cells[k], "bus." + juce::String (fd.cells[k].param)));
+        o->setProperty ("knobs", knobs);
+        d->bus = add (var (o));
+    }
 
     // The chassis: what every lane has beside its instrument, and what is stored of the whole rig.
     {

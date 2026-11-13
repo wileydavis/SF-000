@@ -72,6 +72,9 @@ public:
     void setStateInformation (const void*, int) override;
 
     // Editor / tests
+    // (SF-000) The host sets the key itself (it is the rig's KEY): it is in force with no SF CONTROL
+    // running. Nothing else a CONTROL says is taken as said.
+    static inline std::atomic<bool> keyFromHost { false };
     sf::Module& mod() { return *module; }
     const std::vector<sf::ParamSpec>& allSpecs() const { return specs; }
     int numModuleParams() const { return numModParams; }

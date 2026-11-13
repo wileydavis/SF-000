@@ -175,6 +175,19 @@ inline const FxDef& returnB (int model = 0)
     return d[model == 1 ? 1 : 0];
 }
 
+// The drum bus, in the master: the lanes its CONFIG names (the five drums, to begin with) play
+// through it together on their way to the mix. Compression, drive, crunch on the highs, punch, and a
+// tuned boom underneath. Four knobs on the master's face; the rest is in its CONFIG. With the four
+// at nought it is not there.
+constexpr int kBusKnobs = 4;
+inline const FxDef& drumBus()
+{
+    static const FxDef d { "DRUM BUS", "DRUMBUS", {},
+        { { "DRIVE", "drive", 'u' }, { "CRUNCH", "crunch", 'u' }, { "PUNCH", "punch", 'b' }, { "BOOM", "boom", 'u' },
+          { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } };
+    return d;
+}
+
 // The master chain, built in: the lows made mono, tape, a bus compressor, a true-peak limiter that
 // trims its own input until the loudest passage sits at the target loudness.
 struct MasterStage { const char* module; std::vector<Fixed> fixed; KnobDef knob; };

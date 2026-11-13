@@ -114,6 +114,7 @@ void Engine::applyBind (const Bind& b, float v)
 
 Engine::Engine()
 {
+    SFProcessor::keyFromHost = true;        // KEY is this rig's own: the modules follow it with no SF CONTROL running
     controls.resize ((size_t) cx::kCount);
     for (auto& c : controls) { c.used = false; c.snapshot = false; }
     auto named = [this] (int i, juce::String id, juce::String label, Kind k, float def, bool snap, bool morph) -> Control&
@@ -192,6 +193,16 @@ Engine::Engine()
             b.id = juce::String (m == 0 ? "ret.space_" : "ret.conv_") + returnB (m).cells[k].param; b.snapshot = true;
         }
     }
+    // the drum bus: its four knobs are a snapshot's, travel on a recall, and a snapshot knob can reach them
+    busProc = makeProc (drumBus().module, drumBus().fixed);
+    busProc->setMotionSeed (motionSeedFor ({ 3, 0, 0 }));
+    for (int k = 0; k < kBusKnobs; ++k)
+    {
+        auto& c = controls[(size_t) (cx::kBus + k)];
+        bind[(size_t) (cx::kBus + k)] = makeBind (*busProc, drumBus().cells[k], &c);
+        c.id = juce::String ("bus.") + drumBus().cells[k].param; c.snapshot = true;
+    }
+    for (int l = 0; l < kLanes; ++l) busIn[(size_t) l] = busProc->apvts.getRawParameterValue ("in_" + juce::String (l + 1));
     named (cx::kRetMS, "ret.dub_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
     named (cx::kRetMS + 1, "ret.dub_solo", "SOLO", Kind::Toggle, 0.0f, false, false);
     named (cx::kRetMS + 2, "ret.space_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
@@ -973,6 +984,7 @@ SFProcessor* Engine::processorFor (Target t) const
 {
     if (t.kind == 0) return lane[(size_t) t.lane].voice.load()->proc.get();
     if (t.kind == 1) { auto* in = lane[(size_t) t.lane].ins[t.slot].load(); return in != nullptr ? in->proc.get() : nullptr; }
+    if (t.kind == 3) return busProc.get();
     return t.slot == 0 ? retA.get() : space[(size_t) spaceWant.load()].get();
 }
 
@@ -982,6 +994,7 @@ std::vector<std::string> Engine::boundIds (Target t) const
     auto add = [&ids] (const KnobDef* k, int n) { for (int i = 0; i < n; ++i) if (k[i].param != nullptr) ids.push_back (k[i].param); };
     if (t.kind == 0) add (lanes()[(size_t) t.lane].knobs, kLaneKnobs);
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) add (effects()[(size_t) ty].cells, kCells); }
+    else if (t.kind == 3) add (drumBus().cells, kCells);
     else add ((t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells, kCells);
     return ids;
 }
@@ -1028,6 +1041,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
     auto groupOf = [&] (const sf::ParamSpec& s) -> juce::String
     {
         const juce::String id (s.id);
+        if (t.kind == 3 && id.startsWith ("in_")) return "LANES";       // (which lanes play through the drum bus)
         if (id.startsWith ("fm_")) return plays ("FM 4-OP") ? "FM 4-OP" : juce::String();
         if (id == "table") return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
         if (s.inEngine) return "ENGINE";
@@ -1040,13 +1054,21 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         return plain;
     };
     for (auto& sp : out) sp.group = plain;                  // (SPACE's MODEL, put in above)
-    for (const char* g : { "SOUND", "EFFECT", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "ENGINE", "POCKET", "ECHO", "RIG" })
+    for (const char* g : { "SOUND", "EFFECT", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" })
         for (int i = 0; i < p->numModuleParams(); ++i)
         {
             const auto& s = specs[(size_t) i];
             if (std::find (bound.begin(), bound.end(), s.id) != bound.end() || groupOf (s) != g) continue;
             auto sp = made (i);
             sp.group = g;
+            if (t.kind == 3 && sp.group == "EFFECT") sp.group = "DRUM BUS";
+            if (sp.group == "LANES")
+            {
+                // by the lane's own name, and a row of their own
+                const int l = sp.id.fromFirstOccurrenceOf ("in_", false, false).getIntValue() - 1;
+                if (l < 0 || l >= kLanes) continue;
+                sp.name = lanes()[(size_t) l].name; sp.ownRow = l == 0;
+            }
             out.push_back (sp);
         }
     // MOTION, on an instrument, an effect or a return: two rows of their own, last
@@ -1093,6 +1115,7 @@ std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArra
     const KnobDef* defs = nullptr; int count = 0;
     if (t.kind == 0) { defs = lanes()[(size_t) t.lane].knobs; count = kLaneKnobs; }
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) { defs = effects()[(size_t) ty].cells; count = kCells; } }
+    else if (t.kind == 3) { defs = drumBus().cells; count = kCells; }
     else { defs = (t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells; count = kCells; }
     std::vector<int> order;
     auto add = [&] (int choice, const juce::String& name) { if (std::find (order.begin(), order.end(), choice) == order.end()) { order.push_back (choice); if (names != nullptr) names->add (name); } };
@@ -1236,7 +1259,9 @@ void Engine::prepare (double rate, int block)
     for (auto& sp : space) prep (*sp);
     spaceNow = spaceWant.load(); spaceHold = 0;
     for (auto& m : master) prep (*m);
-    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf }) b->setSize (2, maxBlock, false, true, false);
+    prep (*busProc);
+    for (int l = 0; l < kLanes; ++l) busWas[(size_t) l] = laneOnBus (l) ? 1.0f : 0.0f;
+    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf, &busBuf, &busDry }) b->setSize (2, maxBlock, false, true, false);
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
     kTape = std::max (1 << 20, juce::nextPowerOfTwo ((int) std::ceil (sr * 16.0) + 65536 + maxBlock));
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
@@ -1472,7 +1497,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
     sf::Bus::get().d().keyRoot.store (keyIdx - 1);
     const bool pan = panicNow.exchange (false);
 
-    for (auto* b : { &mix, &sendA, &sendB }) b->clear (0, n);
+    for (auto* b : { &mix, &sendA, &sendB, &busBuf }) b->clear (0, n);
     // who is heard: a soloed lane silences the other lanes; a soloed return silences every lane's dry signal
     bool anySolo = false;
     for (int l = 0; l < kLanes; ++l) anySolo = anySolo || cur[(size_t) cx::lane (l, cx::kSolo)] > 0.5f;
@@ -1673,9 +1698,14 @@ void Engine::render (juce::AudioBuffer<float>& out)
         }
         const float sa = cur[(size_t) cx::lane (l, cx::kSendA)], sb = cur[(size_t) cx::lane (l, cx::kSendB)];
         const float ga = sa * sa, gb = sb * sb;
+        // The drum bus: a lane its CONFIG names goes to the mix through it, with the others it
+        // names. (A switch thrown crosses the lane over in one buffer.) The sends leave before it.
+        const float onNow = laneOnBus (l) ? 1.0f : 0.0f, onWas = busWas[(size_t) l];
+        busWas[(size_t) l] = onNow;
         for (int ch = 0; ch < 2; ++ch)
         {
-            mix.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas, dryNow);
+            if (onWas < 1.0f || onNow < 1.0f) mix.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas * (1.0f - onWas), dryNow * (1.0f - onNow));
+            if (onWas > 0.0f || onNow > 0.0f) busBuf.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas * onWas, dryNow * onNow);
             sendA.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, ln.sendWas[0], ga);
             sendB.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, ln.sendWas[1], gb);
         }
@@ -1684,6 +1714,27 @@ void Engine::render (juce::AudioBuffer<float>& out)
     dryMixWas = dryNow;
 
     juce::AudioBuffer<float> a2 (sendA.getArrayOfWritePointers(), 2, n), bb2 (sendB.getArrayOfWritePointers(), 2, n), m2 (mix.getArrayOfWritePointers(), 2, n);
+    {
+        // The lanes on the drum bus, together, through it and on to the mix. At rest the bus
+        // leaves them exactly as they came (and what it is recorded as doing is silence).
+        auto tb = clock();
+        juce::AudioBuffer<float> d2 (busBuf.getArrayOfWritePointers(), 2, n);
+        if (rec != nullptr) for (int ch = 0; ch < 2; ++ch) busDry.copyFrom (ch, 0, d2, ch, 0, n);
+        if (pan) busProc->panic();
+        busProc->processBlock (d2, noMidi);
+        for (int ch = 0; ch < 2; ++ch) m2.addFrom (ch, 0, d2, ch, 0, n);
+        if (rec != nullptr)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* w = busDry.getWritePointer (ch);
+                const float* x = d2.getReadPointer (ch);
+                for (int i = 0; i < n; ++i) w[i] = x[i] - w[i];
+            }
+            rec->track (1 + kLanes + 2, busDry.getReadPointer (0), busDry.getReadPointer (1), n);
+        }
+        profMaster += since (tb);
+    }
     // SPACE changing reverbs: the one leaving fades over this block; the one arriving is emptied of
     // whatever it held when it last ran, and comes up once that is done.
     const int spaceNext = spaceWant.load();

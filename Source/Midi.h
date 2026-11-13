@@ -44,7 +44,7 @@ namespace e16
     //   pages 3-5   INS 1-3: knob p (1-8) is the place where the screen has it, CC 8 + 8 * slot + (p - 1);
     //               its press CC 40 + ... (a key among them: THROW, FREEZE)
     //   page 6      RETURNS: DUB's four and SPACE's four, at the addresses a sequencer has (channel 16, CC 60-67)
-    //   page 7      MASTER: TAPE COMP LIMIT (channel 16, CC 68-70)
+    //   page 7      MASTER: TAPE COMP LIMIT (channel 16, CC 68-70), and on knobs 5 to 8 the drum bus's DRIVE CRUNCH PUNCH BOOM (CC 71-74)
     //   page 8      SEQ: LENGTH (CC 70: the value and one is the steps), HITS ROTATE ACCENTS SEED (71-74)
     //   pages 9-11  CONFIG's controls in the order its panel has them, twelve to a page: CC 76 to 95,
     //               then 102 to 117 (96 to 101 are MIDI's own, as 0, 6, 32 and 38 are: nothing here is on those)
@@ -93,15 +93,16 @@ namespace ccx
     // On a lane's channel: its three inserts' eight places (32-39, 40-47, 48-55, whatever effect is
     // in the slot), and MUTE, SOLO and the mute of its own sequencer (64 and over: on).
     constexpr int kIns = 32, kMute = 56, kSolo = 57, kSeqMute = 58;
-    // On channel 16: the DUB return's four knobs, the SPACE return's four, TAPE COMP LIMIT.
-    constexpr int kDub = 60, kSpace = 64, kMaster = 68;
+    // On channel 16: the DUB return's four knobs, the SPACE return's four, TAPE COMP LIMIT, the
+    // drum bus's DRIVE CRUNCH PUNCH BOOM.
+    constexpr int kDub = 60, kSpace = 64, kMaster = 68, kBus = 71;
     // On channel 16, one for each snapshot knob (80-95): RECALL. The value says which of the
     // snapshots the knob holds (1 the first) and that one is recalled, as from the library: sound
     // knobs travel over the GLIDE time (CC 30, sent first), patterns change on the bar. A sequencer
     // says a value again and again: only a new value acts. 0 is none (and makes the next one new).
     constexpr int kRecall = 80;
     constexpr int kPerLane = kSlots * kCells + 3;
-    constexpr int kExtras = kLanes * kPerLane + 4 + 4 + 3;
+    constexpr int kExtras = kLanes * kPerLane + 4 + 4 + 3 + kBusKnobs;
     int extraFor (int channel, int number);                     // -1: not one of them
     int controlFor (int extra, int spaceModel);
     // Any control's address, on the E16's scene or above. False: it has none.

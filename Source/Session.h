@@ -21,6 +21,9 @@ struct Snapshot
     std::array<Engine::SetupState, kLanes> setup;
     std::array<std::array<Engine::SetupState, kSlots>, kLanes> insSetup;
     std::array<Engine::SetupState, 2> retSetup;
+    // the drum bus's CONFIG (its four knobs are among the values). Snapshots from before there was one say nothing: the bus stays as it is.
+    bool hasBus = false;
+    Engine::SetupState busSetup;
     // the files each insert holds (a convolution's impulse responses). Snapshots from before this was kept say nothing.
     bool hasInsFiles = false;
     std::array<std::array<std::vector<Engine::FileRef>, kSlots>, kLanes> insFiles;
@@ -195,14 +198,14 @@ public:
     void finishTakes (bool all = false);
     int takesWaiting() const            { return (int) waiting.size(); }
     void recall (juce::int64 id);       // it becomes the base scene; sound knobs travel by GLIDE
-    // A recall of part of it: the lanes that are chosen, the returns, the key come from the
-    // snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo, GLIDE and
-    // the master's three knobs are the rig's and no snapshot's.)
+    // A recall of part of it: the lanes that are chosen, the returns, the drum bus, the key come
+    // from the snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo,
+    // GLIDE and the master's three knobs are the rig's and no snapshot's.)
     struct Scope
     {
-        std::array<bool, kLanes> lane; bool returns = true, master = true;
+        std::array<bool, kLanes> lane; bool returns = true, bus = true, master = true;
         Scope() { lane.fill (true); }
-        bool all() const { for (bool b : lane) if (! b) return false; return returns && master; }
+        bool all() const { for (bool b : lane) if (! b) return false; return returns && bus && master; }
     };
     void recall (juce::int64 id, const Scope&);
     const Snapshot* findSnap (juce::int64 id) const;
@@ -254,6 +257,7 @@ private:
     std::vector<std::pair<juce::String, juce::var>> defsKept;      // every definition the file has held, by print
     juce::String idInFile;
     std::array<Engine::SetupState, 2> retInit;
+    Engine::SetupState busInit;
     double glideBeats() const;
 
     std::vector<float> base, offset;

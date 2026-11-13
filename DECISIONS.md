@@ -1296,6 +1296,73 @@ many."
      name it; say if OPEN should be a plain press there too. Both scenes' page 12 have it, so
      **both scenes have to be loaded onto the E16 again**.
 
+## Twenty-eighth build (Nov 13): a drum bus in the master; KEY reaches the sound
+
+274. **You:** "do you know how ableton's drum bus makes drums sound so good? Would be nice to do
+     something like that built in", then "do it as a bus across lanes and put it in the master
+     module." DRUM BUS is in the master: the lanes its CONFIG names play through it together on
+     their way to the mix. What it does, in order: a gentle compressor, drive, a second
+     distortion on the highs alone, a transient shaper that leaves the sub be, a tuned resonance
+     under it all, a low-pass, a dry/wet mix. (A first version of it as an insert, one lane at a
+     time, was not kept: it was never pushed.)
+275. **Four knobs on the master's face: DRIVE, CRUNCH, PUNCH, BOOM. The rest in a CONFIG the
+     master now has.** *Mine.* Eight did not fit beside TAPE, COMP, LIMIT, the readouts and the
+     meters; the four are the ones a hand rides, and what is set once (DAMP, BOOM TUNE, BOOM
+     DECAY, MIX, TYPE, COMP, BOOM TO KEY, LEVEL, MOTION) is behind the C beside DRUM BUS. The
+     meters gave up the room: the same eleven lanes and the mix, narrower. With the master in
+     front, C on the keyboard and OPEN on the E16 open it. Say if you would rather have other
+     four, or the meters as they were and the knobs smaller.
+276. **LANES, in that CONFIG, is which lanes play through the bus.** *proposed.* The five drums to
+     begin with; a switch each for all eleven, so the kick can be taken off it (a common way to
+     keep the kick clean) or RUMBLE put on. A switch thrown crosses the lane over in one buffer.
+     A lane's sends leave before the bus.
+277. **At rest it is not there.** *Mine.* With DRIVE, CRUNCH, PUNCH, BOOM and DAMP at nought and
+     LEVEL at 0 dB the lanes reach the mix as they did before there was a bus: checked, the bus
+     is recorded as doing exactly nothing, and the set is the set with no lane on it to the last
+     bit of a float. So every session and snapshot you have sounds as it did. The first knob to
+     move brings the bus in over a hundredth of a second.
+278. **DRIVE is glue and heat on one knob.** *Mine.* The compressor (3:1 from 6 dB under the
+     bus's peaks, 8 ms in, 90 ms out) comes in over the first third of DRIVE's turn and the
+     saturation over all of it; COMP off in CONFIG leaves saturation alone. Both are worked out
+     against the bus's own level, read slowly (up at once, down over half a minute while it
+     plays, held through silence), so the knob does the same whatever the lanes' levels are,
+     and a break of a few bars with the kick out barely moves it. Measured on the kick: full up, 11 dB denser, its
+     peak 0.4 dB lower; the same with the lane 11 dB down. Not what Ableton's does: there the
+     drive is against a fixed level and makes it louder.
+279. **Nothing in it splits the sound into bands.** *Mine.* The first build used a crossover so
+     that PUNCH could leave the sub alone, and a crossover's phase threw a hard-driven kick's
+     peaks up by 6.8 dB. PUNCH is now a shelf above the sub (160 Hz) whose gain moves with the
+     hits: at the centre it does exactly nothing, and the kick's 50 Hz moves by 0.3 dB at either
+     end. Either way the hit comes out (up to 9 dB); right the tail is lifted (8 dB), left it is
+     pulled down (14 dB). It listens for hits in a way that does not take a noisy tail for one.
+280. **BOOM is in the key.** *Mine.* A resonance at BOOM TUNE, rung by the lows, held under a soft
+     ceiling. BOOM TO KEY is on to begin with: with KEY set, it rings on the nearest note of the
+     key to BOOM TUNE; with KEY OFF it is BOOM TUNE as set. BOOM DECAY lengthens the ring and
+     does not thin it. What the bus hands on is held under two and a half times its own level
+     however far PUNCH and BOOM are up (1.9 times the kick's peak, with everything full).
+281. **A snapshot holds the bus.** *Mine.* The four knobs are stored with the other values
+     (`bus.drive` ...), travel on a recall, and a snapshot knob or LEARN reaches them (an ENERGY
+     that pushes DRIVE and BOOM is one LEARN away). Its CONFIG is stored beside the returns'
+     (`setup.bus`). The row that says what RECALL takes has BUS. A snapshot from before there was
+     a bus says nothing of it and leaves it as it is. The snapshots the rig comes with are
+     unchanged. TAPE, COMP and LIMIT are still the rig's and no snapshot's.
+282. **A take has a fifteenth file, `14 DRUM BUS.wav`: what the bus did.** *Mine.* The lanes on the
+     bus as it made them, less those lanes as they came. That way round, every file added
+     together is still what the master was given, a lane's file is still the lane, and leaving
+     the one file out gives the drums without the bus. The other way (the bus's own output as a
+     file, to use in place of the five lanes) is the usual one and I can change to it: say.
+     Silent, and so not kept, when the bus was at rest all take.
+283. **KEY had not been reaching the sound at all, and now does.** Found while checking BOOM TO
+     KEY. The suite's modules take the key only while SF CONTROL is running, and SF-000 has no
+     CONTROL: it wrote the key down and nothing read it. SF-000's copy of the suite's processor
+     now takes the rig's own key as in force. **If KEY is set to a note in a session or a
+     snapshot of yours, it will now sound different**: the pitched lanes move by the key, and the
+     kick and the percussion tune to its nearest note (KEY FOLLOW, on in each lane's CONFIG,
+     lets a lane be). With KEY at OFF nothing changes. There is a check for it now (17 said "KEY
+     transposes" and nothing had tested it).
+284. **On MIDI:** the four are on channel 16, CC 71 to 74, and on the second row of the E16's
+     MASTER page. **SF-FX has to be loaded onto the E16 again** (SF-000 is unchanged).
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -1376,4 +1443,10 @@ many."
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.
+- **The drum bus (twenty-eighth) has not been heard by anyone.** Every figure in 277 to 280 is a
+  measurement on the kick or the clap alone. How it sounds on your drums together, whether the
+  four knobs' ranges are right, whether BOOM at 50 Hz sits with your kick: yours to say. Its
+  page on the E16 is checked against the scene file and a made-up E16 only.
+- **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
+  whether any snapshot of yours has KEY set.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

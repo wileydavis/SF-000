@@ -121,6 +121,261 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         if (! steady) ++bad;
     }
 
+    // The DRUM BUS, in the master. Heard on the kick alone: what the bus hands on is the kick's own
+    // stem and what the bus is recorded as doing to it, added together.
+    {
+        struct Tap : Engine::RecSink
+        {
+            std::vector<float> lane, bus, set; int want = 1;
+            void begin (int) noexcept override {}
+            void track (int idx, const float* l, const float*, int n) noexcept override
+            {
+                auto& into = idx == want ? lane : idx == 1 + kLanes + 2 ? bus : set;
+                if ((idx == want || idx == 1 + kLanes + 2 || idx == 0) && into.size() + (size_t) n <= into.capacity()) into.insert (into.end(), l, l + n);
+            }
+            void end (int) noexcept override {}
+        };
+        enum { kDrive, kCrunch, kPunch, kBoom };
+        using Knobs = std::vector<std::pair<int, float>>;
+        using Setup = std::vector<std::pair<const char*, float>>;
+        const int block = 256;
+        int lane = 0;                           // the lane that plays alone
+        double beat = 0.0;
+        std::vector<float> did, whole;          // (of the last run: what the bus did, and the set)
+        auto run = [&] (const Knobs& knobs, const Setup& setup = {}, float key = 0.0f, float level = -1.0f, bool alone = true)
+        {
+            Engine e; e.prepare (48000.0, block);
+            if (alone) for (int l = 0; l < kLanes; ++l) if (l != lane) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);       // one lane alone (the kick, unless said)
+            for (auto& k : knobs) e.set (cx::kBus + k.first, k.second, 0.0);
+            for (auto& sp : setup) e.setSetup ({ 3, 0, 0 }, sp.first, sp.second);
+            e.set (cx::kKey, key, 0.0);
+            if (level >= 0.0f) e.set (cx::lane (lane, 11), level, 0.0);
+            beat = 60.0 / e.tempo();
+            Tap tap; tap.want = 1 + lane;
+            for (auto* v : { &tap.lane, &tap.bus, &tap.set }) v->reserve (48000 * 6);
+            juce::AudioBuffer<float> b (2, block);
+            e.setRunning (true);
+            for (int i = 0; i < (int) (4.0 * beat * 48000.0 / block); ++i) e.render (b);       // a bar to settle in
+            e.setRecSink (&tap);
+            for (int i = 0; i < (int) (8.0 * beat * 48000.0 / block); ++i) e.render (b);       // two bars heard
+            e.setRecSink (nullptr);
+            did = tap.bus; whole = tap.set;
+            std::vector<float> out = tap.lane;
+            for (size_t i = 0; i < out.size() && i < tap.bus.size(); ++i) out[i] += tap.bus[i];
+            return out;
+        };
+        auto db = [] (double p) { return 10.0 * std::log10 (p + 1.0e-20); };
+        auto power = [] (const std::vector<float>& x) { double s = 0.0; for (float v : x) s += (double) v * v; return s / (double) std::max<size_t> (1, x.size()); };
+        auto peak = [] (const std::vector<float>& x) { float p = 0.0f; for (float v : x) p = std::max (p, std::fabs (v)); return (double) p; };
+        auto differ = [&] (const std::vector<float>& a, const std::vector<float>& b)
+        {
+            double d = 0.0, sum = 0.0;
+            for (size_t i = 0; i < a.size() && i < b.size(); ++i) { d += (double) (a[i] - b[i]) * (a[i] - b[i]); sum += (double) a[i] * a[i]; }
+            return 10.0 * std::log10 ((d + 1.0e-20) / (sum + 1.0e-20));
+        };
+        // how much of one pitch there is (Goertzel), over the whole of it or over a stretch after each beat
+        auto tone = [&] (const std::vector<float>& x, double hz, double fromMs = 0.0, double toMs = 1.0e9)
+        {
+            const double w = juce::MathConstants<double>::twoPi * hz / 48000.0, per = beat * 48000.0;
+            double re = 0.0, im = 0.0; int count = 0;
+            for (size_t i = 0; i < x.size(); ++i)
+            {
+                const double ms = std::fmod ((double) i, per) / 48.0;
+                if (ms < fromMs || ms >= toMs) continue;
+                re += x[i] * std::cos (w * (double) i); im += x[i] * std::sin (w * (double) i); ++count;
+            }
+            return (re * re + im * im) / std::max (1.0, (double) count * (double) count);
+        };
+        // the sound above 150 Hz over a stretch after each beat (two one-pole high-passes)
+        auto upper = [&] (const std::vector<float>& x, double fromMs, double toMs)
+        {
+            const double a = std::exp (-juce::MathConstants<double>::twoPi * 150.0 / 48000.0), per = beat * 48000.0;
+            double z1 = 0.0, z2 = 0.0, sum = 0.0; int count = 0;
+            for (size_t i = 0; i < x.size(); ++i)
+            {
+                z1 = x[i] + a * (z1 - x[i]); const double h1 = x[i] - z1;
+                z2 = h1 + a * (z2 - h1); const double h = h1 - z2;
+                const double ms = std::fmod ((double) i, per) / 48.0;
+                if (ms >= fromMs && ms < toMs) { sum += h * h; ++count; }
+            }
+            return sum / std::max (1, count);
+        };
+        const Setup offBus = { { "in_1", 0.0f }, { "in_2", 0.0f }, { "in_3", 0.0f }, { "in_4", 0.0f }, { "in_5", 0.0f } };
+
+        // At rest it is not there: the whole set, every lane playing, is what it is with no lane on the bus.
+        {
+            run ({}, {}, 0.0f, -1.0f, false);
+            const auto with = whole; const double didAtRest = peak (did);
+            run ({}, offBus, 0.0f, -1.0f, false);
+            const double d = differ (whole, with);
+            const bool ok = with.size() > 48000 && power (with) > 1.0e-6 && didAtRest == 0.0 && d < -100.0;     // (the lanes are added up in another order: the last bit of a float)
+            std::printf ("  %s: DRUM BUS: with its knobs at nought it does nothing (it is recorded as doing %.1e), and the set is the set with no lane on the bus (%.0f dB of difference)\n",
+                         ok ? "ok  " : "FAIL", didAtRest, d);
+            if (! ok) ++bad;
+        }
+        const auto plain = run ({});
+        const bool there = plain.size() > 48000 && power (plain) > 1.0e-6;
+
+        // every knob is heard: the four on the master's face, the four in its CONFIG
+        {
+            juce::String heard; bool all = there;
+            struct K { const char* name; int knob; const char* id; Knobs with; };
+            const K ks[8] = { { "DRIVE", kDrive, nullptr, {} }, { "CRUNCH", kCrunch, nullptr, {} }, { "PUNCH", kPunch, nullptr, {} }, { "BOOM", kBoom, nullptr, {} },
+                              { "DAMP", -1, "damp", { { kCrunch, 0.6f } } }, { "BOOM TUNE", -1, "boom_tune", { { kBoom, 0.7f } } },
+                              { "BOOM DECAY", -1, "boom_decay", { { kBoom, 0.7f } } }, { "MIX", -1, "mix", { { kDrive, 1.0f } } } };
+            for (int c = 0; c < 8; ++c)
+            {
+                Knobs lo = ks[c].with, hi = ks[c].with;
+                Setup slo, shi;
+                if (ks[c].knob >= 0) { lo.push_back ({ ks[c].knob, 0.0f }); hi.push_back ({ ks[c].knob, 1.0f }); }
+                else { slo.push_back ({ ks[c].id, 0.0f }); shi.push_back ({ ks[c].id, 1.0f }); }
+                const double d = differ (run (lo, slo), run (hi, shi));
+                heard << ks[c].name << " " << juce::String ((int) std::lround (d)) << (c < 7 ? ", " : "");
+                all = all && d > -30.0;
+            }
+            std::printf ("  %s: each of its eight knobs is heard, end to end of its travel (dB of difference: %s)\n", all ? "ok  " : "FAIL", heard.toRawUTF8());
+            if (! all) ++bad;
+        }
+
+        // MIX at nought is the drums as they came; half way their lows are not hollowed out
+        {
+            const auto none = run ({ { kDrive, 1.0f } }, { { "mix", 0.0f } }), half = run ({ { kBoom, 0.001f } }, { { "mix", 0.5f } });
+            const double lowPlain = tone (plain, 50.0) + tone (plain, 100.0) + tone (plain, 150.0), lowHalf = tone (half, 50.0) + tone (half, 100.0) + tone (half, 150.0);
+            const bool ok = std::abs (db (power (none)) - db (power (plain))) < 0.3 && std::abs (db (lowHalf) - db (lowPlain)) < 1.5;
+            std::printf ("  %s: MIX at nought is the kick as it came (%+.2f dB), and half way its lows are whole (%+.2f dB at 50, 100 and 150 Hz)\n",
+                         ok ? "ok  " : "FAIL", db (power (none)) - db (power (plain)), db (lowHalf) - db (lowPlain));
+            if (! ok) ++bad;
+        }
+
+        // DRIVE: denser, no hotter. And the same at any level the drums are at.
+        {
+            const auto d1 = run ({ { kDrive, 1.0f } });
+            const double up = db (power (d1)) - db (power (plain)), pk = 20.0 * std::log10 (peak (d1) / peak (plain));
+            const auto q0 = run ({}, {}, 0.0f, 0.35f), q1 = run ({ { kDrive, 1.0f } }, {}, 0.0f, 0.35f);
+            const double upQuiet = db (power (q1)) - db (power (q0)), quieter = db (power (q0)) - db (power (plain));
+            const bool ok = up > 2.0 && pk < 1.5 && pk > -3.0 && std::abs (upQuiet - up) < 1.0;
+            std::printf ("  %s: DRIVE makes the kick denser (%+.1f dB of level) and no hotter (its peak %+.1f dB); with the lane %.0f dB down it does the same (%+.1f dB)\n", ok ? "ok  " : "FAIL", up, pk, -quieter, upQuiet);
+            if (! ok) ++bad;
+            // the compressor comes in with the first third of it, and COMP off leaves saturation alone
+            const auto third = run ({ { kDrive, 0.33f } }), thirdDry = run ({ { kDrive, 0.33f } }, { { "comp", 0.0f } });
+            const double compDoes = differ (third, thirdDry);
+            const bool glue = compDoes > -30.0;
+            std::printf ("  %s: the compressor comes in with DRIVE (a third of the way up, COMP on against off: %.0f dB of difference)\n", glue ? "ok  " : "FAIL", compDoes);
+            if (! glue) ++bad;
+            bool finite = true; double worstPk = 0.0;
+            for (float ty : { 0.0f, 0.5f, 1.0f })
+            {
+                const auto all = run ({ { kDrive, 1.0f }, { kCrunch, 1.0f }, { kPunch, 1.0f }, { kBoom, 1.0f } }, { { "type", ty }, { "boom_decay", 1.0f } });
+                for (float v : all) finite = finite && std::isfinite (v);
+                finite = finite && peak (all) < 6.0 * peak (plain) && power (all) > power (plain);
+                worstPk = std::max (worstPk, peak (all) / peak (plain));
+            }
+            std::printf ("  %s: with everything full up, in each TYPE, it stays within bounds (its peak %.1f times the kick's at most)\n", finite ? "ok  " : "FAIL", worstPk);
+            if (! finite) ++bad;
+        }
+
+        // PUNCH, on the clap: either way the hit stands out more against what follows; right the tail is
+        // lifted, left it is pulled down. And on the kick it leaves the sub as it was.
+        {
+            lane = 3;
+            const auto mid = run ({}), full = run ({ { kPunch, 1.0f } }), tight = run ({ { kPunch, 0.0f } });
+            lane = 0;
+            const double tMid = db (upper (mid, 60.0, 220.0)), tFull = db (upper (full, 60.0, 220.0)), tTight = db (upper (tight, 60.0, 220.0));
+            const double hMid = db (upper (mid, 0.0, 8.0)), hFull = db (upper (full, 0.0, 8.0)), hTight = db (upper (tight, 0.0, 8.0));
+            const auto kFull = run ({ { kPunch, 1.0f } }), kTight = run ({ { kPunch, 0.0f } });
+            const double subFull = db (tone (kFull, 50.0)) - db (tone (plain, 50.0)), subTight = db (tone (kTight, 50.0)) - db (tone (plain, 50.0));
+            const bool ok = power (mid) > 1.0e-8 && tFull > tMid + 2.0 && tTight < tMid - 3.0 && hFull > hMid + 1.0 && hTight > hMid + 1.0 && std::abs (subFull) < 1.5 && std::abs (subTight) < 1.5;
+            std::printf ("  %s: PUNCH right lifts what follows the clap's hit (%+.1f dB above 150 Hz, 60 to 220 ms on), left pulls it down (%+.1f dB); the hit itself comes out either way (%+.1f, %+.1f dB); the kick's sub is left as it was (%+.1f, %+.1f dB at 50 Hz)\n",
+                         ok ? "ok  " : "FAIL", tFull - tMid, tTight - tMid, hFull - hMid, hTight - hMid, subFull, subTight);
+            if (! ok) ++bad;
+        }
+
+        // BOOM: weight at BOOM TUNE, for as long as BOOM DECAY; in the rig's key unless told not to
+        {
+            const float at50 = (50.0f - 30.0f) / 60.0f, at47 = (47.0f - 30.0f) / 60.0f;
+            const auto some = run ({ { kBoom, 1.0f } }, { { "boom_tune", at50 }, { "boom_decay", 0.3f } }), lng = run ({ { kBoom, 1.0f } }, { { "boom_tune", at50 }, { "boom_decay", 1.0f } });
+            const double more = db (tone (some, 50.0)) - db (tone (plain, 50.0));
+            const double late = db (tone (lng, 50.0, 280.0, 430.0)) - db (tone (some, 50.0, 280.0, 430.0));
+            const double loud = db (tone (lng, 50.0)) - db (tone (some, 50.0));
+            // KEY of A: the nearest A to 47 Hz is 55
+            const auto free = run ({ { kBoom, 1.0f } }, { { "boom_tune", at47 }, { "boom_decay", 1.0f }, { "to_key", 0.0f } }, 10.0f / 12.0f);
+            const auto keyed = run ({ { kBoom, 1.0f } }, { { "boom_tune", at47 }, { "boom_decay", 1.0f } }, 10.0f / 12.0f);
+            const double freeLean = db (tone (free, 55.0, 250.0, 430.0)) - db (tone (free, 47.0, 250.0, 430.0)), keyedLean = db (tone (keyed, 55.0, 250.0, 430.0)) - db (tone (keyed, 47.0, 250.0, 430.0));
+            const bool ok = more > 4.0 && late > 2.0 && loud > -3.0 && keyedLean > freeLean + 6.0;
+            std::printf ("  %s: BOOM adds weight at BOOM TUNE (%+.1f dB at 50 Hz); BOOM DECAY keeps it ringing (%+.1f dB there, 280 to 430 ms on) and does not thin it (%+.1f dB over the bar); in the key of A a boom tuned to 47 Hz rings at 55 (55 against 47 Hz: %+.1f dB, from %+.1f with BOOM TO KEY off)\n",
+                         ok ? "ok  " : "FAIL", more, late, loud, keyedLean, freeLean);
+            if (! ok) ++bad;
+        }
+
+        // KEY reaches the sound: the bass moves with it (and so the boom above could)
+        {
+            auto bass = [&] (float key)
+            {
+                Engine e; e.prepare (48000.0, block);
+                for (int l = 0; l < kLanes; ++l) if (l != 5) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+                e.set (cx::kKey, key, 0.0);
+                Tap tap; tap.want = 1 + 5;
+                for (auto* v : { &tap.lane, &tap.bus, &tap.set }) v->reserve (48000 * 6);
+                juce::AudioBuffer<float> b (2, block);
+                e.setRunning (true);
+                for (int i = 0; i < (int) (4.0 * beat * 48000.0 / block); ++i) e.render (b);
+                e.setRecSink (&tap);
+                for (int i = 0; i < (int) (8.0 * beat * 48000.0 / block); ++i) e.render (b);
+                e.setRecSink (nullptr);
+                return tap.lane;
+            };
+            const auto off = bass (0.0f), inG = bass (8.0f / 12.0f);
+            const double d = differ (off, inG);
+            const bool ok = power (off) > 1.0e-7 && d > -20.0;
+            std::printf ("  %s: KEY moves the bass (OFF against G: %.0f dB of difference)\n", ok ? "ok  " : "FAIL", d);
+            if (! ok) ++bad;
+        }
+
+        // A lane taken off the bus in its CONFIG goes straight to the mix: the bus has nothing of it to work on
+        {
+            run ({ { kDrive, 1.0f }, { kBoom, 1.0f } });
+            const double on = peak (did);
+            run ({ { kDrive, 1.0f }, { kBoom, 1.0f } }, { { "in_1", 0.0f } });
+            const double off = peak (did);
+            const bool ok = on > 1.0e-3 && off < 1.0e-6;
+            std::printf ("  %s: with DRIVE and BOOM up the bus works on the kick (%.3f at most); with KICK put out in its CONFIG it has nothing to work on (%.1e)\n", ok ? "ok  " : "FAIL", on, off);
+            if (! ok) ++bad;
+        }
+
+        // A snapshot holds the bus: its four knobs travel on a recall, its CONFIG comes with them; a recall can leave it out
+        {
+            Engine e; Session s (e, false);
+            const int drive = e.find ("bus.drive"), boom = e.find ("bus.boom");
+            auto cfg = [&] (const char* id) { for (auto& kv : e.getSetup ({ 3, 0, 0 })) if (kv.first == id) return kv.second; return -1.0f; };
+            s.userSet (drive, 0.6f); s.userSet (boom, 0.4f);
+            e.setSetup ({ 3, 0, 0 }, "type", 1.0f); e.setSetup ({ 3, 0, 0 }, "in_6", 1.0f);
+            const auto hot = s.take();
+            s.userSet (drive, 0.0f); s.userSet (boom, 0.0f);
+            e.setSetup ({ 3, 0, 0 }, "type", 0.0f); e.setSetup ({ 3, 0, 0 }, "in_6", 0.0f);
+            const auto cold = s.take();
+            s.recall (hot);
+            const bool back = drive >= 0 && boom >= 0 && std::abs (e.target (drive) - 0.6f) < 1.0e-4f && std::abs (e.target (boom) - 0.4f) < 1.0e-4f && cfg ("type") > 0.9f && cfg ("in_6") > 0.5f && e.laneOnBus (5);
+            Session::Scope notBus; notBus.bus = false;
+            s.recall (cold, notBus);
+            const bool left = std::abs (e.target (drive) - 0.6f) < 1.0e-4f && cfg ("type") > 0.9f && e.laneOnBus (5);
+            s.recall (cold);
+            const bool gone = e.target (drive) < 1.0e-4f && cfg ("type") < 0.1f && ! e.laneOnBus (5);
+            // a snapshot knob can reach it, and a snapshot from before there was a bus leaves it alone
+            const bool reach = Session::reaches (e, drive) && e.control (drive).snapshot && e.control (drive).glides;
+            s.userSet (drive, 0.5f);
+            Snapshot old = *s.findSnap (cold);
+            old.id = 4242; old.hasBus = false; for (int k = 0; k < kBusKnobs; ++k) old.values[(size_t) (cx::kBus + k)] = -1.0f;
+            s.library.push_back (old);
+            s.recall (4242);
+            const bool alone = std::abs (e.target (drive) - 0.5f) < 1.0e-4f;
+            const bool ok = back && left && gone && reach && alone;
+            std::printf ("  %s: a snapshot holds the drum bus (its knobs and its CONFIG come back; a recall without BUS leaves it; a snapshot knob can reach it; a snapshot from before it leaves it be)\n", ok ? "ok  " : "FAIL");
+            if (! ok) { std::printf ("    (back %d left %d gone %d reach %d alone %d)\n", (int) back, (int) left, (int) gone, (int) reach, (int) alone); ++bad; }
+        }
+    }
+
+    if (std::getenv ("SF000_TEST_BUS") != nullptr) { std::printf ("%s\n", bad == 0 ? "(the drum bus's checks only: passed)" : "(the drum bus's checks only: FAILED)"); return bad; }
+
     // Recording: the set and its parts go to disk as they are played.
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_rec_test");
@@ -141,6 +396,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         Engine e;
         e.prepare (48000.0, 128);
         e.setPattern (2, Pattern());                           // OPEN HAT plays nothing this take
+        e.set (cx::kBus, 0.5f, 0.0);                           // the drum bus at work: what it does is one of the parts
         juce::AudioBuffer<float> b (2, 128);
         for (int k = 0; k < 750; ++k) e.render (b);            // settled, as the app is
         Recorder rec (e);
@@ -179,7 +435,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         const auto notes = dir.getChildFile ("take.txt").loadFileAsString();
         stemsOk = stemsOk && kept == Engine::kRecTracks - 2 && hatGone && notes.contains ("NOT KEPT, SILENT THROUGHOUT: 03 OPEN HAT") && notes.contains ("LOST     nothing")
                   && dir.getChildFile ("session-at-start.json").existsAsFile() && rec.lostSeconds() == 0.0;
-        std::printf ("  %s: ten lanes and the two returns kept in 32-bit float, each %d samples of silence longer; the lane that played nothing is not kept, and take.txt says so\n",
+        std::printf ("  %s: ten lanes, the two returns and what the drum bus does kept in 32-bit float, each %d samples of silence longer; the lane that played nothing is not kept, and take.txt says so\n",
                      stemsOk ? "ok  " : "FAIL", lead);
         if (! stemsOk) ++bad;
 
@@ -202,7 +458,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             if (c > best) { best = c; bestLag = lag; }
         }
         const bool lined = std::abs (bestLag) <= 2;
-        std::printf ("  %s: the lanes and returns added together line up with the set (best fit %d samples off)\n", lined ? "ok  " : "FAIL", bestLag);
+        std::printf ("  %s: the lanes, the returns and what the drum bus does, added together, line up with the set (best fit %d samples off)\n", lined ? "ok  " : "FAIL", bestLag);
         if (! lined) ++bad;
 
         // a second take is a second folder
@@ -1307,14 +1563,30 @@ static int uiTest()
         ses.bring ({ S::fInsert, 2 }, 1); sc.testTick(); draw();
         const bool toInsert = ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 6 && ses.cfg.slot == 2;
         ses.bring ({ S::fMaster, 0 }, 1); sc.testTick(); draw();
-        const bool shutByMaster = ! ses.cfgOpen;
+        const bool toMaster = ses.cfgOpen && ses.cfg.kind == 3;         // (the master's CONFIG is its drum bus's)
+        int busKnobs = 0, laneKeys = 0;
+        for (auto& h : sc.testHits()) for (int k = 0; k < kBusKnobs; ++k) if (Screen::testIsControl (h, cx::kBus + k)) ++busKnobs;
+        for (auto& sp : ses.configList()) if (sp.group == "LANES") ++laneKeys;
+        ses.bring ({ S::fSeq, 0 }, 1); sc.testTick(); draw();
+        const bool shutBySeq = ! ses.cfgOpen;
+        // the master's own C key, under the mouse
+        {
+            juce::Point<float> at; bool found = false;
+            for (auto& h : sc.testHits()) if (Screen::testIsBusConfigKey (h)) { at = h.r.getCentre(); found = true; }
+            if (found) { click (at); sc.testTick(); draw(); }
+        }
+        const bool byKey = ses.cfgOpen && ses.cfg.kind == 3 && ! sc.testConfigRect().isEmpty();
+        if (byKey) { ses.openConfig ({ 3, 0, 0 }); sc.testTick(); draw(); }
+        const bool shutByMaster = toMaster && busKnobs == kBusKnobs && laneKeys == kLanes && shutBySeq && byKey && ! ses.cfgOpen;
+        if (! shutByMaster) std::printf ("    (to the master %d, %d bus knobs, %d lane keys, shut by the strip %d, by its key %d, open %d)\n", (int) toMaster, busKnobs, laneKeys, (int) shutBySeq, (int) byKey, (int) ses.cfgOpen);
         ses.bringLane (4, 1);
         sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();
         click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fMaster, 0); })); sc.testTick();
         const bool mouseLeaves = ses.cfgOpen && ses.cfg.lane == 4 && ses.front.kind == S::fMaster;      // (under the mouse CONFIG stays where it was put)
-        sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();
+        sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();        // (C: to what is in front now, the master's)
+        sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();        // (and shut)
         check (opened && along && toInsert && shutByMaster && mouseLeaves && ! ses.cfgOpen,
-               "C opens CONFIG on what is in front and shuts it; brought to the front by a key or a controller, a lane or an insert takes CONFIG with it and the master shuts it; under the mouse it stays where it was put");
+               "C opens CONFIG on what is in front and shuts it; brought to the front by a key or a controller, a lane, an insert or the master (its drum bus: four knobs on its face, the eleven lanes among its CONFIG) takes CONFIG with it and the sequencer strip shuts it; the master's own C opens it; under the mouse it stays where it was put");
 
         ses.wantShowing = 1; sc.testTick();
         const bool toLibrary = sc.testPage() == Screen::pLibrary && ses.showing == 1 && ses.wantShowing == -1;
@@ -1354,13 +1626,13 @@ static int uiTest()
         click (firstOf (Screen::testIsCueKey)); draw();
         int cards = countOf (Screen::testIsCard);
         click (firstOf (Screen::testIsCard, cards - 1)); draw();            // the one just taken: cued (or chosen, if it has no sound kept)
-        const bool row = countOf (Screen::testIsScope) == kLanes + 2;
+        const bool row = countOf (Screen::testIsScope) == kLanes + 3;
         click (firstOf (Screen::testIsScope, 0)); draw();                   // the kick put out
         const bool out = ! sc.testScope (0) && sc.testScope (5);
         click (firstOf (Screen::testIsRecallKey)); draw();
         const bool took = std::abs (e.target (cut) - 0.15f) < 1.0e-4f && std::abs (e.target (punch) - 0.9f) < 1.0e-4f && sc.testScope (0);
         if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));
-        check (noneYet && row && out && took, "the library, a snapshot cued: thirteen keys say what RECALL takes; with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
+        check (noneYet && row && out && took, "the library, a snapshot cued: fourteen keys say what RECALL takes (the lanes, the returns, the drum bus, the key); with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
         if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (CUE off again)
         sc.setPage (Screen::pMain); draw();
     }
@@ -2243,6 +2515,7 @@ static int shot (const juce::StringArray& args)
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
     else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
+    else if (cfg == "master") sc.showConfig ({ 3, 0, 0 });
     if (cfg.isNotEmpty() && args.contains ("--load")) sc.showLoad (arg ("--load", ""));         // LOAD's list, open on that folder
     if (args.contains ("--cue")) sc.showCue (arg ("--cue", "-1").getIntValue());                 // the library's CUE lit and a snapshot chosen (a number: that part put out of the recall)
     // --rec: a take under way (in a folder of the system's temporary ones, gone again afterwards)
@@ -3001,7 +3274,7 @@ static int midiTest()
                                 : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl)
                                 : (ctl == cx::kGlide && ch == 16 && num == e16::kGlideCc));
             }
-            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3) + 4 + 4 * kSpaceModels + 3 + 1 + 16;
+            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3) + 4 + 4 * kSpaceModels + 3 + kBusKnobs + 1 + 16;
             check (right && reached == expected, (juce::String (reached) + " controls have a MIDI address, and each address reaches its own control").toRawUTF8());
 
             // an insert's places, the returns, the master, a lane's MUTE
@@ -3429,7 +3702,7 @@ static int midiTest()
                "OPEN on BASS opens its CONFIG and turns the E16 to it (" + toCfg + ", " + cfgTitle + ": " + juce::String ((int) list.size()) + " controls, twelve to a page, each named and told its value); a knob and a list are turned from it and left where the hand put them; PAGE + and PAGE - ("
                    + toPage2 + ", " + toPage1 + "); OPEN again shuts it and the E16 is back on BASS (" + shut + ")");
 
-        // the returns have two: A, then B, then shut. The master has none.
+        // the returns have two: A, then B, then shut. The master's is its drum bus's.
         ses.bring ({ Session::fReturns, 0 }, 2); ticks (2); out.clear();
         press (16, e16::kOpenKey); ticks (1);
         const bool openA = ses.cfgOpen && ses.cfg.kind == 2 && ses.cfg.slot == 0;
@@ -3438,8 +3711,15 @@ static int midiTest()
         press (16, e16::kOpenKey); ticks (1);
         const bool shutAgain = ! ses.cfgOpen;
         ses.bring ({ Session::fMaster, 0 }, 2); ticks (2);
-        press (16, e16::kOpenKey); ticks (1);
-        check (openA && openB && shutAgain && ! ses.cfgOpen, "OPEN on the returns: DUB's CONFIG, SPACE's, shut. On the master: nothing");
+        press (16, e16::kOpenKey); ticks (4);
+        const bool openM = ses.cfgOpen && ses.cfg.kind == 3;
+        const juce::String busTitle = said (5);
+        const auto busList = ses.configList();
+        bool lanesNamed = false;
+        for (auto& sp : busList) lanesNamed = lanesNamed || (sp.group == "LANES" && sp.name == "CLOSED HAT" && sp.value > 0.5f);
+        press (16, e16::kOpenKey); ticks (2);
+        check (openA && openB && shutAgain && openM && busTitle.startsWith ("DRM BUS CFG") && lanesNamed && ! ses.cfgOpen,
+               "OPEN on the returns: DUB's CONFIG, SPACE's, shut. On the master: its drum bus's (" + busTitle + ", " + juce::String ((int) busList.size()) + " controls, the lanes by name), and shut");
         out.clear();
 
         // the pointer's wheel: knob 13 pressed takes it up, its turns go through the stops, and a second press is the choice

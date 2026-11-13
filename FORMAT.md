@@ -76,7 +76,7 @@ this build does not have is written back as it was read.
   "patterns": [ { "len": 16, "steps": [ [step, velocity, gate, ratchet, note, octave], ... ] } per lane ],
   "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],
   "gen":      [ armed generator per lane, -1 none ],
-  "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ] },
+  "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ], "bus": {..} },
   "insertFiles": [ { "lane", "slot", "files": [ { "place", "type", "files": [paths] } ] } ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
 }
@@ -85,7 +85,11 @@ this build does not have is written back as it was read.
 - **`values`**: every stored control by id. A lane's knob is `<slot>.<param>`; an insert's cell
   is `<slot>.i<insert>.c<cell>` (by place: what the place is depends on the effect in `inserts`);
   the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on; the returns are
-  `ret.dub_*`, `ret.space_*`, `ret.conv_*`. A control missing from a snapshot is left where it is.
+  `ret.dub_*`, `ret.space_*`, `ret.conv_*`; the drum bus's four are `bus.drive`, `bus.crunch`,
+  `bus.punch`, `bus.boom`. A control missing from a snapshot is left where it is.
+- **`setup.bus`**: the drum bus's CONFIG, by parameter id (`damp`, `boom_tune`, `type`, ... and
+  `in_1` to `in_11`: which lanes play through it, in `made.slots` order). Absent on a snapshot
+  from before there was a bus (twenty-eighth build): the bus is then left as it is.
 - **A step** may grow more numbers after the sixth; a reader takes the ones it knows.
 - **`ext`** is where another tool writes: `ext.<toolname>`. Tags, an embedding, a place on a map,
   a note. It is the one place a tool may change in a snapshot that already exists.
@@ -99,6 +103,7 @@ this build does not have is written back as it was read.
   "lanes":   { "kick": "<print>", ... },                       each lane's definition
   "fx":      { "DELAY": "<print>", "RADIO": "<print>" },       each effect this snapshot has in an insert
   "returns": { "dub": "<print>", "space": "<print>", "conv": "<print>" },
+  "bus":     "<print>",                                         the drum bus (absent before there was one)
   "chassis": "<print>"
 }
 ```
@@ -121,6 +126,7 @@ Every definition any snapshot in the file names, by print. Never pruned.
 | `lane` | what plays in a slot | `slot`, `name`, `engine` (a print) and `engineId`, `pitched`, `octave`, `fixed` (parameters set once, plain units), `knobs` (twelve: `id`, `label`, `param`, `kind`, `lo`, `hi`) |
 | `fx` | an insert effect | `name`, `engine`, `fixed`, `cells` (eight places: `id` c1..c8, `label`, `param`, `kind`, `lo`, `hi`; null = empty) |
 | `return` | DUB, or SPACE as reverb or as convolution | as `fx`, with four `knobs` by full id |
+| `bus` | the drum bus | as `return`: four `knobs` by full id (`bus.drive` ...) |
 | `chassis` | what every lane has beside its instrument | `v`, the counts, and the strip's and the rig's stored controls: `id`, `label`, `kind`, `choices` |
 
 **From a stored value to a parameter.** A knob (`kind` u or b) at `v` puts its parameter at

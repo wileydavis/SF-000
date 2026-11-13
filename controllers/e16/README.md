@@ -86,7 +86,7 @@ and sends to the same port.
 - **Knob 14 pressed is OPEN.** CONFIG for what is in front, and the E16 goes to CONFIG's page;
   pressed there (it reads SHUT) CONFIG shuts and the E16 is back on the module's page. The returns
   have two: DUB's, SPACE's, then shut. On the snapshot knobs OPEN is the library; in the library
-  it is the way back. The master and the sequencer strip have nothing behind them.
+  it is the way back. The master's is its drum bus's. The sequencer strip has nothing behind it.
 - **On the snapshot page knob 1 pressed is GLIDE and knob 13 pressed is the wheel**, as on a
   lane's page: those two snapshot knobs are not recalled by a press on the E16 (a double-click on
   the screen still does it). Knob 14 there, and knobs 13 and 14 on the library's map, where a
@@ -133,7 +133,7 @@ page 3   INS 1    the active lane's first insert: its eight places where the scr
 page 4   INS 2      1 2 3 4     (DELAY: TIME FEEDBACK TONE DRIVE
 page 5   INS 3      5 6 7 8              THROW FREEZE MIX WIDTH)
 page 6   RETURNS  1-4 DUB TIME, FDBK, TONE, DRIVE; 5-8 SPACE SIZE, DECAY, DARK, DUCK
-page 7   MASTER   1 TAPE, 2 COMP, 3 LIMIT
+page 7   MASTER   1 TAPE, 2 COMP, 3 LIMIT; 5 to 8 the drum bus's DRIVE, CRUNCH, PUNCH, BOOM
 page 8   SEQ      1 LENGTH, 2 HITS, 3 ROTATE, 4 ACCENTS, 5 SEED (the active lane's)
 page 9   CFG 1    CONFIG's controls in the order its panel has them, twelve to a page
 page 10  CFG 2      15 [press]: the page before   16 [press]: the next
@@ -198,7 +198,7 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | the pointer's wheel, where knob 13 is nothing else | 16 | CC 31 |
 | knob 13 pressed (the wheel), knob 14 pressed (OPEN) | 16 | CC 33, CC 34 (127 down, 0 up) |
 | CONFIG's page before, the next (knobs 15, 16 pressed) | 16 | CC 35, CC 36 |
-| the returns' eight knobs, the master's three | 16 | CC 60-67, CC 68-70 |
+| the returns' eight knobs, the master's three, the drum bus's four | 16 | CC 60-67, CC 68-70, CC 71-74 |
 | the page that came up | 16 | CC 119: 1-12 in SF-000 (12: the snapshot page), 21-32 in SF-FX |
 | a MAP knob in place p, its press | 15 | CC 11 + p, CC 43 + p |
 | a FIND knob in place p (1-4), its press | 14 | CC 11 + p, CC 43 + p |

@@ -439,6 +439,11 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
         return true;
     }
     if (ctl >= cx::kRetMS) { where = ctl - cx::kRetMS < 2 ? "RETURN A, THE DUB DELAY" : "RETURN B, THE SPACE"; what = help::param ("LANE", (ctl - cx::kRetMS) % 2 == 0 ? "mute" : "solo"); return true; }
+    if (ctl >= cx::kBus)
+    {
+        where = "MASTER, THE DRUM BUS"; what = help::param (drumBus().module, drumBus().cells[ctl - cx::kBus].param);
+        return true;
+    }
     if (ctl >= cx::kRet)
     {
         const int j = ctl - cx::kRet;
@@ -538,6 +543,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             const auto& sp = cfgParams[(size_t) h.a];
             const char* module = cfg.kind == 0 ? lanes()[(size_t) cfg.lane].module
                                : cfg.kind == 1 ? (eng.insertType (cfg.lane, cfg.slot) >= 0 ? effects()[(size_t) eng.insertType (cfg.lane, cfg.slot)].module : nullptr)
+                               : cfg.kind == 3 ? drumBus().module
                                : (cfg.slot == 0 ? returnA() : returnB (eng.spaceModel())).module;
             t.title = (sp.group.isNotEmpty() && sp.group != "SOUND" && sp.group != "EFFECT" ? sp.group + ": " : String()) + sp.name;
             if (const char* what = module != nullptr ? help::param (module, sp.id.toRawUTF8()) : nullptr) body = what;
@@ -550,7 +556,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             break;
         }
         case hScope:
-            t.title = "WHAT RECALL TAKES: " + (h.a < kLanes ? String (h.a + 1) + " " + lanes()[(size_t) h.a].name : h.a == kLanes ? String ("THE RETURNS") : String ("THE KEY"));
+            t.title = "WHAT RECALL TAKES: " + (h.a < kLanes ? String (h.a + 1) + " " + lanes()[(size_t) h.a].name : h.a == kLanes ? String ("THE RETURNS") : h.a == kLanes + 1 ? String ("THE DRUM BUS") : String ("THE KEY"));
             body = "LIT: THIS PART COMES FROM THE SNAPSHOT WHEN RECALL IS PRESSED. OUT: IT STAYS AS IT IS NOW. CLICK TO PUT IT OUT OR BACK. AFTER A RECALL, AND FOR ANOTHER SNAPSHOT, ALL ARE LIT AGAIN.";
             break;
         case hLane:
@@ -845,7 +851,7 @@ float Screen::slideGoal() const
 {
     // the column of the panel CONFIG is open on goes to the third column, the one beside CONFIG
     if (! cfgOpen || page != pMain) return 0.0f;
-    const int col = cfg.kind == 0 ? (cfg.lane < 5 ? cfg.lane : cfg.lane - 5) : cfg.kind == 1 ? cfg.slot : 3;
+    const int col = cfg.kind == 0 ? (cfg.lane < 5 ? cfg.lane : cfg.lane - 5) : cfg.kind == 1 ? cfg.slot : cfg.kind == 3 ? 4 : 3;
     return (float) (2 - col) * 282.0f;
 }
 
@@ -927,6 +933,7 @@ void Screen::drawConfig (G& g, R r)
         const int t = eng.insertType (cfg.lane, cfg.slot);
         name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
     }
+    else if (cfg.kind == 3) { tag = "M"; name = "DRUM BUS"; }
     else { tag = cfg.slot == 0 ? "A" : "B"; name = cfg.slot == 0 ? "DUB" : "SPACE"; }
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, tag)) + 10.0f);
     this->tag (g, R (x0, y0, wTag, 26), tag);
@@ -1315,6 +1322,16 @@ void Screen::drawMaster (G& g, R r)
     const float wTitle = title (g, x0, y0, "MASTER", ses.front.kind == Session::fMaster);
     chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
+    // the drum bus: its four knobs, and C for the rest of it
+    {
+        const float bx = x0 + 204;
+        if (vis (g, R (bx, y0, 132, 26))) text (g, "DRUM BUS", R (bx + 4, y0, 90, 26), fLegend, col::black, juce::Justification::centredLeft);
+        const R kr (bx + 106, y0 + 2, 22, 22);
+        const bool open = cfgOpen && cfg.kind == 3;
+        if (vis (g, kr)) { key (g, kr, open ? col::black : col::white); textRaw (g, "C", kr, fLbl, inkOn (cap (open ? col::black : col::white), open ? col::lit : col::black)); }
+        hit (kr.expanded (1), hConfig, 3, 0);
+        for (int k = 0; k < kBusKnobs; ++k) control (g, cx::kBus + k, bx + (float) (k % 2) * 66, body + (float) (k / 2) * 77, 64, col::lit);
+    }
     if (! vis (g, R (x0, body + 60, 544, 100))) return;
     // FAULT, gain reduction, loudness
     const float fy = body + 77;
@@ -1325,7 +1342,7 @@ void Screen::drawMaster (G& g, R r)
     const float lu = eng.lufs.load();
     readout (g, R (x0 + 132, fy, 64, 42), "LUFS", lu < -60.0f ? String ("--") : String (lu, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     // meters: every lane as it reaches the mix, then the mix itself
-    const R mp (x0 + 212, y0, 332, 180);
+    const R mp (x0 + 342, y0, 202, 180);
     window (g, mp, col::white);
     const float top = mp.getY() + 26, H = 122.0f, bot = top + H;
     auto yOf = [bot, H] (float db) { return bot - juce::jlimit (0.0f, H, (db + 60.0f) / 66.0f * H); };
@@ -1337,20 +1354,20 @@ void Screen::drawMaster (G& g, R r)
     };
     for (int l = 0; l < kLanes; ++l)
     {
-        const float x = mp.getX() + 8 + (float) l * 23;
-        bar (x, 18, eng.laneDb[(size_t) l].load());
-        const R nb (x - 2, bot + 8, 22, 16);
+        const float x = mp.getX() + 7 + (float) l * 12;
+        bar (x, 11, eng.laneDb[(size_t) l].load());
+        const R nb (x - 1, bot + 8, 13, 16);
         const bool act = l == ses.activeLane;
         if (act) { g.setColour (tone (col::black)); g.fillRect (nb); }
         textRaw (g, String (l + 1), nb, fLbl, act ? (night() ? col::black : col::lit) : tone (col::black));
     }
-    const float mx = mp.getX() + 267;
-    bar (mx, 16, eng.peakL.load());
-    bar (mx + 18, 16, eng.peakR.load());
-    flatKey (g, R (mx, mp.getY() + 6, 16, 12), eng.clipL.load() ? col::red : col::white);       // (flags on the display, not keys)
-    flatKey (g, R (mx + 18, mp.getY() + 6, 16, 12), eng.clipR.load() ? col::red : col::white);
-    text (g, "MIX", R (mx - 4, bot + 8, 42, 16), fLbl, col::black);
-    const float sx = mx + 37;
+    const float mx = mp.getX() + 144;
+    bar (mx, 13, eng.peakL.load());
+    bar (mx + 14, 13, eng.peakR.load());
+    flatKey (g, R (mx, mp.getY() + 6, 13, 12), eng.clipL.load() ? col::red : col::white);       // (flags on the display, not keys)
+    flatKey (g, R (mx + 14, mp.getY() + 6, 13, 12), eng.clipR.load() ? col::red : col::white);
+    text (g, "MIX", R (mx - 4, bot + 8, 35, 16), fLbl, col::black);
+    const float sx = mx + 29;
     g.setColour (col::amber); g.fillRect (R (sx, yOf (0), 3, yOf (-6) - yOf (0)));
     g.setColour (col::red); g.fillRect (R (sx, yOf (6), 3, yOf (0) - yOf (6)));
     static const int ticks[] = { -48, -24, -12, 0 };
@@ -1359,7 +1376,7 @@ void Screen::drawMaster (G& g, R r)
         g.setColour (tone (col::black)); g.fillRect (R (sx, yOf ((float) t) - 1, 6, 2));
         text (g, t == 0 ? String ("0") : String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) + String (-t), R (sx + 7, yOf ((float) t) - 7, 22, 14), fLbl, col::black, juce::Justification::centredLeft);
     }
-    hit (R (mx - 2, mp.getY() + 2, 40, 20), hAct, aClipReset, 0);
+    hit (R (mx - 2, mp.getY() + 2, 32, 20), hAct, aClipReset, 0);
 }
 
 void Screen::drawSequencer (G& g, R r)
@@ -1624,11 +1641,11 @@ void Screen::drawLibrary (G& g)
         if (cueMode && ses.findSnap (id) != nullptr)
         {
             text (g, "RECALL TAKES", R (x0 + 386, y0 + 4, 96, 24), fLbl, col::black, juce::Justification::centredLeft);
-            for (int i = 0; i < kLanes + 2; ++i)
+            for (int i = 0; i < kLanes + 3; ++i)
             {
                 const R kr (x0 + 486 + (float) i * 40, y0 + 4, 36, 24);
                 key (g, kr, scopeOn[(size_t) i] ? col::white : col::putty);
-                const String name = i < kLanes ? String (i + 1) : i == kLanes ? String ("RET") : String ("KEY");
+                const String name = i < kLanes ? String (i + 1) : i == kLanes ? String ("RET") : i == kLanes + 1 ? String ("BUS") : String ("KEY");
                 if (scopeOn[(size_t) i]) text (g, name, kr, fLbl, col::black);
                 else textRaw (g, name, kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));        // (put out: still to be read, dimly)
                 hit (kr.expanded (1), hScope, i, 0);
@@ -1781,7 +1798,7 @@ void Screen::act (int a)
             if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr)
             {
                 Session::Scope sc;
-                if (id == scopeFor) { for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i]; sc.returns = scopeOn[(size_t) kLanes]; sc.master = scopeOn[(size_t) kLanes + 1]; }
+                if (id == scopeFor) { for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i]; sc.returns = scopeOn[(size_t) kLanes]; sc.bus = scopeOn[(size_t) kLanes + 1]; sc.master = scopeOn[(size_t) kLanes + 2]; }
                 selSnap = id; ses.recall (id, sc); ses.cue (0);
                 scopeOn.fill (true);                    // (the next recall takes everything again)
             }
@@ -1878,13 +1895,13 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hLane: case hLanePanel:    // its name, or its plate off the controls: the lane comes to the front
             if (h->kind == hLanePanel && h->a == ses.activeLane && ses.front.kind == Session::fLane) break;
             ses.bringLane (h->a, 0);
-            if (cfgOpen && cfg.kind != 2) { cfgStale = true; cfgScroll = 0; }
+            if (cfgOpen && cfg.kind < 2) { cfgStale = true; cfgScroll = 0; }
             break;
         case hDropFx:   ses.bring ({ h->a == 1 ? (int) Session::fInsert : (int) Session::fReturns, h->a == 1 ? h->b : 0 }, 0); break;
         case hFront:    ses.bring ({ h->a, h->b }, 0); break;
         case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
         case hFile:     pickLoad (h->a); break;
-        case hScope:    if (h->a >= 0 && h->a < kLanes + 2) scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a]; break;
+        case hScope:    if (h->a >= 0 && h->a < kLanes + 3) scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a]; break;
         case hSetup:
             if (h->a < (int) cfgParams.size())
             {
@@ -2159,7 +2176,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey)
     {
         ses.bringLane (juce::jlimit (0, kLanes - 1, ses.activeLane + (k == juce::KeyPress::upKey ? -1 : 1)), 1);
-        if (cfgOpen && cfg.kind != 2) { cfgStale = true; cfgScroll = 0; }
+        if (cfgOpen && cfg.kind < 2) { cfgStale = true; cfgScroll = 0; }
         repaint();
         return true;
     }

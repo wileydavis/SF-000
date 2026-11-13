@@ -70,7 +70,7 @@ int extraFor (int ch, int num)
         if (num >= kIns && num < kIns + kSlots * kCells) return (ch - 1) * kPerLane + (num - kIns);
         if (num >= kMute && num <= kSeqMute) return (ch - 1) * kPerLane + kSlots * kCells + (num - kMute);
     }
-    else if (ch == e16::kSnapChannel && num >= kDub && num < kMaster + 3) return kLanes * kPerLane + (num - kDub);
+    else if (ch == e16::kSnapChannel && num >= kDub && num < kBus + kBusKnobs) return kLanes * kPerLane + (num - kDub);
     return -1;
 }
 
@@ -79,7 +79,7 @@ int controlFor (int extra, int spaceModel)
     if (extra >= kLanes * kPerLane)
     {
         const int j = extra - kLanes * kPerLane;
-        return j < 4 ? cx::kRet + j : j < 8 ? cx::space (spaceModel, j - 4) : cx::kMaster + (j - 8);
+        return j < 4 ? cx::kRet + j : j < 8 ? cx::space (spaceModel, j - 4) : j < 11 ? cx::kMaster + (j - 8) : cx::kBus + (j - 11);
     }
     const int l = extra / kPerLane, j = extra % kPerLane;
     if (j < kSlots * kCells) return cx::ins (l, j / kCells, j % kCells);
@@ -94,6 +94,7 @@ bool addressOf (int ctl, int& ch, int& num)
     if (ctl >= cx::kSnap) { num = e16::kKnobCc + (ctl - cx::kSnap); return true; }
     if (ctl == cx::kGlide) { num = e16::kGlideCc; return true; }
     if (ctl >= cx::kMaster && ctl < cx::kMaster + 3) { num = kMaster + (ctl - cx::kMaster); return true; }
+    if (ctl >= cx::kBus && ctl < cx::kBus + kBusKnobs) { num = kBus + (ctl - cx::kBus); return true; }
     if (ctl >= cx::kRet && ctl < cx::kRet + cx::kRetKnobs) { const int j = ctl - cx::kRet; num = j < 4 ? kDub + j : kSpace + (j - 4) % 4; return true; }
     if (ctl >= cx::kRet) return false;
     const int j = ctl % cx::kPerLane;
@@ -224,7 +225,8 @@ void naming (const KnobDef& k, String& name, String& abbr)
         { "layer", "LAYR" }, { "echo_space", "ESPC" }, { "echo_swing", "ESWG" }, { "echo_prob", "EPRB" }, { "spread", "SPRD" },
         { "position", "POS" }, { "tension", "TENS" }, { "pocket_depth", "PCKT" }, { "pocket_shape", "PSHP" }, { "predelay", "PRE" },
         { "width", "WIDE" }, { "echo_time", "ETIM" }, { "echo_fb", "EFBK" },
-        { "feedback", "FDBK" }, { "throw", "THRW" }, { "freeze", "FRZ" }, { "release", "REL" }, { "squelch", "SQLC" }, { "noise", "NOIS" } };
+        { "feedback", "FDBK" }, { "throw", "THRW" }, { "freeze", "FRZ" }, { "release", "REL" }, { "squelch", "SQLC" }, { "noise", "NOIS" },
+        { "crunch", "CRNC" }, { "damp", "DAMP" }, { "boom", "BOOM" }, { "boom_tune", "BTUN" }, { "boom_decay", "BDCY" } };
     const std::string id (k.param != nullptr ? k.param : "");
     const String label (k.label != nullptr ? k.label : "-");
     const auto sn = shortName.find (id);
@@ -469,6 +471,16 @@ String fxText (const Engine& eng, const juce::StringArray& snapNames)
             e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = kWhite;
             e.channel = kSnapChannel; e.number = ccx::kMaster + (p - 1);
             e.def = to7 (eng.control (cx::kMaster + p - 1), eng.control (cx::kMaster + p - 1).def);
+        }
+        // the drum bus: the second row
+        for (int k = 0; k < kBusKnobs; ++k)
+        {
+            Enc& e = encs[(size_t) (4 + k)];
+            String name, abbr;
+            naming (drumBus().cells[k], name, abbr);
+            e.name = "BUS " + name.substring (0, 4); e.abbr = abbr; e.colour = kLightBlue;
+            e.channel = kSnapChannel; e.number = ccx::kBus + k;
+            e.def = to7 (eng.control (cx::kBus + k), eng.control (cx::kBus + k).def);
         }
         encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
         add ("MASTER", kSnapChannel, encs);
@@ -923,7 +935,7 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         other();
         if (fromE16 && ch == e16::kSnapChannel)        // (the returns' page, the master's)
         {
-            bMark (num >= ccx::kMaster ? num - ccx::kMaster : num - ccx::kDub, val, nowMs);
+            bMark (num >= ccx::kBus ? 4 + num - ccx::kBus : num >= ccx::kMaster ? num - ccx::kMaster : num - ccx::kDub, val, nowMs);
             pageHeard = e16::kFocusB + (num >= ccx::kMaster ? (int) e16::pgMaster : (int) e16::pgRet);
         }
         takeExtra (extra, val, fromE16);
@@ -1434,7 +1446,10 @@ std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
             control (4 + i, e16::kSnapChannel, ccx::kSpace + i, cx::space (engine.spaceModel(), i));
         }
     else if (page == e16::pgMaster)
+    {
         for (int i = 0; i < 3; ++i) control (i, e16::kSnapChannel, ccx::kMaster + i, cx::kMaster + i);
+        for (int i = 0; i < kBusKnobs; ++i) control (4 + i, e16::kSnapChannel, ccx::kBus + i, cx::kBus + i);
+    }
     else if (page == e16::pgSeq)
     {
         k[0] = { e16::kFxChannel, e16::kLenCc, juce::jlimit (0, 127, ses.pattern (l).length - 1) };
@@ -1510,7 +1525,8 @@ void Midi::sayNames()
         {
             const auto& t = ses.cfg;
             const int fx = t.kind == 1 ? engine.insertType (t.lane, t.slot) : -1;
-            title = t.kind == 0 ? String (e16::laneCodes[t.lane]) : t.kind == 1 ? String (e16::laneCodes[t.lane]) + " " + (fx >= 0 ? effects()[(size_t) fx].name : "EMPTY") : String (t.slot == 0 ? "DUB" : "SPACE");
+            title = t.kind == 0 ? String (e16::laneCodes[t.lane]) : t.kind == 1 ? String (e16::laneCodes[t.lane]) + " " + (fx >= 0 ? effects()[(size_t) fx].name : "EMPTY")
+                  : t.kind == 3 ? String ("DRM BUS") : String (t.slot == 0 ? "DUB" : "SPACE");
             title = title.substring (0, pages > 1 ? 7 : 11) + " CFG" + (pages > 1 ? " " + String (c + 1) + "/" + String (pages) : String());
         }
         for (int i = 0; i < e16::kCfgPer; ++i)

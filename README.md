@@ -56,7 +56,7 @@ First run:
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
-| Drag TEMPO or KEY | 60 to 200 bpm; the key every pitched lane follows (parts are written in C) |
+| Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform |
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
@@ -226,6 +226,41 @@ back at the other. The sequencer stays where it is.
   the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
   are more rows than fit.
 - What CONFIG sets is stored in snapshots with everything else, except which reverb SPACE is.
+- **The master's CONFIG is its drum bus's** (the C beside DRUM BUS; with the master in front, the
+  C key or OPEN on the E16). See The drum bus, below.
+
+### The drum bus
+
+DRUM BUS, on the master, is one effect the drums play through together on their way to the mix:
+what a drum-bus processor does to a group, built in. Four knobs on the master's face, the rest in
+its CONFIG.
+
+| KNOB | WHAT |
+|---|---|
+| **DRIVE** | glue and heat on one knob. The first third brings in a gentle compressor (3:1, slow enough to let the hit through); all the way it is saturation. The drums get denser and their peaks stay where they were |
+| **CRUNCH** | a second distortion on the highs alone (above 1.6 kHz): bite on the hats and the clap, the kick's body left clean |
+| **PUNCH** | the transients, above the sub. Either way the hit is brought out. Right: what follows it is lifted too (fuller). Left: it is pulled down (tighter, drier). The sub is left as it is |
+| **BOOM** | a resonance under the drums, rung by their lows: weight and sustain at one note |
+
+In its CONFIG: **DAMP** (a low-pass on what DRIVE and CRUNCH have made, down to 700 Hz), **BOOM
+TUNE** (30 to 90 Hz; near the kick's own pitch it rings most), **BOOM DECAY** (80 ms to a second
+and a half), **MIX**, **TYPE** (how DRIVE clips: SOFT, MEDIUM, HARD), **COMP** (off: DRIVE is
+saturation alone), **BOOM TO KEY** (on: with a KEY set, the boom is the nearest note of the key to
+BOOM TUNE), **LEVEL**, MOTION, and **LANES**: which of the eleven lanes play through the bus. To
+begin with, the five drums.
+
+- **At rest it is not there.** With the four knobs at nought (and DAMP at nought, LEVEL at 0 dB)
+  the lanes reach the mix exactly as they did before there was a bus, sample for sample. The first
+  knob to move brings it in over a hundredth of a second.
+- It works against the bus's own level (a slow reading of its peaks: up at once, down over half
+  a minute, held through silence), so the knobs do the same whatever the lanes' levels are.
+- What it hands on is held under two and a half times that level, however far PUNCH and BOOM are up.
+- A lane's sends leave before the bus. RUMBLE is still made from the kick as it leaves its lane.
+- **A snapshot holds it**: the four knobs travel on a recall and a snapshot knob (or LEARN) can
+  reach them; its CONFIG comes with them. BUS, in the row that says what RECALL takes, leaves it
+  out. A snapshot from before there was a bus leaves it as it is.
+- On the E16 the four are the second row of the MASTER page; a sequencer reaches them on channel
+  16, CC 71 to 74.
 
 ### The library: what a snapshot sounded like
 
@@ -265,7 +300,7 @@ at once, but its card fills in a few bars later, once four bars of that state ha
 move on first, it keeps the bars that were held; if there were none, the bars it was taken over.
 
 **A recall of part of a snapshot.** With CUE lit and a snapshot cued (or chosen), a row above the
-keys says what RECALL takes: lanes 1 to 11, RET (the returns) and KEY. Click one to put it out:
+keys says what RECALL takes: lanes 1 to 11, RET (the returns), BUS (the drum bus) and KEY. Click one to put it out:
 that part then stays as it is, steps, inserts and CONFIG included, and RECALL takes the rest.
 After the recall all are lit again. A tap with CUE off, a snapshot knob and a sequencer's RECALL
 take everything, as always.
@@ -316,12 +351,17 @@ whether or not the clock is running, and goes on until its key is held. Quitting
 | `00 SET.wav` | the set: the output, after the limiter. 24-bit |
 | `01 KICK.wav` to `11 VOICE.wav` | each lane as it went into the mix: after its inserts, EQ, MUTE and SOLO. 32-bit float, so none can clip |
 | `12 DUB.wav`, `13 SPACE.wav` | the two returns as they went into the mix. 32-bit float |
+| `14 DRUM BUS.wav` | what the drum bus did: the lanes on it as the bus made them, less those lanes as they came. 32-bit float |
 | `take.txt` | when, how long, what was kept, and anything lost |
 | `session-at-start.json` | the rig as it stood when the take began |
 
-- The lanes and returns added together are what the master chain was given. Each begins with the
-  master chain's look-ahead in silence (181 samples at 48 kHz), so it lines up with the set.
-- A lane or return that was silent all take is not kept. `take.txt` names them.
+- The lanes, the returns and `14 DRUM BUS` added together are what the master chain was given.
+  Each begins with the master chain's look-ahead in silence (181 samples at 48 kHz), so it lines
+  up with the set. A lane's file is the lane before the bus: leave `14 DRUM BUS` out and the
+  drums are as they were without it. (It is only right beside the lanes at the level they were
+  recorded: it is the difference the bus made to them together.)
+- A lane or return that was silent all take is not kept, nor `14 DRUM BUS` if the bus was at rest
+  throughout. `take.txt` names them.
 - A take is about 19 GB an hour at 48 kHz. The bar says how many hours the disk has room for as it
   starts, and the take ends by itself, kept, with a minute of room left.
 - The audio thread never waits for the disk. If the disk falls behind by more than four seconds,
@@ -359,8 +399,9 @@ lanes you pick, each as far as you show it.
   goes home, ready to push again; short of it the knobs go back.
 - While a knob is being taught it stands at its full turn and cannot be turned. A recall made
   meanwhile starts the measuring again from the recalled scene.
-- It reaches what a snapshot knob reaches. Not an insert's knobs, the master, tempo or the
-  sequencer: moved while learning, those are ordinary changes and stay.
+- It reaches what a snapshot knob reaches: a lane's sound knobs, its sends and EQ, the returns'
+  knobs, the drum bus's four. Not an insert's knobs, TAPE, COMP, LIMIT, tempo or the sequencer:
+  moved while learning, those are ordinary changes and stay.
 
 ### Snapshots that come with it
 
@@ -428,6 +469,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 | a snapshot knob's press: recall its nearest (64 and over) | 16 | 44 to 59 |
 | the DUB return's four knobs, the SPACE return's four | 16 | 60 to 63, 64 to 67 |
 | TAPE, COMP, LIMIT | 16 | 68, 69, 70 |
+| the drum bus's DRIVE, CRUNCH, PUNCH, BOOM | 16 | 71, 72, 73, 74 |
 | **RECALL** from snapshot knob 1 to 16 | 16 | 80 to 95 |
 
   - **RECALL** is for arranging. A snapshot knob's snapshots (the MACRO designer fills it) are a
@@ -460,7 +502,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 - **Every knob on the screen has a page**, so nothing needs the mouse. The second scene (SF-FX)
   holds what the first has no room for: the active lane's three inserts (INS 1 to 3: the eight
   places where the screen has them; a key among them, THROW or FREEZE, is its knob's press), the
-  RETURNS, the MASTER, the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
+  RETURNS, the MASTER (TAPE, COMP, LIMIT; on its second row the drum bus's four), the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
   3: its controls in the order its panel has them, twelve to a page), and the library's two pages.
   Its page 12 is the snapshot knobs again, as the first scene's page 12: they are on the same page
   whichever scene the E16 is in, and choosing them never loads a scene.
@@ -534,7 +576,7 @@ meters when a bar has moved, the playing step.
 | Path | What |
 | --- | --- |
 | `Source/Rig.h` | the rig: each lane's module, fixed model and settings, and which knob drives what |
-| `Source/Engine.*` | clock, lanes, inserts, returns, lane EQ, master chain, delay compensation |
+| `Source/Engine.*` | clock, lanes, inserts, returns, lane EQ, the drum bus, master chain, delay compensation |
 | `Source/Sequencer.h` | patterns, ties, ratchets, the generators, MIDI on the sample |
 | `Source/Session.*` | base scene, snapshot library, snapshot knobs and their morph, the saved file |
 | `Source/Defs.cpp` | every lane, effect and return written out as data, with a print of each: what a snapshot was made with |
@@ -552,7 +594,7 @@ meters when a bar has moved, the playing step.
 | `Source/Recorder.*` | takes: the set, the lanes and the returns to disk, off the audio thread |
 | `Source/Online.*` | ONLINE: snapshots sent to the library on the web in the background, and what has gone |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
-| `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`) |
+| `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`). `suite/modules/FxDrums.cpp`, the drum bus, is SF-000's own |
 
 State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
 scene, each snapshot's profile; its layout and the rules that keep old files readable are in

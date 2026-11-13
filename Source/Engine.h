@@ -41,7 +41,8 @@ namespace cx
     constexpr int kPerLane = kSeqMute + 1;
     constexpr int kRet = kLanes * kPerLane;                 // 4 knobs for A, 4 for B as REVERB, 4 for B as CONVOLUTION
     constexpr int kRetKnobs = 4 + 4 * kSpaceModels;
-    constexpr int kRetMS = kRet + kRetKnobs;                // A MUTE, A SOLO, B MUTE, B SOLO
+    constexpr int kBus = kRet + kRetKnobs;                  // the drum bus's four knobs: DRIVE, CRUNCH, PUNCH, BOOM
+    constexpr int kRetMS = kBus + kBusKnobs;                // A MUTE, A SOLO, B MUTE, B SOLO
     constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT
     constexpr int kTempo = kMaster + 3, kKey = kTempo + 1, kGlide = kKey + 1;
     constexpr int kSnap = kGlide + 1;                       // the 16 snapshot knobs
@@ -73,7 +74,7 @@ public:
         juce::StringArray slots;                                    // the lanes' slugs, in order
         std::array<juce::String, kLanes> lane;                      // each lane's print
         std::vector<std::pair<juce::String, juce::String>> fx;      // each effect: its name, its print
-        juce::String dub, space, conv, chassis;
+        juce::String dub, space, conv, bus, chassis;
         std::vector<std::pair<juce::String, juce::var>> all;        // every definition by its print (the sound engines' too)
     };
     const Defs& defs() const;
@@ -186,10 +187,11 @@ public:
     const juce::AudioBuffer<float>& cueBlock() const { return cueBuf; }          // the last buffer's cue (the device callback; tests)
 
     // ---- recording: what the audio thread hands on, a buffer at a time. Track 0 is the set (the
-    // output), 1 to 11 the lanes, each as it goes into the mix, then the two returns as they do:
-    // together, what the master chain is given. begin and end bracket each buffer. Nothing in a
-    // sink may wait or allocate.
-    static constexpr int kRecTracks = 1 + kLanes + 2;
+    // output), 1 to 11 the lanes, each as it leaves its strip, then the two returns as they go into
+    // the mix, then what the drum bus does to the lanes that play through it (their sum as the bus
+    // makes it, less their sum as it came: silence while the bus is at rest). Together, what the
+    // master chain is given. begin and end bracket each buffer. Nothing in a sink may wait or allocate.
+    static constexpr int kRecTracks = 1 + kLanes + 2 + 1;
     struct RecSink
     {
         virtual ~RecSink() = default;
@@ -224,7 +226,9 @@ public:
     int leaving() const;                        // instruments and effects still on their way out (or waiting to be let go)
 
     // ---- what a CONFIG panel, a dropped file or a setup change is aimed at
-    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1)
+    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1), 3 the master's drum bus
+    // ---- the drum bus (in the master): the lanes its CONFIG names play through it together
+    bool laneOnBus (int lane) const             { return busIn[(size_t) lane] != nullptr && busIn[(size_t) lane]->load() > 0.5f; }
 
     // ---- return B (SPACE) is one of two reverbs: 0 REVERB, 1 CONVOLUTION. Both stay built, so the
     // places a convolution holds are still there when it comes back; only the chosen one runs.
@@ -385,6 +389,9 @@ private:
     std::array<Lane, kLanes> lane;
     std::array<std::array<int, kSlots>, kLanes> insType {};
     std::unique_ptr<SFProcessor> retA;
+    std::unique_ptr<SFProcessor> busProc;                    // the drum bus
+    std::array<std::atomic<float>*, kLanes> busIn {};        // its CONFIG's LANE switches
+    std::array<float, kLanes> busWas {};                     // audio thread: whether each lane was on the bus last block
     std::array<std::unique_ptr<SFProcessor>, kSpaceModels> space;
     std::atomic<int> spaceWant { 0 };
     int spaceNow = 0, spaceHold = 0;                         // audio thread: the one that runs; samples it stays silent after a change
@@ -407,7 +414,7 @@ private:
     double sr = 48000.0;
     int maxBlock = 512;
     bool prepared = false;
-    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost;
+    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost, busBuf, busDry;
     std::array<SetupState, kLanes> initSetup;
     std::array<juce::String, kLanes> files;
     std::vector<std::string> boundIds (Target) const;
