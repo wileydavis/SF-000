@@ -9,6 +9,7 @@
 #include <memory>
 #include "Rig.h"
 #include "Sequencer.h"
+#include "Pockets.h"
 
 class SFProcessor;
 
@@ -38,11 +39,13 @@ namespace cx
     constexpr int kMute = kGen + 4, kSolo = kMute + 1;      // the lane's MUTE and SOLO
     constexpr int kInsMS = kSolo + 1;                       // MUTE and SOLO for each insert slot
     constexpr int kSeqMute = kInsMS + kSlots * 2;           // the lane's own sequencer muted: its steps stay, unplayed
-    constexpr int kPerLane = kSeqMute + 1;
+    constexpr int kPk = kSeqMute + 1;                       // its pocket: HOME, WIDTH, HOLD, YIELD
+    constexpr int kPerLane = kPk + kPkLane;
     constexpr int kRet = kLanes * kPerLane;                 // 4 knobs for A, 4 for B as REVERB, 4 for B as CONVOLUTION
     constexpr int kRetKnobs = 4 + 4 * kSpaceModels;
     constexpr int kBus = kRet + kRetKnobs;                  // the drum bus's four knobs: DRIVE, CRUNCH, PUNCH, BOOM
-    constexpr int kRetMS = kBus + kBusKnobs;                // A MUTE, A SOLO, B MUTE, B SOLO
+    constexpr int kPkG = kBus + kBusKnobs;                  // POCKETS, for the whole rig: AMOUNT, CLEAR, SPEED, RETURNS
+    constexpr int kRetMS = kPkG + kPkGlobals;               // A MUTE, A SOLO, B MUTE, B SOLO
     constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT
     constexpr int kTempo = kMaster + 3, kKey = kTempo + 1, kGlide = kKey + 1;
     constexpr int kSnap = kGlide + 1;                       // the 16 snapshot knobs
@@ -53,6 +56,8 @@ namespace cx
     inline int insMute (int l, int slot)        { return l * kPerLane + kInsMS + slot * 2; }
     inline int insSolo (int l, int slot)        { return insMute (l, slot) + 1; }
     inline int space (int model, int k)         { return kRet + 4 + model * 4 + k; }      // return B's knob k on that model
+    inline int pk (int l, int k)                { return l * kPerLane + kPk + k; }        // a lane's pocket: 0 HOME, 1 WIDTH, 2 HOLD, 3 YIELD
+    inline bool isPk (int i)                    { return i < kRet ? (i % kPerLane) >= kPk : (i >= kPkG && i < kPkG + kPkGlobals); }
 }
 
 double glideBarsFor (float v);      // the GLIDE list: OFF, 1/4 bar ... 256 bars
@@ -74,7 +79,7 @@ public:
         juce::StringArray slots;                                    // the lanes' slugs, in order
         std::array<juce::String, kLanes> lane;                      // each lane's print
         std::vector<std::pair<juce::String, juce::String>> fx;      // each effect: its name, its print
-        juce::String dub, space, conv, bus, chassis;
+        juce::String dub, space, conv, bus, pockets, chassis;
         std::vector<std::pair<juce::String, juce::var>> all;        // every definition by its print (the sound engines' too)
     };
     const Defs& defs() const;
@@ -236,6 +241,15 @@ public:
     // ---- the drum bus (in the master): the lanes its CONFIG names play through it together
     bool laneOnBus (int lane) const             { return busIn[(size_t) lane] != nullptr && busIn[(size_t) lane]->load() > 0.5f; }
 
+    // ---- POCKETS (in the master): each lane's place in the spectrum, and who gives way to whom.
+    // What it sees and does, band by band, for the screen (and for AUTO, which places the pockets
+    // from what is playing). watch: it looks even with AMOUNT at nought, while the screen shows it.
+    void pocketsSeen (Pockets::Seen& s) const   { pockets.seen (s); }
+    void watchPockets (bool on)                 { pkWatch = on; }
+    bool pocketsWatched() const                 { return pkWatch.load(); }
+    Pockets::Set pocketSet (bool shownNow = true) const;        // its knobs as they sound now (or as they are set: where a glide is going)
+    const Pockets& pocketsForTests() const      { return pockets; }
+
     // ---- return B (SPACE) is one of two reverbs: 0 REVERB, 1 CONVOLUTION. Both stay built, so the
     // places a convolution holds are still there when it comes back; only the chosen one runs.
     int spaceModel() const                      { return spaceWant.load(); }
@@ -297,7 +311,7 @@ public:
     // tests: where a block's time goes, in seconds summed, while profile is on
     bool profile = false;
     std::array<double, kLanes> profLane {}, profIns {};
-    double profRet = 0.0, profMaster = 0.0, profAll = 0.0;
+    double profRet = 0.0, profMaster = 0.0, profAll = 0.0, profPockets = 0.0;
     double sampleRate() const                   { return sr; }
     int latencySamples() const                  { return maxLat.load(); }
 
@@ -424,6 +438,9 @@ private:
     int maxBlock = 512;
     bool prepared = false;
     juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost, busBuf, busDry;
+    juce::AudioBuffer<float> laneBuf;                        // every lane's strip, side by side (two channels each): POCKETS sees them all before any reaches the mix
+    Pockets pockets;
+    std::atomic<bool> pkWatch { false };
     std::array<SetupState, kLanes> initSetup;
     std::array<juce::String, kLanes> files;
     std::vector<std::string> boundIds (Target) const;

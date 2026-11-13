@@ -188,6 +188,31 @@ inline const FxDef& drumBus()
     return d;
 }
 
+// POCKETS, in the master: who has which part of the spectrum (Pockets.h). Four knobs a lane (HOME,
+// WIDTH, HOLD, YIELD) and four for the whole rig (AMOUNT, CLEAR, SPEED, RETURNS). Where each lane's
+// pocket starts: its HOME in Hz, its WIDTH in octaves, how firmly it holds it and how much it gives.
+// With AMOUNT at nought, where it starts, nothing is carved.
+constexpr int kPkLane = 4, kPkGlobals = 4;
+struct PocketDef { float homeHz, widthOct, hold, yield; };
+inline const PocketDef& pocketDefault (int lane)
+{
+    static const PocketDef d[kLanes] = {
+        // (each is where the lane's own sound, as the rig starts it, has most of itself)
+        {   55.0f, 1.4f, 1.00f, 0.00f },    // KICK: the bottom is its own, and nothing is taken from it
+        { 9000.0f, 1.6f, 0.55f, 0.40f },    // CLOSED HAT
+        { 7500.0f, 2.0f, 0.50f, 0.40f },    // OPEN HAT
+        { 1400.0f, 2.0f, 0.70f, 0.30f },    // CLAP
+        {  220.0f, 1.6f, 0.50f, 0.50f },    // PERC: a struck membrane, low in the middle
+        {   80.0f, 1.8f, 0.85f, 0.40f },    // BASS: over the kick's fundamental, and under everything else
+        {   45.0f, 1.6f, 0.30f, 0.60f },    // RUMBLE: the floor, where the kick and the bass leave room
+        {  900.0f, 2.4f, 0.75f, 0.40f },    // LEAD
+        {  600.0f, 2.2f, 0.60f, 0.50f },    // CHORD
+        {  350.0f, 2.6f, 0.40f, 0.60f },    // PAD: wide, and the first to give
+        {  400.0f, 3.0f, 0.80f, 0.30f },    // VOICE
+    };
+    return d[lane];
+}
+
 // The master chain, built in: the lows made mono, tape, a bus compressor, a true-peak limiter that
 // trims its own input until the loudest passage sits at the target loudness.
 struct MasterStage { const char* module; std::vector<Fixed> fixed; KnobDef knob; };

@@ -159,6 +159,34 @@ const Engine::Defs& Engine::defs() const
         d->bus = add (var (o));
     }
 
+    // POCKETS: a lane's four knobs and the rig's four, by id, and what a stored value of each means.
+    // (Raise v when one of them changes its meaning.)
+    {
+        auto knob = [] (const char* id, const char* label, const char* unit, const char* law)
+        {
+            auto* k = new juce::DynamicObject();
+            k->setProperty ("id", id); k->setProperty ("label", label); k->setProperty ("kind", "u");
+            k->setProperty ("unit", unit); k->setProperty ("law", law);
+            return var (k);
+        };
+        juce::Array<var> strip, rig;
+        strip.add (knob ("pk_home", "HOME", "Hz", "31.25 * 2 ^ (9 * v)"));
+        strip.add (knob ("pk_width", "WIDTH", "octaves at half height", "0.5 * 16 ^ v"));
+        strip.add (knob ("pk_hold", "HOLD", "share", "v"));
+        strip.add (knob ("pk_yield", "YIELD", "dB at most", "24 * v"));
+        rig.add (knob ("pk.amount", "AMOUNT", "share", "v"));
+        rig.add (knob ("pk.clear", "CLEAR", "dB", "18 * v"));
+        rig.add (knob ("pk.speed", "SPEED", "ms to come back", "600 * (25 / 600) ^ v"));
+        rig.add (knob ("pk.returns", "RETURNS", "dB at most", "24 * v"));
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kind", "pockets");
+        o->setProperty ("v", 1);
+        o->setProperty ("bands", Pockets::kBands);
+        o->setProperty ("lane", strip);         // on every lane: <slot>.pk_home ...
+        o->setProperty ("rig", rig);
+        d->pockets = add (var (o));
+    }
+
     // The chassis: what every lane has beside its instrument, and what is stored of the whole rig.
     {
         auto entry = [] (const Control& c, const juce::String& id)
@@ -175,6 +203,7 @@ const Engine::Defs& Engine::defs() const
         for (int k = kLaneKnobs; k < cx::kPerLane; ++k)
         {
             if (k >= cx::kIns && k < cx::kGen) continue;                        // an insert's cells: the effect's own
+            if (k >= cx::kPk) continue;                                         // its pocket: POCKETS' own definition
             const auto& c = controls[(size_t) cx::lane (0, k)];
             if (c.used && c.snapshot) strip.add (entry (c, c.id.fromFirstOccurrenceOf (own, false, false)));
         }

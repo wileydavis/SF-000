@@ -264,6 +264,79 @@ begin with, the five drums.
 - On the E16 the four are the second row of the MASTER page; a sequencer reaches them on channel
   16, CC 71 to 74.
 
+### POCKETS: who has which part of the spectrum
+
+POCKETS, on the master, is the mix made by the instrument: every lane has a **pocket**, a
+stretch of the spectrum that is its own, and where two sounds would cover one another the one
+with the weaker claim to that stretch gives way to the other. Only there, only while the other
+is sounding, and by no more than it takes to sit clear below it. Move a pocket and the sound moves
+to another place in the mix, so where the pockets are and how they overlap is part of the sound,
+not a job for afterwards.
+
+(POCKET DEPTH and POCKET SHAPE, on a lane, are something else and were there before: the kick's
+pocket in **time**, a duck round each kick. POCKETS is each lane's place in **frequency**.)
+
+**P** on the keyboard, or the POCKETS key on the master, opens its page: a row for each lane and
+the two returns, each with a map of the spectrum from 31 Hz to 16 kHz. On a map the yellow shape
+is the lane's pocket, as tall as it is firmly held; the pale bars are what the lane is playing,
+band by band; the red at a bar's top is what is being taken from it at that moment. Esc, P or MAIN
+goes back.
+
+Four knobs for the whole rig, on the page's strip:
+
+| KNOB | WHAT |
+|---|---|
+| **AMOUNT** | how much of it is done, from none to all that CLEAR asks for. It starts at nought, where POCKETS is not there at all |
+| **CLEAR** | how far below the one with the claim the others are put, band by band: 0 to 18 dB (3 to begin with). Low: they may be as loud as it. High: it stands well clear |
+| **SPEED** | how soon a sound comes back once the other has gone: over 600 ms at nought, 25 at full. Slow: it breathes. Fast: it snaps back between hits |
+| **RETURNS** | the most the two returns give, up to 24 dB. They have no pocket: echo and reverb give way to every lane wherever the lane is sounding, and fill what is left |
+
+Four for each lane, beside its map:
+
+| KNOB | WHAT |
+|---|---|
+| **HOME** | where the pocket is, 31 Hz to 16 kHz. Drag the pocket itself along the map |
+| **WIDTH** | how wide it is, half an octave to eight. Drag the pocket up and down. Narrow: a claim to one place, and the rest of the sound gives way. Wide: it keeps more of itself, and more has to move for it |
+| **HOLD** | how firmly it holds its pocket: where pockets meet, the lane with more HOLD wins. Outside its pocket a lane has a quarter of its HOLD, so one with a lot of it still comes before the rest there. At nought it gives way to everyone |
+| **YIELD** | the most the lane gives in any band, up to 24 dB. At nought nothing is ever taken from it: the kick starts there |
+
+- **Where the pockets start.** Each where its lane's own sound has most of itself: the kick at
+  55 Hz and never cut, the bass over it at 80 Hz, the rumble under both, the hats at the top, and
+  in the middle (where everything meets) the voice before the lead, the lead before the chord, the
+  chord before the percussion and the pad. With AMOUNT at full on the rig as it starts, nine
+  lanes give somewhere, the most in one band is some 10 dB, no lane loses more than 3 dB over
+  all, and the kick's stem is the same to the last bit. Half way is a good place to begin.
+- **AUTO** places the pockets from what is playing: each lane heard while the page was up gets
+  the narrowest pocket (an octave to four) that holds three fifths of its sound, where it holds
+  the most. HOLD and YIELD stay as they are. **RESET** puts every pocket back where the rig
+  starts it. Both travel over the GLIDE time. A double-click on a pocket puts that one back.
+- **With AMOUNT at nought it is not there**: nothing is looked at, nothing is in the path, and the
+  set is the same to the last bit. With its page up it looks (so the maps move, and AUTO has
+  something to go by) and still touches nothing.
+- **No delay.** Each lane and each return is heard through 28 third-octave bands and carved by
+  28 bells that only ever cut. A bell that is not cutting is not run. A low band takes tens of
+  milliseconds to ring up, and a kick is past its hardest part by then: once a kick has been
+  heard, the next is known by its spectrum from its first millisecond, so the bass is out of its
+  way 8 ms in and not 40.
+- **What is not heard covers nothing.** A muted lane, or one put out by another's SOLO, asks
+  nothing of the others: bring the kick out and the bass has the bottom to itself. Each row has
+  the lane's M and S, to hear a lane by itself as POCKETS leaves it.
+- A lane is carved as it leaves its strip: its sends, its stem in a take and its meter are of
+  what was left. The returns are carved as they come back.
+- **The knobs are knobs**: forty-four for the lanes and four for the rig, each in a snapshot,
+  each travelling over the GLIDE time on a recall or under a hand (a HOME sent somewhere sweeps
+  there), each within reach of a snapshot knob and of LEARN. A snapshot from before there were
+  pockets leaves them as they are. In the row that says what RECALL takes, a lane's pocket goes
+  with its lane and the rig's four with BUS.
+- On the E16 the rig's four are the third row of the MASTER page. **OPEN** on the master is its
+  drum bus's CONFIG; OPEN again is POCKETS, and the CONFIG pages are then its knobs, a lane to a
+  knob: HOME (and AMOUNT on the twelfth), WIDTH (and CLEAR), YIELD (and SPEED), and a fourth,
+  HOLD (and RETURNS), which PAGE + from the third puts on the third's knobs. The display says
+  which. OPEN once more is the way back. A sequencer reaches a lane's four on the lane's channel,
+  CC 59 to 62, and the rig's four on channel 16, CC 75 to 78.
+- Its cost on the machine this was written on (a slow one): 2 % of a core to look at all thirteen
+  parts, 5 % with two hundred bells cutting at once, which is every lane giving way all over.
+
 ### The library: what a snapshot sounded like
 
 A snapshot taken while the clock runs keeps its sound: the last four whole bars of the output, cut
@@ -508,12 +581,14 @@ Open SETUP to see what is connected. Nothing needs choosing.
 | its SEND A, SEND B, LOW, HIGH, MID | the lane's number | 24, 25, 26, 27, 28 |
 | its three inserts' eight places (whatever effect is in the slot) | the lane's number | 32 to 39, 40 to 47, 48 to 55 |
 | its MUTE, SOLO, and the mute of its own sequencer (64 and over: on) | the lane's number | 56, 57, 58 |
+| its pocket's HOME, WIDTH, HOLD, YIELD (POCKETS) | the lane's number | 59, 60, 61, 62 |
 | the sixteen snapshot knobs: a turn | 16 | 12 to 27 |
 | GLIDE | 16 | 30 |
 | a snapshot knob's press: recall its nearest (64 and over) | 16 | 44 to 59 |
 | the DUB return's four knobs, the SPACE return's four | 16 | 60 to 63, 64 to 67 |
 | TAPE, COMP, LIMIT | 16 | 68, 69, 70 |
 | the drum bus's DRIVE, CRUNCH, PUNCH, BOOM | 16 | 71, 72, 73, 74 |
+| POCKETS' AMOUNT, CLEAR, SPEED, RETURNS | 16 | 75, 76, 77, 78 |
 | **RECALL** from snapshot knob 1 to 16 | 16 | 80 to 95 |
 
   - **RECALL** is for arranging. A snapshot knob's snapshots (the MACRO designer fills it) are a
@@ -546,8 +621,10 @@ Open SETUP to see what is connected. Nothing needs choosing.
 - **Every knob on the screen has a page**, so nothing needs the mouse. The second scene (SF-FX)
   holds what the first has no room for: the active lane's three inserts (INS 1 to 3: the eight
   places where the screen has them; a key among them, THROW or FREEZE, is its knob's press), the
-  RETURNS, the MASTER (TAPE, COMP, LIMIT; on its second row the drum bus's four), the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
-  3: its controls in the order its panel has them, twelve to a page), and the library's two pages.
+  RETURNS, the MASTER (TAPE, COMP, LIMIT; on its second row the drum bus's four, on its third
+  POCKETS' four), the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
+  3: its controls in the order its panel has them, twelve to a page; with POCKETS up, every
+  lane's pocket), and the library's two pages.
   Its page 12 is the snapshot knobs again, as the first scene's page 12: they are on the same page
   whichever scene the E16 is in, and choosing them never loads a scene.
   SF-000 names an insert's and CONFIG's knobs on the E16's display as they change.
@@ -571,13 +648,15 @@ Open SETUP to see what is connected. Nothing needs choosing.
   knob instead and the pointer is put down with nothing chosen; eight seconds untouched does the
   same. On a lane's page knob 13 is SEND A: the wheel never moves SEND A.
 - **Knob 14 pressed is OPEN** (held, on those same two pages): CONFIG for what is in front, and
-  on CONFIG's pages SHUT. On the snapshot knobs it opens the library; in the library it is the
+  on CONFIG's pages SHUT. On the master, the press that shuts its CONFIG opens POCKETS, and the
+  next is the way back. On the snapshot knobs it opens the library; in the library it is the
   way back. On CONFIG's pages knobs 15 and 16 pressed are the page before and the next.
 
 ## Checks
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only the newest of them (POCKETS'), for when that is what is being worked on
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
@@ -588,7 +667,7 @@ build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapsho
 build/.../SF-000 --shot setup.png --setup follow  # draw the SETUP panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16's two scenes: that one (snapshot knob names from your session) and SF-000-FX.oxie16 beside it
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros|pockets (pockets: --amount 0 to 100), --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
@@ -620,13 +699,14 @@ meters when a bar has moved, the playing step.
 | Path | What |
 | --- | --- |
 | `Source/Rig.h` | the rig: each lane's module, fixed model and settings, and which knob drives what |
-| `Source/Engine.*` | clock, lanes, inserts, returns, lane EQ, the drum bus, master chain, delay compensation |
+| `Source/Engine.*` | clock, lanes, inserts, returns, lane EQ, POCKETS, the drum bus, master chain, delay compensation |
 | `Source/Sequencer.h` | patterns, ties, ratchets, the generators, MIDI on the sample |
 | `Source/Session.*` | base scene, snapshot library, snapshot knobs and their morph, the saved file |
 | `Source/Defs.cpp` | every lane, effect and return written out as data, with a print of each: what a snapshot was made with |
 | `FORMAT.md` | the session file: what is in it, and the rules it grows by |
 | `tests/fixtures/` | a session file as an older build wrote it, for the check that old files still open |
-| `Source/Screen.*` | the three screens |
+| `Source/Pockets.*` | POCKETS: the bank of bands each lane is heard through, who gives way to whom, the bells that cut |
+| `Source/Screen.*` | the four screens |
 | `Source/Help.h` | what each control does, in a line or two: INFO's boxes |
 | `Source/Skin.*` | the lit skin: surfaces as heights and finishes (the 3D model's), lit into pictures the screen is put together from; for the 3D stage, the same calls written down as parts |
 | `Source/Parts.h` | the solid parts a screen is made of, as the skin records them |
@@ -702,6 +782,11 @@ Delete `session.json` to start again from the factory rig.
   snapshot's fly-out goes by how many knobs are moving, not by knowing a recall happened. Metal
   (OpenGL is the Mac's older way of drawing; it works and Apple no longer improves it).
 
+- POCKETS: the stereo field is not part of it (a lane is heard as its two sides added, and cut the
+  same on both); a return gives way to the lanes but no lane to a return, and neither return to
+  the other; HOLD is one figure a lane, not one a band; AUTO places HOME and WIDTH and leaves
+  HOLD and YIELD to the hand. On the screen its page takes the place of the main one: there is
+  no AMOUNT knob on the master's face, only its figure beside the key.
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP

@@ -68,9 +68,9 @@ int extraFor (int ch, int num)
     if (ch >= 1 && ch <= kLanes)
     {
         if (num >= kIns && num < kIns + kSlots * kCells) return (ch - 1) * kPerLane + (num - kIns);
-        if (num >= kMute && num <= kSeqMute) return (ch - 1) * kPerLane + kSlots * kCells + (num - kMute);
+        if (num >= kMute && num < kPk + kPkLane) return (ch - 1) * kPerLane + kSlots * kCells + (num - kMute);
     }
-    else if (ch == e16::kSnapChannel && num >= kDub && num < kBus + kBusKnobs) return kLanes * kPerLane + (num - kDub);
+    else if (ch == e16::kSnapChannel && num >= kDub && num < kPkG + kPkGlobals) return kLanes * kPerLane + (num - kDub);
     return -1;
 }
 
@@ -79,11 +79,11 @@ int controlFor (int extra, int spaceModel)
     if (extra >= kLanes * kPerLane)
     {
         const int j = extra - kLanes * kPerLane;
-        return j < 4 ? cx::kRet + j : j < 8 ? cx::space (spaceModel, j - 4) : j < 11 ? cx::kMaster + (j - 8) : cx::kBus + (j - 11);
+        return j < 4 ? cx::kRet + j : j < 8 ? cx::space (spaceModel, j - 4) : j < 11 ? cx::kMaster + (j - 8) : j < 11 + kBusKnobs ? cx::kBus + (j - 11) : cx::kPkG + (j - 11 - kBusKnobs);
     }
     const int l = extra / kPerLane, j = extra % kPerLane;
     if (j < kSlots * kCells) return cx::ins (l, j / kCells, j % kCells);
-    static const int tail[] = { cx::kMute, cx::kSolo, cx::kSeqMute };
+    static const int tail[] = { cx::kMute, cx::kSolo, cx::kSeqMute, cx::kPk, cx::kPk + 1, cx::kPk + 2, cx::kPk + 3 };
     return l * cx::kPerLane + tail[j - kSlots * kCells];
 }
 
@@ -95,6 +95,7 @@ bool addressOf (int ctl, int& ch, int& num)
     if (ctl == cx::kGlide) { num = e16::kGlideCc; return true; }
     if (ctl >= cx::kMaster && ctl < cx::kMaster + 3) { num = kMaster + (ctl - cx::kMaster); return true; }
     if (ctl >= cx::kBus && ctl < cx::kBus + kBusKnobs) { num = kBus + (ctl - cx::kBus); return true; }
+    if (ctl >= cx::kPkG && ctl < cx::kPkG + kPkGlobals) { num = kPkG + (ctl - cx::kPkG); return true; }
     if (ctl >= cx::kRet && ctl < cx::kRet + cx::kRetKnobs) { const int j = ctl - cx::kRet; num = j < 4 ? kDub + j : kSpace + (j - 4) % 4; return true; }
     if (ctl >= cx::kRet) return false;
     const int j = ctl % cx::kPerLane;
@@ -110,6 +111,7 @@ bool addressOf (int ctl, int& ch, int& num)
     else if (j == cx::kMute) num = kMute;
     else if (j == cx::kSolo) num = kSolo;
     else if (j == cx::kSeqMute) num = kSeqMute;
+    else if (j >= cx::kPk && j < cx::kPk + kPkLane) num = kPk + (j - cx::kPk);
     else return false;
     return true;
 }
@@ -481,6 +483,18 @@ String fxText (const Engine& eng, const juce::StringArray& snapNames)
             e.name = "BUS " + name.substring (0, 4); e.abbr = abbr; e.colour = kLightBlue;
             e.channel = kSnapChannel; e.number = ccx::kBus + k;
             e.def = to7 (eng.control (cx::kBus + k), eng.control (cx::kBus + k).def);
+        }
+        // POCKETS: the third row (its page, with every lane's pocket, is behind OPEN: the drum bus's CONFIG first, then it)
+        {
+            static const char* const names[kPkGlobals] = { "PK AMNT", "PK CLEAR", "PK SPEED", "PK RETS" };
+            static const char* const abbrs[kPkGlobals] = { "AMNT", "CLR", "SPD", "RETS" };
+            for (int k = 0; k < kPkGlobals; ++k)
+            {
+                Enc& e = encs[(size_t) (8 + k)];
+                e.name = names[k]; e.abbr = abbrs[k]; e.colour = kGreen;
+                e.channel = kSnapChannel; e.number = ccx::kPkG + k;
+                e.def = to7 (eng.control (cx::kPkG + k), eng.control (cx::kPkG + k).def);
+            }
         }
         encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
         add ("MASTER", kSnapChannel, encs);
@@ -935,7 +949,7 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         other();
         if (fromE16 && ch == e16::kSnapChannel)        // (the returns' page, the master's)
         {
-            bMark (num >= ccx::kBus ? 4 + num - ccx::kBus : num >= ccx::kMaster ? num - ccx::kMaster : num - ccx::kDub, val, nowMs);
+            bMark (num >= ccx::kPkG ? 8 + num - ccx::kPkG : num >= ccx::kBus ? 4 + num - ccx::kBus : num >= ccx::kMaster ? num - ccx::kMaster : num - ccx::kDub, val, nowMs);
             pageHeard = e16::kFocusB + (num >= ccx::kMaster ? (int) e16::pgMaster : (int) e16::pgRet);
         }
         takeExtra (extra, val, fromE16);
@@ -1047,14 +1061,15 @@ void Midi::service()
             ses.moved (ctl, 1);
             ses.userSet (ctl, e16::from7 (engine.control (ctl), v));
         }
-    if (ses.cfgOpen != cfgWasOpen || ses.cfg.kind != cfgWas.kind || ses.cfg.lane != cfgWas.lane || ses.cfg.slot != cfgWas.slot)
+    if (ses.cfgOpen != cfgWasOpen || ses.cfg.kind != cfgWas.kind || ses.cfg.lane != cfgWas.lane || ses.cfg.slot != cfgWas.slot || ses.pocketsUp() != pocketsWereUp)
     {
-        // CONFIG opened, shut or moved to another panel: its first page, and its controls looked at afresh
+        // CONFIG opened, shut or moved to another panel (or POCKETS came up, or went): its first page, and its controls looked at afresh
         cfgWas = ses.cfg; cfgWasOpen = ses.cfgOpen; cfgPage = 0; cfgCacheAge = 0;
         for (auto& v : cfgIn) v = -1;
     }
+    pocketsWereUp = ses.pocketsUp();
     for (int k = 0; k < e16::kCfgPer * e16::kCfgPages; ++k)
-        if (const int v = cfgIn[(size_t) k].exchange (-1); v >= 0) { ses.setConfig (k, v); cfgCacheAge = 0; }
+        if (const int v = cfgIn[(size_t) k].exchange (-1); v >= 0) { ses.setConfig (cfgFirst (k / e16::kCfgPer) + k % e16::kCfgPer, v); cfgCacheAge = 0; }
     if (--cfgCacheAge <= 0) { cfgCacheAge = 6; cfgCache = ses.configList(); }
     serviceWheel (now);
     if ((openKeys.exchange (0) & 1) != 0)
@@ -1062,7 +1077,13 @@ void Midi::service()
         if (wheelMode.load()) wheelChoose();        // (what the pointer is on comes to the front first: OPEN is for that)
         openPressed();
     }
-    if (const int st = cfgStep.exchange (0); st != 0 && ses.cfgOpen) cfgPage = juce::jlimit (0, cfgPagesNow() - 1, cfgPage + (st > 0 ? 1 : -1));
+    if (const int st = cfgStep.exchange (0); st != 0 && cfgUp())
+        if (const int to = juce::jlimit (0, cfgPagesNow() - 1, cfgPage + (st > 0 ? 1 : -1)); to != cfgPage)
+        {
+            // (the fourth stands on the third's knobs: they are told their new values and names, where a turn of the E16's page would have done it)
+            if (std::min (to, e16::kCfgPages - 1) == std::min (cfgPage, e16::kCfgPages - 1)) { for (auto& v : bSent) v = -1; for (auto& v : bHeardAt) v = 0; }
+            cfgPage = to;
+        }
     laneNow = ses.activeLane;
 
     // A page that has just come up is told its values again, a moment after it has settled.
@@ -1136,7 +1157,7 @@ Midi::Where Midi::whereNow() const
     // (the snapshot knobs are the twelfth page of both scenes: the one it is in, so no scene is loaded for them)
     const int snapScene = e16At.scene == 1 ? 1 : 0;
     if (ses.showing == 2) return { snapScene, e16::kSnapPage };
-    if (ses.cfgOpen) return { 1, e16::pgCfg + juce::jlimit (0, e16::kCfgPages - 1, cfgPage) };
+    if (cfgUp()) return { 1, e16::pgCfg + juce::jlimit (0, e16::kCfgPages - 1, cfgPage) };
     switch (ses.front.kind)
     {
         case S::fLane:    return { 0, ses.activeLane + 1 };
@@ -1207,6 +1228,12 @@ void Midi::pageCame (int said, juce::uint32 now)
     else if (at.page == e16::pgMap || at.page == e16::pgFind) { if (ses.showing != 1) ses.wantShowing = 1; }
     else
     {
+        if (ses.pocketsUp() && at.page >= e16::pgCfg && at.page < e16::pgCfg + e16::kCfgPages)
+        {
+            // POCKETS is up, and these are its pages: it stays, on the one turned to
+            cfgPage = at.page - e16::pgCfg; cfgCacheAge = 0;
+            return;
+        }
         if (ses.showing != 0) ses.wantShowing = 0;
         if (at.page >= e16::pgIns && at.page < e16::pgIns + kSlots) ses.bring ({ S::fInsert, at.page - e16::pgIns }, 2);
         else if (at.page == e16::kSnapPage) ses.bring ({ S::fSnap, 0 }, 2);
@@ -1287,12 +1314,14 @@ void Midi::settle (juce::uint32 now)
 // is the library, and in the library it is the way back.
 void Midi::openPressed()
 {
-    if (ses.showing != 0) { ses.wantShowing = 0; return; }
+    if (ses.showing != 0 || ses.pocketsUp()) { ses.wantShowing = 0; return; }
+    // behind the master's CONFIG (its drum bus's) is POCKETS, its page: OPEN once more
+    if (ses.cfgOpen && ses.cfg.kind == 3 && ses.front.kind == Session::fMaster) { ses.configOfFront (2); ses.wantShowing = 3; return; }
     if (! ses.cfgOpen && ses.front.kind == Session::fSnap) { ses.wantShowing = 1; return; }
     ses.configOfFront (2);
 }
 
-int Midi::cfgPagesNow() { return juce::jlimit (1, (int) e16::kCfgPages, ((int) cfgCache.size() + e16::kCfgPer - 1) / e16::kCfgPer); }
+int Midi::cfgPagesNow() { return juce::jlimit (1, (int) e16::kCfgPages + (ses.pocketsUp() ? 1 : 0), ((int) cfgCache.size() + e16::kCfgPer - 1) / e16::kCfgPer); }
 
 // ------------------------------------------------------------------------- the pointer's wheel
 void Midi::wheelStart (juce::uint32 now)
@@ -1449,6 +1478,7 @@ std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
     {
         for (int i = 0; i < 3; ++i) control (i, e16::kSnapChannel, ccx::kMaster + i, cx::kMaster + i);
         for (int i = 0; i < kBusKnobs; ++i) control (4 + i, e16::kSnapChannel, ccx::kBus + i, cx::kBus + i);
+        for (int i = 0; i < kPkGlobals; ++i) control (8 + i, e16::kSnapChannel, ccx::kPkG + i, cx::kPkG + i);
     }
     else if (page == e16::pgSeq)
     {
@@ -1458,7 +1488,7 @@ std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
     else if (page >= e16::pgCfg && page < e16::pgCfg + e16::kCfgPages)
         for (int i = 0; i < e16::kCfgPer; ++i)
         {
-            const int idx = (page - e16::pgCfg) * e16::kCfgPer + i;
+            const int idx = cfgFirst (page - e16::pgCfg) + i;
             if (idx >= (int) cfgCache.size()) continue;
             const auto& sp = cfgCache[(size_t) idx];
             // A switch and a list take a share of the knob's travel each: a knob that is already
@@ -1474,7 +1504,7 @@ std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
                 want = has >= 0 && juce::jmin (n - 1, has * n / 128) == at ? has : juce::jlimit (0, 127, (at * 128 + 64) / n);
             }
             else if (sp.kind == Kind::Bipolar) want = juce::jlimit (0, 127, (int) std::lround (sp.value <= 0.5f ? sp.value * 128.0f : 64.0f + (sp.value - 0.5f) * 126.0f));
-            k[(size_t) i] = { e16::kFxChannel, e16::cfgCc (idx), want };
+            k[(size_t) i] = { e16::kFxChannel, e16::cfgCc ((page - e16::pgCfg) * e16::kCfgPer + i), want };       // (the knob's own address, whatever it holds)
         }
     return k;
 }
@@ -1521,7 +1551,8 @@ void Midi::sayNames()
     else if (e16At.scene == 1 && pg >= e16::pgCfg && pg < e16::pgCfg + e16::kCfgPages)
     {
         const int c = pg - e16::pgCfg, pages = cfgPagesNow();
-        if (ses.cfgOpen)
+        if (ses.pocketsUp()) title = "POCKETS " + String (Session::pocketPageName (cfgFirst (c) / e16::kCfgPer));
+        else if (ses.cfgOpen)
         {
             const auto& t = ses.cfg;
             const int fx = t.kind == 1 ? engine.insertType (t.lane, t.slot) : -1;
@@ -1531,8 +1562,11 @@ void Midi::sayNames()
         }
         for (int i = 0; i < e16::kCfgPer; ++i)
         {
-            const int idx = c * e16::kCfgPer + i;
-            nm[(size_t) i] = ses.cfgOpen && idx < (int) cfgCache.size() ? four (cfgCache[(size_t) idx].name) : String ("-");
+            const int idx = cfgFirst (c) + i;
+            nm[(size_t) i] = ! (cfgUp() && idx < (int) cfgCache.size()) ? String ("-")
+                           : ! ses.pocketsUp() ? four (cfgCache[(size_t) idx].name)
+                           : i < kLanes ? String (e16::laneCodes[i])                                    // (POCKETS: a knob is known by its lane)
+                           : String (std::array<const char*, 4> { "AMNT", "CLR", "SPD", "RETS" }[(size_t) juce::jlimit (0, 3, idx / e16::kCfgPer)]);
         }
     }
     if (wheelMode.load() && ses.pointing) { title = "> " + ses.stopName (ses.pointAt); nm[12] = "SEL"; }

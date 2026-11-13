@@ -191,13 +191,77 @@ bool Session::configOfFront (int by)
     }
 }
 
+// ---- POCKETS as a controller's CONFIG pages have it
+int Session::pocketControl (int index)
+{
+    if (index < 0 || index >= kPocketList) return -1;
+    static const int laneKnob[4] = { 0, 1, 3, 2 }, rigKnob[4] = { 0, 1, 2, 3 };        // HOME, WIDTH, YIELD, HOLD; AMOUNT, CLEAR, SPEED, RETURNS
+    const int page = index / (kLanes + 1), place = index % (kLanes + 1);
+    return place < kLanes ? cx::pk (place, laneKnob[page]) : cx::kPkG + rigKnob[page];
+}
+
+const char* Session::pocketPageName (int page)
+{
+    static const char* const names[4] = { "HOME", "WIDTH", "YIELD", "HOLD" };
+    return names[juce::jlimit (0, 3, page)];
+}
+
+int Session::pocketsAuto()
+{
+    Pockets::Seen seen;
+    engine.pocketsSeen (seen);
+    Pockets::Set out;
+    std::array<bool, kLanes> placed;
+    Pockets::place (seen, engine.pocketSet (false), out, placed);
+    int n = 0;
+    for (int l = 0; l < kLanes; ++l)
+        if (placed[(size_t) l]) { userSet (cx::pk (l, 0), out.home[(size_t) l]); userSet (cx::pk (l, 1), out.width[(size_t) l]); ++n; }
+    if (onChange) onChange();
+    return n;
+}
+
+void Session::pocketsReset()
+{
+    for (int l = 0; l < kLanes; ++l)
+        for (int k = 0; k < kPkLane; ++k) userSet (cx::pk (l, k), engine.control (cx::pk (l, k)).def);
+    if (onChange) onChange();
+}
+
 std::vector<Engine::SetupParam> Session::configList() const
 {
+    if (pocketsUp())
+    {
+        std::vector<Engine::SetupParam> list;
+        for (int i = 0; i < kPocketList; ++i)
+        {
+            const int ctl = pocketControl (i), place = i % (kLanes + 1);
+            const auto& c = engine.control (ctl);
+            Engine::SetupParam sp;
+            sp.id = c.id; sp.kind = c.kind; sp.value = engine.target (ctl); sp.def = c.def; sp.text = engine.valueText (ctl);
+            sp.name = place < kLanes ? juce::String (lanes()[(size_t) place].name) : c.label;      // (on a page of HOMEs, a knob is known by its lane)
+            sp.group = pocketPageName (i / (kLanes + 1));
+            list.push_back (sp);
+        }
+        return list;
+    }
     return cfgOpen && engine.processorFor (cfg) != nullptr ? engine.setupParams (cfg) : std::vector<Engine::SetupParam>();
 }
 
 void Session::setConfig (int index, int v7)
 {
+    if (pocketsUp())
+    {
+        // (POCKETS' are the rig's own knobs: turned as one on the screen is, and they travel)
+        if (const int ctl = pocketControl (index); ctl >= 0)
+        {
+            const float v = (float) juce::jlimit (0, 127, v7) / 127.0f;
+            if (std::abs (v - engine.target (ctl)) < 1.0e-6f) return;
+            moved (ctl, 1);
+            userSet (ctl, v);
+            if (onChange) onChange();
+        }
+        return;
+    }
     const auto list = configList();
     if (index < 0 || index >= (int) list.size()) return;
     const auto& sp = list[(size_t) index];
@@ -607,6 +671,7 @@ juce::var Session::madeNow (const Snapshot& s) const
     rt->setProperty ("dub", d.dub); rt->setProperty ("space", d.space); rt->setProperty ("conv", d.conv);
     o->setProperty ("returns", var (rt));
     if (s.hasBus) o->setProperty ("bus", d.bus);
+    if ((int) s.values.size() > cx::kPkG && s.values[(size_t) cx::kPkG] >= 0.0f) o->setProperty ("pockets", d.pockets);
     o->setProperty ("chassis", d.chassis);
     return var (o);
 }

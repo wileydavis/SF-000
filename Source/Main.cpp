@@ -43,10 +43,449 @@ static void dumpModules()
 #include <juce_audio_formats/juce_audio_formats.h>
 
 // Offline checks: every lane sounds, hits land on the grid at any block size, the mix is loud and clean.
+// POCKETS, the master's tool for who has which part of the spectrum: first on made-up sounds (a
+// tone against a tone, a kick against a bass), where what it should do can be said in numbers,
+// then in the rig.
+static void pocketsTest (int& bad)
+{
+    using namespace sf0;
+    const double SR = 48000.0;
+    auto dbv = [] (double a) { return 20.0 * std::log10 (a + 1.0e-20); };
+    // Thirteen parts of made-up sound, through the unit as the engine runs it.
+    struct Bench
+    {
+        Pockets pk; Pockets::Set set;
+        std::vector<std::vector<float>> ch;         // two for each lane, then the returns' four
+        int block;
+        explicit Bench (int blockSize = 256) : block (blockSize)
+        {
+            pk.prepare (48000.0, block);
+            for (int l = 0; l < kLanes; ++l)
+            {
+                const auto& d = pocketDefault (l);
+                set.home[(size_t) l] = Pockets::homeValue (d.homeHz); set.width[(size_t) l] = Pockets::widthValue (d.widthOct);
+                set.hold[(size_t) l] = d.hold; set.yield[(size_t) l] = d.yield;
+            }
+            set.amount = 1.0f; set.clear = 6.0f / 18.0f; set.speed = 0.5f; set.returns = 0.5f;
+            ch.assign ((size_t) (2 * kLanes + 4), std::vector<float> ((size_t) block, 0.0f));
+        }
+        void pocket (int lane, float hz, float oct, float hold, float yield)
+        {
+            set.home[(size_t) lane] = Pockets::homeValue (hz); set.width[(size_t) lane] = Pockets::widthValue (oct);
+            set.hold[(size_t) lane] = hold; set.yield[(size_t) lane] = yield;
+        }
+        void silence() { for (auto& c : ch) std::fill (c.begin(), c.end(), 0.0f); }
+        void put (int part, int i, float v) { ch[(size_t) (2 * part)][(size_t) i] += v; ch[(size_t) (2 * part + 1)][(size_t) i] += v; }
+        void run (bool watch = false)
+        {
+            float* p[2 * kLanes + 4];
+            for (size_t i = 0; i < ch.size(); ++i) p[i] = ch[i].data();
+            pk.lanes (p, block, set, watch);
+            pk.returns (p + 2 * kLanes, block);
+        }
+    };
+    enum { A = 7, B = 9, RA = kLanes };             // the one with the claim (the LEAD's place), the one that gives (the PAD's), return A
+    const float amp = std::pow (10.0f, -12.0f / 20.0f);
+    // A tone at 1 kHz on A; on B (or on return A) a tone at 1 kHz and one at 4 kHz, all three as loud.
+    // Run for `secs`, A sounding for the first `aFor` of them. What B's two tones are at the end
+    // (in dB against what went in), over the last 80 ms; and whether B came out exactly as it went in.
+    struct Tones { double at1k = 0.0, at4k = 0.0; bool exact = false; float cut1k = 0.0f; };
+    auto tones = [&] (Bench& r, double secs, double aFor, int into = B, std::vector<float>* cutOverTime = nullptr)
+    {
+        std::vector<float> out;
+        const int blocks = (int) (secs * SR / r.block);
+        double pa = 0.0, p1 = 0.3, p4 = 0.7;
+        Tones t;
+        for (int blk = 0; blk < blocks; ++blk)
+        {
+            r.silence();
+            std::vector<float> went ((size_t) r.block);
+            for (int i = 0; i < r.block; ++i)
+            {
+                if ((blk * r.block + i) / SR < aFor) r.put (A, i, amp * (float) std::sin (pa));
+                const float b = amp * (float) (std::sin (p1) + std::sin (p4));
+                r.put (into, i, b); went[(size_t) i] = b;
+                pa += juce::MathConstants<double>::twoPi * 1000.0 / SR; p1 += juce::MathConstants<double>::twoPi * 1000.0 / SR; p4 += juce::MathConstants<double>::twoPi * 4000.0 / SR;
+            }
+            r.run();
+            const auto& got = r.ch[(size_t) (2 * into)];
+            out.insert (out.end(), got.begin(), got.end());
+            if (blk == blocks - 1) { t.exact = true; for (int i = 0; i < r.block; ++i) t.exact = t.exact && got[(size_t) i] == went[(size_t) i]; }
+            if (cutOverTime != nullptr) cutOverTime->push_back (r.pk.cutNow (into, 15));
+        }
+        const int N = 3840, from = (int) out.size() - N;
+        auto tone = [&] (double hz) { double re = 0.0, im = 0.0; for (int i = 0; i < N; ++i) { const double w = juce::MathConstants<double>::twoPi * hz * (double) (from + i) / SR; re += out[(size_t) (from + i)] * std::cos (w); im += out[(size_t) (from + i)] * std::sin (w); } return 2.0 * std::sqrt (re * re + im * im) / (double) N; };
+        t.at1k = dbv (tone (1000.0)) - dbv (amp); t.at4k = dbv (tone (4000.0)) - dbv (amp);
+        t.cut1k = r.pk.cutNow (into, 15);
+        return t;
+    };
+    // (A's pocket is round 1 kHz and firmly held; B's is elsewhere, and B gives all it is asked)
+    struct Two : Bench { Two() { pocket (A, 1000.0f, 1.0f, 1.0f, 0.0f); pocket (B, 300.0f, 1.0f, 0.5f, 1.0f); } };
+
+    // Where two sounds meet, the one with the weaker claim sits CLEAR below the other, there and nowhere else.
+    {
+        Two r;
+        const auto t = tones (r, 3.0, 9.0);
+        const bool ok = std::abs (t.at1k + 6.0) < 0.8 && std::abs (t.at4k) < 0.3;
+        std::printf ("  %s: POCKETS: a tone in another's pocket, as loud as the other's, is taken down to sit CLEAR below it (%.1f dB, CLEAR at 6), and the same sound's tone two octaves up is left alone (%+.2f dB)\n",
+                     ok ? "ok  " : "FAIL", t.at1k, t.at4k);
+        if (! ok) ++bad;
+    }
+    // Only while the other is there: once it stops, what gave way comes back, and is then exactly what went in.
+    {
+        Two r;
+        std::vector<float> cut;
+        const auto t = tones (r, 4.0, 1.5, B, &cut);
+        const double perBlock = 256.0 / SR;
+        int back = -1;
+        for (int i = (int) (1.5 / perBlock); i < (int) cut.size() && back < 0; ++i) if (cut[(size_t) i] < 0.5f) back = i;
+        const double backMs = back < 0 ? -1.0 : ((double) back * perBlock - 1.5) * 1000.0;
+        const bool ok = t.exact && std::abs (t.at1k) < 0.01 && backMs > 50.0 && backMs < 900.0;
+        std::printf ("  %s: the other gone, it comes back (within half a dB %.0f ms after), and is then exactly the sound that went in: no bell is left in its way\n", ok ? "ok  " : "FAIL", backMs);
+        if (! ok) ++bad;
+    }
+    // AMOUNT, CLEAR, YIELD, HOLD and SPEED each do what they say.
+    {
+        Two half; half.set.amount = 0.5f;
+        Two wide; wide.set.clear = 12.0f / 18.0f;
+        Two mean; mean.set.yield[(size_t) B] = 3.0f / Pockets::kMaxCut;
+        Two swap; swap.pocket (A, 300.0f, 1.0f, 0.5f, 1.0f); swap.pocket (B, 1000.0f, 1.0f, 1.0f, 0.0f);
+        Two even; even.pocket (B, 1000.0f, 1.0f, 1.0f, 1.0f);
+        const auto th = tones (half, 3.0, 9.0), tw = tones (wide, 3.0, 9.0), tmn = tones (mean, 3.0, 9.0), ts = tones (swap, 3.0, 9.0), te = tones (even, 3.0, 9.0);
+        const float swapCutA = swap.pk.cutNow (A, 15);
+        auto backAfter = [&] (float speed)
+        {
+            Two r; r.set.speed = speed;
+            std::vector<float> cut; tones (r, 3.5, 1.5, B, &cut);
+            const double perBlock = 256.0 / SR;
+            for (int i = (int) (1.5 / perBlock); i < (int) cut.size(); ++i) if (cut[(size_t) i] < 0.5f) return ((double) i * perBlock - 1.5) * 1000.0;
+            return 1.0e9;
+        };
+        const double slow = backAfter (0.0f), fast = backAfter (1.0f);
+        const bool ok = std::abs (th.at1k + 3.0) < 0.6 && std::abs (tw.at1k + 12.0) < 1.2 && std::abs (tmn.at1k + 3.0) < 0.5
+                     && std::abs (ts.at1k) < 0.05 && swapCutA > 4.0f && std::abs (te.at1k) < 0.05 && even.pk.cutNow (A, 15) == 0.0f
+                     && fast < 200.0 && slow > 3.0 * fast;
+        std::printf ("  %s: AMOUNT at half takes half of it (%.1f dB); CLEAR at 12 asks 12 (%.1f); YIELD at 3 dB gives 3 (%.1f); with the claims the other way round the other gives (%.1f dB on it, %+.2f on this); "
+                     "two with the same claim to a band leave one another alone (%+.2f); SPEED sets how soon it is back (%.0f ms at full, %.0f at nought)\n",
+                     ok ? "ok  " : "FAIL", th.at1k, tw.at1k, tmn.at1k, -swapCutA, ts.at1k, te.at1k, fast, slow);
+        if (! ok) ++bad;
+    }
+    // The returns have no pocket: echo and reverb give way to a lane, by as much as RETURNS lets them.
+    {
+        Two r; r.set.returns = 0.25f;                               // 6 dB at most
+        Two deep; deep.set.returns = 1.0f; deep.set.clear = 1.0f;
+        const auto t = tones (r, 3.0, 9.0, RA), td = tones (deep, 3.0, 9.0, RA);
+        Two none; none.set.returns = 0.0f;
+        const auto tn = tones (none, 3.0, 9.0, RA);
+        const bool ok = std::abs (t.at1k + 6.0) < 0.8 && std::abs (t.at4k) < 0.3 && td.at1k < -15.0 && tn.exact;
+        std::printf ("  %s: a return gives way to a lane where the lane is sounding (%.1f dB with RETURNS at 6 and CLEAR at 6; %.1f with both at full), is left alone elsewhere (%+.2f dB), and with RETURNS at nought is not touched\n",
+                     ok ? "ok  " : "FAIL", t.at1k, td.at1k, t.at4k);
+        if (! ok) ++bad;
+    }
+    // A sound is taken to be where it is, not where the bank's bands overlap: a tone at 1 kHz makes room at 1 kHz.
+    {
+        Two r; r.set.clear = 1.0f; r.pocket (A, 1000.0f, 6.0f, 1.0f, 0.0f);       // (a pocket six octaves wide: only where it sounds can limit it)
+        juce::Random rnd (11);
+        double pa = 0.0;
+        for (int blk = 0; blk < (int) (3.0 * SR / r.block); ++blk)
+        {
+            r.silence();
+            for (int i = 0; i < r.block; ++i) { r.put (A, i, 0.05f * (float) std::sin (pa)); pa += juce::MathConstants<double>::twoPi * 1000.0 / SR; r.put (B, i, 0.5f * (rnd.nextFloat() * 2.0f - 1.0f)); }
+            r.run();
+        }
+        float at = r.pk.cutNow (B, 15), far = 0.0f;
+        for (int b = 0; b < Pockets::kBands; ++b) if (std::abs (b - 15) >= 3) far = std::max (far, r.pk.cutNow (B, b));
+        const bool ok = at > 6.0f && far < 0.3f;
+        std::printf ("  %s: a tone makes room where it is and not beside it: noise under a 1 kHz tone is cut %.1f dB at 1 kHz, and by no more than %.2f dB an octave or more away\n", ok ? "ok  " : "FAIL", at, far);
+        if (! ok) ++bad;
+    }
+    // A kick against a bass. The bottom bands take tens of milliseconds to ring up, and the kick's
+    // hardest part is over by then: once a kick has been heard, the next is known by its spectrum
+    // from its first millisecond.
+    {
+        Bench r (64);
+        const long per = (long) (0.4545 * SR);
+        const float ab = std::pow (10.0f, -10.0f / 20.0f);
+        double pb = 0.0; long t = 0;
+        std::vector<float> cut;                 // the bass's cut round its own note, every 64 samples
+        for (int blk = 0; blk < (int) (6 * per / 64); ++blk)
+        {
+            r.silence();
+            for (int i = 0; i < 64; ++i, ++t)
+            {
+                const double tt = (double) (t % per) / SR;
+                r.put (0, i, 0.7f * (float) (std::exp (-tt / 0.09) * std::sin (juce::MathConstants<double>::twoPi * (50.0 * tt + 60.0 * 0.02 * (1.0 - std::exp (-tt / 0.02))))));
+                r.put (5, i, ab * (float) std::sin (pb)); pb += juce::MathConstants<double>::twoPi * 50.0 / SR;
+            }
+            r.run();
+            cut.push_back (r.pk.cutNow (5, 2) + 0.27f * (r.pk.cutNow (5, 1) + r.pk.cutNow (5, 3)));
+        }
+        const int perB = (int) (per / 64);
+        auto at = [&] (int hit, double ms) { return cut[(size_t) (hit * perB + (int) (ms * SR / 64000.0))]; };
+        float deepest = 0.0f; for (int k = 0; k < perB; ++k) deepest = std::max (deepest, cut[(size_t) (4 * perB + k)]);
+        const float first8 = at (0, 8.0), later8 = at (4, 8.0), before = at (4, -4.0);
+        const bool ok = deepest > 3.0f && later8 > 0.5f * deepest && first8 < 0.2f * deepest && before < 0.45f * deepest;
+        std::printf ("  %s: a bass under a kick: 8 ms into the fifth kick the bass's 50 Hz is down %.1f dB of the %.1f it reaches (the first kick, not yet known: %.1f dB by then), and it is back to %.1f before the next\n",
+                     ok ? "ok  " : "FAIL", later8, deepest, first8, before);
+        if (! ok) ++bad;
+    }
+    // What it costs, at its worst: thirteen parts of noise, every one of them giving way all over.
+    {
+        Bench r; juce::Random rnd (3);
+        for (int l = 0; l < kLanes; ++l) r.set.yield[(size_t) l] = 1.0f;
+        r.set.clear = 1.0f; r.set.returns = 1.0f;
+        std::vector<std::vector<float>> noise = r.ch;
+        for (auto& c : noise) for (auto& v : c) v = 0.2f * (rnd.nextFloat() * 2.0f - 1.0f);
+        const int blocks = (int) (8.0 * SR / r.block);
+        auto timeIt = [&] (float amount, bool watch)
+        {
+            r.set.amount = amount;
+            const auto t0 = juce::Time::getHighResolutionTicks();
+            for (int blk = 0; blk < blocks; ++blk) { r.ch = noise; r.run (watch); }
+            return juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) / 8.0 * 100.0;
+        };
+        const double off = timeIt (0.0f, false), looking = timeIt (0.0f, true), full = timeIt (1.0f, false);
+        int bells = 0; for (int q = 0; q < Pockets::kParts; ++q) for (int b = 0; b < Pockets::kBands; ++b) bells += r.pk.cutNow (q, b) > 0.0f ? 1 : 0;
+        const bool ok = full - off < 12.0 && looking - off < 5.0;
+        std::printf ("  %s: its cost: looking at all thirteen parts, %.1f %% of one core of this machine; with %d of its 364 bells cutting at once, %.1f %% (and none at all with AMOUNT at nought)\n",
+                     ok ? "ok  " : "FAIL", looking - off, bells, full - off);
+        if (! ok) ++bad;
+    }
+    // AUTO, on made-up spectra: each lane's pocket is put where its own sound is, and no wider than it takes to hold it.
+    {
+        Pockets::Seen sn;
+        for (auto& row : sn.usual) row.fill (-120.0f);
+        auto hump = [&] (int lane, float band, float halfWidth, float db) { for (int b = 0; b < Pockets::kBands; ++b) { const float d = ((float) b - band) / halfWidth; sn.usual[(size_t) lane][(size_t) b] = std::max (sn.usual[(size_t) lane][(size_t) b], db - 12.0f * d * d); } sn.heardFor[(size_t) lane] = 10.0f; };
+        hump (0, 2.0f, 1.0f, -30.0f);                               // a kick at 50 Hz, with a click far up and far down
+        hump (0, 21.0f, 2.0f, -52.0f);
+        hump (1, 25.0f, 1.5f, -45.0f);                              // a hat at 10 kHz
+        for (int b = 8; b <= 20; ++b) sn.usual[8][(size_t) b] = -44.0f;     // a chord spread evenly from 200 Hz to 3 kHz
+        sn.heardFor[8] = 10.0f;
+        sn.heardFor[9] = 0.5f; for (auto& v : sn.usual[9]) v = -40.0f;      // (a pad heard for half a second: too little to go by)
+        Pockets::Set now, out; std::array<bool, kLanes> placed;
+        for (int l = 0; l < kLanes; ++l) { const auto& d = pocketDefault (l); now.home[(size_t) l] = Pockets::homeValue (d.homeHz); now.width[(size_t) l] = Pockets::widthValue (d.widthOct); now.hold[(size_t) l] = d.hold; now.yield[(size_t) l] = d.yield; }
+        Pockets::place (sn, now, out, placed);
+        const float kick = Pockets::homeHz (out.home[0]), hat = Pockets::homeHz (out.home[1]), chord = Pockets::homeHz (out.home[8]);
+        const float kickW = Pockets::widthOct (out.width[0]), chordW = Pockets::widthOct (out.width[8]);
+        int n = 0; for (bool b : placed) n += b ? 1 : 0;
+        const bool ok = n == 3 && placed[0] && placed[1] && placed[8] && ! placed[9] && kick > 44.0f && kick < 56.0f && hat > 9000.0f && hat < 11500.0f && chord > 550.0f && chord < 1050.0f
+                     && kickW < 1.5f && chordW > 2.5f && out.home[9] == now.home[9] && out.hold == now.hold && out.yield == now.yield;
+        std::printf ("  %s: AUTO, given a kick at 50 Hz, a hat at 10 kHz and a chord spread evenly from 200 Hz to 3 kHz: the kick's pocket goes to %.0f Hz and is %.1f octaves wide, the hat's to %.1f kHz, the chord's to %.0f Hz and %.1f octaves; a lane heard for half a second is left where it was\n",
+                     ok ? "ok  " : "FAIL", kick, kickW, hat / 1000.0f, chord, chordW);
+        if (! ok) ++bad;
+    }
+
+    // ---- in the rig
+    struct Tap : Engine::RecSink
+    {
+        std::array<std::vector<float>, Engine::kRecTracks> t;
+        void begin (int) noexcept override {}
+        void track (int idx, const float* l, const float*, int n) noexcept override { auto& v = t[(size_t) idx]; if (v.size() + (size_t) n <= v.capacity()) v.insert (v.end(), l, l + n); }
+        void end (int) noexcept override {}
+    };
+    using Sets = std::vector<std::pair<int, float>>;
+    const int block = 256;
+    bool worked = false, sound = true;
+    std::array<double, Pockets::kParts> cutSeen {};
+    auto run = [&] (const Sets& sets, std::vector<int> onlyLanes, bool watch, Tap& tap)
+    {
+        Engine e; e.prepare (SR, block);
+        for (auto& kv : sets) e.set (kv.first, kv.second, 0.0);
+        if (! onlyLanes.empty()) for (int l = 0; l < kLanes; ++l) if (std::find (onlyLanes.begin(), onlyLanes.end(), l) == onlyLanes.end()) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+        e.watchPockets (watch);
+        const double beat = 60.0 / e.tempo();
+        for (auto& v : tap.t) { v.clear(); v.reserve ((size_t) (9.0 * beat * SR)); }
+        juce::AudioBuffer<float> b (2, block);
+        e.setRunning (true);
+        for (int i = 0; i < (int) (8.0 * beat * SR / block); ++i) e.render (b);         // two bars to settle in
+        e.setRecSink (&tap);
+        cutSeen.fill (0.0);
+        for (int i = 0; i < (int) (8.0 * beat * SR / block); ++i)
+        {
+            e.render (b);
+            for (int q = 0; q < Pockets::kParts; ++q) for (int k = 0; k < Pockets::kBands; ++k) cutSeen[(size_t) q] = std::max (cutSeen[(size_t) q], (double) e.pocketsForTests().cutNow (q, k));
+            for (int i2 = 0; i2 < block; ++i2) sound = sound && std::isfinite (b.getSample (0, i2));
+        }
+        e.setRecSink (nullptr);
+        worked = e.pocketsForTests().working();
+        sound = sound && ! e.fault.load();
+    };
+    auto same = [] (const std::vector<float>& a, const std::vector<float>& b) { return a.size() == b.size() && ! a.empty() && std::equal (a.begin(), a.end(), b.begin()); };
+    auto differ = [] (const std::vector<float>& a, const std::vector<float>& b)
+    {
+        double d = 0.0, sum = 0.0;
+        for (size_t i = 0; i < a.size() && i < b.size(); ++i) { d += (double) (a[i] - b[i]) * (a[i] - b[i]); sum += (double) a[i] * a[i]; }
+        return 10.0 * std::log10 ((d + 1.0e-20) / (sum + 1.0e-20));
+    };
+    auto rms = [] (const std::vector<float>& a) { double s = 0.0; for (float v : a) s += (double) v * v; return 10.0 * std::log10 (s / (double) std::max<size_t> (1, a.size()) + 1.0e-20); };
+    const int AMOUNT = cx::kPkG, CLEAR = cx::kPkG + 1, SPEED = cx::kPkG + 2, RETURNS = cx::kPkG + 3;
+    auto plain = std::make_unique<Tap>(), watched = std::make_unique<Tap>(), full = std::make_unique<Tap>(), other = std::make_unique<Tap>();
+
+    // With AMOUNT at nought it is not there: it does no work, and the set is the same to the last bit whether or not the page is looking.
+    {
+        run ({}, {}, false, *plain);
+        const bool idle = ! worked;
+        run ({}, {}, true, *watched);
+        const bool looking = worked;
+        bool every = true;
+        for (int t = 0; t < Engine::kRecTracks; ++t) every = every && (plain->t[(size_t) t].empty() ? watched->t[(size_t) t].empty() : same (plain->t[(size_t) t], watched->t[(size_t) t]));
+        const bool ok = idle && looking && every && plain->t[0].size() > 48000;
+        std::printf ("  %s: in the rig, AMOUNT at nought (where it starts): POCKETS does no work at all, and with its page up and looking the set and every stem are the same to the last bit\n", ok ? "ok  " : "FAIL");
+        if (! ok) ++bad;
+    }
+    // At work on the whole rig: nothing breaks, the kick is not touched, the others give where they should.
+    {
+        run ({ { AMOUNT, 1.0f } }, {}, false, *full);
+        int gave = 0; double most = 0.0; juce::String who;
+        for (int l = 1; l < kLanes; ++l) if (cutSeen[(size_t) l] > 1.0) { ++gave; if (cutSeen[(size_t) l] > most) { most = cutSeen[(size_t) l]; who = lanes()[(size_t) l].name; } }
+        const double setWas = rms (plain->t[0]), setIs = rms (full->t[0]);
+        double worst = 0.0; juce::String worstWho;
+        for (int l = 0; l < kLanes; ++l) if (const double d = rms (plain->t[(size_t) (1 + l)]) - rms (full->t[(size_t) (1 + l)]); d > worst) { worst = d; worstWho = lanes()[(size_t) l].name; }
+        const bool ok = sound && same (plain->t[1], full->t[1]) && cutSeen[0] == 0.0 && gave >= 4 && most <= Pockets::kMaxCut + 0.01 && std::abs (setWas - setIs) < 3.0 && worst < 5.0;
+        std::printf ("  %s: AMOUNT at full, every lane playing: the kick's stem is the same to the last bit (its YIELD is nought), %d other lanes give somewhere (the most in one band: %.1f dB, %s), no lane loses more than %.1f dB over all (%s), and the set is %+.1f dB\n",
+                     ok ? "ok  " : "FAIL", gave, most, who.toRawUTF8(), worst, worstWho.toRawUTF8(), setIs - setWas);
+        if (! ok) ++bad;
+    }
+    // What is not heard covers nothing: the bass under the kick gives; the kick muted, the bass is as it came.
+    {
+        Tap a, b, c;
+        run ({}, { 0, 5 }, false, a);
+        run ({ { AMOUNT, 1.0f }, { CLEAR, 1.0f }, { cx::pk (5, 3), 1.0f } }, { 0, 5 }, false, b);
+        const double gives = differ (a.t[6], b.t[6]), bassCut = cutSeen[5];
+        run ({ { AMOUNT, 1.0f }, { CLEAR, 1.0f }, { cx::pk (5, 3), 1.0f } }, { 5 }, false, c);
+        Tap alone; run ({}, { 5 }, false, alone);
+        const bool ok = gives > -40.0 && bassCut > 3.0 && same (alone.t[6], c.t[6]);
+        std::printf ("  %s: the kick and the bass alone: the bass gives under the kick (up to %.1f dB in a band; its stem differs by %.0f dB); with the kick muted the bass is the bass as it came, to the last bit\n",
+                     ok ? "ok  " : "FAIL", bassCut, gives);
+        if (! ok) ++bad;
+    }
+    // Every knob is heard: the rig's four, and a lane's four.
+    {
+        juce::String heard; bool all = true;
+        auto pair = [&] (const char* name, const Sets& lo, const Sets& hi, int track)
+        {
+            Tap a, b;
+            run (lo, {}, false, a); run (hi, {}, false, b);
+            const double d = differ (a.t[(size_t) track], b.t[(size_t) track]);
+            heard << (heard.isEmpty() ? "" : ", ") << name << " " << juce::String ((int) std::lround (d));
+            all = all && d > -45.0;
+        };
+        pair ("AMOUNT", { { AMOUNT, 0.0f } }, { { AMOUNT, 1.0f } }, 0);
+        pair ("CLEAR", { { AMOUNT, 1.0f }, { CLEAR, 0.0f } }, { { AMOUNT, 1.0f }, { CLEAR, 1.0f } }, 0);
+        pair ("SPEED", { { AMOUNT, 1.0f }, { CLEAR, 1.0f }, { SPEED, 0.0f } }, { { AMOUNT, 1.0f }, { CLEAR, 1.0f }, { SPEED, 1.0f } }, 0);
+        // (the returns, with the lead and the chord sent hard to them so there is something of theirs to cut)
+        const Sets sends = { { AMOUNT, 1.0f }, { CLEAR, 1.0f }, { cx::lane (7, cx::kSendA), 1.0f }, { cx::lane (8, cx::kSendB), 1.0f }, { cx::lane (5, cx::kSendA), 0.8f } };
+        Sets r0 = sends, r1 = sends; r0.push_back ({ RETURNS, 0.0f }); r1.push_back ({ RETURNS, 1.0f });
+        pair ("RETURNS", r0, r1, 1 + kLanes);
+        const Sets on = { { AMOUNT, 1.0f }, { CLEAR, 0.5f } };
+        auto with = [&] (int knob, float v) { Sets x = on; x.push_back ({ cx::pk (5, knob), v }); return x; };
+        pair ("BASS HOME", with (0, Pockets::homeValue (60.0f)), with (0, Pockets::homeValue (400.0f)), 6);
+        pair ("WIDTH", with (1, 0.0f), with (1, 1.0f), 6);
+        pair ("HOLD", with (2, 0.0f), with (2, 1.0f), 6);
+        pair ("YIELD", with (3, 0.0f), with (3, 1.0f), 6);
+        std::printf ("  %s: each of its knobs is heard, end to end of its travel: the rig's four, and a lane's four on the bass (dB of difference: %s)\n", all ? "ok  " : "FAIL", heard.toRawUTF8());
+        if (! all) ++bad;
+    }
+    // A sweep of HOME travels: it is a knob like any other, and GLIDE carries it.
+    {
+        Engine e; e.prepare (SR, block);
+        e.set (AMOUNT, 1.0f, 0.0);
+        juce::AudioBuffer<float> b (2, block);
+        e.setRunning (true);
+        for (int i = 0; i < 200; ++i) e.render (b);
+        const float from = e.shown (cx::pk (5, 0));
+        e.set (cx::pk (5, 0), Pockets::homeValue (800.0f), 8.0);       // over two bars
+        const double beat = 60.0 / e.tempo();
+        for (int i = 0; i < (int) (4.5 * beat * SR / block); ++i) e.render (b);
+        const float mid = e.shown (cx::pk (5, 0));
+        for (int i = 0; i < (int) (5.0 * beat * SR / block); ++i) e.render (b);
+        const float to = e.shown (cx::pk (5, 0));
+        const bool ok = mid > from + 0.1f * (to - from) && mid < to - 0.1f * (to - from) && std::abs (Pockets::homeHz (to) - 800.0f) < 2.0f && e.valueText (cx::pk (5, 0)) == "800 HZ";
+        std::printf ("  %s: the bass's HOME sent from %.0f Hz to 800 Hz over two bars is on its way half way through (%.0f Hz) and there at the end (%s)\n",
+                     ok ? "ok  " : "FAIL", Pockets::homeHz (from), Pockets::homeHz (mid), e.valueText (cx::pk (5, 0)).toRawUTF8());
+        if (! ok) ++bad;
+    }
+    // A snapshot holds the pockets; a recall brings them back; the session file keeps them by name;
+    // a snapshot from before there were any leaves them where they are. AUTO and RESET.
+    {
+        using juce::var;
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_pockets_test");
+        tmp.deleteRecursively(); tmp.createDirectory();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        bool kept = false, back = false, left = false, scoped = false, inFile = false, madeSays = false, autoOk = false, resetOk = false, reaches = false, onDisk = false;
+        juce::String autoSays;
+        juce::int64 withId = 0;
+        {
+            Engine e; e.prepare (SR, block);
+            Session ses (e, true);
+            juce::AudioBuffer<float> b (2, block);
+            auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * SR / block); for (int k = 0; k < blocks; ++k) e.render (b); };
+            ses.userSet (cx::kGlide, 0.0f);
+            const float homeWas = e.target (cx::pk (5, 0));
+            ses.userSet (AMOUNT, 0.7f); ses.userSet (cx::pk (5, 0), 0.33f); ses.userSet (cx::pk (9, 3), 0.9f);
+            bars (0.1);
+            withId = ses.take();
+            const auto& snap = ses.library[(size_t) ses.indexOf (withId)];
+            kept = std::abs (snap.values[(size_t) AMOUNT] - 0.7f) < 1.0e-6f && std::abs (snap.values[(size_t) cx::pk (5, 0)] - 0.33f) < 1.0e-6f;
+            madeSays = snap.made["pockets"].toString().length() == 16 && snap.made["pockets"].toString() == e.defs().pockets;
+            // a snapshot from before: no word of pockets in it
+            Snapshot old = snap; old.id = withId + 77; old.name = "FROM BEFORE"; old.uid.clear(); old.kept = var();
+            for (int i = 0; i < cx::kCount; ++i) if (cx::isPk (i)) old.values[(size_t) i] = -1.0f;
+            ses.library.push_back (old);
+            ses.userSet (AMOUNT, 0.2f); ses.userSet (cx::pk (5, 0), 0.6f); ses.userSet (cx::pk (9, 3), 0.1f);
+            bars (0.1);
+            ses.recall (old.id); bars (0.1);
+            left = std::abs (e.target (AMOUNT) - 0.2f) < 1.0e-6f && std::abs (e.target (cx::pk (5, 0)) - 0.6f) < 1.0e-6f;
+            // part of a snapshot: the bass alone brings the bass's pocket and not the rig's AMOUNT or the pad's
+            Session::Scope sc; sc.lane.fill (false); sc.lane[5] = true; sc.returns = false; sc.bus = false; sc.master = false;
+            ses.recall (withId, sc); bars (0.1);
+            scoped = std::abs (e.target (cx::pk (5, 0)) - 0.33f) < 1.0e-6f && std::abs (e.target (AMOUNT) - 0.2f) < 1.0e-6f && std::abs (e.target (cx::pk (9, 3)) - 0.1f) < 1.0e-6f;
+            ses.recall (withId); bars (0.1);
+            back = std::abs (e.target (AMOUNT) - 0.7f) < 1.0e-6f && std::abs (e.target (cx::pk (5, 0)) - 0.33f) < 1.0e-6f && std::abs (e.target (cx::pk (9, 3)) - 0.9f) < 1.0e-6f;
+            reaches = Session::reaches (e, AMOUNT) && Session::reaches (e, cx::pk (5, 0)) && ! Session::reaches (e, cx::kMaster);
+            // RESET, then AUTO from what plays
+            ses.pocketsReset(); bars (0.1);
+            resetOk = std::abs (e.target (cx::pk (5, 0)) - homeWas) < 1.0e-6f && std::abs (e.target (cx::pk (9, 3)) - e.control (cx::pk (9, 3)).def) < 1.0e-6f && std::abs (e.target (AMOUNT) - 0.7f) < 1.0e-6f;
+            const int none = ses.pocketsAuto();                                 // (nothing has been looked at: nothing is moved)
+            e.watchPockets (true);
+            e.setRunning (true);
+            bars (6.0);
+            const int n = ses.pocketsAuto(); bars (0.1);
+            const float kick = Pockets::homeHz (e.target (cx::pk (0, 0))), hat = Pockets::homeHz (e.target (cx::pk (1, 0))), bass = Pockets::homeHz (e.target (cx::pk (5, 0))), clap = Pockets::homeHz (e.target (cx::pk (3, 0)));
+            autoOk = none == 0 && n >= 9 && kick > 35.0f && kick < 110.0f && hat > 4000.0f && bass > 40.0f && bass < 500.0f && clap > 500.0f && clap < 5000.0f
+                  && std::abs (e.target (cx::pk (5, 2)) - e.control (cx::pk (5, 2)).def) < 1.0e-6f;
+            autoSays = juce::String (n) + " lanes placed: KICK " + juce::String ((int) kick) + " Hz, BASS " + juce::String ((int) bass) + " Hz, CLAP " + juce::String ((int) clap) + " Hz, CLOSED HAT " + juce::String (hat / 1000.0f, 1) + " kHz";
+
+            e.setRunning (false);
+            ses.recall (withId); bars (0.1);
+            ses.waitForClips(); ses.save();
+            const var root = juce::JSON::parse (Session::stateFile().loadFileAsString());
+            for (int i = 0; i < root["library"].size(); ++i)
+                if ((juce::int64) root["library"][i]["id"] == withId)
+                    inFile = std::abs ((double) root["library"][i]["values"]["pk.amount"] - 0.7) < 1.0e-4 && std::abs ((double) root["library"][i]["values"]["bass.pk_home"] - 0.33) < 1.0e-4
+                          && root["library"][i]["made"]["pockets"].toString().length() == 16 && root["defs"][juce::Identifier (root["library"][i]["made"]["pockets"].toString())]["kind"].toString() == "pockets";
+        }
+        {
+            Engine e; e.prepare (SR, block);
+            Session ses (e, true);
+            onDisk = std::abs (e.target (AMOUNT) - 0.7f) < 1.0e-4f && std::abs (e.target (cx::pk (5, 0)) - 0.33f) < 1.0e-4f && ses.indexOf (withId) >= 0
+                  && std::abs (ses.library[(size_t) ses.indexOf (withId)].values[(size_t) cx::pk (9, 3)] - 0.9f) < 1.0e-4f;
+        }
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+        const bool ok = kept && madeSays && left && scoped && back && reaches && resetOk && autoOk && inFile && onDisk;
+        std::printf ("  %s: a snapshot holds the pockets and a recall brings them back; one from before there were any leaves them as they are; the bass alone, recalled, brings the bass's and not the rig's; a snapshot knob can reach them; "
+                     "they are in the session file by name with what they were made with, and there when it opens. RESET puts every pocket back; AUTO, after six bars: %s\n", ok ? "ok  " : "FAIL", autoSays.toRawUTF8());
+        if (! ok) { std::printf ("        (kept %d made %d left %d scoped %d back %d reaches %d reset %d auto %d file %d disk %d)\n", kept, madeSays, left, scoped, back, reaches, resetOk, autoOk, inFile, onDisk); ++bad; }
+    }
+}
+
 static int selfTest (const juce::String& wavPath, double bars = 16.0)
 {
     using namespace sf0;
     int bad = 0;
+    // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); pocketsTest (bad); std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -750,7 +1189,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    pocketsTest (bad);
 
     // Recording: the set and its parts go to disk as they are played.
     {
@@ -1808,7 +2247,7 @@ static int uiTest()
 
     // 2. everything, on every page: a click, then a drag on what turns
     int clicks = 0;
-    for (auto page : { Screen::pMain, Screen::pLibrary, Screen::pMacros })
+    for (auto page : { Screen::pMain, Screen::pLibrary, Screen::pMacros, Screen::pPockets })
     {
         sc.setPage (page); draw();
         const auto all = sc.testHits();
@@ -2039,8 +2478,101 @@ static int uiTest()
     draw();
     bool finite = true;
     for (int i = 0; i < 512; ++i) finite = finite && std::isfinite (b.getSample (0, i)) && std::isfinite (b.getSample (1, i));
-    check (true, (juce::String (clicks) + " controls clicked, dragged and double-clicked across three screens").toRawUTF8());
+    check (true, (juce::String (clicks) + " controls clicked, dragged and double-clicked across four screens").toRawUTF8());
     check (finite && ! e.fault.load(), "the audio is still clean afterwards");
+
+    // POCKETS: the master's page. A key on the master and P on the keyboard; every lane's pocket on
+    // a map, dragged by hand; the rig's four knobs and each lane's four; AUTO and RESET.
+    {
+        const juce::KeyPress pKey ('p', juce::ModifierKeys(), 'p');
+        sc.setPage (Screen::pMain); ses.userSet (cx::kGlide, 0.0f); ses.pocketsReset();
+        for (int k = 0; k < kPkGlobals; ++k) ses.userSet (cx::kPkG + k, e.control (cx::kPkG + k).def);
+        for (int l = 0; l < kLanes; ++l) { ses.userSet (cx::lane (l, cx::kMute), 0.0f); ses.userSet (cx::lane (l, cx::kSolo), 0.0f); }
+        audio (4); draw();
+        int keys = 0; juce::Point<float> keyAt;
+        for (auto& h : sc.testHits()) if (Screen::testIsPocketsKey (h)) { ++keys; keyAt = h.r.getCentre(); }
+        const bool idle = ! e.pocketsForTests().working() && ! e.pocketsWatched();
+        click (keyAt); draw();
+        audio (4);
+        const bool opened = sc.testPage() == Screen::pPockets && ses.showing == 3 && e.pocketsWatched() && e.pocketsForTests().working();
+        int knobs = 0, rig = 0, maps = 0, mutes = 0;
+        juce::Rectangle<float> bassMap, autoKey, resetKey, bassHome;
+        for (auto& h : sc.testHits())
+        {
+            for (int l = 0; l < kLanes; ++l)
+            {
+                for (int k = 0; k < kPkLane; ++k) if (Screen::testIsControl (h, cx::pk (l, k))) { ++knobs; if (l == 5 && k == 0) bassHome = h.r; }
+                if (Screen::testIsPocket (h, l)) { ++maps; if (l == 5) bassMap = h.r; }
+                if (Screen::testIsToggle (h, cx::lane (l, cx::kMute)) || Screen::testIsToggle (h, cx::lane (l, cx::kSolo))) ++mutes;
+            }
+            for (int k = 0; k < kPkGlobals; ++k) if (Screen::testIsControl (h, cx::kPkG + k)) ++rig;
+            if (Screen::testIsPocketsKey (h, 1)) autoKey = h.r;
+            if (Screen::testIsPocketsKey (h, 2)) resetKey = h.r;
+        }
+        check (keys == 1 && idle && opened && knobs == kLanes * kPkLane && rig == kPkGlobals && maps == kLanes && mutes == 2 * kLanes,
+               "POCKETS: a key on the master opens its page, and only then does it look at the lanes (AMOUNT being at nought): a map and four knobs for every lane, the rig's four, and each lane's MUTE and SOLO");
+        // a pocket dragged along its map is its HOME, dragged up its WIDTH; double-clicked, both are back
+        const int home = cx::pk (5, 0), width = cx::pk (5, 1);
+        const float h0 = e.target (home), w0 = e.target (width);
+        dragBy (bassMap.getCentre(), bassMap.getWidth() * 0.25f, 0.0f);
+        const float h1 = e.target (home), w1 = e.target (width);
+        dragBy (bassMap.getCentre(), 0.0f, -80.0f);
+        const float h2 = e.target (home), w2 = e.target (width);
+        sc.mouseDoubleClick (ev (bassMap.getCentre(), bassMap.getCentre(), false));
+        const bool dragged = std::abs (h1 - (h0 + 0.25f * 28.0f / 27.0f)) < 0.01f && w1 == w0 && h2 == h1 && std::abs (w2 - (w0 + 0.5f)) < 0.01f
+                          && std::abs (e.target (home) - h0) < 1.0e-6f && std::abs (e.target (width) - w0) < 1.0e-6f;
+        // its knob, as any knob
+        dragBy (bassHome.getCentre(), 0.0f, -32.0f);
+        const bool knobbed = std::abs (e.target (home) - (h0 + 0.2f)) < 0.01f;
+        check (dragged && knobbed, "a pocket dragged a quarter of the way along its map moves its HOME by that much, dragged up it widens, and a double-click puts both back; its HOME knob turns it too");
+        // AUTO places the pockets from what has been playing while the page was up; RESET puts them back
+        audio (700); sc.testTick(); draw();
+        click (autoKey.getCentre()); draw();
+        audio (4);
+        // (the rig is as the clicking above left it: what matters here is that the key places them, by what is playing. --test holds AUTO to where.)
+        int movedLanes = 0;
+        for (int l = 0; l < kLanes; ++l) if (std::abs (e.target (cx::pk (l, 0)) - e.control (cx::pk (l, 0)).def) > 1.0e-4f || std::abs (e.target (cx::pk (l, 1)) - e.control (cx::pk (l, 1)).def) > 1.0e-4f) ++movedLanes;
+        const float hat = Pockets::homeHz (e.target (cx::pk (1, 0)));
+        const bool placed = movedLanes >= 3 && hat > 3000.0f && std::abs (e.target (cx::pk (5, 2)) - e.control (cx::pk (5, 2)).def) < 1.0e-6f;
+        click (resetKey.getCentre()); draw(); audio (4);
+        bool reset = true;
+        for (int l = 0; l < kLanes; ++l) for (int k = 0; k < kPkLane; ++k) reset = reset && std::abs (e.target (cx::pk (l, k)) - e.control (cx::pk (l, k)).def) < 1.0e-6f;
+        check (placed && reset, ("AUTO moves the pockets to where the lanes have been playing (" + juce::String (movedLanes) + " of them moved; the closed hat's is at " + juce::String (hat / 1000.0f, 1) + " kHz) and leaves HOLD alone; RESET puts every pocket back where the rig starts it").toRawUTF8());
+        // INFO: every knob, key and pocket on the page says what it is, and where MIDI finds it
+        sc.setInfo (true); draw();
+        int asked = 0, silent = 0;
+        for (auto& h : sc.testHits())
+        {
+            if (! Screen::testAnswers (h)) continue;
+            sc.testPointAt (h.r.getCentre());
+            ++asked;
+            if (sc.testTip().trim().isEmpty()) ++silent;
+        }
+        sc.testPointAt (bassHome.getCentre());
+        const auto homeTip = sc.testTip();
+        for (auto& h : sc.testHits()) if (Screen::testIsControl (h, cx::kPkG)) sc.testPointAt (h.r.getCentre());
+        const auto amountTip = sc.testTip();
+        sc.setInfo (false);
+        check (asked >= kLanes * (kPkLane + 3) + kPkGlobals + 3 && silent == 0 && homeTip.contains ("6 BASS") && homeTip.contains ("CHANNEL 6, CC 59") && amountTip.contains ("CHANNEL 16, CC 75"),
+               ("with INFO on, each of the page's " + juce::String (asked) + " knobs, keys and pockets says what it is; the bass's HOME is on channel 6, CC 59, and AMOUNT on channel 16, CC 75").toRawUTF8());
+        // Esc and P; and a controller asking for the page
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::escapeKey)); draw(); audio (4);
+        const bool left = sc.testPage() == Screen::pMain && ! e.pocketsWatched() && ! e.pocketsForTests().working();
+        sc.keyPressed (pKey); draw();
+        const bool byP = sc.testPage() == Screen::pPockets;
+        sc.keyPressed (pKey); draw();
+        const bool backByP = sc.testPage() == Screen::pMain;
+        ses.wantShowing = 3; sc.testTick(); draw();
+        const bool asked3 = sc.testPage() == Screen::pPockets && ses.pocketsUp() && (int) ses.configList().size() == Session::kPocketList;
+        ses.wantShowing = 0; sc.testTick(); draw();
+        check (left && byP && backByP && asked3 && sc.testPage() == Screen::pMain && ! e.pocketsWatched(),
+               "Esc leaves the page, and it stops looking; P on the keyboard opens and shuts it; a controller that asks for it gets it, with its forty-eight knobs listed for the CONFIG pages");
+        // AMOUNT turned up is heard, and shows on the master
+        ses.userSet (cx::kPkG, 1.0f); audio (300);
+        float cut = 0.0f; for (int q = 0; q < Pockets::kParts; ++q) for (int k = 0; k < Pockets::kBands; ++k) cut = std::max (cut, e.pocketsForTests().cutNow (q, k));
+        ses.userSet (cx::kPkG, 0.0f); audio (300);
+        check (cut > 2.0f && ! e.pocketsForTests().working(), ("with AMOUNT at full the playing rig is carved (up to " + juce::String (cut, 1) + " dB in a band); back at nought, once the last bell has let go, POCKETS is doing nothing again").toRawUTF8());
+    }
 
     // 2b. GLIDE set on the screen, then a snapshot knob turned on the screen: the pushed knobs travel
     {
@@ -2908,7 +3440,15 @@ static int shot (const juce::StringArray& args)
     if (args.contains ("--seqmute")) { ses.userSet (cx::lane (ses.activeLane, cx::kSeqMute), 1.0f); for (int i = 0; i < 8; ++i) e.render (b); }
     Screen sc (ses);
     const auto page = arg ("--page", "main");
-    sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : Screen::pMain);
+    sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : Screen::pMain);
+    if (page == "pockets")
+    {
+        // POCKETS at work: AMOUNT up (--amount, in hundredths: 60 unless said), a bar and a half played with the page up, caught on a kick
+        ses.userSet (cx::kPkG, (float) arg ("--amount", "60").getIntValue() / 100.0f);
+        const int blocks = (int) ((6.0 * 60.0 / e.tempo() + 0.03) * 48000.0 / 512.0);
+        for (int i = 0; i < blocks; ++i) e.render (b);
+        sc.testTick();
+    }
     const auto cfg = arg ("--cfg", "");
     if (cfg == "lane") sc.showConfig ({ 0, ses.activeLane, 0 });
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });
@@ -3673,7 +4213,7 @@ static int midiTest()
                                 : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl)
                                 : (ctl == cx::kGlide && ch == 16 && num == e16::kGlideCc));
             }
-            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3) + 4 + 4 * kSpaceModels + 3 + kBusKnobs + 1 + 16;
+            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3 + kPkLane) + 4 + 4 * kSpaceModels + 3 + kBusKnobs + kPkGlobals + 1 + 16;
             check (right && reached == expected, (juce::String (reached) + " controls have a MIDI address, and each address reaches its own control").toRawUTF8());
 
             // an insert's places, the returns, the master, a lane's MUTE
@@ -4011,10 +4551,16 @@ static int midiTest()
                              && ccOut (16, ccx::kDub + 1) == e16::to7 (e.control (cx::kRet + 1), e.target (cx::kRet + 1));
         out.clear();
         turnsTo (e16::kFocusB + e16::pgMaster); ticks (4);
-        const bool masterFollows = ses.front.kind == Session::fMaster && turns().isEmpty() && ccOut (16, ccx::kMaster) >= 0 && ccOut (16, ccx::kMaster + 2) >= 0;
-        in (16, ccx::kMaster + 1, 99); ticks (1);
-        check (laneFollows && retFollows && masterFollows && std::abs (e.target (cx::kMaster + 1) - 99.0f / 127.0f) < 1.0e-6f,
-               "a page the E16 turns to itself brings its module to the front (CHORD; the returns; the master) with no page sent back, and the page is told its values (the returns' eight, the master's three)");
+        bool masterFollows = ses.front.kind == Session::fMaster && turns().isEmpty() && ccOut (16, ccx::kMaster) >= 0 && ccOut (16, ccx::kMaster + 2) >= 0;
+        for (int k = 0; k < kBusKnobs; ++k) masterFollows = masterFollows && ccOut (16, ccx::kBus + k) == e16::to7 (e.control (cx::kBus + k), e.target (cx::kBus + k));
+        for (int k = 0; k < kPkGlobals; ++k) masterFollows = masterFollows && ccOut (16, ccx::kPkG + k) == e16::to7 (e.control (cx::kPkG + k), e.target (cx::kPkG + k));
+        in (16, ccx::kMaster + 1, 99); in (16, ccx::kPkG, 40); ticks (1);
+        const bool amountTurned = std::abs (e.target (cx::kPkG) - 40.0f / 127.0f) < 1.0e-6f;
+        in (16, ccx::kPkG, 0); in (6, ccx::kPk, 90); ticks (1);                 // (and a lane's pocket has addresses on the lane's channel: BASS's HOME)
+        const bool homeTurned = std::abs (e.target (cx::pk (5, 0)) - 90.0f / 127.0f) < 1.0e-6f && e.target (cx::kPkG) == 0.0f;
+        ses.userSet (cx::pk (5, 0), e.control (cx::pk (5, 0)).def);
+        check (laneFollows && retFollows && masterFollows && amountTurned && homeTurned && std::abs (e.target (cx::kMaster + 1) - 99.0f / 127.0f) < 1.0e-6f,
+               "a page the E16 turns to itself brings its module to the front (CHORD; the returns; the master) with no page sent back, and the page is told its values (the returns' eight; the master's three, its drum bus's four and POCKETS' four, whose AMOUNT is turned from there)");
         out.clear();
 
         // an insert's page: the active lane's, whatever effect is in the slot
@@ -4119,6 +4665,52 @@ static int midiTest()
         press (16, e16::kOpenKey); ticks (2);
         check (openA && openB && shutAgain && openM && busTitle.startsWith ("DRM BUS CFG") && lanesNamed && ! ses.cfgOpen,
                "OPEN on the returns: DUB's CONFIG, SPACE's, shut. On the master: its drum bus's (" + busTitle + ", " + juce::String ((int) busList.size()) + " controls, the lanes by name), and shut");
+
+        // Behind the master's CONFIG is POCKETS, its page: that second OPEN asked for it. While it is
+        // up the CONFIG pages are its knobs: the eleven lanes' HOME and AMOUNT, their WIDTH and
+        // CLEAR, their YIELD and SPEED; and a fourth, their HOLD and RETURNS, on the third's knobs.
+        {
+            const bool asked = ses.wantShowing == 3 && ses.pocketsUp();         // (there is no screen here to take it up: asked for is up)
+            ticks (5);
+            const juce::String pkTitle = said (5), k1 = name (1), k6 = name (6), k11 = name (11), k12 = name (12);
+            const auto pkList = ses.configList();
+            bool told = (int) pkList.size() == Session::kPocketList;
+            for (int i = 0; i < e16::kCfgPer; ++i) told = told && ccOut (13, e16::cfgCc (i)) == (int) std::lround (e.target (Session::pocketControl (i)) * 127.0f);
+            out.clear();
+            ses.userSet (cx::kGlide, 0.0f);
+            in (13, e16::cfgCc (5), 100); in (13, e16::cfgCc (11), 64); ticks (1);         // BASS's HOME; AMOUNT
+            const bool turned = std::abs (e.target (cx::pk (5, 0)) - 100.0f / 127.0f) < 1.0e-6f && std::abs (e.target (cx::kPkG) - 64.0f / 127.0f) < 1.0e-6f;
+            out.clear();
+            press (16, e16::kCfgNextKey); ticks (5);
+            const juce::String to2 = turns(), title2 = said (5);
+            in (13, e16::cfgCc (12 + 9), 20); ticks (1);                                    // the PAD's WIDTH
+            out.clear();
+            press (16, e16::kCfgNextKey); ticks (5);
+            const juce::String to3 = turns(), title3 = said (5), twelfth3 = name (12);
+            out.clear();
+            press (16, e16::kCfgNextKey); ticks (5);                                        // the fourth: on the third's knobs
+            const juce::String to4 = turns(), title4 = said (5), twelfth4 = name (12);
+            const bool retold = ccOut (13, e16::cfgCc (24)) == (int) std::lround (e.target (cx::pk (0, 2)) * 127.0f);        // (the knobs under the hand are told what they now are: the KICK's HOLD)
+            out.clear();
+            in (13, e16::cfgCc (24 + 10), 33); in (13, e16::cfgCc (24 + 11), 99); ticks (1);  // the VOICE's HOLD; RETURNS
+            const bool fourth = std::abs (e.target (cx::pk (10, 2)) - 33.0f / 127.0f) < 1.0e-6f && std::abs (e.target (cx::kPkG + 3) - 99.0f / 127.0f) < 1.0e-6f
+                             && std::abs (e.target (cx::pk (10, 3)) - e.control (cx::pk (10, 3)).def) < 1.0e-6f;
+            press (16, e16::kCfgPrevKey); ticks (5);
+            in (13, e16::cfgCc (24 + 10), 50); ticks (1);                                     // (back on the third: the VOICE's YIELD)
+            const bool third = std::abs (e.target (cx::pk (10, 3)) - 50.0f / 127.0f) < 1.0e-6f && std::abs (e.target (cx::pk (9, 1)) - 20.0f / 127.0f) < 1.0e-6f;
+            out.clear();
+            press (16, e16::kOpenKey); ticks (3);
+            const juce::String back = turns();
+            check (asked && pkTitle == "POCKETS HOME" && k1 == "KCK" && k6 == "BAS" && k11 == "VOX" && k12 == "AMNT" && told && turned
+                       && to2 == "P9" && title2 == "POCKETS WIDTH" && to3 == "P10" && title3 == "POCKETS YIELD" && twelfth3 == "SPD"
+                       && to4.isEmpty() && title4 == "POCKETS HOLD" && twelfth4 == "RETS" && retold && fourth && third && back == "P6" && ! ses.pocketsUp(),
+                   "OPEN once more on the master is POCKETS: the CONFIG pages are then its knobs, a lane to a knob (" + pkTitle + ": " + k1 + " ... " + k6 + " ... " + k11 + ", " + k12 + "), told their values; BASS's HOME and AMOUNT are turned from the first, "
+                       "the PAD's WIDTH from the second (" + title2 + "), and PAGE + from the third (" + title3 + ") is a fourth on the same knobs (" + title4 + ": no page is turned, the knobs are named and told again); OPEN leaves it, back to the master's page (" + back + ")");
+            for (int l = 0; l < kLanes; ++l) for (int k = 0; k < kPkLane; ++k) ses.userSet (cx::pk (l, k), e.control (cx::pk (l, k)).def);
+            for (int k = 0; k < kPkGlobals; ++k) ses.userSet (cx::kPkG + k, e.control (cx::kPkG + k).def);
+            ses.wantShowing = -1;
+            ticks (3);
+        }
         out.clear();
 
         // the pointer's wheel: knob 13 pressed takes it up, its turns go through the stops, and a second press is the choice

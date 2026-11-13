@@ -61,9 +61,17 @@ Screen::Screen (Session& s)
     startTimerHz (30);
 }
 
-Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullptr; }
+Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullptr; eng.watchPockets (false); }
 
-void Screen::setPage (Page p) { endEdit (true); if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0); page = p; ses.showing = (int) p; repaint(); }
+void Screen::setPage (Page p)
+{
+    endEdit (true);
+    if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0);
+    page = p; ses.showing = (int) p;
+    eng.watchPockets (p == pPockets);           // (POCKETS looks at the lanes while its page is up, whatever AMOUNT is)
+    pkSig.fill (0);
+    repaint();
+}
 
 void Screen::resized()
 {
@@ -439,6 +447,12 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
         return true;
     }
     if (ctl >= cx::kRetMS) { where = ctl - cx::kRetMS < 2 ? "RETURN A, THE DUB DELAY" : "RETURN B, THE SPACE"; what = help::param ("LANE", (ctl - cx::kRetMS) % 2 == 0 ? "mute" : "solo"); return true; }
+    if (ctl >= cx::kPkG)
+    {
+        static const char* const ids[kPkGlobals] = { "amount", "clear", "speed", "returns" };
+        where = "MASTER, POCKETS"; what = help::param ("POCKETS", ids[ctl - cx::kPkG]);
+        return true;
+    }
     if (ctl >= cx::kBus)
     {
         where = "MASTER, THE DRUM BUS"; what = help::param (drumBus().module, drumBus().cells[ctl - cx::kBus].param);
@@ -480,7 +494,12 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
         label = (j - cx::kInsMS) % 2 == 0 ? "MUTE" : "SOLO";
         what = (j - cx::kInsMS) % 2 == 0 ? "PASSES THE EFFECT BY." : "PLAYS ONLY WHAT THE EFFECT ADDS.";
     }
-    else { label = "SEQUENCER MUTE"; what = help::param ("LANE", "seq_mute"); }
+    else if (j == cx::kSeqMute) { label = "SEQUENCER MUTE"; what = help::param ("LANE", "seq_mute"); }
+    else
+    {
+        static const char* const ids[kPkLane] = { "pk_home", "pk_width", "pk_hold", "pk_yield" };
+        where << ", ITS POCKET"; what = help::param ("POCKETS", ids[j - cx::kPk]);
+    }
     return true;
 }
 
@@ -559,6 +578,12 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             t.title = "WHAT RECALL TAKES: " + (h.a < kLanes ? String (h.a + 1) + " " + lanes()[(size_t) h.a].name : h.a == kLanes ? String ("THE RETURNS") : h.a == kLanes + 1 ? String ("THE DRUM BUS") : String ("THE KEY"));
             body = "LIT: THIS PART COMES FROM THE SNAPSHOT WHEN RECALL IS PRESSED. OUT: IT STAYS AS IT IS NOW. CLICK TO PUT IT OUT OR BACK. AFTER A RECALL, AND FOR ANOTHER SNAPSHOT, ALL ARE LIT AGAIN.";
             break;
+        case hPocket:
+            t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name + ": ITS POCKET";
+            body = "THE YELLOW SHAPE IS THE PART OF THE SPECTRUM THAT IS THIS LANE'S OWN: AS TALL AS ITS HOLD. DRAG IT LEFT AND RIGHT TO MOVE IT (HOME), UP AND DOWN TO WIDEN IT (WIDTH); DOUBLE-CLICK: BACK TO WHERE IT STARTS. "
+                   "THE PALE BARS ARE WHAT THE LANE IS PLAYING, BAND BY BAND, 31 HZ TO 16 KHZ; THE RED AT A BAR'S TOP IS WHAT POCKETS IS TAKING FROM IT NOW.";
+            below = true;
+            break;
         case hLane:
             t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name;
             body = String (help::lane (h.a)) + " CLICK THE NAME TO MAKE IT THE ACTIVE LANE: THE INSERTS AND THE SEQUENCER STRIP SHOW IT.";
@@ -623,6 +648,9 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
+                { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER BESIDE IT IS AMOUNT." },
+                { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
+                { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
                 { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A CUE PLAYS, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO. IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
             };
             for (const auto& a : acts) if (a.a == h.a) { t.title = a.title; body = a.body; }
@@ -681,12 +709,13 @@ const char* const kKeys[][2] = {
     { "SPACE", "RUN AND STOP" },
     { "I", "INFO: WHAT A CONTROL IS, AND THIS LIST" },
     { "F", "FULL SCREEN" },
-    { "ESC", "BACK OUT: OF LOAD'S LIST, CONFIG, THE LIBRARY, FULL SCREEN" },
+    { "ESC", "BACK OUT: OF LOAD'S LIST, CONFIG, THE LIBRARY, POCKETS, FULL SCREEN" },
     { "H", "PHONES" },
     { "N", "NOTES: WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES" },
     { "UP  DOWN", "THE ACTIVE LANE" },
     { "TAB", "THE NEXT MODULE TO THE FRONT (SHIFT: THE ONE BEFORE)" },
     { "C", "CONFIG FOR WHAT IS IN FRONT, AND SHUT" },
+    { "P", "POCKETS: WHO HAS WHICH PART OF THE SPECTRUM" },
     { "RETURN", "LEARN: KEEP WHAT THE KNOB HAS BEEN SHOWN" },
     { "LEFT  RIGHT", "THE SEQUENCER'S PAGE OF STEPS" },
     { "3", "THE 3D STAGE, OR THE LIT SKIN" },
@@ -763,6 +792,7 @@ void Screen::drawAll (G& g)
     drawBar (g);
     if (page == pMain) drawMain (g);
     else if (page == pLibrary) drawLibrary (g);
+    else if (page == pPockets) drawPockets (g);
     else drawMacros (g);
     keysDrawn = false;
     if (info && ! three && ! recording && ! printing) { drawKeys (g, keysBox(), false); keysDrawn = true; }      // (in 3D it is a tag at the foot of the window: see the timer)
@@ -785,7 +815,7 @@ void Screen::drawBar (G& g)
             g.fillRect (R (23, 17.5f, w, 40));
             text (g, "SF-000", R (23, 17.5f, w, 40), fFlag, col::lit);
         }
-        if (page != pMain) title (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : "MACRO DESIGNER");
+        if (page != pMain) title (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : page == pPockets ? "POCKETS" : "MACRO DESIGNER");
         else if (ses.learning >= 0)
         {
             // LEARN: which knob is being taught, how many knobs it has been shown, and the two ways out
@@ -1349,6 +1379,14 @@ void Screen::drawMaster (G& g, R r)
     readout (g, R (x0 + 66, fy, 64, 42), "GR", String (eng.gainRed.load(), 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     const float lu = eng.lufs.load();
     readout (g, R (x0 + 132, fy, 64, 42), "LUFS", lu < -60.0f ? String ("--") : String (lu, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
+    // POCKETS: its page, and how much of it is on
+    {
+        const R kr (x0 + 6, fy + 49, 22, 22);
+        key (g, kr, eng.target (cx::kPkG) > 0.0f ? col::green : col::white);
+        text (g, "POCKETS", R (x0 + 34, fy + 49, 60, 22), fLbl, col::black, juce::Justification::centredLeft);
+        text (g, eng.valueText (cx::kPkG), R (x0 + 96, fy + 49, 40, 22), fLbl, col::black, juce::Justification::centredLeft);
+        hit (R (x0 + 4, fy + 47, 130, 26), hAct, aPockets, 0);
+    }
     // meters: every lane as it reaches the mix, then the mix itself
     const R mp (x0 + 342, y0, 202, 180);
     window (g, mp, col::white);
@@ -1682,6 +1720,167 @@ void Screen::drawLibrary (G& g)
     text (g, help, R (x0 + 832, ky + 20, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
 }
 
+// ------------------------------------------------------------------------------------- POCKETS
+// The master's page for who has which part of the spectrum. A strip of what the whole rig is set
+// to, then a row for every lane and the two returns: a map of the spectrum, 31 Hz to 16 kHz, with
+// the lane's pocket on it, what the lane is playing and what is being taken from it; and the
+// pocket's four knobs.
+namespace
+{
+constexpr float kPkTopDb = -24.0f, kPkRangeDb = 60.0f;       // a map's height: a band's level from -84 to -24 dB
+}
+
+juce::uint64 Screen::pocketSig (int q) const
+{
+    // what a row's map shows, to the pixel: a change in this is a reason to draw it again
+    juce::uint64 sig = 1469598103934665603ull;
+    auto mix = [&sig] (int v) { sig = (sig ^ (juce::uint64) (v & 0xffff)) * 1099511628211ull; };
+    for (int b = 0; b < Pockets::kBands; ++b)
+    {
+        mix ((int) std::lround (juce::jlimit (0.0f, 1.0f, (pkSeen.level[(size_t) q][(size_t) b] - (kPkTopDb - kPkRangeDb)) / kPkRangeDb) * 56.0f));
+        mix ((int) std::lround (pkSeen.cut[(size_t) q][(size_t) b] * 56.0f / kPkRangeDb));
+    }
+    if (q < kLanes) for (int k = 0; k < 3; ++k) mix ((int) std::lround (eng.shown (cx::pk (q, k)) * 2000.0f));
+    return sig;
+}
+
+void Screen::drawPocketMap (G& g, int q, R mr)
+{
+    pkMaps[(size_t) q] = mr;
+    if (! vis (g, mr)) return;
+    if (seen (g, mr)) pkSig[(size_t) q] = pocketSig (q);
+    window (g, mr, col::black);
+    if (recording) return;                      // (in 3D the pane is a display: what it shows is light, printed on the sheet)
+    const R in = mr.reduced (3.0f, 3.0f);
+    const float bw = in.getWidth() / (float) Pockets::kBands, bot = in.getBottom(), H = in.getHeight();
+    auto xAt = [&] (float band) { return in.getX() + (band + 0.5f) * bw; };
+    // the octaves, faintly
+    g.setColour (col::lit.withAlpha (0.10f));
+    for (int b = 0; b < Pockets::kBands; b += 3) g.fillRect (R (xAt ((float) b) - 0.5f, in.getY(), 1.0f, H));
+    if (q < kLanes)
+    {
+        // the pocket: as tall as it is firmly held
+        const float home = eng.shown (cx::pk (q, 0)), width = eng.shown (cx::pk (q, 1)), hold = eng.shown (cx::pk (q, 2));
+        juce::Path shape;
+        shape.startNewSubPath (in.getX(), bot);
+        for (float x = in.getX(); x <= in.getRight() + 0.5f; x += 3.0f)
+        {
+            const float band = (x - in.getX()) / bw - 0.5f;
+            shape.lineTo (x, bot - H * Pockets::claimOf (hold, Pockets::pocketAt (home, width, band)));
+        }
+        shape.lineTo (in.getRight(), bot);
+        shape.closeSubPath();
+        g.setColour (col::yellow.withAlpha (0.22f)); g.fillPath (shape);
+        g.setColour (col::yellow.withAlpha (0.85f)); g.strokePath (shape, juce::PathStrokeType (1.5f));
+        g.setColour (col::yellow); g.fillRect (R (xAt (Pockets::homeBand (home)) - 1.0f, in.getY(), 2.0f, H));       // its HOME
+    }
+    // what it is playing, band by band, and what is being taken from each
+    for (int b = 0; b < Pockets::kBands; ++b)
+    {
+        const float lev = pkSeen.level[(size_t) q][(size_t) b], cut = pkSeen.cut[(size_t) q][(size_t) b];
+        const float h = juce::jlimit (0.0f, 1.0f, (lev - (kPkTopDb - kPkRangeDb)) / kPkRangeDb) * H;
+        if (h < 0.5f) continue;
+        const float x = in.getX() + (float) b * bw + 3.0f, w = bw - 6.0f;
+        const float took = std::min (h, cut * H / kPkRangeDb);
+        g.setColour (col::lit.withAlpha (0.80f)); g.fillRect (R (x, bot - h + took, w, h - took));
+        if (took >= 0.5f) { g.setColour (col::red); g.fillRect (R (x, bot - h, w, took)); }
+    }
+}
+
+void Screen::drawPockets (G& g)
+{
+    // ---- the strip: the rig's four knobs, AUTO and RESET, the way back, and the map's scale
+    const R strip (23, 78, 1682, 96);
+    const float mapX = 190.0f, mapW = 1232.0f;                 // the maps: 28 bands of 44
+    if (vis (g, strip))
+    {
+        panel (g, strip, col::grey);
+        const float x0 = strip.getX() + 5, y0 = strip.getY() + 5;
+        title (g, x0, y0, "POCKETS");
+        text (g, "WHO HAS WHICH PART", R (x0, y0 + 30, 160, 16), fLbl, col::black, juce::Justification::centredLeft);
+        text (g, "OF THE SPECTRUM", R (x0, y0 + 46, 160, 16), fLbl, col::black, juce::Justification::centredLeft);
+        // the scale: a mark at every octave
+        static const char* const marks[] = { "31", "63", "125", "250", "500", "1K", "2K", "4K", "8K", "16K" };
+        const float bw = (mapW - 6.0f) / (float) Pockets::kBands;
+        for (int k = 0; k < 10; ++k)
+        {
+            const float x = mapX + 3.0f + ((float) (k * 3) + 0.5f) * bw;
+            text (g, marks[k], R (x - 24, strip.getBottom() - 19, 48, 14), fLbl, col::black);
+            g.setColour (tone (col::black)); g.fillRect (R (x - 0.5f, strip.getBottom() - 5, 1.0f, 4.0f));
+        }
+        text (g, "HZ", R (mapX + mapW + 2, strip.getBottom() - 19, 30, 14), fLbl, col::black, juce::Justification::centredLeft);
+        // what AUTO or RESET just did; else how to use the page
+        const R words (mapX + 480, y0 + 2, 1025, 54);
+        if (pkNote.isNotEmpty()) plate (g, words.getX(), y0 + 12, pkNote, fNote, 6, col::white, col::black);
+        else
+        {
+            text (g, "EACH LANE'S POCKET (YELLOW) IS ITS OWN PART OF THE SPECTRUM. THERE THE OTHERS GIVE WAY TO IT, WHILE IT SOUNDS; ELSEWHERE IT GIVES WAY (RED).", R (words.getX(), y0 + 2, words.getWidth(), 16), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "DRAG A POCKET: LEFT AND RIGHT ITS HOME, UP AND DOWN ITS WIDTH. HOLD: WHO WINS WHERE POCKETS MEET. YIELD: THE MOST A LANE GIVES.", R (words.getX(), y0 + 19, words.getWidth(), 16), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "NOTHING IS CUT WITH AMOUNT AT NOUGHT. THE RETURNS HAVE NO POCKET: THEY GIVE WAY TO EVERY LANE.", R (words.getX(), y0 + 36, words.getWidth(), 16), fLbl, col::black, juce::Justification::centredLeft);
+        }
+    }
+    {
+        const float x0 = strip.getX() + 5, y0 = strip.getY() + 5;
+        for (int k = 0; k < kPkGlobals; ++k) control (g, cx::kPkG + k, mapX + (float) k * 66, y0 + 2, 64, col::lit, 40, 16.0f);
+        actKey (g, aPkAuto, mapX + 286, y0 + 2, 54, "AUTO", col::yellow, 3);
+        actKey (g, aPkReset, mapX + 346, y0 + 2, 54, "RESET", col::white, 3);
+        actKey (g, aMain, mapX + 406, y0 + 2, 54, "MAIN", col::white, 3);
+        juce::ignoreUnused (x0);
+    }
+    // ---- a row for every lane, then the two returns
+    for (int q = 0; q < Pockets::kParts; ++q)
+    {
+        const R r (23.0f, 180.0f + (float) q * 70.0f, 1682.0f, 66.0f);
+        const float x0 = r.getX() + 5, y0 = r.getY() + 5;
+        if (vis (g, r))
+        {
+            panel (g, r, col::putty);
+            const bool lane = q < kLanes, active = lane && q == ses.activeLane;
+            const String num = lane ? String (q + 1) : String (q == kLanes ? "A" : "B"), name = lane ? String (lanes()[(size_t) q].name) : String (q == kLanes ? "DUB" : "SPACE");
+            const R dr (x0, y0, 126, 26);
+            window (g, dr, active ? col::lit : col::black);
+            textRaw (g, num, R (x0 + 2, y0, 26, 26), fLegend, active ? col::black : col::lit);
+            textRaw (g, name, R (x0 + 32, y0, 92, 26), fLegend, active ? col::black : col::lit, juce::Justification::centredLeft);
+        }
+        // MUTE and SOLO, to hear a lane by itself as POCKETS leaves it (what is not heard covers nothing)
+        {
+            const int muteCtl = q < kLanes ? cx::lane (q, cx::kMute) : cx::kRetMS + (q - kLanes) * 2, soloCtl = muteCtl + 1;
+            const Colour fills[2] = { eng.shown (muteCtl) > 0.5f ? col::amber : col::putty, eng.shown (soloCtl) > 0.5f ? col::green : col::putty };
+            for (int k = 0; k < 2; ++k)
+            {
+                const R kr (x0 + (float) k * 25.0f, y0 + 32, 22, 22);
+                const int ctl = k == 0 ? muteCtl : soloCtl;
+                if (vis (g, kr))
+                {
+                    String letter (k == 0 ? "M" : "S");
+                    if (int ch = 0, num = 0; info && ccx::addressOf (ctl, ch, num)) letter = String (num);
+                    key (g, kr, fills[k]); textRaw (g, letter, kr, fLbl, inkOn (cap (fills[k]), col::black));
+                    if (seen (g, kr)) lastShown[(size_t) ctl] = eng.shown (ctl);
+                }
+                hit (kr.expanded (1), hToggle, ctl);
+            }
+        }
+        if (q < kLanes)
+        {
+            // where its pocket is and how wide, in figures
+            const R vr (x0 + 54, y0 + 32, 104, 22);
+            if (vis (g, vr)) text (g, eng.valueText (cx::pk (q, 0)) + "  " + eng.valueText (cx::pk (q, 1)), vr, fLbl, col::black, juce::Justification::centredLeft);
+            if (seen (g, vr)) pkSaid[(size_t) q] = eng.target (cx::pk (q, 0)) + 2.0f * eng.target (cx::pk (q, 1));
+        }
+        drawPocketMap (g, q, R (mapX, r.getY() + 4, mapW, 58));
+        if (q < kLanes)
+        {
+            hit (R (mapX, r.getY() + 4, mapW, 58), hPocket, q, 0);
+            for (int k = 0; k < kPkLane; ++k) control (g, cx::pk (q, k), mapX + mapW + 8 + (float) k * 62, r.getY() + 3, 60, k < 2 ? col::yellow : col::lit, 40, 16.0f);
+        }
+        else if (vis (g, r))
+        {
+            text (g, "NO POCKET: IT GIVES WAY TO EVERY LANE,", R (mapX + mapW + 12, r.getY() + 14, 250, 16), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "BY AS MUCH AS RETURNS LETS IT.", R (mapX + mapW + 12, r.getY() + 31, 250, 16), fLbl, col::black, juce::Justification::centredLeft);
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------ macro designer
 void Screen::drawMacros (G& g)
 {
@@ -1746,7 +1945,7 @@ void Screen::drawMacros (G& g)
             const int ln = i < cx::kRet ? i / cx::kPerLane : -1;
             if (ln != lastLane) { moves << (moves.isEmpty() ? "" : "   ") << (ln >= 0 ? String (lanes()[(size_t) ln].name) : String ("RETURNS")) << ": "; lastLane = ln; }
             else moves << ", ";
-            moves << eng.control (i).label << (i >= cx::space (1, 0) && i < cx::space (1, 4) ? " (CONV)" : "");
+            moves << (i >= cx::kPkG && i < cx::kPkG + kPkGlobals ? "POCKETS " : cx::isPk (i) ? "POCKET " : "") << eng.control (i).label << (i >= cx::space (1, 0) && i < cx::space (1, 4) ? " (CONV)" : "");
             for (const auto& l : kn.links)
                 if (l.ctl == i) { const int far = (int) std::lround (l.amount * kn.depth * 100.0f); moves << (far >= 0 ? " +" : " -") << std::abs (far); }
         }
@@ -1803,6 +2002,15 @@ void Screen::act (int a)
         case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
         case aNotes:    ses.setRecallNotes (! ses.recallNotes); repaint(); break;
+        case aPockets:  setPage (page == pPockets ? pMain : pPockets); break;
+        case aPkAuto:
+        {
+            const int n = ses.pocketsAuto();
+            pkNote = n == 0 ? String ("NOTHING HAS BEEN PLAYING: AUTO GOES BY WHAT THE LANES HAVE PLAYED WHILE THIS PAGE WAS UP") : "PLACED " + String (n) + (n == 1 ? " LANE" : " LANES") + " FROM WHAT THEY HAVE BEEN PLAYING";
+            pkNoteAt = juce::Time::getMillisecondCounter();
+            break;
+        }
+        case aPkReset:  ses.pocketsReset(); pkNote = "EVERY POCKET IS WHERE THE RIG STARTS IT"; pkNoteAt = juce::Time::getMillisecondCounter(); break;
         case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
         case aRecallCue:
@@ -1899,6 +2107,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
     switch (h->kind)
     {
         case hKnob: case hRead: drag.v0 = ses.value (h->a); break;
+        case hPocket:   drag.v0 = ses.value (cx::pk (h->a, 0)); drag.g0 = ses.value (cx::pk (h->a, 1)); break;
         case hSnapKnob: drag.v0 = ses.value (cx::kSnap + h->a); if (page == pMacros) selKnob = h->a; break;
         case hDepth:    drag.v0 = ses.knobs[(size_t) h->a].depth; selKnob = h->a; break;
         case hLen:      drag.v0 = (float) ses.pattern (ses.activeLane).length; break;
@@ -2000,6 +2209,18 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             if (drag.kind == hSnapKnob || ctl >= cx::kTempo) repaint();
             break;
         }
+        case hPocket:
+        {
+            // the pocket follows the hand along the map (its HOME), and widens as the hand goes up (its WIDTH)
+            if (! drag.moved && std::max (std::abs (dx), std::abs (dy)) < 4.0f) break;
+            drag.moved = true;
+            if (drag.axis == 0) drag.axis = std::abs (dx) >= std::abs (dy) ? 'h' : 'w';
+            const R mr = pkMaps[(size_t) drag.a];
+            if (drag.axis == 'h' && mr.getWidth() > 1.0f) ses.userSet (cx::pk (drag.a, 0), drag.v0 + dx * (float) Pockets::kBands / (mr.getWidth() * (float) (Pockets::kBands - 1)));
+            else if (drag.axis == 'w') ses.userSet (cx::pk (drag.a, 1), drag.g0 + dy / (e.mods.isShiftDown() ? 800.0f : 160.0f));
+            dirty (mr);
+            break;
+        }
         case hSetup:
             if (drag.a < (int) cfgParams.size())
             {
@@ -2084,6 +2305,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
     if (const auto* h = hitAt (where (e)))
     {
         if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
+        else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
         else if (h->kind == hSetup && h->a < (int) cfgParams.size())
@@ -2097,7 +2319,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
-    if (page != pMain) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (page == pLibrary || page == pMacros) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
     if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     const auto* h = hitAt (where (e));
@@ -2177,6 +2399,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k.getTextCharacter() == 'i' || k.getTextCharacter() == 'I') { setInfo (! info); return true; }
     if (k.getTextCharacter() == 'h' || k.getTextCharacter() == 'H') { act (aPhones); return true; }
     if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { act (aNotes); return true; }
+    if (k.getTextCharacter() == 'p' || k.getTextCharacter() == 'P') { act (aPockets); return true; }
     if (k.getTextCharacter() == 'd' || k.getTextCharacter() == 'D')
     {
         // the dark instrument, which is the lit skin's: from the flat drawing D goes to it
@@ -2684,7 +2907,7 @@ void Screen::refreshStage()
 void Screen::timerCallback()
 {
     // what a controller asked for: another screen; CONFIG opened, shut, or moved to another panel
-    if (ses.wantShowing >= 0) { const int w = ses.wantShowing; ses.wantShowing = -1; if (w != (int) page && w <= (int) pMacros) setPage ((Page) w); }
+    if (ses.wantShowing >= 0) { const int w = ses.wantShowing; ses.wantShowing = -1; if (w != (int) page && w <= (int) pPockets) setPage ((Page) w); }
     if (cfgOpen != cfgOpenSeen || cfg.kind != cfgSeen.kind || cfg.lane != cfgSeen.lane || cfg.slot != cfgSeen.slot)
     {
         if (cfgOpen) { cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false; }
@@ -2738,6 +2961,17 @@ void Screen::timerCallback()
         slideT = std::min (1.0f, slideT + 0.2f);
         slideX = slideFrom + (slideTo - slideFrom) * slideT * slideT * (3.0f - 2.0f * slideT);
         repaint();
+    }
+    if (page == pPockets)
+    {
+        // each row's map is drawn again when a bar of it has moved by a pixel, or its pocket has
+        eng.pocketsSeen (pkSeen);
+        for (int q = 0; q < Pockets::kParts; ++q)
+        {
+            if (const auto sig = pocketSig (q); sig != pkSig[(size_t) q] && ! pkMaps[(size_t) q].isEmpty()) dirty (pkMaps[(size_t) q]);
+            if (q < kLanes && pkSaid[(size_t) q] != eng.target (cx::pk (q, 0)) + 2.0f * eng.target (cx::pk (q, 1))) dirty (R (82.0f, 217.0f + (float) q * 70.0f, 104.0f, 22.0f));
+        }
+        if (pkNote.isNotEmpty() && juce::Time::getMillisecondCounter() - pkNoteAt > 6000) { pkNote = {}; dirty (R (23, 78, 1682, 96)); }
     }
     if (page == pMain)
     {

@@ -17,7 +17,7 @@ public:
     explicit Screen (Session&);
     ~Screen() override;
 
-    enum Page { pMain, pLibrary, pMacros };
+    enum Page { pMain, pLibrary, pMacros, pPockets };
     void setPage (Page);
     std::function<void()> onAudioSetup, onFullScreen, onOnlineSetup;
     std::function<void()> onLeaveFullScreen;    // Esc, with nothing else open: out of full screen (never into it)
@@ -96,7 +96,7 @@ public:
     struct TestHit { juce::Rectangle<float> r; int kind, a, b; };
     std::vector<TestHit> testHits() const { std::vector<TestHit> v; for (auto& h : hits) v.push_back ({ h.r, h.kind, h.a, h.b }); return v; }
     static bool testSkips (const TestHit& h) { return h.kind == hAct && (h.a == aAudio || h.a == aFull || h.a == aRec || h.a == aOnline || h.a == aOnlineSetup); }
-    static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay; }
+    static bool testIsKnob (const TestHit& h) { return h.kind == hKnob || h.kind == hSnapKnob || h.kind == hRead || h.kind == hLen || h.kind == hDepth || h.kind == hSetup || h.kind == hDisplay || h.kind == hPocket; }
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsFile (const TestHit& h)   { return h.kind == hFile; }
@@ -117,7 +117,7 @@ public:
     static bool testIsNotesKey (const TestHit& h) { return h.kind == hAct && h.a == aNotes; }      // NOTES: whether a recall brings a snapshot's notes
     // the kinds of thing that say what they are when pointed at with INFO on
     static bool testAnswers (const TestHit& h) { return h.kind == hKnob || h.kind == hToggle || h.kind == hHold || h.kind == hRead || h.kind == hSnapKnob || h.kind == hLane || h.kind == hConfig
-                                                     || h.kind == hInsHead || h.kind == hStep || h.kind == hPageSel || h.kind == hLen || h.kind == hAct; }
+                                                     || h.kind == hInsHead || h.kind == hStep || h.kind == hPageSel || h.kind == hLen || h.kind == hAct || h.kind == hPocket; }
     static bool testIsSnapKnob (const TestHit& h, int k) { return h.kind == hSnapKnob && h.a == k; }
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
     static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
@@ -136,6 +136,8 @@ public:
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
     static bool testIsConfigKey (const TestHit& h, int lane) { return h.kind == hConfig && h.a == 0 && h.b == lane * 8; }
     static bool testIsBusConfigKey (const TestHit& h) { return h.kind == hConfig && h.a == 3; }      // the master's C: its drum bus's CONFIG
+    static bool testIsPocketsKey (const TestHit& h, int which = 0) { return h.kind == hAct && h.a == (which == 0 ? aPockets : which == 1 ? aPkAuto : aPkReset); }      // POCKETS (on the master); on its page AUTO, RESET
+    static bool testIsPocket (const TestHit& h, int lane) { return h.kind == hPocket && h.a == lane; }      // a lane's pocket on the map
     Page testPage() const { return page; }
     double testPrintMs() const { return printMs; }
     double testSendMs() const { return sendMs; }
@@ -152,9 +154,11 @@ private:
     using R = juce::Rectangle<float>;
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
-                   hFront };        // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
+                   hFront,          // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
+                   hPocket };       // POCKETS: a lane's pocket on the map (a: the lane): dragged, left and right its HOME, up and down its WIDTH
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes };
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aPockets, aPkAuto, aPkReset };
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -263,6 +267,8 @@ private:
     void drawSequencer (G&, R);
     void drawLibrary (G&);
     void drawMacros (G&);
+    void drawPockets (G&);
+    void drawPocketMap (G&, int part, R);       // one row's map: the lane's pocket, what it is playing, what is taken from it
     void drawConfig (G&, R);
     void openConfig (Engine::Target);
     void drawSnapCard (G&, const Snapshot&, int index, R, bool selected, int hitKind);
@@ -351,6 +357,14 @@ private:
     void readLoad();
     void pickLoad (int index);
     void drawLoad (G&, R area);
+    // POCKETS: what the engine last said of each part's bands, as drawn (so a row is drawn again only when it has moved)
+    Pockets::Seen pkSeen;
+    std::array<R, Pockets::kParts> pkMaps;
+    std::array<juce::uint64, Pockets::kParts> pkSig {};
+    std::array<float, kLanes> pkSaid {};        // each lane's HOME and WIDTH as last written beside its name
+    juce::uint64 pocketSig (int part) const;
+    juce::String pkNote;                // what AUTO last had to say, for a few seconds
+    juce::uint32 pkNoteAt = 0;
     juce::String cfgName, cfgNote, cfgStatus;
     R cfgDisplay, cfgRect;
     std::unique_ptr<juce::TextEditor> editor;

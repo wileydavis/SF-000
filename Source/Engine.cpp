@@ -167,6 +167,14 @@ Engine::Engine()
             named (cx::insMute (l, s), slug + ".i" + juce::String (s + 1) + ".mute", "MUTE", Kind::Toggle, 0.0f, false, false);
             named (cx::insSolo (l, s), slug + ".i" + juce::String (s + 1) + ".solo", "SOLO", Kind::Toggle, 0.0f, false, false);
         }
+        {
+            // its pocket (POCKETS, in the master): a snapshot's, and they travel
+            const auto& pd = pocketDefault (l);
+            const float pv[kPkLane] = { Pockets::homeValue (pd.homeHz), Pockets::widthValue (pd.widthOct), pd.hold, pd.yield };
+            static const char* const pn[kPkLane] = { "HOME", "WIDTH", "HOLD", "YIELD" };
+            static const char* const pi[kPkLane] = { "pk_home", "pk_width", "pk_hold", "pk_yield" };
+            for (int k = 0; k < kPkLane; ++k) named (cx::pk (l, k), slug + "." + pi[k], pn[k], Kind::Knob, pv[k], true, true);
+        }
         static const char* const gn[] = { "HITS", "ROTATE", "ACCENTS", "SEED" };
         static const char* const gi[] = { "gen_hits", "gen_rotate", "gen_accents", "gen_seed" };
         static const float gd[] = { 0.31f, 0.5f, 0.2f, 0.0f };
@@ -203,6 +211,11 @@ Engine::Engine()
         c.id = juce::String ("bus.") + drumBus().cells[k].param; c.snapshot = true;
     }
     for (int l = 0; l < kLanes; ++l) busIn[(size_t) l] = busProc->apvts.getRawParameterValue ("in_" + juce::String (l + 1));
+    // POCKETS: with AMOUNT at nought, where it starts, nothing is carved
+    named (cx::kPkG, "pk.amount", "AMOUNT", Kind::Knob, 0.0f, true, true);
+    named (cx::kPkG + 1, "pk.clear", "CLEAR", Kind::Knob, 3.0f / 18.0f, true, true);
+    named (cx::kPkG + 2, "pk.speed", "SPEED", Kind::Knob, 0.5f, true, true);
+    named (cx::kPkG + 3, "pk.returns", "RETURNS", Kind::Knob, 0.5f, true, true);
     named (cx::kRetMS, "ret.dub_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
     named (cx::kRetMS + 1, "ret.dub_solo", "SOLO", Kind::Toggle, 0.0f, false, false);
     named (cx::kRetMS + 2, "ret.space_mute", "MUTE", Kind::Toggle, 0.0f, false, false);
@@ -282,6 +295,21 @@ juce::String Engine::valueText (int i) const
     const auto& c = controls[(size_t) i];
     const float v = target (i);
     if (i == cx::kTempo) return juce::String (tempoFor (v), 1);
+    if (cx::isPk (i))
+    {
+        const int k = i < cx::kRet ? (i % cx::kPerLane) - cx::kPk : 4 + (i - cx::kPkG);
+        auto hz = [] (float f) { return f >= 1000.0f ? juce::String (f / 1000.0f, f >= 10000.0f ? 0 : 1) + " KHZ" : juce::String ((int) std::lround (f)) + " HZ"; };
+        switch (k)
+        {
+            case 0: return hz (Pockets::homeHz (v));
+            case 1: return juce::String (Pockets::widthOct (v), 1) + " OCT";
+            case 3: return juce::String ((int) std::lround (Pockets::kMaxCut * v)) + " DB";
+            case 5: return juce::String ((int) std::lround (Pockets::clearDb (v))) + " DB";
+            case 6: return juce::String ((int) std::lround (Pockets::releaseMs (v))) + " MS";
+            case 7: return juce::String ((int) std::lround (Pockets::kMaxCut * v)) + " DB";
+            default: break;         // HOLD and AMOUNT: a share
+        }
+    }
     if (c.kind == Kind::List && c.steps() > 0) return c.choices[juce::jlimit (0, c.steps() - 1, (int) std::lround (v * (float) (c.steps() - 1)))];
     if (c.kind == Kind::Toggle || c.kind == Kind::Hold) return v > 0.5f ? "ON" : "OFF";
     return juce::String ((int) std::lround (v * 100.0f));
@@ -1003,6 +1031,20 @@ void Engine::setSpaceModel (int model)
 
 void Engine::panic() { panicNow = true; }
 
+Pockets::Set Engine::pocketSet (bool shownNow) const
+{
+    // (the audio thread asks for what sounds now: its own table. The message thread: what is shown, or where it is going.)
+    auto v = [&] (int i) { return shownNow ? shownV[(size_t) i].load (std::memory_order_relaxed) : targetV[(size_t) i].load (std::memory_order_relaxed); };
+    Pockets::Set s;
+    s.amount = v (cx::kPkG); s.clear = v (cx::kPkG + 1); s.speed = v (cx::kPkG + 2); s.returns = v (cx::kPkG + 3);
+    for (int l = 0; l < kLanes; ++l)
+    {
+        s.home[(size_t) l] = v (cx::pk (l, 0)); s.width[(size_t) l] = v (cx::pk (l, 1));
+        s.hold[(size_t) l] = v (cx::pk (l, 2)); s.yield[(size_t) l] = v (cx::pk (l, 3));
+    }
+    return s;
+}
+
 // ---------------------------------------------------------------------------------------- setup
 SFProcessor* Engine::processorFor (Target t) const
 {
@@ -1286,6 +1328,8 @@ void Engine::prepare (double rate, int block)
     prep (*busProc);
     for (int l = 0; l < kLanes; ++l) busWas[(size_t) l] = laneOnBus (l) ? 1.0f : 0.0f;
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf, &busBuf, &busDry }) b->setSize (2, maxBlock, false, true, false);
+    laneBuf.setSize (2 * kLanes, maxBlock, false, true, false);
+    pockets.prepare (sr, maxBlock);
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
     kTape = std::max (1 << 20, juce::nextPowerOfTwo ((int) std::ceil (sr * 16.0) + 65536 + maxBlock));
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
@@ -1529,10 +1573,12 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const bool anyRetSolo = retSolo[0] || retSolo[1];
     const float dryNow = anyRetSolo ? 0.0f : 1.0f;
     const float fall = (float) (30.0 * n / sr);      // meters fall 30 dB a second
-    juce::AudioBuffer<float> b2 (buf.getArrayOfWritePointers(), 2, n);
+    // Every lane is played into its own pair of channels first: POCKETS hears them all together
+    // before any of them reaches the mix.
     for (int l = 0; l < kLanes; ++l)
     {
         auto& ln = lane[(size_t) l];
+        juce::AudioBuffer<float> b2 (laneBuf.getArrayOfWritePointers() + 2 * l, 2, n);
         if (! run && ln.patWait.load()) { ln.patWait = false; ln.patDirty = true; }      // the clock stopped: nothing to wait for
         if (ln.patDirty.load())
         {
@@ -1703,7 +1749,21 @@ void Engine::render (juce::AudioBuffer<float>& out)
         if (so >= 0 && so != l) ln.gainWas = 0.0f;       // a test's solo is in force from the first sample
         if (lg != 1.0f || ln.gainWas != 1.0f) for (int ch = 0; ch < 2; ++ch) b2.applyGainRamp (ch, 0, n, ln.gainWas, lg);
         ln.gainWas = lg;
+    }
 
+    // POCKETS: each lane is carved where it covers a sound with the better claim to that part of the
+    // spectrum, while that sound is there. What is not heard (muted, or put out by a solo) covers
+    // nothing. With AMOUNT at nought, and the screen not showing it, this does nothing at all.
+    {
+        const auto tk = clock();
+        pockets.lanes (laneBuf.getArrayOfWritePointers(), n, pocketSet(), pkWatch.load());
+        profPockets += since (tk);
+    }
+
+    for (int l = 0; l < kLanes; ++l)
+    {
+        auto& ln = lane[(size_t) l];
+        juce::AudioBuffer<float> b2 (laneBuf.getArrayOfWritePointers() + 2 * l, 2, n);
         const float lp = b2.getMagnitude (0, n);
         ln.hold = std::max (juce::Decibels::gainToDecibels (lp, -100.0f), ln.hold - fall);
         laneDb[(size_t) l] = ln.hold;
@@ -1768,6 +1828,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
     retA->processBlock (a2, noMidi);
     space[(size_t) spaceNow]->processBlock (bb2, noMidi);
     profRet += since (tr);
+    {
+        // POCKETS: the returns have no pocket, and give way to every lane
+        const auto tk = clock();
+        float* const wet[4] = { a2.getWritePointer (0), a2.getWritePointer (1), bb2.getWritePointer (0), bb2.getWritePointer (1) };
+        pockets.returns (wet, n);
+        profPockets += since (tk);
+    }
     const bool spaceQuiet = spaceSwap || spaceHold > 0;
     spaceHold = std::max (0, spaceHold - n);
     if (spaceSwap) { spaceNow = spaceNext; space[(size_t) spaceNow]->panic(); spaceHold = (int) (sr * 0.02); }

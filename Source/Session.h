@@ -144,9 +144,20 @@ public:
     std::vector<Engine::SetupParam> configList() const;     // its controls, in the order the panel has them
     void setConfig (int index, int value7);                 // one of them, from a controller (0 to 127; a list: its share of that; a switch: the upper half is on)
     juce::String cfgTouched;            // the control of CONFIG's a controller last turned (the panel shows its value)
-    // ---- which screen is up (0 the main one, 1 the library, 2 the macro designer), and the one a
+    // ---- POCKETS: the master's page (showing 3). While it is up, a controller's CONFIG pages hold
+    // its knobs, twelve to a page: the eleven lanes' HOME and AMOUNT; their WIDTH and CLEAR; their
+    // YIELD and SPEED; their HOLD and RETURNS (configList and setConfig then mean these).
+    static constexpr int kPocketList = 4 * (kLanes + 1);
+    static int pocketControl (int index);       // the control in that place of the list (-1: none)
+    static const char* pocketPageName (int page);       // HOME, WIDTH, YIELD, HOLD
+    // AUTO: every lane that has been sounding gets its HOME and WIDTH from what it has been
+    // playing (see Pockets::place). They travel there over the GLIDE time. How many were placed.
+    int pocketsAuto();
+    void pocketsReset();                // every lane's pocket back to where the rig starts it (AMOUNT and the rest stay)
+    // ---- which screen is up (0 the main one, 1 the library, 2 the macro designer, 3 POCKETS), and the one a
     // controller asks for (-1: none): the screen takes it up
     int showing = 0, wantShowing = -1;
+    bool pocketsUp() const              { return wantShowing == 3 || (showing == 3 && wantShowing < 0); }      // POCKETS is up, or has just been asked for
 
     // ---- controls
     // A knob or key moved by hand. sounding: the engine already has the value (a controller's knob,

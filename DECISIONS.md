@@ -1472,7 +1472,118 @@ many."
      every copy has its SHA-256, and a snapshot sent to the web names its samples from the
      library folder down, not by a path on your disk.
 
+## Thirty-first build (Nov 13): POCKETS, the master's tool for who has which part of the spectrum
+
+303. **You:** "Some kind of tool on the master that is world class and allows for the management
+     of frequency overlap. This can be ai/smart and automatic or manual (or a mix of both) but
+     when making a sound, it would be nice to be able to carve up the bands to create a mix where
+     everything sits in a pocket. What those pockets are and how they overlap is a critical
+     sound design tool, not just a mixing step. [...] I want to spare no expense on getting this
+     right." With it, an overview of what is sold for the job: Trackspacer, FUSER, soothe2's
+     sidechain, Neutron's Unmask, smart:EQ 4's tiers, Pro-Q 4, Waves F6.
+304. **What I built is none of those with another face: every lane has a pocket, and the pockets
+     are the instrument's.** *Mine.* Those tools sit on one track and listen to one other. Here
+     the whole rig is known: eleven lanes and two returns, each heard, each carved, by one rule.
+     A lane has a stretch of the spectrum that is its own (HOME, WIDTH), held so firmly (HOLD),
+     and gives at most so much (YIELD). Where two sounds meet, the one with the weaker claim to
+     that band gives way, there, while the other sounds.
+305. **How much it gives: what it takes to sit CLEAR below the other, and no more.** *Mine.*
+     Trackspacer's law is the other one on offer: cut in proportion to how loud the other is,
+     whatever is under it. That cuts a sound that was never in the way. Here a band is cut by
+     how far the lane stands above (the other's peak there, less CLEAR), so a lane already
+     under it is not touched, and AMOUNT says how much of that is done. What it costs: a quiet
+     sound with the stronger claim can ask a lot of a loud one. YIELD is the limit on that, and
+     a weak band of the other's (12 dB or more under its strongest) asks no more room than its
+     strong ones.
+306. **Who wins: HOLD, and a pocket is worth four times as much inside as out.** *Mine.* A lane's
+     claim to a band is its HOLD inside its pocket and a quarter of it outside; the claim that
+     is stronger by a fifth of full takes the band outright, less than that takes part. So a
+     pocket is respected by all but a much firmer lane, and where neither has a pocket (or both
+     do) the firmer one wins. Two lanes with the same claim leave one another alone. I tried
+     without HOLD (the narrower pocket winning) and dropped it: a wide sound could then never
+     be put in front.
+307. **What counts as sounding.** *Mine.* A lane claims a band while that band is within 8 dB
+     of its own remembered peak there, less and less down to 26 dB under, and only in bands
+     that are part of its sound (within 6 to 24 dB of its loudest). The peaks are remembered
+     through silence and let down (10 dB a second) only while the lane plays, so a kick back
+     after a break is known for what it was. A sound heard for the first time has its claims
+     come in over a tenth of a second.
+308. **The kick is known before the bottom bands have heard it.** *Mine.* A band at 50 Hz takes
+     some 60 ms to ring up, which is longer than the part of a kick that matters. For that long
+     after a hit (a jump of the lane's whole level), each band is taken to be where the lane's
+     remembered spectrum says, at the level the whole sound has now. Measured: the bass's 50 Hz
+     is three quarters of the way down 8 ms into the fifth kick; on the first kick, not yet
+     known, it has not begun by then. No look-ahead: nothing is delayed.
+309. **Twenty-eight third-octave bands, 31 Hz to 16 kHz, and bells that only cut.** *Mine.* Each
+     part is heard through a bank of band-passes (two sections a band), and what a band's
+     neighbours let through is taken out of it, so a tone is in its own band and not in five.
+     Each part is carved by 28 bells in series (Q 3.5, wide enough that a run of them cut alike
+     is a smooth dip), each set to what its band still lacks once its neighbours' cuts are
+     counted. A cut comes in over 1 to 6 ms (slower in the lows) and goes at SPEED. A bell that
+     is not cutting is not run, and a part with none is not touched: checked, to the last bit.
+310. **Where in the lane.** *Mine.* After MUTE and SOLO and before everything else: the sends,
+     the drum bus, the stem and the meter are of what was left. So **what is not heard covers
+     nothing**, and a soloed lane is heard as it came, not as the mix leaves it. That is the
+     one I would most expect you to want the other way; each row of the page has M and S, and
+     with them a lane can be heard carved by muting what covers least.
+311. **The returns have no pocket.** *Mine.* They give way to every lane, where the lane sounds,
+     up to RETURNS; no lane gives way to them. At the sends the rig starts with they are
+     already under the lanes and are not touched: it shows when a send is thrown.
+312. **Forty-eight knobs, and they are knobs.** *Mine.* In snapshots, travelling over the GLIDE
+     time, within reach of a snapshot knob and LEARN, with MIDI addresses. AMOUNT starts at
+     nought, so nothing you have sounds different until you turn it; a snapshot from before
+     there were pockets leaves them as they are (as with the drum bus, 281). In the row that
+     says what RECALL takes, a lane's pocket goes with its lane and the rig's four with BUS.
+313. **Where the pockets start** is *proposed*, every figure of it: a HOME for each lane where
+     its own sound, as the rig starts it, measured loudest (the kick 55 Hz, the bass 80, the
+     rumble 45, PERC 220, the pad 350, the voice 400, the chord 600, the lead 900, the clap
+     1.4 kHz, the hats 7.5 and 9 kHz), widths of 1.4 to 3 octaves, HOLD in the order kick, bass,
+     voice, lead, clap, chord, closed hat, perc and open hat, pad, rumble, YIELD from nought
+     (the kick) to 60 %, CLEAR 3 dB, SPEED 120 ms, RETURNS 12 dB. At full AMOUNT on the rig as it
+     starts: nine lanes give somewhere, the most in a band is 9.6 dB (the lead), no lane loses
+     more than 2.9 dB over all (the rumble), the set is 0.8 dB quieter.
+314. **AUTO places each pocket where its lane's own sound is, and that is all it does.** *Mine.*
+     The narrowest pocket, of an octave to four, that holds three fifths of the lane's power,
+     where it holds the most. I first had it also keep clear of what firmer lanes had taken,
+     which reads as smarter and sent the bass's pocket to 314 Hz, off its own fundamental,
+     where the rumble then beat it at the bottom. Who wins where pockets meet is HOLD's to say,
+     and AUTO leaves HOLD and YIELD alone. It goes by what the lanes played while the page was
+     up (or while AMOUNT was up); a lane heard for less than two seconds is left where it was.
+315. **A page, not a panel.** *Mine.* Thirteen maps need the whole screen. P, or a key on the
+     master beside AMOUNT's figure; there was no room on the master's face for the knob itself.
+     A pocket is dragged on its map; every knob on the page is also on the E16.
+316. **On the E16.** *Mine.* The rig's four are the MASTER page's third row, which is the one
+     change to a scene: `SF-000-FX.oxie16` wants loading again for those four knobs. The lanes'
+     forty-four are on CONFIG's three pages while POCKETS is up, by sending names, with a fourth
+     page on the third's knobs since a scene has no room for one. OPEN on the master now goes
+     drum bus, POCKETS, back, where it went drum bus, back.
+317. **The format.** `values` gains the ids, `made` a `pockets` print, `defs` a `pockets`
+     definition saying what a value of each knob means. The chassis is unchanged, so its print
+     is too.
+318. **The engine plays every lane into its own pair of channels before any reaches the mix**,
+     so that POCKETS hears them all at once; it used to play one, add it, play the next.
+     Nothing about the sound changes with AMOUNT at nought: sixteen bars of the whole rig from
+     this build and from the last one are the same file, byte for byte.
+319. **The name.** The suite already says "pocket" for the kick's duck (POCKET DEPTH, POCKET
+     SHAPE): a pocket in time. This is a pocket in frequency, and it is your word for it. I
+     kept both and say which is which wherever they meet. If two meanings are one too many,
+     POCKETS is the one to rename.
+320. **A correction to what I told you was missing.** Mono below a set frequency is not missing:
+     the master chain has had it since the first build (LOWEND, at 150 Hz). It is not a knob.
+321. **Still to come, in the order I will take them**: the convolution with more than one
+     impulse response across the spectrum (your first of the two); then your additions of this
+     morning: keys that go down on the 3D stage, motion on a snapshot knob, an arrangement of
+     snapshots that can be printed for release, and a page of the E16 for the sequencer's steps.
+
 ## Not verified
+
+- **POCKETS (thirty-first) has not been heard by anyone.** Every claim about it is a
+  measurement on made-up tones or on the rig's stems: that the right thing is cut, where, by how
+  much and for how long. Whether a mix carved this way sounds better, whether 8 ms is soon
+  enough under your kick, whether a bell moving at SPEED is heard as movement, whether the
+  pockets I started each lane with suit your sounds: all yours to say. Start with AMOUNT half
+  way and the page open. Its page has been drawn here and not seen on a Mac; its E16 pages have
+  met only the made-up E16.
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
   builds and plays it on his Mac.

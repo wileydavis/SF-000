@@ -103,7 +103,10 @@ this build does not have is written back as it was read.
   is `<slot>.i<insert>.c<cell>` (by place: what the place is depends on the effect in `inserts`);
   the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on; the returns are
   `ret.dub_*`, `ret.space_*`, `ret.conv_*`; the drum bus's four are `bus.drive`, `bus.crunch`,
-  `bus.punch`, `bus.boom`. A control missing from a snapshot is left where it is.
+  `bus.punch`, `bus.boom`; POCKETS' are `<slot>.pk_home`, `.pk_width`, `.pk_hold`, `.pk_yield`
+  on every lane and `pk.amount`, `pk.clear`, `pk.speed`, `pk.returns` for the rig (thirty-first
+  build on; what a value of each means is in the `pockets` definition). A control missing from a
+  snapshot is left where it is: a snapshot from before there were pockets leaves them alone.
 - **`setup.bus`**: the drum bus's CONFIG, by parameter id (`damp`, `boom_tune`, `type`, ... and
   `in_1` to `in_11`: which lanes play through it, in `made.slots` order). Absent on a snapshot
   from before there was a bus (twenty-eighth build): the bus is then left as it is.
@@ -132,6 +135,7 @@ this build does not have is written back as it was read.
   "fx":      { "DELAY": "<print>", "RADIO": "<print>" },       each effect this snapshot has in an insert
   "returns": { "dub": "<print>", "space": "<print>", "conv": "<print>" },
   "bus":     "<print>",                                         the drum bus (absent before there was one)
+  "pockets": "<print>",                                         POCKETS (absent on a snapshot that holds no pocket values)
   "chassis": "<print>"
 }
 ```
@@ -155,6 +159,7 @@ Every definition any snapshot in the file names, by print. Never pruned.
 | `fx` | an insert effect | `name`, `engine`, `fixed`, `cells` (eight places: `id` c1..c8, `label`, `param`, `kind`, `lo`, `hi`; null = empty) |
 | `return` | DUB, or SPACE as reverb or as convolution | as `fx`, with four `knobs` by full id |
 | `bus` | the drum bus | as `return`: four `knobs` by full id (`bus.drive` ...) |
+| `pockets` | POCKETS: who has which part of the spectrum | `v`, `bands` (28), and its knobs by id, `lane` (the four every lane has: `pk_home` ...) and `rig` (`pk.amount` ...), each with a `unit` and a `law`: the value in that unit as a formula in `v`, the stored 0 to 1 |
 | `chassis` | what every lane has beside its instrument | `v`, the counts, and the strip's and the rig's stored controls: `id`, `label`, `kind`, `choices` |
 
 **From a stored value to a parameter.** A knob (`kind` u or b) at `v` puts its parameter at
