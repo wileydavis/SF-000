@@ -115,6 +115,16 @@ public:
     void finishTakes (bool all = false);
     int takesWaiting() const            { return (int) waiting.size(); }
     void recall (juce::int64 id);       // it becomes the base scene; sound knobs travel by GLIDE
+    // A recall of part of it: the lanes that are chosen, the returns, the key come from the
+    // snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo, GLIDE and
+    // the master's three knobs are the rig's and no snapshot's.)
+    struct Scope
+    {
+        std::array<bool, kLanes> lane; bool returns = true, master = true;
+        Scope() { lane.fill (true); }
+        bool all() const { for (bool b : lane) if (! b) return false; return returns && master; }
+    };
+    void recall (juce::int64 id, const Scope&);
     const Snapshot* findSnap (juce::int64 id) const;
     int indexOf (juce::int64 id) const;
     void remove (juce::int64 id);

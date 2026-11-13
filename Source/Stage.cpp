@@ -247,9 +247,10 @@ const char* const kSlabVert = R"(#version 150
 in vec2 aCorner; in vec2 aArc; in vec3 aProf; in vec2 aN; in float aTop;
 in vec4 iRect; in vec4 iShape; in vec4 iColour; in vec4 iMat; in vec4 iClip;
 uniform mat4 uVP;
-out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip;
+out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip; flat out vec4 vRect;
 void main()
 {
+    vRect = iRect;
     vec2 hs = iRect.zw;
     float r = min (iShape.z, min (hs.x, hs.y));
     float bev = min (iShape.w, r);
@@ -266,9 +267,10 @@ const char* const kTurnedVert = R"(#version 150
 in vec3 aPos; in vec3 aNormal; in float aTop;
 in vec4 iPos; in vec4 iColour; in vec4 iMat; in vec4 iClip;
 uniform mat4 uVP;
-out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip;
+out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip; flat out vec4 vRect;
 void main()
 {
+    vRect = vec4 (0.0);
     vPos = vec3 (iPos.x + aPos.x * iPos.w, iPos.z + aPos.y * iPos.w, iPos.y + aPos.z * iPos.w);
     vNormal = aNormal;
     vTop = aTop; vColour = iColour; vMat = iMat; vClip = iClip;
@@ -316,8 +318,8 @@ void main()
 // Every solid surface. vMat.x says what it is: 0 plain; 1 its top carries the sheet's print;
 // 2 a display (what the sheet shows there is light); 3 a lit key; 4 the case.
 const char* const kSurfaceFrag = R"(#version 150
-in vec3 vPos; in vec3 vNormal; in float vTop; in vec4 vColour; in vec4 vMat; in vec4 vClip;
-uniform vec3 uEye; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround;
+in vec3 vPos; in vec3 vNormal; in float vTop; in vec4 vColour; in vec4 vMat; in vec4 vClip; flat in vec4 vRect;
+uniform vec3 uEye; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround; uniform float uFinish;
 uniform sampler2D uSheet; uniform vec4 uSheetMap;
 uniform sampler2DShadow uShadow; uniform mat4 uShadowVP; uniform float uShadowTexel;
 uniform vec3 uWarm; uniform float uCaseDepth;
@@ -326,6 +328,14 @@ const float PI = 3.14159265;
 const vec2 kTaps[9] = vec2[9] (vec2 (0.0, 0.0), vec2 (0.95, 0.20), vec2 (-0.35, 0.90), vec2 (-0.90, -0.30), vec2 (0.30, -0.95),
                                vec2 (0.55, 0.65), vec2 (-0.70, 0.45), vec2 (-0.50, -0.75), vec2 (0.75, -0.50));
 vec3 toLinear (vec3 c) { return mix (c / 12.92, pow ((c + vec3 (0.055)) / 1.055, vec3 (2.4)), step (vec3 (0.04045), c)); }
+// numbers with no pattern to them, from a place: one for a point, and one that changes smoothly between points
+float hash1 (vec2 p) { vec3 q = fract (vec3 (p.xyx) * 0.1031); q += dot (q, q.yzx + 33.33); return fract ((q.x + q.y) * q.z); }
+float smoothNoise (vec2 p)
+{
+    vec2 i = floor (p), f = fract (p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix (mix (hash1 (i), hash1 (i + vec2 (1.0, 0.0)), f.x), mix (hash1 (i + vec2 (0.0, 1.0)), hash1 (i + vec2 (1.0, 1.0)), f.x), f.y);
+}
 float shade (vec3 p, vec3 n)
 {
     vec4 q = uShadowVP * vec4 (p + n * 0.7, 1.0);
@@ -343,6 +353,26 @@ void main()
     vec3 albedo = vColour.rgb;
     float rough = clamp (vColour.a, 0.06, 1.0), metal = clamp (vMat.z, 0.0, 1.0), kind = vMat.x;
     vec3 emit = vec3 (0.0);
+    if (vTop > 0.5 && vMat.w > 0.5 && uFinish > 0.0)
+    {
+        // A faceplate: anodized aluminium that has been used. Its dye is never quite even (a slow
+        // mottling, a fine blasted grain); along its edges, in patches, hands and cases have rubbed
+        // it toward the metal; and here and there something has been dragged across it. All of it slight.
+        vec2 p = vPos.xz;
+        float grain = hash1 (floor (p * 2.3)) - 0.5;
+        float mottle = smoothNoise (p * 0.035) * 0.6 + smoothNoise (p * 0.11 + vec2 (17.0, 5.0)) * 0.4 - 0.5;
+        float edge = min (vRect.z - abs (p.x - vRect.x), vRect.w - abs (p.y - vRect.y));
+        float worn = (1.0 - smoothstep (0.6, 7.0, edge)) * smoothstep (0.42, 0.80, smoothNoise (p * 0.06 + vec2 (3.0, 41.0)));
+        vec2 along = vec2 (0.83, 0.56), across = vec2 (-0.56, 0.83);
+        float scuff = smoothstep (0.94, 1.0, smoothNoise (vec2 (dot (p, across) * 2.6, dot (p, along) * 0.020)))
+                    + smoothstep (0.96, 1.0, smoothNoise (vec2 (dot (p, along) * 2.1 + 9.0, dot (p, across) * 0.014 + 4.0)));
+        scuff *= smoothstep (0.35, 0.75, smoothNoise (p * 0.02 + vec2 (60.0, 12.0)));
+        float f = uFinish;
+        albedo *= 1.0 + f * (grain * 0.06 + mottle * 0.07);
+        albedo = mix (albedo, vec3 (0.42, 0.43, 0.44), f * (worn * 0.24 + scuff * 0.04));
+        rough = clamp (rough + f * (grain * 0.05 - mottle * 0.06 - worn * 0.18 - scuff * 0.08), 0.06, 1.0);
+        metal = clamp (metal + f * worn * 0.45, 0.0, 1.0);
+    }
     if (vTop > 0.5 && kind > 0.5)
     {
         vec4 p = texture (uSheet, (vPos.xz + uSheetMap.xy) * uSheetMap.zw);
@@ -971,11 +1001,11 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     {
         for (float f : { c.x0 - kW * 0.5f, c.y0 - kH * 0.5f, c.x1 - kW * 0.5f, c.y1 - kH * 0.5f }) d.push_back (f);
     }
-    void slab (juce::Rectangle<float> r, float base, float height, float corner, float roll, Rgb colour, float rough, float kind, float emit, float metal, const Parts::Clip& clip)
+    void slab (juce::Rectangle<float> r, float base, float height, float corner, float roll, Rgb colour, float rough, float kind, float emit, float metal, const Parts::Clip& clip, float finish = 0.0f)
     {
         auto& d = slabs.data;
         for (float f : { r.getCentreX() - kW * 0.5f, r.getCentreY() - kH * 0.5f, r.getWidth() * 0.5f, r.getHeight() * 0.5f, base, height, corner, roll,
-                         colour.r, colour.g, colour.b, rough, kind, emit, metal, 0.0f }) d.push_back (f);
+                         colour.r, colour.g, colour.b, rough, kind, emit, metal, finish }) d.push_back (f);
         clipTo (d, clip);
     }
     void turnedAt (Batch& b, float cx, float cy, float base, float scale, Rgb colour, float rough, float kind, const Parts::Clip& clip)
@@ -999,7 +1029,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         for (const auto& p : parts.plates)
         {
             slab (p.r.expanded (1.3f), p.base + 0.05f, 0.02f, 8.6f, 0.0f, l.pocket, 0.9f, 0.0f, 0.0f, 0.0f, p.clip);       // the pocket it stands in, seen as the gap round it
-            slab (p.r, p.base, Parts::kPlate, 7.5f, 1.2f, lin (p.ground), l.plateRough, 1.0f, 0.0f, 0.0f, p.clip);
+            slab (p.r, p.base, Parts::kPlate, 7.5f, 1.2f, lin (p.ground), l.plateRough, 1.0f, 0.0f, 0.0f, p.clip, 1.0f);       // (a faceplate: it has the anodized finish)
         }
         for (const auto& k : parts.keys)
         {
@@ -1101,6 +1131,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const V3 sun = sunDir();
         glUniform3f (loc ("uSun"), sun.x, sun.y, sun.z);
         glUniform3f (loc ("uSunCol"), 2.46f, 2.40f, 2.30f);
+        glUniform1f (loc ("uFinish"), dark ? 1.0f : 0.0f);       // (the worn black anodizing is the dark instrument's; the pale one's plates are as they were)
         glUniform3f (loc ("uSky"), 0.40f, 0.42f, 0.44f);
         glUniform3f (loc ("uGround"), 0.20f, 0.17f, 0.15f);
         glUniform1i (loc ("uSheet"), 0);

@@ -744,6 +744,40 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                         std::printf ("  %s: a snapshot holds MOTION wherever it is set (a lane's, an insert's, a return's) and writes it to the session file; and a lane's random waves are the same waves after its voice has crossed over\n", ok8 ? "ok  " : "FAIL");
                         if (! ok8) { ++bad; std::printf ("    (lane %d return %d insert %d file %d wave %d)\n", (int) lane, (int) ret, (int) ins, (int) file, (int) sameWave); }
                     }
+                    // a recall of part of a snapshot: what is chosen comes from it, the rest stays as it is
+                    {
+                        Engine e9; e9.prepare (48000.0, 128);
+                        Session s9 (e9, false);
+                        const int punch = cx::lane (0, 5), cut = cx::lane (5, 6), dub = cx::kRet + 1;
+                        auto near = [&] (int ctl, float v) { return std::abs (e9.target (ctl) - v) < 1.0e-4f; };
+                        s9.userSet (cx::kGlide, 0.0f);
+                        s9.userSet (punch, 0.2f); s9.userSet (cut, 0.2f); s9.userSet (dub, 0.2f); s9.userSet (cx::kKey, 0.0f);
+                        const auto pat0 = e9.pattern (0);
+                        const auto a9 = s9.take();
+                        s9.userSet (punch, 0.8f); s9.userSet (cut, 0.8f); s9.userSet (dub, 0.8f); s9.userSet (cx::kKey, 0.5f);
+                        s9.pressGenerator (0, 0);                                       // (and the kick's steps written anew)
+                        const auto b9 = s9.take();
+                        s9.finishTakes (true);
+                        s9.recall (a9);
+                        const bool whole = near (punch, 0.2f) && near (cut, 0.2f) && near (dub, 0.2f) && near (cx::kKey, 0.0f);
+                        Session::Scope bassOnly; bassOnly.lane.fill (false); bassOnly.lane[5] = true; bassOnly.returns = false; bassOnly.master = false;
+                        s9.recall (b9, bassOnly);
+                        const bool part = near (punch, 0.2f) && near (cut, 0.8f) && near (dub, 0.2f) && near (cx::kKey, 0.0f);
+                        // with a snapshot knob turned, a lane left out stays where the knob has it
+                        s9.recall (a9);
+                        s9.knobs[0].snaps = { a9, b9 };
+                        s9.turnSnapKnob (0, 0.5f);
+                        const float punchWas = e9.target (punch);
+                        s9.recall (b9, bassOnly);
+                        const bool underKnob = std::abs (punchWas - 0.5f) < 0.02f && near (punch, punchWas);
+                        s9.turnSnapKnob (0, 0.0f);
+                        s9.recall (b9);
+                        const bool again = near (punch, 0.8f) && near (cut, 0.8f) && near (dub, 0.8f) && near (cx::kKey, 0.5f);
+                        const bool ok9 = whole && part && underKnob && again;
+                        std::printf ("  %s: a recall of part of a snapshot (the bass alone): the bass takes the snapshot's place, the kick, the returns and the key stay as they are, under a turned snapshot knob too; a plain recall takes all of it\n", ok9 ? "ok  " : "FAIL");
+                        if (! ok9) { ++bad; std::printf ("    (whole %d part %d under the knob %d again %d: punch %.2f cut %.2f dub %.2f tempo %.1f)\n", (int) whole, (int) part, (int) underKnob, (int) again, e9.target (punch), e9.target (cut), e9.target (dub), (double) e9.target (cx::kKey)); }
+                        juce::ignoreUnused (pat0);
+                    }
                 }
             }
         }
@@ -1201,6 +1235,31 @@ static int uiTest()
         const bool loaded = ! sc.testLoadOpen() && juce::File (e.laneFile (10)) == phrase && sc.loadFolder (false) == phrase.getParentDirectory().getFullPathName();
         check (keyThere && listed && inside && loaded, "LOAD on a lane that takes a file lists folders and sound files in CONFIG's own panel; a click goes into a folder, a click on a file loads it, and it opens there next time");
         tmp.deleteRecursively();
+    }
+    // the library: with a snapshot cued, the parts RECALL takes can be put out; after the recall all are lit again
+    {
+        ses.userSet (cx::kGlide, 0.0f);
+        const int cut = cx::lane (5, 6), punch = cx::lane (0, 5);
+        ses.userSet (cut, 0.15f); ses.userSet (punch, 0.15f);
+        ses.take(); ses.finishTakes (true);
+        ses.userSet (cut, 0.9f); ses.userSet (punch, 0.9f);
+        sc.setPage (Screen::pLibrary); draw();
+        auto firstOf = [&] (bool (*is) (const Screen::TestHit&), int nth = 0) { int n = 0; for (auto& h : sc.testHits()) if (is (h) && n++ == nth) return h.r.getCentre(); return juce::Point<float>(); };
+        auto countOf = [&] (bool (*is) (const Screen::TestHit&)) { int n = 0; for (auto& h : sc.testHits()) if (is (h)) ++n; return n; };
+        if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (left on by a check above: off, to begin)
+        const bool noneYet = countOf (Screen::testIsScope) == 0;
+        click (firstOf (Screen::testIsCueKey)); draw();
+        int cards = countOf (Screen::testIsCard);
+        click (firstOf (Screen::testIsCard, cards - 1)); draw();            // the one just taken: cued (or chosen, if it has no sound kept)
+        const bool row = countOf (Screen::testIsScope) == kLanes + 2;
+        click (firstOf (Screen::testIsScope, 0)); draw();                   // the kick put out
+        const bool out = ! sc.testScope (0) && sc.testScope (5);
+        click (firstOf (Screen::testIsRecallKey)); draw();
+        const bool took = std::abs (e.target (cut) - 0.15f) < 1.0e-4f && std::abs (e.target (punch) - 0.9f) < 1.0e-4f && sc.testScope (0);
+        if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));
+        check (noneYet && row && out && took, "the library, a snapshot cued: thirteen keys say what RECALL takes; with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
+        if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (CUE off again)
+        sc.setPage (Screen::pMain); draw();
     }
     audio (200);
     draw();
@@ -1952,6 +2011,7 @@ static int shot (const juce::StringArray& args)
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
     else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
     if (cfg.isNotEmpty() && args.contains ("--load")) sc.showLoad (arg ("--load", ""));         // LOAD's list, open on that folder
+    if (args.contains ("--cue")) sc.showCue (arg ("--cue", "-1").getIntValue());                 // the library's CUE lit and a snapshot chosen (a number: that part put out of the recall)
     // --rec: a take under way (in a folder of the system's temporary ones, gone again afterwards)
     const auto recDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_shot_rec");
     Recorder rec (e);

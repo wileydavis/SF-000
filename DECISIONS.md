@@ -993,6 +993,21 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      Each place in the rig (a lane, an insert's slot, a return) now has its own numbers, always
      the same: the wave is the same wave after a recall, a crossing-over, a restart. *Mine:* so
      two snapshots cannot have different STEPS patterns on the same lane.
+238. **A recall of part of a snapshot, from the library** (you: "recalling a snapshot recalls
+     everything; but in library, when a snapshot is cued, you can deselect components you don't
+     want to recall... the next time you recall, it defaults again to all selected"). With CUE
+     lit and a snapshot cued or chosen, a row says what RECALL takes: lanes 1 to 11, RET (the
+     returns) and KEY. A part put out stays exactly as it is now: its knobs, its steps, its
+     inserts, its CONFIG. After the recall, and for another snapshot, all are lit again. Every
+     other way of recalling takes everything, as before. *Mine:* the thirteenth key is KEY and
+     not "master", because the tempo, GLIDE and the master's three knobs were never a
+     snapshot's; a lane left out under a turned snapshot knob stays where the knob has it.
+     **Not built, as you said, for later:** making a new snapshot from one with parts put out.
+239. **A worn black anodized finish on the dark instrument's faceplates** (you: "subtle but
+     realistic slightly worn"). Worked out in the surface's shader, no pictures: a fine blasted
+     grain, a slow unevenness in the dye, the anodizing rubbed toward the metal in patches along
+     each plate's edges, and a few faint drags across it. The print sits on top, as sharp as it
+     was. *Mine:* the pale instrument's plates are as they were; how much of each there is.
 
 ## Not verified
 
@@ -1043,6 +1058,9 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
   stopped and join at the next RUN, with no burst); a MUTE and a THROW sequenced from the ONE
   (tight, not late); quitting with ONLINE on and the network pulled (it should simply quit); a
   recall that changes VOICE's model with a long sample in it (no pause of the screen).
+- **The faceplates' finish and the pulse have been looked at only as a software driver draws
+  them**, at a fraction of your display's sharpness. Whether the grain is too fine to see or the
+  wear too much is for your eye; each is one number in `Stage.cpp`'s surface shader.
 - **The twenty-second build is unseen on the Mac**: leaving full screen (the fault was read in
   JUCE's source, not reproduced; the fix uses a call I can only run on Linux), the SETUP window's
   new row, the icon in the Dock (the Finder may show the old one until it forgets it), and how

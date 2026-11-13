@@ -52,6 +52,7 @@ Screen::Screen (Session& s)
       fRead   (face (BinaryData::BarlowSemiCondensedMedium_ttf, BinaryData::BarlowSemiCondensedMedium_ttfSize, 21.0f, 0.0f)),
       fFlag   (face (BinaryData::BarlowSemiCondensedSemiBold_ttf, BinaryData::BarlowSemiCondensedSemiBold_ttfSize, 36.0f, 0.0f))
 {
+    scopeOn.fill (true);
     setOpaque (true);
     setWantsKeyboardFocus (true);
     lastShown.fill (-1.0f);
@@ -520,6 +521,10 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             below = true;
             break;
         }
+        case hScope:
+            t.title = "WHAT RECALL TAKES: " + (h.a < kLanes ? String (h.a + 1) + " " + lanes()[(size_t) h.a].name : h.a == kLanes ? String ("THE RETURNS") : String ("THE KEY"));
+            body = "LIT: THIS PART COMES FROM THE SNAPSHOT WHEN RECALL IS PRESSED. OUT: IT STAYS AS IT IS NOW. CLICK TO PUT IT OUT OR BACK. AFTER A RECALL, AND FOR ANOTHER SNAPSHOT, ALL ARE LIT AGAIN.";
+            break;
         case hLane:
             t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name;
             body = String (help::lane (h.a)) + " CLICK THE NAME TO MAKE IT THE ACTIVE LANE: THE INSERTS AND THE SEQUENCER STRIP SHOW IT.";
@@ -1537,12 +1542,31 @@ void Screen::drawLibrary (G& g)
     // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
     actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5);
     actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
+    // What RECALL takes of it: every lane, the returns and the master, unless some are put out
+    // first. Put out, a part stays as it is now. The next snapshot starts with all of them again.
+    {
+        const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap;
+        if (id != scopeFor) { scopeFor = id; scopeOn.fill (true); }
+        if (cueMode && ses.findSnap (id) != nullptr)
+        {
+            text (g, "RECALL TAKES", R (x0 + 386, y0 + 4, 96, 24), fLbl, col::black, juce::Justification::centredLeft);
+            for (int i = 0; i < kLanes + 2; ++i)
+            {
+                const R kr (x0 + 486 + (float) i * 40, y0 + 4, 36, 24);
+                key (g, kr, scopeOn[(size_t) i] ? col::white : col::putty);
+                const String name = i < kLanes ? String (i + 1) : i == kLanes ? String ("RET") : String ("KEY");
+                if (scopeOn[(size_t) i]) text (g, name, kr, fLbl, col::black);
+                else textRaw (g, name, kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));        // (put out: still to be read, dimly)
+                hit (kr.expanded (1), hScope, i, 0);
+            }
+        }
+    }
     // PHONES: one pair of outputs with headphones on it. While a cue plays: the set left, the cue right.
     actKey (g, aPhones, x0 + 518, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5);
     const String help = ! cueMode ? (night() ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE LIT NAME IS THE BASE SCENE."
                                              : "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.")
                       : eng.phones() ? "CUE WITH PHONES LIT: WHILE A SNAPSHOT'S BARS PLAY, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET."
-                      : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES (TICK THEM IN AUDIO), OR PHONES LIT: THEN THIS OUTPUT CARRIES THE SET LEFT AND THE CUE RIGHT."
+                      : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES (TICK THEM IN SETUP), OR PHONES LIT: THEN THIS OUTPUT CARRIES THE SET LEFT AND THE CUE RIGHT."
                       : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
     if (online == nullptr) { text (g, help, R (x0 + 606, ky, 1040, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
     // ONLINE: each snapshot goes to the library on the web as it is taken. The lamp: green when the
@@ -1673,7 +1697,13 @@ void Screen::act (int a)
         case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
         case aRecallCue:
-            if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr) { selSnap = id; ses.recall (id); ses.cue (0); }
+            if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr)
+            {
+                Session::Scope sc;
+                if (id == scopeFor) { for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i]; sc.returns = scopeOn[(size_t) kLanes]; sc.master = scopeOn[(size_t) kLanes + 1]; }
+                selSnap = id; ses.recall (id, sc); ses.cue (0);
+                scopeOn.fill (true);                    // (the next recall takes everything again)
+            }
             break;
         case aLibrary:  setPage (pLibrary); break;
         case aMacros:   setPage (pMacros); break;
@@ -1760,6 +1790,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             break;
         case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
         case hFile:     pickLoad (h->a); break;
+        case hScope:    if (h->a >= 0 && h->a < kLanes + 2) scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a]; break;
         case hSetup:
             if (h->a < (int) cfgParams.size())
             {

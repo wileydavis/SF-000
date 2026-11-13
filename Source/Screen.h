@@ -57,6 +57,9 @@ public:
     juce::String loadFolder (bool fx) const     { return (fx ? loadFxDir : loadLaneDir).getFullPathName(); }
     void setLoadFolder (bool fx, const juce::String& path) { (fx ? loadFxDir : loadLaneDir) = path.isNotEmpty() ? juce::File (path) : juce::File(); }
     bool testLoadOpen() const                   { return loadOpen; }
+    bool testScope (int i) const                { return scopeOn[(size_t) i]; }
+    bool testCueMode() const                    { return cueMode; }
+    void showCue (int putOut = -1)              { cueMode = true; if (! ses.library.empty()) selSnap = ses.library.back().id; scopeFor = selSnap; scopeOn.fill (true); if (putOut >= 0) scopeOn[(size_t) putOut] = false; repaint(); }     // (the pictures: the library with a snapshot chosen for RECALL)
     void showLoad (const juce::String& folder)  { setLoadFolder (cfg.kind != 0, folder); openLoad(); repaint(); }     // (the pictures: LOAD's list, open on that folder)
     bool testWatch (juce::uint32 now, bool inFront) { return watchStart (now, inFront); }
     // (these stand in front of the component's own: in 3D a repaint is the sheet and the parts brought up to date)
@@ -95,6 +98,10 @@ public:
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsFile (const TestHit& h)   { return h.kind == hFile; }
+    static bool testIsScope (const TestHit& h)  { return h.kind == hScope; }
+    static bool testIsCueKey (const TestHit& h) { return h.kind == hAct && h.a == aCue; }
+    static bool testIsRecallKey (const TestHit& h) { return h.kind == hAct && h.a == aRecallCue; }
+    static bool testIsCard (const TestHit& h)   { return h.kind == hCard; }
     static bool testIsLoadKey (const TestHit& h){ return h.kind == hAct && h.a == aLoad; }
     static bool testIsControl (const TestHit& h, int ctl) { return (h.kind == hKnob || h.kind == hRead) && h.a == ctl; }
     static bool testIsToggle (const TestHit& h, int ctl) { return h.kind == hToggle && h.a == ctl; }
@@ -133,7 +140,7 @@ private:
     using G = juce::Graphics;
     using R = juce::Rectangle<float>;
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
-    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile };
+    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope };
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp };
 
@@ -286,6 +293,10 @@ private:
 
     struct Drag { int kind = 0, a = 0, b = 0; juce::Point<float> start; float v0 = 0, g0 = 0; int r0 = 1; bool moved = false; char axis = 0; juce::uint32 t0 = 0; bool fired = false; } drag;
     juce::int64 selSnap = 0;
+    // The library, with a snapshot cued or chosen: what RECALL will take from it. All of it, unless
+    // parts are put out first; and all again for the next (0 to 10: the lanes; 11: the returns; 12: the key).
+    std::array<bool, kLanes + 2> scopeOn;
+    juce::int64 scopeFor = 0;
     int selKnob = 0, libScroll = 0;
     R selNameRect;
     bool mouseIsDown = false;

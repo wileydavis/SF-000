@@ -143,6 +143,9 @@ key's gate and anything else that follows the hand is wherever the pointer is on
 - **Typing a name** (a snapshot's, a snapshot knob's) happens in a small box over the stage.
 - **D** is the dark instrument here too.
 
+The dark instrument's faceplates have a worn black anodized finish: a fine grain, a slight
+unevenness, wear toward the metal along the edges. The pale instrument's are plain.
+
 The glow under the case is set in SETUP: three knobs. COLOUR (round the wheel), BRIGHTNESS (none
 to four times what it comes with) and PULSE: how much it beats with the kick, from none (steady,
 as it comes) to intense (nearly out between hits, three times as bright on one). It follows the
@@ -246,6 +249,12 @@ nothing was still travelling. Press SNAPSHOT on a state you have been listening 
 is there at once. Press it the moment you arrive (or while a knob glides) and the snapshot is taken
 at once, but its card fills in a few bars later, once four bars of that state have played. If you
 move on first, it keeps the bars that were held; if there were none, the bars it was taken over.
+
+**A recall of part of a snapshot.** With CUE lit and a snapshot cued (or chosen), a row above the
+keys says what RECALL takes: lanes 1 to 11, RET (the returns) and KEY. Click one to put it out:
+that part then stays as it is, steps, inserts and CONFIG included, and RECALL takes the rest.
+After the recall all are lit again. A tap with CUE off, a snapshot knob and a sequencer's RECALL
+take everything, as always.
 
 ### A recall, when more than knobs differ
 

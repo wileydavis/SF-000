@@ -545,6 +545,41 @@ void Session::recall (juce::int64 id)
     }
 }
 
+void Session::recall (juce::int64 id, const Scope& scope)
+{
+    if (scope.all()) { recall (id); return; }
+    auto* s = findSnap (id);
+    if (s == nullptr) return;
+    // The snapshot, with every part that is not chosen put back as it stands now: applied whole,
+    // those parts find nothing to change. (A sound knob's place here is the scene under the
+    // snapshot knobs, not what they have made of it: that is what a recall sets.)
+    Snapshot m = *s;
+    const Snapshot now = capture();
+    if (m.values.size() < (size_t) cx::kCount) m.values.resize ((size_t) cx::kCount, -1.0f);
+    auto keep = [&] (int from, int to)
+    {
+        for (int i = from; i < to; ++i)
+            m.values[(size_t) i] = now.values[(size_t) i] < 0.0f ? -1.0f : (engine.control (i).morph && i < kMorphEnd ? base[(size_t) i] : now.values[(size_t) i]);
+    };
+    for (int l = 0; l < kLanes; ++l)
+    {
+        if (scope.lane[(size_t) l]) continue;
+        keep (l * cx::kPerLane, (l + 1) * cx::kPerLane);
+        m.patterns[(size_t) l] = now.patterns[(size_t) l];
+        m.inserts[(size_t) l] = now.inserts[(size_t) l];
+        m.gen[(size_t) l] = now.gen[(size_t) l];
+        if (m.hasSetup) { m.setup[(size_t) l] = now.setup[(size_t) l]; m.insSetup[(size_t) l] = now.insSetup[(size_t) l]; }
+        if (m.hasInsFiles) m.insFiles[(size_t) l] = now.insFiles[(size_t) l];
+    }
+    if (! scope.returns) { keep (cx::kRet, cx::kMaster); if (m.hasSetup) m.retSetup = now.retSetup; }
+    if (! scope.master) keep (cx::kMaster, cx::kSnap);
+    applySnapshot (m, glideBeats());
+    baseId = id;
+    selStep = -1;
+    touch();
+    if (onChange) onChange();
+}
+
 void Session::remove (juce::int64 id)
 {
     const int i = indexOf (id);
