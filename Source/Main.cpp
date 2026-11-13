@@ -480,6 +480,257 @@ static void pocketsTest (int& bad)
     }
 }
 
+// MOTION on the snapshot knobs: a wave swings a snapshot knob in time with the clock, and what the
+// knob moves goes with it, worked out on the audio thread.
+static void knobMotionTest (int& bad)
+{
+    using namespace sf0;
+    using juce::var;
+    const double SR = 48000.0;
+    const int block = 128;
+    auto say = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    const int W = 0, S = 1, K = 2, A = 3;       // a unit's four: WAVE, SPEED, KNOB, AMOUNT
+    const auto waves = Engine::motionWaves();
+    auto wave = [&] (const char* name) { return (float) waves.indexOf (name) / (float) (waves.size() - 1); };
+    auto speed = [] (const char* name) { const auto all = Engine::motionSpeeds(); return (float) all.indexOf (name) / (float) (all.size() - 1); };
+    auto knob = [] (int k) { return (float) k / 15.0f; };
+    const int tune = cx::lane (5, 0), other = cx::lane (5, 3), far = cx::lane (9, 1);
+
+    // 1. a knob tied to knobs: the wave swings it, what it is tied to goes with it, and nothing else moves
+    {
+        Engine e; e.prepare (SR, block);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, block);
+        const double beat = 60.0 / e.tempo();
+        const int perBar = (int) std::lround (4.0 * beat * SR / block);
+        ses.userSet (cx::kGlide, 0.0f);
+        const float base = e.target (tune), otherWas = e.target (other);
+        ses.knobs[2].links = { { tune, 0.4f } };
+        ses.userSet (cx::kSnap + 2, 0.5f);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        const float stands = e.target (tune);
+        const bool tied = std::abs (stands - (base + 0.2f)) < 1.0e-5f && Session::reaches (e, tune);
+        // nothing yet: a wave chosen with no amount is no motion
+        ses.userSet (cx::mot (0, W), wave ("SINE")); ses.userSet (cx::mot (0, K), knob (2));
+        for (int i = 0; i < 40; ++i) e.render (b);
+        const bool still = e.shown (tune) == stands && ses.motionOn (2) == 0 && e.motionPush (tune) == 0.0f;
+        ses.userSet (cx::mot (0, A), 0.75f);                    // half the knob's turn, each way
+        e.setRunning (true);
+        float lo = 2.0f, hi = -1.0f, kLo = 2.0f, kHi = -1.0f, atBar = 9.0f, quarter = 0.0f;
+        bool glides = false, othersMoved = false, targetMoved = false;
+        std::vector<float> seen;
+        for (int i = 0; i < perBar * 4; ++i)
+        {
+            const double p0 = e.songPos();
+            e.render (b);
+            const double p1 = e.songPos();
+            const float v = e.shown (tune);
+            seen.push_back (v);
+            lo = std::min (lo, v); hi = std::max (hi, v);
+            kLo = std::min (kLo, e.shown (cx::kSnap + 2)); kHi = std::max (kHi, e.shown (cx::kSnap + 2));
+            glides = glides || e.isGliding (tune) || e.isGliding (cx::kSnap + 2);
+            othersMoved = othersMoved || e.shown (other) != otherWas || e.shown (far) != e.target (far);
+            targetMoved = targetMoved || e.target (tune) != stands || e.target (cx::kSnap + 2) != 0.5f;
+            if (p0 > 3.9 && std::floor (p1 / 4.0) > std::floor (p0 / 4.0)) atBar = std::min (atBar, std::abs (v - stands));        // the block a bar line fell in
+            if (p0 < 9.0 && p1 >= 9.0) quarter = v - stands;                                                                       // a quarter of the way through the third bar: the top
+        }
+        // a bar on, it is where it was
+        float off = 0.0f;
+        for (size_t i = 0; i + (size_t) perBar < seen.size(); ++i) off = std::max (off, std::abs (seen[i + (size_t) perBar] - seen[i]));
+        const bool ok = tied && still && ses.motionOn (2) == 1 && std::abs (hi - (stands + 0.2f)) < 0.004f && std::abs (lo - (stands - 0.2f)) < 0.004f && kHi > 0.99f && kLo < 0.01f
+                     && ! glides && ! othersMoved && ! targetMoved && atBar < 0.012f && std::abs (quarter - 0.2f) < 0.006f && off < 0.012f;
+        say (ok, "MOTION on a knob tied to the bass's TUNE: a SINE a bar long, half the knob's turn each way, swings the knob from one end to the other and TUNE with it (" + juce::String (lo - stands, 3) + " to +" + juce::String (hi - stands, 3)
+                     + " about where it stands; 0.2 is the tie's share), in time with the bar (" + juce::String (atBar, 4) + " off at a bar line, +" + juce::String (quarter, 3) + " a beat in, the same a bar on to " + juce::String (off, 4)
+                     + "); where the knobs stand is not touched, nothing else moves, and nothing is said to be travelling");
+        if (! ok) std::printf ("        (tied %d still %d on %d hi %.4f lo %.4f knob %.3f..%.3f glides %d others %d target %d)\n", tied, still, ses.motionOn (2), hi - stands, lo - stands, kLo, kHi, glides, othersMoved, targetMoved);
+
+        // stopped, the wave carries on; AMOUNT the other way turns it over; two on one knob add; off, it is where it stood
+        e.setRunning (false);
+        float sLo = 2.0f, sHi = -1.0f;
+        for (int i = 0; i < perBar * 2; ++i) { e.render (b); sLo = std::min (sLo, e.shown (tune)); sHi = std::max (sHi, e.shown (tune)); }
+        e.setRunning (true);
+        for (int i = 0; i < 8; ++i) e.render (b);
+        auto pushAt = [&] (double beatInBar)
+        {
+            float got = 0.0f;
+            for (int i = 0; i < perBar * 3; ++i)
+            {
+                const double p0 = std::fmod (e.songPos(), 4.0);
+                e.render (b);
+                const double p1 = std::fmod (e.songPos(), 4.0);
+                if (p0 < beatInBar && p1 >= beatInBar) { got = e.shown (tune) - stands; break; }
+            }
+            return got;
+        };
+        ses.userSet (cx::mot (0, A), 0.25f);
+        const float turned = pushAt (1.0);
+        ses.userSet (cx::mot (0, A), 0.625f);                                                   // a quarter of the turn
+        ses.userSet (cx::mot (1, W), wave ("SINE")); ses.userSet (cx::mot (1, K), knob (2)); ses.userSet (cx::mot (1, A), 0.625f);
+        const float two = pushAt (1.0);
+        ses.userSet (cx::mot (1, A), 0.5f);
+        const float one = pushAt (1.0);
+        ses.userSet (cx::mot (0, W), 0.0f);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        const bool back = e.shown (tune) == stands && e.shown (cx::kSnap + 2) == 0.5f && ses.motionOn (2) == 0;
+        const bool ok2 = sHi - sLo > 0.39f && std::abs (turned + 0.2f) < 0.006f && std::abs (one - 0.1f) < 0.006f && std::abs (two - 0.2f) < 0.006f && back;
+        say (ok2, "stopped, the wave carries on (" + juce::String (sHi - sLo, 3) + " end to end); AMOUNT the other way turns it over (" + juce::String (turned, 3) + " a beat in); two on one knob add ("
+                      + juce::String (one, 3) + " alone, " + juce::String (two, 3) + " together); and with the wave OFF everything is exactly where it stood");
+
+        // 2. a knob of snapshots: the wave takes it through them as a hand would
+        ses.userSet (cx::kSnap + 2, 0.0f);
+        ses.knobs[2].links.clear();
+        ses.userSet (tune, 0.20f); ses.userSet (other, 0.10f); ses.userSet (far, 0.30f);
+        for (int i = 0; i < 20; ++i) e.render (b);
+        const auto a = ses.take();
+        ses.userSet (tune, 0.80f); ses.userSet (far, 0.50f);
+        for (int i = 0; i < 20; ++i) e.render (b);
+        const auto c = ses.take();
+        ses.userSet (tune, 0.40f); ses.userSet (other, 0.90f);
+        for (int i = 0; i < 20; ++i) e.render (b);
+        const auto d = ses.take();
+        ses.recall (a);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        ses.knobs[4].snaps = { a, c, d };
+        ses.knobs[4].depth = 1.0f;
+        // by hand, at four places
+        float hand[4][3];
+        const float at[4] = { 0.25f, 0.5f, 0.75f, 1.0f };
+        for (int q = 0; q < 4; ++q) { ses.turnSnapKnob (4, at[q]); hand[q][0] = e.target (tune); hand[q][1] = e.target (other); hand[q][2] = e.target (far); }
+        ses.turnSnapKnob (4, 0.0f);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        // by the wave: a ramp, a bar long, the whole turn
+        ses.userSet (cx::mot (2, W), wave ("RAMP UP")); ses.userSet (cx::mot (2, S), speed ("1 BAR")); ses.userSet (cx::mot (2, K), knob (4)); ses.userSet (cx::mot (2, A), 1.0f);
+        float worst = 0.0f;
+        int looked = 0;
+        for (int i = 0; i < perBar * 3; ++i)
+        {
+            const double p0 = std::fmod (e.songPos(), 4.0);
+            e.render (b);
+            const double p1 = std::fmod (e.songPos(), 4.0);
+            for (int q = 0; q < 3; ++q)                                                         // (the last place is the ramp's end, where it falls back: not looked at)
+                if (p0 < at[q] * 4.0 && p1 >= at[q] * 4.0)
+                {
+                    // (where the wave is at the block's end, not at the line itself: the knob is that much further on)
+                    const float ahead = (float) ((p1 - at[q] * 4.0) / 4.0);
+                    const float slope[3] = { (hand[q + 1][0] - hand[q][0]) / 0.25f, (hand[q + 1][1] - hand[q][1]) / 0.25f, (hand[q + 1][2] - hand[q][2]) / 0.25f };
+                    worst = std::max ({ worst, std::abs (e.shown (tune) - hand[q][0] - slope[0] * ahead), std::abs (e.shown (other) - hand[q][1] - slope[1] * ahead), std::abs (e.shown (far) - hand[q][2] - slope[2] * ahead) });
+                    ++looked;
+                }
+        }
+        const bool ok3 = looked >= 6 && worst < 0.01f && std::abs (hand[1][0] - 0.80f) < 1.0e-4f && std::abs (hand[3][1] - 0.90f) < 1.0e-4f && ses.motionOn (4) == 4;
+        say (ok3, "on a knob of three snapshots, a RAMP UP over the whole turn takes TUNE, a second knob and the pad's through them exactly as the hand does: a quarter, a half and three quarters of the way round, each is where the knob turned there by hand puts it ("
+                      + juce::String (worst, 4) + " off at most, over " + juce::String (looked) + " looks)");
+
+        // a recall leaves MOTION as it is, and a snapshot taken with it running holds where the knobs stand, not where the wave has them
+        const float standsNow = e.target (tune);
+        const auto withWave = ses.take();
+        const float held = ses.library[(size_t) ses.indexOf (withWave)].values[(size_t) tune];
+        ses.recall (a);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        const bool ok4 = std::abs (held - standsNow) < 1.0e-6f && ses.library[(size_t) ses.indexOf (withWave)].values[(size_t) cx::mot (2, W)] < 0.0f
+                      && std::abs (e.target (cx::mot (2, W)) - wave ("RAMP UP")) < 1.0e-6f && e.target (cx::mot (2, A)) == 1.0f && ses.motionOn (4) == 4;
+        say (ok4, "a snapshot taken while it runs holds where the knobs stand, and says nothing of MOTION; a recall leaves MOTION as it is");
+
+        // a snapshot taken off the knob: the law is made again, and with one left it does nothing
+        ses.knobs[4].snaps = { a, c };
+        ses.turnSnapKnob (4, 0.0f);
+        float span2 = 0.0f, o2 = 0.0f;
+        for (int i = 0; i < perBar; ++i) { e.render (b); span2 = std::max (span2, e.shown (tune) - e.target (tune)); o2 = std::max (o2, std::abs (e.shown (other) - e.target (other))); }
+        ses.knobs[4].snaps = { a };
+        ses.turnSnapKnob (4, 0.0f);
+        float span1 = 0.0f;
+        for (int i = 0; i < perBar; ++i) { e.render (b); span1 = std::max (span1, std::abs (e.shown (tune) - e.target (tune))); }
+        say (span2 > 0.55f && o2 < 1.0e-6f && span1 == 0.0f, "a snapshot taken off the knob changes what the wave does at once (two left: TUNE still goes, " + juce::String (span2, 2) + ", and the knob only the third moved does not); with one left it moves nothing");
+        e.setRunning (false);
+    }
+
+    // 3. the kick as the wave
+    {
+        Engine e; e.prepare (SR, block);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, block);
+        const int perBar = (int) std::lround (4.0 * 60.0 / e.tempo() * SR / block);
+        ses.userSet (cx::kGlide, 0.0f);
+        Pattern p = ses.pattern (0);
+        for (int i = 0; i < (int) p.steps.size(); ++i) p.steps[(size_t) i].on = i % 4 == 0 && i < p.length;
+        ses.setPattern (0, p);
+        ses.knobs[0].links = { { tune, 0.5f } };
+        ses.userSet (cx::mot (0, W), wave ("KICK")); ses.userSet (cx::mot (0, S), speed ("1/4")); ses.userSet (cx::mot (0, A), 1.0f);
+        for (int i = 0; i < 20; ++i) e.render (b);
+        const float stands = e.target (tune), before = e.shown (tune) - stands;
+        e.setRunning (true);
+        float top = 0.0f, low = 9.0f;
+        int rises = 0;
+        float was = 0.0f;
+        for (int i = 0; i < perBar * 2; ++i)
+        {
+            e.render (b);
+            const float v = e.shown (tune) - stands;
+            if (i > perBar) { top = std::max (top, v); low = std::min (low, v); if (v > was + 0.1f) ++rises; }
+            was = v;
+        }
+        e.setRunning (false);
+        say (before == 0.0f && top > 0.3f && low < 0.5f * top && rises >= 3 && rises <= 5, "KICK as the wave: nothing before the kick plays; then each hit pushes the knob and it falls back before the next (up to +" + juce::String (top, 2) + ", down to +" + juce::String (low, 2)
+                 + ", " + juce::String (rises) + " rises in a bar)");
+    }
+
+    // 4. with no MOTION on, the sound is to the sample what it was; with it on something nothing is tied to, too
+    {
+        auto run = [&] (int how)
+        {
+            Engine e; e.prepare (SR, block);
+            Session ses (e, false);
+            juce::AudioBuffer<float> b (2, block);
+            ses.userSet (cx::kGlide, 0.0f);
+            if (how == 1) { ses.userSet (cx::mot (0, W), wave ("SINE")); ses.userSet (cx::mot (1, W), wave ("DRIFT")); ses.userSet (cx::mot (1, K), knob (7)); }      // waves chosen, no amount
+            if (how == 2 && ! ses.knobLive (15)) { ses.userSet (cx::mot (0, W), wave ("SINE")); ses.userSet (cx::mot (0, K), knob (15)); ses.userSet (cx::mot (0, A), 1.0f); ses.userSet (cx::kSnap + 15, 0.5f); }      // on a knob that holds nothing
+            if (how == 3) { ses.knobs[15].links = { { cx::lane (7, 2), 0.5f } }; ses.userSet (cx::mot (0, W), wave ("SINE")); ses.userSet (cx::mot (0, K), knob (15)); ses.userSet (cx::mot (0, A), 0.8f); }       // on a knob tied to the lead
+            e.setRunning (true);
+            std::vector<float> out;
+            const int blocks = (int) (8.0 * 60.0 / e.tempo() * SR / block);
+            for (int i = 0; i < blocks; ++i) { e.render (b); out.insert (out.end(), b.getReadPointer (0), b.getReadPointer (0) + block); out.insert (out.end(), b.getReadPointer (1), b.getReadPointer (1) + block); }
+            return out;
+        };
+        const auto plain = run (0), chosen = run (1), empty = run (2), on = run (3);
+        double diff = 0.0, all = 0.0;
+        for (size_t i = 0; i < plain.size(); ++i) { diff += (double) (on[i] - plain[i]) * (double) (on[i] - plain[i]); all += (double) plain[i] * (double) plain[i]; }
+        const bool same = plain == chosen && plain == empty;
+        say (same && all > 0.0 && diff > 1.0e-4 * all, "two bars of the rig are to the sample what they were with waves chosen and no AMOUNT, and with MOTION on a snapshot knob that holds nothing; on a knob tied to the lead they are not ("
+                 + juce::String (10.0 * std::log10 (diff / (all + 1.0e-30) + 1.0e-30), 1) + " dB of difference)");
+    }
+
+    // 5. the file keeps it, by name, and it is at work again when the app opens
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_motion_test");
+        tmp.deleteRecursively(); tmp.createDirectory();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        bool inFile = false, backOn = false, swings = false;
+        {
+            Engine e; e.prepare (SR, block);
+            Session ses (e, true);
+            ses.knobs[6].links = { { tune, 0.3f } };
+            ses.userSet (cx::mot (1, W), wave ("TRIANGLE")); ses.userSet (cx::mot (1, S), speed ("2 BAR")); ses.userSet (cx::mot (1, K), knob (6)); ses.userSet (cx::mot (1, A), 0.9f);
+            ses.save();
+            const var root = juce::JSON::parse (Session::stateFile().loadFileAsString());
+            inFile = std::abs ((double) root["controls"]["mot.2_wave"] - (double) wave ("TRIANGLE")) < 1.0e-6 && std::abs ((double) root["controls"]["mot.2_amount"] - 0.9) < 1.0e-6
+                  && std::abs ((double) root["controls"]["mot.2_knob"] - (double) knob (6)) < 1.0e-6 && root["controls"].hasProperty ("mot.2_speed");
+        }
+        {
+            Engine e; e.prepare (SR, block);
+            Session ses (e, true);
+            juce::AudioBuffer<float> b (2, block);
+            backOn = e.valueText (cx::mot (1, W)) == "TRIANGLE" && e.valueText (cx::mot (1, S)) == "2 BAR" && e.valueText (cx::mot (1, K)) == "7" && e.valueText (cx::mot (1, A)) == "+80" && ses.motionOn (6) == 2;
+            float lo = 9.0f, hi = -9.0f;
+            for (int i = 0; i < (int) (8.0 * 60.0 / e.tempo() * SR / block); ++i) { e.render (b); lo = std::min (lo, e.motionPush (tune)); hi = std::max (hi, e.motionPush (tune)); }
+            swings = hi > 0.2f && lo == 0.0f;           // (the knob stands at nought: the wave's lower half has nowhere to go)
+        }
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+        say (inFile && backOn && swings, "MOTION is in the session file by name (mot.2_wave ...), and when the app opens it is on the knob it was on and at work (TRIANGLE, 2 BAR, knob 7, +80)");
+        if (! (inFile && backOn && swings)) std::printf ("        (file %d back %d swings %d)\n", inFile, backOn, swings);
+    }
+}
+
 // The convolution's BANDS: three places across the spectrum. Its response to one click is taken
 // (with the module rendering as it does offline, so each change is built before the click), and
 // looked at band by band: how much is there, and how much of that is late.
@@ -672,7 +923,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); if (std::getenv ("SF000_TEST_NEW")[0] != 'b') pocketsTest (bad); convolutionBandsTest (bad); std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -1378,6 +1629,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 
     pocketsTest (bad);
     convolutionBandsTest (bad);
+    knobMotionTest (bad);
 
     // Recording: the set and its parts go to disk as they are played.
     {
@@ -2452,6 +2704,7 @@ static int uiTest()
         }
     }
     ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
+    for (int i = cx::kMot; i < cx::kSnap; ++i) ses.userSet (i, ses.engine.control (i).def);       // (and MOTION's knobs were among those dragged: off again)
     // every CONFIG panel: each lane, the lead's two inserts, both returns
     std::vector<Engine::Target> targets;
     for (int l = 0; l < kLanes; ++l) targets.push_back ({ 0, l, 0 });
@@ -3233,6 +3486,31 @@ static int uiTest()
                "LEARN in the macro designer brings the main screen up with KEEP and DROP in its top bar; DROP puts the knob back and ties nothing; KEEP ties it, and the snapshot knob is there to turn");
         sc.setPage (Screen::pMain); draw();
     }
+    // 3d. MOTION in the macro designer: three rows of four knobs, turned like any other
+    {
+        auto at = [&] (int ctl) { for (auto& h : sc.testHits()) if (Screen::testIsControl (h, ctl)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        sc.setPage (Screen::pMain); draw();
+        const bool notOnMain = at (cx::mot (0, 0)).x < 0.0f;
+        sc.setPage (Screen::pMacros); draw();
+        int there = 0;
+        for (int i = cx::kMot; i < cx::kSnap; ++i) there += at (i).x >= 0.0f ? 1 : 0;
+        ses.knobs[9].links = { { cx::lane (3, 10), 0.3f } };
+        ses.userSet (cx::mot (1, 2), 9.0f / 15.0f);
+        const auto wave = at (cx::mot (1, 0)), amount = at (cx::mot (1, 3));
+        dragBy (wave, 0.0f, -30.0f); draw();
+        const bool waveOn = ses.engine.valueText (cx::mot (1, 0)) != "OFF" && ses.motionOn (9) == 0;      // (a wave and no amount: not on yet)
+        dragBy (amount, 0.0f, -60.0f); draw();
+        const bool on = ses.motionOn (9) == 2 && ses.engine.target (cx::mot (1, 3)) > 0.55f;
+        juce::String where, label; const char* what = nullptr;
+        const bool said = sc.testDescribe (cx::mot (1, 3), where, label, what) && where == "SNAPSHOT KNOBS, MOTION 2" && label == "AMOUNT" && what != nullptr && juce::String (what).contains ("WHOLE TURN")
+                       && sc.testDescribe (cx::mot (2, 0), where, label, what) && what != nullptr && sc.testDescribe (cx::mot (0, 1), where, label, what) && what != nullptr && sc.testDescribe (cx::mot (0, 2), where, label, what) && what != nullptr;
+        sc.mouseDoubleClick (ev (amount, amount, false)); sc.mouseDoubleClick (ev (wave, wave, false)); draw();
+        const bool back = ses.motionOn (9) == 0 && ses.engine.valueText (cx::mot (1, 0)) == "OFF" && ses.engine.valueText (cx::mot (1, 3)) == "NONE";
+        ses.knobs[9].links.clear(); ses.userSet (cx::mot (1, 2), 0.0f);
+        check (notOnMain && there == cx::kMotUnits * cx::kMotKnobs && waveOn && on && said && back,
+               ("MOTION is in the macro designer: three rows of WAVE, SPEED, KNOB, AMOUNT (" + juce::String (there) + " knobs), dragged like any knob (a wave with no amount is not on; with one it is, and the knob's card says so), each with its help, and a double-click puts one back").toRawUTF8());
+        sc.setPage (Screen::pMain); draw();
+    }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
         Engine e3; e3.prepare (48000.0, 512);
@@ -3634,6 +3912,18 @@ static int shot (const juce::StringArray& args)
         // POCKETS at work: AMOUNT up (--amount, in hundredths: 60 unless said), a bar and a half played with the page up, caught on a kick
         ses.userSet (cx::kPkG, (float) arg ("--amount", "60").getIntValue() / 100.0f);
         const int blocks = (int) ((6.0 * 60.0 / e.tempo() + 0.03) * 48000.0 / 512.0);
+        for (int i = 0; i < blocks; ++i) e.render (b);
+        sc.testTick();
+    }
+    if (args.contains ("--motion"))
+    {
+        // MOTION at work on two snapshot knobs: a sine a bar long on the first, the kick on the fourth; caught a little way into a bar
+        const auto waves = Engine::motionWaves();
+        auto wave = [&] (const char* n) { return (float) waves.indexOf (n) / (float) (waves.size() - 1); };
+        ses.userSet (cx::kSnap, 0.4f);
+        ses.userSet (cx::mot (0, 0), wave ("SINE")); ses.userSet (cx::mot (0, 3), 0.7f);
+        ses.userSet (cx::mot (1, 0), wave ("KICK")); ses.userSet (cx::mot (1, 1), 2.0f / 20.0f); ses.userSet (cx::mot (1, 2), 3.0f / 15.0f); ses.userSet (cx::mot (1, 3), 0.85f);
+        const int blocks = (int) ((4.6 * 60.0 / e.tempo()) * 48000.0 / 512.0);
         for (int i = 0; i < blocks; ++i) e.render (b);
         sc.testTick();
     }
@@ -4410,7 +4700,7 @@ static int midiTest()
                                 : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl)
                                 : (ctl == cx::kGlide && ch == 16 && num == e16::kGlideCc));
             }
-            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3 + kPkLane) + 4 + 4 * kSpaceModels + 3 + kBusKnobs + kPkGlobals + 1 + 16;
+            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3 + kPkLane) + 4 + 4 * kSpaceModels + 3 + kBusKnobs + kPkGlobals + 1 + cx::kMotUnits * cx::kMotKnobs + 16;
             check (right && reached == expected, (juce::String (reached) + " controls have a MIDI address, and each address reaches its own control").toRawUTF8());
 
             // an insert's places, the returns, the master, a lane's MUTE
@@ -4429,6 +4719,15 @@ static int midiTest()
             m3.service();
             check (placed && e3.target (cx::ins (0, 0, 5)) < 0.5f && e3.target (cx::lane (2, cx::kMute)) < 0.5f && back.empty(),
                    "a sequencer reaches an insert's places (CC 32-55 on the lane's channel), the returns and the master (CC 60-70 on channel 16) and a lane's MUTE (CC 56), with nothing sent to the E16 for them");
+
+            // MOTION on the snapshot knobs: three of four, on channel 16 from CC 102
+            m3.incoming (cc (16, 102, 13), false);                      // MOTION 1's WAVE: SINE
+            m3.incoming (cc (16, 108, 64), false);                      // MOTION 2's KNOB: the ninth
+            m3.incoming (cc (16, 113, 96), false);                      // MOTION 3's AMOUNT: half way up from none
+            m3.service();
+            check (e3.valueText (cx::mot (0, 0)) == "SINE" && e3.valueText (cx::mot (1, 2)) == "9" && e3.valueText (cx::mot (2, 3)) == "+51" && back.empty(),
+                   "a sequencer reaches MOTION on the snapshot knobs (CC 102-113 on channel 16: a list by its share of the number, AMOUNT with none at 64)");
+            for (int i = cx::kMot; i < cx::kSnap; ++i) s3.userSet (i, e3.control (i).def);
 
             // what a sequencer turns, the E16 is told: its knob and ring follow
             m3.incoming (cc (6, 18, 90), false);                        // BASS CUTOFF, from the ONE
@@ -5088,6 +5387,37 @@ static int midiTest()
         const bool asksBack = ses.wantShowing == 0;
         ses.showing = 0; ses.wantShowing = -1; ticks (1);
         const juce::String fromMap = turns(); out.clear();
+        // MOTION: knob 15 held on the snapshot knobs. The macro designer is asked for, where MOTION is, and
+        // the E16 turns to its knobs (CONFIG's first page): named, told, turned from there. OPEN is the way back.
+        {
+            const auto base15 = ses.baseId;
+            in (16, e16::kPressCc + 14, 127); juce::Thread::sleep (420); ticks (1); in (16, e16::kPressCc + 14, 0); ticks (1);
+            const bool asks = ses.wantShowing == 2 && ses.motionUp && ses.baseId == base15;        // (and nothing was recalled by it)
+            ses.showing = 2; ses.wantShowing = -1; ticks (6);
+            const juce::String to = turns(), title = said (5), n1 = name (1), n2 = name (2), n3 = name (3), n4 = name (4), n9 = name (9);
+            const bool told = ccOut (13, e16::cfgCc (1)) >= 0 && ccOut (13, e16::cfgCc (3)) == 64 && (int) ses.configList().size() == cx::kMotUnits * cx::kMotKnobs;
+            out.clear();
+            in (13, e16::cfgCc (0), 16); in (13, e16::cfgCc (2), 30); in (13, e16::cfgCc (3), 96); in (13, e16::cfgCc (4 + 1), 127); ticks (1);
+            const bool set = e.valueText (cx::mot (0, 0)) == "SINE" && e.valueText (cx::mot (0, 2)) == "4" && std::abs (e.target (cx::mot (0, 3)) - (0.5f + 32.0f / 126.0f)) < 1.0e-5f
+                          && e.valueText (cx::mot (1, 1)) == Engine::motionSpeeds()[Engine::motionSpeeds().size() - 1] && ses.motionOn (3) == 1;
+            out.clear();
+            press (16, e16::kOpenKey); ticks (1);
+            const bool asksBack2 = ses.wantShowing == 0;
+            ses.showing = 0; ses.wantShowing = -1; ticks (4);
+            const juce::String from = turns(); out.clear();
+            // the designer opened on the screen: the E16 is on the snapshot knobs, as it was, until it is turned to CONFIG's page by hand
+            ses.showing = 2; ticks (4);
+            const juce::String shown = turns(); out.clear();
+            answers (e16::kFocusB + e16::pgCfg); ticks (4);
+            const bool byHand = ses.motionUp && ses.showing == 2 && ses.wantShowing < 0 && said (5) == "KNOB MOTION";
+            ses.showing = 0; ticks (4); out.clear();
+            for (int i = cx::kMot; i < cx::kSnap; ++i) ses.userSet (i, e.control (i).def);
+            ses.bring ({ Session::fSnap, 0 }, 2); ticks (4); out.clear();
+            check (asks && to == "P8" && title == "KNOB MOTION" && n1 == "WAVE" && n2 == "SPD" && n3 == "KNOB" && n4 == "AMNT" && n9 == "WAVE" && told && set && asksBack2 && from == "P11" && ! ses.motionUp
+                       && shown.isEmpty() && byHand,
+                   "knob 15 held on the snapshot knobs is MOTION: the macro designer is asked for and the E16 turns to its knobs (" + to + ", " + title + ": " + n1 + " " + n2 + " " + n3 + " " + n4 + " for each of the three), told their values; "
+                       "a wave, a knob, an amount and a speed are set from there; OPEN is the way back (" + from + "). The designer opened on the screen leaves the E16 on the snapshot knobs, and CONFIG's page turned to by hand there is MOTION");
+        }
         // (back from the library the snapshot knobs are that scene's own twelfth page: no scene is loaded for them)
         in (16, e16::kKnobCc + 3, 40); ticks (2);                        // a snapshot knob turned there: still the second scene's twelfth page
         ses.bring ({ Session::fMaster, 0 }, 0); ticks (1);
@@ -5886,6 +6216,25 @@ static int stageTest()
         ses.userSet (cx::kTempo, 0.5f); audio (4); sc.testTick(); sc.testTick();
         check (sc.testFollowing().isEmpty(), "the tempo moving moves no eye");
         restFor (1000);
+        // MOTION on a snapshot knob that moves knobs in three lanes: their lights go with the wave, and the eye stays home
+        {
+            const auto waves = Engine::motionWaves();
+            ses.knobs[14].links = { { cx::lane (0, 2), 0.4f }, { cx::lane (1, 3), 0.4f }, { cx::lane (2, 5), 0.4f }, { cx::lane (3, 1), 0.4f } };
+            ses.userSet (cx::kSnap + 14, 0.5f); audio (4); sc.testTick(); restFor (2600); sc.testTick();
+            ses.userSet (cx::mot (2, 2), 14.0f / 15.0f); ses.userSet (cx::mot (2, 1), 2.0f / 20.0f);
+            ses.userSet (cx::mot (2, 0), (float) waves.indexOf ("SINE") / (float) (waves.size() - 1)); ses.userSet (cx::mot (2, 3), 1.0f);
+            bool eyeStayed = true; float lo = 9.0f, hi = -9.0f;
+            for (int i = 0; i < 12; ++i)
+            {
+                audio (6); sc.testTick();
+                eyeStayed = eyeStayed && sc.testFollowing().isEmpty();
+                lo = std::min (lo, e.shown (cx::lane (1, 3))); hi = std::max (hi, e.shown (cx::lane (1, 3)));
+            }
+            ses.userSet (cx::mot (2, 0), 0.0f); ses.userSet (cx::mot (2, 3), 0.5f); ses.userSet (cx::mot (2, 2), 0.0f); ses.userSet (cx::mot (2, 1), e.control (cx::mot (2, 1)).def);
+            ses.userSet (cx::kSnap + 14, 0.0f); ses.knobs[14].links.clear(); ses.turnSnapKnob (14, 0.0f);
+            audio (6); sc.testTick(); restFor (2600); sc.testTick();
+            check (eyeStayed && hi - lo > 0.1f && sc.testFollowing().isEmpty(), "MOTION swinging a snapshot knob that moves four lanes' knobs moves their lights (" + juce::String (hi - lo, 2) + " of a turn) and no eye");
+        }
         // several knobs moving together with no hand on them: a snapshot. The eye goes out to hold them all.
         for (int lane : { 0, 1 }) for (int k : { 1, 4, 6 }) e.set (cx::lane (lane, k), 0.15f + 0.1f * (float) k, 0.0);
         audio (4); sc.testTick();

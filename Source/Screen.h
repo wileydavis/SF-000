@@ -132,6 +132,7 @@ public:
     static bool testIsLanePanel (const TestHit& h, int lane) { return h.kind == hLanePanel && h.a == lane; }
     std::vector<int> testTags() const { std::vector<int> v; for (const auto& t : tagsUp) v.push_back (t); return v; }
     static bool testIsRun (const TestHit& h) { return h.kind == hAct && h.a == aRun; }
+    bool testDescribe (int ctl, juce::String& where, juce::String& label, const char*& what) const { return describe (ctl, where, label, what); }      // what INFO's box says of a control
     static bool testIsPanic (const TestHit& h) { return h.kind == hAct && h.a == aPanic; }
     static bool testIsLearnKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aLearn : which == 1 ? aLearnKeep : aLearnDrop); }     // LEARN, KEEP, DROP
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
@@ -271,6 +272,8 @@ private:
     void drawSequencer (G&, R);
     void drawLibrary (G&);
     void drawMacros (G&);
+    juce::String motionSig() const;     // MOTION's strip, as words
+    juce::String motSig;
     void drawPockets (G&);
     void drawPocketMap (G&, int part, R);       // one row's map: the lane's pocket, what it is playing, what is taken from it
     void drawConfig (G&, R);

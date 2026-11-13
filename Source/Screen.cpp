@@ -451,6 +451,12 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
     }
     if (ctl == cx::kTempo) { label = "TEMPO"; what = "60 TO 200 BPM: DRAG IT. FOLLOWING AN OUTSIDE CLOCK, THE TEMPO IS THAT CLOCK'S."; return true; }
     if (ctl == cx::kKey) { label = "KEY"; what = "THE KEY EVERY PITCHED LANE FOLLOWS: DRAG IT. PARTS ARE WRITTEN IN C."; return true; }
+    if (cx::isMot (ctl))
+    {
+        static const char* const ids[cx::kMotKnobs] = { "wave", "speed", "knob", "amount" };
+        where = "SNAPSHOT KNOBS, MOTION " + String ((ctl - cx::kMot) / cx::kMotKnobs + 1); what = help::param ("KNOBMOTION", ids[(ctl - cx::kMot) % cx::kMotKnobs]);
+        return true;
+    }
     if (ctl >= cx::kMaster)
     {
         static const char* const ids[3] = { "tape", "comp", "limit" };
@@ -1911,7 +1917,15 @@ void Screen::drawMacros (G& g)
         if (sel) selNameRect = R (x0 + wTag, y0, std::max (wn, 150.0f), 26);
         const int scope = (int) ses.knobScope (k).size();
         const String mv = "MOVES " + String (scope);
-        plate (g, r.getRight() - 6 - (std::ceil (tw (fNote, mv)) + 12), y0, mv, fNote, 6, col::white, col::black);
+        const float mvX = r.getRight() - 6 - (std::ceil (tw (fNote, mv)) + 12);
+        plate (g, mvX, y0, mv, fNote, 6, col::white, col::black);
+        // (a MOTION on it says so, beside that: lit while its wave is running)
+        if (const int on = ses.motionOn (k); on != 0)
+        {
+            String ms ("MOTION");
+            for (int u = 0; u < cx::kMotUnits; ++u) if ((on >> u) & 1) ms << " " << String (u + 1);
+            plate (g, mvX - 2 - (std::ceil (tw (fNote, ms)) + 12), y0, ms, fNote, 6, col::green, col::black);
+        }
         // the knob itself, its depth, its snapshots in sweep order
         const float ky = y0 + 40;
         if (ses.knobLive (k))
@@ -1980,10 +1994,39 @@ void Screen::drawMacros (G& g)
     actKey (g, aRenameKnob, x0 + 160, ky, 64, "RENAME", col::yellow, 5);
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
     actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, true, ses.learning == selKnob);
-    const String help = "PICK A KNOB. FROM SNAPSHOTS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10); TAP A NUMBERED SLOT TO TAKE IT OUT. THE KNOB MOVES ONLY WHAT DIFFERS AMONG THEM. "
-                        "STRAIGHT TO KNOBS: PRESS LEARN, TURN THE KNOBS IT SHOULD MOVE TO WHERE ITS FULL TURN TAKES THEM, AND KEEP. EITHER WAY IT IS AN OFFSET FROM THE BASE SCENE, AND KNOBS STACK.";
+    // MOTION: three waves, each put on a snapshot knob. The knob swings in time with the clock, and what it moves goes with it.
+    motSig = motionSig();
+    for (int u = 0; u < cx::kMotUnits; ++u)
+    {
+        const float ux = x0 + 386 + (float) u * 262;
+        const float w = title (g, ux, y0, "MOTION " + String (u + 1));
+        const int target = (int) std::lround (eng.target (cx::mot (u, 2)) * 15.0f);
+        const bool waveOn = eng.valueText (cx::mot (u, 0)) != "OFF", on = (ses.motionOn (target) >> u) & 1;
+        // what it is set to, in words: its wave, how long, which knob (by its name), how much
+        String says = eng.valueText (cx::mot (u, 0));
+        if (waveOn)
+        {
+            const auto& nm = ses.knobs[(size_t) target].name;
+            says << "  " << eng.valueText (cx::mot (u, 1)) << "  " << (nm.isEmpty() ? "KNOB " + String (target + 1) : String (target + 1) + " " + nm) << "  " << eng.valueText (cx::mot (u, 3));
+        }
+        const float room = 256.0f - w - 4.0f;
+        while (says.length() > 4 && std::ceil (tw (fNote, says)) + 12.0f > room) says = says.dropLastCharacters (1);
+        plate (g, ux + w + 2, y0, says, fNote, 6, on ? col::green : col::white, col::black);
+        for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
+    }
+    const String help = "PICK A KNOB. TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10); TAP A NUMBERED SLOT TO TAKE IT OUT. OR PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
+                        "MOTION: A WAVE THAT TURNS A SNAPSHOT KNOB FOR YOU, IN TIME WITH THE CLOCK. CHOOSE ITS WAVE, HOW LONG IT IS, WHICH KNOB, AND HOW MUCH OF THE KNOB'S TURN.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
-    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 400, (int) ky - 4, 1240, 48), juce::Justification::centredLeft, 3, 1.0f);
+    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1180, (int) y0 + 2, 490, 94), juce::Justification::centredLeft, 6, 0.85f);
+}
+
+// What MOTION's strip says in words: when it differs, the strip is drawn again.
+juce::String Screen::motionSig() const
+{
+    String s;
+    for (int i = cx::kMot; i < cx::kSnap; ++i) s << eng.valueText (i) << "|";
+    for (int k = 0; k < 16; ++k) s << ses.motionOn (k);
+    return s;
 }
 
 // ---------------------------------------------------------------------------------------- input
@@ -2630,7 +2673,7 @@ void Screen::stageState()
     {
         three = true;
         sheetAll = true;
-        for (int i = 0; i < cx::kCount; ++i) followWas[(size_t) i] = eng.shown (i);
+        for (int i = 0; i < cx::kCount; ++i) followWas[(size_t) i] = eng.stands (i);
         bySequencer.fill (false);
         followOn = false; tagsWere = {};
         refreshStage();
@@ -2673,7 +2716,7 @@ void Screen::followMoves()
         const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
         if (ctl < 0 || ctl >= cx::kCount) continue;
         const auto i = (size_t) ctl;
-        const float v = eng.shown (ctl);
+        const float v = eng.stands (ctl);          // (not what MOTION adds: a wave on a snapshot knob moves lights, not the eye)
         const bool travelling = std::abs (v - followWas[i]) > 1.0e-4f || eng.isGliding (ctl);
         followWas[i] = v;
         const int by = ses.movedBy[i].load();
@@ -2980,6 +3023,7 @@ void Screen::timerCallback()
         slideX = slideFrom + (slideTo - slideFrom) * slideT * slideT * (3.0f - 2.0f * slideT);
         repaint();
     }
+    if (page == pMacros && motionSig() != motSig) repaint();       // MOTION turned from a controller: its words, and the marks on the knobs' cards
     if (page == pPockets)
     {
         // each row's map is drawn again when a bar of it has moved by a pixel, or its pocket has

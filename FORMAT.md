@@ -107,6 +107,15 @@ this build does not have is written back as it was read.
   on every lane and `pk.amount`, `pk.clear`, `pk.speed`, `pk.returns` for the rig (thirty-first
   build on; what a value of each means is in the `pockets` definition). A control missing from a
   snapshot is left where it is: a snapshot from before there were pockets leaves them alone.
+- **`controls`** (the session's own, beside `base`): what a snapshot leaves alone, by id.
+  `g.tempo`, `g.glide`, `mst.*`, the mutes, the snapshot knobs `snap.k1` ... `snap.k16`, and
+  (thirty-fourth build on) MOTION on the snapshot knobs: `mot.1_wave`, `mot.1_speed`,
+  `mot.1_knob`, `mot.1_amount`, and the same for `mot.2_` and `mot.3_`. Each is 0 to 1: a list
+  (wave, speed, knob) is its choice's place among the choices, first 0 and last 1 (the waves:
+  OFF SINE TRIANGLE SQUARE RAMP UP RAMP DOWN RANDOM DRIFT STEPS ENVELOPE KICK; the speeds: the
+  suite's twenty-one, `1/16` to `7 BAR`; the knob: 1 to 16); the amount has none at 0.5 and is
+  the share of the knob's turn either way from there, doubled. One a build does not know is
+  carried.
 - **`setup.bus`**: the drum bus's CONFIG, by parameter id (`damp`, `boom_tune`, `type`, ... and
   `in_1` to `in_11`: which lanes play through it, in `made.slots` order). Absent on a snapshot
   from before there was a bus (twenty-eighth build): the bus is then left as it is.

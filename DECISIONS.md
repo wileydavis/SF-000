@@ -1635,8 +1635,57 @@ many."
      key on its way sends that batch (a few hundred keys) and draws the shadow again, and the
      plates, knobs and print are left as they were.
 
+## Thirty-fourth build (Nov 13): a wave on a snapshot knob
+
+334. **You:** "Maybe a way to apply modulation to the snapshot knobs (like a wave, speed and
+     amount to a selected knob)."
+335. **Three MOTIONs, each WAVE, SPEED, KNOB, AMOUNT.** *Mine:* that it is three units that are
+     each put on a knob, and not a wave built into each of the sixteen knobs. It is the shape
+     the lanes' MOTION already has in CONFIG (wave, speed, target, amount), twelve knobs fit one
+     page of the E16 with a row for each, and a set rarely wants more than a slow one, a fast
+     one and the kick. Sixteen knobs with three settings each would be forty-eight controls,
+     most of them never touched.
+336. **The waves are the suite's own** (`suite/core/Motion.h`, unchanged): the same shapes,
+     the same speeds, locked to the song position the same way, so a lane's MOTION and a
+     snapshot knob's fall together. Left out: the two that listen to a module's own sound.
+     KICK is in: it reads the kick lane's hits from the suite's bus, as a lane's MOTION does.
+337. **It is worked out on the audio thread, not by the screen turning the knob.** *Mine.*
+     The screen's thread could have turned the knob sixty times a second, and the wave would
+     then have stuttered whenever a window was dragged or a file chosen. Instead the session
+     writes down, for each knob a MOTION is on, the law by which that knob moves each control
+     (a line through what each of its snapshots says, a slope for each knob it is tied to):
+     exactly what turning it works out, for every place it could stand. The engine swings the
+     knob and reads the laws, every block. The laws are made again only when a knob's
+     snapshots or ties change, and handed over without a lock.
+338. **What sounds and where a knob stands are now two things in the engine.** A control has
+     where it stands (travelling under GLIDE, as before) and MOTION's push on that; everything
+     the sound is made from reads the two together, and so do the knobs' lights. Snapshots,
+     the hand, the E16's knobs and "is it travelling" go by where it stands. With no MOTION on,
+     the two are the same number and the sound is to the sample what it was (checked).
+339. **MOTION is not in a snapshot.** *Mine.* The snapshot knobs are not either: they are what
+     is played over the scenes. So a recall leaves the waves running, and a snapshot taken
+     under a wave holds where the knobs stand and not where the wave had them. (What that
+     snapshot is filed as in the library, its sound, is what was heard: wave and all.)
+340. **AMOUNT is a share of the knob's turn, either way, and the knob's ends stop it.** A knob
+     at nought under a SINE has only the upper half. *Mine:* that it is not rescaled to fit.
+     Where the knob stands is yours to choose, and it is the plainest thing to explain.
+341. **The 3D eye does not follow a wave.** A snapshot knob swung by MOTION moves many knobs at
+     once, which is how the eye knows a recall; it now goes by where knobs stand, so the lights
+     move and the view stays, as for a sequencer's knob.
+342. **On the E16: knob 15 held on the snapshot knobs.** *Mine,* and the part I am least sure
+     of. OPEN there is the library and I left it so; a second press of OPEN for MOTION would
+     have made the way back from the library two presses. Knobs 13 and 14 held are already the
+     wheel and OPEN on that page, so the next knob held is MOTION. Nothing on the E16 says so.
+     If it should be somewhere else, say where.
+343. **Addresses for a sequencer: channel 16, CC 102 to 113.**
+
 ## Not verified
 
+- **MOTION on the snapshot knobs (thirty-fourth) is checked by where the knobs are**, block by
+  block, against the knob turned by hand. Not heard. Things for your ears: fast waves (a
+  sixteenth, a SQUARE) on knobs whose modules smooth a change over 30 ms, which rounds them;
+  KICK on a morph; whether +100 on a knob at nought is what you expect. The held knob 15 is
+  checked against a made-up E16.
 - **The keys' travel (thirty-third) is checked by where each key stands**, frame by frame, on a
   software OpenGL here. Not seen moving on a Mac: whether 45 and 70 ms look like a key or like
   a flicker at your display's rate, and whether latched reads at a glance from where you sit.

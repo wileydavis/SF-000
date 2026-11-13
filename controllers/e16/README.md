@@ -94,6 +94,11 @@ and sends to the same port.
   the screen still does it). Knob 14 there, and knobs 13 and 14 on the library's map, where a
   press already recalls, are **held for half a second** for OPEN and the wheel. A press let go
   sooner recalls as before (the recall then comes as the knob is let go, not as it goes down).
+- **Knob 15 held for half a second on the snapshot page is MOTION**: the macro designer comes up
+  on the screen and the E16 turns to CONFIG's first page, which is then MOTION's twelve knobs,
+  a row for each of the three: WAVE, SPD, KNOB, AMNT (the page is titled KNOB MOTION). OPEN
+  goes back. With the designer opened on the screen instead, the E16 stays on the snapshot
+  knobs; turn it to CFG 1 by hand and it is MOTION. A short press on knob 15 recalls as before.
 
 ## The first scene: SF-000
 
@@ -211,6 +216,7 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | knob 13 pressed (the wheel), knob 14 pressed (OPEN) | 16 | CC 33, CC 34 (127 down, 0 up) |
 | CONFIG's page before, the next (knobs 15, 16 pressed) | 16 | CC 35, CC 36 |
 | the returns' eight knobs, the master's three, the drum bus's four, POCKETS' four | 16 | CC 60-67, CC 68-70, CC 71-74, CC 75-78 |
+| MOTION on the snapshot knobs: three of WAVE, SPEED, KNOB, AMOUNT (on no page: for a sequencer) | 16 | CC 102-113 |
 | the page that came up | 16 | CC 119: 1-12 in SF-000 (12: the snapshot page), 21-32 in SF-FX |
 | a MAP knob in place p, its press | 15 | CC 11 + p, CC 43 + p |
 | a FIND knob in place p (1-4), its press | 14 | CC 11 + p, CC 43 + p |

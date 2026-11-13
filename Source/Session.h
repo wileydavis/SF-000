@@ -158,6 +158,12 @@ public:
     // controller asks for (-1: none): the screen takes it up
     int showing = 0, wantShowing = -1;
     bool pocketsUp() const              { return wantShowing == 3 || (showing == 3 && wantShowing < 0); }      // POCKETS is up, or has just been asked for
+    // The macro designer (showing 2) is where MOTION's knobs are. While it is up, a controller's
+    // CONFIG pages hold them: one page, a row for each MOTION (WAVE, SPEED, KNOB, AMOUNT).
+    // motionUp: it was asked for from a controller for those knobs, and that is the page the
+    // controller is sent to (otherwise it stays on the snapshot knobs, as it did).
+    bool macrosUp() const               { return wantShowing == 2 || (showing == 2 && wantShowing < 0); }
+    bool motionUp = false;
 
     // ---- controls
     // A knob or key moved by hand. sounding: the engine already has the value (a controller's knob,
@@ -196,6 +202,8 @@ public:
     // where those knobs now stand), and the knob goes home.
     void pressSnapKnob (int k);
     bool knobLive (int k) const;        // it does something: two snapshots or more, or a knob it is tied to
+    // MOTION (the engine's three: cx::mot): which of them are on that knob, as a bit each (a wave chosen and an amount set)
+    int motionOn (int k) const;
     static bool reaches (const Engine&, int ctl);      // a snapshot knob can move it: a lane's sound knobs, sends and EQ, the returns' knobs
 
     // ---- LEARN: a snapshot knob tied to knobs by showing it. learnBegin puts the knob at its full
@@ -323,6 +331,10 @@ public:
 private:
     void timerCallback() override;
     void applyMorph (double glideBeats);
+    // MOTION on the snapshot knobs: the laws of the knobs it is on, written down for the audio
+    // thread whenever one of those knobs, or what MOTION is on, has changed (and only then).
+    void motionLaws();
+    juce::uint64 lawsSig = 0;
     // notes: the lanes whose sequencers are given what the snapshot was playing (nullptr: all of them)
     void applySnapshot (const Snapshot&, double glideBeats, const std::array<bool, kLanes>* notes = nullptr);
     void recallWhole (juce::int64 id);

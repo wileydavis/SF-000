@@ -547,6 +547,46 @@ lanes you pick, each as far as you show it.
   knobs, the drum bus's four. Not an insert's knobs, TAPE, COMP, LIMIT, tempo or the sequencer:
   moved while learning, those are ordinary changes and stay.
 
+### MOTION: a wave on a snapshot knob
+
+A snapshot knob can be turned for you. The macro designer has three **MOTION**s along its foot,
+each four knobs:
+
+- **WAVE**: the shape. SINE, TRIANGLE, SQUARE, RANDOM, DRIFT (a smooth wander that never repeats)
+  and STEPS (eight steps, over and over) swing the knob both ways about where it stands. RAMP UP,
+  RAMP DOWN and ENVELOPE (up at once, falling over the rest) push it one way and let it back.
+  KICK pushes it on every hit of the kick lane. OFF: nothing.
+- **SPEED**: how long one turn of the wave is: a sixteenth to 64 bars, with dotted, triplet and
+  odd lengths (3/16, 5 BAR) that cross the bar. For KICK: how long the push takes to fall back.
+- **KNOB**: which of the sixteen snapshot knobs it turns.
+- **AMOUNT**: how much of that knob's turn, and which way. In the middle: none. +100 is the
+  whole turn.
+
+Everything the knob moves goes with it, as if a hand were turning it: through its snapshots in
+their order, and every knob it is tied to by its own share. The knob stands where you leave it
+and the wave moves it from there, as far as its travel goes (a SINE on a knob standing at nought
+has only its upper half to go to; stand the knob half way for the whole swing).
+
+- **In time with the clock.** Every wave is locked to the song position, so it falls on the bar
+  the same way each time, and RANDOM, DRIFT and STEPS are the same every run. Stopped, the waves
+  carry on from where they were.
+- **It is worked out with the sound**, on the audio thread, every block: nothing waits on the
+  screen, and a window being dragged does not make it stutter.
+- **What the knobs show is what sounds.** The snapshot knob's ring swings, and so does the ring
+  of every knob it moves. Where they *stand* is not touched: a snapshot taken while a wave runs
+  holds where the knobs stand, a knob under the hand is set where the hand puts it and the wave
+  carries on about that, and the E16's knobs are told where they stand.
+- Two MOTIONs on one knob add. A MOTION with a wave and no AMOUNT, or on a knob that holds
+  nothing, does nothing at all (the sound is to the sample what it was).
+- **MOTION is not part of a snapshot.** Like the snapshot knobs themselves it is what you play
+  over the scenes: a recall leaves it as it is. It is kept in the session file.
+- A knob's card in the designer says which MOTIONs are on it, and each MOTION says what it is set
+  to in words (`SINE  1 BAR  1 ENERGY  +40`).
+- **Without the mouse.** On the E16, hold knob 15 on the snapshot knobs' page for half a second:
+  the macro designer comes up and the E16 turns to MOTION's twelve knobs (a row for each: WAVE,
+  SPD, KNOB, AMNT). OPEN is the way back. (A short press on knob 15 still recalls its nearest
+  snapshot.) They also have addresses of their own for a sequencer: channel 16, CC 102 to 113.
+
 ### Snapshots that come with it
 
 CLEAN SLATE (always first in the library) puts every knob where the rig starts it, with no steps
@@ -616,6 +656,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 | TAPE, COMP, LIMIT | 16 | 68, 69, 70 |
 | the drum bus's DRIVE, CRUNCH, PUNCH, BOOM | 16 | 71, 72, 73, 74 |
 | POCKETS' AMOUNT, CLEAR, SPEED, RETURNS | 16 | 75, 76, 77, 78 |
+| MOTION 1, 2, 3 on the snapshot knobs: each WAVE, SPEED, KNOB, AMOUNT | 16 | 102 to 105, 106 to 109, 110 to 113 |
 | **RECALL** from snapshot knob 1 to 16 | 16 | 80 to 95 |
 
   - **RECALL** is for arranging. A snapshot knob's snapshots (the MACRO designer fills it) are a
@@ -623,6 +664,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
     sound knobs travel over the GLIDE time, patterns change on the bar. A sequencer says a value
     again on every step, so only a new value acts; 0 is none, and makes the next value new. A
     number past the last it holds does nothing.
+  - **MOTION**'s WAVE, SPEED and KNOB are lists: the number's share of 0 to 127 says which (WAVE:
+    0 OFF, 13 SINE, 25 TRIANGLE, 38 SQUARE, 51 RAMP UP, 64 RAMP DOWN, 76 RANDOM, 89 DRIFT, 102
+    STEPS, 114 ENVELOPE, 127 KICK; KNOB: 0 the first, 127 the sixteenth). AMOUNT has none at 64.
   - **GLIDE** by value: 0 OFF, 12 a quarter bar, 23 half, 35 one bar, 46 two, 58 four, 69 eight,
     81 sixteen, 92 thirty-two, 104 sixty-four, 115 a hundred and twenty-eight, 127 two hundred and
     fifty-six. Sent in the same step as a RECALL, it is taken first.
@@ -643,7 +687,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
   Press knob 1 and it is GLIDE (its ring turns green), the same GLIDE on every lane's page; press
   again for the lane's first knob. Page 12 is the sixteen snapshot knobs (knob 1 pressed is GLIDE
   there too, and knob 13 pressed the wheel); a press on any of the others recalls that
-  knob's nearest snapshot. The rings follow the rig, and a travelling knob's ring walks green. A
+  knob's nearest snapshot. (Knob 15 held for half a second is MOTION: see MOTION, above.) The rings follow the rig, and a travelling knob's ring walks green. A
   page that comes up is told its values again, so a knob's first turn starts where the rig is.
 - **Every knob on the screen has a page**, so nothing needs the mouse. The second scene (SF-FX)
   holds what the first has no room for: the active lane's three inserts (INS 1 to 3: the eight
@@ -683,7 +727,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only the newest of them (POCKETS'), for when that is what is being worked on
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
@@ -697,6 +741,7 @@ python3 tests/e16_scene_test.py                   # the scene's shape and addres
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros|pockets (pockets: --amount 0 to 100), --lane N, --cfg lane|insert|return|space|master|bands (bands: a convolution with BANDS lit), --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
+build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
@@ -824,6 +869,9 @@ Delete `session.json` to start again from the factory rig.
   sequencer plays them as steps. NOTES has no address on MIDI yet.
 - The library: the sound map drawn on the screen, more finders (traits by name), suggestions timed
   to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
+- MOTION on the snapshot knobs: three of them, for the whole rig; none of a wave's own shape can
+  be drawn; no way to hold a wave at a place; it does not listen to a lane other than the kick.
+  From the E16 the way in is a held knob, which nothing on the E16 itself says.
 - A snapshot knob moves sound knobs only: it does not cross between effects or models (a recall does).
   A knob tied to knobs (LEARN) does not reach an insert's knobs, and its ties cannot be edited one by one.
   A model changed by hand in CONFIG changes at once. Nothing on the screen shows a crossing yet.

@@ -244,6 +244,19 @@ std::vector<Engine::SetupParam> Session::configList() const
         }
         return list;
     }
+    if (macrosUp())
+    {
+        std::vector<Engine::SetupParam> list;
+        for (int ctl = cx::kMot; ctl < cx::kSnap; ++ctl)
+        {
+            const auto& c = engine.control (ctl);
+            Engine::SetupParam sp;
+            sp.id = c.id; sp.name = c.label; sp.kind = c.kind; sp.choices = c.choices; sp.value = engine.target (ctl); sp.def = c.def; sp.text = engine.valueText (ctl);
+            sp.group = "MOTION " + juce::String ((ctl - cx::kMot) / cx::kMotKnobs + 1);
+            list.push_back (sp);
+        }
+        return list;
+    }
     return cfgOpen && engine.processorFor (cfg) != nullptr ? engine.setupParams (cfg) : std::vector<Engine::SetupParam>();
 }
 
@@ -272,6 +285,14 @@ void Session::setConfig (int index, int v7)
     else if (sp.kind == Kind::List && sp.choices.size() > 1) v = (float) juce::jmin (sp.choices.size() - 1, v7 * sp.choices.size() / 128) / (float) (sp.choices.size() - 1);
     else if (sp.kind == Kind::Bipolar) v = v7 <= 64 ? (float) v7 / 128.0f : 0.5f + (float) (v7 - 64) / 126.0f;
     if (std::abs (v - sp.value) < 1.0e-6f) return;
+    if (macrosUp())
+    {
+        // (MOTION's are the rig's own knobs: turned as one on the screen is)
+        moved (cx::kMot + index, 1);
+        userSet (cx::kMot + index, v);
+        if (onChange) onChange();
+        return;
+    }
     engine.setSetup (cfg, sp.id, v);
     cfgTouched = sp.id;
     touch();
@@ -287,6 +308,7 @@ void Session::userSet (int i, float v, bool sounding)
     base[(size_t) i] = c.morph && i < kMorphEnd ? v - offset[(size_t) i] : v;
     // a sound knob under the hand travels over the GLIDE time, as a recalled one does (OFF: at once)
     if (! sounding) engine.set (i, v, c.glides ? glideBeats() : 0.0);
+    if (cx::isMot (i)) motionLaws();        // (MOTION put on a knob, or taken off: that knob's law is wanted, or no longer)
     if (i < cx::kRet)
     {
         // a generator knob rewrites the pattern while its generator is armed
@@ -345,6 +367,73 @@ void Session::applyMorph (double glide)
         const float t = juce::jlimit (0.0f, 1.0f, base[(size_t) i] + offset[(size_t) i]);
         if (std::abs (t - engine.target (i)) > 1e-5f) engine.set (i, t, glide);
     }
+    motionLaws();
+}
+
+int Session::motionOn (int k) const
+{
+    int bits = 0;
+    for (int u = 0; u < cx::kMotUnits; ++u)
+    {
+        const auto& w = engine.control (cx::mot (u, 0));
+        const bool wave = (int) std::lround (engine.target (cx::mot (u, 0)) * (float) (w.steps() - 1)) != 0;
+        const bool amount = std::abs (engine.target (cx::mot (u, 3)) - 0.5f) > 1.0e-4f;
+        if (wave && amount && (int) std::lround (engine.target (cx::mot (u, 2)) * 15.0f) == k) bits |= 1 << u;
+    }
+    return bits;
+}
+
+// What applyMorph works out for where a knob stands, written as a law for every place it could
+// stand: for each control the knob moves, how far each of its snapshots has it from the first,
+// and the slope of a knob it is tied to. The audio thread reads these to swing the knob itself.
+void Session::motionLaws()
+{
+    std::array<bool, 16> on {};
+    bool any = false;
+    for (int k = 0; k < 16; ++k) { on[(size_t) k] = motionOn (k) != 0 && knobLive (k); any = any || on[(size_t) k]; }
+    // has anything a law is made from changed?
+    juce::uint64 sig = any ? 1469598103934665603ull : 0ull;
+    auto mix = [&sig] (juce::uint64 v) { sig = (sig ^ v) * 1099511628211ull; };
+    auto mixF = [&mix] (float f) { juce::uint32 u; std::memcpy (&u, &f, 4); mix (u); };
+    for (int k = 0; any && k < 16; ++k)
+    {
+        if (! on[(size_t) k]) continue;
+        const auto& kn = knobs[(size_t) k];
+        mix ((juce::uint64) k + 1); mixF (kn.depth);
+        for (auto id : kn.snaps) { mix ((juce::uint64) id); mix (findSnap (id) != nullptr ? 2u : 3u); }
+        mix (0xABCDu);
+        for (const auto& l : kn.links) { mix ((juce::uint64) (l.ctl + 7)); mixF (l.amount); }
+    }
+    if (sig == lawsSig) return;
+    lawsSig = sig;
+    if (! any) { engine.setKnobLaws (nullptr); return; }
+    auto laws = std::make_unique<Engine::KnobLaws>();
+    for (int k = 0; k < 16; ++k)
+    {
+        if (! on[(size_t) k]) continue;
+        const auto& kn = knobs[(size_t) k];
+        auto& law = laws->knob[(size_t) k];
+        std::vector<const Snapshot*> ss;
+        for (auto id : kn.snaps) if (auto* sn = findSnap (id)) ss.push_back (sn);
+        if (ss.size() > (size_t) Engine::KnobLaw::kNodes) ss.resize ((size_t) Engine::KnobLaw::kNodes);
+        law.nodes = ss.size() >= 2 ? (int) ss.size() : 0;
+        for (int i = 0; i < kMorphEnd; ++i)
+        {
+            if (! engine.control (i).morph) continue;
+            Engine::KnobLaw::Row r;
+            r.ctl = i;
+            for (const auto& l : kn.links) if (l.ctl == i) r.link += kn.depth * l.amount;
+            bool moves = r.link != 0.0f;
+            for (int j = 0; j < law.nodes; ++j)
+            {
+                const float s0 = ss[0]->values[(size_t) i], sj = ss[(size_t) j]->values[(size_t) i];
+                r.node[(size_t) j] = s0 < 0.0f || sj < 0.0f ? Engine::KnobLaw::kNone : kn.depth * (sj - s0);
+                moves = moves || (r.node[(size_t) j] != 0.0f && r.node[(size_t) j] < Engine::KnobLaw::kNone * 0.5f);
+            }
+            if (moves) law.rows.push_back (r);
+        }
+    }
+    engine.setKnobLaws (std::move (laws));
 }
 
 void Session::pressSnapKnob (int k)
@@ -1889,6 +1978,7 @@ bool Session::load()
         foundIn (was);
         applySnapshot (was, 0.0);
     }
+    motionLaws();
     warmInserts();
     return true;
 }

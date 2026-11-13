@@ -102,13 +102,16 @@ namespace ccx
     // On channel 16: the DUB return's four knobs, the SPACE return's four, TAPE COMP LIMIT, the
     // drum bus's DRIVE CRUNCH PUNCH BOOM, POCKETS' AMOUNT CLEAR SPEED RETURNS.
     constexpr int kDub = 60, kSpace = 64, kMaster = 68, kBus = 71, kPkG = 75;
+    // On channel 16, MOTION on the snapshot knobs (102-113): for each of the three, WAVE SPEED KNOB
+    // AMOUNT. A list takes the number's share of 0-127; AMOUNT has none at 64.
+    constexpr int kMot = 102;
     // On channel 16, one for each snapshot knob (80-95): RECALL. The value says which of the
     // snapshots the knob holds (1 the first) and that one is recalled, as from the library: sound
     // knobs travel over the GLIDE time (CC 30, sent first), patterns change on the bar. A sequencer
     // says a value again and again: only a new value acts. 0 is none (and makes the next one new).
     constexpr int kRecall = 80;
     constexpr int kPerLane = kSlots * kCells + 3 + kPkLane;
-    constexpr int kExtras = kLanes * kPerLane + 4 + 4 + 3 + kBusKnobs + kPkGlobals;
+    constexpr int kExtras = kLanes * kPerLane + 4 + 4 + 3 + kBusKnobs + kPkGlobals + cx::kMotUnits * cx::kMotKnobs;
     int extraFor (int channel, int number);                     // -1: not one of them
     int controlFor (int extra, int spaceModel);
     // Any control's address, on the E16's scene or above. False: it has none.
@@ -215,7 +218,7 @@ private:
     std::atomic<int> pageUp { 0 }, glideIn { -1 };
     // the pointer's wheel, OPEN, and CONFIG's pages
     std::atomic<bool> wheelMode { false }, otherTurned { false };
-    std::atomic<int> wheelTurn { 0 }, wheelKeys { 0 }, openKeys { 0 }, cfgStep { 0 };
+    std::atomic<int> wheelTurn { 0 }, wheelKeys { 0 }, openKeys { 0 }, motionKeys { 0 }, cfgStep { 0 };
     // The wheel's knob: the address it last sent from, the number it last said, and the number it
     // was last told to stand at (-1: none since it last spoke). A turn is counted from whichever
     // of the two it is nearer to, so it counts right whether or not the E16 took the number told.
@@ -223,8 +226,8 @@ private:
     void wheelIn (int address, int val, juce::uint32 nowMs);
     std::atomic<int> pageHeard { 0 };                           // the page a knob just turned on the E16 is on (as the script would say it)
     std::atomic<juce::uint32> wheelHeardAt { 0 };
-    std::array<std::atomic<juce::uint32>, 4> heldSince;         // knobs 13 and 14 of the snapshot page, then of the map: down since (0: up)
-    std::array<std::atomic<bool>, 4> heldFired;
+    std::array<std::atomic<juce::uint32>, 5> heldSince;         // knobs 13 and 14 of the snapshot page, then of the map, then the snapshot page's 15: down since (0: up)
+    std::array<std::atomic<bool>, 5> heldFired;
     int wheelRest = 0;                                          // message thread from here
     juce::uint32 wheelBusyAt = 0, wheelPlacedAt = 0;
     int wheelTries = 0, wheelIdx = 0;
@@ -248,8 +251,9 @@ private:
     std::array<int, 2> sceneSlots { { 1, 2 } };
     int cfgPage = 0;                    // (POCKETS has a fourth: it stands on the third page's knobs)
     int cfgFirst (int physicalPage) const       { return physicalPage == e16::kCfgPages - 1 && cfgPage >= e16::kCfgPages ? cfgPage * e16::kCfgPer : physicalPage * e16::kCfgPer; }      // the place in CONFIG's list of that page's first knob
-    bool cfgUp() const                          { return ses.cfgOpen || ses.pocketsUp(); }        // CONFIG's pages have something to hold
-    bool pocketsWereUp = false;
+    bool cfgUp() const                          { return ses.cfgOpen || ses.pocketsUp() || ses.macrosUp(); }        // CONFIG's pages have something to hold
+    bool pocketsWereUp = false, macrosWereUp = false;
+    void motionPressed();
     Engine::Target cfgWas;
     // the second scene's page that is up: what its knobs were last told or said, and its names
     std::array<std::atomic<int>, 16> bSent;

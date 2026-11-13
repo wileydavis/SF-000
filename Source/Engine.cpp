@@ -3,6 +3,7 @@
 #include "core/Registry.h"
 #include "core/Bus.h"
 #include "core/Loudness.h"
+#include "core/Motion.h"
 #include <map>
 #include <mutex>
 
@@ -10,6 +11,14 @@ namespace sf0
 {
 static const double kGlideBars[] = { 0, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256 };
 static const char* const kGlideNames[] = { "OFF", "1/4 BAR", "1/2 BAR", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", "32 BARS", "64 BARS", "128 BARS", "256 BARS" };
+// MOTION on the snapshot knobs: the suite's waves, less the two that listen to a sound of the
+// module's own. (Its numbers for them, in this order.)
+static const char* const kWaveNames[] = { "OFF", "SINE", "TRIANGLE", "SQUARE", "RAMP UP", "RAMP DOWN", "RANDOM", "DRIFT", "STEPS", "ENVELOPE", "KICK" };
+static const int kWaveSrc[] = { sf::MOT_OFF, sf::MOT_SINE, sf::MOT_TRI, sf::MOT_SQUARE, sf::MOT_RAMP_UP, sf::MOT_RAMP_DOWN, sf::MOT_RANDOM, sf::MOT_DRIFT, sf::MOT_STEPS, sf::MOT_ENV, sf::MOT_KICK };
+constexpr int kWaves = 11;
+struct Engine::MotState { std::array<sf::Motion, cx::kMotUnits> wave; };
+juce::StringArray Engine::motionWaves() { juce::StringArray a; for (auto* n : kWaveNames) a.add (n); return a; }
+juce::StringArray Engine::motionSpeeds() { juce::StringArray a; for (auto& n : sf::motionRateNames()) a.add (juce::String (n)); return a; }
 static const char* const kKeyNames[] = { "OFF", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
 double glideBarsFor (float v)   { return kGlideBars[juce::jlimit (0, 11, (int) std::lround (v * 11.0f))]; }
@@ -239,14 +248,25 @@ Engine::Engine()
     for (auto* n : kKeyNames) key.choices.add (n);
     auto& gl = named (cx::kGlide, "g.glide", "GLIDE", Kind::List, 0.0f, false, false);
     for (auto* n : kGlideNames) gl.choices.add (n);
+    // MOTION on the snapshot knobs: off, a bar long, on the first knob, with no amount
+    for (int u = 0; u < cx::kMotUnits; ++u)
+    {
+        const juce::String id = "mot." + juce::String (u + 1) + "_";
+        named (cx::mot (u, 0), id + "wave", "WAVE", Kind::List, 0.0f, false, false).choices = motionWaves();
+        named (cx::mot (u, 1), id + "speed", "SPEED", Kind::List, 4.0f / (float) (sf::kMotionRates - 1), false, false).choices = motionSpeeds();
+        auto& kn = named (cx::mot (u, 2), id + "knob", "KNOB", Kind::List, 0.0f, false, false);
+        for (int k = 1; k <= 16; ++k) kn.choices.add (juce::String (k));
+        named (cx::mot (u, 3), id + "amount", "AMOUNT", Kind::Bipolar, 0.5f, false, false);
+    }
+    motState = std::make_unique<MotState>();
     for (int k = 0; k < 16; ++k)
         named (cx::kSnap + k, "snap.k" + juce::String (k + 1), {}, Kind::Knob, 0.0f, false, false);
 
     for (int i = 0; i < cx::kCount; ++i)
     {
         const float d = controls[(size_t) i].def;
-        targetV[(size_t) i] = d; shownV[(size_t) i] = d; glideV[(size_t) i] = 0.0f; seqV[(size_t) i] = 0;
-        cur[(size_t) i] = d; applied[(size_t) i] = d;
+        targetV[(size_t) i] = d; shownV[(size_t) i] = d; baseV[(size_t) i] = d; glideV[(size_t) i] = 0.0f; seqV[(size_t) i] = 0;
+        cur[(size_t) i] = d; applied[(size_t) i] = d; snd[(size_t) i] = d; curSaid[(size_t) i] = d;
     }
     loud = std::make_unique<Loud>();
     for (auto& p : laneDb) p = -100.0f;
@@ -261,6 +281,7 @@ Engine::Engine()
 Engine::~Engine()
 {
     collectRetired (true);
+    delete knobLaws.exchange (nullptr);
     for (auto* p : parked) delete p;
     for (auto& ln : lane)
     {
@@ -287,7 +308,13 @@ void Engine::set (int i, float v, double glideBeats)
     targetV[(size_t) i] = v;
     glideV[(size_t) i] = (float) glideBeats;
     seqV[(size_t) i].fetch_add (1);
-    if (! prepared) { shownV[(size_t) i] = targetV[(size_t) i].load(); }
+    if (! prepared) { shownV[(size_t) i] = targetV[(size_t) i].load(); baseV[(size_t) i] = targetV[(size_t) i].load(); }
+}
+
+void Engine::setKnobLaws (std::unique_ptr<KnobLaws> laws)
+{
+    // (the one the audio thread may still be reading is let go two blocks on: see collectRetired)
+    if (auto* was = knobLaws.exchange (laws.release())) retiredLaws.push_back ({ was, blockCount.load() });
 }
 
 juce::String Engine::valueText (int i) const
@@ -295,6 +322,8 @@ juce::String Engine::valueText (int i) const
     const auto& c = controls[(size_t) i];
     const float v = target (i);
     if (i == cx::kTempo) return juce::String (tempoFor (v), 1);
+    // MOTION's AMOUNT: how much of the knob's turn the wave swings it, and which way
+    if (cx::isMot (i) && (i - cx::kMot) % cx::kMotKnobs == 3) { const int a = (int) std::lround ((v - 0.5f) * 200.0f); return a == 0 ? juce::String ("NONE") : (a > 0 ? "+" : "-") + juce::String (std::abs (a)); }
     if (cx::isPk (i))
     {
         const int k = i < cx::kRet ? (i % cx::kPerLane) - cx::kPk : 4 + (i - cx::kPkG);
@@ -842,6 +871,12 @@ void Engine::collectRetired (bool all)
             }
         if (ln.voiceOut.load() != nullptr && gone (kSlots)) delete ln.voiceOut.exchange (nullptr);
     }
+    for (size_t i = retiredLaws.size(); i-- > 0;)
+        if (all || now >= retiredLaws[i].second + 2 || ! prepared)
+        {
+            delete retiredLaws[i].first;
+            retiredLaws.erase (retiredLaws.begin() + (long) i);
+        }
     for (size_t i = retiredVoices.size(); i-- > 0;)
         if (all || now >= retiredVoices[i].second + 2 || ! prepared)
         {
@@ -1296,6 +1331,9 @@ void Engine::prepare (double rate, int block)
     // by an earlier one stays "alive" for four seconds by the clock on the wall, which made the
     // start of a render depend on what had run just before it. An engine starts with none.
     { auto& bd = sf::Bus::get().d(); bd.kickWrite = 0; bd.kickSeenMs = 0; }
+    // MOTION's waves: RANDOM, DRIFT and STEPS are the same every time, each unit its own
+    for (int u = 0; u < cx::kMotUnits; ++u) motState->wave[(size_t) u].prepare (sr, 0x5F0A11C3u + 0x9E3779B9u * (uint32_t) u);
+    motPpq = 0.0;
     // nothing is part-way between two effects or two instruments when the audio starts: what was leaving is let go
     collectRetired (false);
     for (auto& ln : lane)
@@ -1358,10 +1396,50 @@ juce::Optional<juce::AudioPlayHead::PositionInfo> Engine::getPosition() const
     return p;
 }
 
-void Engine::advanceControls (double beats)
+// MOTION on the snapshot knobs, for this block: where each wave is at the block's end, how far that
+// swings its knob, and what that does to every control the knob moves (mOff).
+void Engine::knobMotion (double beats, int n)
+{
+    // Where the waves are in the song: the clock's own place while it runs, so every wave falls on
+    // the bar the same way each time; stopped, they carry on from where they were.
+    motPpq = wasRunning ? ppq + beats : motPpq + beats;
+    std::array<float, 16> swing {};
+    bool any = false;
+    sf::Ctx c;
+    c.sr = sr; c.n = n; c.bpm = blockBpm; c.ppq = motPpq - beats; c.playing = wasRunning; c.beatsPerBar = 4.0; c.bus = &sf::Bus::get();
+    for (int u = 0; u < cx::kMotUnits; ++u)
+    {
+        const int w = juce::jlimit (0, kWaves - 1, (int) std::lround (cur[(size_t) cx::mot (u, 0)] * (float) (kWaves - 1)));
+        const float amount = (cur[(size_t) cx::mot (u, 3)] - 0.5f) * 2.0f;
+        if (w == 0 || std::abs (amount) < 1.0e-4f) { motState->wave[(size_t) u].reset(); continue; }
+        const int rate = (int) std::lround (cur[(size_t) cx::mot (u, 1)] * (float) (sf::kMotionRates - 1));
+        const int k = juce::jlimit (0, 15, (int) std::lround (cur[(size_t) cx::mot (u, 2)] * 15.0f));
+        swing[(size_t) k] += amount * motState->wave[(size_t) u].tick (kWaveSrc[w], rate, c, motPpq, n, 0.0f);
+        any = true;
+    }
+    if (! any && ! mOn) return;
+    mOff.fill (0.0f);
+    mOn = any;
+    if (! any) return;
+    const KnobLaws* laws = knobLaws.load();
+    for (int k = 0; k < 16; ++k)
+    {
+        if (swing[(size_t) k] == 0.0f) continue;
+        // the knob swung, as far as its own travel lets it; and everything it moves, by its own law
+        const float v = cur[(size_t) (cx::kSnap + k)], v2 = juce::jlimit (0.0f, 1.0f, v + swing[(size_t) k]);
+        if (v2 == v) continue;
+        mOff[(size_t) (cx::kSnap + k)] = v2 - v;
+        if (laws == nullptr) continue;
+        const auto& law = laws->knob[(size_t) k];
+        for (const auto& r : law.rows) mOff[(size_t) r.ctl] += law.at (r, v2) - law.at (r, v);
+    }
+}
+
+void Engine::advanceControls (double beats, int n)
 {
     gClock += beats;
     glidingNow = false;
+    knobMotion (beats, n);
     for (int i = 0; i < cx::kCount; ++i)
     {
         const auto s = (size_t) i;
@@ -1388,25 +1466,29 @@ void Engine::advanceControls (double beats)
             if (t >= 1.0) { cur[s] = gTo[s]; gliding[s] = false; }
             else if (t > 0.0) cur[s] = gFrom[s] + (gTo[s] - gFrom[s]) * (float) t;
         }
-        if (cur[s] != applied[s])
+        if (cur[s] != curSaid[s]) { curSaid[s] = cur[s]; baseV[s] = cur[s]; }
+        // what sounds: where it stands, and MOTION's push on it
+        const float out = mOn ? juce::jlimit (0.0f, 1.0f, cur[s] + mOff[s]) : cur[s];
+        snd[s] = out;
+        if (out != applied[s])
         {
-            applied[s] = cur[s];
-            shownV[s] = cur[s];
-            if (bind[s].raw != nullptr) applyBind (bind[s], cur[s]);
+            applied[s] = out;
+            shownV[s] = out;
+            if (bind[s].raw != nullptr) applyBind (bind[s], out);
             else if (i < cx::kRet)
             {
                 const int k = i % cx::kPerLane;
                 if (k < kLaneKnobs)
                 {
                     auto& ln = lane[(size_t) (i / cx::kPerLane)];
-                    if (auto* v = ln.voice.load()) applyBind (v->bind[k], cur[s]);
+                    if (auto* v = ln.voice.load()) applyBind (v->bind[k], out);
                     // one on its way out follows the knobs that travel; a menu or a switch stays as it left it
-                    if (controls[s].glides && ln.fading[kSlots]) if (auto* o = ln.voiceOut.load()) applyBind (o->bind[k], cur[s]);
+                    if (controls[s].glides && ln.fading[kSlots]) if (auto* o = ln.voiceOut.load()) applyBind (o->bind[k], out);
                 }
                 else if (k >= cx::kIns && k < cx::kGen)
                     if (auto* in = lane[(size_t) (i / cx::kPerLane)].ins[(k - cx::kIns) / kCells].load())
                         if (! (in->soloOn && (k - cx::kIns) % kCells == in->mixCell))
-                            applyBind (in->bind[(k - cx::kIns) % kCells], cur[s]);
+                            applyBind (in->bind[(k - cx::kIns) % kCells], out);
             }
         }
     }
@@ -1561,18 +1643,18 @@ void Engine::render (juce::AudioBuffer<float>& out)
         }
     }
     wasRunning = run;
-    advanceControls (beats);
+    advanceControls (beats, n);
     gatherNotes (n, spb);
 
-    const int keyIdx = (int) std::lround (cur[(size_t) cx::kKey] * 12.0f);
+    const int keyIdx = (int) std::lround (snd[(size_t) cx::kKey] * 12.0f);
     sf::Bus::get().d().keyRoot.store (keyIdx - 1);
     const bool pan = panicNow.exchange (false);
 
     for (auto* b : { &mix, &sendA, &sendB, &busBuf }) b->clear (0, n);
     // who is heard: a soloed lane silences the other lanes; a soloed return silences every lane's dry signal
     bool anySolo = false;
-    for (int l = 0; l < kLanes; ++l) anySolo = anySolo || cur[(size_t) cx::lane (l, cx::kSolo)] > 0.5f;
-    const bool retSolo[2] = { cur[(size_t) cx::kRetMS + 1] > 0.5f, cur[(size_t) cx::kRetMS + 3] > 0.5f };
+    for (int l = 0; l < kLanes; ++l) anySolo = anySolo || snd[(size_t) cx::lane (l, cx::kSolo)] > 0.5f;
+    const bool retSolo[2] = { snd[(size_t) cx::kRetMS + 1] > 0.5f, snd[(size_t) cx::kRetMS + 3] > 0.5f };
     const bool anyRetSolo = retSolo[0] || retSolo[1];
     const float dryNow = anyRetSolo ? 0.0f : 1.0f;
     const float fall = (float) (30.0 * n / sr);      // meters fall 30 dB a second
@@ -1596,7 +1678,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         {
             // a voice that has just taken the lane: every knob as it stands now (it was copied a moment before it was put here)
             ln.voiceSeen = voice;
-            for (int k = 0; k < kLaneKnobs; ++k) applyBind (voice->bind[k], cur[(size_t) cx::lane (l, k)]);
+            for (int k = 0; k < kLaneKnobs; ++k) applyBind (voice->bind[k], snd[(size_t) cx::lane (l, k)]);
         }
         if (pan)
         {
@@ -1607,7 +1689,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         }
         // The lane's own sequencer muted: its steps keep their place and go unplayed, and what it
         // was holding ends now. Notes from outside still sound.
-        const bool seqOff = cur[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
+        const bool seqOff = snd[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
         if (seqOff && ! ln.seqOff) ln.player.stop (ln.midi, 0);
         ln.seqOff = seqOff;
         if (run)
@@ -1670,18 +1752,18 @@ void Engine::render (juce::AudioBuffer<float>& out)
             const bool fade = fadeStep (ln, sl, beats, f0, f1);
             if (! fade) og = nullptr;                   // (its fade is done: it waits to be let go)
             // MUTE on an insert: the lane passes it by. The effect keeps running, so its tail is current when it comes back.
-            const float g1 = cur[(size_t) cx::insMute (l, sl)] > 0.5f ? 0.0f : 1.0f, g0 = ln.slotG[sl];
+            const float g1 = snd[(size_t) cx::insMute (l, sl)] > 0.5f ? 0.0f : 1.0f, g0 = ln.slotG[sl];
             ln.slotG[sl] = g1;
             if (in == nullptr && ! fade) continue;
             if (in != nullptr)
             {
                 // SOLO on an insert: only what the effect makes (its MIX held at full, its DRY switch off)
-                const bool solo = cur[(size_t) cx::insSolo (l, sl)] > 0.5f;
+                const bool solo = snd[(size_t) cx::insSolo (l, sl)] > 0.5f;
                 if (solo != in->soloOn)
                 {
                     in->soloOn = solo;
                     if (solo && in->dryRaw != nullptr) in->dryWas = in->dryRaw->load();
-                    if (in->mixCell >= 0) applyBind (in->bind[in->mixCell], solo ? 1.0f : cur[(size_t) cx::ins (l, sl, in->mixCell)]);
+                    if (in->mixCell >= 0) applyBind (in->bind[in->mixCell], solo ? 1.0f : snd[(size_t) cx::ins (l, sl, in->mixCell)]);
                     if (in->dryRaw != nullptr) in->dryRaw->store (solo ? 0.0f : in->dryWas);
                 }
                 if (! fade && g0 == 1.0f && g1 == 1.0f) { in->proc->processBlock (b2, noMidi); continue; }
@@ -1722,7 +1804,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         bool eqOn = false;
         for (int e = 0; e < 3; ++e)
         {
-            const float want = eqDbFor (cur[(size_t) cx::lane (l, cx::kEqLow + e)]);
+            const float want = eqDbFor (snd[(size_t) cx::lane (l, cx::kEqLow + e)]);
             ln.eqDb[e] += 0.25f * (want - ln.eqDb[e]);
             if (std::abs (want - ln.eqDb[e]) < 0.02f) ln.eqDb[e] = want;
             if (std::abs (ln.eqDb[e] - ln.eqSet[e]) > 0.01f) { setEq (ln, e, ln.eqDb[e]); ln.eqSet[e] = ln.eqDb[e]; }
@@ -1747,7 +1829,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
         // MUTE and SOLO: a silenced lane still runs, so it comes back in time
         const int so = solo.load();
-        const bool heard = cur[(size_t) cx::lane (l, cx::kMute)] < 0.5f && (! anySolo || cur[(size_t) cx::lane (l, cx::kSolo)] > 0.5f) && (so < 0 || so == l);
+        const bool heard = snd[(size_t) cx::lane (l, cx::kMute)] < 0.5f && (! anySolo || snd[(size_t) cx::lane (l, cx::kSolo)] > 0.5f) && (so < 0 || so == l);
         const float lg = heard ? 1.0f : 0.0f;
         if (so >= 0 && so != l) ln.gainWas = 0.0f;       // a test's solo is in force from the first sample
         if (lg != 1.0f || ln.gainWas != 1.0f) for (int ch = 0; ch < 2; ++ch) b2.applyGainRamp (ch, 0, n, ln.gainWas, lg);
@@ -1783,7 +1865,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
                 rec->track (1 + l, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
             }
         }
-        const float sa = cur[(size_t) cx::lane (l, cx::kSendA)], sb = cur[(size_t) cx::lane (l, cx::kSendB)];
+        const float sa = snd[(size_t) cx::lane (l, cx::kSendA)], sb = snd[(size_t) cx::lane (l, cx::kSendB)];
         const float ga = sa * sa, gb = sb * sb;
         // The drum bus: a lane its CONFIG names goes to the mix through it, with the others it
         // names. (A switch thrown crosses the lane over in one buffer.) The sends leave before it.
@@ -1841,8 +1923,8 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const bool spaceQuiet = spaceSwap || spaceHold > 0;
     spaceHold = std::max (0, spaceHold - n);
     if (spaceSwap) { spaceNow = spaceNext; space[(size_t) spaceNow]->panic(); spaceHold = (int) (sr * 0.02); }
-    const float rg[2] = { cur[(size_t) cx::kRetMS] < 0.5f && (! anyRetSolo || retSolo[0]) ? 1.0f : 0.0f,
-                          cur[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) && ! spaceQuiet ? 1.0f : 0.0f };
+    const float rg[2] = { snd[(size_t) cx::kRetMS] < 0.5f && (! anyRetSolo || retSolo[0]) ? 1.0f : 0.0f,
+                          snd[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) && ! spaceQuiet ? 1.0f : 0.0f };
     for (int ch = 0; ch < 2; ++ch)
     {
         m2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, retGainWas[0], rg[0]);

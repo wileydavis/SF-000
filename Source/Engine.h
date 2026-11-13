@@ -48,8 +48,13 @@ namespace cx
     constexpr int kRetMS = kPkG + kPkGlobals;               // A MUTE, A SOLO, B MUTE, B SOLO
     constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT
     constexpr int kTempo = kMaster + 3, kKey = kTempo + 1, kGlide = kKey + 1;
-    constexpr int kSnap = kGlide + 1;                       // the 16 snapshot knobs
+    // MOTION on the snapshot knobs: three of them, each a WAVE, a SPEED, the KNOB it is on and an AMOUNT
+    constexpr int kMotUnits = 3, kMotKnobs = 4;
+    constexpr int kMot = kGlide + 1;
+    constexpr int kSnap = kMot + kMotUnits * kMotKnobs;     // the 16 snapshot knobs
     constexpr int kCount = kSnap + 16;
+    inline int mot (int unit, int k)            { return kMot + unit * kMotKnobs + k; }  // 0 WAVE, 1 SPEED, 2 KNOB, 3 AMOUNT
+    inline bool isMot (int i)                   { return i >= kMot && i < kSnap; }
     inline int lane (int l, int k)              { return l * kPerLane + k; }
     inline int ins (int l, int slot, int cell)  { return l * kPerLane + kIns + slot * kCells + cell; }
     inline int gen (int l, int k)               { return l * kPerLane + kGen + k; }
@@ -94,6 +99,7 @@ public:
     int find (const juce::String& id) const;
     float shown (int i) const                   { return shownV[(size_t) i].load(); }     // what sounds now
     float target (int i) const                  { return targetV[(size_t) i].load(); }    // where it is going
+    float stands (int i) const                  { return baseV[(size_t) i].load(); }      // where it stands or has travelled to: what sounds, less MOTION's push
     void set (int i, float v, double glideBeats = 0.0);
     juce::String valueText (int i) const;
 
@@ -298,7 +304,40 @@ public:
     SetupState getSetup (Target) const;
     void applySetup (Target, const SetupState&);
     const SetupState& initialSetup (int lane) const { return initSetup[(size_t) lane]; }
-    bool isGliding (int i) const                { return glideV[(size_t) i].load() > 0.0f && std::abs (shownV[(size_t) i].load() - targetV[(size_t) i].load()) > 1e-4f; }
+    // (on its way under GLIDE. What MOTION adds to a knob is not travel: it is left out.)
+    bool isGliding (int i) const                { return glideV[(size_t) i].load() > 0.0f && std::abs (baseV[(size_t) i].load() - targetV[(size_t) i].load()) > 1e-4f; }
+
+    // ---- MOTION on the snapshot knobs. A snapshot knob moves many knobs, each by a law of its
+    // own: a line through what each of its snapshots says of that knob, and a slope for a knob it
+    // is tied to. The session writes those laws down for the audio thread, which swings the
+    // snapshot knob in time with the clock and moves what it moves, exactly as a hand turning it
+    // would, with nothing waiting on the screen. What the knobs show is what sounds.
+    struct KnobLaw
+    {
+        static constexpr int kNodes = 10;
+        static constexpr float kNone = 1.0e9f;          // (that snapshot says nothing of this control)
+        struct Row { int ctl = -1; float link = 0.0f; std::array<float, kNodes> node {}; };
+        int nodes = 0;                                  // how many snapshots it sweeps (0: it is only tied to knobs)
+        std::vector<Row> rows;                          // every control it moves
+        // how far the snapshot knob at v has that control from where the base scene has it
+        float at (const Row& r, float v) const
+        {
+            float f = r.link * v;
+            if (nodes >= 2)
+            {
+                const float p = v * (float) (nodes - 1);
+                const int a = std::min (nodes - 2, (int) p);
+                const float na = r.node[(size_t) a], nb = r.node[(size_t) a + 1];
+                if (na < kNone * 0.5f && nb < kNone * 0.5f) f += na + (nb - na) * (p - (float) a);
+            }
+            return f;
+        }
+    };
+    struct KnobLaws { std::array<KnobLaw, 16> knob; };
+    void setKnobLaws (std::unique_ptr<KnobLaws>);       // message thread. Nothing: no MOTION is on anything
+    static juce::StringArray motionWaves();             // WAVE's choices
+    static juce::StringArray motionSpeeds();            // SPEED's: the suite's own rates
+    float motionPush (int i) const              { return shownV[(size_t) i].load() - baseV[(size_t) i].load(); }      // how far MOTION has that control from where it stands, now
 
     // ---- what the screen reads
     std::atomic<float> peakL { -100.0f }, peakR { -100.0f }, gainRed { 0.0f }, lufs { -70.0f };
@@ -393,7 +432,7 @@ private:
     Bind makeBind (SFProcessor&, const KnobDef&, Control* describe);
     static float readBind (const Bind&);
     static void applyBind (const Bind&, float v);
-    void advanceControls (double beats);
+    void advanceControls (double beats, int n);
     void setEq (Lane&, int band, float db);
     void updateLatency();
     void collectRetired (bool all);
@@ -402,9 +441,19 @@ private:
     mutable std::unique_ptr<Defs> defsMade;
     std::array<Bind, cx::kCount> bind {};
     std::array<std::atomic<float>, cx::kCount> targetV, shownV, glideV;
+    std::array<std::atomic<float>, cx::kCount> baseV;         // where each stands or has travelled to, without MOTION's push
     std::array<std::atomic<uint32_t>, cx::kCount> seqV;
     // audio thread
-    std::array<float, cx::kCount> cur {}, gFrom {}, gTo {}, applied {};
+    // cur: where each control stands (travelling under GLIDE). snd: what sounds, which is cur and
+    // MOTION's push on it (mOff). Everything the render reads is snd.
+    std::array<float, cx::kCount> cur {}, gFrom {}, gTo {}, applied {}, snd {}, mOff {}, curSaid {};
+    bool mOn = false;
+    double motPpq = 0.0;
+    struct MotState;
+    std::unique_ptr<MotState> motState;
+    std::atomic<KnobLaws*> knobLaws { nullptr };
+    std::vector<std::pair<KnobLaws*, uint64_t>> retiredLaws;
+    void knobMotion (double beats, int n);
     std::array<double, cx::kCount> gStart {}, gLen {};
     std::array<uint32_t, cx::kCount> seen {};
     std::array<bool, cx::kCount> gliding {};
