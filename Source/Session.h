@@ -41,12 +41,17 @@ constexpr juce::int64 kCleanSlateId = 999;
 
 // A snapshot knob: 2 to 10 snapshots in sweep order. Turning it moves every knob that differs
 // among them, as an offset from the base scene, so knobs stack.
+// It can also be tied straight to knobs (LEARN): each link is a knob and how far the full turn
+// takes it, in that knob's own travel (-1 to 1). The two add up on a knob that has both.
 struct MacroKnob
 {
+    struct Link { int ctl = -1; float amount = 0.0f; };
     juce::String name;
     std::vector<juce::int64> snaps;
+    std::vector<Link> links;
     float depth = 1.0f;
     juce::NamedValueSet more;           // what the file says of it that this build does not know: carried
+    juce::Array<juce::var> linksKept;   // links to knobs this build does not have, as the file had them: carried
 };
 
 class Session : private juce::Timer
@@ -160,7 +165,24 @@ public:
     bool cue (juce::int64 id);          // false: that snapshot has no sound kept
     juce::int64 cueing() const          { return cueId; }
     void turnSnapKnob (int k, float v);
-    void pressSnapKnob (int k);         // recall the knob's nearest snapshot as the new base; the knob goes home
+    // Recall the knob's nearest snapshot as the new base; the knob goes home. A knob that is only
+    // tied to knobs: the nearer end of its turn is kept (past half way, what it has pushed is
+    // where those knobs now stand), and the knob goes home.
+    void pressSnapKnob (int k);
+    bool knobLive (int k) const;        // it does something: two snapshots or more, or a knob it is tied to
+    static bool reaches (const Engine&, int ctl);      // a snapshot knob can move it: a lane's sound knobs, sends and EQ, the returns' knobs
+
+    // ---- LEARN: a snapshot knob tied to knobs by showing it. learnBegin puts the knob at its full
+    // turn; every knob moved from then on (on the screen, on a controller) is what the full turn
+    // does. learnKeep ties them to it and leaves the rig sounding as it does, the knob at full:
+    // turned back, they go back to where they were. learnDrop puts them back and forgets.
+    // A knob turned back to where it was is not tied (and one that was tied is let go).
+    int learning = -1;                  // the knob being taught; -1: none
+    void learnBegin (int k);
+    void learnKeep();
+    void learnDrop();
+    bool learnMoved (int ctl) const;    // it has been moved since LEARN was pressed
+    int learnMoves() const;             // how many have
     // Recall the nth (1 the first) of the snapshots a snapshot knob holds, as a recall from the
     // library is: an arrangement's way in, from a sequencer. False: it holds no such one.
     bool recallFromKnob (int k, int n);
@@ -235,6 +257,8 @@ private:
     double glideBeats() const;
 
     std::vector<float> base, offset;
+    std::vector<float> learnBase;       // the scene under the knobs as it stood when LEARN was pressed
+    float learnWas = 0.0f;              // where the knob being taught stood
     bool dirty = false, useDisk = true;
     juce::ThreadPool clipWriter { 1 };
     juce::int64 cueId = 0;

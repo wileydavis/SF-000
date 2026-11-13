@@ -1185,6 +1185,7 @@ static int uiTest()
             if (i % 7 == 0) { draw(); audio (2); }
         }
     }
+    ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
     // every CONFIG panel: each lane, the lead's two inserts, both returns
     std::vector<Engine::Target> targets;
     for (int l = 0; l < kLanes; ++l) targets.push_back ({ 0, l, 0 });
@@ -1711,6 +1712,136 @@ static int uiTest()
         for (int i = 0; i < 50; ++i) e2.render (b2);
         check (e2.insertType (0, 0) == 1 && e2.insertType (0, 1) == 0 && ! e2.fault.load(), "recalling the other puts them back, while it plays");
     }
+    // 3b. LEARN: a snapshot knob tied straight to knobs
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_learn_test");
+        tmp.deleteRecursively(); tmp.createDirectory();
+        const auto was = Session::stateFileForTests;
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        Engine e2; e2.prepare (48000.0, 512);
+        {
+            Session s2 (e2, true);
+            const int cut = e2.find ("bass.cutoff"), res = e2.find ("bass.res"), dec = e2.find ("closed_hat.decay"), tune = e2.find ("kick.tune"), sendA = cx::lane (7, cx::kSendA);
+            auto at = [&] (int i) { return e2.target (i); };
+            s2.userSet (cx::kGlide, 0.0f);
+            s2.userSet (cut, 0.30f); s2.userSet (res, 0.20f); s2.userSet (dec, 0.40f); s2.userSet (sendA, 0.10f);
+            const float tune0 = at (tune);
+            const bool deadBefore = ! s2.knobLive (8) && s2.knobScope (8).empty();
+            // taught: three knobs moved, one of them down
+            s2.learnBegin (8);
+            const bool begun = s2.learning == 8 && at (cx::kSnap + 8) == 1.0f && s2.knobLive (8) && s2.learnMoves() == 0;
+            s2.userSet (cut, 0.80f); s2.userSet (dec, 0.25f); s2.userSet (sendA, 0.50f);
+            s2.userSet (res, 0.60f); s2.userSet (res, 0.20f);                     // (turned, and turned back: not one of them)
+            s2.turnSnapKnob (8, 0.3f);                                             // (it stands at full while it is taught)
+            const bool counting = s2.learnMoves() == 3 && s2.learnMoved (cut) && ! s2.learnMoved (res) && at (cx::kSnap + 8) == 1.0f;
+            s2.learnKeep();
+            const auto& kn = s2.knobs[8];
+            const bool kept = s2.learning < 0 && kn.links.size() == 3 && s2.knobScope (8).size() == 3
+                           && std::abs (at (cut) - 0.80f) < 1e-4f && std::abs (at (dec) - 0.25f) < 1e-4f && std::abs (at (sendA) - 0.50f) < 1e-4f && at (cx::kSnap + 8) == 1.0f;
+            check (deadBefore && begun && counting && kept,
+                   "LEARN: the knob goes to its full turn; three knobs moved (one turned and turned back is not one of them) are tied to it by KEEP, and nothing changes in the sound");
+            s2.turnSnapKnob (8, 0.5f);
+            const bool half = std::abs (at (cut) - 0.55f) < 1e-4f && std::abs (at (dec) - 0.325f) < 1e-4f && std::abs (at (sendA) - 0.30f) < 1e-4f;
+            s2.turnSnapKnob (8, 0.0f);
+            const bool home = std::abs (at (cut) - 0.30f) < 1e-4f && std::abs (at (dec) - 0.40f) < 1e-4f && std::abs (at (sendA) - 0.10f) < 1e-4f && std::abs (at (res) - 0.20f) < 1e-4f && at (tune) == tune0;
+            // from wherever the knobs stand, and stacked on a snapshot knob that moves the same one
+            s2.userSet (cut, 0.10f);
+            s2.turnSnapKnob (8, 1.0f);
+            const bool fromThere = std::abs (at (cut) - 0.60f) < 1e-4f;
+            const int dens = e2.find ("closed_hat.density");
+            const float d0 = at (dens);
+            s2.turnSnapKnob (0, 1.0f);                                             // ENERGY, a snapshot knob
+            const bool stacked = at (dens) > d0 + 0.2f && std::abs (at (cut) - 0.60f) < 0.25f;
+            s2.turnSnapKnob (0, 0.0f); s2.turnSnapKnob (8, 0.0f);
+            check (half && home && fromThere && stacked, "turned, each tied knob goes its own share of its own way (BASS CUTOFF up, CLOSED HAT DECAY down) from wherever it stands, nothing else moves, and it stacks with a snapshot knob");
+            // LEARN again adds to what it has; a tied knob turned back to where zero has it is let go; DROP forgets
+            s2.userSet (cut, 0.30f);
+            s2.learnBegin (8);
+            s2.userSet (res, 0.45f);                                               // one more
+            s2.userSet (sendA, 0.10f);                                             // (at full it stood at 0.50: back to where the knob's zero has it)
+            s2.learnKeep();
+            const bool added = kn.links.size() == 3 && s2.knobScope (8) == std::vector<int> ({ dec, std::min (cut, res), std::max (cut, res) });
+            s2.turnSnapKnob (8, 0.0f);
+            const bool addedHome = std::abs (at (res) - 0.20f) < 1e-4f && std::abs (at (sendA) - 0.10f) < 1e-4f;
+            s2.learnBegin (8);
+            s2.userSet (tune, 0.9f);
+            s2.learnDrop();
+            const bool dropped = s2.learning < 0 && kn.links.size() == 3 && at (tune) == tune0 && at (cx::kSnap + 8) == 0.0f;
+            check (added && addedHome && dropped, "LEARN again adds a knob to what it has and lets go of one turned back to where it was; DROP puts back what was moved and ties nothing");
+            // a press with no snapshot to land on: past half way what it has pushed is kept, and the knob goes home
+            s2.turnSnapKnob (8, 0.7f);
+            s2.pressSnapKnob (8);
+            const bool landed = at (cx::kSnap + 8) == 0.0f && std::abs (at (cut) - 0.80f) < 1e-4f && std::abs (at (dec) - 0.25f) < 1e-4f;
+            s2.turnSnapKnob (8, 0.3f);
+            s2.pressSnapKnob (8);
+            const bool backAgain = at (cx::kSnap + 8) == 0.0f && std::abs (at (cut) - 0.80f) < 1e-4f;
+            // a recall while a knob is being taught: what it is shown is measured from the recalled scene
+            s2.learnBegin (9);
+            s2.recall (1000);
+            const float cutInit = at (cut);
+            s2.userSet (cut, juce::jlimit (0.0f, 1.0f, cutInit + 0.2f));
+            s2.learnKeep();
+            const bool afterRecall = s2.knobs[9].links.size() == 1 && std::abs (s2.knobs[9].links[0].amount - (at (cut) - cutInit)) < 1e-4f;
+            check (landed && backAgain && afterRecall, "its press, with no snapshot to land on: past half way what it has pushed stays and the knob goes home, short of it they go back; a recall while one is taught starts the measuring again");
+            s2.knobs[8].name = "OPEN UP";
+            s2.touch(); s2.save();
+        }
+        {
+            // the session file: the links by each knob's id, read back; one to a knob this build does not have is carried
+            auto text = Session::stateFileForTests.loadFileAsString();
+            const bool written = text.contains ("\"links\"") && text.contains ("bass.cutoff") && text.contains ("closed_hat.decay");
+            auto root = juce::JSON::parse (text);
+            if (auto* kn = root.getProperty ("knobs", juce::var()).getArray())
+                if (auto* ls = (*kn)[8].getProperty ("links", juce::var()).getArray())
+                {
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty ("c", "theremin.wobble"); o->setProperty ("d", 0.25);
+                    ls->add (juce::var (o));
+                }
+            Session::stateFileForTests.replaceWithText (juce::JSON::toString (root));
+            Engine e3; e3.prepare (48000.0, 512);
+            Session s3 (e3, true);
+            s3.load();
+            const int cut = e3.find ("bass.cutoff");
+            const bool read = s3.knobs[8].name == "OPEN UP" && s3.knobs[8].links.size() == 3 && s3.knobLive (8) && s3.knobs[9].links.size() == 1;
+            const float c0 = e3.target (cut);
+            s3.userSet (cx::kGlide, 0.0f);
+            s3.turnSnapKnob (8, 1.0f);
+            const bool works = std::abs (e3.target (cut) - juce::jlimit (0.0f, 1.0f, c0 + 0.5f)) < 1e-3f;
+            s3.touch(); s3.save();
+            const bool carried = Session::stateFileForTests.loadFileAsString().contains ("theremin.wobble");
+            check (written && read && works && carried, "the session file holds what a knob is tied to, by each knob's own id; read back it does the same, and a tie to a knob this build does not have is carried through a save");
+        }
+        Session::stateFileForTests = was;
+        tmp.deleteRecursively();
+    }
+    // 3c. LEARN on the screens: the key in the macro designer, KEEP and DROP in the top bar
+    {
+        auto actKey = [&] (bool keep) { for (auto& h : sc.testHits()) if (Screen::testIsLearnKey (h, keep ? 1 : 2)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto learnKey = [&] { for (auto& h : sc.testHits()) if (Screen::testIsLearnKey (h, 0)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        sc.setPage (Screen::pMain); draw();
+        const bool noneYet = actKey (true).x < 0.0f && actKey (false).x < 0.0f;
+        sc.setPage (Screen::pMacros); sc.testPickKnob (10); draw();
+        click (learnKey()); draw();
+        const bool toMain = ses.learning == 10 && sc.testPage() == Screen::pMain && actKey (true).x > 0.0f && actKey (false).x > 0.0f;
+        const int filt = cx::lane (3, 10);
+        const float f0 = ses.value (filt);
+        ses.userSet (filt, f0 > 0.5f ? f0 - 0.3f : f0 + 0.3f); draw();
+        click (actKey (false)); draw();
+        const bool droppedIt = ses.learning < 0 && std::abs (ses.value (filt) - f0) < 1e-4f && ses.knobs[10].links.empty() && actKey (true).x < 0.0f;
+        sc.setPage (Screen::pMacros); sc.testPickKnob (10); draw();
+        click (learnKey()); draw();
+        ses.userSet (filt, f0 > 0.5f ? f0 - 0.3f : f0 + 0.3f); draw();
+        click (actKey (true)); draw();
+        const bool keptIt = ses.learning < 0 && ses.knobs[10].links.size() == 1 && ses.knobs[10].links[0].ctl == filt && actKey (true).x < 0.0f;
+        bool shown = false;
+        for (auto& h : sc.testHits()) shown = shown || Screen::testIsSnapKnob (h, 10);      // (it is a knob on the main screen now)
+        ses.turnSnapKnob (10, 0.0f);
+        ses.knobs[10].links.clear();
+        check (noneYet && toMain && droppedIt && keptIt && shown && std::abs (ses.value (filt) - f0) < 1e-4f,
+               "LEARN in the macro designer brings the main screen up with KEEP and DROP in its top bar; DROP puts the knob back and ties nothing; KEEP ties it, and the snapshot knob is there to turn");
+        sc.setPage (Screen::pMain); draw();
+    }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
         Engine e3; e3.prepare (48000.0, 512);
@@ -2144,6 +2275,18 @@ static int shot (const juce::StringArray& args)
         auto stop = [&] (const char* name) { return all[(size_t) juce::jlimit (0, (int) all.size() - 1, arg (name, "0").getIntValue())]; };
         if (args.contains ("--front")) ses.bringStop (stop ("--front"), 1);
         if (args.contains ("--pointer")) ses.point (stop ("--pointer"));
+    }
+    if (args.contains ("--learn") || args.contains ("--learnt"))
+    {
+        // --learn N: snapshot knob N being taught, with a few knobs moved. --learnt N: after KEEP, the knob turned half way back.
+        const int k = juce::jlimit (0, 15, arg (args.contains ("--learn") ? "--learn" : "--learnt", "6").getIntValue() - 1);
+        ses.knobs[(size_t) k].name = "OPEN UP";
+        ses.learnBegin (k);
+        ses.userSet (cx::lane (1, 8), 0.82f); ses.userSet (cx::lane (2, 8), 0.74f);        // the hats' decay
+        ses.userSet (cx::lane (5, 6), 0.9f); ses.userSet (cx::lane (5, 2), 0.55f);         // the bass's cutoff and resonance
+        ses.userSet (cx::lane (7, cx::kSendA), 0.6f);                                       // the lead's send to the dub
+        if (args.contains ("--learnt")) { ses.learnKeep(); ses.turnSnapKnob (k, 0.5f); }
+        for (int i = 0; i < 40; ++i) e.render (b);
     }
     if (args.contains ("--phones")) e.setPhones (true);
     if (const auto pt = arg ("--point", ""); pt.isNotEmpty())   // the mouse resting at x,y (screen units), with INFO on: its box
@@ -4225,6 +4368,34 @@ static int stageTest()
         ses.bringStop ({ S::fLane, 2, 0 }, 0); fresh(); sc.testTick(); sc.testTick();     // (the mouse, with the eye home: the hand is already there)
         check (letGo && ses.activeLane == 2 && sc.testFollowing().isEmpty() && ! sc.testEyeHeld(), "Esc lets the eye go home; a module brought to the front with the mouse from there does not move it");
         ses.bringLane (7, 0); fresh();
+    }
+    // 5c. LEARN: a knob moved while a snapshot knob is being taught is lit yellow (moved from outside too, with no hand on the screen), and KEEP is reached in the top bar
+    {
+        const int ctl = cx::lane (0, 5);            // KICK PUNCH: a white ring
+        const auto ku = find ([&] (const Screen::TestHit& h) { return Screen::testIsControl (h, ctl); });
+        auto yellow = [&] (const juce::Image& img)
+        {
+            const auto c = pt (ku).roundToInt();
+            int n = 0;
+            for (int y = c.y - 26; y <= c.y + 26; ++y)
+                for (int x = c.x - 26; x <= c.x + 26; ++x)
+                    if (x >= 0 && y >= 0 && x < img.getWidth() && y < img.getHeight())
+                    { const auto p = img.getPixelAt (x, y); if (p.getRed() > 170 && p.getGreen() > 140 && p.getBlue() < 110 && (int) p.getRed() - (int) p.getBlue() > 90) ++n; }
+            return n;
+        };
+        const float was = ses.value (ctl);
+        const int before = yellow (fresh());
+        ses.learnBegin (11);
+        fromOutside (ctl, was > 0.5f ? was - 0.35f : was + 0.35f, 2); sc.testTick(); sc.testTick();
+        const int during = yellow (fresh());
+        const auto keep = find ([] (const Screen::TestHit& h) { return Screen::testIsLearnKey (h, 1); });
+        click (keep);
+        const int after = yellow (fresh());
+        const bool tied = keep.x > 0.0f && ses.learning < 0 && ses.knobs[11].links.size() == 1 && ses.knobs[11].links[0].ctl == ctl;
+        ses.turnSnapKnob (11, 0.0f); ses.knobs[11].links.clear(); fresh();
+        check (before < 4 && during >= before + 8 && tied && after < 4 && std::abs (ses.value (ctl) - was) < 1e-4f,
+               "LEARN: a knob moved while a snapshot knob is being taught is lit yellow (" + juce::String (before) + " yellow points round it before, " + juce::String (during) + " while, " + juce::String (after)
+                   + " after); KEEP in the top bar ties it, and with the knob turned back it is where it was");
     }
 
     // 6. INFO: the box floats by the pointer

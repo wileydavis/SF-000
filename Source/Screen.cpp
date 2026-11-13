@@ -170,6 +170,8 @@ void Screen::legend (G& g, float cx, float y, const String& label)
 
 void Screen::knob (G& g, float cx, float cy, int size, float v, Kind kind, int steps, Colour litCol, float target)
 {
+    // LEARN: a knob moved since it was pressed is lit yellow, and so is the knob being taught
+    if (knobCtl >= 0 && ses.learning >= 0 && (knobCtl == cx::kSnap + ses.learning || ses.learnMoved (knobCtl))) { litCol = col::yellow; knobLight = col::yellow; }
     const float body = (float) size * 0.5f, ro = size >= 40 ? 17.0f : 13.0f, ri = size >= 40 ? 10.0f : 7.0f;
     const float pi = juce::MathConstants<float>::pi, seg = pi / 8.0f;
     float a = 0.0f, b = 0.0f;       // the lit arc, in turns from six o'clock, clockwise
@@ -520,6 +522,10 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             for (auto id : kn.snaps) if (ses.findSnap (id) != nullptr) ++held;
             t.title = "SNAPSHOT KNOB " + String (h.a + 1) + (kn.name.isNotEmpty() ? ": " + kn.name : String());
             body = "TURN IT TO PUSH THE RIG FROM WHERE IT IS TOWARD THE " + String (held) + " SNAPSHOTS IT HOLDS, IN THE ORDER THE MACRO DESIGNER SHOWS. DOUBLE-CLICK: RECALL THE NEAREST AS THE NEW BASE SCENE.";
+            if (held < 2 && ! kn.links.empty())
+                body = "TIED TO " + String ((int) kn.links.size()) + (kn.links.size() == 1 ? " KNOB" : " KNOBS") + " (LEARN, IN THE MACRO DESIGNER, WHICH LISTS THEM). TURN IT AND EACH GOES ITS OWN WAY, FROM WHERE IT STANDS. "
+                       "DOUBLE-CLICK: PAST HALF WAY, WHAT IT HAS PUSHED IS KEPT AND THE KNOB GOES HOME; SHORT OF IT, THEY GO BACK.";
+            else if (! kn.links.empty()) body += " IT IS ALSO TIED TO " + String ((int) kn.links.size()) + (kn.links.size() == 1 ? " KNOB." : " KNOBS.");
             midi = "MIDI: CHANNEL 16. CC " + String (e16::kKnobCc + h.a) + " TURNS IT. CC " + String (e16::kPressCc + h.a) + " (64 AND OVER) RECALLS ITS NEAREST. CC " + String (ccx::kRecall + h.a)
                  + " RECALLS THE ONE ITS VALUE NAMES: 1 THE FIRST IT HOLDS, " + String (std::max (2, held)) + " THE LAST. A VALUE SAID AGAIN DOES NOTHING; 0 IS NONE.";
             below = true;
@@ -588,7 +594,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
                 { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
-                { aMacros, "MACROS", "THE MACRO DESIGNER: WHICH SNAPSHOTS EACH SNAPSHOT KNOB HOLDS, IN SWEEP ORDER. A KNOB'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
+                { aMacros, "MACROS", "THE MACRO DESIGNER: WHICH SNAPSHOTS EACH SNAPSHOT KNOB HOLDS, IN SWEEP ORDER, AND LEARN, WHICH TIES A KNOB STRAIGHT TO OTHER KNOBS. A KNOB'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
                 { aMain, "MAIN", "BACK TO THE MAIN SCREEN." },
                 { aNudgeL, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP EARLIER." },
                 { aNudgeR, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP LATER." },
@@ -600,7 +606,10 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRename, "RENAME", "NAMES THE CHOSEN SNAPSHOT." },
                 { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
                 { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
-                { aClearKnob, "CLEAR", "TAKES EVERY SNAPSHOT OFF THIS KNOB." },
+                { aClearKnob, "CLEAR", "TAKES EVERY SNAPSHOT OFF THIS KNOB, AND UNTIES IT FROM EVERY KNOB." },
+                { aLearn, "LEARN", "TIES THIS KNOB STRAIGHT TO OTHER KNOBS. IT GOES TO ITS FULL TURN AND THE MAIN SCREEN COMES UP: TURN THE KNOBS IT SHOULD MOVE (HERE OR ON A CONTROLLER) TO WHERE THE FULL TURN TAKES THEM, AND KEEP. LEARN AGAIN ADDS TO WHAT IT HAS; A KNOB TURNED BACK TO WHERE IT WAS IS LET GO." },
+                { aLearnKeep, "KEEP", "TIES THE KNOBS MOVED SINCE LEARN TO THE KNOB BEING TAUGHT. NOTHING CHANGES IN THE SOUND: THE KNOB IS AT ITS FULL TURN, AND TURNED BACK THEY GO BACK TO WHERE THEY WERE." },
+                { aLearnDrop, "DROP", "PUTS BACK THE KNOBS MOVED SINCE LEARN AND TIES NOTHING." },
                 { aCfgClose, "X", "CLOSES CONFIG." },
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aCue, "CUE", "WHILE IT IS LIT, A TAPPED SNAPSHOT'S BARS ARE HEARD IN THE HEADPHONES, IN TIME WITH THE CLOCK, AND THE SET IS LEFT ALONE." },
@@ -670,6 +679,7 @@ const char* const kKeys[][2] = {
     { "UP  DOWN", "THE ACTIVE LANE" },
     { "TAB", "THE NEXT MODULE TO THE FRONT (SHIFT: THE ONE BEFORE)" },
     { "C", "CONFIG FOR WHAT IS IN FRONT, AND SHUT" },
+    { "RETURN", "LEARN: KEEP WHAT THE KNOB HAS BEEN SHOWN" },
     { "LEFT  RIGHT", "THE SEQUENCER'S PAGE OF STEPS" },
     { "3", "THE 3D STAGE, OR THE LIT SKIN" },
     { "V", "3D: THE NEXT VIEW" },
@@ -768,6 +778,20 @@ void Screen::drawBar (G& g)
             text (g, "SF-000", R (23, 17.5f, w, 40), fFlag, col::lit);
         }
         if (page != pMain) title (g, 23 + w + 12, 24.5f, page == pLibrary ? "SNAPSHOT LIBRARY" : "MACRO DESIGNER");
+        else if (ses.learning >= 0)
+        {
+            // LEARN: which knob is being taught, how many knobs it has been shown, and the two ways out
+            title (g, 23 + w + 12, 24.5f, learnTitle(), true);
+            const float kx = learnKeysX();
+            key (g, R (kx, 17.5f, 40, 40), col::yellow, mouseIsDown && drag.kind == hAct && drag.a == aLearnKeep ? 6.0f : 2.0f);
+            text (g, "KEEP", R (kx + 46, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
+            key (g, R (kx + 96, 17.5f, 40, 40), col::white, mouseIsDown && drag.kind == hAct && drag.a == aLearnDrop ? 6.0f : 2.0f);
+            text (g, "DROP", R (kx + 142, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
+            const int n = ses.learnMoves();
+            const float tx = kx + 196, tw2 = std::max (60.0f, 932.0f - tx);
+            text (g, "SET THE KNOBS AS ITS FULL TURN SHOULD LEAVE THEM.", R (tx, 20, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, n == 0 ? String ("NONE MOVED YET.") : String (n) + " MOVED (LIT YELLOW).", R (tx, 38, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
+        }
         else if (info)
         {
             text (g, "INFO (I): THE NUMBER ON A CONTROL IS ITS MIDI CC. A LANE'S NUMBER IS ITS CHANNEL, AND ITS INSERTS ARE ON IT TOO.", R (23 + w + 16, 20, 760, 17), fLbl, col::black, juce::Justification::centredLeft);
@@ -803,6 +827,11 @@ void Screen::drawBar (G& g)
         if (seen (g, bar)) lastShown[(size_t) cx::kGlide] = eng.shown (cx::kGlide);
     }
     if (! collect) return;
+    if (page == pMain && ses.learning >= 0)
+    {
+        hit (R (learnKeysX(), 17.5f, 40, 40).expanded (3), hAct, aLearnKeep, 0);
+        hit (R (learnKeysX() + 96, 17.5f, 40, 40).expanded (3), hAct, aLearnDrop, 0);
+    }
     hit (R (950, 17.5f, 40, 40), hAct, aRec, 0);
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
     hit (R (1176, 17.5f, 40, 40), hAct, aRun, 0);
@@ -1207,7 +1236,7 @@ void Screen::drawSnapPanel (G& g, R r)
     {
         const float cxm = x0 + (float) (k % 4) * 66 + 32, y = body + (float) (k / 4) * 61;
         const R kr (cxm - 20, y, 40, 40);
-        if (ses.knobs[(size_t) k].snaps.size() >= 2)
+        if (ses.knobLive (k))
         {
             const float v = eng.shown (cx::kSnap + k);
             if (vis (g, R (cxm - 40, y, 80, 58)))
@@ -1648,11 +1677,11 @@ void Screen::drawMacros (G& g)
         plate (g, r.getRight() - 6 - (std::ceil (tw (fNote, mv)) + 12), y0, mv, fNote, 6, col::white, col::black);
         // the knob itself, its depth, its snapshots in sweep order
         const float ky = y0 + 40;
-        if (kn.snaps.size() >= 2)
+        if (ses.knobLive (k))
         {
             const float v = eng.shown (cx::kSnap + k);
             lastShown[(size_t) (cx::kSnap + k)] = v;
-            knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, col::teal);
+            knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, k == ses.learning ? col::yellow : col::teal);
             hit (R (x0 + 8, ky - 2, 48, 44), hSnapKnob, k, 0);
         }
         else hollow (g, x0 + 32, ky + 20, 40, true);
@@ -1676,9 +1705,13 @@ void Screen::drawMacros (G& g)
         for (size_t s = 0; s < kn.snaps.size(); ++s)
             if (auto* sn = ses.findSnap (kn.snaps[s])) order << (s > 0 ? "  >  " : "") << sn->name;
         g.setColour (tone (col::black)); g.setFont (fLbl);
-        g.drawFittedText (order.isEmpty() ? String ("NO SNAPSHOTS. PICK THIS KNOB, THEN TAP SNAPSHOTS ON THE RIGHT.") : order,
+        // (a knob tied straight to knobs says so; one being taught says that)
+        const int tied = (int) kn.links.size();
+        if (k == ses.learning) order = "BEING TAUGHT: " + String (ses.learnMoves()) + " MOVED. KEEP, OR DROP." + (order.isEmpty() ? String() : "   " + order);
+        else if (tied > 0) order = "TIED TO " + String (tied) + (tied == 1 ? " KNOB" : " KNOBS") + (order.isEmpty() ? String (".") : ".   " + order);
+        g.drawFittedText (order.isEmpty() ? String ("NOTHING ON IT. TAP SNAPSHOTS ON THE RIGHT, OR PRESS LEARN.") : order,
                           juce::Rectangle<int> ((int) x0, (int) (ky + 68), 258, 30), juce::Justification::topLeft, 2, 1.0f);
-        // what it moves, lane by lane
+        // what it moves, lane by lane (a knob it is tied to: how far the full turn takes it, in hundredths of that knob's travel)
         String moves;
         int lastLane = -2;
         for (int i : ses.knobScope (k))
@@ -1687,6 +1720,8 @@ void Screen::drawMacros (G& g)
             if (ln != lastLane) { moves << (moves.isEmpty() ? "" : "   ") << (ln >= 0 ? String (lanes()[(size_t) ln].name) : String ("RETURNS")) << ": "; lastLane = ln; }
             else moves << ", ";
             moves << eng.control (i).label << (i >= cx::space (1, 0) && i < cx::space (1, 4) ? " (CONV)" : "");
+            for (const auto& l : kn.links)
+                if (l.ctl == i) { const int far = (int) std::lround (l.amount * kn.depth * 100.0f); moves << (far >= 0 ? " +" : " -") << std::abs (far); }
         }
         g.drawFittedText (moves, juce::Rectangle<int> ((int) x0, (int) (ky + 102), 258, 64), juce::Justification::topLeft, 4, 0.8f);
     }
@@ -1707,10 +1742,11 @@ void Screen::drawMacros (G& g)
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
     actKey (g, aRenameKnob, x0 + 160, ky, 64, "RENAME", col::yellow, 5);
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
-    const String help = "PICK A KNOB. TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10). TAP A NUMBERED SLOT TO TAKE IT OUT. "
-                        "THE KNOB MOVES ONLY WHAT DIFFERS AMONG ITS SNAPSHOTS, AS AN OFFSET FROM THE BASE SCENE.";
+    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5);
+    const String help = "PICK A KNOB. FROM SNAPSHOTS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10); TAP A NUMBERED SLOT TO TAKE IT OUT. THE KNOB MOVES ONLY WHAT DIFFERS AMONG THEM. "
+                        "STRAIGHT TO KNOBS: PRESS LEARN, TURN THE KNOBS IT SHOULD MOVE TO WHERE ITS FULL TURN TAKES THEM, AND KEEP. EITHER WAY IT IS AN OFFSET FROM THE BASE SCENE, AND KNOBS STACK.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
-    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 330, (int) ky - 4, 1300, 48), juce::Justification::centredLeft, 3, 1.0f);
+    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 400, (int) ky - 4, 1240, 48), juce::Justification::centredLeft, 3, 1.0f);
 }
 
 // ---------------------------------------------------------------------------------------- input
@@ -1778,7 +1814,16 @@ void Screen::act (int a)
             if (! selNameRect.isEmpty())
                 beginEdit (selNameRect, ses.knobs[(size_t) selKnob].name, [this, k = selKnob] (String t) { ses.knobs[(size_t) k].name = t.trim().toUpperCase().substring (0, 10); ses.touch(); });
             return;
+        case aLearn:
+            // LEARN on the knob that is being taught keeps it; on another, that one is kept and this one begun
+            if (ses.learning == selKnob) ses.learnKeep();
+            else { ses.learnBegin (selKnob); setPage (pMain); }
+            break;
+        case aLearnKeep: ses.learnKeep(); break;
+        case aLearnDrop: ses.learnDrop(); break;
         case aClearKnob:
+            if (ses.learning == selKnob) ses.learnDrop();
+            ses.knobs[(size_t) selKnob].links.clear();
             ses.knobs[(size_t) selKnob].snaps.clear();
             ses.turnSnapKnob (selKnob, 0.0f);
             break;
@@ -2088,6 +2133,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         if (onLook) onLook();
         return true;
     }
+    if (k == juce::KeyPress::returnKey && ses.learning >= 0) { act (aLearnKeep); repaint(); return true; }
     if (k == juce::KeyPress::escapeKey)
     {
         if (page != pMain) setPage (pMain);
@@ -2211,6 +2257,18 @@ void Screen::endEdit (bool keep)
 }
 
 // What the top bar shows that can change without a hand on it: RUN and the tempo, under an outside clock.
+String Screen::learnTitle() const
+{
+    if (ses.learning < 0) return {};
+    const auto& kn = ses.knobs[(size_t) ses.learning];
+    return "LEARNING " + String (ses.learning + 1) + (kn.name.isNotEmpty() ? " " + kn.name : String());
+}
+
+float Screen::learnKeysX() const
+{
+    return 23.0f + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 12.0f + std::ceil (tw (fLegend, learnTitle())) + 16.0f + 14.0f;
+}
+
 juce::uint64 Screen::barNow() const
 {
     const bool rec = recorder != nullptr && recorder->recording();
@@ -2218,7 +2276,8 @@ juce::uint64 Screen::barNow() const
     return (juce::uint64) (eng.isRunning() ? 1 : 0) | (juce::uint64) (eng.following() ? 2 : 0)
          | ((juce::uint64) (juce::uint32) std::lround (eng.target (cx::kTempo) * 14000.0f) << 2)
          | ((juce::uint64) (rec ? 1 + ((juce::int64) recorder->seconds() & 0xfffff) : 0) << 20)
-         | ((juce::uint64) (rec && recorder->lostSeconds() > 0.0 ? 1 : 0) << 41) | ((juce::uint64) (note ? 1 : 0) << 42);
+         | ((juce::uint64) (rec && recorder->lostSeconds() > 0.0 ? 1 : 0) << 41) | ((juce::uint64) (note ? 1 : 0) << 42)
+         | ((juce::uint64) (ses.learning + 1) << 43) | ((juce::uint64) (ses.learning >= 0 ? ses.learnMoves() : 0) << 48);      // (a knob being taught, and how many it has been shown)
 }
 
 // What the MASTER panel's meters and numbers show, to the pixel: it is drawn again only when this changes.

@@ -1224,6 +1224,55 @@ You: "works but needs some small fixes."
      (false; true says the scene with every page as before). `e16_bank_always` is no longer read:
      every `midi.json` written so far has it set to true, which would have kept the fault.
 
+## Twenty-sixth build (Nov 12): a knob tied to knobs
+
+You: "Is there a way to create macros that just adjust certain knobs on certain lanes? It would
+be nice, in addition to the snapshot macros, to eb able to create a macro that ties one knob to
+many."
+
+266. **There was a way, a roundabout one.** A snapshot knob moves only what differs among its
+     snapshots (22), so two snapshots that differ in three knobs make a knob that moves those
+     three. It costs two snapshots in the library for every such knob, and nothing says what
+     the knob moves until it is built.
+267. **LEARN ties a knob straight to knobs** *Mine, all of the how:*
+     - **by showing it, not by filling in a table.** LEARN in the macro designer puts the knob
+       at its full turn and brings the main screen up; whatever is then turned, on the screen
+       or on the E16, is what the full turn does, and KEEP ties it. The other way was a list of
+       targets each with a range to set, which is more to draw, more to click, and cannot be
+       done from the controller;
+     - **an amount for each knob, in its own direction**, measured as how far it was moved.
+       Applied as every snapshot knob's push is: an offset from the base scene, times DEPTH,
+       stacked with the others and held to the knob's travel. So it works from wherever the
+       rig stands and after any recall;
+     - **nothing changes in the sound at KEEP**: the scene under the knobs is put back as it
+       was and the knob stands at full, which comes to the same. Turned back, they go back;
+     - **LEARN again adds**: the knob goes to full first, so what is turned then is measured
+       from its full turn. A tied knob turned back to where zero has it is let go, which is
+       the only way to untie one knob short of CLEAR;
+     - **one moved and moved back is not tied** (under two thousandths of its travel);
+     - **the sixteen knobs are the same sixteen**: a knob holds snapshots, or ties, or both
+       (they add up). No second bank, no second page on the E16;
+     - **what it reaches is what a snapshot knob reaches** (a lane's twelve sound knobs, its
+       sends and EQ, the returns' knobs). An insert's knobs would need the tie to know which
+       effect it was made on, as 23 says of snapshots; not done.
+268. **On the screen** *Mine:* the top bar says `LEARNING`, the knob's number and name, with
+     KEEP and DROP beside it and a count of the knobs moved; each moved knob's ring is yellow
+     until KEEP or DROP, in 3D as well, and so is the knob being taught, which stands at full
+     and cannot be turned meanwhile. Return is KEEP. The designer's card says `TIED TO 5 KNOBS`
+     and lists them with how far each goes (`BASS: CUTOFF +50`, hundredths of its travel).
+     LEARN on the knob being taught reads KEEP.
+269. **Its press** *Mine:* a snapshot knob pressed recalls its nearest snapshot and goes home
+     (25). A knob with ties and no snapshots has none to land on, so it lands on the nearer end
+     of its own turn: past half way what it would push at full is where those knobs now stand,
+     short of it they go back, and either way the knob is at zero and can push again. *proposed:*
+     say if you would sooner it did nothing.
+270. **In the session file** a knob gains `links`: each tied knob's id and its amount
+     (`FORMAT.md`). A file with them opened by an older build keeps them, unread, and writes
+     them back. A link to a knob this build does not have is carried the same way.
+271. **Not done.** *Mine:* KEEP and DROP from the E16 (the knobs can be turned there; the two
+     keys are the screen's and the keyboard's); editing one tie's amount without learning it
+     again; an insert's knobs; a curve other than a straight line through the knob's turn.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -1299,6 +1348,8 @@ You: "works but needs some small fixes."
 - **The twenty-fourth build's wheel is checked against a made-up E16 that does and does not take
   the numbers it is sent.** Whether the real one sticks or leaps again is for your hands (259).
   The scenes and the script are unchanged: nothing needs loading onto the E16 again.
+- **LEARN (twenty-sixth) is checked on the session and on the drawn screens here**, not on the Mac
+  and not by ear: whether the pushes it makes are musical is yours to say.
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.

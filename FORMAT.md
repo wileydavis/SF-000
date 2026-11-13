@@ -49,10 +49,15 @@ The uid comes back the same (see below); `made` does not.
   "controls":  { "g.tempo": 0.51, ... },      what a snapshot leaves alone: tempo, glide, master, mutes
   "activeLane", "files", "space", "insertFiles":   the rig's own state (samples, impulse responses)
   "library":   [ snapshot, ... ],
-  "knobs":     [ { "name", "depth", "snaps": [ids] } x 16 ],
+  "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ] } x 16 ],
   "defs":      { "<print>": definition, ... }
 }
 ```
+
+A knob's `links` are the knobs it is tied to (LEARN): `c` is the knob's id as `values` has it
+(`bass.cutoff`), `d` how far the full turn takes it, as a share of that knob's whole travel from
+-1 to 1 (the knob's `depth` multiplies it). Absent on a knob tied to nothing. A link to an id
+this build does not have is written back as it was read.
 
 `libraryId` is sixteen hex digits made once for this library. It is also kept in
 `library-id.txt` beside the session, so it outlives a build that drops it from the file.

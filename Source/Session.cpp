@@ -227,9 +227,21 @@ void Session::userSet (int i, float v, bool sounding)
 
 void Session::turnSnapKnob (int k, float v)
 {
-    engine.set (cx::kSnap + k, v);
+    if (k != learning) engine.set (cx::kSnap + k, v);       // (the knob being taught stands at its full turn)
     applyMorph (glideBeats());
     touch();
+}
+
+bool Session::reaches (const Engine& e, int ctl) { return ctl >= 0 && ctl < kMorphEnd && e.control (ctl).morph; }
+
+bool Session::knobLive (int k) const
+{
+    if (k < 0 || k >= 16) return false;
+    const auto& kn = knobs[(size_t) k];
+    if (! kn.links.empty() || k == learning) return true;
+    int held = 0;
+    for (auto id : kn.snaps) if (findSnap (id) != nullptr) ++held;
+    return held >= 2;
 }
 
 void Session::applyMorph (double glide)
@@ -239,9 +251,12 @@ void Session::applyMorph (double glide)
     {
         const auto& kn = knobs[(size_t) k];
         const float v = engine.target (cx::kSnap + k);
+        if (v <= 0.0f) continue;
+        // the knobs it is tied to: each its own share of the turn
+        for (const auto& l : kn.links) if (reaches (engine, l.ctl)) offset[(size_t) l.ctl] += kn.depth * l.amount * v;
         std::vector<const Snapshot*> ss;
         for (auto id : kn.snaps) if (auto* s = findSnap (id)) ss.push_back (s);
-        if (ss.size() < 2 || v <= 0.0f) continue;
+        if (ss.size() < 2) continue;
         const float p = v * (float) (ss.size() - 1);
         const int a = juce::jmin ((int) ss.size() - 2, (int) p);
         const float f = p - (float) a;
@@ -263,10 +278,25 @@ void Session::applyMorph (double glide)
 
 void Session::pressSnapKnob (int k)
 {
+    if (k == learning) return;
     const auto& kn = knobs[(size_t) k];
     std::vector<juce::int64> ids;
     for (auto id : kn.snaps) if (findSnap (id) != nullptr) ids.push_back (id);
-    if (ids.empty()) return;
+    if (ids.empty())
+    {
+        // Tied to knobs and nothing else: there is no snapshot to land on, so it lands on the
+        // nearer end of its own turn. Past half way what it would push at full is where those
+        // knobs stand from now on; short of it they go back. Either way the knob goes home.
+        if (kn.links.empty()) return;
+        if (engine.target (cx::kSnap + k) >= 0.5f)
+            for (const auto& l : kn.links)
+                if (reaches (engine, l.ctl)) base[(size_t) l.ctl] = juce::jlimit (0.0f, 1.0f, base[(size_t) l.ctl] + kn.depth * l.amount);
+        engine.set (cx::kSnap + k, 0.0f);
+        applyMorph (glideBeats());
+        touch();
+        if (onChange) onChange();
+        return;
+    }
     const float v = engine.target (cx::kSnap + k);
     const auto id = ids[(size_t) juce::jlimit (0, (int) ids.size() - 1, (int) std::lround (v * (float) (ids.size() - 1)))];
     engine.set (cx::kSnap + k, 0.0f);
@@ -286,17 +316,89 @@ bool Session::recallFromKnob (int k, int n)
 std::vector<int> Session::knobScope (int k) const
 {
     std::vector<int> out;
+    const auto& kn = knobs[(size_t) k];
     std::vector<const Snapshot*> ss;
-    for (auto id : knobs[(size_t) k].snaps) if (auto* s = findSnap (id)) ss.push_back (s);
-    if (ss.size() < 2) return out;
+    for (auto id : kn.snaps) if (auto* s = findSnap (id)) ss.push_back (s);
     for (int i = 0; i < kMorphEnd; ++i)
     {
         if (! engine.control (i).morph) continue;
+        bool tied = false;
+        for (const auto& l : kn.links) tied = tied || l.ctl == i;
+        if (tied) { out.push_back (i); continue; }
+        if (ss.size() < 2) continue;
         float lo = 2.0f, hi = -2.0f; bool all = true;
         for (auto* s : ss) { const float v = s->values[(size_t) i]; if (v < 0.0f) { all = false; break; } lo = std::min (lo, v); hi = std::max (hi, v); }
         if (all && hi - lo > 1e-4f) out.push_back (i);
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------------------- LEARN
+// The knob goes to its full turn (what it already pushes, it pushes), and the scene under the
+// knobs is remembered. What the hand then does to a knob changes that scene, as it always does.
+void Session::learnBegin (int k)
+{
+    if (k < 0 || k >= 16) return;
+    if (learning >= 0) learnKeep();
+    auto& kn = knobs[(size_t) k];
+    if (kn.depth < 0.1f) kn.depth = 1.0f;           // (a knob with its depth at nothing can be shown nothing)
+    learnWas = engine.target (cx::kSnap + k);
+    engine.set (cx::kSnap + k, 1.0f);
+    applyMorph (glideBeats());
+    learnBase = base;
+    learning = k;
+    touch();
+    if (onChange) onChange();
+}
+
+bool Session::learnMoved (int ctl) const
+{
+    return learning >= 0 && reaches (engine, ctl) && ctl < (int) learnBase.size() && std::abs (base[(size_t) ctl] - learnBase[(size_t) ctl]) > 0.002f;
+}
+
+int Session::learnMoves() const
+{
+    int n = 0;
+    for (int i = 0; i < kMorphEnd; ++i) if (learnMoved (i)) ++n;
+    return n;
+}
+
+// Each knob that was moved is tied to the knob by how far it was moved (added to what tied it
+// before), and the scene under the knobs is put back as it was: with the knob at full the rig
+// sounds exactly as it does, and turned back those knobs go back to where they were.
+void Session::learnKeep()
+{
+    if (learning < 0) return;
+    auto& kn = knobs[(size_t) learning];
+    for (int i = 0; i < kMorphEnd; ++i)
+    {
+        if (! learnMoved (i)) continue;
+        const float d = (base[(size_t) i] - learnBase[(size_t) i]) / kn.depth;
+        auto it = std::find_if (kn.links.begin(), kn.links.end(), [i] (const MacroKnob::Link& l) { return l.ctl == i; });
+        if (it == kn.links.end()) kn.links.push_back ({ i, d }); else it->amount += d;
+        base[(size_t) i] = learnBase[(size_t) i];
+    }
+    for (auto& l : kn.links) l.amount = juce::jlimit (-1.0f, 1.0f, l.amount);
+    kn.links.erase (std::remove_if (kn.links.begin(), kn.links.end(), [] (const MacroKnob::Link& l) { return std::abs (l.amount) < 0.004f; }), kn.links.end());
+    std::sort (kn.links.begin(), kn.links.end(), [] (const MacroKnob::Link& a, const MacroKnob::Link& b) { return a.ctl < b.ctl; });
+    learning = -1;
+    learnBase.clear();
+    applyMorph (glideBeats());
+    touch();
+    if (onChange) onChange();
+}
+
+// The knobs moved since LEARN go back, and the knob to where it stood.
+void Session::learnDrop()
+{
+    if (learning < 0) return;
+    for (int i = 0; i < kMorphEnd; ++i) if (learnMoved (i)) base[(size_t) i] = learnBase[(size_t) i];
+    engine.set (cx::kSnap + learning, learnWas);
+    learning = -1;
+    learnBase.clear();
+    applyMorph (glideBeats());
+    touch();
+    if (onChange) onChange();
 }
 
 // ------------------------------------------------------------------------------------ snapshots
@@ -683,6 +785,7 @@ void Session::applySnapshot (const Snapshot& s, double glide)
         }
     }
     if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, withMotion (engine, { 2, 0, r }, s.retSetup[(size_t) r]));
+    if (learning >= 0) learnBase = base;            // (a recall while a knob is being taught: what it is shown is measured from the recalled scene)
     applyMorph (glide);
 }
 void Session::recall (juce::int64 id)
@@ -1082,6 +1185,20 @@ void Session::save()
         juce::Array<var> ids;
         for (auto id : k.snaps) ids.add (id);
         o->setProperty ("snaps", ids);
+        if (! k.links.empty() || k.linksKept.size() > 0)
+        {
+            // the knobs it is tied to: each by its id, and how far the full turn takes it (FORMAT.md)
+            juce::Array<var> ls;
+            for (const auto& l : k.links)
+            {
+                auto* lo = new juce::DynamicObject();
+                lo->setProperty ("c", engine.control (l.ctl).id);
+                lo->setProperty ("d", l.amount);
+                ls.add (var (lo));
+            }
+            for (auto& v : k.linksKept) ls.add (v);
+            o->setProperty ("links", ls);
+        }
         for (auto& m : k.more) o->setProperty (m.name, m.value);
         kn.add (var (o));
     }
@@ -1154,6 +1271,7 @@ bool Session::load()
         for (auto& p : d->getProperties()) defsKept.push_back ({ p.name.toString(), p.value });
     idInFile = root.getProperty ("libraryId", "").toString();
 
+    learning = -1; learnBase.clear();
     library.clear();
     if (auto* lib = root.getProperty ("library", var()).getArray())
         for (auto& v : *lib) library.push_back (snapFromVar (v, engine));
@@ -1166,10 +1284,20 @@ bool Session::load()
             knobs[(size_t) k].snaps.clear();
             if (auto* ids = o.getProperty ("snaps", var()).getArray())
                 for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) knobs[(size_t) k].snaps.push_back ((juce::int64) id);
+            knobs[(size_t) k].links.clear();
+            knobs[(size_t) k].linksKept.clear();
+            if (auto* ls = o.getProperty ("links", var()).getArray())
+                for (auto& l : *ls)
+                {
+                    const int i = engine.find (l.getProperty ("c", "").toString());
+                    const float d = juce::jlimit (-1.0f, 1.0f, (float) (double) l.getProperty ("d", 0.0));
+                    if (reaches (engine, i)) { if (std::abs (d) >= 0.004f) knobs[(size_t) k].links.push_back ({ i, d }); }
+                    else knobs[(size_t) k].linksKept.add (l);       // (a knob this build does not have, or cannot push: carried)
+                }
             knobs[(size_t) k].more.clear();
             if (auto* ko = o.getDynamicObject())
                 for (auto& p : ko->getProperties())
-                    if (p.name != juce::Identifier ("name") && p.name != juce::Identifier ("depth") && p.name != juce::Identifier ("snaps")) knobs[(size_t) k].more.set (p.name, p.value);
+                    if (p.name != juce::Identifier ("name") && p.name != juce::Identifier ("depth") && p.name != juce::Identifier ("snaps") && p.name != juce::Identifier ("links")) knobs[(size_t) k].more.set (p.name, p.value);
         }
     if (auto* other = root.getProperty ("controls", var()).getDynamicObject())
         for (auto& p : other->getProperties())

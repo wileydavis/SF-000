@@ -131,12 +131,15 @@ public:
     static bool testIsLanePanel (const TestHit& h, int lane) { return h.kind == hLanePanel && h.a == lane; }
     std::vector<int> testTags() const { std::vector<int> v; for (const auto& t : tagsUp) v.push_back (t); return v; }
     static bool testIsRun (const TestHit& h) { return h.kind == hAct && h.a == aRun; }
+    static bool testIsLearnKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aLearn : which == 1 ? aLearnKeep : aLearnDrop); }     // LEARN, KEEP, DROP
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
     static bool testIsConfigKey (const TestHit& h, int lane) { return h.kind == hConfig && h.a == 0 && h.b == lane * 8; }
     Page testPage() const { return page; }
     double testPrintMs() const { return printMs; }
     double testSendMs() const { return sendMs; }
     void testRenameKnob() { act (aRenameKnob); }
+    void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
+    void testPickKnob (int k) { selKnob = juce::jlimit (0, 15, k); }
     bool testEditing() const { return editor != nullptr; }
     bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
     void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
@@ -149,7 +152,7 @@ private:
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
                    hFront };        // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp };
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp };
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -296,6 +299,8 @@ private:
     juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
     juce::uint32 recNoteAt = 0;
     juce::uint64 barNow() const;
+    juce::String learnTitle() const;    // the top bar's plate while a knob is being taught
+    float learnKeysX() const;           // where KEEP stands in the top bar (DROP is 96 on)
     int lastStep = -1;
 
     struct Drag { int kind = 0, a = 0, b = 0; juce::Point<float> start; float v0 = 0, g0 = 0; int r0 = 1; bool moved = false; char axis = 0; juce::uint32 t0 = 0; bool fired = false; } drag;

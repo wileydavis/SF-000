@@ -109,6 +109,10 @@ page 12: SNAP, the sixteen snapshot knobs (violet), on channel 16. Press: recall
   E16 does this itself (Swap Destination) and keeps a value for each.
 - **A snapshot knob's press** recalls the snapshot the knob is nearest to as the new base, and the
   knob goes back to zero, as a double-click on the screen does.
+- **A snapshot knob tied to knobs** (LEARN, in the macro designer) is turned and pressed here like
+  the others. With no snapshot to land on, its press keeps what it has pushed if the knob is past
+  half way, and sends the knob home either way. While one is being taught, the lane knobs turned
+  on the E16 are what it learns; KEEP and DROP are on the screen (Return is KEEP).
 - **Rings.** A value changed on the screen, by a recall or by a snapshot knob is sent to its knob.
   While a knob travels (GLIDE), its ring is green and walks with the sound; turn it and the ring
   shows your hand for a moment. Knobs 1 and 16 keep their own rings (the script cannot tell which

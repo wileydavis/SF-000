@@ -55,7 +55,7 @@ First run:
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
-| MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order |
+| MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every pitched lane follows (parts are written in C) |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform |
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
@@ -331,6 +331,37 @@ whether or not the clock is running, and goes on until its key is held. Quitting
   pulled plug still opens, up to there. Past 4 GB a file is written as RF64.
 - MIDI and knob moves are not recorded yet.
 
+### A knob tied to knobs: LEARN
+
+A snapshot knob can be made without snapshots: one knob that moves the knobs you pick, on the
+lanes you pick, each as far as you show it.
+
+1. **MACROS**, pick one of the sixteen knobs, press **LEARN**. The main screen comes up with
+   `LEARNING` and the knob's number in the top bar, and that knob goes to its full turn.
+2. **Set the rig as that knob's full turn should leave it**: turn any lane's sound knobs, sends
+   and EQ, and the returns' knobs, on the screen or on the E16. Each one moved lights yellow, and
+   the bar counts them. One turned and turned back is not counted.
+3. **KEEP** (the yellow key in the top bar, or Return). Nothing changes in the sound: the knob is
+   at its full turn. Turn it back and those knobs go back to where they were, each by its own
+   share. **DROP** puts them back and ties nothing.
+
+- It pushes **from wherever those knobs stand**, like every snapshot knob: an offset from the
+  base scene, so it stacks with the others and works after any recall.
+- Up or down is whichever way you turned each knob: one knob can open the bass's filter while it
+  shortens the hats.
+- **LEARN again adds** to what the knob has. A tied knob turned back to where the knob's zero
+  has it is let go. CLEAR unties everything (and takes its snapshots off).
+- The macro designer lists what a knob is tied to and how far its full turn takes each, in
+  hundredths of that knob's travel (`BASS: CUTOFF +50`). DEPTH scales the lot, to twice.
+- A knob can hold snapshots and be tied to knobs too: the two add up.
+- **Pressed** (double-click; its knob's press on the E16), a knob that has no snapshot to land on
+  lands on the nearer end of its own turn: past half way what it has pushed stays and the knob
+  goes home, ready to push again; short of it the knobs go back.
+- While a knob is being taught it stands at its full turn and cannot be turned. A recall made
+  meanwhile starts the measuring again from the recalled scene.
+- It reaches what a snapshot knob reaches. Not an insert's knobs, the master, tempo or the
+  sequencer: moved while learning, those are ordinary changes and stay.
+
 ### Snapshots that come with it
 
 CLEAN SLATE (always first in the library) puts every knob where the rig starts it, with no steps
@@ -471,6 +502,7 @@ python3 tests/e16_scene_test.py                   # the scene's shape and addres
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
+build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
@@ -539,11 +571,13 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
 
 - MIDI: no MIDI learn for other controllers, no notes out. Following a clock takes its ticks,
   START, STOP and CONTINUE; a song position sent on its own is not read.
-- The E16: returns, inserts and the master are not on it; 7-bit knobs (128 places).
+- The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP
+  and DROP are on the screen and the keyboard only.
 - Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
 - The library: the sound map drawn on the screen, more finders (traits by name), suggestions timed
   to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
 - A snapshot knob moves sound knobs only: it does not cross between effects or models (a recall does).
+  A knob tied to knobs (LEARN) does not reach an insert's knobs, and its ties cannot be edited one by one.
   A model changed by hand in CONFIG changes at once. Nothing on the screen shows a crossing yet.
 - Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound.
   The session file is ready for it: `FORMAT.md`.
