@@ -86,17 +86,33 @@ public:
     int frontCount = 0;                 // (a number that is different after every one of those)
     void bringLane (int lane, int by);  // a lane to the front: it is the active lane
     void bring (Front, int by);         // an insert, the returns, the master, the sequencer strip, the snapshot knobs
-    // The modules in the order the screen has them, left to right and row by row: the stops of the
-    // pointer (a controller's wheel; TAB on the keyboard).
-    static constexpr int kStops = kLanes + 7;
-    static Front stopFront (int stop, int& lane);       // lane: the lane that stop is, or -1
-    int stopNow() const;                // the stop that is in front
-    void bringStop (int stop, int by);
-    juce::String stopName (int stop) const;
-    // The pointer: where a controller's wheel is, while it is in use (a stop; -1: not in use). What
-    // it rests on comes to the front; what it only passes over does not.
-    int pointer = -1;
-    void point (int stop);
+    // The stops of the pointer (a controller's wheel; TAB on the keyboard), in order: a lane, then
+    // those of its three inserts that have an effect in them, then the next lane and its inserts;
+    // after the lanes, the snapshot knobs, the returns, the master, the sequencer strip.
+    struct Stop
+    {
+        int kind = fLane, lane = 0, slot = 0;
+        bool operator== (const Stop& o) const { return kind == o.kind && ((kind != fLane && kind != fInsert) || lane == o.lane) && (kind != fInsert || slot == o.slot); }
+        bool operator!= (const Stop& o) const { return ! (*this == o); }
+    };
+    std::vector<Stop> stops() const;
+    Stop stopNow() const;               // what is in front, as a stop
+    static int stopIndex (const std::vector<Stop>&, Stop);     // where it is among them (an empty insert: its lane's place); -1: nowhere
+    void bringStop (Stop, int by);
+    juce::String stopName (Stop) const;
+    // Which panel of the screen a stop is: the lanes' eleven and the snapshot knobs' in the order
+    // the screen has them (0 to 11), the three inserts' (12 to 14), the returns', the master's,
+    // the sequencer strip's (15, 16, 17).
+    static constexpr int kPlaces = kLanes + 7;
+    static int placeOf (Stop);
+    // The pointer: where a controller's wheel is, while it is in use. Nothing comes to the front
+    // for it: that is for the press that ends it. While it is on a lane or one of a lane's
+    // inserts, the insert panels show that lane's.
+    bool pointing = false;
+    Stop pointAt;
+    void point (Stop);
+    void pointOff();
+    int shownLane() const               { return pointing && (pointAt.kind == fLane || pointAt.kind == fInsert) ? pointAt.lane : activeLane; }
 
     // ---- CONFIG: the setup panel, and what it is open on. The screen draws it; a controller can
     // open it and turn what is on it. It keeps to what is in front: a lane or an insert brought

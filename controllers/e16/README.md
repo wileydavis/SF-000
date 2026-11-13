@@ -45,24 +45,38 @@ and sends to the same port.
 - **Turn the E16 to a page yourself** and that module comes to the front on the screen. A lane's
   page makes it the active lane (its inserts, its sequencer strip). SF-000 does not answer that by
   turning the E16 again.
-- **The 3D stage's eye goes to what comes to the front**, as it goes to a knob under your hand
-  (M on the keyboard turns following off).
+- **An E16 plugged in, or there when SF-000 starts, is turned to the page of what is in front**,
+  so the two agree from the first knob. If the script is not running and the page is turned by
+  hand, the first knob turned there tells SF-000 which page it is.
+- **The 3D stage's eye goes to what is chosen and stays there**: a page turned to, the wheel's
+  second press. It moves on when something else is chosen, takes CONFIG in while CONFIG is open,
+  and goes home for Esc on the keyboard (M turns following off altogether).
 - **A page that comes up is told its values**, so a knob's first turn starts where the rig is.
 
 ## Knobs 13 and 14, on every page
 
-- **Knob 13 pressed is the pointer's wheel.** Its turns then go through the modules in the order
-  the screen has them, three clicks to the next: five lanes, the snapshot knobs, six lanes, the
-  three inserts, the returns, the master, the sequencer strip. On the screen a yellow frame is
-  round the one the pointer is on; the E16's display says its name, and knob 13 reads SEL.
-  - What the pointer **rests on** for a third of a second comes to the front, and the E16 turns
-    to its page. What it only **passes over** does not: so from KICK you can wheel straight to
-    INS 1 and it is KICK's first insert, not VOICE's.
-  - The wheel stays the wheel as the pages turn under it: keep turning.
-  - **Press it again, or turn any other knob**, and knob 13 is the page's own again. Six seconds
-    untouched ends it too. On a lane's page knob 13 is SEND A: the wheel never moves SEND A, and
-    its ring is put back when the wheel ends.
-  - Its ring, while it is the wheel, is where the pointer stands among the modules.
+- **Knob 13 is the pointer's wheel: press, turn, press.**
+  - **Press**: the pointer is up. On the screen a yellow frame is round the module in front and
+    the 3D eye goes home, so the whole rig is in view; the E16's display says `> ` and the
+    module's name, and knob 13 reads SEL.
+  - **Turn**: the frame moves, three clicks to the next (two when there are more than thirty-six
+    to go through). The order is a lane, then those of its three inserts that have an effect in
+    them (`3.1 DELAY`: lane 3's first insert), then the next lane and its inserts, and after
+    VOICE the snapshot knobs, the returns, the master and the sequencer strip. Nothing comes to
+    the front and the E16 stays on the page it is on, however long the pointer rests.
+  - **Press again**: what the pointer is on is chosen. It comes to the front, the E16 turns to
+    its page, the eye flies in to it and stays, and knob 13 is the page's own again.
+  - **Not choosing**: turn any other knob (it does what it always does) and the pointer is put
+    down where it was taken up. Eight seconds untouched does the same.
+  - On a lane's page knob 13 is SEND A: the wheel never moves SEND A, and its ring is put back
+    when the pointer is put down.
+  - Its ring, while it is the wheel, moves with the pointer. When the pointer is taken up SF-000
+    sets the knob to a number with room either side to reach both ends of the list (an E16 knob
+    stops at 0 and at 127), and after that leaves it alone unless it has got more than six
+    clicks from where it should be. Your clicks are counted from wherever the knob says it is:
+    a number the E16 did not take cannot throw the pointer.
+  - On the second scene's pages knob 13 is nothing else, and a turn takes the pointer up without
+    the first press.
 - **Knob 14 pressed is OPEN.** CONFIG for what is in front, and the E16 goes to CONFIG's page;
   pressed there (it reads SHUT) CONFIG shuts and the E16 is back on the module's page. The returns
   have two: DUB's, SPACE's, then shut. On the snapshot knobs OPEN is the library; in the library
@@ -212,15 +226,19 @@ the second scene's bottom row are pink.
 
 ## What only the E16 can say
 
+Tried on Wiley's E16: Bank Select (controller 32, the slot less one) with Program Change (the page
+less one) turns it to the scene and the page as sent.
+
 Read from the E16's manual for OS 1.3.0 (docs.oxiinstruments.com, MIDI In and Lua Scripting), not
 tried:
 
-- **That Bank Select and Program Change turn it as sent.** The manual says a Bank Select with a
-  Program Change changes the scene and the page, and (for Ableton) that it is the Sub, controller
-  32, that picks the scene. It does not say that the numbers start at nought; SF-000 sends the
-  slot less one and the page less one, as a Program Change usually counts. If every turn lands
-  one page or one scene out, that is the reason: say so (or set the slots in SETUP one higher)
-  and I will add the setting.
+- **Whether a knob takes a number sent to it while a hand is on it.** The wheel's knob is set
+  when the pointer is taken up (the hand has pressed it, and is not turning it yet), so that it
+  is never at the end of its travel with modules still to go, and set again at a pause if it is
+  found well away from there. SF-000 does not count on the number being taken (clicks are
+  counted from wherever the knob says it is), but a knob that never took it and stands at
+  nought has nothing left to send when turned back. If the pointer ever will not go back, that
+  is what happened: pause for a moment and it should free itself; say so if it does not.
 - **How quick a change of scene is.** A lane's page to one of its inserts is a change of scene.
   If it is slow or untidy in the middle of a set, the pages can be dealt out differently.
 - **Whether the E16 loads a scene again when it is told the scene it is already in.** SF-000 says

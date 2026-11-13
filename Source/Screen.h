@@ -125,7 +125,8 @@ public:
     std::vector<juce::Rectangle<int>> testMovingRects() const { std::vector<juce::Rectangle<int>> v; for (auto r : { masterRect, seqRect, cfgDisplay }) if (! r.isEmpty()) v.push_back (r.getSmallestIntegerContainer().expanded (2)); return v; }
     // for the tests: what the eye is following (empty: nothing), and the tags that are up (a control's index, or -1 INFO's box, -2 the line of words)
     juce::Rectangle<float> testFollowing() const { return followOn ? followBox : juce::Rectangle<float>(); }
-    juce::Rectangle<float> testStopRect (int stop) const { return stopRects[(size_t) stop]; }
+    juce::Rectangle<float> testStopRect (Session::Stop s) const { return stopRects[(size_t) Session::placeOf (s)]; }
+    bool testEyeHeld() const { return eyeHeld; }
     static bool testIsFront (const TestHit& h, int kind, int slot) { return (h.kind == hFront && h.a == kind && h.b == slot) || (kind == Session::fInsert && h.kind == hDropFx && h.a == 1 && h.b == slot) || (kind == Session::fReturns && h.kind == hDropFx && h.a == 2); }
     static bool testIsLanePanel (const TestHit& h, int lane) { return h.kind == hLanePanel && h.a == lane; }
     std::vector<int> testTags() const { std::vector<int> v; for (const auto& t : tagsUp) v.push_back (t); return v; }
@@ -320,11 +321,16 @@ private:
     bool cfgOpenSeen = false;
     // What is in front (the session's), as the screen has it: where each of the pointer's stops
     // stands as last drawn, the frame round the one the pointer is on, and the eye going to it.
-    std::array<R, Session::kStops> stopRects;
-    void stopAt (int stop, R drawn);
-    R frontBox() const;                 // what the eye goes to: the stop in front (or under the pointer), with CONFIG if it is open
+    std::array<R, Session::kPlaces> stopRects;
+    void stopAt (int place, R drawn);
+    R frontBox() const;                 // what the eye holds: the module in front, with CONFIG if it is open
     int frontSeen = 0;
-    bool frontHeld = false;
+    // The eye stays on what was last chosen (by a key or a controller) until something else is, or
+    // CONFIG is opened or shut, or the pointer is taken up (it goes home, to show every module),
+    // or Esc, V, M or a hand on the view lets it go.
+    bool eyeHeld = false, heldBefore = false, wasPointing = false;
+    juce::uint32 knobAt = 0;            // when a knob under a hand (or a snapshot's sweep) last had the eye
+    bool knobHas = false;
     float cfgT = 0.0f;
     int cfgScroll = 0, cfgAge = 0;
     std::vector<Engine::SetupParam> cfgParams;

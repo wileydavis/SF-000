@@ -276,15 +276,15 @@ float Screen::title (G& g, float x, float y, const String& s, bool inFront)
 // round while CONFIG is open, and a panel can be drawn twice, part of it at each edge).
 void Screen::stopAt (int stop, R drawn)
 {
-    if (! collect || stop < 0 || stop >= Session::kStops) return;
+    if (! collect || stop < 0 || stop >= Session::kPlaces) return;
     auto& at = stopRects[(size_t) stop];
     if (drawn.getWidth() * drawn.getHeight() > at.getWidth() * at.getHeight()) at = drawn;
 }
 
 Screen::R Screen::frontBox() const
 {
-    R box = stopRects[(size_t) juce::jlimit (0, Session::kStops - 1, ses.pointer >= 0 ? ses.pointer : ses.stopNow())];
-    if (cfgOpen && ses.pointer < 0 && ! cfgRect.isEmpty()) box = box.isEmpty() ? cfgRect : box.getUnion (cfgRect);
+    R box = stopRects[(size_t) Session::placeOf (ses.stopNow())];
+    if (cfgOpen && ! cfgRect.isEmpty()) box = box.isEmpty() ? cfgRect : box.getUnion (cfgRect);
     return box.isEmpty() ? box : box.expanded (10.0f).getIntersection (R (0, 0, kW, kH));
 }
 
@@ -858,11 +858,12 @@ void Screen::drawMain (G& g)
     }
     drawSequencer (g, R (23, 980, 1682, 110));
     // the pointer (a controller's wheel): a frame round the module it is on
-    if (ses.pointer >= 0)
-        if (const R pr = stopRects[(size_t) juce::jmin (ses.pointer, Session::kStops - 1)]; ! pr.isEmpty() && vis (g, pr))
+    if (ses.pointing)
+        if (const R pr = stopRects[(size_t) Session::placeOf (ses.pointAt)]; ! pr.isEmpty() && vis (g, pr))
         {
-            g.setColour (col::yellow);
-            g.drawRect (pr.reduced (1.0f), 3.0f);
+            // (read from the whole rig's distance: the eye is home while it moves)
+            g.setColour (col::black);  g.drawRect (pr.expanded (1.0f), 12.0f);
+            g.setColour (col::yellow); g.drawRect (pr.reduced (1.0f), 8.0f);
         }
     if (cfgT > 0.001f && (collect || vis (g, cfgR)))
     {
@@ -1238,7 +1239,7 @@ void Screen::drawInsert (G& g, int slot, R r)
 {
     if (off (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
-    const int l = ses.activeLane, t = eng.insertType (l, slot);
+    const int l = ses.shownLane(), t = eng.insertType (l, slot);       // (the active lane's; while the pointer is on a lane or its inserts, that lane's)
     stopAt (12 + slot, r.translated (shift, 0.0f).getIntersection (rowsClip));
     hit (r, hDropFx, 1, slot);
     panel (g, r, col::putty);
@@ -1813,6 +1814,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
     {
         // the view is unlocked and the hand is off the controls (or the right button is down): it moves the eye
         eyeDrag = e.mods.isRightButtonDown() || e.mods.isShiftDown() ? 2 : 1;
+        eyeHeld = false;
         if (stage != nullptr) stage->lookAt (nullptr);
         return;
     }
@@ -1854,7 +1856,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouse (p, cfgDisplay, true);
             ses.touch();
             break;
-        case hInsHead:  ses.stepInsert (ses.activeLane, h->a); cfgStale = true; break;
+        case hInsHead:  ses.stepInsert (ses.shownLane(), h->a); cfgStale = true; break;
         case hPageSel:  ses.page = h->a; break;
         case hStep:
         {
@@ -2067,7 +2069,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         eyePose.view = stage != nullptr && stage->home().view >= 0 ? (stage->home().view + 1) % 3 : 1;
         eyePose.turn = eyePose.view == 2 ? -30.0f : 0.0f; eyePose.tilt = eyePose.view == 0 ? 89.9f : eyePose.view == 1 ? 56.0f : 31.0f;
         if (stage != nullptr) { stage->lookAt (nullptr); stage->setHome (eyePose, true); }
-        followOn = false;
+        followOn = false; eyeHeld = false;
         say (eyePose.view == 0 ? "FROM ABOVE" : eyePose.view == 1 ? "THE PLAYER'S VIEW" : "FROM THE CORNER");
         if (onLook) onLook();
         return true;
@@ -2081,7 +2083,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     }
     if (wantThree && (k.getTextCharacter() == 'm' || k.getTextCharacter() == 'M')) {
         eyeFollow = ! eyeFollow;
-        if (! eyeFollow && stage != nullptr) { followOn = false; stage->lookAt (nullptr); }
+        if (! eyeFollow && stage != nullptr) { followOn = false; eyeHeld = false; stage->lookAt (nullptr); }
         say (eyeFollow ? "THE EYE FOLLOWS THE CONTROLLER" : "THE EYE STAYS HOME");
         if (onLook) onLook();
         return true;
@@ -2091,6 +2093,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         if (page != pMain) setPage (pMain);
         else if (cfgOpen && loadOpen) { loadOpen = false; repaint(); }
         else if (cfgOpen) { cfgOpen = false; repaint(); }
+        else if (three && eyeHeld) eyeHeld = false;                    // (the eye goes home)
         else if (onLeaveFullScreen) onLeaveFullScreen();
         return true;
     }
@@ -2118,7 +2121,9 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     // before). C: CONFIG for what is in front, and shut again.
     if (k.getKeyCode() == juce::KeyPress::tabKey && page == pMain)
     {
-        ses.bringStop (juce::jlimit (0, Session::kStops - 1, ses.stopNow() + (k.getModifiers().isShiftDown() ? -1 : 1)), 1);
+        const auto all = ses.stops();
+        const int at = juce::jmax (0, Session::stopIndex (all, ses.stopNow()));
+        ses.bringStop (all[(size_t) juce::jlimit (0, (int) all.size() - 1, at + (k.getModifiers().isShiftDown() ? -1 : 1))], 1);
         repaint();
         return true;
     }
@@ -2356,33 +2361,38 @@ void Screen::followMoves()
         if (by == 1 && recent) direct.push_back (h.r);
         else if (travelling) swept.push_back (h.r);
     }
-    // something brought to the front from a controller or the keyboard (a page turned to, the
-    // pointer's wheel, TAB, CONFIG opened): the eye goes to it as it goes to a knob under a hand.
-    // (Not for the mouse: the hand is already there.)
-    if (ses.frontCount != frontSeen) { frontSeen = ses.frontCount; frontHeld = ses.frontBy != 0; }
+    // Something chosen from a controller or the keyboard (a page turned to, the wheel's second
+    // press, TAB, CONFIG opened or shut): the eye goes to it and stays. (Not for the mouse: the
+    // hand is already there. But a module the mouse brings to the front while the eye is held
+    // is what it holds from then on.) While the pointer is up the eye is home, to show every
+    // module; put down with nothing chosen, it goes back to what it held.
+    if (ses.frontCount != frontSeen) { frontSeen = ses.frontCount; if (ses.frontBy != 0) { eyeHeld = true; heldBefore = true; } }
+    if (ses.pointing != wasPointing)
+    {
+        wasPointing = ses.pointing;
+        if (ses.pointing) { heldBefore = eyeHeld; eyeHeld = false; } else eyeHeld = heldBefore;
+    }
     // several moving together with no hand on them: a snapshot. One or two under a hand on the controller: that module.
     const auto& use = swept.size() >= 3 ? swept : direct;
-    if (eyeFollow && use.empty() && frontHeld && eyeDrag == 0 && page == pMain && now - ses.frontAt < 2200u)
+    const bool free = eyeFollow && eyeDrag == 0;
+    R want;                                     // where the eye should be (empty: home)
+    if (free && ! use.empty() && ! ses.pointing)
     {
-        // (looked at afresh each time: the rows travel for a moment after CONFIG opens or the lane changes)
-        if (const R box = frontBox(); ! box.isEmpty() && (! followOn || box != followBox)) { followBox = box; followOn = true; stage->lookAt (&box); }
-        followAt = ses.frontAt;
-    }
-    else if (eyeFollow && ! use.empty() && eyeDrag == 0)
-    {
-        frontHeld = false;
         R box;
         for (const auto& r : use) { const R p = panelOf (r.getCentre()); box = box.isEmpty() ? p : box.getUnion (p); }
         box = box.expanded (10.0f).getIntersection (R (0, 0, kW, kH));
-        followAt = now;
-        if (box.getWidth() * box.getHeight() > 0.7f * kW * kH && stage->home().view >= 0)
-        {
-            // nearly all of it, and home is a view of all of it: home
-            if (followOn) { followOn = false; stage->lookAt (nullptr); }
-        }
-        else if (! followOn || box != followBox) { followBox = box; followOn = true; stage->lookAt (&box); }
+        // (nearly all of it, and home is a view of all of it: home)
+        knobHas = ! (box.getWidth() * box.getHeight() > 0.7f * kW * kH && stage->home().view >= 0);
+        knobAt = now; followAt = now;
+        if (knobHas) want = box;
+        // (a knob of what the eye already holds: it stays as it is, CONFIG and all)
+        if (eyeHeld && page == pMain) if (const R held = frontBox(); ! held.isEmpty() && held.contains (box)) { want = held; knobHas = true; }
     }
-    else if (followOn && (! eyeFollow || eyeDrag != 0 || now - followAt > 2200u)) { followOn = false; stage->lookAt (nullptr); }
+    else if (free && ! ses.pointing && knobAt != 0 && now - knobAt <= 2200u) { if (knobHas) want = followBox; }       // (it stays a moment after the hand stops)
+    else if (free && eyeHeld && ! ses.pointing && page == pMain) { knobAt = 0; want = frontBox(); }       // (looked at afresh each time: the rows travel for a moment after CONFIG opens or the lane changes)
+    else knobAt = 0;
+    if (want.isEmpty()) { if (followOn) { followOn = false; stage->lookAt (nullptr); } }
+    else if (! followOn || want != followBox) { followBox = want; followOn = true; stage->lookAt (&want); }
 }
 
 void Screen::say (const String& words) { sayText = words; sayAt = juce::Time::getMillisecondCounter(); }

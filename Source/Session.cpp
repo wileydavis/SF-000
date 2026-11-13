@@ -81,60 +81,84 @@ void Session::bring (Front f, int by)
     if (onChange) onChange();
 }
 
-// Row by row as the screen has them: five lanes and the snapshot knobs; six lanes; the three
-// inserts, the returns, the master; the sequencer strip.
-Session::Front Session::stopFront (int stop, int& lane)
+// A lane, then its inserts that have an effect in them, then the next lane; then the snapshot
+// knobs, the returns, the master, the sequencer strip.
+std::vector<Session::Stop> Session::stops() const
 {
-    static_assert (kLanes == 11, "the stops are laid out for eleven lanes");
-    stop = juce::jlimit (0, kStops - 1, stop);
-    lane = stop < 5 ? stop : stop > 5 && stop < 12 ? stop - 1 : -1;
-    if (lane >= 0) return { fLane, 0 };
-    if (stop == 5) return { fSnap, 0 };
-    if (stop < 15) return { fInsert, stop - 12 };
-    return { stop == 15 ? fReturns : stop == 16 ? fMaster : fSeq, 0 };
+    std::vector<Stop> v;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        v.push_back ({ fLane, l, 0 });
+        for (int sl = 0; sl < kSlots; ++sl) if (engine.insertType (l, sl) >= 0) v.push_back ({ fInsert, l, sl });
+    }
+    for (int k : { (int) fSnap, (int) fReturns, (int) fMaster, (int) fSeq }) v.push_back ({ k, 0, 0 });
+    return v;
 }
 
-int Session::stopNow() const
+Session::Stop Session::stopNow() const
 {
-    switch (front.kind)
+    return { front.kind, front.kind == fLane || front.kind == fInsert ? activeLane : 0, front.kind == fInsert ? front.slot : 0 };
+}
+
+int Session::stopIndex (const std::vector<Stop>& v, Stop s)
+{
+    for (size_t i = 0; i < v.size(); ++i) if (v[i] == s) return (int) i;
+    if (s.kind == fInsert) return stopIndex (v, { fLane, s.lane, 0 });      // (an insert with nothing in it is no stop: its lane is)
+    return -1;
+}
+
+int Session::placeOf (Stop s)
+{
+    static_assert (kLanes == 11, "the panels are laid out for eleven lanes");
+    switch (s.kind)
     {
-        case fLane:    return activeLane < 5 ? activeLane : activeLane + 1;
+        case fLane:    return s.lane < 5 ? s.lane : s.lane + 1;
         case fSnap:    return 5;
-        case fInsert:  return 12 + front.slot;
+        case fInsert:  return 12 + juce::jlimit (0, kSlots - 1, s.slot);
         case fReturns: return 15;
         case fMaster:  return 16;
         default:       return 17;
     }
 }
 
-void Session::bringStop (int stop, int by)
+void Session::bringStop (Stop s, int by)
 {
-    int lane = -1;
-    const Front f = stopFront (stop, lane);
-    if (lane >= 0) bringLane (lane, by); else bring (f, by);
+    if (s.kind == fLane) { bringLane (s.lane, by); return; }
+    if (s.kind == fInsert)
+        if (const int l = juce::jlimit (0, kLanes - 1, s.lane); l != activeLane)
+        {
+            // (an insert of another lane: that lane is the active one, and its insert is what is in front)
+            activeLane = l; selStep = -1; page = 0;
+            if (cfgOpen && cfg.kind != 2) cfg.lane = l;
+            touch();
+        }
+    bring ({ s.kind, s.slot }, by);
 }
 
-juce::String Session::stopName (int stop) const
+juce::String Session::stopName (Stop s) const
 {
-    int lane = -1;
-    const Front f = stopFront (stop, lane);
-    if (lane >= 0) return juce::String (lane + 1) + " " + lanes()[(size_t) lane].name;
-    switch (f.kind)
+    switch (s.kind)
     {
+        case fLane:    return juce::String (s.lane + 1) + " " + lanes()[(size_t) juce::jlimit (0, kLanes - 1, s.lane)].name;
+        case fInsert:  { const int t = engine.insertType (s.lane, s.slot); return juce::String (s.lane + 1) + "." + juce::String (s.slot + 1) + " " + (t >= 0 ? effects()[(size_t) t].name : "EMPTY"); }
         case fSnap:    return "SNAPSHOTS";
-        case fInsert:  { const int t = engine.insertType (activeLane, f.slot); return juce::String (activeLane + 1) + "." + juce::String (f.slot + 1) + " " + (t >= 0 ? effects()[(size_t) t].name : "EMPTY"); }
         case fReturns: return "RETURNS";
         case fMaster:  return "MASTER";
         default:       return "SEQUENCER";
     }
 }
 
-void Session::point (int stop)
+void Session::point (Stop s)
 {
-    stop = stop < 0 ? -1 : juce::jmin (stop, kStops - 1);
-    if (stop == pointer) return;
-    pointer = stop;
-    frontAt = juce::Time::getMillisecondCounter(); frontBy = 2; ++frontCount;
+    if (pointing && pointAt == s) return;
+    pointing = true; pointAt = s;
+    if (onChange) onChange();
+}
+
+void Session::pointOff()
+{
+    if (! pointing) return;
+    pointing = false;
     if (onChange) onChange();
 }
 

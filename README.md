@@ -61,7 +61,7 @@ First run:
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
-| **Tab** | the next module to the front, in the order the screen has them: five lanes, the snapshot knobs, six lanes, the three inserts, the returns, the master, the sequencer strip. Shift-Tab: the one before |
+| **Tab** | the next module to the front: a lane, then those of its three inserts that have an effect in them, then the next lane and its inserts, and after the last lane the snapshot knobs, the returns, the master and the sequencer strip. Shift-Tab: the one before |
 | **C** (the keyboard's) | CONFIG for what is in front, and shut again (the returns: DUB's, then SPACE's, then shut) |
 | **I** | INFO: every control MIDI reaches shows its CC number, a panel its channel, and a control the mouse rests on says what it does. **I** again puts it away |
 | **H** | PHONES: headphones on the one pair of outputs. While a cue plays, the set is in the left ear and the cue in the right (see The library, below) |
@@ -132,12 +132,17 @@ key's gate and anything else that follows the hand is wherever the pointer is on
   (over a knob the wheel still turns the knob). **K** again locks it where you put it. The view,
   the lock and M are kept between runs.
 - **The eye follows the controller** (**M** turns this off and on). A knob turned on the E16: the
-  eye flies in to that knob's module, and goes home a couple of seconds after the hand stops. A
-  module brought to the front does the same: a page turned to on the E16, the pointer's wheel
-  (the eye goes along with it from module to module), Tab, CONFIG opened by OPEN or by C (the eye
-  holds CONFIG and the module beside it). Not a click of the mouse: the hand is already there. A
-  snapshot recalled or pushed, when three or more knobs are moving together: it flies out to
-  hold all of them. What never moves it: notes, the clock, the tempo under an outside clock,
+  eye flies in to that knob's module, and goes home a couple of seconds after the hand stops.
+- **A module chosen from the controller or the keyboard holds the eye.** The wheel's second
+  press, a page turned to on the E16, Tab: the eye flies in to that module and stays there
+  until another is chosen (it goes to that one) or CONFIG is opened or shut by OPEN or by C (it
+  holds CONFIG and the module beside it for as long as CONFIG is open, the module alone after).
+  While the wheel's pointer is up the eye is home, so that every module can be seen to choose
+  from; put down with nothing chosen, it goes back to what it held. **Esc** lets it go home, and
+  so do V, M and a drag of the view. A click of the mouse does not fetch it (the hand is
+  already there), but a module clicked to the front while the eye is held is what it holds.
+- A snapshot recalled or pushed, when three or more knobs are moving together: the eye flies out
+  to hold all of them. What never moves it: notes, the clock, the tempo under an outside clock,
   keys (mute, solo, THROW, FREEZE), and any knob moved by a message from another port than the
   E16's, which is a sequencer playing it. Those knobs' lights move; the view stays.
 - **A moved knob has a tag beside it**: its name, the reading the engine gives (hertz, decibels,
@@ -430,16 +435,20 @@ Open SETUP to see what is connected. Nothing needs choosing.
   (a click on its plate, Tab) or open CONFIG or the library, and the E16 turns to that page, in
   whichever scene it is. Turn the E16 to a page yourself and that module comes to the front on
   the screen (a lane's page makes it the active lane, as before); SF-000 never answers that by
-  turning the E16 again.
-- **Knob 13 is the pointer's wheel, on every page.** Press it (on the snapshot page and the
-  library's map, where a press recalls, hold it for half a second) and its turns go through the
-  modules in the order the screen has them, three clicks to the next: a yellow frame is round the
-  one the pointer is on, and the eye goes with it in 3D. What the pointer rests on for a third of
-  a second comes to the front and the E16 turns to its page; what it only passes over does not,
-  so the inserts it comes to are still those of the lane it set out from. The wheel stays the
-  wheel as the pages turn under it. Press it again, or turn any other knob, and knob 13 is the
-  page's own again (SEND A on a lane's page: the wheel never moves it). Six seconds untouched
-  ends it too.
+  turning the E16 again. An E16 plugged in, or there when SF-000 starts, is turned to the page of
+  what is in front.
+- **Knob 13 pressed is the pointer's wheel, on every page: press, turn, press.** The first press
+  (on the snapshot page and the library's map, where a press recalls, hold it for half a second)
+  takes the pointer up: a yellow frame round the module in front, and the 3D eye home so the
+  whole rig is in view. Its turns move the frame, three clicks to the next: a lane, then those
+  of its inserts that have an effect in them (the three insert panels show the lane the pointer
+  is on), then the next lane and its inserts, and after the last lane the snapshot knobs, the
+  returns, the master and the sequencer strip. The E16's display names what it is on (`> 3.1
+  DELAY`). Nothing comes to the front and the E16 stays on its page while you turn, however long
+  the pointer rests. **The second press chooses**: that module comes to the front, the E16 turns
+  to its page, the eye flies in and stays, and knob 13 is the page's own again. Turn any other
+  knob instead and the pointer is put down with nothing chosen; eight seconds untouched does the
+  same. On a lane's page knob 13 is SEND A: the wheel never moves SEND A.
 - **Knob 14 pressed is OPEN** (held, on those same two pages): CONFIG for what is in front, and
   on CONFIG's pages SHUT. On the snapshot knobs it opens the library; in the library it is the
   way back. On CONFIG's pages knobs 15 and 16 pressed are the page before and the next.
@@ -461,7 +470,7 @@ python3 tests/e16_scene_test.py                   # the scene's shape and addres
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
-build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (stops 0 to 17, in the screen's order)
+build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```

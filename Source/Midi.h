@@ -55,11 +55,13 @@ namespace e16
     constexpr int cfgAt (int number)    { return number >= kCfgCc && number < kCfgCc + 20 ? number - kCfgCc : number >= 102 && number < 102 + kCfgPer * kCfgPages - 20 ? 20 + number - 102 : -1; }
     enum { pgMap = 1, pgFind = 2, pgIns = 3, pgRet = 6, pgMaster = 7, pgSeq = 8, pgCfg = 9 };
     // On channel 16, from every page of both scenes. The wheel: knob 13 pressed (on the snapshot
-    // page and the map, where a press recalls: held for half a second) makes it the pointer, and
-    // its turns then go through the modules in the order the screen has them, whatever page it
-    // is on; what the pointer rests on comes to the front and the E16 turns to its page. Pressed
-    // again, or another knob turned, and it is the page's own knob again. (On a page where knob
-    // 13 is nothing else it sends CC 31 and is always the wheel.) OPEN: knob 14 pressed (held,
+    // page and the map, where a press recalls: held for half a second) takes up the pointer, and
+    // its turns then go through the modules (a lane, its inserts that have an effect in them,
+    // the next lane ...; then the snapshot knobs, the returns, the master, the sequencer strip).
+    // Nothing comes to the front and the E16 stays on its page until the knob is pressed again:
+    // that is the choice, and the E16 turns to what was chosen. Another knob turned, or eight
+    // seconds untouched, puts the pointer down with nothing chosen. (On a page where knob 13 is
+    // nothing else it sends CC 31, and a turn takes the pointer up.) OPEN: knob 14 pressed (held,
     // on those two pages) opens CONFIG on what is in front and shuts it; on the snapshot knobs it
     // opens the library, and in the library shuts it.
     constexpr int kWheelCc = 31, kWheelKey = 33, kOpenKey = 34, kCfgPrevKey = 35, kCfgNextKey = 36;
@@ -163,13 +165,17 @@ private:
     Where whereNow() const;
     void pageCame (int said, juce::uint32 now); // the E16 said which page is up
     static juce::String pageName (Where);
-    void arrived (Where);                       // it is on that page now (it said so, or was sent there): the page is told its values and names again
+    void arrived (Where, bool heard = false);                       // it is on that page now (it said so, or was sent there): the page is told its values and names again
     void turnTo (Where, juce::uint32 now);
     void openPressed();
     void wheelStart (juce::uint32 now);
     void wheelEnd();
+    void wheelChoose();
     void serviceWheel (juce::uint32 now);
     void placeWheel (juce::uint32 now);
+    struct WheelKnob { int ch = 0, num = -1, slot = -1; bool lib = false, own = false; };
+    bool wheelKnob (WheelKnob&) const;                              // knob 13 of the page that is up: its address, and whose it is when the pointer is down
+    static int wheelPer (int stops) { return stops > 36 ? 2 : 3; }  // clicks to the next (a knob has 128 numbers, and room is kept at both ends)
     struct PageKnob { int channel = 0, number = -1, want = -1; };
     std::array<PageKnob, 16> pageKnobs (int page);
     void feedPage (juce::uint32 now);
@@ -201,12 +207,22 @@ private:
     std::atomic<int> pageUp { 0 }, glideIn { -1 };
     // the pointer's wheel, OPEN, and CONFIG's pages
     std::atomic<bool> wheelMode { false }, otherTurned { false };
-    std::atomic<int> wheelTurn { 0 }, wheelSent { -1 }, wheelKeys { 0 }, openKeys { 0 }, cfgStep { 0 };
+    std::atomic<int> wheelTurn { 0 }, wheelKeys { 0 }, openKeys { 0 }, cfgStep { 0 };
+    // The wheel's knob: the address it last sent from, the number it last said, and the number it
+    // was last told to stand at (-1: none since it last spoke). A turn is counted from whichever
+    // of the two it is nearer to, so it counts right whether or not the E16 took the number told.
+    std::atomic<int> wheelAddr { -1 }, wheelHeard { -1 }, wheelTold { -1 };
+    void wheelIn (int address, int val, juce::uint32 nowMs);
+    std::atomic<int> pageHeard { 0 };                           // the page a knob just turned on the E16 is on (as the script would say it)
     std::atomic<juce::uint32> wheelHeardAt { 0 };
     std::array<std::atomic<juce::uint32>, 4> heldSince;         // knobs 13 and 14 of the snapshot page, then of the map: down since (0: up)
     std::array<std::atomic<bool>, 4> heldFired;
     int wheelRest = 0;                                          // message thread from here
-    juce::uint32 wheelBusyAt = 0;
+    juce::uint32 wheelBusyAt = 0, wheelPlacedAt = 0;
+    int wheelTries = 0, wheelIdx = 0;
+    bool wheelFresh = false;                                    // the pointer has just been taken up: the knob has not been set for it yet
+    std::vector<Session::Stop> wheelList;                       // the stops as they stood when the pointer was taken up
+    bool syncWanted = true;                                     // an E16 newly here is turned to what is in front
     Where e16At, whereWas, asked;
     bool whereKnown = false, cfgWasOpen = false;
     juce::uint32 turnedAt = 0;
@@ -221,6 +237,7 @@ private:
     std::array<std::atomic<juce::uint32>, 16> bHeardAt;
     void bMark (int knob, int val, juce::uint32 nowMs) { bSent[(size_t) knob] = val; bHeardAt[(size_t) knob] = nowMs; }
     int bWait = 0;
+    bool bHeard = false;
     std::atomic<int> laneNow { 0 };                             // the active lane, for the inputs' threads
     std::atomic<int> lenIn { -1 };
     std::array<std::atomic<int>, 4> genIn;

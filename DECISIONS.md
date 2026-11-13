@@ -1073,7 +1073,9 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      E16 goes to the map; MACROS, to the snapshot knobs' page.
 247. **Knob 13 is the pointer's wheel** (you: "one of the knobs on every page act as a scroll wheel
      to activate modules or effects when pressed (similar to how the glide adjust works, knob just
-     has to be consistent)"). *Mine, all of the how:*
+     has to be consistent)"). *Mine, all of the how.* (The order, what chooses and how it ends
+     are yours since 255 to 257; what is left of this list is knob 13, who keeps the wheel, the
+     three clicks and the held press.)
      - knob 13, the bottom left corner, which on a lane's page is SEND A;
      - **SF-000 keeps the wheel, not the E16.** GLIDE's press swaps the knob on the E16, page by
        page. Done that way the wheel would have stopped being the wheel the moment the page
@@ -1097,7 +1099,8 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      front, and shut; the returns' two in turn; the library from the snapshot knobs, and back. On
      CONFIG's pages 15 and 16 pressed are the page before and the next.
 249. **The eye goes to what comes to the front** (you: "the follow cam zoomed in on an active
-     module when it's activated in the same way it does when it gets midi input"). A page turned
+     module when it's activated in the same way it does when it gets midi input"). (It stays
+     there now, and is home while the wheel turns: 258.) A page turned
      to on the E16, the wheel (the eye goes along with the pointer), Tab, CONFIG opened by OPEN or
      C (it holds CONFIG and the module beside it). Home after a couple of seconds, as before; M
      turns it off. *Mine:* **not for a click of the mouse**, for the reason a knob dragged with
@@ -1121,7 +1124,71 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      and a CC's 128 steps is more than a beat a minute a click); M and S are not on it either. Say
      if you want any of them. Making a new snapshot from part of one (238) still waits.
 
-## Not verified
+## Twenty-fourth build (Nov 12): the wheel, after its first try on the E16
+
+You: "works but needs some small fixes."
+
+255. **Press, turn, press** (you: "a press enters scroll mode and a press again makes the
+     selection end exits scroll mode"). The first press takes the pointer up and nothing else.
+     Turning moves it. The second press chooses what it is on: that comes to the front, the E16
+     turns to its page, and knob 13 is the page's own again. Resting on a module no longer
+     chooses it (247's third of a second is gone), and **nothing changes while you turn**: not
+     the module in front, not the active lane, not the E16's page. *Mine:* the three insert
+     panels show the inserts of the lane the pointer is on (they would otherwise show the active
+     lane's while the frame was on another lane's insert); OPEN pressed with the pointer up
+     chooses first, then opens.
+256. **The order** (you: "module, then inserts 123 if they exist, then next module, then module
+     inserts 123, etc."). A lane, then those of its three inserts that have an effect in them,
+     then the next lane and its inserts. An empty insert is not a stop. *Mine:* after the last
+     lane come the snapshot knobs, the returns, the master and the sequencer strip (they have to
+     be somewhere, and the end is where they are on the screen); the E16's display names an
+     insert by its lane and place (`3.1 DELAY`); Tab and Shift-Tab go through the same list;
+     three clicks to the next, two when the list is longer than thirty-six (every lane with all
+     three inserts filled is forty-eight, and a knob has 128 numbers).
+257. **Putting it down without choosing** *Mine:* any other knob turned (which does what it
+     always does), or eight seconds untouched (it was six, and ended the wheel on a module; now
+     it leaves everything as it was, so a pause to think costs nothing but two seconds more).
+258. **The eye** (you: "the zoom should stay zoomed out and only zoom in once a selection has been
+     made, and then it shoud stay zoomed in until anoer selection or configure is toggled").
+     While the pointer is up the eye is home. A module chosen (the second press, a page turned
+     to on the E16, Tab) fetches it, and it stays: no going home after two seconds. Another
+     module chosen moves it there; CONFIG opened by OPEN or C widens it to hold CONFIG and the
+     module, and CONFIG shut brings it back to the module. *Mine:* **Esc lets it go home** (after
+     it has shut CONFIG, if CONFIG is open), and so do V, M and a drag of the view: there was no
+     other way out of a held view but choosing something else. The pointer put down with nothing
+     chosen sends it back to what it held. A knob of another module turned on a controller
+     still takes it there for two seconds, then it is back. A click of the mouse still does not
+     fetch it from home, but a module clicked to the front while it is held is what it holds
+     (it would otherwise be held on a module that is no longer the one in front). The pointer's
+     frame is three times as heavy, to be read from the whole rig's distance.
+259. **"Sometimes the select knob gets stuck and can't go backwars" and "pressing the button takes
+     it back to kick".** One cause, as far as I can tell without the E16 in front of me: an E16
+     knob sends a number from 0 to 127 and stops at each end, and the wheel was working out
+     where the pointer was from numbers it had *told* the knob to stand at. In the last build
+     the pointer coming to rest turned the E16's page, so the knob under the hand became another
+     page's knob 13, standing wherever that page had left it: at nought (a SEND A turned right
+     down) it has nothing to send when turned back, and when its number was far from the one
+     SF-000 believed, the next message read as a leap to the far end of the list, KICK. Three
+     changes: the E16 no longer changes page while the wheel turns; the knob's clicks are counted
+     from the nearer of what it last said and what it was last told, and a leap of more than
+     sixteen is taken as the knob having been somewhere else, not as a turn; and when the pointer
+     is taken up the knob is set to a number with clicks enough either side to reach both ends
+     of the list (one number to a click, the list in the middle of the knob's travel), then left
+     alone unless it is found more than six clicks from where it should be, so that a number is
+     hardly ever sent to a knob while it is being turned. A made-up knob walked back and forth
+     under the wheel ends where its clicks put it, whether it takes its number or never does.
+     *Not verified:* this is reasoned from your two reports and the manual. If it still sticks,
+     the place to look is whether the E16 takes a number sent to a knob with a hand on it
+     (`controllers/e16/README.md` says what that would look like).
+260. **An E16 newly here is turned to the page of what is in front** *Mine:* until it said a page
+     or was sent to one, SF-000 did not know where it was, and the first thing chosen on the
+     screen could leave the two apart. And **a knob turned on a page SF-000 did not know it was
+     on** (the script not loaded, or not saying) puts it on that page, with nothing brought to
+     the front and nothing sent to the knob under the hand.
+261. **The E16's answer to being sent somewhere chooses nothing.** It says the page it arrived at,
+     and that used to count as a page turned to from the controller, which under 258 would have
+     fetched the eye for every click of the mouse.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -1182,16 +1249,17 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
   JUCE's source, not reproduced; the fix uses a call I can only run on Linux), the SETUP window's
   new row, the icon in the Dock (the Finder may show the old one until it forgets it), and how
   MOTION sounds on each wave, which is the suite's code unchanged but has not been heard here.
-- **The twenty-third build has not met an E16, and nothing here can stand in for one.** SF-000's
-  side is checked with made-up messages and the script against a mock written from the E16's
-  manual for OS 1.3.0. What only the hardware can say: that Bank Select (controller 32, the slot
-  less one) and Program Change (the page less one) on channel 12 turn it to the scene and page
-  meant; how quick a change of scene is (a lane to one of its inserts is one); whether it loads
-  a scene again when told the one it is in; whether the script hears of a page turned that way
-  (it looks every 50 ms in case not); the press of a knob whose turn is off; the names SF-000
-  sends showing in place of the scene's. `controllers/e16/README.md` ends with what to do about
-  each. Both scenes must be loaded onto the E16 again (SF-FX in SF-LIB's place), and its PC
-  Receive Channel set to 12.
+- **The twenty-third build has met your E16 once** ("works but needs some small fixes"): Bank
+  Select (controller 32, the slot less one) and Program Change (the page less one) on channel 12
+  turn it to the scene and page meant. Still only checked with made-up messages and a mock
+  written from the E16's manual for OS 1.3.0: how quick a change of scene is (a lane to one of
+  its inserts is one); whether it loads a scene again when told the one it is in; whether the
+  script hears of a page turned that way (it looks every 50 ms in case not); the press of a knob
+  whose turn is off; the names SF-000 sends showing in place of the scene's.
+  `controllers/e16/README.md` ends with what to do about each.
+- **The twenty-fourth build's wheel is checked against a made-up E16 that does and does not take
+  the numbers it is sent.** Whether the real one sticks or leaps again is for your hands (259).
+  The scenes and the script are unchanged: nothing needs loading onto the E16 again.
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.
