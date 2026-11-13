@@ -603,7 +603,7 @@ Midi::~Midi()
     e16Out = nullptr;
 }
 
-juce::File Midi::file() { return Session::stateFile().getSiblingFile ("midi.json"); }
+juce::File Midi::file() { return Session::homeFile ("midi.json"); }      // (this machine's own: not in the library folder)
 
 void Midi::load()
 {

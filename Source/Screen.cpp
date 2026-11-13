@@ -1114,7 +1114,7 @@ void Screen::openLoad()
 {
     const bool fx = cfg.kind != 0;
     juce::File start = fx ? loadFxDir : loadLaneDir;
-    if (! start.isDirectory() && cfg.kind == 0) start = juce::File (eng.laneFile (cfg.lane)).getParentDirectory();
+    if (! start.isDirectory() && cfg.kind == 0) start = juce::File (ses.cameFrom (eng.laneFile (cfg.lane))).getParentDirectory();      // (where the lane's sample came from, not the library's copy of it)
     if (! start.isDirectory()) start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
     if (! start.isDirectory()) start = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     loadDir = start; loadScroll = 0; loadOpen = true;

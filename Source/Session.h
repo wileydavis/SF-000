@@ -263,6 +263,45 @@ public:
     bool load();
     static juce::File stateFile();
     static inline juce::File stateFileForTests;     // tests: the session is kept here instead
+    // ---- where things are kept
+    // home: this machine's own settings (audio, MIDI, the look, the online address), always in
+    // the system's place for them. library: all the instrument needs to be itself, in one folder
+    // (session.json, clips/, samples/, backups/): home, unless another folder is chosen in SETUP.
+    // recordings: where takes go, Music/SF-000 unless chosen. What is chosen is kept in
+    // places.json, in home. A library chosen is taken up at the next start (settlePlaces, before
+    // anything is read): if there is no library in that folder yet, the one in use is copied
+    // there. A chosen library that is not there at a start (its drive is not plugged in) is left
+    // chosen, and home is used that time.
+    struct Places { juce::String library, next, recordings; bool libraryMissing = false; juce::String note; };
+    static juce::File homeDir();
+    static juce::File homeFile (const juce::String& name)   { return homeDir().getChildFile (name); }
+    static juce::File libraryDir();
+    static juce::File recordingsDir();
+    static juce::File usualRecordingsDir();
+    static const Places& places();
+    static void settlePlaces (bool again = false);      // once a run (again: a test's next "start")
+    static juce::File libraryFolderFor (const juce::File& chosen);   // the folder a choice comes to: itself if a library is in it (or it is empty, or named SF-000), else SF-000 inside it
+    static juce::String chooseLibrary (const juce::File&);           // what will happen, to say
+    static juce::String chooseRecordings (const juce::File&);
+    static inline juce::File homeForTests;                           // tests: home is here (and places.json is read)
+    // ---- the samples. Every audio file the rig is given (a lane's sample or phrase, an insert's
+    // or SPACE's impulse responses) is copied into samples/ in the library folder, and read from
+    // there: the library holds what it needs, and goes with its folder. A copy keeps its name, in
+    // a folder named for what is in it (samples/3fa9c2e1/kick.wav), so the same file given twice
+    // is kept once. The session lists the copies it made and where each came from. In the file a
+    // copy is written from the library folder down; a path written whole, by a build from before
+    // this, is read as its copy if one was made from it. A copy that nothing holds any more (no
+    // lane, insert or return, no snapshot) is removed: when a snapshot is deleted, and a moment
+    // after another sample is given. It is deleted if the file it came from is still where it
+    // was (nothing is lost), and put in the Trash if not.
+    struct Sample { juce::String file, from, hash; juce::int64 bytes = 0; };
+    std::vector<Sample> samples;
+    juce::String keepSample (const juce::String& path);         // the copy's full path (the path itself if it is one already, or cannot be copied)
+    static juce::String refOf (const juce::String& fullPath);   // as written in the file
+    juce::String pathOf (const juce::String& ref) const;        // what is written, as a full path
+    juce::String cameFrom (const juce::String& fullPath) const; // where a copy was copied from (itself, if it is not one)
+    int sweepSamples();                                         // copies nothing holds: gone. How many
+    bool samplesMoved = false;
     static void backUp();               // a dated copy of the session as it was found, the last twenty kept
     std::function<void()> onChange;
     // ---- for the online library (the message thread, or with its lock)

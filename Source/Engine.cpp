@@ -921,10 +921,11 @@ bool Engine::loadFiles (Target t, const juce::StringArray& paths)
     stateMoved();
     // unreadable (macOS has not been allowed into that folder yet, or the file is gone): say so
     juce::StringArray ok;
-    for (auto& path : paths)
+    for (auto& given : paths)
     {
-        juce::FileInputStream in { juce::File (path) };
-        if (in.openedOk()) ok.add (path);
+        juce::FileInputStream in { juce::File (given) };
+        if (! in.openedOk()) continue;
+        ok.add (keepFile ? keepFile (given) : given);          // (the library's own copy of it, where one is kept)
     }
     if (ok.isEmpty()) return false;
     if (t.kind == 2 && t.slot == 1) setSpaceModel (1);

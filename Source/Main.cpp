@@ -543,12 +543,13 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             const auto withA = s.take();
             s.finishTakes (true);
             e.loadFile (10, fb);
-            const bool holdsB = e.laneFile (10) == fb.getFullPathName();
+            auto holds = [&] (const char* stem) { return juce::File (e.laneFile (10)).getFileName().startsWith (juce::String (stem) + "."); };      // (the library's own copy of it)
+            const bool holdsB = holds ("b");
             s.recall (withA);
-            const bool holdsA = e.laneFile (10) == fa.getFullPathName() && s.findSnap (withA)->laneFiles[10] == fa.getFullPathName();
+            const bool holdsA = holds ("a") && s.findSnap (withA)->laneFiles[10] == e.laneFile (10);
             e.loadFile (10, fb);
             s.recall (4243);                                                    // (one from before samples were kept... it says the lane had none: left as it is)
-            const bool left = e.laneFile (10) == fb.getFullPathName();
+            const bool left = holds ("b");
             const bool files = loaded && holdsB && holdsA && left;
             std::printf ("  %s: a snapshot keeps the sample a lane held: taken with one phrase on VOICE and recalled with another there, the first is back; a snapshot that names none leaves the lane's as it is\n", files ? "ok  " : "FAIL");
             if (! files) { std::printf ("    (loaded %d B %d A %d left %d)\n", (int) loaded, (int) holdsB, (int) holdsA, (int) left); ++bad; }
@@ -563,7 +564,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             Engine e2; Session s2 (e2, true);
             const Snapshot* r = s2.findSnap (keptId);
             const Snapshot* withFile = nullptr;
-            for (auto& x : s2.library) if (x.hasFiles && x.laneFiles[10].endsWith ("a.wav")) withFile = &x;
+            for (auto& x : s2.library) if (x.hasFiles && juce::File (x.laneFiles[10]).getFileName().startsWith ("a.") && juce::File (x.laneFiles[10]).existsAsFile()) withFile = &x;
             const bool ok = r != nullptr && r->hasPlayed && r->heardOn[5] && r->heard[5].length == 32 && lit (r->heard[5]) == "1 4 7 11 17 23 27" && r->heard[5].steps[6].note == 3 && std::abs (r->heard[5].steps[26].gate - 2.8f) < 0.06f
                          && r->heard[1].steps[14].ratchet == 2 && r->seqMuted[5] && ! r->seqMuted[0] && r->heardNotes[5].size() == 7 && withFile != nullptr && ! s2.recallNotes;
             std::printf ("  %s: saved and opened again, a snapshot still holds what was playing (the bass's steps and its notes as they came, the ratchet, the mutes) and the sample; NOTES is as it was left\n", ok ? "ok  " : "FAIL");
@@ -571,6 +572,181 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             s2.waitForClips();
         }
         Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+    }
+
+    // The library holds its own samples: every file given to the rig is copied into samples/, kept
+    // once, written from the library folder down, and gone with the last snapshot that held it. A
+    // session from before is brought over. The library's folder and the takes' folder can be chosen.
+    {
+        using juce::var;
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_places_test");
+        tmp.deleteRecursively();
+        const auto home = tmp.getChildFile ("home"), outside = tmp.getChildFile ("my sounds");
+        home.createDirectory(); outside.createDirectory();
+        Session::homeForTests = home;
+        Session::settlePlaces (true);
+        auto wavOf = [&] (const char* name, double hz)
+        {
+            const auto f = outside.getChildFile (name);
+            juce::AudioBuffer<float> tone (1, 12000);
+            for (int i = 0; i < 12000; ++i) tone.setSample (0, i, 0.4f * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / 48000.0));
+            juce::WavAudioFormat wav;
+            if (auto out = std::unique_ptr<juce::FileOutputStream> (f.createOutputStream()))
+                if (auto* w = wav.createWriterFor (out.get(), 48000.0, 1, 16, {}, 0)) { out.release(); std::unique_ptr<juce::AudioFormatWriter> wr (w); wr->writeFromAudioSampleBuffer (tone, 0, 12000); }
+            return f;
+        };
+        const auto fa = wavOf ("Vox A.wav", 220.0), fb = wavOf ("vox_b.wav", 330.0), fc = wavOf ("c.wav", 440.0);
+        auto copies = [] (const juce::File& lib) { return lib.getChildFile ("samples").findChildFiles (juce::File::findFiles, true, "*.wav").size(); };
+        auto copyOf = [] (Engine& e, const char* stem) { const juce::File f (e.laneFile (10)); return f.getFileName() == juce::String (stem) + ".wav" && f.existsAsFile() ? f : juce::File(); };
+        juce::int64 idA = 0, idB = 0;
+        {
+            Engine e; e.prepare (48000.0, 256);
+            Session s (e, true);
+            const bool loaded = e.loadFile (10, fa);
+            const juce::File ca = copyOf (e, "Vox A");
+            e.loadFile (10, fa);                                                // the same file again: kept once
+            const bool once = copies (home) == 1 && s.samples.size() == 1 && s.samples[0].from == fa.getFullPathName() && s.samples[0].hash.length() == 64;
+            const juce::String in = ca.getParentDirectory().getFileName();          // (a folder named for what is in the file)
+            const bool inLibrary = ca.isAChildOf (home.getChildFile ("samples")) && fa.existsAsFile() && ca.getSize() == fa.getSize() && ca.getFileName() == "Vox A.wav"
+                                && in.length() == 8 && in.containsOnly ("0123456789abcdef") && s.samples[0].hash.startsWith (in);
+            idA = s.take(); s.finishTakes (true);
+            e.loadFile (10, fb);
+            idB = s.take(); s.finishTakes (true);
+            s.waitForClips(); s.save();
+            const juce::String text = Session::stateFile().loadFileAsString();
+            const var root = juce::JSON::parse (text);
+            const var lib = root["library"];
+            juce::String written;
+            for (int i = 0; i < lib.size(); ++i) if ((juce::int64) lib[i]["id"] == idA) written = lib[i]["laneFiles"][10].toString();
+            const bool relative = written == "samples/" + in + "/Vox A.wav" && root["files"][10].toString().startsWith ("samples/") && root["files"][10].toString().endsWith ("/vox_b.wav") && Session::stateFile().getParentDirectory() == home;
+            // the files they came from can go: the library has its own
+            fa.deleteFile(); fb.deleteFile();
+            s.recall (idA);
+            const bool fromCopy = copyOf (e, "Vox A") == ca;
+            const bool ok = loaded && once && inLibrary && relative && fromCopy;
+            const bool knows = s.cameFrom (ca.getFullPathName()) == outside.getChildFile ("Vox A.wav").getFullPathName();
+            std::printf ("  %s: a sample given to a lane is copied into the library's samples folder under its own name, once however often it is given; the file it came from is untouched and can go; the session writes it from the library folder down (%s) and knows where it came from\n",
+                         ok && knows ? "ok  " : "FAIL", written.toRawUTF8());
+            if (! knows) ++bad;
+            if (! ok) { std::printf ("    (loaded %d once %d in the library %d relative %d from the copy %d)\n", (int) loaded, (int) once, (int) inLibrary, (int) relative, (int) fromCopy); ++bad; }
+
+            // deleting a snapshot takes with it the samples only it held
+            s.recall (idB);                                                     // (the rig holds B now; A is the first snapshot's alone)
+            const juce::File cb = copyOf (e, "vox_b");
+            s.remove (idA);
+            const bool aGone = ! ca.existsAsFile() && ! ca.getParentDirectory().exists() && cb.existsAsFile() && s.samples.size() == 1;
+            s.remove (idB);                                                     // B is still on the lane: it stays
+            const bool bStays = cb.existsAsFile() && s.samples.size() == 1;
+            e.loadFile (10, fc);                                                // the lane is given another; B is nobody's now, and goes at the next clearing
+            const bool bWaits = cb.existsAsFile();
+            const int swept = s.sweepSamples();
+            const bool bGone = swept == 1 && ! cb.existsAsFile() && copies (home) == 1 && s.samples.size() == 1;
+            const bool gone = aGone && bStays && bWaits && bGone;
+            std::printf ("  %s: deleting a snapshot removes the sample only it held, and leaves one a lane or another snapshot still holds; a sample nothing holds any more goes at the next clearing\n", gone ? "ok  " : "FAIL");
+            if (! gone) { std::printf ("    (A gone %d, B stays %d, waits %d, gone %d: %d swept, %d copies)\n", (int) aGone, (int) bStays, (int) bWaits, (int) bGone, swept, copies (home)); ++bad; }
+            idA = s.take(); s.finishTakes (true);                               // one snapshot, holding C
+            s.waitForClips();
+        }
+
+        // A session from before copies were kept: its files written whole, wherever they were
+        {
+            auto text = Session::stateFile().loadFileAsString();
+            var root = juce::JSON::parse (text);
+            const juce::String rel = root["files"][10].toString(), whole = fc.getFullPathName();
+            text = text.replace ("\"" + rel + "\"", juce::JSON::toString (var (whole)));
+            var old = juce::JSON::parse (text);
+            old.getDynamicObject()->removeProperty ("samples");
+            Session::stateFile().replaceWithText (juce::JSON::toString (old));
+            home.getChildFile ("samples").deleteRecursively();
+            const bool wasWhole = rel.startsWith ("samples/") && rel.endsWith ("/c.wav") && ! text.contains (rel) && copies (home) == 0;
+            juce::String kept;
+            {
+                Engine e; e.prepare (48000.0, 256);
+                Session s (e, true);
+                const juce::File cc = copyOf (e, "c");
+                const bool brought = cc.isAChildOf (home.getChildFile ("samples")) && s.samples.size() == 1 && s.samples[0].from == whole && s.findSnap (idA) != nullptr && s.findSnap (idA)->laneFiles[10] == cc.getFullPathName();
+                s.save();
+                const var again = juce::JSON::parse (Session::stateFile());
+                for (int i = 0; i < again["library"].size(); ++i) if ((juce::int64) again["library"][i]["id"] == idA) kept = again["library"][i]["laneFiles"][10].toString();
+                fc.deleteFile();                                                // and now the file it came from goes
+                const bool ok = wasWhole && brought && kept == whole && again["files"][10].toString() == rel;
+                std::printf ("  %s: a session from before copies were kept, its samples written by whole path: opened, each is copied in and read from the copy; the snapshot is written back as it was (%s) and found by where it came from\n", ok ? "ok  " : "FAIL", kept.toRawUTF8());
+                if (! ok) { std::printf ("    (was whole %d brought %d kept as it was %d)\n", (int) wasWhole, (int) brought, (int) (kept == whole)); ++bad; }
+            }
+            {
+                Engine e; e.prepare (48000.0, 256);
+                Session s (e, true);
+                e.loadFile (10, wavOf ("d.wav", 550.0));
+                s.recall (idA);
+                const bool still = copyOf (e, "c") != juce::File();
+                std::printf ("  %s: with that file gone from where it was, the old snapshot still brings its sample back, from the library's copy\n", still ? "ok  " : "FAIL");
+                if (! still) ++bad;
+                s.waitForClips();
+            }
+        }
+
+        // The library is moved: chosen in SETUP, taken up at the next start, copied if there is none there
+        {
+            const auto drive = tmp.getChildFile ("drive");
+            drive.createDirectory();
+            drive.getChildFile ("something else.txt").replaceWithText ("not SF-000's");
+            const juce::String msg = Session::chooseLibrary (drive);
+            const bool pending = Session::places().next.isNotEmpty() && Session::libraryDir() == home && msg.contains ("COPIED");
+            Session::settlePlaces (true);                                       // the next start
+            const auto lib = drive.getChildFile ("SF-000");
+            const bool moved = Session::libraryDir() == lib && lib.getChildFile ("session.json").existsAsFile() && copies (lib) >= 1 && Session::places().note.contains ("NOW IN") && Session::places().next.isEmpty()
+                            && home.getChildFile ("session.json").existsAsFile();
+            home.getChildFile ("session.json").deleteFile(); home.getChildFile ("samples").deleteRecursively(); home.getChildFile ("clips").deleteRecursively();      // the old one is cleared away
+            bool plays = false;
+            {
+                Engine e; e.prepare (48000.0, 256);
+                Session s (e, true);
+                e.loadFile (10, wavOf ("e.wav", 660.0));
+                s.recall (idA);
+                const juce::File cc = copyOf (e, "c");
+                plays = cc.isAChildOf (lib.getChildFile ("samples")) && s.findSnap (idA) != nullptr;
+                s.waitForClips();
+            }
+            // the settings that are this machine's own stayed at home
+            const bool settingsHome = Session::homeFile ("places.json").existsAsFile() && Session::homeFile ("midi.json").getParentDirectory() == home && Online::setupFile().getParentDirectory() == home && Session::homeDir() != Session::libraryDir();
+            // its drive unplugged: it stays chosen, the one on this machine is used this time, and it says so
+            lib.moveFileTo (tmp.getChildFile ("unplugged"));
+            Session::settlePlaces (true);
+            const bool missing = Session::places().libraryMissing && Session::libraryDir() == home && Session::places().note.contains ("NOT THERE") && Session::places().library == lib.getFullPathName();
+            tmp.getChildFile ("unplugged").moveFileTo (lib);
+            Session::settlePlaces (true);
+            const bool backAgain = ! Session::places().libraryMissing && Session::libraryDir() == lib;
+            const bool ok = pending && moved && plays && settingsHome && missing && backAgain;
+            std::printf ("  %s: a folder chosen for the library is taken up at the next start: the library is copied into a folder of its own there (SF-000, the folder not being empty) and plays from it with the old one gone; this machine's settings stay where they were; with the drive unplugged SF-000 says so and uses the one on this machine, and takes the chosen one up again when it is back\n", ok ? "ok  " : "FAIL");
+            if (! ok) { std::printf ("    (pending %d moved %d plays %d settings %d missing %d back %d: %s)\n", (int) pending, (int) moved, (int) plays, (int) settingsHome, (int) missing, (int) backAgain, msg.toRawUTF8()); ++bad; }
+        }
+
+        // Takes go to the folder set for them, or to the usual one when that is not there
+        {
+            Engine e; e.prepare (48000.0, 128);
+            const auto takes = tmp.getChildFile ("takes"), usual = tmp.getChildFile ("usual");
+            takes.createDirectory();
+            const juce::String none = Session::chooseRecordings (takes);
+            const bool set = none.isEmpty() && Session::recordingsDir() == takes;
+            juce::AudioBuffer<float> b (2, 128);
+            Recorder rec (e);
+            rec.usual = usual; rec.root = Session::recordingsDir();
+            const juce::String e1 = rec.start();
+            for (int i = 0; i < 40; ++i) e.render (b);
+            const bool there = e1.isEmpty() && rec.folder().getParentDirectory() == takes;
+            rec.stop();
+            takes.deleteRecursively();                                          // its drive goes
+            const juce::String e2 = rec.start();
+            for (int i = 0; i < 40; ++i) e.render (b);
+            const bool fell = e2.isEmpty() && rec.folder().getParentDirectory() == usual && rec.note().contains ("NOT THERE");
+            rec.stop();
+            const bool ok = set && there && fell;
+            std::printf ("  %s: takes go to the folder chosen for them; with that folder gone a take is still made, in the usual place, and says so\n", ok ? "ok  " : "FAIL");
+            if (! ok) { std::printf ("    (set %d there %d fell back %d: %s %s)\n", (int) set, (int) there, (int) fell, e1.toRawUTF8(), e2.toRawUTF8()); ++bad; }
+        }
+        Session::homeForTests = juce::File();
+        Session::settlePlaces (true);
         tmp.deleteRecursively();
     }
 
@@ -5219,7 +5395,28 @@ public:
         addAndMakeVisible (fullScreen);
         fullScreen.setButtonText ("FULL SCREEN");
         fullScreen.onClick = [this] { if (onFull) onFull(); };
-        setSize (520, 882);
+        // ---- files: where the library is, and where takes go
+        for (auto* l : { &libLabel, &libPath, &recLabel, &recPath, &filesNote })
+        {
+            addAndMakeVisible (*l);
+            l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
+            l->setFont (juce::FontOptions (l == &filesNote ? 12.0f : 14.0f));
+            l->setMinimumHorizontalScale (0.6f);
+        }
+        filesNote.setJustificationType (juce::Justification::topLeft);
+        libLabel.setText ("LIBRARY", juce::dontSendNotification);
+        recLabel.setText ("TAKES", juce::dontSendNotification);
+        for (auto* b : { &libChoose, &recChoose })
+        {
+            addAndMakeVisible (*b);
+            b->setButtonText ("CHOOSE");
+            b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4D514E));
+            b->setColour (juce::TextButton::textColourOffId, juce::Colour (0xffE8E5E1));
+        }
+        libChoose.onClick = [this] { choose (true); };
+        recChoose.onClick = [this] { choose (false); };
+        showFiles();
+        setSize (520, 882 + 98);
         show();
         startTimerHz (4);
     }
@@ -5255,6 +5452,21 @@ public:
         knobLabel.setBounds (row.removeFromLeft (110));
         lead.setBounds (row); trim.setBounds (row);
         r.removeFromTop (2);
+        {
+            // FILES, at the foot: the library's folder, the takes' folder, and a line about them
+            auto files = r.removeFromBottom (98);
+            files.removeFromTop (8);
+            auto row1 = files.removeFromTop (26);
+            libLabel.setBounds (row1.removeFromLeft (110));
+            libChoose.setBounds (row1.removeFromRight (86)); row1.removeFromRight (6);
+            libPath.setBounds (row1);
+            files.removeFromTop (4);
+            auto row2 = files.removeFromTop (26);
+            recLabel.setBounds (row2.removeFromLeft (110));
+            recChoose.setBounds (row2.removeFromRight (86)); row2.removeFromRight (6);
+            recPath.setBounds (row2);
+            filesNote.setBounds (files);
+        }
         auto look = r.removeFromBottom (96);
         late.setBounds (r);
         look.removeFromTop (8);
@@ -5345,6 +5557,43 @@ private:
     juce::Label lookLabel, glowLabel, hueLabel, brightLabel, pulseLabel;
     juce::Slider glowHue, glowBright, glowPulse;
     juce::TextButton fullScreen;
+    // FILES: the library's folder and the folder takes go to
+    juce::Label libLabel, libPath, recLabel, recPath, filesNote;
+    juce::TextButton libChoose, recChoose;
+    std::unique_ptr<juce::FileChooser> chooser;
+    juce::String libSaid;
+    void showFiles()
+    {
+        auto spoken = [] (const juce::File& f)
+        {
+            const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+            return f.isAChildOf (home) ? "~/" + f.getRelativePathFrom (home) : f.getFullPathName();
+        };
+        const auto& p = sf0::Session::places();
+        libPath.setText (spoken (sf0::Session::libraryDir()), juce::dontSendNotification);
+        const juce::File rec = sf0::Session::recordingsDir();
+        recPath.setText (spoken (rec) + (rec.isDirectory() || rec == sf0::Session::usualRecordingsDir() ? "" : "   (NOT THERE NOW)"), juce::dontSendNotification);
+        juce::String note = libSaid;
+        if (note.isEmpty() && p.next.isNotEmpty()) note = "FROM THE NEXT START THE LIBRARY IS IN " + (p.next == "(home)" ? spoken (sf0::Session::homeDir()) : p.next).toUpperCase() + ". QUIT AND OPEN SF-000 AGAIN.";
+        if (note.isEmpty() && p.libraryMissing) note = "THE LIBRARY FOLDER CHOSEN IS NOT THERE (" + p.library.toUpperCase() + "): USING THE ONE ON THIS COMPUTER THIS TIME.";
+        if (note.isEmpty()) note = "THE LIBRARY IS THE SESSION, THE SNAPSHOTS' CLIPS AND A COPY OF EVERY SAMPLE: ALL SF-000 NEEDS ON ANOTHER COMPUTER.";
+        filesNote.setText (note, juce::dontSendNotification);
+    }
+    void choose (bool library)
+    {
+        chooser = std::make_unique<juce::FileChooser> (library ? "The folder for SF-000's library" : "The folder SF-000's takes go to",
+                                                       library ? sf0::Session::libraryDir() : sf0::Session::recordingsDir());
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [this, library] (const juce::FileChooser& fc)
+        {
+            const juce::File f = fc.getResult();
+            if (f == juce::File()) return;
+            if (library) libSaid = sf0::Session::chooseLibrary (f);
+            else { libSaid = sf0::Session::chooseRecordings (f); if (onRecordings) onRecordings(); }
+            showFiles();
+        });
+    }
+public:
+    std::function<void()> onRecordings;         // the folder for takes was chosen
 };
 
 // What the profile makes of the rig in a few states: each snapshot it comes with, and some plain
@@ -5725,6 +5974,7 @@ public:
         if (args.contains ("--perf")) { setApplicationReturnValue (perf()); quit(); return; }
         if (args.contains ("--e16")) { const int i = args.indexOf ("--e16"); setApplicationReturnValue (writeScene (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("SF-000.oxie16"))); quit(); return; }
 
+        sf0::Session::settlePlaces();        // where the library is this time (a folder chosen in SETUP is taken up here)
         engine = std::make_unique<sf0::Engine>();
         session = std::make_unique<sf0::Session> (*engine);
         std::unique_ptr<juce::XmlElement> saved (juce::XmlDocument::parse (audioFile()));
@@ -5733,6 +5983,7 @@ public:
         devices.addAudioCallback (engine.get());
         midi = std::make_unique<sf0::Midi> (*engine, *session);
         recorder = std::make_unique<sf0::Recorder> (*engine);
+        recorder->root = sf0::Session::recordingsDir();
         recorder->stateAtStart = [this] { session->save(); return sf0::Session::stateFile(); };
         // ONLINE: snapshots go to the library on the web as they are taken (if it is lit and set up)
         online = std::make_unique<sf0::Online> (*session);
@@ -5820,6 +6071,10 @@ public:
         screen->grabKeyboardFocus();
         if (session->notSavingWhy.isNotEmpty())
             juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "NOTHING WILL BE SAVED THIS TIME", session->notSavingWhy);
+        // the library's folder: moved, or not found this time
+        if (const auto& p = sf0::Session::places(); p.note.isNotEmpty())
+            juce::AlertWindow::showMessageBoxAsync (p.libraryMissing ? juce::MessageBoxIconType::WarningIcon : juce::MessageBoxIconType::InfoIcon,
+                                                    p.note.upToFirstOccurrenceOf ("\n", false, false), p.note.fromFirstOccurrenceOf ("\n\n", false, false));
     }
 
     void shutdown() override
@@ -5846,8 +6101,9 @@ public:
     void systemRequestedQuit() override { quit(); }
 
 private:
-    static juce::File audioFile() { return sf0::Session::stateFile().getSiblingFile ("audio.xml"); }
-    static juce::File lookFile() { return sf0::Session::stateFile().getSiblingFile ("look.json"); }
+    // (this machine's own: with its settings, not in the library folder)
+    static juce::File audioFile() { return sf0::Session::homeFile ("audio.xml"); }
+    static juce::File lookFile() { return sf0::Session::homeFile ("look.json"); }
 
     void audioSetup()
     {
@@ -5860,6 +6116,7 @@ private:
             sel->onGlow = [screen] (float hue, float bright, float pulse) { screen->setGlow (hue, bright, pulse); if (screen->onLook) screen->onLook(); };
             sel->onFull = [screen] { if (screen->onFullScreen) screen->onFullScreen(); };
         }
+        sel->onRecordings = [this] { if (recorder != nullptr) recorder->root = sf0::Session::recordingsDir(); };       // (from the next take)
         juce::DialogWindow::LaunchOptions o;
         o.content.setOwned (sel);
         o.dialogTitle = "SF-000 SETUP";

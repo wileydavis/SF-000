@@ -49,11 +49,25 @@ The uid comes back the same (see below); `made` does not.
   "controls":  { "g.tempo": 0.51, ... },      what a snapshot leaves alone: tempo, glide, master, mutes
   "activeLane", "files", "space", "insertFiles":   the rig's own state (samples, impulse responses)
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
+  "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ] } x 16 ],
   "defs":      { "<print>": definition, ... }
 }
 ```
+
+**Audio files** (a lane's sample, an insert's or SPACE's impulse responses) are named in `files`,
+`space`, `insertFiles` and a snapshot's `insertFiles` and `laneFiles`. From the thirtieth build on,
+SF-000 copies every file it is given into `samples/` in the library folder (the folder
+`session.json` is in), and a path that does not start at the root is from that folder down, with
+forward slashes: `samples/3fa9c2e1/kick.wav`. The folder's name is the first eight hex digits of
+the file's SHA-256. A path that does start at the root was written by an earlier build: the file
+where it was then. `samples` lists the copies this library has made: `file` (from the library
+folder down), `from` (the whole path it was copied from), `sha256` (all of it) and `bytes`. A
+reader given a whole path looks for an entry whose `from` is that path and reads its `file`; only
+if there is none does it read the path itself. That is how a snapshot from before copies were
+kept, which is not rewritten (rule 3), still finds its sample once the original has gone. Two
+entries may name one `file` (the same audio given from two places).
 
 A knob's `links` are the knobs it is tied to (LEARN): `c` is the knob's id as `values` has it
 (`bass.cutoff`), `d` how far the full turn takes it, as a share of that knob's whole travel from
@@ -102,7 +116,8 @@ this build does not have is written back as it was read.
   loop, each `[beat in the loop, length in beats, MIDI note, velocity]` (a length of -1: still
   held when it was taken). A lane with no entry had none. Absent altogether: a snapshot from
   before this was kept, whose lanes are taken to have been playing their own `patterns`.
-- **`laneFiles`** (twenty-ninth build on): the audio file each lane held, by path, in
+- **`laneFiles`** (twenty-ninth build on): the audio file each lane held, by path (see Audio
+  files, above, for what a path is), in
   `made.slots` order. Absent: not known.
 - **`ext`** is where another tool writes: `ext.<toolname>`. Tags, an embedding, a place on a map,
   a note. It is the one place a tool may change in a snapshot that already exists.

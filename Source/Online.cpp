@@ -8,7 +8,7 @@ namespace sf0
 using juce::String;
 using juce::var;
 
-juce::File Online::setupFile()  { return Session::stateFile().getSiblingFile ("online.json"); }
+juce::File Online::setupFile()  { return Session::homeFile ("online.json"); }       // (this machine's own, with its secret: never in the library folder, which may be on a drive that travels)
 juce::File Online::ledgerFile() { return Session::stateFile().getSiblingFile ("online-sent.json"); }
 
 Online::Online (Session& s) : juce::Thread ("SF-000 online"), ses (s)

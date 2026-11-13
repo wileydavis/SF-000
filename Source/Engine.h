@@ -243,6 +243,9 @@ public:
 
     // ---- dropped audio files, for a lane, insert or return whose module takes them. A convolution
     // keeps eight places: the files go to the place its PLACE is on (several fill the next ones).
+    // Asked of every audio file the rig is given, before it is read: the path to read it from in
+    // its place (the session keeps its own copy of each: see Session::keepSample). Unset: as given.
+    std::function<juce::String (const juce::String& path)> keepFile;
     struct FileRef
     {
         int place = 0, type = -1;               // type: the insert effect they were given to

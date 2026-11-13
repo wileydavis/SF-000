@@ -1,5 +1,6 @@
 #include "Session.h"
 #include "Build.h"
+#include <juce_cryptography/juce_cryptography.h>
 
 namespace sf0
 {
@@ -17,6 +18,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     for (int i = 0; i < cx::kCount; ++i) base[(size_t) i] = engine.target (i);
     for (int r = 0; r < 2; ++r) retInit[(size_t) r] = engine.getSetup ({ 2, 0, r });
     busInit = engine.getSetup ({ 3, 0, 0 });
+    if (useDisk) engine.keepFile = [this] (const juce::String& path) { return keepSample (path); };       // every audio file the rig is given: the library's own copy of it
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
     ensureCleanSlate();
     findLibraryId (idInFile);
@@ -30,7 +32,7 @@ Session::~Session()
     finishTakes (true);
     engine.dropCue();                   // before the clips go
     waitForClips();
-    if (useDisk) save();
+    if (useDisk) { save(); engine.keepFile = nullptr; }
 }
 
 void Session::timerCallback()
@@ -38,6 +40,7 @@ void Session::timerCallback()
     finishTakes();
     engine.tidy();
     pullHeard();
+    if (samplesMoved) { samplesMoved = false; sweepSamples(); }      // a sample was given: the one it replaced, if nothing holds it now, goes
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
     if (const auto now = juce::Time::getMillisecondCounter(); useDisk && dirty && now - savedAt >= 2900) { savedAt = now; save(); }
     pruneCues();
@@ -1015,6 +1018,7 @@ void Session::remove (juce::int64 id)
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
     if (baseId == id) baseId = 0;
     applyMorph (0.0);
+    sweepSamples();                     // the samples only it held go with it
     touch();
 }
 
@@ -1074,14 +1078,258 @@ void Session::stepInsert (int l, int slot)
 }
 
 // ----------------------------------------------------------------------------------------- disk
-juce::File Session::stateFile()
+static Session::Places gPlaces;
+static bool gPlacesRead = false, gSettled = false;
+static juce::File gLibraryDir;
+
+juce::File Session::homeDir()
 {
-    if (stateFileForTests != juce::File()) return stateFileForTests;
+    if (stateFileForTests != juce::File()) return stateFileForTests.getParentDirectory();
+    if (homeForTests != juce::File()) return homeForTests;
     auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
    #if JUCE_MAC
     dir = dir.getChildFile ("Application Support");
    #endif
-    return dir.getChildFile ("SF-000").getChildFile ("session.json");
+    return dir.getChildFile ("SF-000");
+}
+
+static void readPlaces()
+{
+    gPlaces = {}; gPlacesRead = true;
+    if (Session::stateFileForTests != juce::File()) return;
+    const var v = juce::JSON::parse (Session::homeFile ("places.json"));
+    if (! v.isObject()) return;
+    gPlaces.library = v.getProperty ("library", var()).toString();
+    gPlaces.next = v.getProperty ("libraryNext", var()).toString();
+    gPlaces.recordings = v.getProperty ("recordings", var()).toString();
+}
+
+static void writePlaces()
+{
+    if (Session::stateFileForTests != juce::File()) return;
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("library", gPlaces.library);
+    o->setProperty ("libraryNext", gPlaces.next);
+    o->setProperty ("recordings", gPlaces.recordings);
+    Session::homeDir().createDirectory();
+    Session::homeFile ("places.json").replaceWithText (juce::JSON::toString (var (o)));
+}
+
+const Session::Places& Session::places()
+{
+    if (! gSettled && stateFileForTests == juce::File()) settlePlaces();
+    if (! gPlacesRead) readPlaces();
+    return gPlaces;
+}
+
+// How a folder is said: from the home folder down.
+static juce::String said (const juce::File& f)
+{
+    const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    return (f.isAChildOf (home) ? "~/" + f.getRelativePathFrom (home) : f.getFullPathName()).toUpperCase();
+}
+
+// A library, from one folder to another: the session, its id, what has been sent online, the clips
+// and the samples. (Not the backups: they are of the place they were made in.)
+static bool copyLibrary (const juce::File& from, const juce::File& to)
+{
+    if (! to.createDirectory()) return false;
+    bool ok = true;
+    for (auto* name : { "session.json", "library-id.txt", "online-sent.json" })
+        if (const auto f = from.getChildFile (name); f.existsAsFile()) ok = f.copyFileTo (to.getChildFile (name)) && ok;
+    for (auto* name : { "clips", "samples" })
+        if (const auto d = from.getChildFile (name); d.isDirectory()) ok = d.copyDirectoryTo (to.getChildFile (name)) && ok;
+    return ok;
+}
+
+void Session::settlePlaces (bool again)
+{
+    if (gSettled && ! again) return;
+    readPlaces();
+    gSettled = true;
+    auto& p = gPlaces;
+    const juce::File home = homeDir();
+    auto dirOf = [&] (const juce::String& t) { return t.isEmpty() || t == "(home)" ? home : juce::File (t); };
+    juce::File cur = dirOf (p.library);
+    if (p.library.isNotEmpty() && ! cur.isDirectory())
+    {
+        // its drive is not plugged in, or it has been moved: it stays chosen, and this time the one on this machine is used
+        p.libraryMissing = true;
+        p.note = "THE LIBRARY FOLDER IS NOT THERE: " + p.library + "\n\nThis time SF-000 is using the library on this computer (" + said (home)
+               + "), which may be older or empty. What you do now is kept there, not in the folder you chose. Plug the drive in and open SF-000 again to use the chosen one; or choose another in SETUP.";
+        cur = home;
+    }
+    if (p.next.isNotEmpty())
+    {
+        const juce::File to = dirOf (p.next);
+        if (to == cur) { p.next = {}; writePlaces(); }
+        else if (! to.isDirectory() && ! (to.getParentDirectory().isDirectory() && to.createDirectory()))
+            p.note = "THE FOLDER CHOSEN FOR THE LIBRARY IS NOT THERE: " + p.next + "\n\nSF-000 is still using " + said (cur) + ". The chosen folder is taken up at the first start that finds it.";
+        else if (p.libraryMissing && ! to.getChildFile ("session.json").existsAsFile())
+            p.note += "\n\nThe new folder chosen (" + p.next + ") has no library in it, and the one to copy there is not to be found: nothing was moved.";
+        else
+        {
+            const bool there = to.getChildFile ("session.json").existsAsFile();
+            const bool ok = there || copyLibrary (cur, to);
+            if (ok)
+            {
+                p.note = "THE LIBRARY IS NOW IN " + said (to) + "\n\n"
+                       + (there ? juce::String ("The library that was already in that folder is the one in use.")
+                                : "Everything was copied there from " + said (cur) + " (session, clips and samples). The old folder is as it was: delete it when you are sure.");
+                p.library = to == home ? juce::String() : to.getFullPathName();
+                p.libraryMissing = false;
+                cur = to;
+            }
+            else p.note = "THE LIBRARY COULD NOT BE COPIED TO " + said (to) + "\n\nSF-000 is still using " + said (cur) + ". Check the disk has room and can be written to, and choose it again in SETUP.";
+            p.next = {};
+            writePlaces();
+        }
+    }
+    gLibraryDir = cur;
+}
+
+juce::File Session::libraryDir()
+{
+    if (stateFileForTests != juce::File()) return stateFileForTests.getParentDirectory();
+    if (! gSettled) settlePlaces();
+    return gLibraryDir;
+}
+
+juce::File Session::usualRecordingsDir()    { return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SF-000"); }
+juce::File Session::recordingsDir()
+{
+    const auto& p = places();
+    return p.recordings.isNotEmpty() ? juce::File (p.recordings) : usualRecordingsDir();
+}
+
+juce::File Session::libraryFolderFor (const juce::File& chosen)
+{
+    // Not into the top of a disk or a folder of other things: a folder of its own, unless the
+    // one chosen is a library already, is empty, or is named for it.
+    if (chosen.getChildFile ("session.json").existsAsFile()) return chosen;
+    const auto inside = chosen.getChildFile ("SF-000");
+    if (inside.getChildFile ("session.json").existsAsFile()) return inside;
+    if (chosen.getFileName().equalsIgnoreCase ("SF-000") || chosen.getNumberOfChildFiles (juce::File::findFilesAndDirectories | juce::File::ignoreHiddenFiles) == 0) return chosen;
+    return inside;
+}
+
+juce::String Session::chooseLibrary (const juce::File& chosen)
+{
+    if (stateFileForTests != juce::File()) return {};
+    if (! chosen.isDirectory()) return "THAT IS NOT A FOLDER";
+    const juce::File to = libraryFolderFor (chosen), cur = libraryDir();
+    if (! chosen.hasWriteAccess()) return "SF-000 CANNOT WRITE IN " + said (chosen);
+    (void) places();
+    if (to == cur && ! gPlaces.libraryMissing) { gPlaces.next = {}; writePlaces(); return "THE LIBRARY IS THERE ALREADY"; }
+    if (to.isAChildOf (cur.getChildFile ("samples")) || to.isAChildOf (cur.getChildFile ("clips"))) return "THAT IS INSIDE THE LIBRARY";
+    const bool there = to.getChildFile ("session.json").existsAsFile();
+    gPlaces.next = to == homeDir() ? juce::String ("(home)") : to.getFullPathName();
+    writePlaces();
+    return "FROM THE NEXT START: " + said (to) + (there ? ". THE LIBRARY ALREADY IN IT IS USED." : ". THIS LIBRARY IS COPIED THERE.") + " QUIT AND OPEN SF-000 AGAIN.";
+}
+
+juce::String Session::chooseRecordings (const juce::File& chosen)
+{
+    if (stateFileForTests != juce::File()) return {};
+    if (! chosen.isDirectory()) return "THAT IS NOT A FOLDER";
+    if (! chosen.hasWriteAccess()) return "SF-000 CANNOT WRITE IN " + said (chosen);
+    (void) places();
+    gPlaces.recordings = chosen == usualRecordingsDir() ? juce::String() : chosen.getFullPathName();
+    writePlaces();
+    return {};
+}
+
+juce::File Session::stateFile()
+{
+    if (stateFileForTests != juce::File()) return stateFileForTests;
+    return libraryDir().getChildFile ("session.json");
+}
+
+// ------------------------------------------------------------------------------- the samples
+juce::String Session::refOf (const juce::String& full)
+{
+    if (full.isEmpty() || ! juce::File::isAbsolutePath (full)) return full;
+    const juce::File f (full), lib = libraryDir();
+    return f.isAChildOf (lib) ? f.getRelativePathFrom (lib).replaceCharacter ('\\', '/') : full;
+}
+
+juce::String Session::pathOf (const juce::String& ref) const
+{
+    if (ref.isEmpty()) return {};
+    if (! juce::File::isAbsolutePath (ref)) return libraryDir().getChildFile (ref).getFullPathName();
+    // written whole (by a build from before copies were kept): its copy, if one was made from it
+    for (auto& s : samples)
+        if (s.from == ref)
+            if (const auto c = libraryDir().getChildFile (s.file); c.existsAsFile()) return c.getFullPathName();
+    return ref;
+}
+
+juce::String Session::keepSample (const juce::String& path)
+{
+    if (! useDisk || path.isEmpty() || ! juce::File::isAbsolutePath (path)) return path;
+    const juce::File f (path), dir = libraryDir().getChildFile ("samples");
+    if (f.isAChildOf (dir) || ! f.existsAsFile()) return path;                 // one of the library's own already (or nothing to copy)
+    // Under its own name, in a folder named for what is in it (the first eight digits of its
+    // SHA-256): the same file given twice is kept once, and two files of one name do not collide.
+    const juce::String hash = juce::SHA256 (f).toHexString();
+    if (hash.isEmpty()) return path;
+    juce::String name = juce::File::createLegalFileName (f.getFileName());
+    if (name.isEmpty()) name = "sample" + f.getFileExtension();
+    const juce::File in = dir.getChildFile (hash.substring (0, 8)), copy = in.getChildFile (name);
+    if (! copy.existsAsFile())
+    {
+        if (! in.createDirectory() || ! f.copyFileTo (copy)) return path;      // (no room, or it cannot be written: read from where it is)
+    }
+    const juce::String rel = "samples/" + hash.substring (0, 8) + "/" + name;
+    bool listed = false;
+    for (auto& s : samples) listed = listed || (s.file == rel && s.from == path);
+    if (! listed) { samples.push_back ({ rel, path, hash, copy.getSize() }); dirty = true; }
+    samplesMoved = true;                // (what this one took the place of may be nobody's now: looked at on the next tick)
+    return copy.getFullPathName();
+}
+
+juce::String Session::cameFrom (const juce::String& full) const
+{
+    for (auto& s : samples) if (libraryDir().getChildFile (s.file).getFullPathName() == full && s.from.isNotEmpty()) return s.from;
+    return full;
+}
+
+int Session::sweepSamples()
+{
+    if (! useDisk || samples.empty()) return 0;
+    // every file something still refers to: the rig as it stands, and every snapshot
+    juce::StringArray used;
+    auto use = [&] (const juce::String& full) { if (full.isNotEmpty()) used.addIfNotAlreadyThere (juce::File (full).getFullPathName()); };
+    auto useRefs = [&] (const std::vector<Engine::FileRef>& refs) { for (auto& r : refs) for (auto& f : r.files) use (f); };
+    for (int l = 0; l < kLanes; ++l)
+    {
+        use (engine.laneFile (l));
+        for (int k = 0; k < kSlots; ++k) useRefs (engine.heldFiles ({ 1, l, k }));
+    }
+    useRefs (engine.heldFiles ({ 2, 0, 1 }));
+    for (auto& s : library)
+        for (int l = 0; l < kLanes; ++l)
+        {
+            use (s.laneFiles[(size_t) l]);
+            for (int k = 0; k < kSlots; ++k) useRefs (s.insFiles[(size_t) l][(size_t) k]);
+        }
+    int gone = 0;
+    std::vector<Sample> keep;
+    for (auto& s : samples)
+    {
+        const juce::File copy = libraryDir().getChildFile (s.file);
+        if (used.contains (copy.getFullPathName())) { keep.push_back (s); continue; }
+        if (! copy.existsAsFile()) continue;                    // (listed again from another place, and gone a moment ago; or never there)
+        // If the file it was copied from is still where it was, nothing is lost and the copy is
+        // simply deleted. If not, this may be the last there is of it: to the Trash.
+        bool elsewhere = false;
+        for (auto& o : samples) if (o.file == s.file) if (const juce::File was (o.from); was.existsAsFile() && was.getSize() == copy.getSize()) elsewhere = true;
+        if (elsewhere || ! copy.moveToTrash()) copy.deleteFile();
+        if (const auto in = copy.getParentDirectory(); in.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0) in.deleteFile();
+        ++gone;
+    }
+    if (keep.size() != samples.size()) { samples = keep; dirty = true; }
+    return gone;
 }
 
 static var patternToVar (const Pattern& p)
@@ -1135,7 +1383,7 @@ static var refsToVar (const std::vector<Engine::FileRef>& refs)
         o->setProperty ("place", r.place);
         o->setProperty ("type", r.type);
         juce::Array<var> fl;
-        for (auto& f : r.files) fl.add (f);
+        for (auto& f : r.files) fl.add (Session::refOf (f));    // (a copy in the library: from its folder down)
         o->setProperty ("files", fl);
         a.add (var (o));
     }
@@ -1242,7 +1490,7 @@ static var snapToVar (const Snapshot& s, const Engine& e)
     if (s.hasFiles)
     {
         juce::Array<var> fl;
-        for (int l = 0; l < kLanes; ++l) fl.add (s.laneFiles[(size_t) l]);
+        for (int l = 0; l < kLanes; ++l) fl.add (Session::refOf (s.laneFiles[(size_t) l]));
         o->setProperty ("laneFiles", fl);
     }
     return var (o);
@@ -1368,8 +1616,16 @@ void Session::save()
     root->setProperty ("activeLane", activeLane);
     root->setProperty ("recallNotes", recallNotes);
     juce::Array<var> fl;
-    for (int l = 0; l < kLanes; ++l) fl.add (engine.laneFile (l));
+    for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
     root->setProperty ("files", fl);
+    juce::Array<var> sm;                             // the copies of samples this library made, and where each came from
+    for (auto& x : samples)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("file", x.file); o->setProperty ("from", x.from); o->setProperty ("sha256", x.hash); o->setProperty ("bytes", x.bytes);
+        sm.add (var (o));
+    }
+    root->setProperty ("samples", sm);
     // SPACE: which reverb it is, and the impulse responses its convolution was given. An insert's too.
     auto* sp = new juce::DynamicObject();
     sp->setProperty ("model", engine.spaceModel());
@@ -1472,7 +1728,7 @@ bool Session::load()
     }
 
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "samples" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -1521,23 +1777,53 @@ bool Session::load()
         }
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
     recallNotes = (bool) root.getProperty ("recallNotes", true);
+    // The samples. What is written is turned into a path to read: a copy in the library by where
+    // the library is now; a file written whole (by a build from before copies were kept) is
+    // copied in now if it is still where it was, and read from its copy from here on.
+    samples.clear();
+    if (auto* sm = root.getProperty ("samples", var()).getArray())
+        for (auto& e : *sm)
+            if (const juce::String file = e.getProperty ("file", var()).toString(); file.isNotEmpty())
+                samples.push_back ({ file, e.getProperty ("from", var()).toString(), e.getProperty ("sha256", var()).toString(), (juce::int64) e.getProperty ("bytes", 0) });
+    auto found = [this] (const juce::String& ref)
+    {
+        if (ref.isNotEmpty() && juce::File::isAbsolutePath (ref))
+        {
+            bool copied = false;
+            for (auto& x : samples) copied = copied || x.from == ref;
+            if (! copied) return keepSample (ref);
+        }
+        return pathOf (ref);
+    };
+    auto foundRefs = [&found] (std::vector<Engine::FileRef> refs) { for (auto& r : refs) for (auto& f : r.files) f = found (f); return refs; };
+    auto foundIn = [&] (Snapshot& x)
+    {
+        for (auto& f : x.laneFiles) f = found (f);
+        for (auto& lane : x.insFiles) for (auto& slot : lane) slot = foundRefs (slot);
+    };
+    for (auto& x : library) foundIn (x);
     if (const var fl = root.getProperty ("files", var()); fl.isArray())
         for (int l = 0; l < kLanes && l < fl.size(); ++l)
-            if (const juce::File f (fl[l].toString()); fl[l].toString().isNotEmpty() && f.existsAsFile()) engine.loadFile (l, f);
+            if (const juce::File f (found (fl[l].toString())); fl[l].toString().isNotEmpty() && f.existsAsFile()) engine.loadFile (l, f);
     if (const var sp = root.getProperty ("space", var()); sp.isObject())
     {
         engine.setSpaceModel ((int) sp.getProperty ("model", 0));
-        engine.setHeldFiles ({ 2, 0, 1 }, refsFromVar (sp.getProperty ("files", var())));
+        engine.setHeldFiles ({ 2, 0, 1 }, foundRefs (refsFromVar (sp.getProperty ("files", var()))));
     }
     if (auto* insf = root.getProperty ("insertFiles", var()).getArray())
         for (auto& e : *insf)
         {
             const int l = (int) e.getProperty ("lane", -1), k = (int) e.getProperty ("slot", -1);
-            if (l >= 0 && l < kLanes && k >= 0 && k < kSlots) engine.setHeldFiles ({ 1, l, k }, refsFromVar (e.getProperty ("files", var())));
+            if (l >= 0 && l < kLanes && k >= 0 && k < kSlots) engine.setHeldFiles ({ 1, l, k }, foundRefs (refsFromVar (e.getProperty ("files", var()))));
         }
     baseId = (juce::int64) root.getProperty ("baseId", 0);
     selStep = -1;
-    if (root.hasProperty ("base")) applySnapshot (snapFromVar (root["base"], engine), 0.0);
+    if (root.hasProperty ("base"))
+    {
+        Snapshot was = snapFromVar (root["base"], engine);
+        foundIn (was);
+        applySnapshot (was, 0.0);
+    }
     warmInserts();
     return true;
 }

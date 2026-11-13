@@ -28,7 +28,10 @@ public:
     juce::String note() const                   { return said; }                                 // the last thing worth telling (where a take went, why one ended)
     double bytesAnHour() const;                 // at the engine's sample rate
 
-    juce::File root;                            // where takes go: Music/SF-000 (a test points it elsewhere)
+    // Where takes go: Music/SF-000 unless another folder is set in SETUP (a test points it
+    // elsewhere). If that folder is not there when a take begins (its drive is not plugged in),
+    // the take goes to `usual` and says so: a take is not lost for want of a disk.
+    juce::File root, usual;
     std::function<juce::File()> stateAtStart;   // the rig as it stands, written to a file: copied into the take as it begins
 
     static juce::String trackName (int track);  // "00 SET", "01 KICK" ... "12 DUB", "13 SPACE"

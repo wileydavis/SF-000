@@ -1408,11 +1408,69 @@ many."
      snapshot's file, like any change that cannot travel. Not kept: SPACE's impulse responses
      (49: which reverb SPACE is and its files are the rig's), and no copy of the audio is made:
      a file that has moved is not found and the lane keeps what it has. Say if snapshots should
-     carry copies of their samples; it makes the library stand by itself and larger.
+     carry copies of their samples; it makes the library stand by itself and larger. (You did:
+     the thirtieth build.)
 292. **What is lost in the writing down** is said in the README: timing inside a sixteenth, more
      than one note on a step (the lowest is kept), parts longer than eight bars, and notes played
      with the clock stopped. A part's steps are placed by where the bar lines were, so a part
      starts on the step it started on.
+
+## Thirtieth build (Nov 13): the library holds its own samples, and can be put anywhere
+
+293. **You:** "I think a copy makes sense. Ideally deleting a snapshot deletes the copy so I can
+     manage just one repository. So moving the instrument to another computer would simply be a
+     matter of adding the app and selecting a drive location for the files it needs. Would be
+     useful to set a recording location as well (as part of setup) that way I could use external
+     disks. And later, we can work on the online library of snapshots and store samples there
+     as well."
+294. **Every audio file the rig is given is copied into `samples/` in the library folder and read
+     from the copy.** A lane's sample or phrase, an insert's impulse responses, SPACE's. The
+     file you loaded is never touched. *Mine:* a copy keeps its own name, in a folder named for
+     what is in it (the first eight digits of its SHA-256), so the same file given twice is kept
+     once, two files of one name do not collide, and the name on the screen and in the Finder is
+     still the file's. The whole SHA-256 is kept in the session: it is what the web library
+     will want to know a sample by, when samples go there.
+295. **In the file a copy is written from the library folder down** (`samples/3fa9c2e1/kick.wav`),
+     so the library is right wherever its folder is. *Mine*, and the one place this build
+     stretches FORMAT's first rule: a path used to be whole, and a build from before this one
+     will not find a sample written this way. Opened with one, a lane comes up without its
+     sample, and when that build saves, the rig's own note of which file the lane held is gone
+     (the snapshots keep theirs: they are written back as read). Do not go back a build with a
+     library you care about without taking `session.json` from `backups/` first.
+296. **A session from before is brought over when it is opened**: every file it or its snapshots
+     name that is still where it was is copied in. *Mine:* the snapshots are not rewritten
+     (rule 3). The session keeps a list of the copies it made and where each came from, and a
+     snapshot that names the old place is read as the copy made from it. A file that was already
+     gone stays missing, as it was.
+297. **A copy that nothing holds any more is removed.** When a snapshot is deleted, the samples
+     only it held go with it. *Mine:* also a few seconds after a lane, insert or return is given
+     another file, if no snapshot holds the one it replaced; otherwise trying ten samples on a
+     lane would leave nine behind until the next snapshot was deleted. "Holds" is every lane,
+     insert and return as they stand and every snapshot in the library. *Mine:* the copy is
+     deleted outright if the file it came from is still where it was (nothing is lost), and put
+     in the Trash if not, since it may be the last there is. Only copies SF-000 made are ever
+     removed: anything else in `samples/` is left alone.
+298. **LIBRARY, in SETUP: the folder the library is in.** CHOOSE, quit, open again. *Mine:* it is
+     taken up at the next start and not at once, so it happens before anything has been read
+     and with everything saved, in one place in the code. If the folder holds a library, that
+     one is used; if not, the one in use is copied there and the old folder left as it was. A
+     folder that is not empty gets an `SF-000` folder of its own inside it.
+299. **What goes with the library and what stays.** With it: the session, the clips, the samples,
+     the backups, the library's id and what has been sent online. *Mine:* staying on the
+     computer, in Application Support: the interface, the MIDI settings, the look, the folders
+     chosen, and **ONLINE's address and strings**, which were beside the session until now. A
+     drive that travels should not carry the token. So on another computer ONLINE is set up
+     again, once.
+300. **A chosen library that is not there at a start is not replaced or forgotten.** SF-000 says
+     so, uses the library on the computer that time (which may be older, or the factory rig) and
+     keeps the choice for the next start. *Mine.* The other way, starting with nothing saved,
+     would lose a night's snapshots.
+301. **TAKES, in SETUP: the folder takes go to**, from the next take. If it is not there when REC
+     is pressed, the take is made in `Music/SF-000/` and says so. *Mine:* a take is not refused
+     for want of a disk.
+302. **The web library and samples: not in this build.** You said later. What is ready for it:
+     every copy has its SHA-256, and a snapshot sent to the web names its samples from the
+     library folder down, not by a path on your disk.
 
 ## Not verified
 
@@ -1494,6 +1552,12 @@ many."
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.
+- **Folders and samples (thirtieth) are checked on Linux, in folders the test makes.** Not on a
+  Mac: the folder chooser, a real external drive (macOS asks once before an app may read a
+  removable volume: allow it), the Trash on another volume, a library of your size being copied
+  at a start (it is done before the window opens: a large one will make the start slow, once).
+  Your own session is brought over the first time this build opens it: `backups/` has it as it
+  was.
 - **Notes from outside (twenty-ninth) are checked with notes fed in by the test at made-up
   times** (2 ms late, as a sequencer's might be): a two-bar bass line, a hat with a ratchet, a
   part that never repeats. Not with the ONE: its swing, its ratchets as it sends them, what it

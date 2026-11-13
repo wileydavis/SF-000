@@ -25,7 +25,8 @@ double Recorder::bytesAnHour() const
 
 Recorder::Recorder (Engine& e) : juce::Thread ("SF-000 recorder"), engine (e)
 {
-    root = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SF-000");
+    usual = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SF-000");
+    root = usual;
 }
 
 Recorder::~Recorder() { stopTimer(); stop(); }
@@ -50,8 +51,12 @@ String Recorder::start()
     if (rate < 8000.0) return "NO AUDIO DEVICE IS RUNNING";
     began = juce::Time::getCurrentTime();
     const String stamp = began.formatted ("%Y-%m-%d %H.%M.%S");
-    dir = root.getChildFile (stamp);
-    for (int k = 2; dir.exists(); ++k) dir = root.getChildFile (stamp + " " + String (k));
+    // the folder set for takes, or the usual one if that is not there
+    juce::File into = root;
+    String elsewhere;
+    if (root != usual && ! (root.isDirectory() && root.hasWriteAccess())) { into = usual; elsewhere = "  (THE FOLDER SET FOR TAKES IS NOT THERE: " + spoken (root) + ")"; }
+    dir = into.getChildFile (stamp);
+    for (int k = 2; dir.exists(); ++k) dir = into.getChildFile (stamp + " " + String (k));
     if (! dir.createDirectory()) return "CANNOT MAKE " + spoken (dir);
     // room for ten minutes at least
     const auto freeBytes = (double) dir.getBytesFreeOnVolume();
@@ -74,7 +79,7 @@ String Recorder::start()
         {
             for (auto& w : writers) w = nullptr;
             dir.deleteRecursively();
-            return "CANNOT WRITE IN " + spoken (root);
+            return "CANNOT WRITE IN " + spoken (into);
         }
         if (t > 0 && stemLead > 0)
         {
@@ -96,7 +101,7 @@ String Recorder::start()
     on = true;
     engine.setRecSink (this);                                               // from the next buffer on
     startTimer (1000);
-    said = "RECORDING TO " + spoken (dir) + "  (" + String (freeBytes / 1.0e9, 0) + " GB FREE, " + String (freeBytes / bytesAnHour(), 0) + " HOURS)";
+    said = "RECORDING TO " + spoken (dir) + "  (" + String (freeBytes / 1.0e9, 0) + " GB FREE, " + String (freeBytes / bytesAnHour(), 0) + " HOURS)" + elsewhere;
     return {};
 }
 
@@ -129,9 +134,11 @@ void Recorder::finish (const String& why)
       << "LOST     " << (lost > 0.0 ? String (lost, 2) + " s in " + String (lostTimes.load()) + " places: the disk fell behind. Every file has the same gaps, so they are still in step."
                                     : String ("nothing")) << "\n\n"
       << "00 SET.wav is the set: the output, after the limiter. 24-bit.\n"
-      << "The numbered lanes and the two returns (DUB, SPACE) are each as it went into the mix: after its\n"
-      << "inserts, its EQ, MUTE and SOLO, before the master chain. 32-bit float, so none can clip. Added\n"
-      << "together they are what the master chain was given.\n"
+      << "The numbered lanes and the two returns (DUB, SPACE) are each as it left its strip: after its\n"
+      << "inserts, its EQ, MUTE and SOLO, before the drum bus and the master chain. 32-bit float, so none\n"
+      << "can clip. 14 DRUM BUS.wav, if it is here, is what the drum bus did: the lanes on it as the bus\n"
+      << "made them, less those lanes as they came. All of them added together are what the master chain\n"
+      << "was given; leave 14 DRUM BUS out for the drums without the bus.\n"
       << "Each of them begins with " << stemLead << " samples of silence, the master chain's look-ahead, so it lines up with the set.\n\n"
       << "KEPT: " << kept.joinIntoString (", ") << "\n"
       << (silent.isEmpty() ? String() : "NOT KEPT, SILENT THROUGHOUT: " + silent.joinIntoString (", ") + "\n")

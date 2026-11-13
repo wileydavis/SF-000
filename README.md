@@ -58,7 +58,7 @@ First run:
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
-| Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform |
+| Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform. SF-000 keeps its own copy (see Where everything is kept) |
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
@@ -342,9 +342,9 @@ knob's press, a sequencer's RECALL.
 - What steps cannot hold is lost in the writing down: timing finer than a sixteenth (swing, a
   note played early or late), more than one note on a step (the lowest is kept), a part longer
   than eight bars, notes played while the clock was stopped.
-- The sample is kept by where its file is. If the file has been moved, the lane keeps the one it
-  has. A snapshot that held no file on a lane leaves that lane's file alone. SPACE's impulse
-  responses are still the rig's, as before.
+- The sample is the library's own copy of it (see Where everything is kept, below), so it comes
+  back whatever has become of the file it was loaded from. A snapshot that held no file on a
+  lane leaves that lane's file alone. SPACE's impulse responses are still the rig's, as before.
 
 ### A recall, when more than knobs differ
 
@@ -374,8 +374,8 @@ the library turned SF-000 away. The line beside it says which, and how many wait
 
 **SET UP** takes the library's address and the two strings of its service token (Client ID,
 Client Secret). CHECK asks the library whether they let SF-000 in; KEEP stores them in
-`online.json` beside the session, readable by you only. Neither the address nor the strings are in
-the code.
+`online.json` with this computer's settings (not in the library folder, which may be on a drive
+that travels), readable by you only. Neither the address nor the strings are in the code.
 
 - A snapshot renamed here is renamed there. One deleted here stays there.
 - One removed in the web library is not sent again.
@@ -384,8 +384,11 @@ the code.
 
 ### Recording
 
-REC writes a take to `Music/SF-000/`, in a folder named for the moment it began. It starts at once,
-whether or not the clock is running, and goes on until its key is held. Quitting ends and keeps it.
+REC writes a take to `Music/SF-000/`, or to the folder set for TAKES in SETUP (an external disk,
+say), in a folder named for the moment it began. It starts at once, whether or not the clock is
+running, and goes on until its key is held. Quitting ends and keeps it. If the folder set for
+takes is not there when REC is pressed (its disk is not plugged in), the take is made in
+`Music/SF-000/` and says so.
 
 | FILE | WHAT |
 |---|---|
@@ -637,11 +640,55 @@ meters when a bar has moved, the playing step.
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`). `suite/modules/FxDrums.cpp`, the drum bus, is SF-000's own |
 
-State is kept in `~/Library/Application Support/SF-000/session.json` (snapshots, knobs, the base
-scene, each snapshot's profile; its layout and the rules that keep old files readable are in
-`FORMAT.md`), `library-id.txt` (this library's own id), `online.json` (ONLINE's address and strings) and `online-sent.json` (what the web library has said it holds), `clips/` (each snapshot's four bars), `look.json` (the look: 3D, lit or flat, light or dark, and where the 3D stage's eye is kept), `3d.log` (why the 3D stage could not start, if it ever could not), `3d-starting` (there only while the stage is coming up: found at launch, the last start never finished), `audio.xml` (the interface) and `midi.json` (the clock sent or followed, CLOCK LEAD, ON THE BEAT, TRIM). Each time the app
-opens it copies the session as it found it into `backups/` beside it and keeps the last twenty: to go
-back, quit and copy one over `session.json`. Delete `session.json` to start again from the factory rig.
+## Where everything is kept
+
+Two places, and a third for takes.
+
+**The library** is all the instrument needs to be itself, in one folder:
+
+| IN IT | WHAT |
+|---|---|
+| `session.json` | the snapshots, the snapshot knobs, the rig as it was left, each snapshot's profile (its layout and the rules that keep old files readable are in `FORMAT.md`) |
+| `clips/` | each snapshot's four bars |
+| `samples/` | SF-000's own copy of every audio file it has been given: a lane's sample or phrase, an insert's impulse responses, SPACE's. Each under its own name, in a folder named for what is in the file (`samples/3fa9c2e1/kick.wav`) |
+| `backups/` | the session as each of the last twenty launches found it. To go back, quit and copy one over `session.json` |
+| `library-id.txt`, `online-sent.json` | this library's own id; what the web library has said it holds |
+
+It starts in `~/Library/Application Support/SF-000/`. **LIBRARY** in SETUP puts it anywhere else:
+CHOOSE a folder, quit, open SF-000 again.
+
+- If the folder already holds a library, that library is used.
+- If not, the library in use is copied there (session, clips, samples) and used from there. The
+  old folder is left as it was: delete it when you are sure.
+- A folder that is not empty and is not a library gets a folder of its own inside it, `SF-000`,
+  so nothing is spilled into the top of a disk.
+- **On another computer:** install the app, open SETUP, CHOOSE the folder on the drive, quit and
+  open again. Everything is there. (The interface, the MIDI settings, the look and ONLINE's
+  address are that computer's own and are set there.)
+- **If the chosen folder is not there at a start** (the drive is not plugged in), SF-000 says so,
+  uses the library on the computer that time, and keeps the choice: plug the drive in and open
+  it again.
+
+**Samples.** A file you load or drop is copied into `samples/` and read from the copy. The file
+you loaded is never touched, and can be moved, renamed or deleted afterwards without anything
+changing. The same file given twice is kept once. A copy that nothing holds any more (no lane,
+insert or return, and no snapshot) is removed: when you delete a snapshot, the samples only it
+held go with it; and a few seconds after you give a lane another sample, the one it replaced
+goes if no snapshot holds it. A copy is deleted outright if the file it came from is still where
+it was, and put in the Trash if it is not (it may be the last there is). The first time this
+build opens a session from before, it copies in every file the session and its snapshots name
+that is still where it was.
+
+**This computer's own settings** stay in `~/Library/Application Support/SF-000/` wherever the
+library is: `audio.xml` (the interface), `midi.json` (the clock sent or followed, CLOCK LEAD, ON
+THE BEAT, TRIM, the E16), `look.json` (3D, lit or flat, light or dark, the eye), `online.json`
+(ONLINE's address and strings), `places.json` (the folders chosen in SETUP), `3d.log` and
+`3d-starting` (the 3D stage's start).
+
+**Takes** go to `Music/SF-000/`, or to the folder set for TAKES in SETUP. It takes effect from the
+next take; nothing is moved.
+
+Delete `session.json` to start again from the factory rig.
 
 ## Not built yet
 

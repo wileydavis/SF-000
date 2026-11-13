@@ -77,5 +77,6 @@ target_link_libraries(SF000
         juce::juce_audio_processors
         juce::juce_dsp
         juce::juce_opengl
+        juce::juce_cryptography
     PUBLIC
         juce::juce_recommended_config_flags)
