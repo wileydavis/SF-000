@@ -3653,6 +3653,55 @@ static int stageTest()
         const auto mid = pt ({ 700.0f, 38.0f }).roundToInt();       // (bare case, on the top bar)
         check (light.getPixelAt (mid.x, mid.y).getBrightness() > dark.getPixelAt (mid.x, mid.y).getBrightness() + 0.3f,
                "D: the dark instrument (the case at " + mid.toString() + ": " + juce::String (light.getPixelAt (mid.x, mid.y).getBrightness(), 2) + " light, " + juce::String (dark.getPixelAt (mid.x, mid.y).getBrightness(), 2) + " dark)");
+
+        // 7b. the dark instrument's wear: a sheet made from a photograph of scratched metal, a different window of it on every plate
+        {
+            auto rowsApart = [] (const juce::Image& x, const juce::Image& y)
+            {
+                if (! x.isValid() || x.getBounds() != y.getBounds()) return -1;
+                const juce::Image::BitmapData a (x, juce::Image::BitmapData::readOnly), c (y, juce::Image::BitmapData::readOnly);
+                int n = 0;
+                for (int yy = 0; yy < a.height; ++yy) if (std::memcmp (a.getLinePointer (yy), c.getLinePointer (yy), (size_t) a.width * 4) != 0) ++n;
+                return n;
+            };
+            check (st->wearReady(), "the sheet of scratches is read and reaches the card");
+            st->showWear (false);
+            const auto bare = fresh();
+            st->showWear (true);
+            const int darkRows = rowsApart (dark, bare), againRows = rowsApart (dark, fresh());
+            sc.setDark (false);
+            const auto pale = fresh();
+            st->showWear (false);
+            const int paleRows = rowsApart (pale, fresh());
+            st->showWear (true);
+            sc.setDark (true); fresh();
+            check (darkRows > 200 && againRows == 0 && paleRows == 0, "it shows on the dark instrument (" + juce::String (darkRows) + " rows of the picture are different without it; put back, " + juce::String (againRows)
+                       + ") and the pale one is as it was (" + juce::String (paleRows) + ")");
+
+            // every plate has its own number, which says which of the wear it takes; it goes by where the plate is drawn, so a plate that slides keeps it
+            auto lanePlates = [&]
+            {
+                std::vector<std::pair<float, float>> v;      // (number, where it stands)
+                for (const auto& p : sc.testParts().plates) if (std::abs (p.r.getWidth() - 272.0f) < 0.5f && std::abs (p.r.getHeight() - 344.0f) < 0.5f) v.push_back ({ p.seed, p.r.getX() + p.r.getY() * 10000.0f });
+                return v;
+            };
+            const auto shut = lanePlates();
+            std::set<float> numbers;
+            bool inRange = true;
+            for (const auto& p : shut) { numbers.insert (p.first); inRange = inRange && p.first >= 0.0f && p.first < 0.98f; }
+            sc.showConfig ({ 0, 0, 0 }); fresh();
+            const auto open = lanePlates();
+            int known = 0, moved = 0;
+            for (const auto& p : open)
+            {
+                if (numbers.count (p.first) != 0) ++known;
+                for (const auto& q : shut) if (q.first == p.first && q.second != p.second) { ++moved; break; }
+            }
+            sc.hideConfig(); fresh();
+            check (shut.size() == 12 && numbers.size() == 12 && inRange && ! open.empty() && known == (int) open.size() && moved >= 6,
+                   "each plate has its own wear (" + juce::String ((int) numbers.size()) + " numbers for the " + juce::String ((int) shut.size()) + " lane-sized plates) and keeps it when CONFIG slides the rows over ("
+                       + juce::String (moved) + " plates moved, " + juce::String (known) + " of " + juce::String ((int) open.size()) + " with the number they had)");
+        }
         sc.setDark (false);
         sc.keyPressed (juce::KeyPress ('3', juce::ModifierKeys(), '3'));
         pump (100);

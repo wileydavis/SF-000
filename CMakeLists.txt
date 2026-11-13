@@ -28,6 +28,7 @@ juce_add_binary_data(SF000Assets SOURCES
     assets/fonts/BarlowCondensed-SemiBold.ttf
     assets/fonts/BarlowSemiCondensed-Medium.ttf
     assets/fonts/BarlowSemiCondensed-SemiBold.ttf
+    assets/wear.png
     controllers/e16/rings.lua)
 
 # macOS draws a window's changed parts as one box round all of them. With the meters in one corner

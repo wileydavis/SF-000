@@ -1013,6 +1013,25 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      scuffs, its upper edge rubbed. The print sits on top, as sharp as it was. Much slighter
      than your picture: that one is a plate at the end of its life. *Mine:* the pale instrument
      is as it was; and how much of each there is, which is a number apiece.
+240. **The scratches are your photograph's now** (you: "the scratches are a little unrealistic.
+     can we make them more like the one in the photo", then "take the photo, make a square
+     version of it, and then rotate 90 degrees to create four variations that get used randomly
+     for modules so it looks less uniform"). The ones I had worked out in the shader are gone.
+     `tools/wear.py` makes `assets/wear.png` from the photograph: its black taken away, its own
+     worn border cut off, made to repeat without a seam, enlarged, and each scratch smoothed
+     along its length and thinned across it so that it is still a hairline with the eye close.
+     Every plate takes its own piece of that sheet, turned one of four ways. *Mine, past what
+     you asked:* as often as not the piece is mirrored too, and it is a different piece for
+     every plate, not one of four, so no two modules match at all; the piece is the same scale
+     on every plate, so a scratch is as fine on the sequencer's long strip as on a lane (a
+     square stretched to fit each plate would have made them coarse on one and fine on the
+     other); a plate keeps its piece when CONFIG slides the rows over; most of what is on the
+     sheet only just shows and a few scratches are deep, more in some stretches of a plate than
+     others; the edges' wear is specks that thin out as they come inward, where it was soft
+     patches; and the case's few scuffs come from the same sheet, larger and fainter. The
+     photograph itself is not in the repository, only the sheet made from it: if it is not
+     yours to use, that sheet is what to replace (any picture of scratches on black, through
+     the same tool). It costs the card about 13 MB and is cheaper to draw than what it replaces.
 
 ## Not verified
 
@@ -1065,7 +1084,11 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
   recall that changes VOICE's model with a long sample in it (no pause of the screen).
 - **The faceplates' finish and the pulse have been looked at only as a software driver draws
   them**, at a fraction of your display's sharpness. Whether the grain is too fine to see or the
-  wear too much is for your eye; each is one number in `Stage.cpp`'s surface shader.
+  wear too much is for your eye; each is one number in `Stage.cpp`'s surface shader. The same
+  goes for the photograph's scratches (240): how strong they are is `scratch * 0.62` there, how
+  large a piece of the sheet a plate takes is `kWearSpan`. Not run on a Mac: reading the sheet
+  (JUCE's PNG reader into a one-channel texture of 4096 by 2440), which the stage does without
+  if it fails (the plates are then unscratched, and `--stagetest` says so).
 - **The twenty-second build is unseen on the Mac**: leaving full screen (the fault was read in
   JUCE's source, not reproduced; the fix uses a call I can only run on Linux), the SETUP window's
   new row, the icon in the Dock (the Finder may show the old one until it forgets it), and how

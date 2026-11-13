@@ -435,7 +435,7 @@ const Skin::Pic& Skin::panelPic (int w, int h, Colour ground)
 
 void Skin::panel (G& g, R r, Colour ground)
 {
-    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->plates.push_back ({ r.translated (shift, 0.0f), ground.getARGB(), clip, 0.0f }); return; }
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->plates.push_back ({ r.translated (shift, 0.0f), ground.getARGB(), clip, 0.0f, Parts::seedOf (r) }); return; }
     g.setOpacity (1.0f);
     put (g, panelPic (juce::roundToInt (r.getWidth()), juce::roundToInt (r.getHeight()), ground), r.getX(), r.getY());
 }

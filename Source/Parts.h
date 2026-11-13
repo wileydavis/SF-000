@@ -25,7 +25,15 @@ struct Parts
     struct Clip { float x0 = -1.0e9f, y0 = -1.0e9f, x1 = 1.0e9f, y1 = 1.0e9f;
                   bool has (float x, float y) const { return x >= x0 && x <= x1 && y >= y0 && y <= y1; } };
 
-    struct Plate  { R r; juce::uint32 ground = 0; Clip clip; float base = 0.0f; };
+    // seed: the plate's own number (0 .. 999, over 1024), which says which of its wear it has. It goes
+    // by where the plate is drawn, not by where it has slid to, so a plate keeps its scratches as it moves.
+    struct Plate  { R r; juce::uint32 ground = 0; Clip clip; float base = 0.0f; float seed = 0.0f; };
+    static float seedOf (R drawn)
+    {
+        juce::uint32 h = (juce::uint32) juce::roundToInt (drawn.getCentreX() * 4.0f) * 73856093u ^ (juce::uint32) juce::roundToInt (drawn.getCentreY() * 4.0f) * 19349663u;
+        h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+        return (float) (h % 1000u) / 1024.0f;
+    }
     // ctl: the engine's control it shows (its lights then follow the engine by themselves), or -1
     // and a, b, mark say what is lit (turns from six o'clock; mark: where it is going, or below 0).
     struct Knob   { float cx = 0, cy = 0; bool big = true; int ctl = -1, kind = 0, steps = 0; juce::uint32 light = 0; float a = 0, b = 0, mark = -1.0f; Clip clip; float base = 0.0f; };
@@ -84,7 +92,7 @@ struct Parts
             return true;
         };
         return body == o.body && dark == o.dark
-            && all (plates, o.plates, [&] (const Plate& a, const Plate& b) { return a.r == b.r && a.ground == b.ground && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (plates, o.plates, [&] (const Plate& a, const Plate& b) { return a.r == b.r && a.ground == b.ground && clip (a.clip, b.clip) && a.base == b.base && a.seed == b.seed; })
             && all (knobs, o.knobs, [&] (const Knob& a, const Knob& b) { return a.cx == b.cx && a.cy == b.cy && a.big == b.big && a.ctl == b.ctl && a.kind == b.kind && a.steps == b.steps
                                                                              && a.light == b.light && a.a == b.a && a.b == b.b && a.mark == b.mark && clip (a.clip, b.clip) && a.base == b.base; })
             && all (keys, o.keys, [&] (const Key& a, const Key& b) { return a.r == b.r && a.colour == b.colour && a.down == b.down && a.glows == b.glows && clip (a.clip, b.clip) && a.base == b.base; })

@@ -72,6 +72,8 @@ public:
     bool testKeysShown() const { return info && keysDrawn; }
     juce::Rectangle<float> testKeysBox() const { return keysBox(); }
     void showConfig (Engine::Target t) { cfgOpen = false; openConfig (t); cfgT = 1.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }     // open CONFIG at once (screenshots, tests)
+    void hideConfig() { cfgOpen = false; cfgT = 0.0f; slideX = slideTo = slideGoal(); slideT = 1.0f; repaint(); }                                     // and shut it at once (tests)
+    const Parts& testParts() const { return recorded; }                                                                                               // what was last recorded for the 3D stage (tests)
     static void releaseFonts();         // before JUCE shuts down: the embedded typefaces must not outlive it
 
     void paint (juce::Graphics&) override;

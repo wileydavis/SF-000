@@ -1,6 +1,7 @@
 #include "Stage.h"
 #include "Engine.h"
 #include <juce_opengl/juce_opengl.h>
+#include "BinaryData.h"
 #include <atomic>
 #include <cmath>
 #include <cstring>
@@ -322,6 +323,7 @@ in vec3 vPos; in vec3 vNormal; in float vTop; in vec4 vColour; in vec4 vMat; in 
 uniform vec3 uEye; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround; uniform float uFinish;
 uniform sampler2D uSheet; uniform vec4 uSheetMap;
 uniform sampler2DShadow uShadow; uniform mat4 uShadowVP; uniform float uShadowTexel;
+uniform sampler2D uWear; uniform vec2 uWearSpan;
 uniform vec3 uWarm; uniform float uCaseDepth;
 out vec4 oColour;
 const float PI = 3.14159265;
@@ -342,34 +344,26 @@ vec4 hash4 (vec2 p)
     q += dot (q, q.wzxy + 33.33);
     return fract ((q.xxyz + q.yzzw) * q.zywx);
 }
-// Hair-thin scratches. The surface is ruled into squares; some squares have a scratch: a straight
-// stroke somewhere in it, most of them nearly up and down, the rest nearly across, each its own
-// length and faintness, trailing off at its ends. How strongly the nearest one marks this point.
-float scratches (vec2 p, float cell, float seed, float px)
+// The wear: a sheet made from a photograph of scratched black metal (tools/wear.py), which
+// repeats without a seam: white where the surface is scratched through. Each plate takes its
+// own window of it, its own way up (one of four, and as often as not mirrored), so that no two
+// plates are worn alike. Which window goes by the plate's own number (it rides in with the
+// finish), not by where the plate stands: a plate that slides keeps its scratches.
+vec2 wearTurn (vec2 q, vec4 rect, vec4 h)
 {
-    vec2 g = floor (p / cell);
-    float m = 0.0;
-    for (int j = -1; j <= 1; ++j)
-        for (int i = -1; i <= 1; ++i)
-        {
-            vec2 c = g + vec2 (float (i), float (j));
-            vec4 r = hash4 (c + vec2 (seed, seed * 0.37));
-            if (r.x < 0.56) continue;
-            vec4 t = hash4 (c + vec2 (seed + 19.0, 7.0 - seed));
-            vec2 mid = (c + r.yz) * cell;
-            float ang = (t.x - 0.5) * 0.62 + step (0.36, r.w) * 1.5708;
-            vec2 d = vec2 (cos (ang), sin (ang));
-            float len = cell * (0.22 + 0.85 * t.y);
-            vec2 q = p - mid;
-            float along = clamp (dot (q, d), -len, len);
-            float dist = length (q - d * along);
-            float w = 0.09 + 0.20 * t.z;
-            float wide = max (w, px * 0.75);
-            float line = (1.0 - smoothstep (wide * 0.4, wide, dist)) * min (1.0, w / (px * 0.75));
-            float ends = 1.0 - smoothstep (0.55, 1.0, abs (along) / len);
-            m = max (m, line * ends * (0.35 + 0.65 * t.w));
-        }
-    return m;
+    float k = floor (h.x * 4.0);
+    if (rect.z > 2.0 * rect.w) k = 2.0 * floor (h.x * 2.0);              // (a long plate takes the sheet the long way, where it is longest before it comes round again)
+    else if (rect.w > 2.0 * rect.z) k = 2.0 * floor (h.x * 2.0) + 1.0;
+    q = k < 0.5 ? q : (k < 1.5 ? vec2 (-q.y, q.x) : (k < 2.5 ? -q : vec2 (q.y, -q.x)));
+    if (h.y > 0.5) q.x = -q.x;
+    return q;
+}
+float wear (vec2 p, vec4 rect, float scale, float number)
+{
+    vec4 h = hash4 (vec2 (number, number * 0.37 + 11.0));
+    vec2 span = uWearSpan * scale;
+    vec2 uv = wearTurn (p - rect.xy, rect, h) / span + h.zw;
+    return textureGrad (uWear, uv, wearTurn (dFdx (p), rect, h) / span, wearTurn (dFdy (p), rect, h) / span).r;
 }
 float shade (vec3 p, vec3 n)
 {
@@ -392,36 +386,45 @@ void main()
     {
         float f = uFinish;
         float px = max (length (fwidth (vPos.xz)), 0.05);         // how much of the surface one pixel covers: nothing here is drawn finer than that
-        if (vMat.w < 1.5 && vTop > 0.5)
+        float number = mod (floor (vMat.w * 1024.0 + 0.5), 1024.0);         // (this plate's own number)
+        if (vMat.w < 1.99 && vTop > 0.5)
         {
             // A faceplate: black anodized aluminium that has been used. Its dye is never quite even
-            // (a slow mottling, a fine blasted grain, a pit here and there); things dragged across
-            // it have left hair-thin scratches, most of them up and down or across; and along its
-            // edges, in patches, it has been rubbed toward the metal. All of it slight.
+            // (a slow mottling, a fine blasted grain); things dragged across it have left their
+            // scratches and dust has settled (the wear sheet: a photograph's); and along its edges,
+            // more in some stretches than in others, it is rubbed through to the metal in specks
+            // that thin out as they come inward. All of it slight.
             vec2 p = vPos.xz;
             float grain = hash1 (floor (p * 2.3)) - 0.5;
             float mottle = smoothNoise (p * 0.035) * 0.6 + smoothNoise (p * 0.11 + vec2 (17.0, 5.0)) * 0.4 - 0.5;
-            float pit = step (0.9962, hash1 (floor (p * 1.7) + vec2 (5.0, 9.0))) * min (1.0, 0.6 / px);
-            float scratch = max (scratches (p, 47.0, 0.0, px), 0.7 * scratches (p + vec2 (13.0, 29.0), 21.0, 40.0, px));
-            float edge = min (vRect.z - abs (p.x - vRect.x), vRect.w - abs (p.y - vRect.y));
-            float patchy = smoothstep (0.38, 0.78, smoothNoise (p * 0.06 + vec2 (3.0, 41.0)));
-            float worn = (1.0 - smoothstep (0.4, 5.0 + 5.0 * patchy, edge)) * patchy * (0.55 + 0.9 * (grain + 0.5));
+            float w = wear (p, vRect, 1.0, number);
+            // (most of what is on the sheet only just shows: a few scratches are deep; and some stretches of a plate have seen more than others)
+            float busy = smoothstep (0.30, 0.72, smoothNoise (p * 0.013 + vec2 (number, 3.0)));
+            float scratch = w * (0.30 + 0.70 * w) * (0.45 + 0.55 * busy);
+            float corner = min (7.5, min (vRect.z, vRect.w));
+            vec2 a = abs (p - vRect.xy) - (vRect.zw - corner);
+            float edge = corner - (length (max (a, 0.0)) + min (max (a.x, a.y), 0.0));          // how far in from the plate's edge, round its corners too
+            float patchy = smoothstep (0.36, 0.80, smoothNoise (p * 0.045 + vec2 (3.0, 41.0 + number)));
+            float near = 1.0 - clamp (edge / (1.1 + 5.5 * patchy), 0.0, 1.0);
+            float cover = clamp (near * near * (0.20 + 0.60 * patchy), 0.0, 1.0);               // how much of the surface is through, here
+            float speck = step (1.0 - cover, hash1 (floor (p * 3.7) + vec2 (2.0, 87.0)));
+            float worn = mix (speck, cover, clamp (px * 2.4 - 0.5, 0.0, 1.0));                  // (from far off the specks are too fine to see apart: what is left is how many there are)
             albedo *= 1.0 + f * (grain * 0.06 + mottle * 0.07);
-            albedo = mix (albedo, vec3 (0.45, 0.46, 0.47), clamp (f * (worn * 0.20 + scratch * 0.27 + pit * 0.26), 0.0, 1.0));
-            rough = clamp (rough + f * (grain * 0.05 - mottle * 0.06 - worn * 0.18 - scratch * 0.22), 0.06, 1.0);
-            metal = clamp (metal + f * (worn * 0.45 + scratch * 0.35), 0.0, 1.0);
+            albedo = mix (albedo, vec3 (0.50, 0.51, 0.52), clamp (f * (worn * 0.40 + scratch * 0.62), 0.0, 1.0));
+            rough = clamp (rough + f * (grain * 0.05 - mottle * 0.06 - worn * 0.20 - scratch * 0.25), 0.06, 1.0);
+            metal = clamp (metal + f * (worn * 0.50 + scratch * 0.40), 0.0, 1.0);
         }
-        else if (vMat.w > 1.5)
+        else if (vMat.w > 1.99)
         {
             // The case: powder coat. Never quite flat (an orange-peel that breaks up what shines in
-            // it), a fine speckle in the colour, a few scuffs, and its upper edge rubbed where it
-            // has met tables and bags.
+            // it), a fine speckle in the colour, a few scuffs (the wear sheet again, larger and
+            // fainter), and its upper edge rubbed where it has met tables and bags.
             vec2 p = vPos.xz + vPos.y * vec2 (0.61, 0.37);
             float a1 = smoothNoise (p * 1.5) - 0.5, a2 = smoothNoise (p * 1.5 + vec2 (31.0, 7.0)) - 0.5;
             float soft = min (1.0, 1.2 / px);                     // (from far off the peel is too fine to see: it fades, it does not sparkle)
             n = normalize (n + f * soft * 0.20 * (vTop > 0.5 ? vec3 (a1, 0.0, a2) : vec3 (a1, a2, a1 * a2 * 2.0)));
             float speckle = hash1 (floor (p * 2.9)) - 0.5;
-            float scuff = scratches (p, 83.0, 71.0, px);
+            float scuff = wear (p, vRect, 1.6, 23.0);
             float edge = min (vRect.z - abs (vPos.x - vRect.x), vRect.w - abs (vPos.z - vRect.y));
             float rubbed = vTop > 0.5 ? (1.0 - smoothstep (0.5, 8.0, edge)) * smoothstep (0.45, 0.85, smoothNoise (p * 0.05 + vec2 (77.0, 3.0))) : 0.0;
             albedo *= 1.0 + f * (speckle * 0.05 + (smoothNoise (p * 0.04) - 0.5) * 0.06);
@@ -615,6 +618,33 @@ const std::vector<std::pair<float, float>> kCapSmall { { 0.0f, 0.0f }, { 7.78f, 
 } // namespace
 
 // =========================================================================================== Impl
+// The wear on the dark instrument's plates: a sheet made from a photograph of scratched black
+// metal (tools/wear.py makes it; assets/wear.png is it). Read once, the first time a stage is
+// put up, on the message thread: the drawing thread only hands it to the card.
+struct WearSheet { int w = 0, h = 0; std::vector<juce::uint8> grey; };
+static const WearSheet& wearSheet()
+{
+    static const WearSheet sheet = []
+    {
+        WearSheet s;
+        const juce::Image im = juce::ImageFileFormat::loadFrom (BinaryData::wear_png, (size_t) BinaryData::wear_pngSize);
+        if (! im.isValid() || im.getWidth() < 16 || im.getHeight() < 16) return s;
+        const juce::Image::BitmapData bd (im, juce::Image::BitmapData::readOnly);
+        s.w = bd.width; s.h = bd.height;
+        s.grey.resize ((size_t) s.w * (size_t) s.h);
+        for (int y = 0; y < s.h; ++y)
+        {
+            const juce::uint8* in = bd.getLinePointer (y);
+            juce::uint8* out = s.grey.data() + (size_t) y * (size_t) s.w;
+            for (int x = 0; x < s.w; ++x, in += bd.pixelStride)
+                out[x] = bd.pixelFormat == juce::Image::RGB  ? ((const juce::PixelRGB*) in)->getGreen()
+                       : bd.pixelFormat == juce::Image::ARGB ? ((const juce::PixelARGB*) in)->getGreen() : *in;
+        }
+        return s;
+    }();
+    return sheet;
+}
+
 struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
 {
     explicit Impl (Stage& s, Engine& e) : owner (s), eng (e)
@@ -699,6 +729,10 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     GLuint quadVao = 0, quadVbo = 0;
     std::unique_ptr<juce::OpenGLShaderProgram> pSlab, pTurned, pSlabDepth, pTurnedDepth, pLight, pRoom, pGlow, pDown, pUp, pFinal, pCopy, pTag;
     GLuint sheetTex = 0, shadowTex = 0, shadowFbo = 0;
+    GLuint wearTex = 0;                                 // the wear sheet (the dark instrument's scratches)
+    static constexpr float kWearSpan = 330.0f;          // how much of a plate the sheet's height covers: about one of the lanes' plates
+    float wearSpanX = kWearSpan;
+    std::atomic<bool> wearOk { false }, wearShown { true };
     GLuint msFbo = 0, msColour = 0, msDepth = 0, sceneFbo = 0, sceneTex = 0, finalFbo = 0, finalTex = 0;
     static constexpr int kMips = 6;
     GLuint mipFbo[kMips] {}, mipTex[kMips] {}; int mipW[kMips] {}, mipH[kMips] {};
@@ -908,6 +942,35 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             for (int l = 0; l < 4; ++l) glTexSubImage2D (GL_TEXTURE_2D, l, 0, 0, sheetW >> l, sheetH >> l, GL_BGRA, GL_UNSIGNED_BYTE, none.data());
         }
 
+        // the wear: the sheet of scratches, at every size down to a point (seen from far off a scratch fades: it does not glitter)
+        {
+            const WearSheet& ws = wearSheet();
+            clearErrors();
+            glGenTextures (1, &wearTex); glBindTexture (GL_TEXTURE_2D, wearTex);
+            glPixelStorei (GL_UNPACK_ALIGNMENT, 1);
+            if (ws.w > 0) glTexImage2D (GL_TEXTURE_2D, 0, GL_R8, ws.w, ws.h, 0, GL_RED, GL_UNSIGNED_BYTE, ws.grey.data());
+            bool ok = ws.w > 0 && glGetError() == GL_NO_ERROR;
+            if (! ok)
+            {
+                // (no sheet: the plates are then simply unscratched. Nothing else depends on it.)
+                const juce::uint8 none[4] = { 0, 0, 0, 0 };
+                glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, none);
+            }
+            glPixelStorei (GL_UNPACK_ALIGNMENT, 4);
+            const bool sizes = ok && glGenerateMipmap != nullptr;
+            if (sizes) glGenerateMipmap (GL_TEXTURE_2D);
+            glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sizes ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            if (sizes && juce::OpenGLHelpers::isExtensionSupported ("GL_EXT_texture_filter_anisotropic"))
+            {
+                GLfloat most = 1.0f; glGetFloatv (0x84FF, &most);
+                glTexParameterf (GL_TEXTURE_2D, 0x84FE, std::min (8.0f, most));
+            }
+            wearSpanX = ok ? kWearSpan * (float) ws.w / (float) ws.h : kWearSpan;
+            wearOk = ok;
+            clearErrors();
+        }
+
         // the shadows: how far everything is from the light, seen from it
         glGenTextures (1, &shadowTex); glBindTexture (GL_TEXTURE_2D, shadowTex);
         glTexImage2D (GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, kShadow, kShadow, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
@@ -955,7 +1018,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         if (quadVbo != 0) glDeleteBuffers (1, &quadVbo);
         quadVao = quadVbo = 0;
         dropBuffers();
-        for (GLuint* t : { &sheetTex, &shadowTex }) if (*t != 0) { glDeleteTextures (1, t); *t = 0; }
+        for (GLuint* t : { &sheetTex, &shadowTex, &wearTex }) if (*t != 0) { glDeleteTextures (1, t); *t = 0; }
         if (shadowFbo != 0) { glDeleteFramebuffers (1, &shadowFbo); shadowFbo = 0; }
         for (auto& t : tags) if (t.tex != 0) glDeleteTextures (1, &t.tex);
         tags.clear();
@@ -1085,7 +1148,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         for (const auto& p : parts.plates)
         {
             slab (p.r.expanded (1.3f), p.base + 0.05f, 0.02f, 8.6f, 0.0f, l.pocket, 0.9f, 0.0f, 0.0f, 0.0f, p.clip);       // the pocket it stands in, seen as the gap round it
-            slab (p.r, p.base, Parts::kPlate, 7.5f, 1.2f, lin (p.ground), l.plateRough, 1.0f, 0.0f, 0.0f, p.clip, 1.0f);       // (a faceplate: it has the anodized finish)
+            slab (p.r, p.base, Parts::kPlate, 7.5f, 1.2f, lin (p.ground), l.plateRough, 1.0f, 0.0f, 0.0f, p.clip, 1.0f + p.seed);      // (a faceplate: it has the anodized finish, and its own wear)
         }
         for (const auto& k : parts.keys)
         {
@@ -1193,6 +1256,8 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         glUniform1i (loc ("uSheet"), 0);
         glUniform4f (loc ("uSheetMap"), kW * 0.5f, kH * 0.5f, sheetS / (float) sheetW, sheetS / (float) sheetH);
         glUniform1i (loc ("uShadow"), 1);
+        glUniform1i (loc ("uWear"), 2);
+        glUniform2f (loc ("uWearSpan"), wearSpanX, kWearSpan);
         glUniformMatrix4fv (loc ("uShadowVP"), 1, GL_FALSE, sunVP.m);
         glUniform1f (loc ("uShadowTexel"), 1.0f / (float) kShadow);
         {
@@ -1414,6 +1479,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             shadowStale = false;
         }
         glActiveTexture (GL_TEXTURE1); glBindTexture (GL_TEXTURE_2D, shadowTex);
+        glActiveTexture (GL_TEXTURE2); glBindTexture (GL_TEXTURE_2D, wearShown.load() ? wearTex : 0);     // (none bound reads as black: nothing scratched)
         glActiveTexture (GL_TEXTURE0);
 
         glBindFramebuffer (GL_FRAMEBUFFER, msFbo);
@@ -1595,6 +1661,7 @@ void Stage::attachTo (juce::Component& c)
    #endif
     impl->context.setSwapInterval (1);
     impl->sheetOverflow = true;         // (a new picture starts with an empty sheet: all of it is sent again)
+    wearSheet();            // (read here, once, so that the drawing thread never has to)
     impl->context.attachTo (c);
     impl->sendEye (true);
 }
@@ -1878,5 +1945,7 @@ juce::Image Stage::capture (int timeoutMs)
 double Stage::frameMs() const { return impl->lastMs.load(); }
 int Stage::frames() const { return impl->frameCount.load(); }
 int Stage::builds() const { return impl->buildCount.load(); }
+bool Stage::wearReady() const { return impl->wearOk.load(); }
+void Stage::showWear (bool on) { impl->wearShown = on; }
 int Stage::firstPictureSpread() const { return impl->lookSpread.load(); }
 } // namespace sf0

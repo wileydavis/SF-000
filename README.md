@@ -144,8 +144,10 @@ key's gate and anything else that follows the hand is wherever the pointer is on
 - **D** is the dark instrument here too.
 
 The dark instrument's faceplates have a worn black anodized finish: a fine grain, a slight
-unevenness, hair-thin scratches, wear toward the metal along the edges. Its case is powder
-coat: an orange-peel, a speckle, a few scuffs. The pale instrument is plain.
+unevenness, scratches and dust, wear toward the metal along the edges. The scratches are a
+photograph's (`assets/wear.png`, made by `tools/wear.py`): every plate takes its own piece of
+it, turned its own way, so no two modules are worn alike. Its case is powder coat: an
+orange-peel, a speckle, a few scuffs. The pale instrument is plain.
 
 The glow under the case is set in SETUP: three knobs. COLOUR (round the wheel), BRIGHTNESS (none
 to four times what it comes with) and PULSE: how much it beats with the kick, from none (steady,
@@ -425,6 +427,7 @@ build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (sn
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
+python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```
