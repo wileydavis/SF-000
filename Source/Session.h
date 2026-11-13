@@ -27,6 +27,18 @@ struct Snapshot
     // the files each insert holds (a convolution's impulse responses). Snapshots from before this was kept say nothing.
     bool hasInsFiles = false;
     std::array<std::array<std::vector<Engine::FileRef>, kSlots>, kLanes> insFiles;
+    // What each lane was playing that its own steps do not say: the notes that came in from
+    // outside on its channel over the bars before it was taken, as steps (heardOn: some did),
+    // and whether the lane's own sequencer was muted then (its steps were not sounding). The
+    // notes themselves are kept as they came: [[beat in the loop, length in beats, note, velocity], ...].
+    // Snapshots from before this was kept say nothing: a recall gives a lane its own steps, as it always did.
+    bool hasPlayed = false;
+    std::array<bool, kLanes> heardOn {}, seqMuted {};
+    std::array<Pattern, kLanes> heard;
+    std::array<juce::var, kLanes> heardNotes;
+    // the audio file each lane held (a sample, a phrase); empty: none. Snapshots from before these were kept say nothing.
+    bool hasFiles = false;
+    std::array<juce::String, kLanes> laneFiles;
     // what it sounded like when it was taken, worked out from the bars kept with it (has: false if
     // nothing was playing, or it was taken before profiles were kept)
     Profile profile;
@@ -201,13 +213,32 @@ public:
     // A recall of part of it: the lanes that are chosen, the returns, the drum bus, the key come
     // from the snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo,
     // GLIDE and the master's three knobs are the rig's and no snapshot's.)
+    // notes: the lanes' sequencers are given what each lane was playing (see recallNotes). Out:
+    // every sequencer stays as it is, and the recall is the sound alone.
     struct Scope
     {
-        std::array<bool, kLanes> lane; bool returns = true, bus = true, master = true;
+        std::array<bool, kLanes> lane; bool returns = true, bus = true, master = true, notes = true;
         Scope() { lane.fill (true); }
-        bool all() const { for (bool b : lane) if (! b) return false; return returns && bus && master; }
+        bool all() const { for (bool b : lane) if (! b) return false; return returns && bus && master && notes; }
     };
     void recall (juce::int64 id, const Scope&);
+    // NOTES: whether a recall brings a snapshot's notes. Lit (as it starts): each lane's sequencer
+    // is given what the lane was playing when the snapshot was taken, its own steps and the notes
+    // that were coming in from outside together, and plays them (its sequencer's mute is set to
+    // match: off where there are notes to play). Out: a recall changes the sound and leaves every
+    // sequencer, its steps and its mute, exactly as it is. Kept with the session. Every recall
+    // goes by it: a tap in the library, a snapshot knob's press, a sequencer's RECALL.
+    bool recallNotes = true;
+    void setRecallNotes (bool on)       { if (on != recallNotes) { recallNotes = on; touch(); if (onChange) onChange(); } }
+    // What a recall with notes gives a lane's sequencer: its own steps as the snapshot holds
+    // them; or, if notes were coming in from outside, those as steps (over its own steps where
+    // both were sounding, alone if its own sequencer was muted).
+    static Pattern played (const Snapshot&, int lane);
+    // The notes from outside, taken from the engine and kept for the last bars. What a lane was
+    // being played over the bars before now, as steps: as many bars as the part takes to come
+    // round (one, two, four or eight), or the last eight if it does not. False: nothing came.
+    void pullHeard();
+    bool heardPattern (int lane, Pattern&, juce::var* notes = nullptr) const;
     const Snapshot* findSnap (juce::int64 id) const;
     int indexOf (juce::int64 id) const;
     void remove (juce::int64 id);
@@ -242,7 +273,12 @@ public:
 private:
     void timerCallback() override;
     void applyMorph (double glideBeats);
-    void applySnapshot (const Snapshot&, double glideBeats);
+    // notes: the lanes whose sequencers are given what the snapshot was playing (nullptr: all of them)
+    void applySnapshot (const Snapshot&, double glideBeats, const std::array<bool, kLanes>* notes = nullptr);
+    void recallWhole (juce::int64 id);
+    struct HeardEv { double on = 0.0, len = -1.0; int note = 0, vel = 0; };      // len below 0: still held
+    std::array<std::vector<HeardEv>, kLanes> heardLog;
+    double heardFrom = 0.0;             // nothing before this song position is known (the clock set off there, or the log reaches no further back)
     bool laneJumps (const Snapshot&, int lane) const;           // its instrument is to change in a way that cannot travel
     bool insertStays (const Snapshot&, int lane, int slot) const;
     void regenerate (int lane);

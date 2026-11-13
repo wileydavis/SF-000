@@ -112,6 +112,12 @@ public:
     void noteInAt (const juce::MidiMessage&, int sampleInNextBlock);     // tests: exactly there
     float notesLateMs() const                   { return lateMs.load(); }   // incoming notes against the sixteenths, averaged (+ late)
     int notesHeard() const                      { return lateCount.load(); }
+    // The notes that came in from outside while the clock ran, each at the song position it was
+    // played at: a snapshot takes what every lane was being played from these. kind: 0 a note's
+    // end, 1 its start, 2 the clock set off again (what came before it is another run's), 3 some
+    // were lost (nobody took them for too long). The message thread takes them, oldest first.
+    struct HeardNote { double ppq = 0.0; juce::uint8 lane = 0, note = 0, vel = 0, kind = 0; };
+    int takeHeardNotes (HeardNote* into, int most);
 
     // ---- MIDI clock out: START, 24 ticks a beat while it runs, STOP, for whatever follows this rig. The clock
     // runs ahead of the sound by two blocks and LEAD, so a follower's notes are back here in time
@@ -433,6 +439,11 @@ private:
     int noteKeptN = 0;
     juce::MidiBuffer liveMidi;
     void gatherNotes (int n, double spb);
+    static constexpr int kHeardQ = 8192;
+    juce::AbstractFifo heardFifo { kHeardQ };
+    std::array<HeardNote, kHeardQ> heardQ;
+    bool heardLost = false;                     // audio thread: the queue was full
+    void pushHeard (const HeardNote&);
     void pushClock (juce::uint8 byte, double dueMs, juce::int64 sample);
     struct ClockIn { double ms = 0.0; juce::uint8 byte = 0; };
     juce::AbstractFifo clockInFifo { kNoteQ };

@@ -114,6 +114,7 @@ public:
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
     juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
     static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
+    static bool testIsNotesKey (const TestHit& h) { return h.kind == hAct && h.a == aNotes; }      // NOTES: whether a recall brings a snapshot's notes
     // the kinds of thing that say what they are when pointed at with INFO on
     static bool testAnswers (const TestHit& h) { return h.kind == hKnob || h.kind == hToggle || h.kind == hHold || h.kind == hRead || h.kind == hSnapKnob || h.kind == hLane || h.kind == hConfig
                                                      || h.kind == hInsHead || h.kind == hStep || h.kind == hPageSel || h.kind == hLen || h.kind == hAct; }
@@ -153,7 +154,7 @@ private:
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
                    hFront };        // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp };
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes };
 
     void timerCallback() override;
     void handleAsyncUpdate() override;

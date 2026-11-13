@@ -48,6 +48,7 @@ The uid comes back the same (see below); `made` does not.
   "baseId":    the snapshot last recalled or taken,
   "controls":  { "g.tempo": 0.51, ... },      what a snapshot leaves alone: tempo, glide, master, mutes
   "activeLane", "files", "space", "insertFiles":   the rig's own state (samples, impulse responses)
+  "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ] } x 16 ],
   "defs":      { "<print>": definition, ... }
@@ -78,6 +79,8 @@ this build does not have is written back as it was read.
   "gen":      [ armed generator per lane, -1 none ],
   "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ], "bus": {..} },
   "insertFiles": [ { "lane", "slot", "files": [ { "place", "type", "files": [paths] } ] } ],
+  "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
+  "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
 }
 ```
@@ -91,6 +94,16 @@ this build does not have is written back as it was read.
   `in_1` to `in_11`: which lanes play through it, in `made.slots` order). Absent on a snapshot
   from before there was a bus (twenty-eighth build): the bus is then left as it is.
 - **A step** may grow more numbers after the sixth; a reader takes the ones it knows.
+- **`played`** (twenty-ninth build on): what was playing that `patterns` does not say.
+  `seqMute`, in `made.slots` order: 1 if the lane's own sequencer was muted, so its `patterns`
+  entry was not sounding. `in`: one entry for each lane that notes were coming into from outside,
+  `lane` its place in `made.slots`; `len` and `steps` are those notes as a pattern (as in
+  `patterns`: step 0 is the first sixteenth of a bar), and `notes` the notes themselves over that
+  loop, each `[beat in the loop, length in beats, MIDI note, velocity]` (a length of -1: still
+  held when it was taken). A lane with no entry had none. Absent altogether: a snapshot from
+  before this was kept, whose lanes are taken to have been playing their own `patterns`.
+- **`laneFiles`** (twenty-ninth build on): the audio file each lane held, by path, in
+  `made.slots` order. Absent: not known.
 - **`ext`** is where another tool writes: `ext.<toolname>`. Tags, an embedding, a place on a map,
   a note. It is the one place a tool may change in a snapshot that already exists.
 

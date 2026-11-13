@@ -374,7 +374,207 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         }
     }
 
-    if (std::getenv ("SF000_TEST_BUS") != nullptr) { std::printf ("%s\n", bad == 0 ? "(the drum bus's checks only: passed)" : "(the drum bus's checks only: FAILED)"); return bad; }
+    // A snapshot keeps what was playing: the notes that came in from outside (as steps), whether each
+    // lane's own sequencer was heard, and the sample a lane held. A recall brings them, or leaves
+    // the sequencers be.
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_played_test");
+        tmp.deleteRecursively();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        const int block = 256;
+        struct Tap : Engine::RecSink
+        {
+            std::vector<float> a; int want = 1; bool on = false;
+            void begin (int) noexcept override {}
+            void track (int idx, const float* l, const float*, int n) noexcept override { if (on && idx == want && a.size() + (size_t) n <= a.capacity()) a.insert (a.end(), l, l + n); }
+            void end (int) noexcept override {}
+        };
+        // what plays in from outside, as a sequencer would: each part goes round every `loop` beats, a few milliseconds late
+        struct Note { double at, len; int note, vel; };
+        struct Part { int channel; double loop; std::vector<Note> notes; };
+        const Part bass { 6, 8.0, { { 0.0, 0.2, 36, 100 }, { 0.75, 0.2, 36, 80 }, { 1.5, 0.45, 39, 110 }, { 2.5, 0.2, 36, 90 }, { 4.0, 0.2, 43, 100 }, { 5.5, 0.2, 41, 100 }, { 6.5, 0.7, 36, 127 } } };
+        Part hat { 2, 4.0, {} };
+        for (int k = 0; k < 8; ++k) hat.notes.push_back ({ 0.5 * k, 0.1, 60, k % 2 == 0 ? 110 : 70 });
+        hat.notes.push_back ({ 3.625, 0.05, 60, 70 });                         // (a second hit in step 15: a ratchet)
+        const Part open { 3, 4.0, { { 0.75, 0.2, 60, 100 }, { 2.75, 0.2, 60, 100 } } };       // steps 4 and 12, with the lane's own steps sounding too
+        Part wander { 9, 1.0e9, {} };                                           // a part that never comes round
+        for (int k = 0; k < 96; ++k) if (seqHash (41, k) > 0.6f) wander.notes.push_back ({ 0.25 * k, 0.2, 48 + (int) (seqHash (7, k) * 12.0f), 100 });
+        const std::vector<const Part*> parts = { &bass, &hat, &open, &wander };
+        auto playTo = [&] (Engine& e, double toBeat, bool outside)
+        {
+            juce::AudioBuffer<float> b (2, block);
+            const double spb = 48000.0 * 60.0 / e.tempo(), late = 0.002 * e.tempo() / 60.0;
+            while (e.songPos() < toBeat - 1.0e-9)
+            {
+                const double q0 = e.songPos(), q1 = q0 + (double) block / spb;
+                if (outside)
+                    for (auto* p : parts)
+                        for (auto& n : p->notes)
+                            for (int end = 0; end < 2; ++end)
+                            {
+                                const double t = n.at + late + (end == 1 ? n.len : 0.0);
+                                const double first = std::ceil ((q0 - t) / p->loop - 1.0e-12) * p->loop + t;
+                                if (first < q0 || first >= q1) continue;
+                                const int at = juce::jlimit (0, block - 1, (int) std::floor ((first - q0) * spb));
+                                e.noteInAt (end == 0 ? juce::MidiMessage::noteOn (p->channel, n.note, (juce::uint8) n.vel) : juce::MidiMessage::noteOff (p->channel, n.note), at);
+                            }
+                e.render (b);
+            }
+        };
+        auto same = [] (const Pattern& a, const Pattern& b)
+        {
+            if (a.length != b.length) return false;
+            for (int i = 0; i < a.length; ++i)
+            {
+                const auto& x = a.steps[(size_t) i]; const auto& y = b.steps[(size_t) i];
+                if (x.on != y.on || (x.on && (x.note != y.note || x.octave != y.octave || x.ratchet != y.ratchet || std::abs (x.vel - y.vel) > 0.01f || std::abs (x.gate - y.gate) > 0.06f))) return false;
+            }
+            return true;
+        };
+        auto lit = [] (const Pattern& p) { juce::String t; for (int i = 0; i < p.length; ++i) if (p.steps[(size_t) i].on) t << (t.isEmpty() ? "" : " ") << (i + 1); return t; };
+        auto muted = [] (Engine& e, int l) { return e.target (cx::lane (l, cx::kSeqMute)) > 0.5f; };
+        // each sixteenth's level over two bars of a lane's stem
+        auto levels = [] (const std::vector<float>& x, double spb)
+        {
+            std::vector<double> v;
+            for (int k = 0; k < 32; ++k)
+            {
+                const size_t a = (size_t) ((double) k * 0.25 * spb), b = std::min (x.size(), (size_t) ((double) (k + 1) * 0.25 * spb));
+                double q = 0.0; for (size_t i = a; i < b; ++i) q += (double) x[i] * x[i];
+                v.push_back (10.0 * std::log10 (q / (double) std::max<size_t> (1, b - a) + 1.0e-12));
+            }
+            return v;
+        };
+        juce::int64 keptId = 0;
+        {
+            Engine e; e.prepare (48000.0, block);
+            Session s (e, true);
+            const double spb = 48000.0 * 60.0 / e.tempo();
+            // the kick and the open hat play their own steps; every other lane's own sequencer is muted (the outside plays them)
+            for (int l = 0; l < kLanes; ++l) s.userSet (cx::lane (l, cx::kSeqMute), l == 0 || l == 2 ? 0.0f : 1.0f);
+            const Pattern kickWas = e.pattern (0), openWas = e.pattern (2), bassOwn = e.pattern (5);
+            const int cut = e.find ("bass.cutoff");
+            s.userSet (cx::kGlide, 0.0f); s.userSet (cut, 0.3f);
+            Tap tap; tap.want = 1 + 5; tap.a.reserve (48000 * 8);
+            e.setRecSink (&tap);
+            e.setRunning (true);
+            playTo (e, 16.0, true);
+            tap.on = true; playTo (e, 24.0, true); tap.on = false;             // two bars of the bass as the outside plays it
+            const auto bassOut = tap.a; tap.a.clear();
+            const auto id = s.take();
+            keptId = id;
+            s.finishTakes (true);
+            const Snapshot snap = *s.findSnap (id);
+
+            // what it kept
+            const auto& hb = snap.heard[5]; const auto& hh = snap.heard[1];
+            auto step = [] (const Pattern& p, int i) -> const Step& { return p.steps[(size_t) i]; };
+            const bool bassKept = snap.hasPlayed && snap.heardOn[5] && hb.length == 32 && lit (hb) == "1 4 7 11 17 23 27"
+                               && step (hb, 0).note == 0 && step (hb, 0).octave == 1 && step (hb, 6).note == 3 && step (hb, 16).note == 7 && step (hb, 22).note == 5
+                               && std::abs (step (hb, 6).gate - 1.8f) < 0.06f && std::abs (step (hb, 26).gate - 2.8f) < 0.06f && std::abs (step (hb, 26).vel - 1.0f) < 0.01f && std::abs (step (hb, 3).vel - 80.0f / 127.0f) < 0.01f
+                               && snap.heardNotes[5].isArray() && snap.heardNotes[5].size() == 7;
+            const bool hatKept = snap.heardOn[1] && hh.length == 16 && lit (hh) == "1 3 5 7 9 11 13 15" && step (hh, 14).ratchet == 2 && step (hh, 12).ratchet == 1;
+            const bool wanderKept = snap.heardOn[8] && snap.heard[8].length == 64;
+            const bool whoPlayed = ! snap.heardOn[0] && ! snap.heardOn[7] && snap.heardOn[2] && ! snap.seqMuted[0] && ! snap.seqMuted[2] && snap.seqMuted[5] && snap.seqMuted[7];
+            const bool kept = bassKept && hatKept && wanderKept && whoPlayed;
+            std::printf ("  %s: a snapshot keeps what was playing in from outside, as steps: a two-bar bass line (32 steps: %s, its notes, gates and velocities), a hat that goes round in a bar (16 steps: %s, the ratchet in step 15), a part that never comes round (its last four bars), and which lanes' own sequencers were heard\n",
+                         kept ? "ok  " : "FAIL", lit (hb).toRawUTF8(), lit (hh).toRawUTF8());
+            if (! kept) { std::printf ("    (bass %d hat %d wander %d (%d steps) who %d)\n", (int) bassKept, (int) hatKept, (int) wanderKept, snap.heard[8].length, (int) whoPlayed); ++bad; }
+
+            // the outside goes quiet, the sequencers are wiped and their mutes turned about; a recall with notes puts it all back
+            for (int l = 0; l < kLanes; ++l) s.setPattern (l, Pattern());
+            for (int l = 0; l < kLanes; ++l) s.userSet (cx::lane (l, cx::kSeqMute), l == 0 || l == 5 || l == 1 ? 1.0f : 0.0f);
+            s.userSet (cut, 0.8f);
+            s.recall (id);
+            Pattern merged = openWas;
+            merged.steps[3] = snap.heard[2].steps[3]; merged.steps[11] = snap.heard[2].steps[11];
+            const bool given = same (e.pattern (5), hb) && same (e.pattern (1), hh) && same (e.pattern (0), kickWas) && same (e.pattern (2), merged) && same (e.pattern (7), snap.patterns[7]);
+            const bool mutes = ! muted (e, 0) && ! muted (e, 1) && ! muted (e, 2) && ! muted (e, 5) && muted (e, 7) && ! muted (e, 8) && muted (e, 9);
+            playTo (e, 32.0, false);                                            // (the recalled steps are taken up on the bar line)
+            tap.on = true; playTo (e, 40.0, false); tap.on = false;             // two bars of the bass from its own sequencer
+            const auto bassIn = tap.a; tap.a.clear();
+            const auto was = levels (bassOut, spb), is = levels (bassIn, spb);
+            double off = 0.0; int sounding = 0;
+            // (down to 40 dB under full: the outside's notes come a few milliseconds late, so the edge of a hit falls in the sixteenth before it one way and not the other)
+            for (int k = 0; k < 32; ++k) if (was[(size_t) k] > -40.0 || is[(size_t) k] > -40.0) { off += std::abs (std::max (-40.0, was[(size_t) k]) - std::max (-40.0, is[(size_t) k])); ++sounding; }
+            off /= std::max (1, sounding);
+            const bool sounds = bassOut.size() > 48000 && sounding >= 7 && off < 2.5;
+            if (! sounds) { for (int k = 0; k < 32; ++k) std::printf ("%s%.0f/%.0f", k == 0 ? "    (" : " ", was[(size_t) k], is[(size_t) k]); std::printf (")\n"); }
+            const bool back = given && mutes && sounds && std::abs (e.target (cut) - 0.3f) < 1.0e-4f;
+            std::printf ("  %s: recalled with NOTES lit and nothing playing in: each lane's sequencer has what the lane was playing (the bass line, the hat, the kick's own steps, the open hat's own steps with the outside's two among them), its mute set to match, and the bass sounds as it did (over two bars, a sixteenth's level %.2f dB off on average)\n",
+                         back ? "ok  " : "FAIL", off);
+            if (! back) { std::printf ("    (given %d mutes %d sounds %d: %d sixteenths with sound; the bass has steps %s)\n", (int) given, (int) mutes, (int) sounds, sounding, lit (e.pattern (5)).toRawUTF8()); ++bad; }
+
+            // NOTES out: the sound alone. Every sequencer, its steps and its mute, stays as it is
+            s.setRecallNotes (false);
+            Pattern mine; mine.steps[1].on = true; mine.steps[1].octave = 1;
+            s.setPattern (5, mine); s.userSet (cx::lane (5, cx::kSeqMute), 1.0f); s.userSet (cx::lane (7, cx::kSeqMute), 0.0f);
+            s.userSet (cut, 0.8f);
+            s.recall (id);
+            const bool soundOnly = same (e.pattern (5), mine) && muted (e, 5) && ! muted (e, 7) && std::abs (e.target (cut) - 0.3f) < 1.0e-4f;
+            // a snapshot knob's press and a part of a recall go by it too; a snapshot from before any of this gives a lane its own steps and leaves the mutes
+            s.setRecallNotes (true);
+            Snapshot old = snap; old.id = 4243; old.hasPlayed = false;
+            s.library.push_back (old);
+            s.userSet (cx::lane (5, cx::kSeqMute), 1.0f);
+            s.recall (4243);
+            const bool asBefore = same (e.pattern (5), bassOwn) && muted (e, 5);
+            Session::Scope part; part.lane.fill (false); part.lane[5] = true; part.returns = false; part.bus = false; part.master = false; part.notes = false;
+            s.setPattern (5, mine);
+            s.recall (id, part);
+            const bool partly = same (e.pattern (5), mine);
+            const bool ok = soundOnly && asBefore && partly;
+            std::printf ("  %s: with NOTES out a recall is the sound alone (the knobs come, the bass's steps and its sequencer's mute stay as they were); a snapshot from before notes were kept gives a lane its own steps and leaves the mutes, as it always did\n", ok ? "ok  " : "FAIL");
+            if (! ok) { std::printf ("    (sound only %d as before %d partly %d)\n", (int) soundOnly, (int) asBefore, (int) partly); ++bad; }
+
+            // the sample a lane held: a recall puts it back
+            auto wavOf = [&] (const char* name, double hz)
+            {
+                const auto f = tmp.getChildFile (name);
+                juce::AudioBuffer<float> tone (1, 24000);
+                for (int i = 0; i < 24000; ++i) tone.setSample (0, i, 0.4f * (float) std::sin (juce::MathConstants<double>::twoPi * hz * i / 48000.0));
+                juce::WavAudioFormat wav;
+                if (auto out = std::unique_ptr<juce::FileOutputStream> (f.createOutputStream()))
+                    if (auto* w = wav.createWriterFor (out.get(), 48000.0, 1, 16, {}, 0)) { out.release(); std::unique_ptr<juce::AudioFormatWriter> wr (w); wr->writeFromAudioSampleBuffer (tone, 0, 24000); }
+                return f;
+            };
+            const auto fa = wavOf ("a.wav", 220.0), fb = wavOf ("b.wav", 330.0);
+            const bool loaded = e.loadFile (10, fa);
+            const auto withA = s.take();
+            s.finishTakes (true);
+            e.loadFile (10, fb);
+            const bool holdsB = e.laneFile (10) == fb.getFullPathName();
+            s.recall (withA);
+            const bool holdsA = e.laneFile (10) == fa.getFullPathName() && s.findSnap (withA)->laneFiles[10] == fa.getFullPathName();
+            e.loadFile (10, fb);
+            s.recall (4243);                                                    // (one from before samples were kept... it says the lane had none: left as it is)
+            const bool left = e.laneFile (10) == fb.getFullPathName();
+            const bool files = loaded && holdsB && holdsA && left;
+            std::printf ("  %s: a snapshot keeps the sample a lane held: taken with one phrase on VOICE and recalled with another there, the first is back; a snapshot that names none leaves the lane's as it is\n", files ? "ok  " : "FAIL");
+            if (! files) { std::printf ("    (loaded %d B %d A %d left %d)\n", (int) loaded, (int) holdsB, (int) holdsA, (int) left); ++bad; }
+
+            // and all of it through the file
+            s.setRecallNotes (false);
+            s.waitForClips();
+            s.save();
+            e.setRecSink (nullptr);
+        }
+        {
+            Engine e2; Session s2 (e2, true);
+            const Snapshot* r = s2.findSnap (keptId);
+            const Snapshot* withFile = nullptr;
+            for (auto& x : s2.library) if (x.hasFiles && x.laneFiles[10].endsWith ("a.wav")) withFile = &x;
+            const bool ok = r != nullptr && r->hasPlayed && r->heardOn[5] && r->heard[5].length == 32 && lit (r->heard[5]) == "1 4 7 11 17 23 27" && r->heard[5].steps[6].note == 3 && std::abs (r->heard[5].steps[26].gate - 2.8f) < 0.06f
+                         && r->heard[1].steps[14].ratchet == 2 && r->seqMuted[5] && ! r->seqMuted[0] && r->heardNotes[5].size() == 7 && withFile != nullptr && ! s2.recallNotes;
+            std::printf ("  %s: saved and opened again, a snapshot still holds what was playing (the bass's steps and its notes as they came, the ratchet, the mutes) and the sample; NOTES is as it was left\n", ok ? "ok  " : "FAIL");
+            if (! ok) ++bad;
+            s2.waitForClips();
+        }
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+    }
+
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
 
     // Recording: the set and its parts go to disk as they are played.
     {
@@ -1415,11 +1615,18 @@ static int uiTest()
         const auto shot = ses.take();
         click (at); audio (4);
         const bool back = e.target (sm) < 0.5f;
-        ses.recall (shot);                          // taken while it was muted
+        ses.recall (shot);                          // taken while it was muted, and nothing was playing the kick from outside: the lane was silent
         audio (4);
+        const bool mutedAgain = e.target (sm) > 0.5f;
+        click (at); audio (4);
+        ses.setRecallNotes (false);
+        ses.recall (shot);
+        audio (4);
+        const bool leftAlone = e.target (sm) < 0.5f;
+        ses.setRecallNotes (true);
         check (found == 1 && lit && back && kickOn > 1e-3 && kickOff < kickOn * 1e-4 && hatOff > hatOn * 0.5,
                "the sequencer's M key stops the kick's steps and leaves the hat's playing; a second press brings them back");
-        check (e.target (sm) < 0.5f, "it is not a snapshot's to change: recalling one taken while it was muted leaves it playing");
+        check (mutedAgain && leftAlone, "a recall with NOTES lit sets it as the snapshot had it (taken while the kick's steps were muted and nothing played it: muted again); with NOTES out a recall leaves it alone");
         ses.selectLane (7); draw();
     }
 
@@ -1634,6 +1841,22 @@ static int uiTest()
         if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));
         check (noneYet && row && out && took, "the library, a snapshot cued: fourteen keys say what RECALL takes (the lanes, the returns, the drum bus, the key); with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
         if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (CUE off again)
+        // NOTES: a key in the library and one on the snapshot module, and N on the keyboard
+        {
+            const bool was = ses.recallNotes;
+            const int inLibrary = countOf (Screen::testIsNotesKey);
+            click (firstOf (Screen::testIsNotesKey)); draw();
+            const bool outByKey = ses.recallNotes != was;
+            sc.setPage (Screen::pMain); draw();
+            const int onMain = countOf (Screen::testIsNotesKey);
+            click (firstOf (Screen::testIsNotesKey)); draw();
+            const bool backByKey = ses.recallNotes == was;
+            sc.keyPressed (juce::KeyPress ('n', juce::ModifierKeys(), 'n')); sc.testTick();
+            const bool byN = ses.recallNotes != was;
+            sc.keyPressed (juce::KeyPress ('n', juce::ModifierKeys(), 'n')); sc.testTick();
+            check (was && inLibrary == 1 && onMain == 1 && outByKey && backByKey && byN && ses.recallNotes == was,
+                   "NOTES (whether a recall brings a snapshot's notes) is lit to begin with; its key in the library, its key on the snapshot module and N on the keyboard each put it out and light it again");
+        }
         sc.setPage (Screen::pMain); draw();
     }
     audio (200);

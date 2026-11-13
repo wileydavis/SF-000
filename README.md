@@ -53,6 +53,7 @@ First run:
 | SNAPSHOT | keep everything on the main screen as a new snapshot. If the clock is running, the last four bars are kept with it as a clip and it is given a profile: nothing to name or tag (see The library, below) |
 | Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
+| **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
@@ -63,6 +64,7 @@ First run:
 | Arrow keys | up and down: the active lane. Left and right: the step page |
 | **Tab** | the next module to the front: a lane, then those of its three inserts that have an effect in them, then the next lane and its inserts, and after the last lane the snapshot knobs, the returns, the master and the sequencer strip. Shift-Tab: the one before |
 | **C** (the keyboard's) | CONFIG for what is in front, and shut again (the returns: DUB's, then SPACE's, then shut) |
+| **N** | NOTES: whether a recall brings a snapshot's notes |
 | **I** | INFO: every control MIDI reaches shows its CC number, a panel its channel, and a control the mouse rests on says what it does. **I** again puts it away |
 | **H** | PHONES: headphones on the one pair of outputs. While a cue plays, the set is in the left ear and the cue in the right (see The library, below) |
 | **3** | the 3D stage, or the lit skin it is drawn from (see The 3D stage, below) |
@@ -304,6 +306,45 @@ keys says what RECALL takes: lanes 1 to 11, RET (the returns), BUS (the drum bus
 that part then stays as it is, steps, inserts and CONFIG included, and RECALL takes the rest.
 After the recall all are lit again. A tap with CUE off, a snapshot knob and a sequencer's RECALL
 take everything, as always.
+
+### What a snapshot holds of the playing
+
+A snapshot is meant to come back sounding as it did, whoever was playing the lanes when it was
+taken. So besides the sound it keeps, for every lane:
+
+- **its own steps**, as always;
+- **the notes that were coming in from outside** on the lane's channel (the OXI One, a keyboard),
+  written down as steps. SF-000 listens while the clock runs and keeps the last bars: a part that
+  comes round in one, two, four or eight bars is kept as that many; one that never comes round,
+  as its last bars (up to eight). A note up to a quarter of a step early or anywhere later in a
+  step is that step's; two to four hits inside one step are a ratchet; a note's length is the
+  step's gate, its velocity the step's. The notes are also kept exactly as they came, for a
+  later build to do more with;
+- **whether the lane's own sequencer was muted** (the M in the sequencer strip), so its steps
+  are known to have been silent;
+- **the sample it held** (a lane's audio file: a phrase on VOICE, a sample on a lane whose model
+  plays one).
+
+**NOTES** says what a recall does with the playing. It is a key on the snapshot module (beside
+its name), in the library, and **N**. Every recall goes by it: a tap in the library, a snapshot
+knob's press, a sequencer's RECALL.
+
+| NOTES | A RECALL |
+|---|---|
+| **lit** (how it starts) | puts into each lane's sequencer what the lane was playing: its own steps; or the notes from outside as steps; or both together where both were sounding (where a note came from outside, that note). The sequencer's M is set to match: off where there is something to play, on where the lane's steps were muted and nothing was playing it. With nothing playing into SF-000, the snapshot sounds as it did |
+| **out** | changes the sound and leaves every sequencer exactly as it is: its steps, its generator, its M. For when the OXI One is playing the lanes: no part is doubled |
+
+- With NOTES lit and the OXI One still playing a lane, that lane has its notes twice. Put NOTES
+  out, or mute the track on the ONE.
+- A snapshot taken before any of this was kept (before the twenty-ninth build) holds its lanes'
+  own steps only: recalled with NOTES lit it gives those and leaves the M keys alone, as recalls
+  always did.
+- What steps cannot hold is lost in the writing down: timing finer than a sixteenth (swing, a
+  note played early or late), more than one note on a step (the lowest is kept), a part longer
+  than eight bars, notes played while the clock was stopped.
+- The sample is kept by where its file is. If the file has been moved, the lane keeps the one it
+  has. A snapshot that held no file on a lane leaves that lane's file alone. SPACE's impulse
+  responses are still the rig's, as before.
 
 ### A recall, when more than knobs differ
 
@@ -618,7 +659,10 @@ back, quit and copy one over `session.json`. Delete `session.json` to start agai
   START, STOP and CONTINUE; a song position sent on its own is not read.
 - The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP
   and DROP are on the screen and the keyboard only.
-- Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC).
+- Recording of MIDI and knob moves, and rendering a set again from them (audio is recorded: REC;
+  a snapshot keeps the notes of its last bars, not a performance).
+- Playing a snapshot's notes from outside exactly as they came (kept in it, unused so far): the
+  sequencer plays them as steps. NOTES has no address on MIDI yet.
 - The library: the sound map drawn on the screen, more finders (traits by name), suggestions timed
   to where the set is, a learned model for likeness. Meaning filters; snapshot knob pages beyond the first.
 - A snapshot knob moves sound knobs only: it does not cross between effects or models (a recall does).

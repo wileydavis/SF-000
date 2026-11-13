@@ -620,6 +620,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aCue, "CUE", "WHILE IT IS LIT, A TAPPED SNAPSHOT'S BARS ARE HEARD IN THE HEADPHONES, IN TIME WITH THE CLOCK, AND THE SET IS LEFT ALONE." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
+                { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
                 { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A CUE PLAYS, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO. IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
@@ -682,6 +683,7 @@ const char* const kKeys[][2] = {
     { "F", "FULL SCREEN" },
     { "ESC", "BACK OUT: OF LOAD'S LIST, CONFIG, THE LIBRARY, FULL SCREEN" },
     { "H", "PHONES" },
+    { "N", "NOTES: WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES" },
     { "UP  DOWN", "THE ACTIVE LANE" },
     { "TAB", "THE NEXT MODULE TO THE FRONT (SHIFT: THE ONE BEFORE)" },
     { "C", "CONFIG FOR WHAT IS IN FRONT, AND SHUT" },
@@ -1234,11 +1236,17 @@ void Screen::drawSnapPanel (G& g, R r)
     if (vis (g, R (x0, y0, 262, 26)))
     {
         const float w = title (g, x0, y0, "SNAPSHOTS", ses.front.kind == Session::fSnap);
-        if (info) chan (g, x0 + w + 2, y0, e16::kSnapChannel);
-        else plate (g, x0 + w + 2, y0, "PAGE 1", fNote, 6, col::white, col::black);
+        // NOTES: whether a recall brings a snapshot's notes (lit) or its sound alone
+        const R kr (x0 + w + 4, y0 + 2, 46, 22);
+        key (g, kr, ses.recallNotes ? col::white : col::putty);
+        if (ses.recallNotes) text (g, "NOTES", kr, fLbl, col::black);
+        else textRaw (g, "NOTES", kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));
+        // (INFO: the page's channel, where the time of the last snapshot was)
         const String last = "LAST " + ses.lastTakenAt;
-        plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, last)) + 12), y0, last, fNote, 6, col::white, col::black);
+        if (info) chan (g, kr.getRight() + 4, y0, e16::kSnapChannel);
+        else plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, last)) + 12), y0, last, fNote, 6, col::white, col::black);
     }
+    hit (R (x0 + std::ceil (tw (fLegend, "SNAPSHOTS")) + 16 + 4, y0 + 2, 46, 22).expanded (1), hAct, aNotes, 0);
     for (int k = 0; k < 16; ++k)
     {
         const float cxm = x0 + (float) (k % 4) * 66 + 32, y = body + (float) (k / 4) * 61;
@@ -1654,22 +1662,24 @@ void Screen::drawLibrary (G& g)
     }
     // PHONES: one pair of outputs with headphones on it. While a cue plays: the set left, the cue right.
     actKey (g, aPhones, x0 + 518, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5);
+    // NOTES: whether a recall brings a snapshot's notes
+    actKey (g, aNotes, x0 + 584, ky, 64, "NOTES", ses.recallNotes ? col::green : col::putty, 5);
     const String help = ! cueMode ? (night() ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE LIT NAME IS THE BASE SCENE."
                                              : "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.")
                       : eng.phones() ? "CUE WITH PHONES LIT: WHILE A SNAPSHOT'S BARS PLAY, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET."
                       : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES (TICK THEM IN SETUP), OR PHONES LIT: THEN THIS OUTPUT CARRIES THE SET LEFT AND THE CUE RIGHT."
                       : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
-    if (online == nullptr) { text (g, help, R (x0 + 606, ky, 1040, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
+    if (online == nullptr) { text (g, help, R (x0 + 672, ky, 974, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
     // ONLINE: each snapshot goes to the library on the web as it is taken. The lamp: green when the
     // library holds them all, yellow while sending, amber when it waits (no network, or not set up), red when turned away.
     const auto st = online->status().state;
     onlineStamp = online->stamp();
     const Colour lamp = st == Online::State::off ? col::putty : st == Online::State::upToDate ? col::green : st == Online::State::working ? col::yellow
                       : st == Online::State::refused ? col::red : col::amber;
-    actKey (g, aOnline, x0 + 612, ky, 64, "ONLINE", lamp, 5);
-    actKey (g, aOnlineSetup, x0 + 678, ky, 64, "SET UP", col::white, 5);
-    text (g, online->line(), R (x0 + 766, ky, 894, 20), fLbl, col::black, juce::Justification::centredLeft);
-    text (g, help, R (x0 + 766, ky + 20, 894, 20), fLbl, col::black, juce::Justification::centredLeft);
+    actKey (g, aOnline, x0 + 678, ky, 64, "ONLINE", lamp, 5);
+    actKey (g, aOnlineSetup, x0 + 744, ky, 64, "SET UP", col::white, 5);
+    text (g, online->line(), R (x0 + 832, ky, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
+    text (g, help, R (x0 + 832, ky + 20, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
 }
 
 // ------------------------------------------------------------------------------ macro designer
@@ -1792,6 +1802,7 @@ void Screen::act (int a)
         case aSnapshot: selSnap = ses.take(); break;
         case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
+        case aNotes:    ses.setRecallNotes (! ses.recallNotes); repaint(); break;
         case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
         case aRecallCue:
@@ -1799,6 +1810,7 @@ void Screen::act (int a)
             {
                 Session::Scope sc;
                 if (id == scopeFor) { for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i]; sc.returns = scopeOn[(size_t) kLanes]; sc.bus = scopeOn[(size_t) kLanes + 1]; sc.master = scopeOn[(size_t) kLanes + 2]; }
+                sc.notes = ses.recallNotes;
                 selSnap = id; ses.recall (id, sc); ses.cue (0);
                 scopeOn.fill (true);                    // (the next recall takes everything again)
             }
@@ -2164,6 +2176,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { if (wantThree) setThree (false); setLit (! lit); if (onLook) onLook(); return true; }
     if (k.getTextCharacter() == 'i' || k.getTextCharacter() == 'I') { setInfo (! info); return true; }
     if (k.getTextCharacter() == 'h' || k.getTextCharacter() == 'H') { act (aPhones); return true; }
+    if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { act (aNotes); return true; }
     if (k.getTextCharacter() == 'd' || k.getTextCharacter() == 'D')
     {
         // the dark instrument, which is the lit skin's: from the flat drawing D goes to it

@@ -37,6 +37,7 @@ void Session::timerCallback()
 {
     finishTakes();
     engine.tidy();
+    pullHeard();
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
     if (const auto now = juce::Time::getMillisecondCounter(); useDisk && dirty && now - savedAt >= 2900) { savedAt = now; save(); }
     pruneCues();
@@ -443,11 +444,142 @@ Snapshot Session::capture() const
     }
     for (int r = 0; r < 2; ++r) s.retSetup[(size_t) r] = engine.getSetup ({ 2, 0, r });
     s.busSetup = engine.getSetup ({ 3, 0, 0 });
+    for (int l = 0; l < kLanes; ++l) s.laneFiles[(size_t) l] = engine.laneFile (l);
     s.hasSetup = true;
     s.hasBus = true;
     s.hasInsFiles = true;
+    s.hasFiles = true;
     s.made = madeNow (s);
     return s;
+}
+
+// ------------------------------------------------------------------- the notes from outside
+void Session::pullHeard()
+{
+    Engine::HeardNote buf[256];
+    for (;;)
+    {
+        const int n = engine.takeHeardNotes (buf, 256);
+        for (int i = 0; i < n; ++i)
+        {
+            const auto& h = buf[i];
+            if (h.kind >= 2) { for (auto& v : heardLog) v.clear(); heardFrom = h.ppq; continue; }      // the clock set off again, or some were lost: what is known starts here
+            if (h.lane >= kLanes) continue;
+            auto& v = heardLog[h.lane];
+            if (h.kind == 1) v.push_back ({ h.ppq, -1.0, h.note, h.vel });
+            else for (auto it = v.rbegin(); it != v.rend(); ++it) if (it->note == h.note && it->len < 0.0) { it->len = std::max (0.0, h.ppq - it->on); break; }
+        }
+        if (n < 256) break;
+    }
+    // no further back than seventeen bars: eight to be a loop, eight more to show that it is one
+    const double horizon = engine.songPos() - 68.0;
+    if (horizon > heardFrom)
+    {
+        heardFrom = horizon;
+        for (auto& v : heardLog) v.erase (std::remove_if (v.begin(), v.end(), [horizon] (const HeardEv& e) { return e.on < horizon; }), v.end());
+    }
+}
+
+bool Session::heardPattern (int l, Pattern& p, juce::var* raw) const
+{
+    const auto& log = heardLog[(size_t) l];
+    if (log.empty()) return false;
+    // A note up to a quarter of a step early is the next step's (a player ahead of the beat, a
+    // clock's jitter); anything later in a step is that step's (swing, a ratchet's later hits).
+    constexpr double early = 0.25 * kStepBeats;
+    auto stepOf = [] (double q) { return (juce::int64) std::floor ((q + early) / kStepBeats); };
+    const double now = engine.songPos();
+    const juce::int64 kEnd = (juce::int64) std::floor (now / kStepBeats);          // the step under way is not whole yet
+    const juce::int64 kFrom = std::max<juce::int64> (0, (juce::int64) std::ceil (heardFrom / kStepBeats - 1.0e-9));
+    const int W = (int) juce::jlimit<juce::int64> (0, 2 * kMaxSteps, kEnd - kFrom);
+    if (W < 1) return false;
+    const bool pitched = lanes()[(size_t) l].pitched;
+    struct Cell { bool on = false; int note = 0, vel = 0, ratchet = 1; double first = 0.0, last = 0.0, len = 0.0; };
+    std::vector<Cell> win ((size_t) W);
+    for (auto& e : log)
+    {
+        const juce::int64 k = stepOf (e.on);
+        if (k < kEnd - W || k >= kEnd) continue;
+        auto& c = win[(size_t) (k - (kEnd - W))];
+        const double len = e.len >= 0.0 ? e.len : std::max (0.0, now - e.on);
+        if (! c.on) { c.on = true; c.note = e.note; c.vel = e.vel; c.first = c.last = e.on; c.len = len; continue; }
+        if (e.on - c.last > 0.1 * kStepBeats) { c.ratchet = std::min (4, c.ratchet + 1); c.last = e.on; }      // another hit in the step: a ratchet
+        else if (e.on - c.first < 0.1 * kStepBeats && e.note < c.note) { c.note = e.note; c.len = len; }      // a chord: a step holds one note, the lowest
+    }
+    int lately = 0;
+    for (int i = std::max (0, W - kMaxSteps); i < W; ++i) lately += win[(size_t) i].on ? 1 : 0;
+    if (lately == 0) return false;
+    // How long the part is: the shortest of one, two, four and eight bars that the last bars
+    // repeat. If none does (or too little is known to tell), the last bars as they were, up to eight.
+    auto same = [&] (int L)
+    {
+        for (int i = 0; i < L; ++i)
+        {
+            const auto& a = win[(size_t) (W - L + i)]; const auto& b = win[(size_t) (W - 2 * L + i)];
+            if (a.on != b.on || (a.on && ((pitched && a.note != b.note) || a.ratchet != b.ratchet))) return false;
+        }
+        return true;
+    };
+    int L = 0;
+    for (int c : { 16, 32, 64, 128 }) if (L == 0 && W >= 2 * c && same (c)) L = c;
+    for (int c : { 128, 64, 32, 16 }) if (L == 0 && W >= c) L = c;
+    if (L == 0) L = 16;
+    p = Pattern();
+    p.length = L;
+    const int oct = lanes()[(size_t) l].octave;
+    for (auto& st : p.steps) st.octave = oct;
+    for (int i = std::max (0, W - L); i < W; ++i)
+    {
+        const auto& c = win[(size_t) i];
+        if (! c.on) continue;
+        const juce::int64 k = kEnd - W + i;
+        auto& st = p.steps[(size_t) (((k % L) + L) % L)];
+        st.on = true;
+        st.vel = juce::jlimit (1.0f / 127.0f, 1.0f, (float) c.vel / 127.0f);
+        st.ratchet = c.ratchet;
+        const double steps = c.len / kStepBeats;
+        st.gate = (float) (c.ratchet > 1 ? juce::jlimit (0.05, 1.0, steps * c.ratchet) : juce::jlimit (0.05, (double) kMaxSteps, std::round (steps * 100.0) / 100.0));
+        if (pitched) { st.note = c.note % 12; st.octave = juce::jlimit (0, 8, c.note / 12 - 2); }
+    }
+    bool any = false;
+    for (int i = 0; i < L; ++i) any = any || p.steps[(size_t) i].on;
+    if (! any) return false;                    // (it had been played, and had stopped: nothing was coming in)
+    if (raw != nullptr)
+    {
+        juce::Array<var> notes;
+        const double loop = (double) L * kStepBeats;
+        for (auto& e : log)
+        {
+            const juce::int64 k = stepOf (e.on);
+            if (k < kEnd - L || k >= kEnd) continue;
+            double at = std::fmod (e.on, loop);
+            if (at < 0.0) at += loop;
+            juce::Array<var> n;
+            n.add (std::round (at * 10000.0) / 10000.0); n.add (e.len >= 0.0 ? std::round (e.len * 10000.0) / 10000.0 : -1.0); n.add (e.note); n.add (e.vel);
+            notes.add (var (n));
+        }
+        *raw = var (notes);
+    }
+    return true;
+}
+
+Pattern Session::played (const Snapshot& s, int l)
+{
+    const Pattern& own = s.patterns[(size_t) l];
+    if (! s.hasPlayed || ! s.heardOn[(size_t) l]) return own;
+    const Pattern& in = s.heard[(size_t) l];
+    const int la = juce::jlimit (1, kMaxSteps, own.length), lb = juce::jlimit (1, kMaxSteps, in.length);
+    bool any = false;
+    for (int i = 0; i < la; ++i) any = any || own.steps[(size_t) i].on;
+    if (s.seqMuted[(size_t) l] || ! any) return in;
+    // both were sounding: the lane's own steps, and where a note came from outside, that note
+    Pattern m;
+    int len = std::lcm (la, lb);
+    if (len > kMaxSteps) len = std::max (la, lb);
+    m.length = len;
+    for (int i = 0; i < len; ++i) m.steps[(size_t) i] = in.steps[(size_t) (i % lb)].on ? in.steps[(size_t) (i % lb)] : own.steps[(size_t) (i % la)];
+    for (int i = len; i < kMaxSteps; ++i) m.steps[(size_t) i].octave = lanes()[(size_t) l].octave;
+    return m;
 }
 
 // What a snapshot was made with: this build, and the print of every definition its values lean on.
@@ -625,6 +757,14 @@ bool Session::cue (juce::int64 id)
 juce::int64 Session::take()
 {
     auto s = capture();
+    // what each lane was playing that its steps do not say: the notes from outside, and whether its own sequencer was heard
+    pullHeard();
+    for (int l = 0; l < kLanes; ++l)
+    {
+        s.heardOn[(size_t) l] = heardPattern (l, s.heard[(size_t) l], &s.heardNotes[(size_t) l]);
+        s.seqMuted[(size_t) l] = engine.target (cx::lane (l, cx::kSeqMute)) > 0.5f;
+    }
+    s.hasPlayed = true;
     int n = (int) library.size() + 1;
     auto nameFor = [] (int k) { return "SNAP " + juce::String (k).paddedLeft ('0', 3); };
     auto taken = [this] (const juce::String& nm) { for (auto& x : library) if (x.name == nm) return true; return false; };
@@ -712,6 +852,7 @@ static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, En
 // its layer, a sample's ends), or one of its knobs that is a menu or a switch.
 bool Session::laneJumps (const Snapshot& s, int l) const
 {
+    if (s.hasFiles && s.laneFiles[(size_t) l].isNotEmpty() && s.laneFiles[(size_t) l] != engine.laneFile (l)) return true;     // (another sample: it cannot travel)
     if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), withMotion (engine, { 0, l, 0 }, s.setup[(size_t) l]))) return true;
     for (int k = 0; k < kLaneKnobs; ++k)
     {
@@ -742,7 +883,7 @@ bool Session::insertStays (const Snapshot& s, int l, int k) const
     return true;
 }
 
-void Session::applySnapshot (const Snapshot& s, double glide)
+void Session::applySnapshot (const Snapshot& s, double glide, const std::array<bool, kLanes>* notes)
 {
     // What can travel, travels: sound knobs glide to their places. What cannot (an effect put in or
     // taken out, a model, a menu, a switch) is crossed over instead, over the same time: the one
@@ -782,13 +923,22 @@ void Session::applySnapshot (const Snapshot& s, double glide)
     }
     for (int l = 0; l < kLanes; ++l)
     {
-        engine.setPattern (l, s.patterns[(size_t) l], true);         // while the clock runs: on the next bar line
-        genType[(size_t) l] = s.gen[(size_t) l];
+        if (notes == nullptr || (*notes)[(size_t) l])
+        {
+            // What the lane was playing: into its sequencer, on the next bar line while the clock
+            // runs. A snapshot that says what was sounding sets the sequencer's mute to match.
+            engine.setPattern (l, played (s, l), true);
+            genType[(size_t) l] = s.gen[(size_t) l];
+            if (s.hasPlayed) engine.set (cx::lane (l, cx::kSeqMute), ! s.heardOn[(size_t) l] && s.seqMuted[(size_t) l] ? 1.0f : 0.0f);
+        }
         if (s.hasSetup)
         {
             engine.applySetup ({ 0, l, 0 }, withMotion (engine, { 0, l, 0 }, s.setup[(size_t) l]));
             for (int k = 0; k < kSlots; ++k) engine.applySetup ({ 1, l, k }, withMotion (engine, { 1, l, k }, s.insSetup[(size_t) l][(size_t) k]));
         }
+        // the sample it held, if it holds another now (the voice that had the old one is on its way out: see laneJumps)
+        if (s.hasFiles && s.laneFiles[(size_t) l].isNotEmpty() && s.laneFiles[(size_t) l] != engine.laneFile (l))
+            engine.loadFile (l, juce::File (s.laneFiles[(size_t) l]));
     }
     if (s.hasSetup) for (int r = 0; r < 2; ++r) engine.applySetup ({ 2, 0, r }, withMotion (engine, { 2, 0, r }, s.retSetup[(size_t) r]));
     if (s.hasBus) engine.applySetup ({ 3, 0, 0 }, s.busSetup);
@@ -796,6 +946,13 @@ void Session::applySnapshot (const Snapshot& s, double glide)
     applyMorph (glide);
 }
 void Session::recall (juce::int64 id)
+{
+    Scope all;
+    all.notes = recallNotes;
+    recall (id, all);
+}
+
+void Session::recallWhole (juce::int64 id)
 {
     if (auto* s = findSnap (id))
     {
@@ -810,7 +967,7 @@ void Session::recall (juce::int64 id)
 
 void Session::recall (juce::int64 id, const Scope& scope)
 {
-    if (scope.all()) { recall (id); return; }
+    if (scope.all()) { recallWhole (id); return; }
     auto* s = findSnap (id);
     if (s == nullptr) return;
     // The snapshot, with every part that is not chosen put back as it stands now: applied whole,
@@ -824,20 +981,23 @@ void Session::recall (juce::int64 id, const Scope& scope)
         for (int i = from; i < to; ++i)
             m.values[(size_t) i] = now.values[(size_t) i] < 0.0f ? -1.0f : (engine.control (i).morph && i < kMorphEnd ? base[(size_t) i] : now.values[(size_t) i]);
     };
+    std::array<bool, kLanes> notes;
     for (int l = 0; l < kLanes; ++l)
     {
+        // without its notes a lane's sequencer stays as it is: its steps, its generator and that generator's knobs
+        notes[(size_t) l] = scope.lane[(size_t) l] && scope.notes;
+        if (! notes[(size_t) l]) keep (cx::gen (l, 0), cx::gen (l, 0) + 4);
         if (scope.lane[(size_t) l]) continue;
         keep (l * cx::kPerLane, (l + 1) * cx::kPerLane);
-        m.patterns[(size_t) l] = now.patterns[(size_t) l];
         m.inserts[(size_t) l] = now.inserts[(size_t) l];
-        m.gen[(size_t) l] = now.gen[(size_t) l];
         if (m.hasSetup) { m.setup[(size_t) l] = now.setup[(size_t) l]; m.insSetup[(size_t) l] = now.insSetup[(size_t) l]; }
         if (m.hasInsFiles) m.insFiles[(size_t) l] = now.insFiles[(size_t) l];
+        m.laneFiles[(size_t) l] = {};
     }
     if (! scope.returns) { keep (cx::kRet, cx::kBus); if (m.hasSetup) m.retSetup = now.retSetup; }
     if (! scope.bus) { keep (cx::kBus, cx::kRetMS); m.hasBus = false; }
     if (! scope.master) keep (cx::kMaster, cx::kSnap);
-    applySnapshot (m, glideBeats());
+    applySnapshot (m, glideBeats(), &notes);
     baseId = id;
     selStep = -1;
     touch();
@@ -1062,6 +1222,29 @@ static var snapToVar (const Snapshot& s, const Engine& e)
         if (s.hasBus) su->setProperty ("bus", setupToVar (s.busSetup));
         o->setProperty ("setup", var (su));
     }
+    if (s.hasPlayed)
+    {
+        // what was playing that the lanes' own steps do not say
+        juce::Array<var> mutes, in;
+        for (int l = 0; l < kLanes; ++l) mutes.add (s.seqMuted[(size_t) l] ? 1 : 0);
+        for (int l = 0; l < kLanes; ++l)
+            if (s.heardOn[(size_t) l])
+            {
+                var e = patternToVar (s.heard[(size_t) l]);
+                e.getDynamicObject()->setProperty ("lane", l);
+                if (s.heardNotes[(size_t) l].isArray()) e.getDynamicObject()->setProperty ("notes", s.heardNotes[(size_t) l]);
+                in.add (e);
+            }
+        auto* pl = new juce::DynamicObject();
+        pl->setProperty ("seqMute", mutes); pl->setProperty ("in", in);
+        o->setProperty ("played", var (pl));
+    }
+    if (s.hasFiles)
+    {
+        juce::Array<var> fl;
+        for (int l = 0; l < kLanes; ++l) fl.add (s.laneFiles[(size_t) l]);
+        o->setProperty ("laneFiles", fl);
+    }
     return var (o);
 }
 
@@ -1132,6 +1315,25 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         }
         s.hasInsFiles = true;
     }
+    if (const var pl = v.getProperty ("played", var()); pl.isObject())
+    {
+        const var mutes = pl.getProperty ("seqMute", var()), in = pl.getProperty ("in", var());
+        for (int l = 0; l < kLanes; ++l) s.seqMuted[(size_t) l] = l < mutes.size() && (int) mutes[l] != 0;
+        for (int n = 0; n < in.size(); ++n)
+        {
+            const int l = (int) in[n].getProperty ("lane", -1);
+            if (l < 0 || l >= kLanes) continue;
+            s.heard[(size_t) l] = patternFromVar (in[n], lanes()[(size_t) l].octave);
+            s.heardNotes[(size_t) l] = in[n].getProperty ("notes", var());
+            s.heardOn[(size_t) l] = true;
+        }
+        s.hasPlayed = true;
+    }
+    if (const var fl = v.getProperty ("laneFiles", var()); fl.isArray())
+    {
+        for (int l = 0; l < kLanes && l < fl.size(); ++l) s.laneFiles[(size_t) l] = fl[l].toString();
+        s.hasFiles = true;
+    }
     return s;
 }
 
@@ -1164,6 +1366,7 @@ void Session::save()
     for (auto& m : controlsMore) if (! other->hasProperty (m.name)) other->setProperty (m.name, m.value);
     root->setProperty ("controls", var (other));
     root->setProperty ("activeLane", activeLane);
+    root->setProperty ("recallNotes", recallNotes);
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (engine.laneFile (l));
     root->setProperty ("files", fl);
@@ -1269,7 +1472,7 @@ bool Session::load()
     }
 
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -1317,6 +1520,7 @@ bool Session::load()
             if (i < 0) controlsMore.set (p.name, p.value);
         }
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
+    recallNotes = (bool) root.getProperty ("recallNotes", true);
     if (const var fl = root.getProperty ("files", var()); fl.isArray())
         for (int l = 0; l < kLanes && l < fl.size(); ++l)
             if (const juce::File f (fl[l].toString()); fl[l].toString().isNotEmpty() && f.existsAsFile()) engine.loadFile (l, f);

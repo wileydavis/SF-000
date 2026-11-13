@@ -596,6 +596,27 @@ void Engine::pushClock (juce::uint8 byte, double dueMs, juce::int64 sample)
     if (w.blockSize1 > 0) clockQ[(size_t) w.startIndex1] = { dueMs, sample, byte };
 }
 
+void Engine::pushHeard (const HeardNote& h)
+{
+    const auto w = heardFifo.write (1);
+    if (w.blockSize1 <= 0) { heardLost = true; return; }
+    HeardNote e = h;
+    if (heardLost) { e.kind = 3; heardLost = false; }           // (said in place of the first one there is room for again)
+    heardQ[(size_t) w.startIndex1] = e;
+}
+
+int Engine::takeHeardNotes (HeardNote* into, int most)
+{
+    int got = 0;
+    while (got < most)
+    {
+        const auto r = heardFifo.read (1);
+        if (r.blockSize1 <= 0) break;
+        into[got++] = heardQ[(size_t) r.startIndex1];
+    }
+    return got;
+}
+
 // The notes that came since the last block, each at the place in this block that matches when it
 // came (the block before this one's span of time), so what was played evenly sounds evenly.
 void Engine::gatherNotes (int n, double spb)
@@ -612,6 +633,8 @@ void Engine::gatherNotes (int n, double spb)
         }
         at = juce::jlimit (0, n - 1, at);
         liveMidi.addEvent (juce::MidiMessage (e.b[0], e.b[1], e.b[2]), at);
+        // where on the song's time it was played, for a snapshot
+        if (wasRunning) pushHeard ({ ppq + (double) at / spb, (juce::uint8) (e.b[0] & 0x0f), e.b[1], e.b[2], (juce::uint8) ((e.b[0] & 0xf0) == 0x90 && e.b[2] > 0 ? 1 : 0) });
         if ((e.b[0] & 0xf0) == 0x90 && e.b[2] > 0 && e.at < 0 && wasRunning)
         {
             // how far from the nearest sixteenth it lands, for setting the clock's LEAD
@@ -1463,7 +1486,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     // Where a bar line falls in this buffer, noted against the tape: its sound leaves the master
     // chain that much later than it is made.
-    if (starting || again) { ++runCount; barMoved = true; }
+    if (starting || again) { ++runCount; barMoved = true; pushHeard ({ ppq, 0, 0, 0, 2 }); }
     // Has the rig held still? A change colours the sound for as long as the lanes and the master
     // hold it back; a knob still travelling is a change all the way.
     const juce::uint32 stampNow = stateStampV.load();

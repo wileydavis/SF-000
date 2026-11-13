@@ -282,7 +282,8 @@ a snapshot could reach it later.
     needs timing by hand: the lane comes back on the grid. (A note of the same pitch held from
     outside at that moment is let go with it.)
 85. **It is kept with the session, like MUTE and SOLO, and a snapshot recall leaves it alone.**
-    *proposed*: say if snapshots should carry it. A snapshot can already silence a lane's
+    *proposed*: say if snapshots should carry it. (Changed in the twenty-ninth build, 289: a
+    recall with NOTES lit sets it.) A snapshot can already silence a lane's
     sequencer by holding an empty pattern for it.
 86. **It is on the screen only.** The E16's pages are unchanged.
 
@@ -1363,6 +1364,56 @@ many."
 284. **On MIDI:** the four are on channel 16, CC 71 to 74, and on the second row of the E16's
      MASTER page. **SF-FX has to be loaded onto the E16 again** (SF-000 is unchanged).
 
+## Twenty-ninth build (Nov 13): a snapshot holds what was playing
+
+285. **You:** "When a snapshot is taken, would it be possible to record the midi as well, and when
+     recalling, add the option to recall with midi in the sequencer or recall without? Ideally it
+     could capture external midi. It should also capture any samples playing as well. The goal
+     is complete recall of the snapshot sound even if the midi is internal or external." A
+     snapshot now keeps, for every lane: its own steps (as before), the notes that were coming in
+     from outside as steps, whether its own sequencer was muted, and the sample it held.
+286. **The notes from outside are written down as steps.** *Mine*, from "recall with midi in the
+     sequencer": that is where you can see them and change them. SF-000 keeps the notes that
+     come in on each lane's channel while the clock runs, with where in the song each fell, for
+     the last seventeen bars. At a snapshot each lane's are made into a pattern: as long as the
+     part takes to come round (the shortest of one, two, four and eight bars that the last bars
+     repeat), or its last bars up to eight if it never does. A note up to a quarter of a step
+     early, or anywhere later in the step, is that step's: so notes that arrive some
+     milliseconds late (about 11 on your recording of the kick, with ON BEAT lit) land in the
+     right step. Two to four hits in a step are a ratchet. A
+     note's length is the gate, its velocity the velocity, its pitch the note and octave on a
+     lane that takes notes.
+287. **The notes are kept as they came, too** (`played.in[].notes`). *Mine.* A snapshot never
+     changes (FORMAT's rule 3), and steps lose what is finer than a sixteenth; with the notes in
+     it, a later build can play a snapshot's part exactly, or write it down better.
+288. **NOTES: a recall with the notes, or without.** A key on the snapshot module (where PAGE 1
+     stood, which said nothing), one in the library, and N. *Mine:* one switch that every recall
+     goes by, and not a question at each recall, because a snapshot knob's press and a
+     sequencer's RECALL have nowhere to ask. Kept with the session. **Lit, as it starts**, which
+     is what recalls did until now.
+289. **Lit, a recall gives each lane's sequencer what the lane was playing, and sets its M to
+     match.** Its own steps; or the notes from outside as steps (alone if its own sequencer was
+     muted); or both where both were sounding, the outside's note where there is one (so a part
+     the ONE and the lane were both playing, as on your recording of the kick, comes back once
+     and not twice). M goes off where there is something to play and on where the lane's steps
+     were muted and nothing was playing it. **This changes 85** (*proposed* then: "a snapshot
+     recall leaves it alone: say if snapshots should carry it"): with the goal you gave, a
+     snapshot whose notes come back muted has not come back. It holds for snapshots taken from
+     now on; an older one gives its steps and leaves M alone, as before.
+290. **Out, a recall is the sound alone.** Every sequencer stays exactly as it is: steps,
+     generator and its knobs, M. This is the one for a set the ONE is playing: nothing is
+     doubled. A recall of part of a snapshot goes by NOTES too.
+291. **The sample a lane held comes back.** *Mine.* Kept by its path, as an insert's impulse
+     responses already were. A lane whose file differs is crossed over to a voice with the
+     snapshot's file, like any change that cannot travel. Not kept: SPACE's impulse responses
+     (49: which reverb SPACE is and its files are the rig's), and no copy of the audio is made:
+     a file that has moved is not found and the lane keeps what it has. Say if snapshots should
+     carry copies of their samples; it makes the library stand by itself and larger.
+292. **What is lost in the writing down** is said in the README: timing inside a sixteenth, more
+     than one note on a step (the lowest is kept), parts longer than eight bars, and notes played
+     with the clock stopped. A part's steps are placed by where the bar lines were, so a part
+     starts on the step it started on.
+
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -1443,6 +1494,12 @@ many."
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.
+- **Notes from outside (twenty-ninth) are checked with notes fed in by the test at made-up
+  times** (2 ms late, as a sequencer's might be): a two-bar bass line, a hat with a ratchet, a
+  part that never repeats. Not with the ONE: its swing, its ratchets as it sends them, what it
+  does at a pattern change, notes arriving while SF-000 follows its clock with ON BEAT lit. The
+  first snapshot you take with the ONE playing is the real check: recall it with NOTES lit and
+  the ONE's tracks muted, and look at what is in each lane's steps.
 - **The drum bus (twenty-eighth) has not been heard by anyone.** Every figure in 277 to 280 is a
   measurement on the kick or the clap alone. How it sounds on your drums together, whether the
   four knobs' ranges are right, whether BOOM at 50 Hz sits with your kick: yours to say. Its
