@@ -94,6 +94,9 @@ public:
     double frameMs() const;                     // how long the last frame took to draw
     int frames() const;                         // how many have been drawn in full
     int builds() const;                         // how many times its shapes were built and sent to the card
+    float keyTopNow (float ux, float uy) const; // how far the key there stands above its plate in the picture now (it travels), or -1: no key
+    int keyBottoms() const;                     // how many times a key has gone to the bottom on its way from up to latched, or back
+    int keyFrames() const;                      // how many frames have had a key on its way in them
     bool wearReady() const;                     // the sheet of scratches reached the card (without it the plates are simply unscratched)
     void showWear (bool);                       // for the checks: the picture with the sheet left out, to see what it adds
     int firstPictureSpread() const;             // darkest to brightest point of the first picture, of 255 (under 6 it is blank; -1: not looked at yet; -2: it could not be read back)

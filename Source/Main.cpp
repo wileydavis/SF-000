@@ -5765,6 +5765,65 @@ static int stageTest()
                    + " builds; the sheet under the knobs is as it was, " + juce::String (sheetRows) + " rows differ; their lights did move in the picture, over " + juce::String (lightRows) + " rows), and once for a key (" + juce::String (b3 - b0) + ")");
     }
 
+    // 3c. the keys go down, each as its kind does
+    {
+        view (1);
+        const int mute = cx::lane (2, cx::kMute);
+        const auto mk = find ([mute] (const Screen::TestHit& h) { return Screen::testIsToggle (h, mute); });
+        const auto pk = find ([] (const Screen::TestHit& h) { return Screen::testIsPanic (h); });
+        auto near = [] (float a, float b) { return std::abs (a - b) < 0.01f; };
+        const float base = st->heightAt (mk.x, mk.y) - Parts::kKey;
+        const bool up0 = near (st->keyTopNow (mk.x, mk.y), Parts::kKey) && near (st->keyTopNow (pk.x, pk.y), Parts::kKey);
+        // a latching key, under the hand: all the way in while the hand is on it, low once it lifts, and up again at the next press
+        const auto p = pt (mk);
+        sc.mouseDown (ev (p, p, false)); audio (4); fresh();
+        const float held = st->keyTopNow (mk.x, mk.y);
+        sc.mouseUp (ev (p, p, false)); fresh();
+        const float on = st->keyTopNow (mk.x, mk.y), onTop = st->heightAt (mk.x, mk.y);
+        const bool muted = ses.value (mute) > 0.5f;
+        { const auto p2 = pt (mk); sc.mouseDown (ev (p2, p2, false)); audio (4); sc.mouseUp (ev (p2, p2, false)); fresh(); }
+        const float off = st->keyTopNow (mk.x, mk.y);
+        check (up0 && near (held, Parts::kKeyDown) && near (on, Parts::kKeyOn) && near (onTop, base + Parts::kKeyOn) && muted && near (off, Parts::kKey) && ses.value (mute) < 0.5f,
+               "a latching key (a lane's MUTE) is all the way in under the hand, sits low while it is on, and comes up when it is pressed again (" + juce::String (held / Parts::kU, 2) + ", "
+                   + juce::String (on / Parts::kU, 2) + ", " + juce::String (off / Parts::kU, 2) + " mm above its plate; up is " + juce::String (Parts::kKey / Parts::kU, 2) + ")");
+        // a momentary key: in while the hand is on it, and back up
+        const auto q = pt (pk);
+        sc.mouseDown (ev (q, q, false)); fresh();
+        const float in = st->keyTopNow (pk.x, pk.y);
+        sc.mouseUp (ev (q, q, false)); fresh();
+        check (near (in, Parts::kKeyDown) && near (st->keyTopNow (pk.x, pk.y), Parts::kKey), "a momentary key (PANIC) is in while the hand is on it and springs back (" + juce::String (in / Parts::kU, 2) + " mm, then " + juce::String (st->keyTopNow (pk.x, pk.y) / Parts::kU, 2) + ")");
+        // latched from somewhere else (the E16's key, a snapshot): it travels there by way of the bottom, over a few frames, and nothing else is built
+        fresh();
+        // (its first frame is never more than a sixtieth of a second's travel, so the bottom is two frames off at the least, and the way back up one more)
+        const int bottoms0 = st->keyBottoms(), builds0 = st->builds(), frames0 = st->keyFrames();
+        fromOutside (mute, 1.0f, 1);
+        sc.testTick(); sc.refreshNow();
+        int waited = 0;
+        for (; waited < 80 && ! near (st->keyTopNow (mk.x, mk.y), Parts::kKeyOn); ++waited) st->capture();
+        const int builds1 = st->builds(), frames1 = st->keyFrames() - frames0;
+        const bool wentDown = st->keyBottoms() == bottoms0 + 1;
+        fromOutside (mute, 0.0f, 1);
+        sc.testTick(); sc.refreshNow();
+        int waited2 = 0;
+        for (; waited2 < 80 && ! near (st->keyTopNow (mk.x, mk.y), Parts::kKey); ++waited2) st->capture();
+        const int frames2 = st->keyFrames() - frames0 - frames1;
+        check (waited < 80 && frames1 >= 3 && wentDown && builds1 == builds0 + 1 && st->keyBottoms() == bottoms0 + 2 && waited2 < 80 && frames2 >= 3,
+               "latched from outside (the E16's key, a snapshot), a key travels there by way of the bottom, as the switch must: over " + juce::String (frames1) + " frames, with "
+                   + juce::String (builds1 - builds0) + " build for the change and none for the travel; and the same way back up (" + juce::String (frames2) + " frames)");
+        // a key on the keyboard: the action's key is seen to go down, and comes back by itself
+        const auto rk = find ([] (const Screen::TestHit& h) { return Screen::testIsRun (h); });
+        const bool ran = e.isRunning();
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::spaceKey));
+        fresh();
+        const float tapped = st->keyTopNow (rk.x, rk.y);
+        pump (200); fresh();
+        const float after = st->keyTopNow (rk.x, rk.y);
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::spaceKey));
+        pump (200); fresh();
+        check (near (tapped, Parts::kKeyDown) && near (after, ran ? Parts::kKey : Parts::kKeyOn) && near (st->keyTopNow (rk.x, rk.y), ran ? Parts::kKeyOn : Parts::kKey) && e.isRunning() == ran,
+               "the space bar is seen on RUN: its key goes in, then stands where its state says (" + juce::String (tapped / Parts::kU, 2) + ", " + juce::String (after / Parts::kU, 2) + ", " + juce::String (st->keyTopNow (rk.x, rk.y) / Parts::kU, 2) + " mm)");
+    }
+
     // 4. the eye
     {
         const auto home0 = st->home();

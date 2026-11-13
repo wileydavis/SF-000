@@ -77,7 +77,7 @@ public:
     bool ready() const { return scale > 0.0f; }                     // a paint has said what the device's pixels are
     void knob (G&, float cx, float cy, int size);                   // base, ring unlit, cap
     void ringLit (G&, float cx, float cy, int size, float a, float b, juce::Colour);     // the ring's segments from a to b (turns from six o'clock)
-    void key (G&, R, juce::Colour, bool down);
+    void key (G&, R, juce::Colour, int press);      // (Parts::kUp, kOn: latched and sitting low, kHeld: all the way in)
     void lamp (G&, float cx, float cy, juce::Colour, float d, bool on);
     void hollow (G&, float cx, float cy, float d, bool round);      // where a control could be and is not
     void window (G&, R, juce::Colour glass);                        // a display: a pane set into the surface

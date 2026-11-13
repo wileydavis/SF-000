@@ -725,7 +725,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         GLuint vao = 0, vbo = 0, ibo = 0, inst = 0; int count = 0, stride = 0, made = 0; std::vector<float> data;
         int instances() const { return stride > 0 ? (int) data.size() / stride : 0; }
     };
-    Batch slabs, capBig, capSmall, baseBig, baseSmall, lens, segBig, segSmall, lensLit;
+    Batch slabs, keySlabs, capBig, capSmall, baseBig, baseSmall, lens, segBig, segSmall, lensLit;
     GLuint quadVao = 0, quadVbo = 0;
     std::unique_ptr<juce::OpenGLShaderProgram> pSlab, pTurned, pSlabDepth, pTurnedDepth, pLight, pRoom, pGlow, pDown, pUp, pFinal, pCopy, pTag;
     GLuint sheetTex = 0, shadowTex = 0, shadowFbo = 0;
@@ -744,6 +744,16 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     juce::uint64 shapeWas = 0;
     struct Live { float v = -2.0f, target = -2.0f; bool gliding = false; };
     std::vector<Live> liveWas;
+    // The keys travel. Each stands at a height of its own, on its way to where its state says it
+    // should be: up, low (latched on) or all the way in (under a finger). A key that changes between
+    // up and latched without a finger seen on it (the E16 pressed it, or a key on the keyboard)
+    // goes to the bottom first, as the switch itself must to let go of its catch.
+    struct KeyLive { juce::Rectangle<float> r; float h = 0.0f; int press = 0; bool dip = false; };
+    std::vector<KeyLive> keyLive;
+    bool keysWereMoving = false;
+    std::vector<KeyLive> keysShown;             // (under the lock: the same, for whoever asks from outside)
+    std::atomic<int> keyBottomCount { 0 };      // how many times a key has touched bottom on its way somewhere else
+    std::atomic<int> keyFrameCount { 0 };       // how many frames have had a key travelling in them
     juce::uint32 lastMoveMs = 0;
     V3 curEye, curAt, softEye, softAt, goalEye, goalAt, homeEyeGl, homeAtGl;
     bool eyeMoving = false;
@@ -901,6 +911,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const std::initializer_list<std::pair<GLuint, int>> turnedVertex { { 0, 3 }, { 1, 3 }, { 4, 1 } }, turnedCopy { { 5, 4 }, { 7, 4 }, { 8, 4 }, { 9, 4 } };
         const std::initializer_list<std::pair<GLuint, int>> lightCopy { { 5, 4 }, { 7, 4 }, { 9, 4 } };
         makeBatch (slabs, slabMesh(), slabVertex, slabCopy);
+        makeBatch (keySlabs, slabMesh(), slabVertex, slabCopy);
         makeBatch (capBig, turned (kCapBig, 32), turnedVertex, turnedCopy);
         makeBatch (capSmall, turned (kCapSmall, 28), turnedVertex, turnedCopy);
         // a knob's base: a dark disc let into the plate, a hair proud of it
@@ -1008,7 +1019,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
 
     void openGLContextClosing() override
     {
-        for (Batch* b : { &slabs, &capBig, &capSmall, &baseBig, &baseSmall, &lens, &lensLit, &segBig, &segSmall })
+        for (Batch* b : { &slabs, &keySlabs, &capBig, &capSmall, &baseBig, &baseSmall, &lens, &lensLit, &segBig, &segSmall })
         {
             if (b->vao != 0) glDeleteVertexArrays (1, &b->vao);
             for (GLuint* buf : { &b->vbo, &b->ibo, &b->inst }) if (*buf != 0) glDeleteBuffers (1, buf);
@@ -1120,9 +1131,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     {
         for (float f : { c.x0 - kW * 0.5f, c.y0 - kH * 0.5f, c.x1 - kW * 0.5f, c.y1 - kH * 0.5f }) d.push_back (f);
     }
-    void slab (juce::Rectangle<float> r, float base, float height, float corner, float roll, Rgb colour, float rough, float kind, float emit, float metal, const Parts::Clip& clip, float finish = 0.0f)
+    void slab (juce::Rectangle<float> r, float base, float height, float corner, float roll, Rgb colour, float rough, float kind, float emit, float metal, const Parts::Clip& clip, float finish = 0.0f, Batch* into = nullptr)
     {
-        auto& d = slabs.data;
+        auto& d = (into != nullptr ? *into : slabs).data;
         for (float f : { r.getCentreX() - kW * 0.5f, r.getCentreY() - kH * 0.5f, r.getWidth() * 0.5f, r.getHeight() * 0.5f, base, height, corner, roll,
                          colour.r, colour.g, colour.b, rough, kind, emit, metal, finish }) d.push_back (f);
         clipTo (d, clip);
@@ -1152,10 +1163,26 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         }
         for (const auto& k : parts.keys)
         {
-            const juce::Colour c (k.colour);
-            slab (k.r, k.base + 0.04f, 0.02f, 2.6f, 0.0f, lin (juce::Colour (0xff0E0F0E)), 0.9f, 0.0f, 0.0f, 0.0f, k.clip);       // the hole it moves in
-            const Rgb shown = lin (k.glows ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c);
-            slab (k.r.reduced (0.7f), k.base, k.down ? Parts::kKeyDown : Parts::kKey, 2.2f, 1.4f, shown, 0.5f, k.glows ? 3.0f : 1.0f, k.glows ? 0.85f : 0.0f, 0.0f, k.clip);
+            slab (k.r, k.base + 0.04f, 0.02f, 2.6f, 0.0f, lin (juce::Colour (0xff0E0F0E)), 0.9f, 0.0f, 0.0f, 0.0f, k.clip);       // the hole it moves in (the key itself travels: see keysMove)
+        }
+        {
+            // each key keeps the height it stood at (a key is the same key while it is in the same place); a new one stands where it should
+            std::vector<KeyLive> was;
+            was.swap (keyLive);
+            keyLive.reserve (parts.keys.size());
+            for (const auto& k : parts.keys)
+            {
+                KeyLive now { k.r, Parts::keyTop (k.press), k.press, false };
+                for (const auto& w : was)
+                    if (w.r == k.r)
+                    {
+                        now.h = w.h;
+                        // up to latched, or back, with no finger seen: by way of the bottom. A finger come down on it: all the way in, however soon it lifts.
+                        now.dip = w.dip || (w.press != k.press && (k.press == Parts::kHeld || w.press != Parts::kHeld));
+                        break;
+                    }
+                keyLive.push_back (now);
+            }
         }
         for (const auto& p : parts.panes)
         {
@@ -1187,6 +1214,41 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         for (Batch* b : { &slabs, &capBig, &capSmall, &baseBig, &baseSmall, &lens, &lensLit }) fill (*b);
         liveWas.assign (parts.knobs.size(), {});
         rings (true);
+        keysMove (0.0f, true, false);
+    }
+
+    // The keys, at the heights they stand at now. In, a key goes quickly (a finger's push: its whole
+    // travel in 45 ms); out, on its spring, a little slower (70 ms). Only the keys are sent again.
+    bool keysMove (float dt, bool force, bool atOnce)
+    {
+        bool moved = false;
+        if (! keysWereMoving) dt = std::min (dt, 1.0f / 60.0f);        // (the first frame after a rest: it has not been travelling all that while)
+        const float span = Parts::kKey - Parts::kKeyDown, in = span / 0.045f * dt, out = span / 0.070f * dt;
+        for (size_t i = 0; i < keyLive.size() && i < parts.keys.size(); ++i)
+        {
+            auto& k = keyLive[i];
+            const float rest = Parts::keyTop (parts.keys[i].press);
+            if (atOnce) { if (k.h != rest || k.dip) moved = true; k.h = rest; k.dip = false; continue; }
+            const float goal = k.dip ? Parts::kKeyDown : rest;
+            if (k.h > goal) { k.h = std::max (goal, k.h - in); moved = true; }
+            else if (k.h < goal) { k.h = std::min (goal, k.h + out); moved = true; }
+            if (k.dip && k.h <= Parts::kKeyDown) { k.dip = false; moved = moved || rest != k.h; if (rest != k.h) ++keyBottomCount; }
+        }
+        keysWereMoving = moved;
+        if (moved && ! atOnce) ++keyFrameCount;
+        if (! moved && ! force) return false;
+        { const juce::ScopedLock sl (lock); keysShown = keyLive; }
+        keySlabs.data.clear();
+        for (size_t i = 0; i < keyLive.size() && i < parts.keys.size(); ++i)
+        {
+            const auto& k = parts.keys[i];
+            const juce::Colour c (k.colour);
+            const float h = keyLive[i].h;
+            const Rgb shown = lin (k.glows ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c);
+            slab (k.r.reduced (0.7f), k.base, h, 2.2f, std::min (1.4f, h * 0.6f), shown, 0.5f, k.glows ? 3.0f : 1.0f, k.glows ? 0.85f : 0.0f, 0.0f, k.clip, 0.0f, &keySlabs);
+        }
+        fill (keySlabs);
+        return moved;
     }
 
     // The knobs' lights. A knob that shows one of the engine's controls reads it here, on this
@@ -1326,6 +1388,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const float dt = lastFrameAt > 0.0 ? (float) juce::jlimit (0.0, 0.1, (now - lastFrameAt) * 0.001) : 0.016f;
         lastFrameAt = now;
         if (snap) { curEye = softEye = goalEye; curAt = softAt = goalAt; sceneStale = true; }
+        if (keysMove (dt, false, snap)) { sceneStale = shadowStale = true; lastMoveMs = juce::Time::getMillisecondCounter(); }      // (a key on its way: its shade moves with it)
         // The glow beats with the kick, if SETUP says so. The kick's meter is the engine's own (it
         // falls 30 dB a second): how near it stands to the loudest it has lately been is the beat,
         // full on a hit and gone 9 dB (0.3 s) later. Only a pulse that has moved draws the scene again.
@@ -1472,7 +1535,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             glClear (GL_DEPTH_BUFFER_BIT);
             glEnable (GL_POLYGON_OFFSET_FILL); glPolygonOffset (1.5f, 2.0f);
             pSlabDepth->use(); glUniformMatrix4fv (glGetUniformLocation (pSlabDepth->getProgramID(), "uVP"), 1, GL_FALSE, sunVP.m);
-            draw (slabs);
+            draw (slabs); draw (keySlabs);
             pTurnedDepth->use(); glUniformMatrix4fv (glGetUniformLocation (pTurnedDepth->getProgramID(), "uVP"), 1, GL_FALSE, sunVP.m);
             draw (capBig); draw (capSmall); draw (lens);
             glDisable (GL_POLYGON_OFFSET_FILL);
@@ -1509,7 +1572,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         glDisable (GL_BLEND);
         glEnable (GL_DEPTH_TEST); glDepthMask (GL_TRUE);
 
-        useSurface (*pSlab, vp, curEye); draw (slabs);
+        useSurface (*pSlab, vp, curEye); draw (slabs); draw (keySlabs);
         useSurface (*pTurned, vp, curEye); draw (baseBig); draw (baseSmall); draw (capBig); draw (capSmall); draw (lens);
         pLight->use(); glUniformMatrix4fv (glGetUniformLocation (pLight->getProgramID(), "uVP"), 1, GL_FALSE, vp.m);
         draw (segBig); draw (segSmall); draw (lensLit);
@@ -1884,7 +1947,7 @@ juce::Point<float> Stage::unitsAt (juce::Point<float> pt) const
     for (const auto& p : ps.panes)
         if (level (p.base + Parts::kPane, t, ux, uy) && t < best && p.r.contains (ux, uy) && p.clip.has (ux, uy)) { best = t; found = { ux, uy }; }
     for (const auto& k : ps.keys)
-        if (level (k.base + (k.down ? Parts::kKeyDown : Parts::kKey), t, ux, uy) && t < best && k.r.contains (ux, uy) && k.clip.has (ux, uy)) { best = t; found = { ux, uy }; }
+        if (level (k.base + Parts::keyTop (k.press), t, ux, uy) && t < best && k.r.contains (ux, uy) && k.clip.has (ux, uy)) { best = t; found = { ux, uy }; }
     for (const auto& k : ps.knobs)
     {
         // a cap: an upright cylinder. Its side or its top, whichever the line meets first.
@@ -1918,7 +1981,7 @@ float Stage::heightAt (float ux, float uy) const
     float top = 0.0f;
     for (const auto& p : ps.plates) if (p.r.contains (ux, uy) && p.clip.has (ux, uy)) top = std::max (top, p.base + Parts::kPlate);
     for (const auto& p : ps.panes) if (p.r.contains (ux, uy) && p.clip.has (ux, uy)) top = std::max (top, p.base + Parts::kPane);
-    for (const auto& k : ps.keys) if (k.r.contains (ux, uy) && k.clip.has (ux, uy)) top = std::max (top, k.base + (k.down ? Parts::kKeyDown : Parts::kKey));
+    for (const auto& k : ps.keys) if (k.r.contains (ux, uy) && k.clip.has (ux, uy)) top = std::max (top, k.base + Parts::keyTop (k.press));
     for (const auto& k : ps.knobs)
     {
         const float r = k.big ? Parts::kCapRBig : Parts::kCapRSmall, dx = ux - k.cx, dy = uy - k.cy;
@@ -1926,6 +1989,15 @@ float Stage::heightAt (float ux, float uy) const
     }
     return top;
 }
+
+float Stage::keyTopNow (float ux, float uy) const
+{
+    const juce::ScopedLock sl (impl->lock);
+    for (const auto& k : impl->keysShown) if (k.r.contains (ux, uy)) return k.h;
+    return -1.0f;
+}
+int Stage::keyBottoms() const { return impl->keyBottomCount.load(); }
+int Stage::keyFrames() const { return impl->keyFrameCount.load(); }
 
 void Stage::kick() { impl->kick(); }
 void Stage::settle() { { const juce::ScopedLock sl (impl->lock); impl->pending.snap = true; } impl->kick(); }

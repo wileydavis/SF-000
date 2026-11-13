@@ -132,6 +132,7 @@ public:
     static bool testIsLanePanel (const TestHit& h, int lane) { return h.kind == hLanePanel && h.a == lane; }
     std::vector<int> testTags() const { std::vector<int> v; for (const auto& t : tagsUp) v.push_back (t); return v; }
     static bool testIsRun (const TestHit& h) { return h.kind == hAct && h.a == aRun; }
+    static bool testIsPanic (const TestHit& h) { return h.kind == hAct && h.a == aPanic; }
     static bool testIsLearnKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aLearn : which == 1 ? aLearnKeep : aLearnDrop); }     // LEARN, KEEP, DROP
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
     static bool testIsConfigKey (const TestHit& h, int lane) { return h.kind == hConfig && h.a == 0 && h.b == lane * 8; }
@@ -233,7 +234,10 @@ private:
     void hit (R, int kind, int a = 0, int b = 0);
     void headKeys (G&, float right, float y, int kind, int lane, int slot, int muteCtl, int soloCtl);
     void hollow (G&, float cx, float cy, float d, bool round);
-    void key (G&, R, juce::Colour fill, float border = 2.0f);
+    // A key. on: it is latched (lit, it sits low until it is pressed again). Under the hand it is
+    // all the way in, whatever kind it is (a thick border was the flat drawing's way to say so).
+    void key (G&, R, juce::Colour fill, float border = 2.0f, bool on = false);
+    bool pressed (int act) const;       // an action's key: the hand is on it, or it was just now pressed from somewhere else
     void flatKey (G&, R, juce::Colour fill, float border = 2.0f);
     void window (G&, R, juce::Colour glass);                    // a display's pane
     void tag (G&, R, const juce::String&);                      // a number, light on dark
@@ -254,7 +258,7 @@ private:
     void readout (G&, R, const juce::String& label, const juce::String& value);
     void panel (G&, R, juce::Colour ground);
     void control (G&, int ctl, float cellX, float y, float cellW, juce::Colour lit, int size = 40, float legendH = 28.0f);
-    void actKey (G&, int act, float cellX, float y, float cellW, const juce::String& label, juce::Colour fill, float legendGap = 3.0f, bool present = true);
+    void actKey (G&, int act, float cellX, float y, float cellW, const juce::String& label, juce::Colour fill, float legendGap = 3.0f, bool present = true, bool on = false);
 
     // pages
     void drawBar (G&);
@@ -311,7 +315,7 @@ private:
     float learnKeysX() const;           // where KEEP stands in the top bar (DROP is 96 on)
     int lastStep = -1;
 
-    struct Drag { int kind = 0, a = 0, b = 0; juce::Point<float> start; float v0 = 0, g0 = 0; int r0 = 1; bool moved = false; char axis = 0; juce::uint32 t0 = 0; bool fired = false; } drag;
+    struct Drag { int kind = 0, a = 0, b = 0, page = 0; juce::Point<float> start; float v0 = 0, g0 = 0; int r0 = 1; bool moved = false; char axis = 0; juce::uint32 t0 = 0; bool fired = false; } drag;
     juce::int64 selSnap = 0;
     // The library, with a snapshot cued or chosen: what RECALL will take from it. All of it, unless
     // parts are put out first; and all again for the next (0 to 10: the lanes; 11: the returns; 12: the key).
@@ -320,6 +324,8 @@ private:
     int selKnob = 0, libScroll = 0;
     R selNameRect;
     bool mouseIsDown = false;
+    static constexpr juce::uint32 kTapMs = 120;
+    int tapAct = -1; juce::uint32 tapAt = 0;       // the action last done, and when: its key stays down this long
     // CONFIG: the setup panel that slides in from the left. The top three rows move so that the
     // panel being set up (a lane, an insert, the returns) stands right beside it; their six columns
     // go round, so what leaves one edge of the screen comes back at the other.

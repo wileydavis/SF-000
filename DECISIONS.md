@@ -1605,8 +1605,41 @@ many."
      The tape is there (a snapshot's clip comes from it) and so is everything a file needs. It
      is the other way to make the convolution a sound and not a room; say if you want it.
 
+## Thirty-third build (Nov 13): keys that go down
+
+328. **You:** "Make the mechanical buttons change not just their lighting but also make them
+     physically detent when pressed (mute/solos, configure, most of the square/rectangular
+     buttons) in a way that matches theyre function (latching, momentary, etc)".
+329. **A key has three places to stand: up, latched, and all the way in.** 1.27 mm above its
+     plate (the model's key), 0.66 and 0.26. *Mine:* the two new figures. Latched is half way,
+     so that it reads from the player's view by its shorter side and shorter shade; in is as
+     near flush as the rounded edge allows. The lit skin draws the same three.
+330. **Which keys latch.** *Mine,* by what each does: a key that is a state stays down while
+     the state is on (MUTE, SOLO, C while its CONFIG is open, RUN, REC while a take runs, every
+     toggle in CONFIG, CUE, NOTES, PHONES, ONLINE, the scope's keys, LOAD while its list is
+     open, RANDOM or EUCLID while armed, LEARN while teaching, the sequencer's M). A key that
+     does a thing once is in only under the hand. **The step keys are momentary**, as a drum
+     machine's are: the step's bars say it is on, and sixteen keys at two heights would read as
+     a broken row. SETUP and POCKETS open something and come back up, though their colour
+     says a state (PHONES lit, AMOUNT above nought).
+331. **They travel, and a key latched from elsewhere goes by way of the bottom.** In 45 ms, out
+     70 (a finger is quicker than a spring). *Mine.* A latching switch cannot go from up to
+     latched without touching bottom, so one set by the E16, a snapshot or the keyboard does
+     that too: the press is seen even though no pointer made it. A press that lifts at once
+     still goes all the way in before it comes back.
+332. **An action done from the keyboard holds its key in for 120 ms.** *Mine.* Not done: the
+     same for a momentary action that comes from the E16 (a snapshot taken there, a page
+     turned): those do not pass through the screen, and nothing on the stage shows them but
+     their result.
+333. **Travel builds nothing.** The keys are a batch of their own on the card; a frame with a
+     key on its way sends that batch (a few hundred keys) and draws the shadow again, and the
+     plates, knobs and print are left as they were.
+
 ## Not verified
 
+- **The keys' travel (thirty-third) is checked by where each key stands**, frame by frame, on a
+  software OpenGL here. Not seen moving on a Mac: whether 45 and 70 ms look like a key or like
+  a flicker at your display's rate, and whether latched reads at a glance from where you sit.
 - **BANDS (thirty-second) is checked by the response to one click**, band by band, rendered and
   live. Not heard. Whether a hall over a room sounds like one thing or two is for your ears and
   your impulse responses; mine were noise dying away.

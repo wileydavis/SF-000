@@ -16,7 +16,11 @@ struct Parts
     static constexpr float kU = 5.46f;
     static constexpr float kPlate = 1.27f * kU;         // a plate's top above the case's
     static constexpr float kPane = 0.51f * kU;          // a display's glass above its plate
-    static constexpr float kKey = 1.27f * kU, kKeyDown = 0.4f * kU;
+    // A key stands up (0), sits low because it is latched on (1: it stays there until it is pressed
+    // again), or is all the way in under a finger (2).
+    static constexpr float kKey = 1.27f * kU, kKeyOn = 0.66f * kU, kKeyDown = 0.26f * kU;
+    static constexpr int kUp = 0, kOn = 1, kHeld = 2;
+    static float keyTop (int press) { return press >= kHeld ? kKeyDown : press == kOn ? kKeyOn : kKey; }
     static constexpr float kCapBig = 27.74f, kCapSmall = 19.82f;
     static constexpr float kCapRBig = 11.84f, kCapRSmall = 8.29f;      // a cap at its widest
     static constexpr float kCase = 25.4f * kU;          // how deep the case is
@@ -37,7 +41,7 @@ struct Parts
     // ctl: the engine's control it shows (its lights then follow the engine by themselves), or -1
     // and a, b, mark say what is lit (turns from six o'clock; mark: where it is going, or below 0).
     struct Knob   { float cx = 0, cy = 0; bool big = true; int ctl = -1, kind = 0, steps = 0; juce::uint32 light = 0; float a = 0, b = 0, mark = -1.0f; Clip clip; float base = 0.0f; };
-    struct Key    { R r; juce::uint32 colour = 0; bool down = false, glows = false; Clip clip; float base = 0.0f; };
+    struct Key    { R r; juce::uint32 colour = 0; int press = kUp; bool glows = false; Clip clip; float base = 0.0f; };
     struct Lamp   { float cx = 0, cy = 0, d = 12.0f; juce::uint32 colour = 0; bool on = false; Clip clip; float base = 0.0f; };
     struct Hollow { float cx = 0, cy = 0, d = 40.0f; bool round = true; Clip clip; float base = 0.0f; };
     struct Pane   { R r; juce::uint32 glass = 0; Clip clip; float base = 0.0f; };
@@ -95,7 +99,7 @@ struct Parts
             && all (plates, o.plates, [&] (const Plate& a, const Plate& b) { return a.r == b.r && a.ground == b.ground && clip (a.clip, b.clip) && a.base == b.base && a.seed == b.seed; })
             && all (knobs, o.knobs, [&] (const Knob& a, const Knob& b) { return a.cx == b.cx && a.cy == b.cy && a.big == b.big && a.ctl == b.ctl && a.kind == b.kind && a.steps == b.steps
                                                                              && a.light == b.light && a.a == b.a && a.b == b.b && a.mark == b.mark && clip (a.clip, b.clip) && a.base == b.base; })
-            && all (keys, o.keys, [&] (const Key& a, const Key& b) { return a.r == b.r && a.colour == b.colour && a.down == b.down && a.glows == b.glows && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (keys, o.keys, [&] (const Key& a, const Key& b) { return a.r == b.r && a.colour == b.colour && a.press == b.press && a.glows == b.glows && clip (a.clip, b.clip) && a.base == b.base; })
             && all (lamps, o.lamps, [&] (const Lamp& a, const Lamp& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.colour == b.colour && a.on == b.on && clip (a.clip, b.clip) && a.base == b.base; })
             && all (hollows, o.hollows, [&] (const Hollow& a, const Hollow& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.round == b.round && clip (a.clip, b.clip) && a.base == b.base; })
             && all (panes, o.panes, [&] (const Pane& a, const Pane& b) { return a.r == b.r && a.glass == b.glass && clip (a.clip, b.clip) && a.base == b.base; })
@@ -111,7 +115,7 @@ struct Parts
         auto clip = [&mix] (const Clip& c) { mix (c.x0); mix (c.y0); mix (c.x1); mix (c.y1); };
         for (const auto& p : plates) { rect (p.r); clip (p.clip); }
         for (const auto& k : knobs) { mix (k.cx); mix (k.cy); mix (k.big ? 1.0f : 2.0f); clip (k.clip); }
-        for (const auto& k : keys) { rect (k.r); mix (k.down ? 1.0f : 2.0f); clip (k.clip); }
+        for (const auto& k : keys) { rect (k.r); mix ((float) k.press); clip (k.clip); }
         for (const auto& p : panes) { rect (p.r); clip (p.clip); }
         for (const auto& b : badges) rect (b.r);
         mix (body ? 1.0f : 2.0f);

@@ -98,6 +98,13 @@ first pass at it.
   it. The colours are the ones the flat drawing had: white for a sound knob, red for decay or
   gate, density and filter, blue for level, sends and EQ, teal for a snapshot knob, green while it
   travels (with a white mark where it is going). A knob with a middle has a mark printed above it.
+- **A key goes down as its kind does.** One that latches (MUTE, SOLO, a lane's C, RUN, REC while
+  a take runs, a toggle in CONFIG, CUE, NOTES, PHONES, ONLINE, the scope's keys, RANDOM or EUCLID
+  while armed, LEARN while a knob is being taught) sits low for as long as it is on, 0.66 mm
+  above its plate where an idle key stands 1.27, and comes up when it is pressed again. One that
+  does a thing once (SNAPSHOT, PANIC, NUDGE, LIBRARY, a step key) is in only while the hand is on
+  it. Under the hand any key is all the way in, 0.26 mm. So what is on can be read from the keys'
+  heights as well as from their lights.
 - **Displays.** A panel's name is a dark display with light letters. The active lane's is lit:
   pale, with dark letters. Readouts, the step pages and the meters are pale displays.
 - **D** on the keyboard is the dark instrument: a graphite case, dark plates and keys, light
@@ -153,6 +160,11 @@ key's gate and anything else that follows the hand is wherever the pointer is on
   pointer the same way.
 - **A knob's lights follow the engine itself**, read on the drawing thread every frame, so they
   move with the sound whatever else the app is doing.
+- **The keys travel.** In, a key goes its whole way in 45 ms; out, on its spring, in 70. A key
+  latched from somewhere other than the pointer (the E16's MUTE, a snapshot's recall, the space
+  bar on RUN) goes to the bottom first and then to where it sits, as the switch itself must to
+  catch or let go. A key whose action was done from the keyboard is seen to go in and come back.
+  Only the keys are sent to the card again while one travels, with its shade.
 - **Typing a name** (a snapshot's, a snapshot knob's) happens in a small box over the stage.
 - **D** is the dark instrument here too.
 

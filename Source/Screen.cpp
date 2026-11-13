@@ -249,10 +249,20 @@ void Screen::hollow (G& g, float cx, float cy, float d, bool round)
     if (round) g.drawEllipse (r, 1.0f); else g.drawRect (r, 1.0f);
 }
 
-void Screen::key (G& g, R r, Colour fill, float border)
+void Screen::key (G& g, R r, Colour fill, float border, bool on)
 {
-    if (lit) skin.key (g, r, cap (fill), border > 2.5f);        // (a thick border was the flat drawing's way to show a key held down)
+    // Where it stands. Under the hand (the press began on it, on this page) it is all the way in,
+    // whatever kind of key it is; latched on, it sits low and stays; otherwise it is up.
+    const bool held = border > 2.5f || (mouseIsDown && drag.kind != 0 && drag.page == (int) page && r.translated (shift, 0.0f).contains (drag.start));
+    if (lit) skin.key (g, r, cap (fill), held ? Parts::kHeld : on ? Parts::kOn : Parts::kUp);
     else flatKey (g, r, fill, border);
+}
+
+// An action's key is down while the hand is on it, and for a moment after the action is done from
+// somewhere else (a key on the keyboard): a press is seen whoever made it.
+bool Screen::pressed (int a) const
+{
+    return (mouseIsDown && drag.kind == hAct && drag.a == a) || (tapAct == a && juce::Time::getMillisecondCounter() - tapAt < kTapMs);
 }
 
 void Screen::flatKey (G& g, R r, Colour fill, float border)
@@ -343,7 +353,7 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
     if (vis (g, R (cellX - 10, y, cellW + 20, 43 + legendH)))
     {
         if (seen (g, lit ? kr : R (cellX - 10, y, cellW + 20, 43 + legendH))) lastShown[(size_t) ctl] = v;        // (only what was drawn: a change that was not is still owed a repaint)
-        if (c.kind == Kind::Toggle) key (g, kr, v > 0.5f ? col::green : col::putty);
+        if (c.kind == Kind::Toggle) key (g, kr, v > 0.5f ? col::green : col::putty, 2.0f, v > 0.5f);
         else if (c.kind == Kind::Hold) key (g, kr, col::yellow, v > 0.5f ? 8.0f : 2.0f);
         else
         {
@@ -376,7 +386,8 @@ void Screen::headKeys (G& g, float right, float y, int kind, int lane, int slot,
         {
             String letter (letters[k]);
             if (int ch = 0, num = 0; info && k > 0 && ccx::addressOf (k == 1 ? muteCtl : soloCtl, ch, num)) letter = String (num);      // INFO: its number
-            key (g, kr, fills[k]); textRaw (g, letter, kr, fLbl, inkOn (cap (fills[k]), k == 0 && open ? col::lit : col::black));
+            key (g, kr, fills[k], 2.0f, k == 0 ? open : eng.shown (k == 1 ? muteCtl : soloCtl) > 0.5f);
+            textRaw (g, letter, kr, fLbl, inkOn (cap (fills[k]), k == 0 && open ? col::lit : col::black));
             if (k == 1 && seen (g, kr)) lastShown[(size_t) muteCtl] = eng.shown (muteCtl);
             if (k == 2 && seen (g, kr)) lastShown[(size_t) soloCtl] = eng.shown (soloCtl);
         }
@@ -385,13 +396,13 @@ void Screen::headKeys (G& g, float right, float y, int kind, int lane, int slot,
     }
 }
 
-void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const String& label, Colour fill, float legendGap, bool present)
+void Screen::actKey (G& g, int a, float cellX, float y, float cellW, const String& label, Colour fill, float legendGap, bool present, bool on)
 {
     const R kr (cellX + (cellW - 40) * 0.5f, y, 40, 40);
     if (! present) { if (vis (g, kr)) hollow (g, kr.getCentreX(), kr.getCentreY(), 40, false); return; }
     if (vis (g, R (cellX - 10, y, cellW + 20, 62)))
     {
-        key (g, kr, fill, mouseIsDown && drag.kind == hAct && drag.a == a ? 6.0f : 2.0f);
+        key (g, kr, fill, pressed (a) ? 6.0f : 2.0f, on);
         legend (g, kr.getCentreX(), y + 40 + legendGap, label);
     }
     hit (kr.expanded (3), hAct, a, 0);
@@ -821,9 +832,9 @@ void Screen::drawBar (G& g)
             // LEARN: which knob is being taught, how many knobs it has been shown, and the two ways out
             title (g, 23 + w + 12, 24.5f, learnTitle(), true);
             const float kx = learnKeysX();
-            key (g, R (kx, 17.5f, 40, 40), col::yellow, mouseIsDown && drag.kind == hAct && drag.a == aLearnKeep ? 6.0f : 2.0f);
+            key (g, R (kx, 17.5f, 40, 40), col::yellow, pressed (aLearnKeep) ? 6.0f : 2.0f);
             text (g, "KEEP", R (kx + 46, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
-            key (g, R (kx + 96, 17.5f, 40, 40), col::white, mouseIsDown && drag.kind == hAct && drag.a == aLearnDrop ? 6.0f : 2.0f);
+            key (g, R (kx + 96, 17.5f, 40, 40), col::white, pressed (aLearnDrop) ? 6.0f : 2.0f);
             text (g, "DROP", R (kx + 142, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
             const int n = ses.learnMoves();
             const float tx = kx + 196, tw2 = std::max (60.0f, 932.0f - tx);
@@ -839,7 +850,7 @@ void Screen::drawBar (G& g)
         {
             const bool on = recorder != nullptr && recorder->recording();
             key (g, R (950, 17.5f, 40, 40), on ? (recorder->lostSeconds() > 0.0 ? col::amber : col::red) : col::putty,
-                 mouseIsDown && drag.kind == hAct && drag.a == aRec ? 6.0f : 2.0f);
+                 pressed (aRec) ? 6.0f : 2.0f, on);
             String t ("REC");
             if (on) { const auto s = (juce::int64) recorder->seconds(); t = String (s / 3600) + ":" + String ((s / 60) % 60).paddedLeft ('0', 2) + ":" + String (s % 60).paddedLeft ('0', 2); }
             text (g, t, R (996, 17.5f, 70, 40), fLegend, col::black, juce::Justification::centredLeft);
@@ -850,9 +861,9 @@ void Screen::drawBar (G& g)
         text (g, eng.phones() ? "PHONES" : "SETUP", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "RUN", R (1222, 17.5f, 40, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "PANIC", R (1314, 17.5f, 56, 40), fLegend, col::black, juce::Justification::centredLeft);
-        key (g, R (1070, 17.5f, 40, 40), eng.phones() ? col::green : col::white);
-        key (g, R (1176, 17.5f, 40, 40), eng.isRunning() ? col::green : col::putty);
-        key (g, R (1268, 17.5f, 40, 40), col::red, mouseIsDown && drag.kind == hAct && drag.a == aPanic ? 6.0f : 2.0f);
+        key (g, R (1070, 17.5f, 40, 40), eng.phones() ? col::green : col::white, pressed (aAudio) ? 6.0f : 2.0f);
+        key (g, R (1176, 17.5f, 40, 40), eng.isRunning() ? col::green : col::putty, pressed (aRun) ? 6.0f : 2.0f, eng.isRunning());      // (RUN latches: down while it runs)
+        key (g, R (1268, 17.5f, 40, 40), col::red, pressed (aPanic) ? 6.0f : 2.0f);
         // following an outside clock, the tempo is that clock's and says so
         readout (g, R (1373, 17.5f, 96, 40), eng.following() ? "CLOCK IN" : "TEMPO", eng.valueText (cx::kTempo));
         barSig = barNow();
@@ -1048,7 +1059,7 @@ void Screen::drawConfig (G& g, R r)
         {
             // LOAD: the same as dropping a file here, from a list in this panel (so with the window full screen too)
             const R lr (x0 + 474, y - 1, 70, 24);
-            key (g, lr, loadOpen ? col::green : col::yellow);
+            key (g, lr, loadOpen ? col::green : col::yellow, pressed (aLoad) ? 6.0f : 2.0f, loadOpen);
             text (g, "LOAD", lr, fLbl, col::black);
             hit (lr.expanded (2), hAct, aLoad, 0);
         }
@@ -1112,7 +1123,7 @@ void Screen::drawConfig (G& g, R r)
             const R kr (cxl + 25, cy, 40, 40);
             if (vis (g, R (cxl - 16, cy, 122, rowH - titleH)))
             {
-                if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty);
+                if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
                 else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
                 else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
                 legend (g, cxl + 45, cy + 43, sp.name);
@@ -1268,7 +1279,7 @@ void Screen::drawSnapPanel (G& g, R r)
         const float w = title (g, x0, y0, "SNAPSHOTS", ses.front.kind == Session::fSnap);
         // NOTES: whether a recall brings a snapshot's notes (lit) or its sound alone
         const R kr (x0 + w + 4, y0 + 2, 46, 22);
-        key (g, kr, ses.recallNotes ? col::white : col::putty);
+        key (g, kr, ses.recallNotes ? col::white : col::putty, pressed (aNotes) ? 6.0f : 2.0f, ses.recallNotes);
         if (ses.recallNotes) text (g, "NOTES", kr, fLbl, col::black);
         else textRaw (g, "NOTES", kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));
         // (INFO: the page's channel, where the time of the last snapshot was)
@@ -1301,7 +1312,7 @@ void Screen::drawSnapPanel (G& g, R r)
     const R bar (x0, ky, 130, 40);
     if (vis (g, R (x0, ky, 262, 60)))
     {
-        key (g, bar, col::yellow, mouseIsDown && drag.kind == hAct && drag.a == aSnapshot ? 6.0f : 2.0f);
+        key (g, bar, col::yellow, pressed (aSnapshot) ? 6.0f : 2.0f);
         text (g, "SNAPSHOT", R (x0, ky + 43, 130, 14), fLbl, col::black);
     }
     hit (bar, hAct, aSnapshot, 0);
@@ -1366,7 +1377,7 @@ void Screen::drawMaster (G& g, R r)
         if (vis (g, R (bx, y0, 132, 26))) text (g, "DRUM BUS", R (bx + 4, y0, 90, 26), fLegend, col::black, juce::Justification::centredLeft);
         const R kr (bx + 106, y0 + 2, 22, 22);
         const bool open = cfgOpen && cfg.kind == 3;
-        if (vis (g, kr)) { key (g, kr, open ? col::black : col::white); textRaw (g, "C", kr, fLbl, inkOn (cap (open ? col::black : col::white), open ? col::lit : col::black)); }
+        if (vis (g, kr)) { key (g, kr, open ? col::black : col::white, 2.0f, open); textRaw (g, "C", kr, fLbl, inkOn (cap (open ? col::black : col::white), open ? col::lit : col::black)); }
         hit (kr.expanded (1), hConfig, 3, 0);
         for (int k = 0; k < kBusKnobs; ++k) control (g, cx::kBus + k, bx + (float) (k % 2) * 66, body + (float) (k / 2) * 77, 64, col::lit);
     }
@@ -1382,7 +1393,7 @@ void Screen::drawMaster (G& g, R r)
     // POCKETS: its page, and how much of it is on
     {
         const R kr (x0 + 6, fy + 49, 22, 22);
-        key (g, kr, eng.target (cx::kPkG) > 0.0f ? col::green : col::white);
+        key (g, kr, eng.target (cx::kPkG) > 0.0f ? col::green : col::white, pressed (aPockets) ? 6.0f : 2.0f);
         text (g, "POCKETS", R (x0 + 34, fy + 49, 60, 22), fLbl, col::black, juce::Justification::centredLeft);
         text (g, eng.valueText (cx::kPkG), R (x0 + 96, fy + 49, 40, 22), fLbl, col::black, juce::Justification::centredLeft);
         hit (R (x0 + 4, fy + 47, 130, 26), hAct, aPockets, 0);
@@ -1451,7 +1462,7 @@ void Screen::drawSequencer (G& g, R r)
     const R mk (x0 + wTag + wn + 2 + ws + 4, y0 + 2, 22, 22);
     if (vis (g, mk))
     {
-        key (g, mk, seqOff ? col::amber : col::putty);
+        key (g, mk, seqOff ? col::amber : col::putty, 2.0f, seqOff);
         String letter ("M");
         if (int ch = 0, num = 0; info && ccx::addressOf (muteCtl, ch, num)) letter = String (num);
         textRaw (g, letter, mk, fLbl, inkOn (cap (seqOff ? col::amber : col::putty), col::black));
@@ -1568,8 +1579,8 @@ void Screen::drawSequencer (G& g, R r)
     const float x2 = x1 + 752;
     const int armed = ses.genType[(size_t) l];
     title (g, x2, y0, "GENERATE");
-    actKey (g, aGen0, x2, ky, 64, "RANDOM", armed == 0 ? col::green : col::putty, 5);
-    actKey (g, aGen1, x2 + 66, ky, 64, "EUCLID", armed == 1 ? col::green : col::putty, 5);
+    actKey (g, aGen0, x2, ky, 64, "RANDOM", armed == 0 ? col::green : col::putty, 5, true, armed == 0);
+    actKey (g, aGen1, x2 + 66, ky, 64, "EUCLID", armed == 1 ? col::green : col::putty, 5, true, armed == 1);
     hollow (g, x2 + 164, ky + 20, 40, false);
     hollow (g, x2 + 230, ky + 20, 40, false);
     for (int k = 0; k < 4; ++k)
@@ -1677,7 +1688,7 @@ void Screen::drawLibrary (G& g)
     actKey (g, aRename, x0 + 226, ky, 64, "RENAME", col::yellow, 5, has);
     actKey (g, aDelete, x0 + 292, ky, 64, "HOLD: DELETE", col::red, 5, has);
     // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
-    actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5);
+    actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5, true, cueMode);
     actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
     // What RECALL takes of it: every lane, the returns and the master, unless some are put out
     // first. Put out, a part stays as it is now. The next snapshot starts with all of them again.
@@ -1690,7 +1701,7 @@ void Screen::drawLibrary (G& g)
             for (int i = 0; i < kLanes + 3; ++i)
             {
                 const R kr (x0 + 486 + (float) i * 40, y0 + 4, 36, 24);
-                key (g, kr, scopeOn[(size_t) i] ? col::white : col::putty);
+                key (g, kr, scopeOn[(size_t) i] ? col::white : col::putty, 2.0f, scopeOn[(size_t) i]);
                 const String name = i < kLanes ? String (i + 1) : i == kLanes ? String ("RET") : i == kLanes + 1 ? String ("BUS") : String ("KEY");
                 if (scopeOn[(size_t) i]) text (g, name, kr, fLbl, col::black);
                 else textRaw (g, name, kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));        // (put out: still to be read, dimly)
@@ -1699,9 +1710,9 @@ void Screen::drawLibrary (G& g)
         }
     }
     // PHONES: one pair of outputs with headphones on it. While a cue plays: the set left, the cue right.
-    actKey (g, aPhones, x0 + 518, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5);
+    actKey (g, aPhones, x0 + 518, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5, true, eng.phones());
     // NOTES: whether a recall brings a snapshot's notes
-    actKey (g, aNotes, x0 + 584, ky, 64, "NOTES", ses.recallNotes ? col::green : col::putty, 5);
+    actKey (g, aNotes, x0 + 584, ky, 64, "NOTES", ses.recallNotes ? col::green : col::putty, 5, true, ses.recallNotes);
     const String help = ! cueMode ? (night() ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE LIT NAME IS THE BASE SCENE."
                                              : "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.")
                       : eng.phones() ? "CUE WITH PHONES LIT: WHILE A SNAPSHOT'S BARS PLAY, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET."
@@ -1714,7 +1725,7 @@ void Screen::drawLibrary (G& g)
     onlineStamp = online->stamp();
     const Colour lamp = st == Online::State::off ? col::putty : st == Online::State::upToDate ? col::green : st == Online::State::working ? col::yellow
                       : st == Online::State::refused ? col::red : col::amber;
-    actKey (g, aOnline, x0 + 678, ky, 64, "ONLINE", lamp, 5);
+    actKey (g, aOnline, x0 + 678, ky, 64, "ONLINE", lamp, 5, true, st != Online::State::off);
     actKey (g, aOnlineSetup, x0 + 744, ky, 64, "SET UP", col::white, 5);
     text (g, online->line(), R (x0 + 832, ky, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
     text (g, help, R (x0 + 832, ky + 20, 828, 20), fLbl, col::black, juce::Justification::centredLeft);
@@ -1854,7 +1865,7 @@ void Screen::drawPockets (G& g)
                 {
                     String letter (k == 0 ? "M" : "S");
                     if (int ch = 0, num = 0; info && ccx::addressOf (ctl, ch, num)) letter = String (num);
-                    key (g, kr, fills[k]); textRaw (g, letter, kr, fLbl, inkOn (cap (fills[k]), col::black));
+                    key (g, kr, fills[k], 2.0f, eng.shown (ctl) > 0.5f); textRaw (g, letter, kr, fLbl, inkOn (cap (fills[k]), col::black));
                     if (seen (g, kr)) lastShown[(size_t) ctl] = eng.shown (ctl);
                 }
                 hit (kr.expanded (1), hToggle, ctl);
@@ -1968,7 +1979,7 @@ void Screen::drawMacros (G& g)
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
     actKey (g, aRenameKnob, x0 + 160, ky, 64, "RENAME", col::yellow, 5);
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
-    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5);
+    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, true, ses.learning == selKnob);
     const String help = "PICK A KNOB. FROM SNAPSHOTS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10); TAP A NUMBERED SLOT TO TAKE IT OUT. THE KNOB MOVES ONLY WHAT DIFFERS AMONG THEM. "
                         "STRAIGHT TO KNOBS: PRESS LEARN, TURN THE KNOBS IT SHOULD MOVE TO WHERE ITS FULL TURN TAKES THEM, AND KEEP. EITHER WAY IT IS AN OFFSET FROM THE BASE SCENE, AND KNOBS STACK.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
@@ -1979,6 +1990,7 @@ void Screen::drawMacros (G& g)
 void Screen::act (int a)
 {
     const int l = ses.activeLane;
+    tapAct = a; tapAt = juce::Time::getMillisecondCounter();        // (its key is seen to go down, whoever pressed it)
     switch (a)
     {
         case aRun:      eng.setRunning (! eng.isRunning()); break;
@@ -2103,7 +2115,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
     mouseIsDown = true;
     if (hovering) { hovering = false; dirty (tipRect); tipRect = {}; }      // (the box is out of the hand's way)
     if (h == nullptr) return;
-    drag.kind = h->kind; drag.a = h->a; drag.b = h->b; drag.start = p; drag.t0 = juce::Time::getMillisecondCounter();
+    drag.kind = h->kind; drag.a = h->a; drag.b = h->b; drag.page = (int) page; drag.start = p; drag.t0 = juce::Time::getMillisecondCounter();
     switch (h->kind)
     {
         case hKnob: case hRead: drag.v0 = ses.value (h->a); break;
@@ -2915,6 +2927,12 @@ void Screen::timerCallback()
         repaint();
     }
     if (ses.cfgTouched.isNotEmpty()) { cfgName = ses.cfgTouched; ses.cfgTouched = {}; cfgStale = true; if (cfgOpen) dirty (cfgRect); }
+    if (tapAct >= 0 && juce::Time::getMillisecondCounter() - tapAt >= kTapMs)
+    {
+        // the key an action pressed comes back up (in 3D only the parts are written down again: nothing is printed)
+        tapAct = -1;
+        if (three) triggerAsyncUpdate(); else juce::Component::repaint();
+    }
     if (three) { followMoves(); showTags(); }
     if (three && ! settledSaid && stage != nullptr && stage->firstPictureSpread() != -1) settled();       // it is up and has drawn
     watchStart (juce::Time::getMillisecondCounter(), isShowing() && juce::Process::isForegroundProcess());

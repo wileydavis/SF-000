@@ -511,17 +511,17 @@ void Skin::ringLit (G& g, float cx, float cy, int size, float a, float b, Colour
     }
 }
 
-void Skin::key (G& g, R r, Colour c, bool down)
+void Skin::key (G& g, R r, Colour c, int press)
 {
-    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->keys.push_back ({ r.translated (shift, 0.0f), c.getARGB(), down, emits (c), clip, 0.0f }); return; }
+    if (mode != Mode::pictures) { if (rec != nullptr && mode == Mode::record) rec->keys.push_back ({ r.translated (shift, 0.0f), c.getARGB(), press, emits (c), clip, 0.0f }); return; }
     const int w = juce::roundToInt (r.getWidth()), h = juce::roundToInt (r.getHeight());
-    const auto& p = pic (Key { wKey, w, h, c.getARGB(), down ? 1 : 0 }, [&]
+    const auto& p = pic (Key { wKey, w, h, c.getARGB(), press }, [&]
     {
         Relief rf ((float) w, (float) h, scale, 8.0f, 2);
         const R b (0.0f, 0.0f, (float) w, (float) h);
         const bool on = emits (c);
         rf.slab (b, 2.6f, -3.0f, 0.0f, {}, true);                                                  // the hole it moves in
-        rf.slab (b.reduced (0.7f), 2.2f, (down ? 0.4f : 1.27f) * kU, 1.4f, { on ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c, 0.32f, 0.03f, on ? 0.45f : 0.0f });
+        rf.slab (b.reduced (0.7f), 2.2f, Parts::keyTop (press), std::min (1.4f, Parts::keyTop (press) * 0.6f), { on ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c, 0.32f, 0.03f, on ? 0.45f : 0.0f });
         return from (rf);
     });
     g.setOpacity (1.0f);
