@@ -985,6 +985,14 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      snapshots the same way. TARGET lists the effect's own panel first. Among its waves INPUT,
      the level coming in, stands where an instrument has NOTES. This replaces "instruments only"
      in 223.
+237. **What a snapshot holds of MOTION** (you: "make sure the snapshots capture the motion
+     states"). It did hold the settings, everywhere MOTION can be set: a lane's, each insert's,
+     both returns', written to the session file by name like any CONFIG value. A check now says
+     so. One thing it did not hold: RANDOM, DRIFT and STEPS were drawn from numbers made afresh
+     for every voice and every launch, so a snapshot's random wave came back as a different one.
+     Each place in the rig (a lane, an insert's slot, a return) now has its own numbers, always
+     the same: the wave is the same wave after a recall, a crossing-over, a restart. *Mine:* so
+     two snapshots cannot have different STEPS patterns on the same lane.
 
 ## Not verified
 

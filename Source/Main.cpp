@@ -721,6 +721,29 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                         std::printf ("  %s: MOTION on an effect: a sine on a DELAY's %s moves it (%.2f of its range still, %.2f with it), INPUT is among its waves, and a snapshot brings it back\n", fxOk ? "ok  " : "FAIL", cell.label, fxStill, fxMoving);
                         if (! fxOk) { ++bad; std::printf ("    (there %d set %d wave now %s; targets: %s)\n", (int) there, (int) fxSet, fxFind ("m1_src").text.toRawUTF8(), tg.choices.joinIntoString (", ").toRawUTF8()); }
                     }
+                    // what a snapshot holds of MOTION, everywhere it can be set: a lane's, an insert's, a return's, to the file and back
+                    {
+                        e7.setSetup (bass, "m1_src", 1.0f / 11.0f);                 // the bass: MOTION 1 a sine again
+                        e7.setSetup ({ 2, 0, 0 }, "m2_src", 3.0f / 11.0f);          // return A: MOTION 2 a square (the kick's DELAY has its sine from above)
+                        const auto all = s7.take(); s7.finishTakes (true);
+                        const auto* sn = s7.findSnap (all);
+                        auto has = [] (const Engine::SetupState& st, const char* id) { for (auto& kv : st) if (kv.first == id) return kv.second; return -1.0f; };
+                        const bool lane = sn != nullptr && std::abs (has (sn->setup[5], "m1_src") - 1.0f / 11.0f) < 1.0e-4f && has (sn->setup[5], "m1_depth") >= 0.0f && has (sn->setup[5], "m2_target") >= 0.0f;
+                        const bool ret = sn != nullptr && std::abs (has (sn->retSetup[0], "m2_src") - 3.0f / 11.0f) < 1.0e-4f;
+                        const bool ins = sn != nullptr && std::abs (has (sn->insSetup[0][0], "m1_src") - 1.0f / 11.0f) < 1.0e-4f;
+                        // (as the session file and the library on the web are given it: by name, like every other CONFIG value)
+                        const juce::String asWritten = sn != nullptr ? juce::JSON::toString (s7.written (*sn)) : juce::String();
+                        const bool file = asWritten.contains ("m1_src") && asWritten.contains ("m1_rate") && asWritten.contains ("m1_target") && asWritten.contains ("m1_depth") && asWritten.contains ("m2_src");
+                        // its random waves: drawn from the same numbers on the same lane, whichever voice plays (a recall crosses it over)
+                        const auto seedWas = e7.processorFor (bass)->motionSeedNow();
+                        e7.forkVoice (5, 0.0);
+                        const bool sameWave = e7.processorFor (bass)->motionSeedNow() == seedWas && seedWas == Engine::motionSeedFor (bass)
+                                           && Engine::motionSeedFor ({ 0, 6, 0 }) != seedWas && Engine::motionSeedFor ({ 1, 5, 0 }) != seedWas;
+                        e7.setSetup ({ 2, 0, 0 }, "m2_src", 0.0f);
+                        const bool ok8 = lane && ret && ins && file && sameWave;
+                        std::printf ("  %s: a snapshot holds MOTION wherever it is set (a lane's, an insert's, a return's) and writes it to the session file; and a lane's random waves are the same waves after its voice has crossed over\n", ok8 ? "ok  " : "FAIL");
+                        if (! ok8) { ++bad; std::printf ("    (lane %d return %d insert %d file %d wave %d)\n", (int) lane, (int) ret, (int) ins, (int) file, (int) sameWave); }
+                    }
                 }
             }
         }

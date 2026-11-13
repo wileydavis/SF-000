@@ -130,6 +130,7 @@ Engine::Engine()
         auto& ln = lane[(size_t) l];
         auto* first = new Voice();
         first->proc = makeProc (d.module, d.fixed);
+        first->proc->setMotionSeed (motionSeedFor ({ 0, l, 0 }));
         ln.voice = first;
         ln.player.pitched = d.pitched;
         ln.shared = defaultPattern (l);
@@ -176,7 +177,8 @@ Engine::Engine()
     }
 
     retA = makeProc (returnA().module, returnA().fixed);
-    for (int m = 0; m < kSpaceModels; ++m) space[(size_t) m] = makeProc (returnB (m).module, returnB (m).fixed);
+    retA->setMotionSeed (motionSeedFor ({ 2, 0, 0 }));
+    for (int m = 0; m < kSpaceModels; ++m) { space[(size_t) m] = makeProc (returnB (m).module, returnB (m).fixed); space[(size_t) m]->setMotionSeed (motionSeedFor ({ 2, 0, 1 })); }
     for (int k = 0; k < 4; ++k)
     {
         auto& a = controls[(size_t) (cx::kRet + k)];
@@ -654,6 +656,7 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults, const Setu
             inst = new InsertInst();
             inst->type = type; inst->lane = l; inst->slot = slot;
             inst->proc = makeProc (d.module, d.fixed);
+            inst->proc->setMotionSeed (motionSeedFor ({ 1, l, slot }));
         }
         else
         {
@@ -712,6 +715,7 @@ void Engine::forkVoice (int l, double fadeBeats)
     auto* was = ln.voice.load();
     auto* v = new Voice();
     v->proc = makeProc (d.module, d.fixed);
+    v->proc->setMotionSeed (motionSeedFor ({ 0, l, 0 }));
     // as the one playing stands, to the last parameter (CONFIG's too), with the file it plays
     const int np = (int) was->proc->allSpecs().size();
     for (int i = 0; i < np; ++i)
@@ -836,6 +840,7 @@ void Engine::warmInsert (int l, int slot, int type, const std::vector<FileRef>& 
     auto* inst = new InsertInst();
     inst->type = type; inst->lane = l; inst->slot = slot;
     inst->proc = makeProc (d.module, d.fixed);
+    inst->proc->setMotionSeed (motionSeedFor ({ 1, l, slot }));
     if (! inst->proc->mod().acceptsFiles()) { delete inst; return; }
     if (prepared) { inst->proc->setRateAndBufferSizeDetails (sr, maxBlock); inst->proc->prepareToPlay (sr, maxBlock); }
     replayFiles (*inst->proc, refs);

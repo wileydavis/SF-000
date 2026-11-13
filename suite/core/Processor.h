@@ -76,6 +76,10 @@ public:
     const std::vector<sf::ParamSpec>& allSpecs() const { return specs; }
     int numModuleParams() const { return numModParams; }
     const std::vector<int>& motionTargetParams() const { return motionTargets; }     // (SF-000) the module parameter MOTION's TARGET choice k+1 moves
+    // (SF-000) MOTION's RANDOM, DRIFT and STEPS are drawn from this. In a plugin it is made at random
+    // and saved with the set; SF-000 gives every place in the rig its own, always the same.
+    void setMotionSeed (uint32_t s) { motionSeed = s | 1u; for (int k = 0; k < kMotions; ++k) motion[(size_t) k].setSeed (motionSeed + 0x9E3779B9u * (uint32_t) k); }
+    uint32_t motionSeedNow() const { return motionSeed; }
     juce::RangedAudioParameter* param (int i) { return params[(size_t) i]; }
     int paramIndex (const std::string& id) const;
     float currentValue (int i) const { return cur[(size_t) i]; }     // what the module hears (glide, macro, motion)

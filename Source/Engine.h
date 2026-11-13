@@ -260,6 +260,10 @@ public:
     // MOTION: the two modulators every instrument has (the suite's own): a wave, a speed, one of
     // the instrument's knobs to move, and how far. Set in a lane's CONFIG, kept in snapshots.
     static bool isMotionId (const juce::String& id);
+    // What MOTION's RANDOM, DRIFT and STEPS are drawn from, for a place in the rig: a lane, an
+    // insert's slot, a return. Always the same there, so a snapshot's random wave is the same
+    // wave when it is recalled, after a voice has crossed over, and after the app has been shut.
+    static juce::uint32 motionSeedFor (Target t)    { return 1u | (0x9E3779B1u * (juce::uint32) (17 + t.kind * 1000 + t.lane * 10 + t.slot)); }
     SetupState motionOff (Target) const;        // the two of them as they are when never set: a snapshot from before they could be set means this
     SFProcessor* processorFor (Target) const;
     std::vector<SetupParam> setupParams (Target) const;
