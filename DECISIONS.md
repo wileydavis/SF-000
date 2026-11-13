@@ -1575,8 +1575,41 @@ many."
      morning: keys that go down on the 3D stage, motion on a snapshot knob, an arrangement of
      snapshots that can be printed for release, and a page of the E16 for the sequencer's steps.
 
+## Thirty-second build (Nov 13): a convolution with three places at once
+
+322. **You:** "Making convolution more powerful for sound design, not just room emulation. Maybe
+     turning it into a multiband convolution tool that can take separate IRs for low/mid/high
+     bands, for example."
+323. **BANDS, in a convolution's CONFIG: a place for the low, one for the middle, one for the
+     top.** Each with its own LEVEL, DECAY and SIZE, and two knobs for where the bands meet.
+     *Mine:* which knobs a band has. PLACE, LEVEL and DECAY are the ones the idea needs; SIZE is
+     there because a band at another size is the least room-like thing it can do. Not there: a
+     REVERSE or a START for one band alone (REVERSE and LENGTH work on the whole; one band
+     backwards would need the response cut again band by band when the tempo moves, and I left
+     it until you ask).
+324. **It is one response, not three convolutions.** *Mine.* Convolving with three banded
+     responses and adding is the same as convolving once with their sum, so the three are added
+     when a knob moves, on the thread that already builds every change to a place, and the
+     engine runs what it always ran. It costs nothing more to play, the swap from one response
+     to the next is the crossfade there already was, and with BANDS out nothing is different.
+325. **The bands meet at 18 dB an octave (third-order Butterworth), not the usual 24.** *Mine.*
+     A crossover for one signal wants its two sides to add up to the whole; one for two different
+     places wants their powers to. The usual pair does the first and leaves a 3 dB dip where two
+     different places meet (measured: the bands came out 1.4 dB short). A third-order pair does
+     both: three bands of one place are that place to a hundredth of a dB, and two places meet
+     with nothing missing.
+326. **This is the suite's module, changed in SF-000's copy** (`suite/PORTING.md`): fifteen
+     parameters after its last, so every stored state and every address is what it was.
+327. *proposed, not built:* **a place taken from the rig itself.** The last bar the set played,
+     written as a file and given to a place, so a lane is convolved with what the rig just did.
+     The tape is there (a snapshot's clip comes from it) and so is everything a file needs. It
+     is the other way to make the convolution a sound and not a room; say if you want it.
+
 ## Not verified
 
+- **BANDS (thirty-second) is checked by the response to one click**, band by band, rendered and
+  live. Not heard. Whether a hall over a room sounds like one thing or two is for your ears and
+  your impulse responses; mine were noise dying away.
 - **POCKETS (thirty-first) has not been heard by anyone.** Every claim about it is a
   measurement on made-up tones or on the rig's stems: that the right thing is cut, where, by how
   much and for how long. Whether a mix carved this way sounds better, whether 8 ms is soon

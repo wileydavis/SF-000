@@ -180,7 +180,10 @@ private:
 class TerroirModule : public Module, private juce::Thread
 {
 public:
-    enum { SIZE, DECAY, DARK, PREDELAY, DUCK, FREEZE, THROW, MIX, PLACE, LENGTH, REVERSE, START, WIDTH, LOCUT, DUCKSHAPE, INPUT, DRYON, IMPORT };
+    enum { SIZE, DECAY, DARK, PREDELAY, DUCK, FREEZE, THROW, MIX, PLACE, LENGTH, REVERSE, START, WIDTH, LOCUT, DUCKSHAPE, INPUT, DRYON, IMPORT,
+           // (SF-000) BANDS: three places across the spectrum, each with its own level, decay and size
+           BANDS, XLOW, XHIGH, B1PLACE, B1LEVEL, B1DECAY, B1SIZE, B2PLACE, B2LEVEL, B2DECAY, B2SIZE, B3PLACE, B3LEVEL, B3DECAY, B3SIZE };
+    static constexpr int kBands = 3, kPerBand = 4;
     static constexpr int kSlots = 8;
     static constexpr double kMaxIrSec = 16.0;
 
@@ -226,8 +229,18 @@ public:
                  pct ("duck_shape", "DUCK SHAPE", 0.5f),
                  choice ("input", "INPUT", { "ALWAYS", "THROW ONLY" }, 0),
                  dryParam(),
-                 importParam() };
+                 importParam(),
+                 // (SF-000) BANDS. Off, the place is the one PLACE names, whole. On, the low, the
+                 // middle and the top of what plays each come from a place of their own (PLACE:
+                 // the knob's), at a level, with DECAY and SIZE scaled for that band alone.
+                 toggle ("bands", "BANDS"),
+                 knob ("bx_low", "LOW/MID", 60.0f, 1000.0f, 250.0f, "Hz", 250.0f),
+                 knob ("bx_high", "MID/HIGH", 1000.0f, 12000.0f, 2500.0f, "Hz", 3500.0f),
+                 bandPlace ("b1_place"), knob ("b1_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b1_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b1_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f),
+                 bandPlace ("b2_place"), knob ("b2_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b2_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b2_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f),
+                 bandPlace ("b3_place"), knob ("b3_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b3_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b3_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f) };
     }
+    static ParamSpec bandPlace (const char* id) { return choice (id, "PLACE", { "PLACE", "1", "2", "3", "4", "5", "6", "7", "8" }, 0); }
     // What a dropped or loaded file is (ir::Source): AUTO decides and says what it took it for; IR
     // FILE keeps every arrival; CLAP cuts before a second clap; SWEEP is the sweep file recorded.
     // How files come in, not a sound: in no song or preset.
@@ -470,7 +483,19 @@ public:
             const auto b = slotBox (r, i);
             if (i == sel) { g.setColour (ui::kText); g.fillRect (b); }
             else { g.setColour (filled[(size_t) i] ? ui::kDim : ui::kLine); g.drawRect (b, 1.0f); }
-            ui::label (g, juce::String (i + 1), b, i == sel ? ui::kBg : (filled[(size_t) i] ? ui::kText : ui::kFaint), 11.0f, juce::Justification::centred);
+            // (SF-000) with BANDS on, a place says which bands play from it: L, M, H
+            juce::String name (i + 1);
+            if (getParam && getParam (BANDS) > 0.5f)
+            {
+                juce::String which;
+                for (int bnd = 0; bnd < kBands; ++bnd)
+                {
+                    const int pi = juce::jlimit (0, kSlots, (int) std::lround (getParam (B1PLACE + bnd * kPerBand)));
+                    if ((pi == 0 ? sel : pi - 1) == i) which << "LMH"[bnd];
+                }
+                if (which.isNotEmpty()) name << "  " << which;
+            }
+            ui::label (g, name, b, i == sel ? ui::kBg : (filled[(size_t) i] ? ui::kText : ui::kFaint), 11.0f, juce::Justification::centred);
         }
         const auto sb = sweepBox (r);
         g.setColour (ui::kDim); g.drawRect (sb, 1.0f);
@@ -483,7 +508,7 @@ public:
         ui::label (g, ph == 2 ? "STOP" : "CAPTURE", cb, ph == 0 ? ui::kText : cc, 10.0f, juce::Justification::centred);
         in.removeFromTop (sb.getBottom() - in.getY() + 6.0f);
         auto nameRow = in.removeFromTop (16);
-        const bool empty = ! filled[(size_t) sel];
+        const bool empty = ! filled[(size_t) sel] && ! (getParam && getParam (BANDS) > 0.5f);      // (SF-000: with BANDS on the name row says each band's place)
         if (dispFreeze.load() > 0.01f) ui::label (g, "FROZEN", nameRow, ui::kGreen, 10.0f, juce::Justification::centredRight);
         ui::lines (g, empty ? "SLOT " + juce::String (sel + 1) + " EMPTY: BUILT-IN ROOM" : d.name, nameRow.withTrimmedRight (dispFreeze.load() > 0.01f ? 50.0f : 0.0f),
                    empty ? ui::kDim : ui::kText, 12.0f, 1, juce::Justification::centredLeft);
@@ -536,12 +561,30 @@ private:
         uint32_t ver = 0;
         int size = 1000, decay = 1000, dark = 0, start = 0, len = 0, srHz = 48000;
         bool rev = false;
+        // (SF-000) BANDS. Off, none of this is looked at (and a key is what it always was).
+        bool bands = false;
+        int xlo = 250, xhi = 2500;                           // Hz: where low meets middle, and middle top
+        std::array<int, kBands> bslot { { -1, -1, -1 } };     // each band's place (-1: PLACE's)
+        std::array<uint32_t, kBands> bver { { 0, 0, 0 } };
+        std::array<int, kBands> blevel { { 0, 0, 0 } };       // tenths of a dB
+        std::array<int, kBands> bdecay { { 1000, 1000, 1000 } }, bsize { { 1000, 1000, 1000 } };
         bool operator== (const Key& o) const
         {
             return slot == o.slot && ver == o.ver && size == o.size && decay == o.decay && dark == o.dark && start == o.start
-                && len == o.len && srHz == o.srHz && rev == o.rev;
+                && len == o.len && srHz == o.srHz && rev == o.rev
+                && bands == o.bands && (! bands || (xlo == o.xlo && xhi == o.xhi && bslot == o.bslot && bver == o.bver && blevel == o.blevel && bdecay == o.bdecay && bsize == o.bsize));
         }
-        std::array<int64_t, 10> code() const { return { slot, ver, size, decay, dark, start, len, rev ? 1 : 0, srHz, 0 }; }   // IrFilter::from
+        // The bands as one number (0: off), so an IR knows which bands it was built for.
+        int64_t bandCode() const
+        {
+            if (! bands) return 0;
+            uint64_t h = 1469598103934665603ull;
+            auto mix = [&h] (int64_t v) { h = (h ^ (uint64_t) v) * 1099511628211ull; };
+            mix (xlo); mix (xhi);
+            for (int b = 0; b < kBands; ++b) { mix (bslot[(size_t) b]); mix (bver[(size_t) b]); mix (blevel[(size_t) b]); mix (bdecay[(size_t) b]); mix (bsize[(size_t) b]); }
+            return (int64_t) (h | 1ull);
+        }
+        std::array<int64_t, 10> code() const { return { slot, ver, size, decay, dark, start, len, rev ? 1 : 0, srHz, bandCode() }; }   // IrFilter::from
     };
     struct Disp
     {
@@ -571,6 +614,21 @@ private:
         k.len = (int) std::lround (beats * (rate * 60.0 / bpm));
         k.rev = v (REVERSE) > 0.5f;
         k.srHz = (int) std::lround (rate);
+        k.bands = v (BANDS) > 0.5f;
+        if (k.bands)
+        {
+            k.xlo = juce::jlimit (40, 2000, (int) std::lround (v (XLOW)));
+            k.xhi = juce::jlimit (k.xlo * 3 / 2, 16000, (int) std::lround (v (XHIGH)));       // (never under the low one)
+            for (int b = 0; b < kBands; ++b)
+            {
+                const int pi = juce::jlimit (0, kSlots, (int) std::lround (v (B1PLACE + b * kPerBand)));
+                k.bslot[(size_t) b] = pi - 1;
+                k.bver[(size_t) b] = slotVer[(size_t) (pi == 0 ? k.slot : pi - 1)].load (std::memory_order_acquire);
+                k.blevel[(size_t) b] = (int) std::lround (v (B1LEVEL + b * kPerBand) * 10.0f);
+                k.bdecay[(size_t) b] = (int) std::lround (v (B1DECAY + b * kPerBand) * 1000.0f);
+                k.bsize[(size_t) b] = (int) std::lround (v (B1SIZE + b * kPerBand) * 1000.0f);
+            }
+        }
         return k;
     }
     Key keyFrom (const Ctx& c) const { return makeKey ([&c] (int i) { return c.v (i); }, sr, c.bpm, c.beatsPerBar); }
@@ -597,6 +655,13 @@ private:
         rqDark.store (k.dark, std::memory_order_relaxed); rqStart.store (k.start, std::memory_order_relaxed);
         rqLen.store (k.len, std::memory_order_relaxed); rqSr.store (k.srHz, std::memory_order_relaxed);
         rqRev.store (k.rev, std::memory_order_relaxed); rqEpoch.store (epoch, std::memory_order_relaxed);
+        rqBand[0].store (k.bands ? 1 : 0, std::memory_order_relaxed); rqBand[1].store (k.xlo, std::memory_order_relaxed); rqBand[2].store (k.xhi, std::memory_order_relaxed);
+        for (int b = 0; b < kBands; ++b)
+        {
+            auto* q = &rqBand[(size_t) (3 + b * 5)];
+            q[0].store (k.bslot[(size_t) b], std::memory_order_relaxed); q[1].store ((int) k.bver[(size_t) b], std::memory_order_relaxed);
+            q[2].store (k.blevel[(size_t) b], std::memory_order_relaxed); q[3].store (k.bdecay[(size_t) b], std::memory_order_relaxed); q[4].store (k.bsize[(size_t) b], std::memory_order_relaxed);
+        }
         reqSeq.store (s + 2, std::memory_order_release);
         posted = k; postedValid = true; postedSeq = s + 2;
     }
@@ -611,6 +676,13 @@ private:
             k.dark = rqDark.load (std::memory_order_relaxed); k.start = rqStart.load (std::memory_order_relaxed);
             k.len = rqLen.load (std::memory_order_relaxed); k.srHz = rqSr.load (std::memory_order_relaxed);
             k.rev = rqRev.load (std::memory_order_relaxed); ep = rqEpoch.load (std::memory_order_relaxed);
+            k.bands = rqBand[0].load (std::memory_order_relaxed) != 0; k.xlo = rqBand[1].load (std::memory_order_relaxed); k.xhi = rqBand[2].load (std::memory_order_relaxed);
+            for (int b = 0; b < kBands; ++b)
+            {
+                const auto* q = &rqBand[(size_t) (3 + b * 5)];
+                k.bslot[(size_t) b] = q[0].load (std::memory_order_relaxed); k.bver[(size_t) b] = (uint32_t) q[1].load (std::memory_order_relaxed);
+                k.blevel[(size_t) b] = q[2].load (std::memory_order_relaxed); k.bdecay[(size_t) b] = q[3].load (std::memory_order_relaxed); k.bsize[(size_t) b] = q[4].load (std::memory_order_relaxed);
+            }
             std::atomic_thread_fence (std::memory_order_acquire);
             if (reqSeq.load (std::memory_order_relaxed) == s1) { seq = s1; return true; }
         }
@@ -805,8 +877,89 @@ private:
     // The base of a key: all but LENGTH's note and REVERSE (what an uncut IR is for).
     static bool sameBase (const std::array<int64_t, 10>& a, const std::array<int64_t, 10>& b)
     {
-        for (int i : { 0, 1, 2, 3, 4, 5, 8 }) if (a[(size_t) i] != b[(size_t) i]) return false;
+        for (int i : { 0, 1, 2, 3, 4, 5, 8, 9 }) if (a[(size_t) i] != b[(size_t) i]) return false;
         return true;
+    }
+
+    // One place made ready to play at the host's rate: START, DECAY (decay: thousandths of the
+    // captured one), DARK, then SIZE (thousandths) and the rate in one resampling. Into ch; the
+    // level it is to be played at is returned. (SF-000: this was the first half of build.)
+    float shapePlace (const Place& place, const Key& k, int decay, int sizePm, std::vector<float> ch[2]) const
+    {
+        const Place* const src = &place;
+        const double srcSr = src->sr, hostSr = k.srHz;
+        int n = src->audio.getNumSamples();
+        ch[0].assign (src->audio.getReadPointer (0), src->audio.getReadPointer (0) + n);
+        ch[1].resize ((size_t) n);
+        if (src->audio.getNumChannels() > 1) std::copy (src->audio.getReadPointer (1), src->audio.getReadPointer (1) + n, ch[1].begin());
+        else ir::decorrelate (ch[0].data(), ch[1].data(), n, srcSr);
+        // START: skip the direct sound and the early part (2 ms fade in).
+        const int skip = std::min (n - 1, (int) std::lround (k.start * 0.1 * 0.001 * srcSr));
+        if (skip > 0)
+            for (int x = 0; x < 2; ++x)
+            {
+                auto& v = ch[x];
+                v.erase (v.begin(), v.begin() + skip);
+                const int f = std::min ((int) v.size(), (int) (0.002 * srcSr));
+                for (int i = 0; i < f; ++i) v[(size_t) i] *= (float) i / (float) f;
+            }
+        n = (int) ch[0].size();
+        // DECAY: the reverberation time scaled by DECAY (an exponential envelope on top of the captured one).
+        const float d = (float) decay * 0.001f, rt = src->rt60 > 0.05f ? src->rt60 : 1.0f;
+        if (d < 0.999f)
+        {
+            const double step = std::exp (-6.9078 * (1.0 / (rt * d) - 1.0 / rt) / srcSr);
+            for (int x = 0; x < 2; ++x) { auto& v = ch[x]; double e = 1.0; for (int i = 0; i < n; ++i) { v[(size_t) i] *= (float) e; e *= step; } }
+        }
+        // DARK: the tail darkens with time.
+        const float dark = (float) k.dark * 0.001f;
+        if (dark > 0.001f) for (int x = 0; x < 2; ++x) ir::darken (ch[x].data(), n, srcSr, 8.0f * dark * dark);
+        // SIZE and the host rate in one resampling. Resampling by a ratio scales the response by it;
+        // each part gets its own correction: the host rate's is taken out (the room as loud at 96 kHz as
+        // at 48); SIZE keeps its rule (a longer IR holds more energy: 1 / sqrt SIZE); and the capture
+        // rate's (an IR is scaled to kEnergy at its own rate, which at 96 kHz is a room 3 dB louder
+        // than at 48) is taken out too.
+        const double size = sizePm * 0.001, ratio = hostSr * size / srcSr;
+        if (std::abs (ratio - 1.0) > 1e-9)
+            for (int x = 0; x < 2; ++x) ch[x] = ir::stretch (ch[x].data(), (int) ch[x].size(), ratio);
+        return (float) ((srcSr / hostSr) * std::sqrt (48000.0 / srcSr) / std::sqrt (std::max (0.1, size)));
+    }
+
+    // (SF-000) A band of an impulse response, in place: 0 the low, 1 the middle, 2 the top. The
+    // crossovers are third-order Butterworth (18 dB an octave), for two reasons at once: a low
+    // and a high pass of that kind add up to the whole at every frequency (so three bands of one
+    // place are that place again), and their powers add up to the whole too (so two different
+    // places meeting at a crossover leave no dip there, which a Linkwitz-Riley pair would). The
+    // top band is turned through the low crossover's phase as the other two are.
+    static void bandOf (std::vector<float>& v, int band, double xlo, double xhi, double rate)
+    {
+        auto pass = [&] (std::vector<float>& x, double hz, bool high)
+        {
+            const double w = 6.283185307179586 * std::min (hz, 0.45 * rate) / rate;
+            // a first-order section, then a second-order one with a Q of 1
+            const double K = std::tan (0.5 * w), f0 = (high ? 1.0 : K) / (1.0 + K), f1 = high ? -f0 : f0, g1 = (K - 1.0) / (K + 1.0);
+            const double cs = std::cos (w), al = 0.5 * std::sin (w), a0 = 1.0 + al;
+            const double b1 = (high ? -(1.0 + cs) : 1.0 - cs) / a0, b0 = (high ? 1.0 + cs : 1.0 - cs) * 0.5 / a0, a1 = -2.0 * cs / a0, a2 = (1.0 - al) / a0;
+            double p = 0.0, z1 = 0.0, z2 = 0.0;
+            for (auto& s : x)
+            {
+                const double in = s, first = f0 * in + p;
+                p = f1 * in - g1 * first;
+                const double out = b0 * first + z1;
+                z1 = b1 * first - a1 * out + z2;
+                z2 = b0 * first - a2 * out;
+                s = (float) out;
+            }
+        };
+        if (band == 0) { pass (v, xhi, false); pass (v, xlo, false); }
+        else if (band == 1) { pass (v, xhi, false); pass (v, xlo, true); }
+        else
+        {
+            pass (v, xhi, true);
+            auto low = v;
+            pass (low, xlo, false); pass (v, xlo, true);
+            for (size_t i = 0; i < v.size(); ++i) v[i] += low[i];
+        }
     }
 
     // The IR the key asks for, ready for the engine. Worker thread (or the audio thread offline).
@@ -815,42 +968,34 @@ private:
     {
         const auto src = placeFor (k.slot);
         if (src == nullptr || k.srHz <= 0) return nullptr;
-        const double srcSr = src->sr, hostSr = k.srHz;
-        int n = src->audio.getNumSamples();
+        const double hostSr = k.srHz;
+        int n = 0;
         std::vector<float> ch[2];
-        ch[0].assign (src->audio.getReadPointer (0), src->audio.getReadPointer (0) + n);
-        ch[1].resize ((size_t) n);
-        if (src->audio.getNumChannels() > 1) std::copy (src->audio.getReadPointer (1), src->audio.getReadPointer (1) + n, ch[1].begin());
-        else ir::decorrelate (ch[0].data(), ch[1].data(), n, srcSr);
-        // START: skip the direct sound and the early part (2 ms fade in).
-        const int skip = std::min (n - 1, (int) std::lround (k.start * 0.1 * 0.001 * srcSr));
-        if (skip > 0)
-            for (auto& v : ch)
-            {
-                v.erase (v.begin(), v.begin() + skip);
-                const int f = std::min ((int) v.size(), (int) (0.002 * srcSr));
-                for (int i = 0; i < f; ++i) v[(size_t) i] *= (float) i / (float) f;
-            }
-        n = (int) ch[0].size();
-        // DECAY: the reverberation time scaled by DECAY (an exponential envelope on top of the captured one).
-        const float d = (float) k.decay * 0.001f, rt = src->rt60 > 0.05f ? src->rt60 : 1.0f;
-        if (d < 0.999f)
+        float level = 1.0f;
+        std::array<PlacePtr, kBands> bandSrc;
+        if (! k.bands) level = shapePlace (*src, k, k.decay, k.size, ch);
+        else
         {
-            const double step = std::exp (-6.9078 * (1.0 / (rt * d) - 1.0 / rt) / srcSr);
-            for (auto& v : ch) { double e = 1.0; for (int i = 0; i < n; ++i) { v[(size_t) i] *= (float) e; e *= step; } }
+            // (SF-000) BANDS: each band's place is made ready with that band's DECAY and SIZE,
+            // kept to its band, and the three are added. Convolving with the sum is the three
+            // convolutions at once: the engine runs one response, as it always has.
+            for (int b = 0; b < kBands; ++b)
+            {
+                bandSrc[(size_t) b] = k.bslot[(size_t) b] < 0 ? src : placeFor (k.bslot[(size_t) b]);
+                std::vector<float> part[2];
+                const int decay = juce::jlimit (30, 1000, (int) ((int64_t) k.decay * k.bdecay[(size_t) b] / 1000));
+                const int size = juce::jlimit (500, 2000, (int) ((int64_t) k.size * k.bsize[(size_t) b] / 1000));
+                const float lv = shapePlace (*bandSrc[(size_t) b], k, decay, size, part) * std::pow (10.0f, 0.005f * (float) k.blevel[(size_t) b]);
+                const size_t ring = (size_t) (0.06 * hostSr);       // (room for the crossover to ring out)
+                for (int x = 0; x < 2; ++x)
+                {
+                    part[x].resize (part[x].size() + ring, 0.0f);
+                    bandOf (part[x], b, k.xlo, k.xhi, hostSr);
+                    if (ch[x].size() < part[x].size()) ch[x].resize (part[x].size(), 0.0f);
+                    for (size_t i = 0; i < part[x].size(); ++i) ch[x][i] += lv * part[x][i];
+                }
+            }
         }
-        // DARK: the tail darkens with time.
-        const float dark = (float) k.dark * 0.001f;
-        if (dark > 0.001f) for (auto& v : ch) ir::darken (v.data(), n, srcSr, 8.0f * dark * dark);
-        // SIZE and the host rate in one resampling. Resampling by a ratio scales the response by it;
-        // each part gets its own correction: the host rate's is taken out (the room as loud at 96 kHz as
-        // at 48); SIZE keeps its rule (a longer IR holds more energy: 1 / sqrt SIZE); and the capture
-        // rate's (an IR is scaled to kEnergy at its own rate, which at 96 kHz is a room 3 dB louder
-        // than at 48) is taken out too.
-        const double size = k.size * 0.001, ratio = hostSr * size / srcSr;
-        if (std::abs (ratio - 1.0) > 1e-9)
-            for (auto& v : ch) v = ir::stretch (v.data(), (int) v.size(), ratio);
-        const float level = (float) ((srcSr / hostSr) * std::sqrt (48000.0 / srcSr) / std::sqrt (std::max (0.1, size)));
         n = (int) ch[0].size();
         // LENGTH: cut to the note; the engine's limit too.
         const Cut cut = cutFor (n, k);
@@ -895,6 +1040,14 @@ private:
             sh.info = (user ? src->kind + "  " : juce::String()) + juce::String (src->audio.getNumChannels() > 1 ? "STEREO" : "MONO > STEREO")
                     + "  " + juce::String (src->sr / 1000.0, 1) + " KHZ  RT " + juce::String (src->rt60, 2) + " S"
                     + (user && src->snrDb > 0.0f ? "  " + juce::String ((int) std::lround (src->snrDb)) + " DB OVER THE NOISE" : juce::String());
+            if (k.bands)
+            {
+                // (SF-000) which place each band is from, and where they meet
+                auto of = [this] (const PlacePtr& p) { return p == builtIn || p == nullptr ? juce::String ("BUILT-IN ROOM") : p->name; };
+                auto hz = [] (int f) { return f >= 1000 ? juce::String (f / 1000.0, 1) + " KHZ" : juce::String (f) + " HZ"; };
+                sh.name = "LOW " + of (bandSrc[0]) + "   MID " + of (bandSrc[1]) + "   HIGH " + of (bandSrc[2]);
+                sh.info = "THREE BANDS, MEETING AT " + hz (k.xlo) + " AND " + hz (k.xhi);
+            }
             sh.seconds = nd.seconds;
             sh.env = std::move (nd.env);
         }
@@ -1246,6 +1399,7 @@ private:
     std::atomic<uint32_t> reqSeq { 0 }, rqVer { 0 };
     std::atomic<int> rqSlot { 0 }, rqSize { 1000 }, rqDecay { 1000 }, rqDark { 0 }, rqStart { 0 }, rqLen { 0 }, rqSr { 48000 };
     std::atomic<bool> rqRev { false };
+    std::array<std::atomic<int>, 3 + kBands * 5> rqBand {};     // (SF-000) BANDS, as the key has them
     std::atomic<IrFilter*> ready { nullptr };
     std::atomic<int> maxTaps { 1 };
     uint32_t builtSeq = 0;

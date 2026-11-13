@@ -30,3 +30,11 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   Marked `(SF-000)`. See DECISIONS 283.
 - `modules/FxDrums.cpp` is SF-000's own (the DRUMBUS module: the master's drum bus), with a line
   for it in `core/Registry.h` and `core/Registry.cpp`, marked `(SF-000)`. It is not in the suite.
+- `modules/Terroir.cpp`: BANDS (three places across the spectrum), marked `(SF-000)`. Fifteen
+  parameters added after IMPORT (`bands`, `bx_low`, `bx_high`, and `b1_`, `b2_`, `b3_` `place`,
+  `level`, `decay`, `size`). The first half of `build` is now `shapePlace` (one place made ready:
+  the same arithmetic, in the same order), `bandOf` cuts a response to a band, and with BANDS on
+  `build` adds three shaped, banded places into the one response the engine runs. A `Key` carries
+  the bands (its tenth figure is 0 with BANDS off, so an older state's key is what it was), the
+  request to the worker carries them, and the display marks each place with its bands. With
+  BANDS off nothing is different. See DECISIONS, thirty-second build.

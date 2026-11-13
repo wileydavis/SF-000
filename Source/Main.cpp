@@ -480,12 +480,199 @@ static void pocketsTest (int& bad)
     }
 }
 
+// The convolution's BANDS: three places across the spectrum. Its response to one click is taken
+// (with the module rendering as it does offline, so each change is built before the click), and
+// looked at band by band: how much is there, and how much of that is late.
+static void convolutionBandsTest (int& bad)
+{
+    using namespace sf0;
+    const double SR = 48000.0;
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_bands_test");
+    tmp.deleteRecursively(); tmp.createDirectory();
+    Session::homeForTests = tmp.getChildFile ("home");
+    Session::homeForTests.createDirectory();
+    // two places: noise dying away quickly (a third of a second), and slowly (two seconds)
+    auto writeIr = [&] (const char* name, double seconds, int seed)
+    {
+        const auto f = tmp.getChildFile (name);
+        const int n = (int) (SR * std::min (4.0, seconds * 1.6));
+        juce::AudioBuffer<float> x (2, n);
+        juce::Random rng (seed);
+        const double rate = 6.9078 / seconds;
+        for (int i = 0; i < n; ++i) for (int ch = 0; ch < 2; ++ch) x.setSample (ch, i, (i == 0 ? 0.9f : 0.5f * (rng.nextFloat() * 2.0f - 1.0f)) * (float) std::exp (-rate * i / SR));
+        juce::WavAudioFormat wav;
+        if (auto out = std::unique_ptr<juce::FileOutputStream> (f.createOutputStream()))
+            if (auto* w = wav.createWriterFor (out.get(), SR, 2, 24, {}, 0)) { out.release(); std::unique_ptr<juce::AudioFormatWriter> wr (w); wr->writeFromAudioSampleBuffer (x, 0, n); }
+        return f;
+    };
+    const auto shortIr = writeIr ("short.wav", 0.35, 5), longIr = writeIr ("long.wav", 2.0, 9);
+    {
+        Engine e; e.prepare (SR, 512);
+        const Engine::Target t { 1, 7, 0 };
+        e.setInsertType (7, 0, 2);                      // CONVOLUTION, on the lead
+        auto* p = e.processorFor (t);
+        juce::AudioBuffer<float> b (2, 512);
+        juce::MidiBuffer noMidi;
+        auto silence = [&] (int blocks) { for (int i = 0; i < blocks; ++i) { b.clear(); p->processBlock (b, noMidi); } };
+        auto settle = [&] { for (int tries = 0; tries < 400; ++tries) { silence (8); juce::Thread::sleep (10); if (! p->mod().statusLine().startsWith ("IMPORTING") && tries > 8) break; } };
+        auto set = [&] (const char* id, float plain) { if (auto* prm = p->apvts.getParameter (id)) prm->setValueNotifyingHost (prm->convertTo0to1 (plain)); };
+        e.setSetup (t, "import", 1.0f / 3.0f);          // IR FILE: every arrival kept
+        e.loadFiles (t, juce::StringArray (shortIr.getFullPathName())); settle();     // place 1: the short one
+        set ("place", 1.0f);
+        e.loadFiles (t, juce::StringArray (longIr.getFullPathName())); settle();      // place 2: the long one
+        set ("place", 0.0f);
+        set ("mix", 1.0f); set ("dry", 0.0f); set ("duck", 0.0f); set ("lo_cut", 20.0f); set ("dark", 0.0f); set ("size", 1.0f); set ("decay", 1.0f);
+        p->setNonRealtime (true);                       // (as in a render: a change is built here, before the next sound)
+        // The response to one click: three seconds of it. Into three bands (under 250 Hz, to 2.5 kHz,
+        // over), each as its level in all and its level after the first half second.
+        struct Seen { double all[3] = {}, late[3] = {}; double total = 0.0; };
+        auto click = [&]
+        {
+            silence (200);                              // (whatever was asked is built and in, and the last tail is gone)
+            std::vector<float> h;
+            for (int blk = 0; blk < (int) (3.0 * SR / 512); ++blk)
+            {
+                b.clear();
+                if (blk == 0) { b.setSample (0, 0, 1.0f); b.setSample (1, 0, 1.0f); }
+                p->processBlock (b, noMidi);
+                for (int i = 0; i < 512; ++i) h.push_back (b.getSample (0, i));
+            }
+            // (two fourth-order band edges, as crossovers are: the bands' powers then add up to the whole)
+            auto lr = [&] (std::vector<double> x, double hz, bool high)
+            {
+                const double w = juce::MathConstants<double>::twoPi * hz / SR, cs = std::cos (w), al = std::sin (w) / std::sqrt (2.0), a0 = 1.0 + al;
+                const double b1 = (high ? -(1.0 + cs) : 1.0 - cs) / a0, b0 = (high ? 1.0 + cs : 1.0 - cs) * 0.5 / a0, a1 = -2.0 * cs / a0, a2 = (1.0 - al) / a0;
+                for (int twice = 0; twice < 2; ++twice) { double z1 = 0.0, z2 = 0.0; for (auto& v : x) { const double out = b0 * v + z1; z1 = b1 * v - a1 * out + z2; z2 = b0 * v - a2 * out; v = out; } }
+                return x;
+            };
+            const std::vector<double> x (h.begin(), h.end());
+            const auto lowMid = lr (x, 2500.0, false);
+            const std::vector<double> band[3] = { lr (lowMid, 250.0, false), lr (lowMid, 250.0, true), lr (x, 2500.0, true) };
+            Seen sn;
+            for (int k = 0; k < 3; ++k)
+            {
+                double a = 0.0, l = 0.0;
+                for (size_t i = 0; i < band[k].size(); ++i) { const double q = band[k][i] * band[k][i]; a += q; if (i > (size_t) (0.5 * SR)) l += q; }
+                sn.all[k] = 10.0 * std::log10 (a + 1.0e-20); sn.late[k] = 10.0 * std::log10 (l + 1.0e-20);
+                sn.total += a;
+            }
+            sn.total = 10.0 * std::log10 (sn.total + 1.0e-20);
+            return sn;
+        };
+        auto bandsOff = [&] { set ("bands", 0.0f); };
+        auto bandsOn = [&] (int lowPlace, int midPlace, int highPlace)
+        {
+            set ("bands", 1.0f); set ("bx_low", 250.0f); set ("bx_high", 2500.0f);
+            const int places[3] = { lowPlace, midPlace, highPlace };
+            for (int k = 0; k < 3; ++k)
+            {
+                const juce::String pre = "b" + juce::String (k + 1) + "_";
+                set ((pre + "place").toRawUTF8(), (float) places[k]); set ((pre + "level").toRawUTF8(), 0.0f); set ((pre + "decay").toRawUTF8(), 1.0f); set ((pre + "size").toRawUTF8(), 1.0f);
+            }
+        };
+        bandsOff();
+        const Seen shortOne = click();
+        set ("place", 1.0f);
+        const Seen longOne = click();
+        set ("place", 0.0f);
+        const bool twoPlaces = longOne.late[1] > shortOne.late[1] + 25.0 && shortOne.total > -60.0;
+
+        // the three bands of one place are that place
+        bandsOn (0, 0, 0);
+        const Seen same = click();
+        double worst = 0.0;
+        for (int k = 0; k < 3; ++k) worst = std::max (worst, std::abs (same.all[k] - shortOne.all[k]));
+        {
+            const bool ok = twoPlaces && worst < 0.5 && std::abs (same.total - shortOne.total) < 0.3;
+            std::printf ("  %s: CONVOLUTION, BANDS: with all three bands on the place PLACE names it is that place again (each band within %.2f dB, the whole %+.2f dB)\n", ok ? "ok  " : "FAIL", worst, same.total - shortOne.total);
+            if (! ok) ++bad;
+        }
+        // each band from a place of its own: the long place in the middle alone
+        {
+            bandsOn (1, 2, 1);
+            const Seen mixed = click();
+            // (the bands meet at 18 dB an octave, so some of the middle's long tail is still to be found just under 250 Hz and over 2.5 kHz)
+            const bool ok = std::abs (mixed.late[1] - longOne.late[1]) < 1.5 && mixed.late[0] < longOne.late[0] - 8.0 && mixed.late[2] < longOne.late[2] - 15.0
+                         && std::abs (mixed.all[0] - shortOne.all[0]) < 1.0 && std::abs (mixed.all[1] - longOne.all[1]) < 1.0 && std::abs (mixed.all[2] - shortOne.all[2]) < 1.0;
+            std::printf ("  %s: the long place in the middle band and the short one below and above: half a second on, the middle is the long place's (%+.1f dB against it) and the low and the top have died away as the short one's do (%.0f and %.0f dB under the long place's)\n",
+                         ok ? "ok  " : "FAIL", mixed.late[1] - longOne.late[1], longOne.late[0] - mixed.late[0], longOne.late[2] - mixed.late[2]);
+            if (! ok) ++bad;
+        }
+        // and the same when it is not rendering: the bands go to the worker that builds the response, and come back as asked
+        {
+            bandsOff(); silence (200);
+            p->setNonRealtime (false);
+            bandsOn (1, 2, 1);
+            for (int tries = 0; tries < 60; ++tries) { silence (8); juce::Thread::sleep (10); }
+            const Seen live = click();
+            p->setNonRealtime (true);
+            bandsOn (1, 2, 1);
+            const Seen rendered = click();
+            double off = 0.0;
+            for (int k = 0; k < 3; ++k) off = std::max ({ off, std::abs (live.all[k] - rendered.all[k]), std::abs (live.late[k] - rendered.late[k]) });
+            const bool ok = off < 0.05 && std::abs (live.late[1] - longOne.late[1]) < 1.5;
+            std::printf ("  %s: played live (the response built on its worker's thread and crossed to) it is the response a render builds: %.3f dB apart at most\n", ok ? "ok  " : "FAIL", off);
+            if (! ok) ++bad;
+        }
+        // a band's LEVEL, DECAY and SIZE are that band's alone; the crossovers move where the bands meet
+        {
+            bandsOn (2, 2, 2);
+            const Seen base = click();
+            set ("b1_level", -12.0f);
+            const Seen lowDown = click();
+            set ("b1_level", 0.0f); set ("b3_decay", 0.2f);
+            const Seen topShort = click();
+            set ("b3_decay", 1.0f); set ("b2_size", 2.0f);
+            const Seen midBig = click();
+            set ("b2_size", 1.0f); set ("b1_level", -24.0f); set ("bx_low", 1000.0f);
+            const Seen wideLow = click();                // (the low band, turned right down, now reaches up to 1 kHz: the middle band of the test loses what is under that)
+            set ("bx_low", 250.0f);
+            const Seen narrowLow = click();
+            const bool level = lowDown.all[0] < base.all[0] - 6.0 && lowDown.all[0] > base.all[0] - 12.5 && std::abs (lowDown.all[1] - base.all[1]) < 0.5 && std::abs (lowDown.all[2] - base.all[2]) < 0.3;
+            const bool decay = topShort.late[2] < base.late[2] - 15.0 && std::abs (topShort.late[1] - base.late[1]) < 2.0;     // (some of the top's tail was under 2.5 kHz: its skirt)
+            const bool size = midBig.late[1] > base.late[1] + 2.0 && std::abs (midBig.late[2] - base.late[2]) < 0.5;
+            const bool cross = wideLow.all[1] < narrowLow.all[1] - 1.0;
+            const bool ok = level && decay && size && cross;
+            std::printf ("  %s: the low band's LEVEL at -12 dB takes %.1f dB from what is under 250 Hz (the middle band's own skirt is the rest of what is there) and nothing from the others (%+.1f, %+.1f); the top band's DECAY at a fifth lets the top die away (%.0f dB less of it half a second on) with the middle as it was; "
+                         "the middle band's SIZE at 200 %% lengthens the middle (%+.1f dB late); LOW/MID moved from 250 Hz to 1 kHz gives the low band that much more of the spectrum (the middle is %.1f dB less)\n",
+                         ok ? "ok  " : "FAIL", base.all[0] - lowDown.all[0], lowDown.all[1] - base.all[1], lowDown.all[2] - base.all[2], base.late[2] - topShort.late[2], midBig.late[1] - base.late[1], narrowLow.all[1] - wideLow.all[1]);
+            if (! ok) ++bad;
+        }
+        // BANDS off: the band knobs are nothing, and the response is the one it was, sample for sample
+        {
+            bandsOff(); set ("place", 0.0f);
+            set ("b1_level", -24.0f); set ("b2_place", 2.0f); set ("b3_size", 2.0f); set ("bx_low", 700.0f);
+            const Seen again = click();
+            bool exact = true; double off = 0.0;
+            for (int k = 0; k < 3; ++k) { off = std::max (off, std::abs (again.all[k] - shortOne.all[k])); exact = exact && std::abs (again.all[k] - shortOne.all[k]) < 0.01; }
+            // CONFIG lists the bands' knobs only while BANDS is on, and a snapshot's setup holds them
+            p->setNonRealtime (false);
+            int offCount = 0, onCount = 0, groups = 0;
+            for (auto& sp : e.setupParams (t)) if (sp.group.contains ("BAND")) ++offCount;
+            set ("bands", 1.0f);
+            juce::StringArray seenGroups;
+            bool said = true;                           // (each has a line for INFO)
+            for (auto& sp : e.setupParams (t)) if (sp.group.contains ("BAND")) { ++onCount; seenGroups.addIfNotAlreadyThere (sp.group); said = said && help::param ("TERROIR", sp.id.toRawUTF8()) != nullptr; }
+            groups = seenGroups.size();
+            const int listed = (int) e.setupParams (t).size();
+            bool kept = false;
+            for (auto& kv : e.getSetup (t)) kept = kept || kv.first == "b2_place";
+            const bool ok = exact && offCount == 1 && onCount == 15 && groups == 4 && kept && said;
+            std::printf ("  %s: with BANDS off the bands' knobs do nothing (the response is the one it was: %.4f dB apart at most); CONFIG lists BANDS alone while it is off and its fourteen knobs in four boxes while it is on (%d controls in all), and they are in what a snapshot keeps of the effect\n",
+                         ok ? "ok  " : "FAIL", off, listed);
+            if (! ok) { std::printf ("        (exact %d off %d on %d groups %d kept %d)\n", exact, offCount, onCount, groups, kept); ++bad; }
+        }
+    }
+    Session::homeForTests = juce::File();
+    tmp.deleteRecursively();
+}
+
 static int selfTest (const juce::String& wavPath, double bars = 16.0)
 {
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); pocketsTest (bad); std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); if (std::getenv ("SF000_TEST_NEW")[0] != 'b') pocketsTest (bad); convolutionBandsTest (bad); std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -1190,6 +1377,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     }
 
     pocketsTest (bad);
+    convolutionBandsTest (bad);
 
     // Recording: the set and its parts go to disk as they are played.
     {
@@ -3455,6 +3643,15 @@ static int shot (const juce::StringArray& args)
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
     else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
     else if (cfg == "master") sc.showConfig ({ 3, 0, 0 });
+    else if (cfg == "bands")
+    {
+        // a convolution in the active lane's first slot, with BANDS lit: the low and the top from place 2
+        while (e.insertType (ses.activeLane, 0) != 2) ses.stepInsert (ses.activeLane, 0);
+        const Engine::Target t { 1, ses.activeLane, 0 };
+        e.setSetup (t, "bands", 1.0f); e.setSetup (t, "b1_place", 2.0f / 8.0f); e.setSetup (t, "b3_place", 2.0f / 8.0f); e.setSetup (t, "b1_decay", 0.3f); e.setSetup (t, "b3_size", 0.8f);
+        for (int i = 0; i < 60; ++i) { e.render (b); juce::Thread::sleep (5); }
+        sc.showConfig (t);
+    }
     if (cfg.isNotEmpty() && args.contains ("--load")) sc.showLoad (arg ("--load", ""));         // LOAD's list, open on that folder
     if (args.contains ("--cue")) sc.showCue (arg ("--cue", "-1").getIntValue());                 // the library's CUE lit and a snapshot chosen (a number: that part put out of the recall)
     // --rec: a take under way (in a folder of the system's temporary ones, gone again afterwards)

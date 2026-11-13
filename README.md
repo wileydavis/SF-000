@@ -224,6 +224,21 @@ back at the other. The sequencer stays where it is.
 - **An insert belongs to snapshots, whole.** A CONVOLUTION insert takes files the same way (drop
   them on its CONFIG), and a snapshot keeps the effect, its knobs, its CONFIG and those files. A
   recall puts it back with its room already loaded.
+- **BANDS: a convolution with three places at once.** BANDS, in a convolution's CONFIG (an
+  insert's, or SPACE's), gives the low, the middle and the top of what plays a place each. Lit, the
+  panel has four more boxes: where the bands meet (**LOW/MID**, 60 Hz to 1 kHz; **MID/HIGH**,
+  1 to 12 kHz), and for each band its **PLACE** (one of the eight, or PLACE: whatever the PLACE
+  knob is on), its **LEVEL** (-24 to +12 dB), its **DECAY** (a share of the DECAY knob's) and its
+  **SIZE** (on top of the SIZE knob's). The boxes in the display say which bands play from each
+  place (L, M, H). A tight room under the bass with a long hall over the top; a pipe in the
+  middle of a cave; the top band twice the size and the bottom cut to nothing. Any file is a
+  place, a room or not: a hit, a chord, a second of noise.
+  - Three bands of one place, at the same settings, are that place again (checked: to a
+    hundredth of a dB). Two different places meet at a crossover with no dip there.
+  - It costs nothing more to play: the three are made into one response when a knob moves (off
+    the audio thread, as every change to a place is), and that one is what runs.
+  - SIZE, DECAY, DARK, START, LENGTH and REVERSE work on all three; with BANDS out the bands'
+    knobs do nothing and the convolution is what it was.
 - A menu shows its current choice under the knob. The parameter last touched shows its value in
   the panel's header. Double-click returns a knob to where it started. The wheel scrolls if there
   are more rows than fit.
@@ -667,7 +682,7 @@ build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapsho
 build/.../SF-000 --shot setup.png --setup follow  # draw the SETUP panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16's two scenes: that one (snapshot knob names from your session) and SF-000-FX.oxie16 beside it
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros|pockets (pockets: --amount 0 to 100), --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros|pockets (pockets: --amount 0 to 100), --lane N, --cfg lane|insert|return|space|master|bands (bands: a convolution with BANDS lit), --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)

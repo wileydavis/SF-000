@@ -1113,6 +1113,9 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         if (s.inEngine) return "ENGINE";
         if (s.inSample) return phraseIsTheSource || ! sampleIsAModel || plays ("SAMPLE") || tableFromSample ? "SAMPLE" : juce::String();
         if (s.inLayer) return "LAYER";
+        if (id == "bands" || id.startsWith ("bx_")) return id == "bands" || textOf ("bands") == "ON" ? "BANDS" : juce::String();       // (a convolution's three bands: listed while BANDS is on)
+        if (id.startsWith ("b1_") || id.startsWith ("b2_") || id.startsWith ("b3_"))
+            return textOf ("bands") != "ON" ? juce::String() : id.startsWith ("b1_") ? "LOW BAND" : id.startsWith ("b2_") ? "MID BAND" : "HIGH BAND";
         if (id.startsWith ("pocket_")) return "POCKET";
         if (id.startsWith ("echo_")) return "ECHO";
         if (id == "alloc") return {};                       // (the rig has no ALLOC: the switch would do nothing)
@@ -1120,7 +1123,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         return plain;
     };
     for (auto& sp : out) sp.group = plain;                  // (SPACE's MODEL, put in above)
-    for (const char* g : { "SOUND", "EFFECT", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" })
+    for (const char* g : { "SOUND", "EFFECT", "BANDS", "LOW BAND", "MID BAND", "HIGH BAND", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" })
         for (int i = 0; i < p->numModuleParams(); ++i)
         {
             const auto& s = specs[(size_t) i];
