@@ -144,7 +144,8 @@ key's gate and anything else that follows the hand is wherever the pointer is on
 - **D** is the dark instrument here too.
 
 The dark instrument's faceplates have a worn black anodized finish: a fine grain, a slight
-unevenness, wear toward the metal along the edges. The pale instrument's are plain.
+unevenness, hair-thin scratches, wear toward the metal along the edges. Its case is powder
+coat: an orange-peel, a speckle, a few scuffs. The pale instrument is plain.
 
 The glow under the case is set in SETUP: three knobs. COLOUR (round the wheel), BRIGHTNESS (none
 to four times what it comes with) and PULSE: how much it beats with the kick, from none (steady,

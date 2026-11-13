@@ -1003,11 +1003,16 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      not "master", because the tempo, GLIDE and the master's three knobs were never a
      snapshot's; a lane left out under a turned snapshot knob stays where the knob has it.
      **Not built, as you said, for later:** making a new snapshot from one with parts put out.
-239. **A worn black anodized finish on the dark instrument's faceplates** (you: "subtle but
-     realistic slightly worn"). Worked out in the surface's shader, no pictures: a fine blasted
-     grain, a slow unevenness in the dye, the anodizing rubbed toward the metal in patches along
-     each plate's edges, and a few faint drags across it. The print sits on top, as sharp as it
-     was. *Mine:* the pale instrument's plates are as they were; how much of each there is.
+239. **A worn black anodized finish on the dark instrument's faceplates, and powder coat on its
+     case** (you: "subtle but realistic slightly worn", then a picture of scratched black metal
+     as a rough guide, and "same could be done for the case, which is powder coated"). Worked
+     out in the surface's shader, with no pictures loaded. The plates: a fine blasted grain, a
+     slow unevenness in the dye, a pit here and there, hair-thin scratches (most up and down or
+     across, each its own length), and the anodizing rubbed toward the metal in patches along
+     the edges. The case: an orange-peel that breaks up what shines in it, a fine speckle, a few
+     scuffs, its upper edge rubbed. The print sits on top, as sharp as it was. Much slighter
+     than your picture: that one is a plate at the end of its life. *Mine:* the pale instrument
+     is as it was; and how much of each there is, which is a number apiece.
 
 ## Not verified
 

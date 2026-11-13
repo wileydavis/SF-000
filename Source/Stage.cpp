@@ -336,6 +336,41 @@ float smoothNoise (vec2 p)
     f = f * f * (3.0 - 2.0 * f);
     return mix (mix (hash1 (i), hash1 (i + vec2 (1.0, 0.0)), f.x), mix (hash1 (i + vec2 (0.0, 1.0)), hash1 (i + vec2 (1.0, 1.0)), f.x), f.y);
 }
+vec4 hash4 (vec2 p)
+{
+    vec4 q = fract (vec4 (p.xyxy) * vec4 (0.1031, 0.1030, 0.0973, 0.1099));
+    q += dot (q, q.wzxy + 33.33);
+    return fract ((q.xxyz + q.yzzw) * q.zywx);
+}
+// Hair-thin scratches. The surface is ruled into squares; some squares have a scratch: a straight
+// stroke somewhere in it, most of them nearly up and down, the rest nearly across, each its own
+// length and faintness, trailing off at its ends. How strongly the nearest one marks this point.
+float scratches (vec2 p, float cell, float seed, float px)
+{
+    vec2 g = floor (p / cell);
+    float m = 0.0;
+    for (int j = -1; j <= 1; ++j)
+        for (int i = -1; i <= 1; ++i)
+        {
+            vec2 c = g + vec2 (float (i), float (j));
+            vec4 r = hash4 (c + vec2 (seed, seed * 0.37));
+            if (r.x < 0.56) continue;
+            vec4 t = hash4 (c + vec2 (seed + 19.0, 7.0 - seed));
+            vec2 mid = (c + r.yz) * cell;
+            float ang = (t.x - 0.5) * 0.62 + step (0.36, r.w) * 1.5708;
+            vec2 d = vec2 (cos (ang), sin (ang));
+            float len = cell * (0.22 + 0.85 * t.y);
+            vec2 q = p - mid;
+            float along = clamp (dot (q, d), -len, len);
+            float dist = length (q - d * along);
+            float w = 0.09 + 0.20 * t.z;
+            float wide = max (w, px * 0.75);
+            float line = (1.0 - smoothstep (wide * 0.4, wide, dist)) * min (1.0, w / (px * 0.75));
+            float ends = 1.0 - smoothstep (0.55, 1.0, abs (along) / len);
+            m = max (m, line * ends * (0.35 + 0.65 * t.w));
+        }
+    return m;
+}
 float shade (vec3 p, vec3 n)
 {
     vec4 q = uShadowVP * vec4 (p + n * 0.7, 1.0);
@@ -353,25 +388,46 @@ void main()
     vec3 albedo = vColour.rgb;
     float rough = clamp (vColour.a, 0.06, 1.0), metal = clamp (vMat.z, 0.0, 1.0), kind = vMat.x;
     vec3 emit = vec3 (0.0);
-    if (vTop > 0.5 && vMat.w > 0.5 && uFinish > 0.0)
+    if (vMat.w > 0.5 && uFinish > 0.0)
     {
-        // A faceplate: anodized aluminium that has been used. Its dye is never quite even (a slow
-        // mottling, a fine blasted grain); along its edges, in patches, hands and cases have rubbed
-        // it toward the metal; and here and there something has been dragged across it. All of it slight.
-        vec2 p = vPos.xz;
-        float grain = hash1 (floor (p * 2.3)) - 0.5;
-        float mottle = smoothNoise (p * 0.035) * 0.6 + smoothNoise (p * 0.11 + vec2 (17.0, 5.0)) * 0.4 - 0.5;
-        float edge = min (vRect.z - abs (p.x - vRect.x), vRect.w - abs (p.y - vRect.y));
-        float worn = (1.0 - smoothstep (0.6, 7.0, edge)) * smoothstep (0.42, 0.80, smoothNoise (p * 0.06 + vec2 (3.0, 41.0)));
-        vec2 along = vec2 (0.83, 0.56), across = vec2 (-0.56, 0.83);
-        float scuff = smoothstep (0.94, 1.0, smoothNoise (vec2 (dot (p, across) * 2.6, dot (p, along) * 0.020)))
-                    + smoothstep (0.96, 1.0, smoothNoise (vec2 (dot (p, along) * 2.1 + 9.0, dot (p, across) * 0.014 + 4.0)));
-        scuff *= smoothstep (0.35, 0.75, smoothNoise (p * 0.02 + vec2 (60.0, 12.0)));
         float f = uFinish;
-        albedo *= 1.0 + f * (grain * 0.06 + mottle * 0.07);
-        albedo = mix (albedo, vec3 (0.42, 0.43, 0.44), f * (worn * 0.24 + scuff * 0.04));
-        rough = clamp (rough + f * (grain * 0.05 - mottle * 0.06 - worn * 0.18 - scuff * 0.08), 0.06, 1.0);
-        metal = clamp (metal + f * worn * 0.45, 0.0, 1.0);
+        float px = max (length (fwidth (vPos.xz)), 0.05);         // how much of the surface one pixel covers: nothing here is drawn finer than that
+        if (vMat.w < 1.5 && vTop > 0.5)
+        {
+            // A faceplate: black anodized aluminium that has been used. Its dye is never quite even
+            // (a slow mottling, a fine blasted grain, a pit here and there); things dragged across
+            // it have left hair-thin scratches, most of them up and down or across; and along its
+            // edges, in patches, it has been rubbed toward the metal. All of it slight.
+            vec2 p = vPos.xz;
+            float grain = hash1 (floor (p * 2.3)) - 0.5;
+            float mottle = smoothNoise (p * 0.035) * 0.6 + smoothNoise (p * 0.11 + vec2 (17.0, 5.0)) * 0.4 - 0.5;
+            float pit = step (0.9962, hash1 (floor (p * 1.7) + vec2 (5.0, 9.0))) * min (1.0, 0.6 / px);
+            float scratch = max (scratches (p, 47.0, 0.0, px), 0.7 * scratches (p + vec2 (13.0, 29.0), 21.0, 40.0, px));
+            float edge = min (vRect.z - abs (p.x - vRect.x), vRect.w - abs (p.y - vRect.y));
+            float patchy = smoothstep (0.38, 0.78, smoothNoise (p * 0.06 + vec2 (3.0, 41.0)));
+            float worn = (1.0 - smoothstep (0.4, 5.0 + 5.0 * patchy, edge)) * patchy * (0.55 + 0.9 * (grain + 0.5));
+            albedo *= 1.0 + f * (grain * 0.06 + mottle * 0.07);
+            albedo = mix (albedo, vec3 (0.45, 0.46, 0.47), clamp (f * (worn * 0.20 + scratch * 0.27 + pit * 0.26), 0.0, 1.0));
+            rough = clamp (rough + f * (grain * 0.05 - mottle * 0.06 - worn * 0.18 - scratch * 0.22), 0.06, 1.0);
+            metal = clamp (metal + f * (worn * 0.45 + scratch * 0.35), 0.0, 1.0);
+        }
+        else if (vMat.w > 1.5)
+        {
+            // The case: powder coat. Never quite flat (an orange-peel that breaks up what shines in
+            // it), a fine speckle in the colour, a few scuffs, and its upper edge rubbed where it
+            // has met tables and bags.
+            vec2 p = vPos.xz + vPos.y * vec2 (0.61, 0.37);
+            float a1 = smoothNoise (p * 1.5) - 0.5, a2 = smoothNoise (p * 1.5 + vec2 (31.0, 7.0)) - 0.5;
+            float soft = min (1.0, 1.2 / px);                     // (from far off the peel is too fine to see: it fades, it does not sparkle)
+            n = normalize (n + f * soft * 0.20 * (vTop > 0.5 ? vec3 (a1, 0.0, a2) : vec3 (a1, a2, a1 * a2 * 2.0)));
+            float speckle = hash1 (floor (p * 2.9)) - 0.5;
+            float scuff = scratches (p, 83.0, 71.0, px);
+            float edge = min (vRect.z - abs (vPos.x - vRect.x), vRect.w - abs (vPos.z - vRect.y));
+            float rubbed = vTop > 0.5 ? (1.0 - smoothstep (0.5, 8.0, edge)) * smoothstep (0.45, 0.85, smoothNoise (p * 0.05 + vec2 (77.0, 3.0))) : 0.0;
+            albedo *= 1.0 + f * (speckle * 0.05 + (smoothNoise (p * 0.04) - 0.5) * 0.06);
+            albedo = mix (albedo, albedo * 1.7 + vec3 (0.03), clamp (f * (rubbed * 0.40 + scuff * 0.30), 0.0, 1.0));
+            rough = clamp (rough + f * (speckle * 0.05 - rubbed * 0.10 - scuff * 0.10), 0.06, 1.0);
+        }
     }
     if (vTop > 0.5 && kind > 0.5)
     {
@@ -1025,7 +1081,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const Look l = look();
         const Parts::Clip all;
         for (Batch* b : { &slabs, &capBig, &capSmall, &baseBig, &baseSmall, &lens, &lensLit }) b->data.clear();
-        if (parts.body) slab ({ 8.0f, 12.0f, kW - 16.0f, kH - 25.0f }, -Parts::kCase, Parts::kCase, 26.0f, 4.5f, l.body, dark ? 0.40f : 0.46f, 4.0f, 0.0f, 0.55f, all);
+        if (parts.body) slab ({ 8.0f, 12.0f, kW - 16.0f, kH - 25.0f }, -Parts::kCase, Parts::kCase, 26.0f, 4.5f, l.body, dark ? 0.40f : 0.46f, 4.0f, 0.0f, 0.55f, all, 2.0f);        // (the case: powder coat)
         for (const auto& p : parts.plates)
         {
             slab (p.r.expanded (1.3f), p.base + 0.05f, 0.02f, 8.6f, 0.0f, l.pocket, 0.9f, 0.0f, 0.0f, 0.0f, p.clip);       // the pocket it stands in, seen as the gap round it
@@ -1131,7 +1187,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const V3 sun = sunDir();
         glUniform3f (loc ("uSun"), sun.x, sun.y, sun.z);
         glUniform3f (loc ("uSunCol"), 2.46f, 2.40f, 2.30f);
-        glUniform1f (loc ("uFinish"), dark ? 1.0f : 0.0f);       // (the worn black anodizing is the dark instrument's; the pale one's plates are as they were)
+        glUniform1f (loc ("uFinish"), dark ? 1.0f : 0.0f);       // (the worn anodizing and the powder coat are the dark instrument's; the pale one is as it was)
         glUniform3f (loc ("uSky"), 0.40f, 0.42f, 0.44f);
         glUniform3f (loc ("uGround"), 0.20f, 0.17f, 0.15f);
         glUniform1i (loc ("uSheet"), 0);
