@@ -70,6 +70,48 @@ public:
     int page = 0;                       // which 16 steps are shown
     std::array<int, kLanes> genType;    // the armed generator per lane; -1 none
 
+    // ---- what is in front: the module the hands are on. A controller turns to its page and the
+    // 3D stage's eye goes to it. A lane in front is the active lane; an insert in front is one of
+    // the active lane's three.
+    enum { fLane = 0, fInsert, fReturns, fMaster, fSeq, fSnap };
+    struct Front
+    {
+        int kind = fLane, slot = 0;
+        bool operator== (const Front& o) const { return kind == o.kind && (kind != fInsert || slot == o.slot); }
+        bool operator!= (const Front& o) const { return ! (*this == o); }
+    };
+    Front front;
+    juce::uint32 frontAt = 0;           // when something last came to the front, or the pointer last moved
+    int frontBy = 0;                    // what brought it: 0 the mouse, 1 the keyboard, 2 a controller
+    int frontCount = 0;                 // (a number that is different after every one of those)
+    void bringLane (int lane, int by);  // a lane to the front: it is the active lane
+    void bring (Front, int by);         // an insert, the returns, the master, the sequencer strip, the snapshot knobs
+    // The modules in the order the screen has them, left to right and row by row: the stops of the
+    // pointer (a controller's wheel; TAB on the keyboard).
+    static constexpr int kStops = kLanes + 7;
+    static Front stopFront (int stop, int& lane);       // lane: the lane that stop is, or -1
+    int stopNow() const;                // the stop that is in front
+    void bringStop (int stop, int by);
+    juce::String stopName (int stop) const;
+    // The pointer: where a controller's wheel is, while it is in use (a stop; -1: not in use). What
+    // it rests on comes to the front; what it only passes over does not.
+    int pointer = -1;
+    void point (int stop);
+
+    // ---- CONFIG: the setup panel, and what it is open on. The screen draws it; a controller can
+    // open it and turn what is on it. It keeps to what is in front: a lane or an insert brought
+    // to the front takes it along, and something that has no CONFIG shuts it.
+    Engine::Target cfg;
+    bool cfgOpen = false;
+    void openConfig (Engine::Target);   // (on what it is already open on: it shuts)
+    bool configOfFront (int by);        // open on what is in front, or shut (the returns: A, then B, then shut). False: what is in front has none
+    std::vector<Engine::SetupParam> configList() const;     // its controls, in the order the panel has them
+    void setConfig (int index, int value7);                 // one of them, from a controller (0 to 127; a list: its share of that; a switch: the upper half is on)
+    juce::String cfgTouched;            // the control of CONFIG's a controller last turned (the panel shows its value)
+    // ---- which screen is up (0 the main one, 1 the library, 2 the macro designer), and the one a
+    // controller asks for (-1: none): the screen takes it up
+    int showing = 0, wantShowing = -1;
+
     // ---- controls
     // A knob or key moved by hand. sounding: the engine already has the value (a controller's knob,
     // set from the MIDI thread the moment it came); only the session's record of it is brought up.

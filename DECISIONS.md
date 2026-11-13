@@ -224,7 +224,8 @@ a snapshot could reach it later.
     did in the suite. That knob's ring never goes green: the script cannot tell which is up.
 69. **The E16's page sets the active lane, not the other way round.** The script sends the page's
     lane number as the suite's TRACK FOCUS did. Nothing in the suite's script turns the E16's page
-    from outside, so a lane clicked on the screen leaves the E16 where it is.
+    from outside, so a lane clicked on the screen leaves the E16 where it is. (Undone in the
+    twenty-third build, 242: the E16's own firmware takes a page from outside.)
 70. **A knob the hand is on is not sent its own value back** for 150 ms, so the rig never argues
     with a turn in progress.
 71. **The returns, the inserts and the master are not on the E16.** You asked for a page per lane
@@ -1033,6 +1034,94 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
      yours to use, that sheet is what to replace (any picture of scratches on black, through
      the same tool). It costs the card about 13 MB and is cheaper to draw than what it replaces.
 
+## Twenty-third build (Nov 12): every knob without the mouse; the E16 on the page of what is in front
+
+241. **What is in front** (you: "whenever I make a module or an effect (or a config page) active,
+     the e16 would switch to that module's page or scene"). There was an active lane and nothing
+     else. Now one module is in front: a lane (it is the active lane), one of its three inserts,
+     the returns, the master, the sequencer strip, the snapshot knobs. Its name lights up as the
+     active lane's does. *Mine:* a press anywhere on a module's plate off its controls brings it
+     to the front (before, only a lane's name did anything); an insert in front is the active
+     lane's, so the lane's name stays lit too.
+242. **The E16 is turned from here** (you asked whether it could be; the E16's manual for OS
+     1.3.0 says it takes Bank Select for the scene and Program Change for the page, on its PC
+     Receive Channel). SF-000 sends them on channel 12 whenever what is in front changes here.
+     This undoes 69 ("the screen cannot turn the E16's page"). *Mine:* it is never sent because of
+     a page the E16 turned to itself (that module comes to the front here, and the E16 is already
+     there), and nothing is sent at start-up: only a change made here turns it. The scene is said
+     with every page, so that the E16's PC Mode does not matter (`e16_bank_always` in `midi.json`
+     says it only when it changes). The scene is controller 32 with the slot less one, the page
+     the Program Change with the page less one: the manual gives the first by way of Ableton's
+     "Sub" and does not give the counting. The slots are SETUP's (E16 PAGES), 1 and 2 to begin.
+243. **Pages for the effects** (you: "I'd also create them for the effects"). The first scene's
+     twelve pages are full, so they are in the second, which was the library's (SF-LIB) and is
+     now SF-FX: MAP, FIND, INS 1 to 3, RETURNS, MASTER, SEQ, CFG 1 to 3. *Mine:* an insert's page is
+     the **active lane's** insert (new addresses on channel 13 that mean "the active lane's"),
+     not a page for each of thirty-three; a key among an insert's places (THROW, FREEZE) is its
+     knob's press; SF-000 sends the script the names of what a page holds (an insert's places,
+     CONFIG's controls) and the E16 shows them, where the firmware can.
+244. **SEQ, and the generator's knobs get addresses** *Mine*, for your "every parameter that's a
+     knob": LENGTH and HITS, ROTATE, ACCENTS, SEED had none. They are the active lane's, on
+     channel 13.
+245. **CONFIG on the E16** (you: "or a config page"). Three pages, twelve controls each, in the
+     order the panel has them, named by SF-000. *Mine:* twelve and not sixteen, to keep the bottom
+     row the same on every page of the scene; a list takes a share of the knob's travel for each
+     choice and a switch the upper half, and a knob is left where the hand put it (188's lesson: a
+     number put back to the middle of its share at every pause fights a slow turn); controls past
+     the thirty-sixth, and keys that are held, are not on it.
+246. **The library** (you: "as well as the library as you suggested"). Opened on the screen, the
+     E16 goes to the map; MACROS, to the snapshot knobs' page.
+247. **Knob 13 is the pointer's wheel** (you: "one of the knobs on every page act as a scroll wheel
+     to activate modules or effects when pressed (similar to how the glide adjust works, knob just
+     has to be consistent)"). *Mine, all of the how:*
+     - knob 13, the bottom left corner, which on a lane's page is SEND A;
+     - **SF-000 keeps the wheel, not the E16.** GLIDE's press swaps the knob on the E16, page by
+       page. Done that way the wheel would have stopped being the wheel the moment the page
+       turned under it, and left knob 13 swapped on every page it was used from. Instead the
+       press is a message; while the wheel is in use SF-000 takes knob 13's turns, whatever page
+       sends them, as the pointer's, and puts the knob's own value back afterwards. SEND A is
+       never moved by it;
+     - three clicks to the next module, counted from wherever the knob is (188 again);
+     - the order is the screen's, row by row;
+     - what the pointer **rests on** (a third of a second) comes to the front; what it **passes
+       over** does not. Otherwise the inserts, which come after the lanes, would always be the
+       last lane's;
+     - it ends with a second press, with any other knob turned (the hand has arrived), or after
+       six seconds untouched;
+     - **on the snapshot page and the library's map, where every press recalls, it is held for
+       half a second**, and for knobs 13 and 14 there the recall comes as the knob is let go.
+       That is the one place it is not simply "pressed"; the other way was to take the recall off
+       two snapshot knobs and two squares of the map.
+248. **Knob 14 pressed is OPEN** *Mine:* you did not ask for it, but CONFIG's knobs cannot be
+     "accessed without a mouse" unless CONFIG can be opened without one. CONFIG for what is in
+     front, and shut; the returns' two in turn; the library from the snapshot knobs, and back. On
+     CONFIG's pages 15 and 16 pressed are the page before and the next.
+249. **The eye goes to what comes to the front** (you: "the follow cam zoomed in on an active
+     module when it's activated in the same way it does when it gets midi input"). A page turned
+     to on the E16, the wheel (the eye goes along with the pointer), Tab, CONFIG opened by OPEN or
+     C (it holds CONFIG and the module beside it). Home after a couple of seconds, as before; M
+     turns it off. *Mine:* **not for a click of the mouse**, for the reason a knob dragged with
+     the mouse never moved it: the hand is already there, and the view would jump under it and
+     jump back two seconds later in the middle of whatever the mouse did next. *proposed:* say
+     if you want the click to move it too; it is one condition.
+250. **CONFIG keeps to what is in front** under a key or a controller: a lane or an insert brought
+     to the front takes an open CONFIG with it, the returns take it to DUB's, and the master, the
+     sequencer strip and the snapshot knobs shut it. Under the mouse it stays where it was put,
+     as it did. *Mine.*
+251. **Tab, Shift-Tab and C on the keyboard** *Mine:* the wheel's and OPEN's doing, for when the
+     E16 is not there. INFO's list has them.
+252. **INFO** shows each of CONFIG's controls its number while CONFIG is open, the generator's
+     knobs theirs, and says which page and knob of the E16 a CONFIG control is.
+253. **An E16 that goes somewhere other than where it was sent is not followed there**, and SETUP's
+     E16 line says which page was asked for and which it said. (Within a third of a second of
+     being sent; after that a page it says is one a hand turned to.) *Mine:* the counting, the
+     slots and the E16's own settings are all things I could have wrong, and this is how it
+     would show.
+254. **Not done.** *Mine:* TEMPO and KEY are still not on the E16 (they are readouts, not knobs,
+     and a CC's 128 steps is more than a beat a minute a click); M and S are not on it either. Say
+     if you want any of them. Making a new snapshot from part of one (238) still waits.
+
+## Not verified
 ## Not verified
 
 - Built and tested here on Linux only: nothing in this repo has been run on macOS by me. Wiley
@@ -1093,6 +1182,16 @@ brightness; and a new icon from a 4 x 4 module, then "use dark instrument for ic
   JUCE's source, not reproduced; the fix uses a call I can only run on Linux), the SETUP window's
   new row, the icon in the Dock (the Finder may show the old one until it forgets it), and how
   MOTION sounds on each wave, which is the suite's code unchanged but has not been heard here.
+- **The twenty-third build has not met an E16, and nothing here can stand in for one.** SF-000's
+  side is checked with made-up messages and the script against a mock written from the E16's
+  manual for OS 1.3.0. What only the hardware can say: that Bank Select (controller 32, the slot
+  less one) and Program Change (the page less one) on channel 12 turn it to the scene and page
+  meant; how quick a change of scene is (a lane to one of its inserts is one); whether it loads
+  a scene again when told the one it is in; whether the script hears of a page turned that way
+  (it looks every 50 ms in case not); the press of a knob whose turn is off; the names SF-000
+  sends showing in place of the scene's. `controllers/e16/README.md` ends with what to do about
+  each. Both scenes must be loaded onto the E16 again (SF-FX in SF-LIB's place), and its PC
+  Receive Channel set to 12.
 - Following is checked with made-up moves marked as the E16's or as another port's. The real
   thing to try: a knob on the E16 (the eye should go), the ONE's modulation of a knob (it should
   not), a recall from each.

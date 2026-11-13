@@ -50,7 +50,8 @@ Screen::Screen (Session& s)
       fLegend (face (BinaryData::BarlowCondensedSemiBold_ttf, BinaryData::BarlowCondensedSemiBold_ttfSize, 18.0f, 0.04f)),
       fNote   (face (BinaryData::BarlowCondensedSemiBold_ttf, BinaryData::BarlowCondensedSemiBold_ttfSize, 14.0f, 0.05f)),
       fRead   (face (BinaryData::BarlowSemiCondensedMedium_ttf, BinaryData::BarlowSemiCondensedMedium_ttfSize, 21.0f, 0.0f)),
-      fFlag   (face (BinaryData::BarlowSemiCondensedSemiBold_ttf, BinaryData::BarlowSemiCondensedSemiBold_ttfSize, 36.0f, 0.0f))
+      fFlag   (face (BinaryData::BarlowSemiCondensedSemiBold_ttf, BinaryData::BarlowSemiCondensedSemiBold_ttfSize, 36.0f, 0.0f)),
+      cfg (s.cfg), cfgOpen (s.cfgOpen)
 {
     scopeOn.fill (true);
     setOpaque (true);
@@ -62,7 +63,7 @@ Screen::Screen (Session& s)
 
 Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullptr; }
 
-void Screen::setPage (Page p) { endEdit (true); if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0); page = p; repaint(); }
+void Screen::setPage (Page p) { endEdit (true); if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0); page = p; ses.showing = (int) p; repaint(); }
 
 void Screen::resized()
 {
@@ -264,9 +265,27 @@ void Screen::tag (G& g, R r, const String& s)
 }
 
 // A panel's name. Lit, it is a dark display with light letters, as on the model's module.
-float Screen::title (G& g, float x, float y, const String& s)
+float Screen::title (G& g, float x, float y, const String& s, bool inFront)
 {
-    return plate (g, x, y, s, fLegend, 8, lit ? col::black : col::white, lit ? col::lit : col::black);
+    // (in front it is lit up, as the active lane's name is)
+    const bool darkPlate = lit != inFront;
+    return plate (g, x, y, s, fLegend, 8, darkPlate ? col::black : lit ? col::lit : col::white, darkPlate ? col::lit : col::black);
+}
+
+// Where one of the pointer's stops stands on the screen: the most of it that shows (the rows go
+// round while CONFIG is open, and a panel can be drawn twice, part of it at each edge).
+void Screen::stopAt (int stop, R drawn)
+{
+    if (! collect || stop < 0 || stop >= Session::kStops) return;
+    auto& at = stopRects[(size_t) stop];
+    if (drawn.getWidth() * drawn.getHeight() > at.getWidth() * at.getHeight()) at = drawn;
+}
+
+Screen::R Screen::frontBox() const
+{
+    R box = stopRects[(size_t) juce::jlimit (0, Session::kStops - 1, ses.pointer >= 0 ? ses.pointer : ses.stopNow())];
+    if (cfgOpen && ses.pointer < 0 && ! cfgRect.isEmpty()) box = box.isEmpty() ? cfgRect : box.getUnion (cfgRect);
+    return box.isEmpty() ? box : box.expanded (10.0f).getIntersection (R (0, 0, kW, kH));
 }
 
 void Screen::card (G& g, R r, bool selected)
@@ -464,7 +483,7 @@ String Screen::midiOf (int ctl) const
     int ch = 0, num = 0;
     if (! ccx::addressOf (ctl, ch, num)) return "NOT ON MIDI.";
     const auto& c = eng.control (ctl);
-    String s = "MIDI: CHANNEL " + String (ch) + ", CC " + String (num) + ".";
+    String s = "MIDI: CHANNEL " + String (ch) + ", CC " + String (num) + (ch == e16::kFxChannel ? " (THE ACTIVE LANE'S)." : ".");
     if (c.kind == Kind::Bipolar) s << " 64 IS THE MIDDLE.";
     else if (c.kind == Kind::Toggle || c.kind == Kind::Hold) s << " 64 AND OVER IS ON.";
     else if (c.kind == Kind::List && c.steps() >= 2 && c.steps() <= 16)
@@ -517,7 +536,10 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             t.title = (sp.group.isNotEmpty() && sp.group != "SOUND" && sp.group != "EFFECT" ? sp.group + ": " : String()) + sp.name;
             if (const char* what = module != nullptr ? help::param (module, sp.id.toRawUTF8()) : nullptr) body = what;
             body << (body.isEmpty() ? "" : " ") << (sp.kind == Kind::Toggle ? "CLICK TO SWITCH IT." : sp.kind == Kind::Hold ? "HOLD IT DOWN." : "DRAG UP AND DOWN (SHIFT: FINELY). DOUBLE-CLICK: BACK TO WHERE IT STARTS.");
-            midi = "KEPT IN SNAPSHOTS. NOT ON THE E16.";
+            midi = sp.kind == Kind::Hold ? String ("KEPT IN SNAPSHOTS. A KEY THAT IS HELD: NOT ON THE E16.")
+                 : h.a < e16::kCfgPer * e16::kCfgPages ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE CFG " + String (h.a / e16::kCfgPer + 1) + ", KNOB " + String (h.a % e16::kCfgPer + 1)
+                                                             + " (CHANNEL " + String ((int) e16::kFxChannel) + ", CC " + String (e16::cfgCc (h.a)) + ")."
+                                                       : String ("KEPT IN SNAPSHOTS. NOT ON THE E16: ITS THREE CONFIG PAGES HOLD THE FIRST 36.");
             below = true;
             break;
         }
@@ -553,6 +575,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
         case hLen:
             t.title = "LENGTH";
             body = "THE PATTERN'S LENGTH, 1 TO 128 STEPS.";
+            midi = "MIDI: CHANNEL " + String ((int) e16::kFxChannel) + ", CC " + String ((int) e16::kLenCc) + " (THE ACTIVE LANE'S). THE VALUE AND ONE IS THE STEPS.";
             below = true;
             break;
         case hAct:
@@ -645,6 +668,8 @@ const char* const kKeys[][2] = {
     { "ESC", "BACK OUT: OF LOAD'S LIST, CONFIG, THE LIBRARY, FULL SCREEN" },
     { "H", "PHONES" },
     { "UP  DOWN", "THE ACTIVE LANE" },
+    { "TAB", "THE NEXT MODULE TO THE FRONT (SHIFT: THE ONE BEFORE)" },
+    { "C", "CONFIG FOR WHAT IS IN FRONT, AND SHUT" },
     { "LEFT  RIGHT", "THE SEQUENCER'S PAGE OF STEPS" },
     { "3", "THE 3D STAGE, OR THE LIT SKIN" },
     { "V", "3D: THE NEXT VIEW" },
@@ -710,7 +735,7 @@ void Screen::paint (G& g)
 
 void Screen::drawAll (G& g)
 {
-    if (collect) hits.clear();
+    if (collect) { hits.clear(); for (auto& r : stopRects) r = {}; }
     if (lit) { skin.begin (g); if (vis (g, R (0, 0, kW, kH))) skin.body (g, kW, kH); }
     else if (vis (g, R (0, 0, kW, kH)))
     {
@@ -832,6 +857,13 @@ void Screen::drawMain (G& g)
         if (collect) hits.erase (std::remove_if (hits.begin() + (long) first, hits.end(), [this] (const Hit& h) { return ! h.r.intersects (rowsClip); }), hits.end());
     }
     drawSequencer (g, R (23, 980, 1682, 110));
+    // the pointer (a controller's wheel): a frame round the module it is on
+    if (ses.pointer >= 0)
+        if (const R pr = stopRects[(size_t) juce::jmin (ses.pointer, Session::kStops - 1)]; ! pr.isEmpty() && vis (g, pr))
+        {
+            g.setColour (col::yellow);
+            g.drawRect (pr.reduced (1.0f), 3.0f);
+        }
     if (cfgT > 0.001f && (collect || vis (g, cfgR)))
     {
         const juce::Graphics::ScopedSaveState state (g);
@@ -845,10 +877,9 @@ void Screen::drawMain (G& g)
 
 void Screen::openConfig (Engine::Target t)
 {
-    const bool same = cfgOpen && cfg.kind == t.kind && cfg.slot == t.slot && (t.kind == 2 || cfg.lane == t.lane);
-    if (same) { cfgOpen = false; return; }
-    cfg = t; cfgOpen = true; cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false;
-    if (t.kind == 0 && ses.activeLane != t.lane) { ses.activeLane = t.lane; ses.selStep = -1; ses.page = 0; }
+    ses.openConfig (t);
+    if (cfgOpen) { cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false; }
+    cfgSeen = cfg; cfgOpenSeen = cfgOpen;
 }
 
 void Screen::drawConfig (G& g, R r)
@@ -1016,6 +1047,9 @@ void Screen::drawConfig (G& g, R r)
                 else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
                 else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
                 legend (g, cxl + 45, cy + 43, sp.name);
+                // INFO: its number while CONFIG is open (the E16's CONFIG pages hold the controls in this order, twelve to a page)
+                if (info && sp.kind != Kind::Hold && i < e16::kCfgPer * e16::kCfgPages)
+                    textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxl + 31, cy + 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
                 if (sp.kind == Kind::List)
                 {
                     // (inside its box with room to spare; a long name is drawn narrower before it is cut short)
@@ -1119,6 +1153,7 @@ void Screen::drawLane (G& g, int l, R r)
     const auto& d = lanes()[(size_t) l];
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     const bool active = l == ses.activeLane;
+    stopAt (l < 5 ? l : l + 1, r.translated (shift, 0.0f).getIntersection (rowsClip));
     hit (r, hLanePanel, l, 0);
     panel (g, r, col::putty);
     const String num (l + 1);
@@ -1156,10 +1191,12 @@ void Screen::drawSnapPanel (G& g, R r)
 {
     if (off (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
+    stopAt (5, r.translated (shift, 0.0f).getIntersection (rowsClip));
+    hit (r, hFront, Session::fSnap, 0);
     panel (g, r, col::putty);
     if (vis (g, R (x0, y0, 262, 26)))
     {
-        const float w = title (g, x0, y0, "SNAPSHOTS");
+        const float w = title (g, x0, y0, "SNAPSHOTS", ses.front.kind == Session::fSnap);
         if (info) chan (g, x0 + w + 2, y0, e16::kSnapChannel);
         else plate (g, x0 + w + 2, y0, "PAGE 1", fNote, 6, col::white, col::black);
         const String last = "LAST " + ses.lastTakenAt;
@@ -1202,10 +1239,11 @@ void Screen::drawInsert (G& g, int slot, R r)
     if (off (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
     const int l = ses.activeLane, t = eng.insertType (l, slot);
+    stopAt (12 + slot, r.translated (shift, 0.0f).getIntersection (rowsClip));
     hit (r, hDropFx, 1, slot);
     panel (g, r, col::putty);
     const String name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
-    const float w = title (g, x0, y0, name);
+    const float w = title (g, x0, y0, name, ses.front == Session::Front { Session::fInsert, slot });
     hit (R (x0, y0, w, 26), hInsHead, slot, 0);
     if (t >= 0 && w + 54 < 190) chan (g, x0 + w + 2, y0, l + 1);
     if (t >= 0) headKeys (g, r.getRight() - 5, y0 + 2, 1, l, slot, cx::insMute (l, slot), cx::insSolo (l, slot));
@@ -1216,9 +1254,10 @@ void Screen::drawReturns (G& g, R r)
 {
     if (off (g, r)) return;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
+    stopAt (15, r.translated (shift, 0.0f).getIntersection (rowsClip));
     hit (r, hDropFx, 2, 1);
     panel (g, r, col::putty);
-    title (g, x0, y0, "RETURNS");
+    title (g, x0, y0, "RETURNS", ses.front.kind == Session::fReturns);
     const float xr = r.getRight() - 5;
     text (g, "A", R (xr - 180, y0, 14, 26), fLegend, col::black);
     headKeys (g, xr - 94, y0 + 2, 2, 0, 0, cx::kRetMS, cx::kRetMS + 1);
@@ -1240,8 +1279,10 @@ void Screen::drawMaster (G& g, R r)
     if (collect) if (const R mr = r.translated (shift, 0.0f).getIntersection (rowsClip); ! mr.isEmpty()) masterRect = masterRect.isEmpty() ? mr : masterRect.getUnion (mr);
     meterSig = metersNow();
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, body = y0 + 32;
+    stopAt (16, r.translated (shift, 0.0f).getIntersection (rowsClip));
+    hit (r, hFront, Session::fMaster, 0);
     panel (g, r, col::grey);
-    const float wTitle = title (g, x0, y0, "MASTER");
+    const float wTitle = title (g, x0, y0, "MASTER", ses.front.kind == Session::fMaster);
     chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
     if (! vis (g, R (x0, body + 60, 544, 100))) return;
@@ -1294,7 +1335,9 @@ void Screen::drawMaster (G& g, R r)
 void Screen::drawSequencer (G& g, R r)
 {
     seqRect = r;
+    stopAt (17, r);
     if (off (g, r)) return;
+    hit (r, hFront, Session::fSeq, 0);
     panel (g, r, col::putty);
     const int l = ses.activeLane;
     const auto& d = lanes()[(size_t) l];
@@ -1306,7 +1349,8 @@ void Screen::drawSequencer (G& g, R r)
     const String num (l + 1);
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
     tag (g, R (x0, y0, wTag, 26), num);
-    const float wn = plate (g, x0 + wTag, y0, d.name, fLegend, 8, col::white, col::black);
+    const bool seqFront = ses.front.kind == Session::fSeq;       // (in front: its name lit up)
+    const float wn = plate (g, x0 + wTag, y0, d.name, fLegend, 8, seqFront ? (lit ? col::lit : col::black) : col::white, seqFront && ! lit ? col::lit : col::black);
     const float ws = plate (g, x0 + wTag + wn + 2, y0, String (len) + (len == 1 ? " STEP" : " STEPS"), fNote, 6, col::white, col::black);
     // M: this lane's own sequencer muted. Its steps stay and go unplayed; notes from outside still sound.
     const int muteCtl = cx::lane (l, cx::kSeqMute);
@@ -1784,10 +1828,13 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hLen:      drag.v0 = (float) ses.pattern (ses.activeLane).length; break;
         case hToggle:   ses.userSet (h->a, ses.value (h->a) > 0.5f ? 0.0f : 1.0f); break;
         case hHold:     ses.userSet (h->a, 1.0f); break;
-        case hLane:
-            ses.activeLane = h->a; ses.selStep = -1; ses.page = 0; ses.touch();
-            if (cfgOpen && cfg.kind != 2) { cfg.lane = h->a; cfgStale = true; cfgScroll = 0; }
+        case hLane: case hLanePanel:    // its name, or its plate off the controls: the lane comes to the front
+            if (h->kind == hLanePanel && h->a == ses.activeLane && ses.front.kind == Session::fLane) break;
+            ses.bringLane (h->a, 0);
+            if (cfgOpen && cfg.kind != 2) { cfgStale = true; cfgScroll = 0; }
             break;
+        case hDropFx:   ses.bring ({ h->a == 1 ? (int) Session::fInsert : (int) Session::fReturns, h->a == 1 ? h->b : 0 }, 0); break;
+        case hFront:    ses.bring ({ h->a, h->b }, 0); break;
         case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
         case hFile:     pickLoad (h->a); break;
         case hScope:    if (h->a >= 0 && h->a < kLanes + 2) scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a]; break;
@@ -2062,12 +2109,20 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k == juce::KeyPress::rightKey) { ses.page = std::min (7, ses.page + 1); repaint(); return true; }
     if (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey)
     {
-        ses.activeLane = juce::jlimit (0, kLanes - 1, ses.activeLane + (k == juce::KeyPress::upKey ? -1 : 1));
-        ses.selStep = -1; ses.page = 0;
-        if (cfgOpen && cfg.kind != 2) { cfg.lane = ses.activeLane; cfgStale = true; cfgScroll = 0; }
+        ses.bringLane (juce::jlimit (0, kLanes - 1, ses.activeLane + (k == juce::KeyPress::upKey ? -1 : 1)), 1);
+        if (cfgOpen && cfg.kind != 2) { cfgStale = true; cfgScroll = 0; }
         repaint();
         return true;
     }
+    // TAB: the next module comes to the front, in the order the screen has them (SHIFT: the one
+    // before). C: CONFIG for what is in front, and shut again.
+    if (k.getKeyCode() == juce::KeyPress::tabKey && page == pMain)
+    {
+        ses.bringStop (juce::jlimit (0, Session::kStops - 1, ses.stopNow() + (k.getModifiers().isShiftDown() ? -1 : 1)), 1);
+        repaint();
+        return true;
+    }
+    if ((k.getTextCharacter() == 'c' || k.getTextCharacter() == 'C') && page == pMain) { ses.configOfFront (1); repaint(); return true; }
     return false;
 }
 
@@ -2301,10 +2356,21 @@ void Screen::followMoves()
         if (by == 1 && recent) direct.push_back (h.r);
         else if (travelling) swept.push_back (h.r);
     }
+    // something brought to the front from a controller or the keyboard (a page turned to, the
+    // pointer's wheel, TAB, CONFIG opened): the eye goes to it as it goes to a knob under a hand.
+    // (Not for the mouse: the hand is already there.)
+    if (ses.frontCount != frontSeen) { frontSeen = ses.frontCount; frontHeld = ses.frontBy != 0; }
     // several moving together with no hand on them: a snapshot. One or two under a hand on the controller: that module.
     const auto& use = swept.size() >= 3 ? swept : direct;
-    if (eyeFollow && ! use.empty() && eyeDrag == 0)
+    if (eyeFollow && use.empty() && frontHeld && eyeDrag == 0 && page == pMain && now - ses.frontAt < 2200u)
     {
+        // (looked at afresh each time: the rows travel for a moment after CONFIG opens or the lane changes)
+        if (const R box = frontBox(); ! box.isEmpty() && (! followOn || box != followBox)) { followBox = box; followOn = true; stage->lookAt (&box); }
+        followAt = ses.frontAt;
+    }
+    else if (eyeFollow && ! use.empty() && eyeDrag == 0)
+    {
+        frontHeld = false;
         R box;
         for (const auto& r : use) { const R p = panelOf (r.getCentre()); box = box.isEmpty() ? p : box.getUnion (p); }
         box = box.expanded (10.0f).getIntersection (R (0, 0, kW, kH));
@@ -2518,6 +2584,15 @@ void Screen::refreshStage()
 
 void Screen::timerCallback()
 {
+    // what a controller asked for: another screen; CONFIG opened, shut, or moved to another panel
+    if (ses.wantShowing >= 0) { const int w = ses.wantShowing; ses.wantShowing = -1; if (w != (int) page && w <= (int) pMacros) setPage ((Page) w); }
+    if (cfgOpen != cfgOpenSeen || cfg.kind != cfgSeen.kind || cfg.lane != cfgSeen.lane || cfg.slot != cfgSeen.slot)
+    {
+        if (cfgOpen) { cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false; }
+        cfgSeen = cfg; cfgOpenSeen = cfgOpen;
+        repaint();
+    }
+    if (ses.cfgTouched.isNotEmpty()) { cfgName = ses.cfgTouched; ses.cfgTouched = {}; cfgStale = true; if (cfgOpen) dirty (cfgRect); }
     if (three) { followMoves(); showTags(); }
     if (three && ! settledSaid && stage != nullptr && stage->firstPictureSpread() != -1) settled();       // it is up and has drawn
     watchStart (juce::Time::getMillisecondCounter(), isShowing() && juce::Process::isForegroundProcess());

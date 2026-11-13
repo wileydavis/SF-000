@@ -1,9 +1,11 @@
 """Checks the OXI E16 scene SF-000 writes (controllers/e16/SF-000.oxie16, or the path given):
-its shape against a scene as the OXI App exports one, every address, and its script (GLIDE RINGS and
-LANE FOCUS) running against a mock of the E16's Lua (the mock SF Live Suite tests its own scenes with:
-1-based encoders and pages, 14-bit ring values, leds.reset hands a ring back to the firmware,
-midi.sendCC with a 0-based channel). If SF-000 --miditest has run, the ring reports it made are
-played to the script too. The script part needs lupa (pip install lupa): Lua 5.4.
+its shape against a scene as the OXI App exports one, every address, and its script (GLIDE RINGS,
+PAGE FOCUS and NAMES) running against a mock of the E16's Lua (the mock SF Live Suite tests its own
+scenes with: 1-based encoders and pages, 14-bit ring values, leds.reset hands a ring back to the
+firmware, midi.sendCC with a 0-based channel; and slots.update, slots.reset, page.setTitle and
+page.resetTitle as the E16's manual for OS 1.3.0 describes them). The second scene written beside
+it (-FX) is checked the same way. If SF-000 --miditest has run, the ring reports it made are played
+to the script too. The script part needs lupa (pip install lupa): Lua 5.4.
 
     python3 tests/e16_scene_test.py [scene.oxie16] [rings.txt]
 """
@@ -70,11 +72,16 @@ for n, page in enumerate(scene["pages"][:11], 1):
         elif p == 1:
             # GLIDE behind a press on knob 1 of every lane's page: one address for all of them
             ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == 16 and t2["nr1"] == 30 and e["color2"] == GREEN
+        elif p in (13, 14):
+            # SEND A pressed is the pointer's wheel, SEND B pressed is OPEN: a CC each, on channel 16, the same from every page
+            ok = ok and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 20 + p and (push["upper"], push["lower"]) == (127, 0)
+            ok = ok and t2 == TURN_OFF and e["color2"] == 0
         else:
             ok = ok and push["type"] == 0 and t2 == TURN_OFF and e["color2"] == 0
     names.append(", ".join(f'{e["name"]} ({e["abbr"]})' for e in page["encoders"][:12]))
     ok = ok and [e["name"] for e in page["encoders"][12:15]] == ["SEND A", "SEND B", "LOW"]
-check(ok, "pages 1-11, a lane each on its own channel: knob p sends CC 11 + p; 13 SEND A, 14 SEND B, 15 LOW, 16 HIGH with a swap press to MID (CC 28, pink)")
+check(ok, "pages 1-11, a lane each on its own channel: knob p sends CC 11 + p; 13 SEND A (pressed: the wheel, CC 33 on channel 16), 14 SEND B (pressed: OPEN, CC 34), 15 LOW, "
+          "16 HIGH with a swap press to MID (CC 28, pink)")
 snap = scene["pages"][11]
 ok = snap["title"] == "SNAP" and snap["channel"] == 16
 for p, e in enumerate(snap["encoders"], 1):
@@ -84,8 +91,8 @@ for p, e in enumerate(snap["encoders"], 1):
     seen[(16, t["nr1"])] = seen.get((16, t["nr1"]), 0) + 1
     seen[(16, push["nr1"])] = seen.get((16, push["nr1"]), 0) + 1
 check(ok, "page 12, the snapshot knobs on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up)")
-check(all(v == 1 for v in seen.values()) and not any(num in RESERVED for _, num in seen) and (16, 119) not in seen,
-      f"{len(seen)} addresses, each used once, none on a number MIDI keeps for itself; CC 119 on channel 16 is left for the page's lane")
+check(all(v == 1 for v in seen.values()) and not any(num in RESERVED for _, num in seen) and not ({(16, 119), (16, 31), (16, 33), (16, 34), (16, 35), (16, 36)} & set(seen)),
+      f"{len(seen)} addresses, each used once, none on a number MIDI keeps for itself; CC 119 on channel 16 is left for the page, 31 and 33 to 36 for the wheel and the keys")
 for n, row in enumerate(names, 1):
     print(f"       page {n:2d} {CODES[n - 1]}: {row}")
 print("       page 12 SNAP: " + " ".join(e["name"] for e in snap["encoders"]))
@@ -114,7 +121,15 @@ leds = {
   reset = function(i) assert(i >= 1 and i <= 16); E.rings[i] = nil end,
 }
 controller = {getPage = function() return E.page end}
-page = {}
+E.names, E.title = {}, nil
+page = {
+  setTitle = function(t) assert(type(t) == "string" and #t >= 1 and #t <= 15, "title of 1 to 15"); E.title = t end,
+  resetTitle = function() E.title = nil end,
+}
+slots = {
+  update = function(i, t) assert(math.type(i) == "integer" and i >= 1 and i <= 16 and type(t) == "string" and #t >= 1 and #t <= 4, "slot name"); E.names[i] = t end,
+  reset = function(i) assert(i >= 1 and i <= 16); E.names[i] = nil end,
+}
 system = {setUpdateRate = function(ms) E.rate = ms end}
 midi = {
   sendCC = function(out, ch, cc, v)
@@ -127,12 +142,14 @@ midi = {
 
 
 class E16:
-    def __init__(self, send=True):
+    def __init__(self, send=True, script=None, names=True):
         self.lua = lua54.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(MOCK)
         if not send:
             self.lua.execute("midi = nil")
-        self.lua.execute(code["code"])
+        if not names:
+            self.lua.execute("slots = nil; page = {}")       # firmware before names and titles
+        self.lua.execute(script if script is not None else code["code"])
         self.G = self.lua.globals()
         self.E = self.G.E
         self.G.page.onInit()
@@ -168,6 +185,22 @@ class E16:
         prev, self.E.page = self.E.page, p
         self.G.page.onPageChange(prev, p)
 
+    def sent_to(self, p):
+        """The page turned from outside (a Program Change): the E16 is on it, and nothing calls onPageChange."""
+        self.E.page = p
+
+    def names(self):
+        return {i: self.E.names[i] for i in range(1, 17) if self.E.names[i] is not None}
+
+    def name_page(self, page_no, names):
+        out = [0xF0, 0x7D, 0x53, 0x46, 4, page_no]
+        for n in names:
+            out += [ord(c) for c in (n + "    ")[:4]]
+        self.sysex(out + [0xF7])
+
+    def title(self, text):
+        self.sysex([0xF0, 0x7D, 0x53, 0x46, 5] + [ord(c) for c in text] + [0xF7])
+
     def turn(self, i):
         self.G.controller.onEncoderTurn(self.lua.table_from({"index": i, "page": self.E.page, "increment": 1, "value": 0}))
 
@@ -202,6 +235,44 @@ quiet.goto(3)
 quiet.move((3, 12, 500), (3, 13, 500))
 check(quiet.rings() == {2: (500, GREEN)}, "firmware without the script's MIDI out: no page number is sent, the rings still work (knob 1 swaps to GLIDE, so it keeps its own ring)")
 
+# PAGE FOCUS, whoever turns the page; and NAMES
+e = E16()
+e.sent()
+e.goto(4)
+e.update(3)
+check(e.sent() == [(0, 15, 119, 4)], "a page says itself once: the updates that follow a page change do not say it again")
+e.sent_to(7)
+before = e.sent()
+e.update()
+e.move((7, 13, 3000))
+check(before == [] and e.sent() == [(0, 15, 119, 7)] and e.rings() == {2: (3000, GREEN)},
+      "a page turned from outside with no onPageChange (a Program Change): the next update sees it, says it, and the rings are that page's")
+blank = ["    "] * 16
+e.name_page(7, ["TIME", "FDBK", "-"] + blank[3:12] + ["SEL"] + blank[13:])
+e.title("RMB 1 DELAY")
+check(e.names() == {1: "TIME", 2: "FDBK", 3: "-", 13: "SEL"} and e.E.title == "RMB 1 DELAY", f"SF-000 names what the page holds, and titles it: {e.names()}, {e.E.title}; four spaces leave a knob its own name")
+e.name_page(3, ["XXXX"] * 16)
+check(e.names() == {1: "TIME", 2: "FDBK", 3: "-", 13: "SEL"}, "names for a page that is not the one up are not put on it")
+e.name_page(7, blank)
+e.title("")
+check(e.names() == {} and e.E.title is None, "sixteen blanks and no title: the scene's own again")
+e.name_page(7, ["AAAA"] + blank[1:])
+e.title("X")
+e.goto(2)
+check(e.names() == {} and e.E.title is None, "a page change takes the names and the title away with it (the E16 would keep them)")
+e.sent_to(5)
+e.name_page(5, ["BBBB"] + blank[1:])
+check(e.names() == {1: "BBBB"} and e.sent()[-1] == (0, 15, 119, 5), "names that come for a page turned from outside, before any update: the page is seen first, then named")
+e.sysex([0xF0, 0x7D, 0x53, 0x46, 9, 1, 2, 3, 0xF7])
+e.sysex([0xF0, 0x7D, 0x53, 0x46, 3, 1, 0xF7])
+check(e.rings() == {} and e.names() == {1: "BBBB"}, "a message of a kind it does not know changes nothing")
+old = E16(names=False)
+old.goto(2)
+old.name_page(2, ["AAAA"] * 16)
+old.title("TITLE")
+old.move((2, 13, 500))
+check(old.rings() == {2: (500, GREEN)} and old.sent()[-1] == (0, 15, 119, 2), "firmware without names and titles: they are not asked of it, and the rest works")
+
 if os.path.exists(rings_path):
     msgs = [bytes.fromhex(line) for line in open(rings_path).read().split() if line]
     lit, peak = set(), 0
@@ -223,33 +294,84 @@ if os.path.exists(rings_path):
 else:
     print(f"     ({rings_path} is not there: run SF-000 --miditest first to play its ring reports to the script)")
 
-# The library's scene, written beside it: the same form, the map on page 1 and the finders on page 2.
-lib_path = os.path.join(os.path.dirname(path), os.path.splitext(os.path.basename(path))[0] + "-LIBRARY.oxie16")
+# The second scene, written beside it: the same form. The library's map and finders, then a page
+# for everything the first scene has none for.
+lib_path = os.path.join(os.path.dirname(path), os.path.splitext(os.path.basename(path))[0] + "-FX.oxie16")
 if os.path.exists(lib_path):
     lraw = open(lib_path, "rb").read()
     lib = json.loads(lraw)
     encs = [e for p in lib["pages"] for e in p["encoders"]]
     ok = all(b < 128 for b in lraw) and b"\n" not in lraw and list(lib) == HEADER and len(lib["pages"]) == 12 and 1 <= len(lib["title"]) <= 7
-    ok = ok and all(list(p) == PAGE and len(p["encoders"]) == 16 for p in lib["pages"])
+    ok = ok and all(list(p) == PAGE and len(p["encoders"]) == 16 and 1 <= len(p["title"]) <= 11 for p in lib["pages"])
     ok = ok and all(list(e) == ENCODER and list(e["push_action"]) == PUSH and all(list(t) == TURN for t in e["turn_actions"]) for e in encs)
-    ok = ok and all(1 <= len(e["name"]) <= 8 and 1 <= len(e["abbr"]) <= 4 for e in encs)
-    the_map, find = lib["pages"][0], lib["pages"][1]
-    ok = ok and the_map["title"] == "MAP" and all(
-        e["turn_actions"][0]["type"] == 3 and e["turn_actions"][0]["channel"] == 15 and e["turn_actions"][0]["nr1"] == 12 + i
-        and e["push_action"]["type"] == 2 and e["push_action"]["channel"] == 15 and e["push_action"]["nr1"] == 44 + i
-        for i, e in enumerate(the_map["encoders"]))
-    ok = ok and find["title"] == "FIND" and [e["name"] for e in find["encoders"][:4]] == ["RECENT", "FITS NOW", "MORE", "LESS"]
-    ok = ok and all(e["turn_actions"][0]["channel"] == 14 and e["turn_actions"][0]["nr1"] == 12 + i and e["push_action"]["nr1"] == 44 + i
-                    for i, e in enumerate(find["encoders"][:4]))
-    ok = ok and all(e["turn_actions"][0]["type"] == 0 and e["push_action"]["type"] == 0 for e in find["encoders"][4:15])
-    glide = find["encoders"][15]
-    ok = ok and glide["name"] == "GLIDE" and glide["turn_actions"][0]["type"] == 3 and glide["turn_actions"][0]["channel"] == 16 and glide["turn_actions"][0]["nr1"] == 30 and glide["push_action"]["type"] == 0
-    ok = ok and all(e["turn_actions"][0]["type"] == 0 for p in lib["pages"][2:] for e in p["encoders"])
-    used = {(e["turn_actions"][0]["channel"], e["turn_actions"][0]["nr1"]) for e in encs if e["turn_actions"][0]["type"] == 3}
+    ok = ok and all(1 <= len(e["name"]) <= 8 and 1 <= len(e["abbr"]) <= 4 and e["name"] == e["name"].upper() for e in encs)
+    ok = ok and all(e["turn_actions"][1] == TURN_OFF and e["color2"] == 0 for e in encs)
+    ok = ok and lib["transmitOnSceneEntry"] == 0 and lib["transmitOnPageSwitch"] == 0 and lib["transmitOnPresetLoad"] == 0
+    check(ok and lib["title"] == "SF-FX" and [p["title"] for p in lib["pages"]] == ["MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "-"],
+          f"{os.path.basename(lib_path)}: the same form, twelve pages: " + ", ".join(p["title"] for p in lib["pages"]))
+
+    def turn(e):
+        t = e["turn_actions"][0]
+        return (t["channel"], t["nr1"]) if t["type"] == 3 else None
+
+    def push(e):
+        q = e["push_action"]
+        return (q["channel"], q["nr1"]) if q["type"] == 2 and q["mode"] == 1 and (q["upper"], q["lower"]) == (127, 0) else None
+
+    pages = lib["pages"]
+    the_map, find = pages[0], pages[1]
+    ok = all(turn(e) == (15, 12 + i) and push(e) == (15, 44 + i) for i, e in enumerate(the_map["encoders"]))
+    ok = ok and [e["name"] for e in find["encoders"][:4]] == ["RECENT", "FITS NOW", "MORE", "LESS"]
+    ok = ok and all(turn(e) == (14, 12 + i) and push(e) == (14, 44 + i) for i, e in enumerate(find["encoders"][:4]))
+    ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in find["encoders"][4:12] + [find["encoders"][14]])
+    ok = ok and turn(find["encoders"][15]) == (16, 30) and find["encoders"][15]["name"] == "GLIDE" and find["encoders"][15]["push_action"]["type"] == 0
+    check(ok, "MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), GLIDE as FIND's knob 16")
+    ok = True
+    for sl in range(3):
+        pg = pages[2 + sl]
+        ok = ok and pg["channel"] == 13 and all(turn(e) == (13, 8 + sl * 8 + i) and push(e) == (13, 40 + sl * 8 + i) for i, e in enumerate(pg["encoders"][:8]))
+        ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in pg["encoders"][8:12])
+    ok = ok and [turn(e) for e in pages[5]["encoders"][:8]] == [(16, 60 + i) for i in range(8)] and all(e["push_action"]["type"] == 0 for e in pages[5]["encoders"][:12])
+    ok = ok and [turn(e) for e in pages[6]["encoders"][:4]] == [(16, 68), (16, 69), (16, 70), None] and [e["name"] for e in pages[6]["encoders"][:3]] == ["TAPE", "COMP", "LIMIT"]
+    ok = ok and [turn(e) for e in pages[7]["encoders"][:6]] == [(13, 70), (13, 71), (13, 72), (13, 73), (13, 74), None] and pages[7]["encoders"][0]["name"] == "LENGTH"
+    for c in range(3):
+        pg = pages[8 + c]
+        ok = ok and all(turn(e) == (13, (76 + n if n < 20 else 102 + n - 20)) and e["push_action"]["type"] == 0 for n, e in enumerate(pg["encoders"][:12], c * 12))
+        ok = ok and [push(e) for e in pg["encoders"][14:]] == [(16, 35), (16, 36)] and all(turn(e) is None for e in pg["encoders"][13:])
+    check(ok, "INS 1-3: an insert's eight places on channel 13 (CC 8 + 8 for each slot; pressed, CC 40 + ...); RETURNS and MASTER at the addresses a sequencer has (channel 16, CC 60-70); "
+              "SEQ: LENGTH and the generator's four (channel 13, CC 70-74); CFG 1-3: CONFIG's controls, twelve to a page (CC 76-95, then 102-117), with PAGE - and PAGE + on 15 and 16")
+    ok = all(turn(pg["encoders"][12]) == (16, 31) and push(pg["encoders"][12]) == (16, 33) and pg["encoders"][12]["name"] == "SELECT"
+             and turn(pg["encoders"][13]) is None and push(pg["encoders"][13]) == (16, 34) for pg in pages[1:11])
+    ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in pages[11]["encoders"])
+    check(ok, "on every page after the map, knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 14 pressed is OPEN (CC 34); page 12 is empty")
+    used = {}
+    for pg in pages:
+        for e in pg["encoders"]:
+            if turn(e) and turn(e) not in ((16, 31),):
+                used[turn(e)] = used.get(turn(e), 0) + 1
+            if push(e) and push(e)[0] == 13:
+                used[push(e)] = used.get(push(e), 0) + 1
     mine = {(t["channel"], t["nr1"]) for p in scene["pages"] for e in p["encoders"] for t in e["turn_actions"] if t["type"] == 3}
-    ok = ok and (used & mine) == {(16, 30)} and lib["code"]["scriptName"] == scene["code"]["scriptName"]
-    check(ok, f"{os.path.basename(lib_path)}: the same form; MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), GLIDE as FIND's knob 16, "
-              f"ten empty pages, and no address the first scene uses but GLIDE's")
+    check(all(v == 1 for v in used.values()) and (set(used) & mine) == {(16, 30)} and not any(num in RESERVED or num in (0, 32) for _, num in used)
+          and not any(ch == 12 for ch, _ in used) and lib["code"]["scriptName"] == scene["code"]["scriptName"],
+          f"its {len(used)} knob addresses are each one knob's, none is the first scene's but GLIDE's, and nothing is on channel 12 (where the page is turned from outside)")
+    try:
+        fx = E16(script=lib["code"]["code"])
+        said = fx.sent()
+        fx.goto(3)
+        said += fx.sent()
+        fx.sent_to(9)
+        fx.update()
+        said += fx.sent()
+        fx.name_page(9, ["MODL", "ATK"] + ["    "] * 14)
+        fx.move((13, 76, 100))
+        fx.name_page(9, ["    "] * 16)
+        named = fx.names()
+        fx.name_page(9, ["MODL", "ATK"] + ["    "] * 14)
+        check(said == [(0, 15, 119, 21), (0, 15, 119, 23), (0, 15, 119, 29)] and named == {} and fx.names() == {1: "MODL", 2: "ATK"} and fx.rings() == {},
+              "its script says each page as 20 and the page's number (21 the map, 23 INS 1, 29 CFG 1), takes names, and walks no ring (nothing on these pages travels)")
+    except NameError:
+        pass
 else:
     check(False, f"{os.path.basename(lib_path)} is missing")
 

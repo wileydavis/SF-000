@@ -105,6 +105,7 @@ bool addressOf (int ctl, int& ch, int& num)
     else if (j == cx::kEqHigh) num = e16::kKnobCc + 15;
     else if (j == cx::kEqMid) num = e16::kMidCc;
     else if (j >= cx::kIns && j < cx::kIns + kSlots * kCells) num = kIns + (j - cx::kIns);
+    else if (j >= cx::kGen && j < cx::kGen + 4) { ch = e16::kFxChannel; num = e16::kGenCc + (j - cx::kGen); }       // (the generator's knobs: the active lane's, on the channel of what is in front)
     else if (j == cx::kMute) num = kMute;
     else if (j == cx::kSolo) num = kSolo;
     else if (j == cx::kSeqMute) num = kSeqMute;
@@ -193,6 +194,8 @@ std::string encJson (const Enc& e, int place)
                         { "turn_actions", Json::arr ({ t1, t2 }) }, { "color2", Json::num (e.press == 2 ? e.colour2 : 0) } });
 }
 
+const char* const laneCodes[kLanes] = { "KCK", "CHH", "OHH", "CLP", "PRC", "BAS", "RMB", "LED", "CRD", "PAD", "VOX" };
+
 // A knob's name on the E16: 8 characters at most, and 4 for its short form.
 String cleaned (String s, int len)
 {
@@ -220,7 +223,8 @@ void naming (const KnobDef& k, String& name, String& abbr)
         { "attack", "ATK" }, { "signal", "SIG" }, { "echo", "ECHO" }, { "accent", "ACNT" }, { "glide", "GLID" }, { "pitch_time", "PTIM" },
         { "layer", "LAYR" }, { "echo_space", "ESPC" }, { "echo_swing", "ESWG" }, { "echo_prob", "EPRB" }, { "spread", "SPRD" },
         { "position", "POS" }, { "tension", "TENS" }, { "pocket_depth", "PCKT" }, { "pocket_shape", "PSHP" }, { "predelay", "PRE" },
-        { "width", "WIDE" }, { "echo_time", "ETIM" }, { "echo_fb", "EFBK" } };
+        { "width", "WIDE" }, { "echo_time", "ETIM" }, { "echo_fb", "EFBK" },
+        { "feedback", "FDBK" }, { "throw", "THRW" }, { "freeze", "FRZ" }, { "release", "REL" }, { "squelch", "SQLC" }, { "noise", "NOIS" } };
     const std::string id (k.param != nullptr ? k.param : "");
     const String label (k.label != nullptr ? k.label : "-");
     const auto sn = shortName.find (id);
@@ -252,7 +256,7 @@ String minified (const String& src)
 
 String sceneText (const Engine& eng, const juce::StringArray& snapNames)
 {
-    static const char* const codes[kLanes] = { "KCK", "CHH", "OHH", "CLP", "PRC", "BAS", "RMB", "LED", "CRD", "PAD", "VOX" };
+    const auto& codes = laneCodes;
     std::vector<std::string> pages;
     String map;
     juce::StringArray focus;
@@ -279,8 +283,9 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
                     e.def2 = to7 (eng.control (cx::kGlide), eng.control (cx::kGlide).def);
                 }
             }
-            else if (p == 13) { e.name = "SEND A"; e.abbr = "SNDA"; e.colour = kLightBlue; }
-            else if (p == 14) { e.name = "SEND B"; e.abbr = "SNDB"; e.colour = kLightBlue; }
+            // (SEND A pressed is the pointer's wheel, SEND B pressed is OPEN: SF-000 is told, and does the rest)
+            else if (p == 13) { e.name = "SEND A"; e.abbr = "SNDA"; e.colour = kLightBlue; e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kWheelKey; }
+            else if (p == 14) { e.name = "SEND B"; e.abbr = "SNDB"; e.colour = kLightBlue; e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kOpenKey; }
             else if (p == 15) { e.name = "LOW"; e.abbr = "LOW"; e.colour = kLightBlue; }
             else
             {
@@ -342,10 +347,10 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
     return String (scene);
 }
 
-// The library's scene: the map on page 1, the finders on page 2, the rest empty. It carries the
-// first scene's script (which finds nothing of its own to do here), so its form is one the E16
-// is known to take.
-String libraryText()
+// The second scene: the library's map and finders, then a page for everything the first scene has
+// none for (the active lane's inserts, the returns, the master, the sequencer strip, CONFIG). It
+// carries the same script, which says each page as it comes up and takes the names SF-000 sends.
+String fxText (const Engine& eng)
 {
     std::vector<std::string> pages;
     String map;
@@ -353,50 +358,133 @@ String libraryText()
     static const char* const rows[4] = { "PEAK", "DRIVE", "EASY", "CALM" };         // the top row of knobs first
     static const char* const cols[4] = { "DK", "WM", "CL", "BR" };                  // dark, warm, clear, bright
     static const int colColour[4] = { kRed, kPink, kLightBlue, kWhite };
+    auto add = [&] (const String& title, int channel, const std::vector<Enc>& encs)
     {
-        std::vector<std::string> encs;
+        std::vector<std::string> js;
+        for (int p = 1; p <= 16; ++p) { js.push_back (encJson (p <= (int) encs.size() ? encs[(size_t) (p - 1)] : Enc(), p)); map << "---"; }
+        pages.push_back (Json::obj ({ { "title", Json::str (title) }, { "output", "0" }, { "channel", Json::num (channel) }, { "encoders", Json::arr (js) } }));
+        focus.add (String (kFocusB + (int) pages.size()));
+    };
+    // the bottom row these pages share: 13 the pointer's wheel (its press makes it so on the pages where it is something else), 14 OPEN
+    auto wheel = []
+    {
+        Enc e; e.name = "SELECT"; e.abbr = "SEL"; e.colour = kPink;
+        e.channel = kSnapChannel; e.number = kWheelCc; e.def = 0;
+        e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kWheelKey;
+        return e;
+    };
+    auto key = [] (const char* name, const char* abbr, int number)
+    {
+        Enc e; e.name = name; e.abbr = abbr; e.colour = kPink;
+        e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = number;
+        return e;
+    };
+    {
+        std::vector<Enc> encs (16);
         for (int p = 1; p <= 16; ++p)
         {
-            Enc e;
+            Enc& e = encs[(size_t) (p - 1)];
             const int r = (p - 1) / 4, c = (p - 1) % 4;
             e.name = String (rows[r]) + " " + cols[c]; e.abbr = String (rows[r]).substring (0, 2) + cols[c];
             e.colour = colColour[c];
             e.channel = kMapChannel; e.number = kKnobCc + p - 1; e.def = 0;
             e.press = 1; e.pressChannel = kMapChannel; e.pressNumber = kPressCc + p - 1;
-            encs.push_back (encJson (e, p));
-            map << "---";
         }
-        pages.push_back (Json::obj ({ { "title", Json::str ("MAP") }, { "output", "0" }, { "channel", Json::num (kMapChannel) }, { "encoders", Json::arr (encs) } }));
-        focus.add ("0");
+        add ("MAP", kMapChannel, encs);
     }
     {
         static const char* const names[4] = { "RECENT", "FITS NOW", "MORE", "LESS" };
         static const char* const abbrs[4] = { "RCNT", "FITS", "MORE", "LESS" };
         static const int colours[4] = { kViolet, kGreen, kWhite, kRed };
-        std::vector<std::string> encs;
-        for (int p = 1; p <= 16; ++p)
+        std::vector<Enc> encs (16);
+        for (int p = 1; p <= 4; ++p)
         {
-            Enc e;
-            if (p <= 4)
-            {
-                e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = colours[p - 1];
-                e.channel = kFindChannel; e.number = kKnobCc + p - 1; e.def = 0;
-                e.press = 1; e.pressChannel = kFindChannel; e.pressNumber = kPressCc + p - 1;
-            }
-            else if (p == 16) { e.name = "GLIDE"; e.abbr = "GLID"; e.colour = kGreen; e.channel = kSnapChannel; e.number = kGlideCc; e.def = 0; }
-            encs.push_back (encJson (e, p));
-            map << "---";
+            Enc& e = encs[(size_t) (p - 1)];
+            e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = colours[p - 1];
+            e.channel = kFindChannel; e.number = kKnobCc + p - 1; e.def = 0;
+            e.press = 1; e.pressChannel = kFindChannel; e.pressNumber = kPressCc + p - 1;
         }
-        pages.push_back (Json::obj ({ { "title", Json::str ("FIND") }, { "output", "0" }, { "channel", Json::num (kFindChannel) }, { "encoders", Json::arr (encs) } }));
-        focus.add ("0");
+        encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
+        { Enc& e = encs[15]; e.name = "GLIDE"; e.abbr = "GLID"; e.colour = kGreen; e.channel = kSnapChannel; e.number = kGlideCc; e.def = 0; }
+        add ("FIND", kFindChannel, encs);
     }
-    for (int page = 3; page <= 12; ++page)
+    for (int sl = 0; sl < sf0::kSlots; ++sl)        // (the rig's three insert slots: kSlots alone, in here, is the scene's count of addresses)
     {
-        std::vector<std::string> encs;
-        for (int p = 1; p <= 16; ++p) { encs.push_back (encJson (Enc(), p)); map << "---"; }
-        pages.push_back (Json::obj ({ { "title", Json::str ("-") }, { "output", "0" }, { "channel", "1" }, { "encoders", Json::arr (encs) } }));
-        focus.add ("0");
+        // an insert of the active lane: its eight places where the screen has them. What they are
+        // depends on the lane and on the effect in the slot: SF-000 sends their names.
+        std::vector<Enc> encs (16);
+        for (int p = 1; p <= kCells; ++p)
+        {
+            Enc& e = encs[(size_t) (p - 1)];
+            e.name = "INS" + String (sl + 1) + " " + String (p); e.abbr = "I" + String (sl + 1) + "." + String (p);
+            e.colour = kWhite;
+            e.channel = kFxChannel; e.number = kInsCc + sl * kCells + (p - 1); e.def = 0;
+            e.press = 1; e.pressChannel = kFxChannel; e.pressNumber = kInsPressCc + sl * kCells + (p - 1);
+        }
+        encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
+        add ("INS " + String (sl + 1), kFxChannel, encs);
     }
+    {
+        // (SPACE's four have the same names whichever reverb it is)
+        static const char* const names[8] = { "DUB TIME", "DUB FDBK", "DUB TONE", "DUB DRV", "SPC SIZE", "SPC DCAY", "SPC DARK", "SPC DUCK" };
+        static const char* const abbrs[8] = { "DTIM", "DFBK", "DTON", "DDRV", "SIZE", "DCAY", "DARK", "DUCK" };
+        std::vector<Enc> encs (16);
+        for (int p = 1; p <= 8; ++p)
+        {
+            Enc& e = encs[(size_t) (p - 1)];
+            const int ctl = p <= 4 ? cx::kRet + (p - 1) : cx::space (eng.spaceModel(), p - 5);
+            e.name = names[p - 1]; e.abbr = abbrs[p - 1];
+            e.colour = p <= 4 ? kWhite : kLightBlue;
+            e.channel = kSnapChannel; e.number = (p <= 4 ? ccx::kDub : ccx::kSpace) + (p - 1) % 4;
+            e.def = to7 (eng.control (ctl), eng.control (ctl).def);
+        }
+        encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
+        add ("RETURNS", kSnapChannel, encs);
+    }
+    {
+        static const char* const names[3] = { "TAPE", "COMP", "LIMIT" };
+        static const char* const abbrs[3] = { "TAPE", "COMP", "LIM" };
+        std::vector<Enc> encs (16);
+        for (int p = 1; p <= 3; ++p)
+        {
+            Enc& e = encs[(size_t) (p - 1)];
+            e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = kWhite;
+            e.channel = kSnapChannel; e.number = ccx::kMaster + (p - 1);
+            e.def = to7 (eng.control (cx::kMaster + p - 1), eng.control (cx::kMaster + p - 1).def);
+        }
+        encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
+        add ("MASTER", kSnapChannel, encs);
+    }
+    {
+        static const char* const names[5] = { "LENGTH", "HITS", "ROTATE", "ACCENTS", "SEED" };
+        static const char* const abbrs[5] = { "LEN", "HITS", "ROT", "ACNT", "SEED" };
+        std::vector<Enc> encs (16);
+        for (int p = 1; p <= 5; ++p)
+        {
+            Enc& e = encs[(size_t) (p - 1)];
+            e.name = names[p - 1]; e.abbr = abbrs[p - 1]; e.colour = p == 1 ? kWhite : kLightBlue;
+            e.channel = kFxChannel; e.number = p == 1 ? kLenCc : kGenCc + (p - 2); e.def = p == 1 ? 15 : 0;
+        }
+        encs[12] = wheel(); encs[13] = key ("OPEN", "OPEN", kOpenKey);
+        add ("SEQ", kFxChannel, encs);
+    }
+    for (int c = 0; c < kCfgPages; ++c)
+    {
+        // CONFIG's controls, twelve to a page, in the order its panel has them: SF-000 sends their names
+        std::vector<Enc> encs (16);
+        for (int p = 1; p <= kCfgPer; ++p)
+        {
+            Enc& e = encs[(size_t) (p - 1)];
+            const int n = c * kCfgPer + p;
+            e.name = "CFG " + String (n); e.abbr = "C" + String (n); e.colour = kWhite;
+            e.channel = kFxChannel; e.number = cfgCc (n - 1); e.def = 0;
+        }
+        encs[12] = wheel(); encs[13] = key ("SHUT", "SHUT", kOpenKey);
+        encs[14] = key ("PAGE -", "PG -", kCfgPrevKey); encs[15] = key ("PAGE +", "PG +", kCfgNextKey);
+        add ("CFG " + String (c + 1), kFxChannel, encs);
+    }
+    add ("-", 1, {});
+
     String src = String::fromUTF8 (BinaryData::rings_lua, BinaryData::rings_luaSize).replace ("\r\n", "\n");
     src = src.replace ("@MAP@", map).replace ("@GREEN@", String (kGreen)).replace ("@FOCUS@", focus.joinIntoString (", "))
              .replace ("@FOCUS_CH@", String (kSnapChannel - 1)).replace ("@FOCUS_CC@", String (kFocusCc));
@@ -412,7 +500,7 @@ String libraryText()
     const std::string code = Json::obj ({ { "code", Json::str (minified (src)) }, { "fullScript", Json::str (src.replace ("\n", "\r\n")) },
                                           { "scriptName", Json::str ("sf_glide_rings") } });
     const std::string scene = Json::obj ({
-        { "title", Json::str ("SF-LIB") }, { "icon", Json::arr (icon) }, { "selectedPreset", "0" }, { "color", Json::num (kViolet) },
+        { "title", Json::str ("SF-FX") }, { "icon", Json::arr (icon) }, { "selectedPreset", "0" }, { "color", Json::num (kViolet) },
         { "transmitMode", "0" }, { "pcOnEntry", "0" }, { "bankOnEntry", "65535" }, { "recentPage", "0" }, { "recentPreset", "0" },
         { "transmitOnSceneEntry", "0" }, { "transmitOnPageSwitch", "0" }, { "transmitOnPresetLoad", "0" }, { "smartTransmit", "15" },
         { "outputOnEntry", "0" }, { "holdMode", "0" }, { "acceleration", "3" }, { "code", code }, { "pages", Json::arr (pages) } });
@@ -453,6 +541,13 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
     for (auto& v : exBy) v = 2;
     for (auto& v : recallHeard) v = -1;
     for (auto& v : recallIn) v = 0;
+    for (auto& v : heldSince) v = 0;
+    for (auto& v : heldFired) v = false;
+    for (auto& v : bSent) v = -1;
+    for (auto& v : bHeardAt) v = 0;
+    for (auto& v : genIn) v = -1;
+    for (auto& v : cfgIn) v = -1;
+    laneNow = ses.activeLane;
     ringLast.fill (0); ringSentAt.fill (0.0);
     if (useDevices)
     {
@@ -488,6 +583,10 @@ void Midi::load()
     followWanted = (bool) v.getProperty ("follow", false);
     beatWanted = (bool) v.getProperty ("on_beat", false);
     trimMs = juce::jlimit (-40.0f, 40.0f, (float) (double) v.getProperty ("trim", 0.0));
+    pcCh = juce::jlimit (0, 16, (int) v.getProperty ("e16_pc_channel", e16::kPcChannel));
+    sceneSlots[0] = juce::jlimit (1, 16, (int) v.getProperty ("e16_scene", 1));
+    sceneSlots[1] = juce::jlimit (1, 16, (int) v.getProperty ("e16_scene_fx", 2));
+    bankAlways = (bool) v.getProperty ("e16_bank_always", true);
 }
 
 void Midi::save() const
@@ -499,6 +598,10 @@ void Midi::save() const
     o->setProperty ("follow", followWanted);
     o->setProperty ("on_beat", beatWanted);
     o->setProperty ("trim", trimMs);
+    o->setProperty ("e16_pc_channel", pcCh);
+    o->setProperty ("e16_scene", sceneSlots[0]);
+    o->setProperty ("e16_scene_fx", sceneSlots[1]);
+    o->setProperty ("e16_bank_always", bankAlways);
     file().getParentDirectory().createDirectory();
     file().replaceWithText (juce::JSON::toString (juce::var (o)));
 }
@@ -515,6 +618,8 @@ void Midi::setLead (float ms)           { leadMs = juce::jlimit (0.0f, 60.0f, ms
 void Midi::setFollowsClock (bool on)    { followWanted = on; apply(); save(); }
 void Midi::setOnBeat (bool on)          { beatWanted = on; apply(); save(); }
 void Midi::setTrim (float ms)           { trimMs = juce::jlimit (-40.0f, 40.0f, ms); apply(); save(); }
+void Midi::setPcChannel (int channel)   { pcCh = juce::jlimit (0, 16, channel); save(); }
+void Midi::setSceneSlot (int which, int slot) { sceneSlots[(size_t) juce::jlimit (0, 1, which)] = juce::jlimit (1, 16, slot); e16At = {}; save(); }
 
 String Midi::clockSource() const
 {
@@ -582,6 +687,10 @@ void Midi::scan()
         for (auto& v : sent) v = -1;            // a fresh E16 is told every value
         glideSent = -1;
         ringOn.fill (false);
+        e16At = {};                             // (and which page it is on is not known until it says, or is sent to one)
+        for (auto& v : bSent) v = -1;
+        wheelSent = -1;
+        namesSaid = {};
     }
     {
         const juce::ScopedLock g (outLock);
@@ -616,6 +725,40 @@ void Midi::handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiM
     incoming (m, fromE16);
 }
 
+// Knob 13 of a lane's page (SEND A) or of the snapshot page: the one that is the pointer's wheel while the wheel is in use.
+static bool isKnob13 (int slot)
+{
+    return slot >= kLanes * e16::kPerLane ? slot - kLanes * e16::kPerLane == 12 : slot % e16::kPerLane == 12;
+}
+
+// Knobs 13 and 14 where a press already recalls (the snapshot page, the library's map): held for
+// half a second they are the wheel and OPEN, and the recall is for a press let go before that.
+void Midi::held (int which, bool down, juce::uint32 nowMs, std::atomic<int>& shortPress, bool wheel)
+{
+    const auto i = (size_t) which;
+    if (down) { heldFired[i] = false; heldSince[i] = nowMs == 0 ? 1u : nowMs; return; }
+    const bool wasDown = heldSince[i].exchange (0) != 0;
+    if (wasDown && ! heldFired[i].exchange (false)) { if (wheel) otherTurned = true; shortPress.fetch_add (1); }
+}
+
+// An address that is on no page of the first scene (an insert's place, a return's knob, the
+// master's, a lane's keys), from a sequencer or from the second scene's pages.
+void Midi::takeExtra (int extra, int val, bool fromE16)
+{
+    // A key (MUTE, SOLO, a lane's sequencer muted, a hold like THROW or FREEZE) acts at once,
+    // from this thread: on the next block of sound, not when the screen's thread next comes
+    // round (up to 25 ms, more if it is busy). Every other address waits for that thread (an
+    // insert's place is whatever effect is in it when it comes), but in the order they came
+    // and with nothing dropped; it also keeps the session's own record of the keys.
+    const int ctl = ccx::controlFor (extra, engine.spaceModel());
+    const auto& c = engine.control (ctl);
+    const bool key = c.used && (c.kind == Kind::Toggle || c.kind == Kind::Hold);
+    if (key) engine.set (ctl, val >= 64 ? 1.0f : 0.0f);
+    const juce::SpinLock::ScopedLockType g (exLock);
+    if (exN < kExQ) exQ[(size_t) exN++] = { (juce::uint16) extra, (juce::uint8) val, (juce::uint8) (fromE16 ? 1 : 2), key };
+    else { exBy[(size_t) extra] = fromE16 ? 1 : 2; exLatest[(size_t) extra] = val; }
+}
+
 void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
 {
     if (m.isNoteOnOrOff())
@@ -625,32 +768,72 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     }
     if (! m.isController()) return;
     const int ch = m.getChannel(), num = m.getControllerNumber(), val = m.getControllerValue();
+    const auto nowMs = juce::Time::getMillisecondCounter();
+    // The pointer's wheel is in use: knob 13 of whatever page is up moves the pointer and nothing
+    // else. Anything else turned or pressed on the E16 says the hand has moved on.
+    const bool wheel = fromE16 && wheelMode.load();
+    auto other = [&] { if (wheel) otherTurned = true; };
+
     if (ch == e16::kMapChannel || ch == e16::kFindChannel)
     {
         const int base = ch == e16::kMapChannel ? 0 : 16;
         if (num >= e16::kKnobCc && num < e16::kKnobCc + 16)
         {
             const auto k = (size_t) (base + num - e16::kKnobCc);
+            if (wheel && k == 12)
+            {
+                if (const int was = libSent[k].exchange (val); was >= 0) wheelTurn.fetch_add (val - was);
+                libHeardAt[k] = nowMs; wheelHeardAt = nowMs;
+                return;
+            }
+            other();
             // how far it was turned, from where the knob was (its number is the E16's own business:
             // SF-000 moves it to show a place, and that must not count as a turn)
             if (const int was = libSent[k].exchange (val); was >= 0) libTurn[k].fetch_add (val - was);
-            libLatest[k] = val; libHeardAt[k] = juce::Time::getMillisecondCounter();
+            libLatest[k] = val; libHeardAt[k] = nowMs;
         }
-        else if (num >= e16::kPressCc && num < e16::kPressCc + 16 && val >= 64) libPresses[(size_t) (base + num - e16::kPressCc)].fetch_add (1);
+        else if (num >= e16::kPressCc && num < e16::kPressCc + 16)
+        {
+            const int k = base + num - e16::kPressCc;
+            if (fromE16 && (k == 12 || k == 13)) held (2 + (k - 12), val >= 64, nowMs, libPresses[(size_t) k], wheel);
+            else if (val >= 64) { other(); libPresses[(size_t) k].fetch_add (1); }
+        }
         return;
     }
     if (ch == e16::kSnapChannel)
     {
-        if (num == e16::kFocusCc) { if (val >= 1 && val <= kLanes) focus = val; if (val >= 1 && val <= e16::kSnapPage) pageUp = val; return; }
+        if (num == e16::kFocusCc)
+        {
+            if ((val >= 1 && val <= e16::kSnapPage) || (val > e16::kFocusB && val <= e16::kFocusB + 12)) pageUp = val;
+            return;
+        }
+        if (num == e16::kWheelCc)
+        {
+            // the wheel's own address (a page where knob 13 is nothing else): always the pointer's
+            if (const int was = wheelSent.exchange (val); was >= 0) wheelTurn.fetch_add (val - was);
+            wheelHeardAt = nowMs;
+            if (fromE16) bMark (12, val, nowMs);
+            return;
+        }
+        if (num == e16::kWheelKey) { if (val >= 64) wheelKeys.fetch_add (1); return; }
+        if (num == e16::kOpenKey)  { if (val >= 64) openKeys.fetch_add (1); return; }
+        if (num == e16::kCfgPrevKey || num == e16::kCfgNextKey) { if (val >= 64) cfgStep.fetch_add (num == e16::kCfgNextKey ? 1 : -1); return; }
         if (num == e16::kGlideCc)
         {
+            other();
             // GLIDE is taken up at once, from this thread, as a lane's knob is: a knob sent just
             // after it travels by it. (It waited for the message thread, and the knob did not.)
             engine.set (cx::kGlide, e16::from7 (engine.control (cx::kGlide), val));
             glideFromE16 = fromE16; glideIn = val; ses.moved (cx::kGlide, fromE16 ? 1 : 2);
             return;
         }
-        if (num >= e16::kPressCc && num < e16::kPressCc + 16) { if (val >= 64) presses[(size_t) (num - e16::kPressCc)].fetch_add (1); return; }
+        if (num >= e16::kPressCc && num < e16::kPressCc + 16)
+        {
+            const int k = num - e16::kPressCc;
+            if (fromE16 && (k == 12 || k == 13)) held (k - 12, val >= 64, nowMs, presses[(size_t) k], wheel);
+            else if (val >= 64) { other(); presses[(size_t) k].fetch_add (1); }
+            return;
+        }
         if (num >= ccx::kRecall && num < ccx::kRecall + 16)
         {
             // RECALL: which of the snapshots a snapshot knob holds. Only a new value acts.
@@ -659,26 +842,53 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
             return;
         }
     }
+    if (ch == e16::kFxChannel)
+    {
+        // the second scene's pages: what they hold belongs to whatever is in front
+        other();
+        const int lane = laneNow.load();
+        if (num >= e16::kInsCc && num < e16::kInsCc + kSlots * kCells)
+        {
+            const int j = num - e16::kInsCc;
+            if (fromE16) bMark (j % kCells, val, nowMs);
+            takeExtra (lane * ccx::kPerLane + j, val, fromE16);
+        }
+        else if (num >= e16::kInsPressCc && num < e16::kInsPressCc + kSlots * kCells)
+        {
+            // a place pressed: a key among them is held (THROW) or switched (FREEZE); a knob's press is nothing
+            const int extra = lane * ccx::kPerLane + (num - e16::kInsPressCc);
+            const int ctl = ccx::controlFor (extra, engine.spaceModel());
+            const auto& c = engine.control (ctl);
+            if (c.used && c.kind == Kind::Hold) takeExtra (extra, val >= 64 ? 127 : 0, fromE16);
+            else if (c.used && c.kind == Kind::Toggle && val >= 64) takeExtra (extra, engine.target (ctl) > 0.5f ? 0 : 127, fromE16);
+        }
+        else if (num == e16::kLenCc) { lenIn = val; if (fromE16) bMark (0, val, nowMs); }
+        else if (num >= e16::kGenCc && num < e16::kGenCc + 4) { genIn[(size_t) (num - e16::kGenCc)] = val; if (fromE16) bMark (1 + num - e16::kGenCc, val, nowMs); }
+        else if (const int n = e16::cfgAt (num); n >= 0)
+        {
+            cfgIn[(size_t) n] = val;
+            if (fromE16) bMark (n % e16::kCfgPer, val, nowMs);
+        }
+        return;
+    }
     if (const int extra = ccx::extraFor (ch, num); extra >= 0)
     {
-        // A key (MUTE, SOLO, a lane's sequencer muted, a hold like THROW or FREEZE) acts at once,
-        // from this thread: on the next block of sound, not when the screen's thread next comes
-        // round (up to 25 ms, more if it is busy). Every other address waits for that thread (an
-        // insert's place is whatever effect is in it when it comes), but in the order they came
-        // and with nothing dropped; it also keeps the session's own record of the keys.
-        const int ctl = ccx::controlFor (extra, engine.spaceModel());
-        const auto& c = engine.control (ctl);
-        const bool key = c.used && (c.kind == Kind::Toggle || c.kind == Kind::Hold);
-        if (key) engine.set (ctl, val >= 64 ? 1.0f : 0.0f);
-        const juce::SpinLock::ScopedLockType g (exLock);
-        if (exN < kExQ) exQ[(size_t) exN++] = { (juce::uint16) extra, (juce::uint8) val, (juce::uint8) (fromE16 ? 1 : 2), key };
-        else { exBy[(size_t) extra] = fromE16 ? 1 : 2; exLatest[(size_t) extra] = val; }
+        other();
+        if (fromE16 && ch == e16::kSnapChannel) bMark (num >= ccx::kMaster ? num - ccx::kMaster : num - ccx::kDub, val, nowMs);     // (the returns' page, the master's)
+        takeExtra (extra, val, fromE16);
         return;
     }
     const int slot = e16::slotFor (ch, num);
     if (slot < 0) return;
+    if (wheel && isKnob13 (slot))
+    {
+        if (const int was = sent[(size_t) slot].exchange (val); was >= 0) wheelTurn.fetch_add (val - was);
+        heardAt[(size_t) slot] = nowMs; wheelHeardAt = nowMs;
+        return;
+    }
+    other();
     const int ctl = e16::controlFor (slot);
-    if (fromE16) { sent[(size_t) slot] = val; heardAt[(size_t) slot] = juce::Time::getMillisecondCounter(); }
+    if (fromE16) { sent[(size_t) slot] = val; heardAt[(size_t) slot] = nowMs; }
     ses.moved (ctl, fromE16 ? 1 : 2);           // (who moved it: the 3D stage's eye goes to a hand on the E16, not to a sequencer)
     // A lane's knob is taken up at once, from this thread (and travels over the GLIDE time, if one
     // is set). The session's record of it (the base scene under the snapshot knobs) follows on the
@@ -712,8 +922,8 @@ void Midi::service()
     }
     for (int k = 0; k < 16; ++k)
         if (presses[(size_t) k].exchange (0) > 0) ses.pressSnapKnob (k);
-    if (const int f = focus.exchange (0); f > 0) ses.selectLane (f - 1);
     const auto now = juce::Time::getMillisecondCounter();
+    if (const int said = pageUp.exchange (0); said > 0) pageCame (said, now);
     takeGlide();
     takeRecalls();
     {
@@ -751,26 +961,67 @@ void Midi::service()
         ses.moved (ctl, exBy[(size_t) extra].load());
         ses.userSet (ctl, c.kind == Kind::Toggle || c.kind == Kind::Hold ? (v >= 64 ? 1.0f : 0.0f) : e16::from7 (c, v));
     }
+    // the second scene's pages: the sequencer strip's knobs, CONFIG's controls
+    if (const int v = lenIn.exchange (-1); v >= 0)
+    {
+        Pattern pat = ses.pattern (ses.activeLane);
+        if (const int n = juce::jlimit (1, kMaxSteps, v + 1); n != pat.length) { pat.length = n; ses.setPattern (ses.activeLane, pat); if (ses.onChange) ses.onChange(); }
+    }
+    for (int j = 0; j < 4; ++j)
+        if (const int v = genIn[(size_t) j].exchange (-1); v >= 0)
+        {
+            const int ctl = cx::gen (ses.activeLane, j);
+            ses.moved (ctl, 1);
+            ses.userSet (ctl, e16::from7 (engine.control (ctl), v));
+        }
+    if (ses.cfgOpen != cfgWasOpen || ses.cfg.kind != cfgWas.kind || ses.cfg.lane != cfgWas.lane || ses.cfg.slot != cfgWas.slot)
+    {
+        // CONFIG opened, shut or moved to another panel: its first page, and its controls looked at afresh
+        cfgWas = ses.cfg; cfgWasOpen = ses.cfgOpen; cfgPage = 0; cfgCacheAge = 0;
+        for (auto& v : cfgIn) v = -1;
+    }
+    for (int k = 0; k < e16::kCfgPer * e16::kCfgPages; ++k)
+        if (const int v = cfgIn[(size_t) k].exchange (-1); v >= 0) { ses.setConfig (k, v); cfgCacheAge = 0; }
+    if (--cfgCacheAge <= 0) { cfgCacheAge = 6; cfgCache = ses.configList(); }
+    serviceWheel (now);
+    if ((openKeys.exchange (0) & 1) != 0)
+    {
+        if (wheelMode.load()) wheelEnd();           // (what the pointer is on comes to the front first: OPEN is for that)
+        openPressed();
+    }
+    if (const int st = cfgStep.exchange (0); st != 0 && ses.cfgOpen) cfgPage = juce::jlimit (0, cfgPagesNow() - 1, cfgPage + (st > 0 ? 1 : -1));
+    laneNow = ses.activeLane;
+
     // A page that has just come up is told its values again, a moment after it has settled.
-    if (const int pg = pageUp.exchange (0); pg > 0) { pageNow = pg; pageWait = 2; }
     if (pageWait > 0 && --pageWait == 0)
     {
         const int first = (pageNow - 1) * e16::kPerLane, count = pageNow == e16::kSnapPage ? 16 : e16::kPerLane;
         for (int k = 0; k < count && first + k < e16::kSlots; ++k) sent[(size_t) (first + k)] = -1;
         glideSent = -1;
     }
+    if (bWait > 0 && --bWait == 0) { for (auto& v : bSent) v = -1; for (auto& v : bHeardAt) v = 0; wheelSent = -1; }
     serviceLibrary();
 
+    // Where the E16 should be for what is in front. It is sent there when that changes here (a
+    // module brought to the front on the screen, by a key, by the wheel; CONFIG or the library
+    // opened), and never because of a page it turned to itself: that is where it already is.
+    const Where want = whereNow();
+    const bool turn = whereKnown && want != whereWas && want != e16At;
+    whereWas = want; whereKnown = true;
+
     if (! toE16 && e16Out == nullptr) return;
+    if (turn && pcCh > 0) turnTo (want, now);
     // The E16's rings follow the rig: a value that changed here (a recall, the mouse, a snapshot
     // knob's push) is sent to its address. A knob the hand is on is left alone for a moment.
     // No more than a couple of dozen at a time (a fresh E16 is told some two hundred, and a burst
     // of that size can be more than it takes in), the page that is up first.
     int room = 24;
+    const bool wheelOn = wheelMode.load();
     const int from = pageNow > 0 ? (pageNow - 1) * e16::kPerLane : 0;
     for (int k = 0; k < e16::kSlots && room > 0; ++k)
     {
         const int slot = (from + k) % e16::kSlots;
+        if (wheelOn && isKnob13 (slot)) continue;               // (the pointer's wheel for now: its number is the pointer's place)
         const int ctl = e16::controlFor (slot);
         const int want = e16::to7 (engine.control (ctl), engine.target (ctl));
         if (want == sent[(size_t) slot].load() || now - heardAt[(size_t) slot].load() < 150u) continue;
@@ -785,7 +1036,319 @@ void Midi::service()
         sendE16 (juce::MidiMessage::controllerEvent (e16::kSnapChannel, e16::kGlideCc, want));
         glideSent = want;
     }
+    placeWheel (now);
+    feedPage (now);
+    sayNames();
     rings (juce::Time::getMillisecondCounterHiRes());
+}
+
+// ------------------------------------------------------------------ what is in front, on the E16
+Midi::Where Midi::whereNow() const
+{
+    using S = Session;
+    if (ses.showing == 1) return { 1, e16At.scene == 1 && e16At.page == e16::pgFind ? (int) e16::pgFind : (int) e16::pgMap };
+    if (ses.showing == 2) return { 0, e16::kSnapPage };
+    if (ses.cfgOpen) return { 1, e16::pgCfg + juce::jlimit (0, e16::kCfgPages - 1, cfgPage) };
+    switch (ses.front.kind)
+    {
+        case S::fLane:    return { 0, ses.activeLane + 1 };
+        case S::fSnap:    return { 0, e16::kSnapPage };
+        case S::fInsert:  return { 1, e16::pgIns + ses.front.slot };
+        case S::fReturns: return { 1, e16::pgRet };
+        case S::fMaster:  return { 1, e16::pgMaster };
+        default:          return { 1, e16::pgSeq };
+    }
+}
+
+void Midi::arrived (Where w)
+{
+    e16At = w;
+    if (w.scene == 0) { pageNow = w.page; pageWait = 2; }
+    else bWait = 2;
+    namesSaid = {};
+}
+
+// The E16 says which page is up. What is in front follows it, and nothing is sent back for that.
+void Midi::pageCame (int said, juce::uint32 now)
+{
+    using S = Session;
+    const Where at = said > e16::kFocusB ? Where { 1, said - e16::kFocusB } : Where { 0, said };
+    if (now - turnedAt < 300u && at != asked)
+    {
+        // It was just sent to a page and says another: the two do not agree about scenes or pages
+        // (its PC Receive Channel, its PC Mode, the scene slots in SETUP). Nothing follows it there.
+        pcNote = "ASKED FOR " + pageName (asked) + ", IT WENT TO " + pageName (at);
+        arrived (at);
+        return;
+    }
+    if (now - turnedAt < 300u) pcNote = {};
+    arrived (at);
+    if (at.scene == 0)
+    {
+        if (at.page <= kLanes) ses.bringLane (at.page - 1, 2); else ses.bring ({ S::fSnap, 0 }, 2);
+        if (ses.showing != 0) ses.wantShowing = 0;
+    }
+    else if (at.page == e16::pgMap || at.page == e16::pgFind) { if (ses.showing != 1) ses.wantShowing = 1; }
+    else
+    {
+        if (ses.showing != 0) ses.wantShowing = 0;
+        if (at.page >= e16::pgIns && at.page < e16::pgIns + kSlots) ses.bring ({ S::fInsert, at.page - e16::pgIns }, 2);
+        else if (at.page == e16::pgRet)    ses.bring ({ S::fReturns, 0 }, 2);
+        else if (at.page == e16::pgMaster) ses.bring ({ S::fMaster, 0 }, 2);
+        else if (at.page == e16::pgSeq)    ses.bring ({ S::fSeq, 0 }, 2);
+        else if (at.page >= e16::pgCfg && at.page < e16::pgCfg + e16::kCfgPages)
+        {
+            if (! ses.cfgOpen) ses.configOfFront (2);
+            cfgWas = ses.cfg; cfgWasOpen = ses.cfgOpen; cfgCacheAge = 0;
+            cfgPage = at.page - e16::pgCfg;
+        }
+    }
+}
+
+juce::String Midi::pageName (Where w)
+{
+    static const char* const b[12] = { "MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "PAGE 12" };
+    if (w.page < 1 || w.page > 12) return "NOWHERE";
+    return w.scene == 1 ? "SF-FX " + String (b[w.page - 1]) : "SF-000 PAGE " + String (w.page);
+}
+
+// Bank Select says the scene (by the slot it is in on the E16: controller 32, the one Ableton calls
+// Sub, which is what the E16's manual says picks the scene; controller 0 goes with it as nought),
+// Program Change the page. Both every time, so that it does not matter what the E16's own PC Mode
+// is set to (a Program Change by itself is a scene or a page according to that). With
+// "e16_bank_always" false in midi.json the scene is said only when it changes.
+void Midi::turnTo (Where w, juce::uint32 now)
+{
+    if (bankAlways || w.scene != e16At.scene)
+    {
+        sendE16 (juce::MidiMessage::controllerEvent (pcCh, 0, 0));
+        sendE16 (juce::MidiMessage::controllerEvent (pcCh, 32, sceneSlots[(size_t) juce::jlimit (0, 1, w.scene)] - 1));
+    }
+    sendE16 (juce::MidiMessage::programChange (pcCh, w.page - 1));
+    turnedAt = now; asked = w;
+    arrived (w);
+}
+
+// OPEN (knob 14 pressed): CONFIG for what is in front, and shut again; behind the snapshot knobs
+// is the library, and in the library it is the way back.
+void Midi::openPressed()
+{
+    if (ses.showing != 0) { ses.wantShowing = 0; return; }
+    if (! ses.cfgOpen && ses.front.kind == Session::fSnap) { ses.wantShowing = 1; return; }
+    ses.configOfFront (2);
+}
+
+int Midi::cfgPagesNow() { return juce::jlimit (1, (int) e16::kCfgPages, ((int) cfgCache.size() + e16::kCfgPer - 1) / e16::kCfgPer); }
+
+// ------------------------------------------------------------------------- the pointer's wheel
+static constexpr int kWheelPer = 3;         // clicks of the wheel to the next module
+
+void Midi::wheelStart (juce::uint32 now)
+{
+    wheelMode = true; wheelRest = 0; wheelBusyAt = now;
+    if (ses.showing != 0) ses.wantShowing = 0;      // (the pointer is the main screen's)
+    ses.point (ses.stopNow());
+}
+
+void Midi::wheelEnd()
+{
+    if (ses.pointer >= 0 && ses.pointer != ses.stopNow()) ses.bringStop (ses.pointer, 2);     // what it was left on comes to the front
+    ses.point (-1);
+    wheelMode = false; wheelRest = 0;
+    // the knobs that were the wheel are their pages' own again: each is told its own value
+    for (int l = 0; l < kLanes; ++l) sent[(size_t) (l * e16::kPerLane + 12)] = -1;
+    sent[(size_t) (kLanes * e16::kPerLane + 12)] = -1;
+    libSent[12] = -1;
+}
+
+void Midi::serviceWheel (juce::uint32 now)
+{
+    // knobs 13 and 14 held, on the pages where a press recalls
+    for (int i = 0; i < 4; ++i)
+        if (const auto since = heldSince[(size_t) i].load(); since != 0 && (juce::int32) (now - since) >= 400)
+        {
+            bool no = false;
+            if (heldFired[(size_t) i].compare_exchange_strong (no, true) && heldSince[(size_t) i].load() != 0) (i % 2 == 0 ? wheelKeys : openKeys).fetch_add (1);
+        }
+    const bool keyed = (wheelKeys.exchange (0) & 1) != 0;
+    const int turned = wheelTurn.exchange (0);
+    const bool other = otherTurned.exchange (false);
+    bool on = wheelMode.load();
+    if (keyed) { if (on) wheelEnd(); else wheelStart (now); on = ! on; }
+    else if (! on && turned != 0) { wheelStart (now); on = true; }      // (the wheel's own address: no press needed)
+    else if (on && other && turned == 0) { wheelEnd(); on = false; }    // (the hand has gone to another knob)
+    if (! on) return;
+    if (turned != 0)
+    {
+        // so many clicks to the next module, counted from wherever the knob is
+        wheelRest += turned;
+        const int steps = wheelRest / kWheelPer;
+        wheelRest -= steps * kWheelPer;
+        if (steps != 0)
+        {
+            const int to = juce::jlimit (0, Session::kStops - 1, ses.pointer + steps);
+            if (to != ses.pointer + steps) wheelRest = 0;               // (the end of them)
+            ses.point (to);
+        }
+        wheelBusyAt = now;
+    }
+    // what the pointer rests on comes to the front (what it only passes over does not: the
+    // inserts it comes to are still those of the lane it set out from)
+    if (ses.pointer >= 0 && ses.pointer != ses.stopNow() && now - wheelBusyAt >= 350u) ses.bringStop (ses.pointer, 2);
+    if (now - wheelBusyAt > 6000u) wheelEnd();
+}
+
+// The wheel's knob is given a number that says where the pointer stands among the modules: its
+// ring shows it, and there is always room to turn on, either way, short of the ends. Sent a
+// moment after the hand stops; it does not count as a turn.
+void Midi::placeWheel (juce::uint32 now)
+{
+    const bool on = wheelMode.load();
+    if (now - wheelHeardAt.load() < 150u) return;
+    const int stop = on && ses.pointer >= 0 ? ses.pointer : ses.stopNow();
+    const int want = 8 + (stop * 119 + (Session::kStops - 1) / 2) / (Session::kStops - 1);
+    if (e16At.scene == 1 && e16At.page >= e16::pgFind)
+    {
+        // a page where knob 13 is the wheel and nothing else: it stands at what is in front
+        if (bWait == 0 && wheelSent.load() != want) { sendE16 (juce::MidiMessage::controllerEvent (e16::kSnapChannel, e16::kWheelCc, want)); wheelSent = want; }
+    }
+    else if (! on) return;
+    else if (e16At.scene == 1 && e16At.page == e16::pgMap)
+    {
+        if (libSent[12].load() != want) { sendE16 (juce::MidiMessage::controllerEvent (e16::kMapChannel, e16::kKnobCc + 12, want)); libSent[12] = want; }
+    }
+    else if (e16At.scene == 0 && e16At.page >= 1 && e16At.page <= e16::kSnapPage)
+    {
+        const int slot = e16At.page == e16::kSnapPage ? kLanes * e16::kPerLane + 12 : (e16At.page - 1) * e16::kPerLane + 12;
+        if (sent[(size_t) slot].load() == want) return;
+        int ch, num;
+        e16::addressOf (slot, ch, num);
+        sendE16 (juce::MidiMessage::controllerEvent (ch, num, want));
+        sent[(size_t) slot] = want;
+    }
+}
+
+// ------------------------------------------------- the second scene's page that is up: its values
+std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
+{
+    std::array<PageKnob, 16> k {};
+    const int l = ses.activeLane;
+    auto control = [&] (int i, int channel, int number, int ctl)
+    {
+        const auto& c = engine.control (ctl);
+        k[(size_t) i] = { channel, number, c.used ? e16::to7 (c, engine.target (ctl)) : 0 };
+    };
+    if (page >= e16::pgIns && page < e16::pgIns + kSlots)
+        for (int c = 0; c < kCells; ++c) control (c, e16::kFxChannel, e16::kInsCc + (page - e16::pgIns) * kCells + c, cx::ins (l, page - e16::pgIns, c));
+    else if (page == e16::pgRet)
+        for (int i = 0; i < 4; ++i)
+        {
+            control (i, e16::kSnapChannel, ccx::kDub + i, cx::kRet + i);
+            control (4 + i, e16::kSnapChannel, ccx::kSpace + i, cx::space (engine.spaceModel(), i));
+        }
+    else if (page == e16::pgMaster)
+        for (int i = 0; i < 3; ++i) control (i, e16::kSnapChannel, ccx::kMaster + i, cx::kMaster + i);
+    else if (page == e16::pgSeq)
+    {
+        k[0] = { e16::kFxChannel, e16::kLenCc, juce::jlimit (0, 127, ses.pattern (l).length - 1) };
+        for (int j = 0; j < 4; ++j) control (1 + j, e16::kFxChannel, e16::kGenCc + j, cx::gen (l, j));
+    }
+    else if (page >= e16::pgCfg && page < e16::pgCfg + e16::kCfgPages)
+        for (int i = 0; i < e16::kCfgPer; ++i)
+        {
+            const int idx = (page - e16::pgCfg) * e16::kCfgPer + i;
+            if (idx >= (int) cfgCache.size()) continue;
+            const auto& sp = cfgCache[(size_t) idx];
+            // A switch and a list take a share of the knob's travel each: a knob that is already
+            // somewhere in the right share is left where the hand put it (put back to the middle
+            // of its share at every pause, a slow turn would never get out of it).
+            const int has = bSent[(size_t) i].load(), n = sp.choices.size();
+            int want = juce::jlimit (0, 127, (int) std::lround (sp.value * 127.0f));
+            if (sp.kind == Kind::Hold) want = 0;
+            else if (sp.kind == Kind::Toggle) want = has >= 0 && (has >= 64) == (sp.value > 0.5f) ? has : sp.value > 0.5f ? 127 : 0;
+            else if (sp.kind == Kind::List && n > 1)
+            {
+                const int at = juce::jlimit (0, n - 1, (int) std::lround (sp.value * (float) (n - 1)));
+                want = has >= 0 && juce::jmin (n - 1, has * n / 128) == at ? has : juce::jlimit (0, 127, (at * 128 + 64) / n);
+            }
+            else if (sp.kind == Kind::Bipolar) want = juce::jlimit (0, 127, (int) std::lround (sp.value <= 0.5f ? sp.value * 128.0f : 64.0f + (sp.value - 0.5f) * 126.0f));
+            k[(size_t) i] = { e16::kFxChannel, e16::cfgCc (idx), want };
+        }
+    return k;
+}
+
+void Midi::feedPage (juce::uint32 now)
+{
+    if (e16At.scene != 1 || e16At.page < e16::pgIns || bWait > 0) return;
+    const auto knobs = pageKnobs (e16At.page);
+    for (int i = 0; i < 12; ++i)                // (the bottom row is the wheel's and the keys')
+    {
+        const auto& k = knobs[(size_t) i];
+        if (k.number < 0 || k.want < 0 || k.want == bSent[(size_t) i].load() || now - bHeardAt[(size_t) i].load() < 150u) continue;
+        sendE16 (juce::MidiMessage::controllerEvent (k.channel, k.number, k.want));
+        bSent[(size_t) i] = k.want;
+    }
+}
+
+// ----------------------------------------------------------------- the page's names, to the script
+// What a page of the second scene holds depends on what is in front (an insert's eight places,
+// CONFIG's controls): the script is sent a title and sixteen names of four characters, and the
+// E16 shows them in place of the scene's own. With the wheel in use the title is what the pointer
+// is on, on any page. Sent when they change.
+//   F0 7D 53 46 04 {page, sixteen names} F7     (a name of four spaces: the scene's own)
+//   F0 7D 53 46 05 {title} F7                   (none: the scene's own)
+void Midi::sayNames()
+{
+    if (e16At.page < 1) return;
+    String title;
+    std::array<String, 16> nm;
+    const int pg = e16At.page, l = ses.activeLane;
+    auto four = [] (const String& in) { return e16::cleaned (in.removeCharacters (" "), 4); };
+    if (e16At.scene == 1 && pg >= e16::pgIns && pg < e16::pgIns + kSlots)
+    {
+        const int slot = pg - e16::pgIns, t = engine.insertType (l, slot);
+        title = String (e16::laneCodes[l]) + " " + String (slot + 1) + " " + (t >= 0 ? effects()[(size_t) t].name : "EMPTY");
+        for (int c = 0; c < kCells; ++c)
+        {
+            String name, abbr ("-");
+            if (t >= 0 && effects()[(size_t) t].cells[c].label != nullptr) e16::naming (effects()[(size_t) t].cells[c], name, abbr);
+            nm[(size_t) c] = abbr;
+        }
+    }
+    else if (e16At.scene == 1 && pg == e16::pgSeq) title = String (e16::laneCodes[l]) + " SEQUENCER";
+    else if (e16At.scene == 1 && pg >= e16::pgCfg && pg < e16::pgCfg + e16::kCfgPages)
+    {
+        const int c = pg - e16::pgCfg, pages = cfgPagesNow();
+        if (ses.cfgOpen)
+        {
+            const auto& t = ses.cfg;
+            const int fx = t.kind == 1 ? engine.insertType (t.lane, t.slot) : -1;
+            title = t.kind == 0 ? String (e16::laneCodes[t.lane]) : t.kind == 1 ? String (e16::laneCodes[t.lane]) + " " + (fx >= 0 ? effects()[(size_t) fx].name : "EMPTY") : String (t.slot == 0 ? "DUB" : "SPACE");
+            title = title.substring (0, pages > 1 ? 7 : 11) + " CFG" + (pages > 1 ? " " + String (c + 1) + "/" + String (pages) : String());
+        }
+        for (int i = 0; i < e16::kCfgPer; ++i)
+        {
+            const int idx = c * e16::kCfgPer + i;
+            nm[(size_t) i] = ses.cfgOpen && idx < (int) cfgCache.size() ? four (cfgCache[(size_t) idx].name) : String ("-");
+        }
+    }
+    if (wheelMode.load() && ses.pointer >= 0) { title = "> " + ses.stopName (ses.pointer); nm[12] = "SEL"; }
+
+    title = e16::cleaned (title, 15);
+    if (title == "-") title = {};
+    String names;
+    for (auto& n : nm) names << (n.isEmpty() ? String ("    ") : n.paddedRight (' ', 4).substring (0, 4));
+    const String key = String (e16At.scene) + "/" + String (pg) + "/" + title + "/" + names;
+    if (key == namesSaid) return;
+    const bool first = namesSaid.isEmpty();
+    namesSaid = key;
+    if (first && title.isEmpty() && names.trim().isEmpty()) return;      // (a page with its own names, newly come up: nothing to say)
+    std::vector<juce::uint8> msg { 0x7D, 0x53, 0x46, 0x04, (juce::uint8) pg };
+    for (int i = 0; i < names.length(); ++i) msg.push_back ((juce::uint8) (names[i] & 0x7f));
+    sendE16 (juce::MidiMessage::createSysExMessage (msg.data(), (int) msg.size()));
+    msg = { 0x7D, 0x53, 0x46, 0x05 };
+    for (int i = 0; i < title.length(); ++i) msg.push_back ((juce::uint8) (title[i] & 0x7f));
+    sendE16 (juce::MidiMessage::createSysExMessage (msg.data(), (int) msg.size()));
 }
 
 // GLIDE from outside (the E16: knob 1 of a lane's page, pressed, or knob 16 of the library's FIND; a sequencer)
@@ -875,6 +1438,7 @@ void Midi::serviceLibrary()
         // where it stands among them: the first a little up from nought (nought is an empty knob), the last at the top; one alone, the middle
         const int want = n > 1 ? juce::jlimit (0, 127, 8 + (idx * 119 + (n - 1) / 2) / (n - 1)) : n == 1 ? 64 : 0;
         if (want == libSent[i].load() || now - libHeardAt[i].load() < 150u) continue;
+        if (k == 12 && wheelMode.load()) continue;                         // (the pointer's wheel for now)
         sendE16 (juce::MidiMessage::controllerEvent (k < 16 ? e16::kMapChannel : e16::kFindChannel, e16::kKnobCc + k % 16, want));
         libSent[i] = want;
     }

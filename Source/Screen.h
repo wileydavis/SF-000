@@ -125,6 +125,9 @@ public:
     std::vector<juce::Rectangle<int>> testMovingRects() const { std::vector<juce::Rectangle<int>> v; for (auto r : { masterRect, seqRect, cfgDisplay }) if (! r.isEmpty()) v.push_back (r.getSmallestIntegerContainer().expanded (2)); return v; }
     // for the tests: what the eye is following (empty: nothing), and the tags that are up (a control's index, or -1 INFO's box, -2 the line of words)
     juce::Rectangle<float> testFollowing() const { return followOn ? followBox : juce::Rectangle<float>(); }
+    juce::Rectangle<float> testStopRect (int stop) const { return stopRects[(size_t) stop]; }
+    static bool testIsFront (const TestHit& h, int kind, int slot) { return (h.kind == hFront && h.a == kind && h.b == slot) || (kind == Session::fInsert && h.kind == hDropFx && h.a == 1 && h.b == slot) || (kind == Session::fReturns && h.kind == hDropFx && h.a == 2); }
+    static bool testIsLanePanel (const TestHit& h, int lane) { return h.kind == hLanePanel && h.a == lane; }
     std::vector<int> testTags() const { std::vector<int> v; for (const auto& t : tagsUp) v.push_back (t); return v; }
     static bool testIsRun (const TestHit& h) { return h.kind == hAct && h.a == aRun; }
     static bool testIsLibraryKey (const TestHit& h) { return h.kind == hAct && h.a == aLibrary; }
@@ -142,7 +145,8 @@ private:
     using G = juce::Graphics;
     using R = juce::Rectangle<float>;
     struct Hit { R r; int kind = 0, a = 0, b = 0; };
-    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope };
+    enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
+                   hFront };        // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp };
 
@@ -223,7 +227,7 @@ private:
     void flatKey (G&, R, juce::Colour fill, float border = 2.0f);
     void window (G&, R, juce::Colour glass);                    // a display's pane
     void tag (G&, R, const juce::String&);                      // a number, light on dark
-    float title (G&, float x, float y, const juce::String&);    // a panel's name
+    float title (G&, float x, float y, const juce::String&, bool inFront = false);     // a panel's name (lit up while the panel is in front)
     void card (G&, R, bool selected);
     bool off (G& g, R r) const { return ! collect && ! vis (g, r); }       // a part-paint that does not touch it
     // INFO
@@ -309,8 +313,18 @@ private:
     float slideX = 0.0f, slideFrom = 0.0f, slideTo = 0.0f, slideT = 1.0f;
     float slideGoal() const;
     R rowsClip;
-    Engine::Target cfg;
-    bool cfgOpen = false, cfgStale = true;
+    Engine::Target& cfg;                // (the session's: a controller opens CONFIG too)
+    bool& cfgOpen;
+    bool cfgStale = true;
+    Engine::Target cfgSeen;             // what it was open on when last looked at, to see a change made from outside
+    bool cfgOpenSeen = false;
+    // What is in front (the session's), as the screen has it: where each of the pointer's stops
+    // stands as last drawn, the frame round the one the pointer is on, and the eye going to it.
+    std::array<R, Session::kStops> stopRects;
+    void stopAt (int stop, R drawn);
+    R frontBox() const;                 // what the eye goes to: the stop in front (or under the pointer), with CONFIG if it is open
+    int frontSeen = 0;
+    bool frontHeld = false;
     float cfgT = 0.0f;
     int cfgScroll = 0, cfgAge = 0;
     std::vector<Engine::SetupParam> cfgParams;

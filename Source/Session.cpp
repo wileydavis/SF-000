@@ -49,7 +49,136 @@ void Session::selectLane (int l)
 {
     l = juce::jlimit (0, kLanes - 1, l);
     if (l == activeLane) return;
-    activeLane = l; selStep = -1; page = 0;
+    bringLane (l, 2);
+}
+
+// ------------------------------------------------------------------------------ what is in front
+void Session::bringLane (int l, int by)
+{
+    l = juce::jlimit (0, kLanes - 1, l);
+    if (l != activeLane) { activeLane = l; selStep = -1; page = 0; }
+    front = { fLane, 0 };
+    // CONFIG keeps to the lane: its instrument's, or the same slot's of this lane's inserts. (Open
+    // on a return it stays there under the mouse; a controller's or the keyboard's lane takes it.)
+    if (cfgOpen && cfg.kind != 2) cfg.lane = l; else if (cfgOpen && by != 0) cfg = { 0, l, 0 };
+    frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::bring (Front f, int by)
+{
+    if (f.kind == fLane) { bringLane (activeLane, by); return; }
+    f.slot = f.kind == fInsert ? juce::jlimit (0, kSlots - 1, f.slot) : 0;
+    front = f;
+    if (cfgOpen && by != 0)                     // (under the mouse CONFIG stays where it was put)
+    {
+        if (f.kind == fInsert) cfg = { 1, activeLane, f.slot };
+        else if (f.kind == fReturns) { if (cfg.kind != 2) cfg = { 2, 0, 0 }; }
+        else cfgOpen = false;                   // (the master, the sequencer strip, the snapshot knobs: no CONFIG)
+    }
+    frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
+    if (onChange) onChange();
+}
+
+// Row by row as the screen has them: five lanes and the snapshot knobs; six lanes; the three
+// inserts, the returns, the master; the sequencer strip.
+Session::Front Session::stopFront (int stop, int& lane)
+{
+    static_assert (kLanes == 11, "the stops are laid out for eleven lanes");
+    stop = juce::jlimit (0, kStops - 1, stop);
+    lane = stop < 5 ? stop : stop > 5 && stop < 12 ? stop - 1 : -1;
+    if (lane >= 0) return { fLane, 0 };
+    if (stop == 5) return { fSnap, 0 };
+    if (stop < 15) return { fInsert, stop - 12 };
+    return { stop == 15 ? fReturns : stop == 16 ? fMaster : fSeq, 0 };
+}
+
+int Session::stopNow() const
+{
+    switch (front.kind)
+    {
+        case fLane:    return activeLane < 5 ? activeLane : activeLane + 1;
+        case fSnap:    return 5;
+        case fInsert:  return 12 + front.slot;
+        case fReturns: return 15;
+        case fMaster:  return 16;
+        default:       return 17;
+    }
+}
+
+void Session::bringStop (int stop, int by)
+{
+    int lane = -1;
+    const Front f = stopFront (stop, lane);
+    if (lane >= 0) bringLane (lane, by); else bring (f, by);
+}
+
+juce::String Session::stopName (int stop) const
+{
+    int lane = -1;
+    const Front f = stopFront (stop, lane);
+    if (lane >= 0) return juce::String (lane + 1) + " " + lanes()[(size_t) lane].name;
+    switch (f.kind)
+    {
+        case fSnap:    return "SNAPSHOTS";
+        case fInsert:  { const int t = engine.insertType (activeLane, f.slot); return juce::String (activeLane + 1) + "." + juce::String (f.slot + 1) + " " + (t >= 0 ? effects()[(size_t) t].name : "EMPTY"); }
+        case fReturns: return "RETURNS";
+        case fMaster:  return "MASTER";
+        default:       return "SEQUENCER";
+    }
+}
+
+void Session::point (int stop)
+{
+    stop = stop < 0 ? -1 : juce::jmin (stop, kStops - 1);
+    if (stop == pointer) return;
+    pointer = stop;
+    frontAt = juce::Time::getMillisecondCounter(); frontBy = 2; ++frontCount;
+    if (onChange) onChange();
+}
+
+// ------------------------------------------------------------------------------------- CONFIG
+void Session::openConfig (Engine::Target t)
+{
+    const bool same = cfgOpen && cfg.kind == t.kind && cfg.slot == t.slot && (t.kind == 2 || cfg.lane == t.lane);
+    if (same) { cfgOpen = false; if (onChange) onChange(); return; }
+    cfg = t; cfgOpen = true; cfgTouched = {};
+    if (t.kind == 0 && activeLane != t.lane) { activeLane = t.lane; selStep = -1; page = 0; }
+    if (onChange) onChange();
+}
+
+bool Session::configOfFront (int by)
+{
+    frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
+    switch (front.kind)
+    {
+        case fLane:    openConfig ({ 0, activeLane, 0 }); return true;
+        case fInsert:  openConfig ({ 1, activeLane, front.slot }); return true;
+        case fReturns: openConfig ({ 2, 0, cfgOpen && cfg.kind == 2 && cfg.slot == 0 ? 1 : cfgOpen && cfg.kind == 2 ? cfg.slot : 0 }); return true;       // A; then B; then (B again) shut
+        default:       if (cfgOpen) { cfgOpen = false; if (onChange) onChange(); } return false;
+    }
+}
+
+std::vector<Engine::SetupParam> Session::configList() const
+{
+    return cfgOpen && engine.processorFor (cfg) != nullptr ? engine.setupParams (cfg) : std::vector<Engine::SetupParam>();
+}
+
+void Session::setConfig (int index, int v7)
+{
+    const auto list = configList();
+    if (index < 0 || index >= (int) list.size()) return;
+    const auto& sp = list[(size_t) index];
+    v7 = juce::jlimit (0, 127, v7);
+    float v = (float) v7 / 127.0f;
+    if (sp.kind == Kind::Hold) return;                                  // (a key that is held: not a knob's to turn)
+    if (sp.kind == Kind::Toggle) v = v7 >= 64 ? 1.0f : 0.0f;
+    else if (sp.kind == Kind::List && sp.choices.size() > 1) v = (float) juce::jmin (sp.choices.size() - 1, v7 * sp.choices.size() / 128) / (float) (sp.choices.size() - 1);
+    else if (sp.kind == Kind::Bipolar) v = v7 <= 64 ? (float) v7 / 128.0f : 0.5f + (float) (v7 - 64) / 126.0f;
+    if (std::abs (v - sp.value) < 1.0e-6f) return;
+    engine.setSetup (cfg, sp.id, v);
+    cfgTouched = sp.id;
     touch();
     if (onChange) onChange();
 }

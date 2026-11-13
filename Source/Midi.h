@@ -37,6 +37,37 @@ namespace e16
     // that snapshot stands among the others, which moves the knob's number and nothing else: the
     // snapshot it is on stays until it is turned.
     constexpr int kMapChannel = 15, kFindChannel = 14, kLibKnobs = 32;      // 0-15 the map, 16-31 the finders
+    // The second scene (SF-FX) holds the library's two pages and then everything the first has
+    // no page for: the active lane's three inserts, the returns, the master, the sequencer strip
+    // and CONFIG. What these pages hold depends on what is in front, so their knobs are on a
+    // channel of their own (13) and SF-000 sends the script their names:
+    //   pages 3-5   INS 1-3: knob p (1-8) is the place where the screen has it, CC 8 + 8 * slot + (p - 1);
+    //               its press CC 40 + ... (a key among them: THROW, FREEZE)
+    //   page 6      RETURNS: DUB's four and SPACE's four, at the addresses a sequencer has (channel 16, CC 60-67)
+    //   page 7      MASTER: TAPE COMP LIMIT (channel 16, CC 68-70)
+    //   page 8      SEQ: LENGTH (CC 70: the value and one is the steps), HITS ROTATE ACCENTS SEED (71-74)
+    //   pages 9-11  CONFIG's controls in the order its panel has them, twelve to a page: CC 76 to 95,
+    //               then 102 to 117 (96 to 101 are MIDI's own, as 0, 6, 32 and 38 are: nothing here is on those)
+    // The bottom row is the same on all of them: 13 the pointer's wheel, 14 OPEN, and on CONFIG's
+    // pages 15 and 16 the page before and the next.
+    constexpr int kFxChannel = 13, kInsCc = 8, kInsPressCc = 40, kLenCc = 70, kGenCc = 71, kCfgCc = 76, kCfgPer = 12, kCfgPages = 3;
+    constexpr int cfgCc (int n)         { return n < 20 ? kCfgCc + n : 102 + (n - 20); }       // CONFIG's nth control (0 to 35)
+    constexpr int cfgAt (int number)    { return number >= kCfgCc && number < kCfgCc + 20 ? number - kCfgCc : number >= 102 && number < 102 + kCfgPer * kCfgPages - 20 ? 20 + number - 102 : -1; }
+    enum { pgMap = 1, pgFind = 2, pgIns = 3, pgRet = 6, pgMaster = 7, pgSeq = 8, pgCfg = 9 };
+    // On channel 16, from every page of both scenes. The wheel: knob 13 pressed (on the snapshot
+    // page and the map, where a press recalls: held for half a second) makes it the pointer, and
+    // its turns then go through the modules in the order the screen has them, whatever page it
+    // is on; what the pointer rests on comes to the front and the E16 turns to its page. Pressed
+    // again, or another knob turned, and it is the page's own knob again. (On a page where knob
+    // 13 is nothing else it sends CC 31 and is always the wheel.) OPEN: knob 14 pressed (held,
+    // on those two pages) opens CONFIG on what is in front and shuts it; on the snapshot knobs it
+    // opens the library, and in the library shuts it.
+    constexpr int kWheelCc = 31, kWheelKey = 33, kOpenKey = 34, kCfgPrevKey = 35, kCfgNextKey = 36;
+    // A page of the second scene says 21 to 32 where the first scene's say 1 to 12 (CC 119).
+    constexpr int kFocusB = 20;
+    // SF-000 turns the E16's page by Bank Select (the scene) and Program Change (the page), on the
+    // channel the E16 is set to listen on (its MIDI Config: PC Receive Channel; PC Mode: Page).
+    constexpr int kPcChannel = 12;
     constexpr int kPerLane = 17;                                // 12 knobs, SEND A, SEND B, LOW, HIGH, MID
     constexpr int kSlots = kLanes * kPerLane + 16;              // every address that carries a value
     // ring colours, by the OXI App's numbers (the suite's, as set in the App on Nov 8)
@@ -50,7 +81,7 @@ namespace e16
     // The scene file's text, as the OXI App exports one. snapNames: the sixteen snapshot knobs'
     // names (an empty one is SNAP n).
     juce::String sceneText (const Engine&, const juce::StringArray& snapNames);
-    juce::String libraryText();                                 // the library's scene
+    juce::String fxText (const Engine&);                        // the second scene: the library, the inserts, the returns, the master, the sequencer strip, CONFIG
 }
 
 // More addresses, for a sequencer to play (the OXI ONE's modulation lanes). They are on no page of
@@ -100,6 +131,15 @@ public:
     juce::StringArray inputNames() const;
     juce::StringArray clockNames() const;
     juce::String e16Name() const;
+    // The E16's pages turned from here: the channel it listens on for Program Change (0: SF-000
+    // never turns its page), and the slots its two scenes are in (1 to 16; which: 0 SF-000, 1 SF-FX).
+    int pcChannel() const                       { return pcCh; }
+    void setPcChannel (int channel);
+    int sceneSlot (int which) const             { return sceneSlots[(size_t) juce::jlimit (0, 1, which)]; }
+    void setSceneSlot (int which, int slot);
+    bool wheelInUse() const                     { return wheelMode.load(); }
+    void setBankAlways (bool on)                { bankAlways = on; }    // (midi.json's "e16_bank_always"; tests)
+    juce::String pageNote() const               { return pcNote; }      // set when the E16 went somewhere other than where it was sent
 
     // A message as if it had come in (the inputs call this; so do tests). Any thread.
     void incoming (const juce::MidiMessage&, bool fromE16);
@@ -116,6 +156,25 @@ private:
     void handleAsyncUpdate() override;          // a recall has come in: it is not kept waiting for the timer
     void takeGlide();
     void takeRecalls();
+    void takeExtra (int extra, int val, bool fromE16);
+    void held (int which, bool down, juce::uint32 nowMs, std::atomic<int>& shortPress, bool wheel);
+    // ---- where the E16 is, and where what is in front would have it
+    struct Where { int scene = -1, page = 0; bool operator== (const Where& o) const { return scene == o.scene && page == o.page; } bool operator!= (const Where& o) const { return ! (*this == o); } };
+    Where whereNow() const;
+    void pageCame (int said, juce::uint32 now); // the E16 said which page is up
+    static juce::String pageName (Where);
+    void arrived (Where);                       // it is on that page now (it said so, or was sent there): the page is told its values and names again
+    void turnTo (Where, juce::uint32 now);
+    void openPressed();
+    void wheelStart (juce::uint32 now);
+    void wheelEnd();
+    void serviceWheel (juce::uint32 now);
+    void placeWheel (juce::uint32 now);
+    struct PageKnob { int channel = 0, number = -1, want = -1; };
+    std::array<PageKnob, 16> pageKnobs (int page);
+    void feedPage (juce::uint32 now);
+    void sayNames();
+    int cfgPagesNow();
     void run() override;                        // the clock's own thread
     void scan();
     void sendE16 (const juce::MidiMessage&);
@@ -139,8 +198,36 @@ private:
     std::array<std::atomic<int>, e16::kSlots> latest, sent;
     std::array<std::atomic<juce::uint32>, e16::kSlots> heardAt;
     std::array<std::atomic<int>, 16> presses;
-    std::atomic<int> focus { 0 };
     std::atomic<int> pageUp { 0 }, glideIn { -1 };
+    // the pointer's wheel, OPEN, and CONFIG's pages
+    std::atomic<bool> wheelMode { false }, otherTurned { false };
+    std::atomic<int> wheelTurn { 0 }, wheelSent { -1 }, wheelKeys { 0 }, openKeys { 0 }, cfgStep { 0 };
+    std::atomic<juce::uint32> wheelHeardAt { 0 };
+    std::array<std::atomic<juce::uint32>, 4> heldSince;         // knobs 13 and 14 of the snapshot page, then of the map: down since (0: up)
+    std::array<std::atomic<bool>, 4> heldFired;
+    int wheelRest = 0;                                          // message thread from here
+    juce::uint32 wheelBusyAt = 0;
+    Where e16At, whereWas, asked;
+    bool whereKnown = false, cfgWasOpen = false;
+    juce::uint32 turnedAt = 0;
+    juce::String pcNote;                                        // it was sent to one page and said it was on another
+    int pcCh = e16::kPcChannel;
+    bool bankAlways = true;
+    std::array<int, 2> sceneSlots { { 1, 2 } };
+    int cfgPage = 0;
+    Engine::Target cfgWas;
+    // the second scene's page that is up: what its knobs were last told or said, and its names
+    std::array<std::atomic<int>, 16> bSent;
+    std::array<std::atomic<juce::uint32>, 16> bHeardAt;
+    void bMark (int knob, int val, juce::uint32 nowMs) { bSent[(size_t) knob] = val; bHeardAt[(size_t) knob] = nowMs; }
+    int bWait = 0;
+    std::atomic<int> laneNow { 0 };                             // the active lane, for the inputs' threads
+    std::atomic<int> lenIn { -1 };
+    std::array<std::atomic<int>, 4> genIn;
+    std::array<std::atomic<int>, e16::kCfgPer * e16::kCfgPages> cfgIn;
+    std::vector<Engine::SetupParam> cfgCache;
+    int cfgCacheAge = 0;
+    juce::String namesSaid;
     std::atomic<bool> glideFromE16 { false };                   // the GLIDE that came in was the E16's own (it knows it; anyone else's it is told)
     int pageNow = 0, pageWait = 0, glideSent = -1;              // message thread
     juce::uint32 glideHeardAt = 0;

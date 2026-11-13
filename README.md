@@ -36,7 +36,8 @@ First run:
 | --- | --- |
 | Drag a knob up or down | turn it (hold Shift for fine; double-click for its starting value; the wheel works too) |
 | Set GLIDE, then turn a knob | the sound travels there over the GLIDE time: the knob turns green and walks, with a white mark where it is going. It sets off on the next beat while the clock runs. Turn it again on the way and it carries on from where the sound is. OFF: at once |
-| Click a lane's name | make it the active lane: the inserts and the sequencer strip show it. Its display is the one lit up |
+| Click a lane's name, or its plate anywhere off the controls | make it the active lane: the inserts and the sequencer strip show it. Its display is the one lit up |
+| Click an insert's plate, the returns', the master's, the snapshot knobs', the sequencer strip's, off the controls | bring that module to the front: its name lights up, and the E16 turns to its page (see MIDI and the E16) |
 | **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
 | Click an insert's name | step that slot through DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, EMPTY |
@@ -60,6 +61,8 @@ First run:
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
 | Arrow keys | up and down: the active lane. Left and right: the step page |
+| **Tab** | the next module to the front, in the order the screen has them: five lanes, the snapshot knobs, six lanes, the three inserts, the returns, the master, the sequencer strip. Shift-Tab: the one before |
+| **C** (the keyboard's) | CONFIG for what is in front, and shut again (the returns: DUB's, then SPACE's, then shut) |
 | **I** | INFO: every control MIDI reaches shows its CC number, a panel its channel, and a control the mouse rests on says what it does. **I** again puts it away |
 | **H** | PHONES: headphones on the one pair of outputs. While a cue plays, the set is in the left ear and the cue in the right (see The library, below) |
 | **3** | the 3D stage, or the lit skin it is drawn from (see The 3D stage, below) |
@@ -130,6 +133,9 @@ key's gate and anything else that follows the hand is wherever the pointer is on
   the lock and M are kept between runs.
 - **The eye follows the controller** (**M** turns this off and on). A knob turned on the E16: the
   eye flies in to that knob's module, and goes home a couple of seconds after the hand stops. A
+  module brought to the front does the same: a page turned to on the E16, the pointer's wheel
+  (the eye goes along with it from module to module), Tab, CONFIG opened by OPEN or by C (the eye
+  holds CONFIG and the module beside it). Not a click of the mouse: the hand is already there. A
   snapshot recalled or pushed, when three or more knobs are moving together: it flies out to
   hold all of them. What never moves it: notes, the clock, the tempo under an outside clock,
   keys (mute, solo, THROW, FREEZE), and any knob moved by a message from another port than the
@@ -361,7 +367,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
   after START bar 1's first step cannot be early either: it is played at once. TRIM moves the steps
   either way by ear. The settings for the OXI One, and how to line all three up, are in
   `controllers/oxi-one/`.
-- **The E16's second scene, the library** (`controllers/e16/SF-000-LIBRARY.oxie16`, SF-LIB). Page 1
+- **The library on the E16** (the second scene's first two pages; the library opened on the screen turns the E16 to them). Page 1
   is the **MAP**: the grid of knobs is the library laid out by sound, energy up the rows (bottom
   row calm, top row peak) and brightness along them (dark at the left, bright at the right). Each
   knob holds the snapshots in its square. **Turn** it to step through them (four clicks to the
@@ -400,16 +406,43 @@ Open SETUP to see what is connected. Nothing needs choosing.
     own curve to be heard as drawn, GLIDE is OFF. A bipolar knob's middle is 64. A menu's values
     are spread evenly (INFO lists them). Insert, return, master and mute addresses are taken up
     forty times a second; a lane's own knobs and a RECALL at once.
-  - Not on MIDI: tempo, key, the generator's four knobs, a step's keys, an insert's or a return's
-    C, M and S.
-- **The E16.** Load `controllers/e16/SF-000.oxie16` (see `controllers/e16/README.md`). Pages 1-11
-  are the lanes: the twelve knobs where the screen has them, then SEND A, SEND B, LOW and HIGH. Press
-  knob 16 and it is MID (its ring turns pink); press again for HIGH. Press knob 1 and it is GLIDE
-  (its ring turns green), the same GLIDE on every lane's page; press again for the lane's first
-  knob. Page 12 is the sixteen snapshot knobs; a press recalls that knob's nearest snapshot.
-  Turning to a lane's page makes it the active lane on the screen. The rings follow the rig, and a
-  travelling knob's ring walks green. A page that comes up is told its values again, so a knob's
-  first turn starts where the rig is.
+  - The active lane's, on channel 13 (the second E16 scene's pages; a sequencer can send them too):
+    its three inserts' eight places (CC 8 to 31; pressed, 40 to 63: a key among them), the
+    sequencer strip's LENGTH (70: the value and one is the steps) and HITS, ROTATE, ACCENTS, SEED
+    (71 to 74), and CONFIG's controls while CONFIG is open, in the order its panel has them (76 to
+    95, then 102 to 117: INFO shows each one's number).
+  - Not on MIDI: tempo, key, a step's keys, an insert's or a return's C, M and S.
+- **The E16.** Two scenes: load `controllers/e16/SF-000.oxie16` and `SF-000-FX.oxie16` (see
+  `controllers/e16/README.md`, which has the three settings to make on the E16 and in SETUP).
+  In the first, pages 1-11 are the lanes: the twelve knobs where the screen has them, then SEND A,
+  SEND B, LOW and HIGH. Press knob 16 and it is MID (its ring turns pink); press again for HIGH.
+  Press knob 1 and it is GLIDE (its ring turns green), the same GLIDE on every lane's page; press
+  again for the lane's first knob. Page 12 is the sixteen snapshot knobs; a press recalls that
+  knob's nearest snapshot. The rings follow the rig, and a travelling knob's ring walks green. A
+  page that comes up is told its values again, so a knob's first turn starts where the rig is.
+- **Every knob on the screen has a page**, so nothing needs the mouse. The second scene (SF-FX)
+  holds what the first has no room for: the active lane's three inserts (INS 1 to 3: the eight
+  places where the screen has them; a key among them, THROW or FREEZE, is its knob's press), the
+  RETURNS, the MASTER, the sequencer strip (SEQ: LENGTH and the generator's four), CONFIG (CFG 1 to
+  3: its controls in the order its panel has them, twelve to a page), and the library's two pages.
+  SF-000 names an insert's and CONFIG's knobs on the E16's display as they change.
+- **The E16 is on the page of whatever is in front.** Bring a module to the front on the screen
+  (a click on its plate, Tab) or open CONFIG or the library, and the E16 turns to that page, in
+  whichever scene it is. Turn the E16 to a page yourself and that module comes to the front on
+  the screen (a lane's page makes it the active lane, as before); SF-000 never answers that by
+  turning the E16 again.
+- **Knob 13 is the pointer's wheel, on every page.** Press it (on the snapshot page and the
+  library's map, where a press recalls, hold it for half a second) and its turns go through the
+  modules in the order the screen has them, three clicks to the next: a yellow frame is round the
+  one the pointer is on, and the eye goes with it in 3D. What the pointer rests on for a third of
+  a second comes to the front and the E16 turns to its page; what it only passes over does not,
+  so the inserts it comes to are still those of the lane it set out from. The wheel stays the
+  wheel as the pages turn under it. Press it again, or turn any other knob, and knob 13 is the
+  page's own again (SEND A on a lane's page: the wheel never moves it). Six seconds untouched
+  ends it too.
+- **Knob 14 pressed is OPEN** (held, on those same two pages): CONFIG for what is in front, and
+  on CONFIG's pages SHUT. On the snapshot knobs it opens the library; in the library it is the
+  way back. On CONFIG's pages knobs 15 and 16 pressed are the page before and the next.
 
 ## Checks
 
@@ -423,11 +456,12 @@ build/.../SF-000 --stagetest                      # the 3D stage, played through
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
 build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapshot library running on this machine (its `npm run dev`)
 build/.../SF-000 --shot setup.png --setup follow  # draw the SETUP panel: --setup send|follow|off, --beat
-build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16 scene (snapshot knob names from your session)
+build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16's two scenes: that one (snapshot knob names from your session) and SF-000-FX.oxie16 beside it
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
 build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros, --lane N, --cfg lane|insert|return|space, --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
+build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (stops 0 to 17, in the screen's order)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above
 SF000_SKIN_TIMES=1 build/.../SF-000 --shot x.png  # how long each of the lit skin's pictures took to make
 ```

@@ -5,6 +5,7 @@
 //   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
 //   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
 //   SF-000 --perf                              the engine's share of real time and what the screen costs, on this machine
+#include <functional>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "core/Processor.h"
 #include "core/Registry.h"
@@ -1236,6 +1237,85 @@ static int uiTest()
         check (keyThere && listed && inside && loaded, "LOAD on a lane that takes a file lists folders and sound files in CONFIG's own panel; a click goes into a folder, a click on a file loads it, and it opens there next time");
         tmp.deleteRecursively();
     }
+    // what is in front: a press on a module's own plate off its controls, TAB, C, and what a controller asks for
+    {
+        sc.setPage (Screen::pMain); sc.hideConfig(); sc.testTick(); draw();
+        // a place on a panel that no control of it is on
+        auto bare = [&] (std::function<bool (const Screen::TestHit&)> is)
+        {
+            const auto hits = sc.testHits();
+            for (size_t i = 0; i < hits.size(); ++i)
+            {
+                if (! is (hits[i])) continue;
+                for (float y = hits[i].r.getY() + 6.0f; y < hits[i].r.getBottom(); y += 9.0f)
+                    for (float x = hits[i].r.getX() + 6.0f; x < hits[i].r.getRight(); x += 9.0f)
+                    {
+                        size_t top = hits.size();
+                        for (size_t k = hits.size(); k-- > 0;) if (hits[k].r.contains (x, y)) { top = k; break; }
+                        if (top == i) return juce::Point<float> (x, y);
+                    }
+            }
+            return juce::Point<float>();
+        };
+        using S = Session;
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsLanePanel (h, 2); })); draw();
+        const bool lane = ses.activeLane == 2 && ses.front.kind == S::fLane;
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fInsert, 1); })); draw();
+        const bool ins = ses.front == S::Front { S::fInsert, 1 } && ses.activeLane == 2;
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fReturns, 0); })); draw();
+        const bool ret = ses.front.kind == S::fReturns;
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fMaster, 0); })); draw();
+        const bool mas = ses.front.kind == S::fMaster;
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fSnap, 0); })); draw();
+        const bool snp = ses.front.kind == S::fSnap;
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fSeq, 0); })); draw();
+        const bool seq = ses.front.kind == S::fSeq && ses.activeLane == 2 && ses.frontBy == 0;
+        check (lane && ins && ret && mas && snp && seq, "a press on a module's plate, off its controls, brings it to the front: a lane (it is the active one), one of its inserts, the returns, the master, the snapshot knobs, the sequencer strip");
+
+        const juce::KeyPress tab (juce::KeyPress::tabKey), back (juce::KeyPress::tabKey, juce::ModifierKeys::shiftModifier, 0);
+        sc.keyPressed (tab);
+        const bool end = ses.stopNow() == S::kStops - 1;                 // (the last of them: it stays)
+        sc.keyPressed (back); sc.keyPressed (back);
+        const bool backTwo = ses.front.kind == S::fReturns;
+        for (int k = 0; k < S::kStops; ++k) sc.keyPressed (back);
+        const bool first = ses.stopNow() == 0 && ses.activeLane == 0 && ses.front.kind == S::fLane;
+        for (int k = 0; k < 5; ++k) sc.keyPressed (tab);
+        const bool sixth = ses.front.kind == S::fSnap && ses.activeLane == 4;      // (the sixth place of the top row is the snapshot knobs: the active lane stays the fifth)
+        sc.keyPressed (tab);
+        check (end && backTwo && first && sixth && ses.activeLane == 5 && ses.frontBy == 1,
+               "TAB brings the next module to the front in the order the screen has them, SHIFT-TAB the one before: five lanes, the snapshot knobs, six lanes, the inserts, the returns, the master, the sequencer strip");
+
+        sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick(); draw();
+        const bool opened = ses.cfgOpen && ses.cfg.kind == 0 && ses.cfg.lane == 5 && ! sc.testConfigRect().isEmpty();
+        sc.keyPressed (tab); sc.testTick(); draw();
+        const bool along = ses.cfgOpen && ses.cfg.lane == 6 && ses.activeLane == 6;
+        ses.bring ({ S::fInsert, 2 }, 1); sc.testTick(); draw();
+        const bool toInsert = ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 6 && ses.cfg.slot == 2;
+        ses.bring ({ S::fMaster, 0 }, 1); sc.testTick(); draw();
+        const bool shutByMaster = ! ses.cfgOpen;
+        ses.bringLane (4, 1);
+        sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();
+        click (bare ([] (const Screen::TestHit& h) { return Screen::testIsFront (h, S::fMaster, 0); })); sc.testTick();
+        const bool mouseLeaves = ses.cfgOpen && ses.cfg.lane == 4 && ses.front.kind == S::fMaster;      // (under the mouse CONFIG stays where it was put)
+        sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();
+        check (opened && along && toInsert && shutByMaster && mouseLeaves && ! ses.cfgOpen,
+               "C opens CONFIG on what is in front and shuts it; brought to the front by a key or a controller, a lane or an insert takes CONFIG with it and the master shuts it; under the mouse it stays where it was put");
+
+        ses.wantShowing = 1; sc.testTick();
+        const bool toLibrary = sc.testPage() == Screen::pLibrary && ses.showing == 1 && ses.wantShowing == -1;
+        ses.wantShowing = 0; sc.testTick();
+        // the pointer: a frame round the module it is on
+        ses.bringLane (0, 0); ses.point (15); sc.testTick(); draw();
+        const auto fr = sc.testStopRect (15);
+        const auto with = sc.createComponentSnapshot (sc.getLocalBounds(), false, 1.0f);
+        ses.point (-1); sc.testTick(); draw();
+        const auto without = sc.createComponentSnapshot (sc.getLocalBounds(), false, 1.0f);
+        const auto at = juce::Point<float> (fr.getX() + 2.0f, fr.getCentreY()).roundToInt();
+        const auto cw = with.getPixelAt (at.x, at.y), co = without.getPixelAt (at.x, at.y);
+        check (toLibrary && sc.testPage() == Screen::pMain && ! fr.isEmpty() && cw.getRed() > 180 && cw.getGreen() > 150 && cw.getBlue() < 140 && cw != co,
+               ("a controller's wish for the library is taken up, and the way back; the pointer puts a yellow frame round the module it is on (" + cw.toDisplayString (false) + " where it was " + co.toDisplayString (false) + ")").toRawUTF8());
+        ses.bringLane (7, 0); sc.testTick(); draw();
+    }
     // the library: with a snapshot cued, the parts RECALL takes can be put out; after the recall all are lit again
     {
         ses.userSet (cx::kGlide, 0.0f);
@@ -2036,6 +2116,8 @@ static int shot (const juce::StringArray& args)
     if (args.contains ("--flat")) sc.setLit (false);            // the flat drawing the lit skin replaced
     if (args.contains ("--dark")) sc.setDark (true);            // the lit skin's dark instrument
     if (args.contains ("--info")) sc.setInfo (true);            // INFO: the MIDI numbers
+    if (args.contains ("--front")) ses.bringStop (arg ("--front", "0").getIntValue(), 1);        // that module in front (a stop: 0 to 17, in the screen's order)
+    if (args.contains ("--pointer")) ses.point (arg ("--pointer", "0").getIntValue());           // and the wheel's pointer on that one
     if (args.contains ("--phones")) e.setPhones (true);
     if (const auto pt = arg ("--point", ""); pt.isNotEmpty())   // the mouse resting at x,y (screen units), with INFO on: its box
     {
@@ -2121,11 +2203,11 @@ static int writeScene (const juce::String& path)
     const bool ok = f.replaceWithData (text.toRawUTF8(), text.getNumBytesAsUTF8());
     std::printf (ok ? "wrote %s (%d bytes): copy it into the OXI App's Scenes folder and send it to the E16\n" : "could not write %s\n",
                  f.getFullPathName().toRawUTF8(), (int) text.getNumBytesAsUTF8());
-    // the library's scene beside it
-    const auto lib = sf0::e16::libraryText();
-    const auto lf = f.getSiblingFile (f.getFileNameWithoutExtension() + "-LIBRARY" + f.getFileExtension());
+    // the second scene beside it
+    const auto lib = sf0::e16::fxText (e);
+    const auto lf = f.getSiblingFile (f.getFileNameWithoutExtension() + "-FX" + f.getFileExtension());
     const bool ok2 = lf.replaceWithData (lib.toRawUTF8(), lib.getNumBytesAsUTF8());
-    std::printf (ok2 ? "wrote %s (%d bytes): the library's scene (the map, the finders)\n" : "could not write %s\n", lf.getFullPathName().toRawUTF8(), (int) lib.getNumBytesAsUTF8());
+    std::printf (ok2 ? "wrote %s (%d bytes): the second scene (the library; the inserts, the returns, the master, the sequencer strip, CONFIG)\n" : "could not write %s\n", lf.getFullPathName().toRawUTF8(), (int) lib.getNumBytesAsUTF8());
     return ok && ok2 ? 0 : 1;
 }
 
@@ -2738,11 +2820,13 @@ static int midiTest()
                 if (! ccx::addressOf (ctl, ch, num)) continue;
                 ++reached;
                 const int slot = e16::slotFor (ch, num), extra = ccx::extraFor (ch, num);
-                right = right && (slot >= 0 ? e16::controlFor (slot) == ctl
+                const bool gen = ctl < cx::kRet && ctl % cx::kPerLane >= cx::kGen && ctl % cx::kPerLane < cx::kGen + 4;      // (a generator's knob: the active lane's, on channel 13)
+                right = right && (gen ? ch == e16::kFxChannel && num == e16::kGenCc + (ctl % cx::kPerLane - cx::kGen)
+                                : slot >= 0 ? e16::controlFor (slot) == ctl
                                 : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl)
                                 : (ctl == cx::kGlide && ch == 16 && num == e16::kGlideCc));
             }
-            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 3) + 4 + 4 * kSpaceModels + 3 + 1 + 16;
+            const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3) + 4 + 4 * kSpaceModels + 3 + 1 + 16;
             check (right && reached == expected, (juce::String (reached) + " controls have a MIDI address, and each address reaches its own control").toRawUTF8());
 
             // an insert's places, the returns, the master, a lane's MUTE
@@ -2914,6 +2998,287 @@ static int midiTest()
         }
         check (wellFormed && kept16 && moves > 5 && dones >= 1 && entries > 20,
                "a recall with GLIDE on reports the travelling knobs to the E16's script and says when each arrives (" + juce::String (moves) + " reports, " + juce::String (dones) + " arrivals)");
+    }
+
+    // 4c. what is in front, on the E16: its page turned from here, the second scene's pages, the
+    // pointer's wheel, OPEN
+    {
+        Engine e; e.prepare (48000.0, 512);
+        Session ses (e, false);
+        Midi midi (e, ses, false);
+        std::vector<juce::MidiMessage> out;
+        midi.toE16 = [&] (const juce::MidiMessage& m) { out.push_back (m); };
+        auto cc = [] (int ch, int num, int v) { return juce::MidiMessage::controllerEvent (ch, num, v); };
+        auto ticks = [&] (int n) { for (int k = 0; k < n; ++k) midi.service(); };
+        auto in = [&] (int ch, int num, int v) { midi.incoming (cc (ch, num, v), true); };
+        auto press = [&] (int ch, int num) { in (ch, num, 127); in (ch, num, 0); };
+        // the E16 turning its own page (a third of a second after anything sent to it: sooner than that, a page it says is taken for its answer to being sent)
+        auto turnsTo = [&] (int says) { juce::Thread::sleep (310); in (16, e16::kFocusCc, says); };
+        // the page turns sent: Bank Select's two numbers and the Program Change, as "B0=0 B32=1 P3"
+        auto turns = [&]
+        {
+            juce::String t;
+            for (auto& m : out)
+            {
+                if (m.isController() && m.getChannel() == e16::kPcChannel) t << "B" << m.getControllerNumber() << "=" << m.getControllerValue() << " ";
+                if (m.isProgramChange()) t << (m.getChannel() == e16::kPcChannel ? "P" : "?") << m.getProgramChangeNumber() << " ";
+            }
+            return t.trim();
+        };
+        auto ccOut = [&] (int ch, int num) { int v = -1; for (auto& m : out) if (m.isController() && m.getChannel() == ch && m.getControllerNumber() == num) v = m.getControllerValue(); return v; };
+        auto said = [&] (int kind) { juce::String t; bool any = false; for (auto& m : out) if (m.isSysEx() && m.getSysExDataSize() >= 4 && m.getSysExData()[3] == kind) { any = true; t = juce::String::fromUTF8 ((const char*) m.getSysExData() + 4, m.getSysExDataSize() - 4); } return any ? t : juce::String ("(none)"); };
+        auto name = [&] (int knob) { const auto t = said (4); return t.length() >= 65 ? t.substring (1 + (knob - 1) * 4, 5 + (knob - 1) * 4).trim() : juce::String ("?"); };
+
+        {
+            // the new addresses are no one else's
+            std::set<int> seen;
+            bool clean = true;
+            for (int slot = 0; slot < e16::kSlots; ++slot) { int ch = 0, num = 0; e16::addressOf (slot, ch, num); seen.insert (ch * 128 + num); }
+            for (int ctl = 0; ctl < cx::kCount; ++ctl) { int ch = 0, num = 0; if (ccx::addressOf (ctl, ch, num)) seen.insert (ch * 128 + num); }
+            for (int k = 0; k < 16; ++k) { seen.insert (16 * 128 + e16::kPressCc + k); seen.insert (16 * 128 + ccx::kRecall + k); }
+            seen.insert (16 * 128 + e16::kFocusCc);
+            for (int num : { e16::kWheelCc, e16::kWheelKey, e16::kOpenKey, e16::kCfgPrevKey, e16::kCfgNextKey }) clean = clean && seen.insert (16 * 128 + num).second;
+            for (int j = 0; j < kSlots * kCells; ++j) clean = clean && seen.insert (e16::kFxChannel * 128 + e16::kInsCc + j).second && seen.insert (e16::kFxChannel * 128 + e16::kInsPressCc + j).second;
+            clean = clean && seen.insert (e16::kFxChannel * 128 + e16::kLenCc).second;         // (the generator's four are in already: every lane's are the same four, the active lane's)
+            for (int j = 0; j < 4; ++j) clean = clean && seen.count (e16::kFxChannel * 128 + e16::kGenCc + j) == 1;
+            for (int j = 0; j < e16::kCfgPer * e16::kCfgPages; ++j) clean = clean && seen.insert (e16::kFxChannel * 128 + e16::cfgCc (j)).second && e16::cfgAt (e16::cfgCc (j)) == j;
+            // none on a number MIDI keeps for itself (Bank Select's two, Data Entry's two, the registered-parameter six, the channel-mode eight)
+            for (int v : seen) { const int ch = v / 128, num = v % 128; if (ch == e16::kFxChannel || (ch == 16 && num >= e16::kWheelCc && num <= e16::kCfgNextKey)) clean = clean && num != 0 && num != 6 && num != 32 && num != 38 && ! (num >= 96 && num <= 101) && num < 120; }
+            check (clean && e16::kPcChannel != e16::kFxChannel && e16::kPcChannel > kLanes && e16::kPcChannel < e16::kFindChannel,
+                   "the second scene's addresses (the wheel, OPEN, an insert's places and their presses, the sequencer strip, CONFIG's 36) are no one else's, and the channel the page is turned on carries nothing else");
+        }
+
+        ticks (14);
+        const juce::String atStart = turns();
+        out.clear();
+        // brought to the front here: the E16 is turned there. The scene by Bank Select (its slot less one), the page by Program Change (the page less one).
+        ses.bringLane (2, 0); ticks (1);
+        const juce::String t1 = turns(); out.clear();
+        ses.bringLane (5, 1); ticks (1);
+        const juce::String t2 = turns(); out.clear();
+        ses.bring ({ Session::fInsert, 1 }, 1); ticks (1);
+        const juce::String t3 = turns(); out.clear();
+        ses.bring ({ Session::fMaster, 0 }, 0); ticks (1);
+        const juce::String t4 = turns(); out.clear();
+        ses.bring ({ Session::fSnap, 0 }, 0); ticks (1);
+        const juce::String t5 = turns(); out.clear();
+        check (atStart.isEmpty() && t1 == "B0=0 B32=0 P2" && t2 == "B0=0 B32=0 P5" && t3 == "B0=0 B32=1 P3" && t4 == "B0=0 B32=1 P6" && t5 == "B0=0 B32=0 P11",
+               "a module brought to the front is the E16's page, the scene said by Bank Select and the page by Program Change: nothing at the start; OPEN HAT (" + t1 + "), BASS (" + t2 + "), its second insert in the other scene (" + t3
+                   + "), the master (" + t4 + "), the snapshot knobs (" + t5 + ")");
+        // (midi.json's "e16_bank_always" false: the scene is said only when it changes)
+        midi.setBankAlways (false);
+        ses.bringLane (1, 0); ticks (1);
+        const juce::String a1 = turns(); out.clear();
+        ses.bring ({ Session::fSeq, 0 }, 0); ticks (1);
+        const juce::String a2 = turns(); out.clear();
+        ses.bring ({ Session::fMaster, 0 }, 0); ticks (1);
+        const juce::String a3 = turns(); out.clear();
+        check (a1 == "P1" && a2 == "B0=0 B32=1 P7" && a3 == "P6", "with the scene said only when it changes: " + a1 + ", " + a2 + ", " + a3);
+
+        // the slots the scenes are in, and off
+        midi.setSceneSlot (0, 5); midi.setSceneSlot (1, 9);
+        ses.bringLane (0, 0); ticks (1);
+        const juce::String s1 = turns(); out.clear();
+        ses.bring ({ Session::fReturns, 0 }, 0); ticks (1);
+        const juce::String s2 = turns(); out.clear();
+        midi.setPcChannel (0);
+        ses.bringLane (3, 0); ticks (3);
+        const juce::String s3 = turns(); out.clear();
+        midi.setPcChannel (e16::kPcChannel); midi.setSceneSlot (0, 1); midi.setSceneSlot (1, 2);
+        check (s1 == "B0=0 B32=4 P0" && s2 == "B0=0 B32=8 P5" && s3.isEmpty(), "the scenes' slots are SETUP's (5 and 9: " + s1 + ", " + s2 + "), and with the channel OFF the E16 is left alone");
+
+        // the E16 turns its own page: what is in front follows, and nothing is sent back for it
+        turnsTo (9); ticks (3);
+        const bool laneFollows = ses.activeLane == 8 && ses.front.kind == Session::fLane && turns().isEmpty() && ccOut (9, 12) >= 0;
+        out.clear();
+        turnsTo (e16::kFocusB + e16::pgRet); ticks (4);
+        int retVals = 0;
+        for (int k = 0; k < 8; ++k) if (ccOut (16, ccx::kDub + k) >= 0) ++retVals;
+        const bool retFollows = ses.front.kind == Session::fReturns && ses.activeLane == 8 && turns().isEmpty() && retVals == 8
+                             && ccOut (16, ccx::kDub + 1) == e16::to7 (e.control (cx::kRet + 1), e.target (cx::kRet + 1));
+        out.clear();
+        turnsTo (e16::kFocusB + e16::pgMaster); ticks (4);
+        const bool masterFollows = ses.front.kind == Session::fMaster && turns().isEmpty() && ccOut (16, ccx::kMaster) >= 0 && ccOut (16, ccx::kMaster + 2) >= 0;
+        in (16, ccx::kMaster + 1, 99); ticks (1);
+        check (laneFollows && retFollows && masterFollows && std::abs (e.target (cx::kMaster + 1) - 99.0f / 127.0f) < 1.0e-6f,
+               "a page the E16 turns to itself brings its module to the front (CHORD; the returns; the master) with no page sent back, and the page is told its values (the returns' eight, the master's three)");
+        out.clear();
+
+        // an insert's page: the active lane's, whatever effect is in the slot
+        while (e.insertType (8, 0) != 0) ses.stepInsert (8, 0);         // DELAY in CHORD's first slot
+        turnsTo (e16::kFocusB + e16::pgIns); ticks (4);
+        int insVals = 0;
+        for (int c = 0; c < kCells; ++c) if (ccOut (13, e16::kInsCc + c) >= 0) ++insVals;
+        const juce::String insTitle = said (5), n1 = name (1), n2 = name (2), n5 = name (5), n13 = name (13);
+        out.clear();
+        in (13, e16::kInsCc + 1, 100); ticks (1);                        // FEEDBACK
+        const bool fbk = std::abs (e.target (cx::ins (8, 0, 1)) - 100.0f / 127.0f) < 1.0e-6f && ccOut (13, e16::kInsCc + 1) < 0;
+        in (13, e16::kInsPressCc + 4, 127);                              // THROW, held
+        const bool thrown = e.target (cx::ins (8, 0, 4)) > 0.5f;
+        in (13, e16::kInsPressCc + 4, 0);
+        const bool let = e.target (cx::ins (8, 0, 4)) < 0.5f;
+        press (13, e16::kInsPressCc + 5);                                // FREEZE, switched
+        const bool frozen = e.target (cx::ins (8, 0, 5)) > 0.5f;
+        press (13, e16::kInsPressCc + 5);
+        const bool thawed = e.target (cx::ins (8, 0, 5)) < 0.5f;
+        press (13, e16::kInsPressCc + 1);                                // (a knob's press is nothing)
+        ticks (1);
+        check (ses.front == Session::Front { Session::fInsert, 0 } && insVals == 8 && insTitle == "CRD 1 DELAY" && n1 == "TIME" && n2 == "FDBK" && n5 == "THRW" && n13.isEmpty()
+                   && fbk && thrown && let && frozen && thawed && std::abs (e.target (cx::ins (8, 0, 1)) - 100.0f / 127.0f) < 1.0e-6f,
+               "INS 1 is the active lane's first insert: told its eight values and named (" + insTitle + ": " + n1 + ", " + n2 + " ... " + n5 + "); FEEDBACK turned, THROW held by its knob's press, FREEZE switched by its own");
+        out.clear();
+
+        // the sequencer strip
+        turnsTo (e16::kFocusB + e16::pgSeq); ticks (4);
+        const bool seqTold = ccOut (13, e16::kLenCc) == ses.pattern (8).length - 1 && ccOut (13, e16::kGenCc) >= 0;
+        in (13, e16::kLenCc, 31); in (13, e16::kGenCc + 1, 64); ticks (1);
+        check (ses.front.kind == Session::fSeq && seqTold && ses.pattern (8).length == 32 && std::abs (e.target (cx::gen (8, 1)) - e16::from7 (e.control (cx::gen (8, 1)), 64)) < 1.0e-6f,
+               "SEQ is the active lane's sequencer strip: LENGTH (the number and one: 32 steps) and the generator's four knobs, which had no address before");
+        out.clear();
+
+        // OPEN: CONFIG for what is in front, on the E16 its controls twelve to a page, named
+        ses.bringLane (5, 0); ticks (3); out.clear();                   // BASS
+        press (16, e16::kOpenKey); ticks (1);
+        const juce::String toCfg = turns();
+        ticks (4);
+        const auto list = ses.configList();
+        int knobAt = -1, listAt = -1, switchAt = -1;
+        for (int i = 0; i < (int) list.size() && i < e16::kCfgPer; ++i)
+        {
+            if (knobAt < 0 && list[(size_t) i].kind == Kind::Knob) knobAt = i;
+            if (listAt < 0 && list[(size_t) i].kind == Kind::List && list[(size_t) i].choices.size() > 2) listAt = i;
+            if (switchAt < 0 && list[(size_t) i].kind == Kind::Toggle) switchAt = i;
+        }
+        const juce::String cfgTitle = said (5);
+        bool named = (int) list.size() > e16::kCfgPer, told = true;
+        for (int i = 0; i < e16::kCfgPer && i < (int) list.size(); ++i)
+        {
+            named = named && name (i + 1) == list[(size_t) i].name.removeCharacters (" ").toUpperCase().substring (0, 4).trim();
+            told = told && (list[(size_t) i].kind == Kind::Hold || ccOut (13, e16::cfgCc (i)) >= 0);
+        }
+        out.clear();
+        bool turned = knobAt >= 0 && listAt >= 0;
+        if (turned)
+        {
+            in (13, e16::cfgCc (knobAt), 90);
+            const int n = list[(size_t) listAt].choices.size();
+            in (13, e16::cfgCc (listAt), 127);                          // a list: the top of the knob is its last choice
+            ticks (1);
+            juce::Thread::sleep (170); ticks (7);
+            const auto now = ses.configList();
+            turned = std::abs (now[(size_t) knobAt].value - 90.0f / 127.0f) < 1.0e-3f && std::abs (now[(size_t) listAt].value - 1.0f) < 1.0e-6f
+                  && ccOut (13, e16::cfgCc (knobAt)) < 0 && ccOut (13, e16::cfgCc (listAt)) < 0;        // (neither is sent back: each is where the hand put it)
+            // and one set on the screen is sent, to the middle of its share
+            e.setSetup (ses.cfg, list[(size_t) listAt].id, 0.0f);
+            ticks (7);
+            turned = turned && ccOut (13, e16::cfgCc (listAt)) == 64 / n;
+        }
+        out.clear();
+        press (16, e16::kCfgNextKey); ticks (1);
+        const juce::String toPage2 = turns();
+        ticks (4);
+        const juce::String title2 = said (5), first2 = name (1);
+        out.clear();
+        press (16, e16::kCfgPrevKey); ticks (1); press (16, e16::kCfgPrevKey); ticks (1);
+        const juce::String toPage1 = turns(); out.clear();
+        press (16, e16::kOpenKey); ticks (1);
+        const juce::String shut = turns(); out.clear();
+        check (toCfg == "B0=0 B32=1 P8" && cfgTitle == "BAS CFG 1/" + juce::String (((int) list.size() + 11) / 12) && named && told && turned && toPage2 == "P9" && title2.startsWith ("BAS CFG 2/")
+                   && first2 == list[12].name.removeCharacters (" ").toUpperCase().substring (0, 4).trim() && toPage1 == "P8" && shut == "B0=0 B32=0 P5" && ! ses.cfgOpen,
+               "OPEN on BASS opens its CONFIG and turns the E16 to it (" + toCfg + ", " + cfgTitle + ": " + juce::String ((int) list.size()) + " controls, twelve to a page, each named and told its value); a knob and a list are turned from it and left where the hand put them; PAGE + and PAGE - ("
+                   + toPage2 + ", " + toPage1 + "); OPEN again shuts it and the E16 is back on BASS (" + shut + ")");
+
+        // the returns have two: A, then B, then shut. The master has none.
+        ses.bring ({ Session::fReturns, 0 }, 2); ticks (2); out.clear();
+        press (16, e16::kOpenKey); ticks (1);
+        const bool openA = ses.cfgOpen && ses.cfg.kind == 2 && ses.cfg.slot == 0;
+        press (16, e16::kOpenKey); ticks (1);
+        const bool openB = ses.cfgOpen && ses.cfg.kind == 2 && ses.cfg.slot == 1;
+        press (16, e16::kOpenKey); ticks (1);
+        const bool shutAgain = ! ses.cfgOpen;
+        ses.bring ({ Session::fMaster, 0 }, 2); ticks (2);
+        press (16, e16::kOpenKey); ticks (1);
+        check (openA && openB && shutAgain && ! ses.cfgOpen, "OPEN on the returns: DUB's CONFIG, SPACE's, shut. On the master: nothing");
+        out.clear();
+
+        // the pointer's wheel: knob 13 pressed. Its turns go through the modules in the order the screen has them.
+        ses.bringLane (0, 0); ticks (3); out.clear();                   // the E16 is on KICK's page
+        const int sendA = cx::lane (0, cx::kSendA);
+        const float sendWas = e.target (sendA);
+        press (16, e16::kWheelKey); ticks (1);
+        const bool started = midi.wheelInUse() && ses.pointer == 0;
+        juce::Thread::sleep (160); ticks (1);
+        const int placed = ccOut (1, e16::kKnobCc + 12);                 // its number is the pointer's place among the stops
+        const juce::String wheelTitle = said (5), sel = name (13);
+        for (int v = placed + 1; v <= placed + 3; ++v) { in (1, e16::kKnobCc + 12, v); ticks (1); }
+        const bool oneOn = ses.pointer == 1 && ses.activeLane == 0 && e.target (sendA) == sendWas && turns().isEmpty();
+        const juce::String title1 = said (5);
+        for (int v = placed + 4; v <= placed + 36; ++v) in (1, e16::kKnobCc + 12, v);
+        ticks (1);
+        const bool passed = ses.pointer == 12 && ses.activeLane == 0 && ses.front.kind == Session::fLane && turns().isEmpty();     // (over ten lanes and the snapshot knobs, none of them brought to the front)
+        juce::Thread::sleep (370); ticks (1);
+        const juce::String landed = turns();
+        const bool rested = ses.front == Session::Front { Session::fInsert, 0 } && ses.activeLane == 0 && midi.wheelInUse();
+        ticks (3); juce::Thread::sleep (160); ticks (1);
+        const int own = ccOut (16, e16::kWheelCc);                       // on that page knob 13 has its own address: the wheel goes on
+        in (16, e16::kWheelCc, own + 3); ticks (1);
+        const bool onward = ses.pointer == 13;
+        out.clear();
+        in (13, e16::kInsCc, 50); ticks (1);                             // another knob turned: the hand has moved on
+        const bool ended = ! midi.wheelInUse() && ses.pointer == -1 && ses.front == Session::Front { Session::fInsert, 1 } && e.target (sendA) == sendWas;
+        ticks (2);
+        const bool given = ccOut (1, e16::kKnobCc + 12) == e16::to7 (e.control (sendA), sendWas);
+        check (started && placed == 8 && wheelTitle == "> 1 KICK" && sel == "SEL" && oneOn && title1 == "> 2 CLOSED HAT" && passed && landed == "B0=0 B32=1 P2" && rested && own >= 0 && onward && ended && given,
+               "knob 13 pressed is the pointer's wheel: three clicks to the next module (" + title1 + "), SEND A itself untouched; ten lanes and the snapshot knobs passed over without one coming to the front; resting on INS 1 brings KICK's own first insert to the front and turns the E16 there ("
+                   + landed + "); on that page the wheel goes on; another knob turned ends it, and SEND A is told its own value again");
+        out.clear();
+
+        // pressed again it ends (left alone for six seconds it ends too: not waited for here), and the page has its own names back
+        ses.bringLane (3, 0); ticks (3); out.clear();
+        press (16, e16::kWheelKey); ticks (1);
+        const bool again = midi.wheelInUse() && said (5) == "> 4 CLAP" && name (13) == "SEL";
+        out.clear();
+        press (16, e16::kWheelKey); ticks (1);
+        const bool namesBack = said (5).isEmpty() && name (13).isEmpty() && said (4).length() == 65;
+        // the snapshot page, where a press recalls: knob 13 held is the wheel, and a press let go at once still recalls
+        turnsTo (12); ticks (3);
+        {
+            std::vector<juce::int64> two;                               // (two that are not the base, so that a recall of either shows)
+            for (auto& sn : ses.library) if (sn.id != ses.baseId && two.size() < 2) two.push_back (sn.id);
+            ses.knobs[12].snaps = two;
+        }
+        ses.turnSnapKnob (12, 1.0f);
+        const auto baseWas = ses.baseId;
+        in (16, e16::kPressCc + 12, 127); ticks (1);
+        const bool notYet = ses.baseId == baseWas && ! midi.wheelInUse();
+        in (16, e16::kPressCc + 12, 0); ticks (1);
+        const bool recalled = ses.baseId != baseWas && ! midi.wheelInUse();
+        const auto baseThen = ses.baseId;
+        in (16, e16::kPressCc + 12, 127); juce::Thread::sleep (420); ticks (1);
+        const bool heldIs = midi.wheelInUse() && ses.pointer == 5;
+        in (16, e16::kPressCc + 12, 0); ticks (1);
+        const bool noRecall = ses.baseId == baseThen && midi.wheelInUse();
+        // OPEN on the snapshot knobs is the library; in the library it is the way back
+        press (16, e16::kWheelKey); ticks (1);
+        out.clear();
+        in (16, e16::kPressCc + 13, 127); juce::Thread::sleep (420); ticks (1); in (16, e16::kPressCc + 13, 0); ticks (1);
+        const bool asksLibrary = ses.wantShowing == 1;
+        ses.showing = 1; ses.wantShowing = -1; ticks (1);               // (the screen takes it up)
+        const juce::String toMap = turns(); out.clear();
+        in (15, e16::kPressCc + 13, 127); juce::Thread::sleep (420); ticks (1); in (15, e16::kPressCc + 13, 0); ticks (1);
+        const bool asksBack = ses.wantShowing == 0;
+        ses.showing = 0; ses.wantShowing = -1; ticks (1);
+        const juce::String fromMap = turns(); out.clear();
+        check (again && namesBack && ! midi.wheelInUse() && notYet && recalled && heldIs && noRecall && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "B0=0 B32=0 P11",
+               "on the snapshot page knob 13 held for half a second is the wheel, and a press let go before that still recalls (as it is let go); knob 14 held there opens the library (" + toMap + ") and held in the library shuts it (" + fromMap + ")");
+
+        // the E16 sent to one page says it is on another: nothing follows it there, and SETUP says so
+        juce::Thread::sleep (310);
+        ses.bringLane (2, 0); ticks (1);
+        in (16, e16::kFocusCc, 4); ticks (1);
+        const bool noted = ses.activeLane == 2 && midi.pageNote().contains ("ASKED FOR SF-000 PAGE 3") && midi.pageNote().contains ("PAGE 4");
+        ses.bringLane (6, 0); ticks (1); in (16, e16::kFocusCc, 7); ticks (1);
+        check (noted && midi.pageNote().isEmpty() && ses.activeLane == 6, "an E16 that goes somewhere other than where it was sent is not followed there, and SETUP says which page was asked for and which it went to; one that agrees clears it");
     }
 
     // 5. a recalled pattern waits for the bar line; an edit does not
@@ -3099,8 +3464,10 @@ static int midiTest()
                        + juce::String (up != 0 ? prof (up).energy : 0.0f, 2) + "), LESS one with less (" + juce::String (down != 0 ? prof (down).energy : 0.0f, 2) + "); pressing MORE recalls it");
         }
         // the scene file
-        const auto lib = juce::JSON::parse (e16::libraryText());
-        bool form = lib.isObject() && lib["title"].toString() == "SF-LIB" && lib["pages"].isArray() && lib["pages"].size() == 12;
+        Engine eFx;
+        const auto fxScene = e16::fxText (eFx);
+        const auto lib = juce::JSON::parse (fxScene);
+        bool form = lib.isObject() && lib["title"].toString() == "SF-FX" && lib["pages"].isArray() && lib["pages"].size() == 12;
         if (form)
         {
             const auto map = lib["pages"][0], find = lib["pages"][1];
@@ -3114,7 +3481,7 @@ static int midiTest()
             form = form && find["encoders"][0]["name"].toString() == "RECENT" && (int) find["encoders"][2]["turn_actions"][0]["channel"] == e16::kFindChannel
                    && (int) find["encoders"][5]["turn_actions"][0]["type"] == 0 && lib["pages"][2]["encoders"].size() == 16;
         }
-        check (form, "the library's scene is written: MAP on channel 15, FIND on 14, knob p on CC 11 + p with its press on CC 43 + p, ten empty pages");
+        check (form, "the second scene is written, the library first: MAP on channel 15, FIND on 14, knob p on CC 11 + p with its press on CC 43 + p");
         Session::stateFileForTests = juce::File();
         tmp.deleteRecursively();
     }
@@ -3585,6 +3952,33 @@ static int stageTest()
         sc.keyPressed (juce::KeyPress ('m', juce::ModifierKeys(), 'm'));
         restFor (3200);
         check (sc.testFollowing().isEmpty(), "M again: it follows again, and with nothing moving it is home");
+
+        // 5b. something brought to the front: the eye goes to it as it goes to a knob under a hand
+        ses.bringStop (3, 1); fresh(); sc.testTick();                   // (TAB, or a controller's page: CLAP)
+        const auto fb = sc.testFollowing();
+        const bool toModule = ! fb.isEmpty() && fb.contains (laneRect (3)) && fb.getWidth() < laneRect (3).getWidth() + 40.0f;
+        fresh();
+        const bool away = st->isAway();
+        restFor (2600);
+        check (toModule && away && sc.testFollowing().isEmpty(), "a module brought to the front by a key or a controller: the eye goes to it (" + fb.toString() + "), and home again when left alone");
+        ses.bringStop (9, 0); fresh(); sc.testTick(); sc.testTick();     // (the mouse: the hand is already there)
+        const bool mouseStays = sc.testFollowing().isEmpty() && ses.activeLane == 8;
+        ses.point (15); fresh(); sc.testTick();                         // the pointer's wheel, on the returns
+        const auto pb = sc.testFollowing();
+        const bool toPointer = ! pb.isEmpty() && pb.contains (sc.testStopRect (15)) && ! pb.contains (laneRect (8)) && ses.front.kind == Session::fLane;
+        ses.point (16); fresh(); sc.testTick();
+        const bool onward = sc.testFollowing().contains (sc.testStopRect (16)) && sc.testFollowing() != pb;
+        ses.point (-1);
+        restFor (2600);
+        check (mouseStays && toPointer && onward && sc.testFollowing().isEmpty(), "brought to the front with the mouse, the eye stays; the pointer's wheel takes it along from module to module (" + pb.toString() + ")");
+        ses.bringLane (2, 1); ses.configOfFront (1);                    // CONFIG, from the keyboard: the eye holds the panel and the module beside it
+        restFor (700);
+        const auto cb = sc.testFollowing();
+        const bool holdsBoth = ! cb.isEmpty() && cb.contains (sc.testConfigRect().reduced (12.0f)) && cb.contains (sc.testStopRect (2).reduced (12.0f));
+        ses.configOfFront (1);
+        restFor (3000);
+        check (holdsBoth && ! ses.cfgOpen && sc.testFollowing().isEmpty(), "CONFIG opened from the keyboard or a controller: the eye holds its panel and the module beside it (" + cb.toString() + ")");
+        ses.bringLane (7, 0); fresh();
     }
 
     // 6. INFO: the box floats by the pointer
@@ -3768,7 +4162,7 @@ public:
         : audio (dm, 0, 0, 2, 4, false, false, true, false), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
-        for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel })
+        for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel, &pagesLabel, &slotsLabel })
         {
             addAndMakeVisible (*l);
             l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
@@ -3779,6 +4173,24 @@ public:
         delay.setJustificationType (juce::Justification::topLeft);
         clockLabel.setText ("CLOCK", juce::dontSendNotification);
         stepsLabel.setText ("OWN STEPS", juce::dontSendNotification);
+        // the E16's pages turned from here: the channel it listens on for Program Change, and the slots its two scenes are in
+        pagesLabel.setText ("E16 PAGES", juce::dontSendNotification);
+        slotsLabel.setText ("PC CHANNEL, THEN THE SLOTS OF SF-000 AND SF-FX", juce::dontSendNotification);
+        slotsLabel.setFont (juce::FontOptions (12.0f));
+        for (auto* c : { &pcBox, &slotA, &slotB })
+        {
+            addAndMakeVisible (*c);
+            c->setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff4D514E));
+            c->setColour (juce::ComboBox::textColourId, juce::Colour (0xffE8E5E1));
+        }
+        pcBox.addItem ("OFF", 1);
+        for (int ch = 1; ch <= 16; ++ch) { pcBox.addItem (juce::String (ch), ch + 1); slotA.addItem (juce::String (ch), ch); slotB.addItem (juce::String (ch), ch); }
+        pcBox.setSelectedId (midi.pcChannel() + 1, juce::dontSendNotification);
+        slotA.setSelectedId (midi.sceneSlot (0), juce::dontSendNotification);
+        slotB.setSelectedId (midi.sceneSlot (1), juce::dontSendNotification);
+        pcBox.onChange = [this] { midi.setPcChannel (pcBox.getSelectedId() - 1); };
+        slotA.onChange = [this] { midi.setSceneSlot (0, slotA.getSelectedId()); };
+        slotB.onChange = [this] { midi.setSceneSlot (1, slotB.getSelectedId()); };
         auto radio = [this] (juce::TextButton& b, const char* text, int group, std::function<void()> chosen)
         {
             addAndMakeVisible (b);
@@ -3846,7 +4258,7 @@ public:
         addAndMakeVisible (fullScreen);
         fullScreen.setButtonText ("FULL SCREEN");
         fullScreen.onClick = [this] { if (onFull) onFull(); };
-        setSize (520, 850);
+        setSize (520, 882);
         show();
         startTimerHz (4);
     }
@@ -3858,7 +4270,15 @@ public:
         load.setBounds (r.removeFromTop (24));
         ins.setBounds (r.removeFromTop (24));
         e16.setBounds (r.removeFromTop (24));
-        r.removeFromTop (4);
+        {
+            auto pr = r.removeFromTop (26);
+            pagesLabel.setBounds (pr.removeFromLeft (110));
+            pcBox.setBounds (pr.removeFromLeft (64)); pr.removeFromLeft (6);
+            slotA.setBounds (pr.removeFromLeft (56)); pr.removeFromLeft (6);
+            slotB.setBounds (pr.removeFromLeft (56)); pr.removeFromLeft (8);
+            slotsLabel.setBounds (pr);
+        }
+        r.removeFromTop (6);
         delay.setBounds (r.removeFromTop (70));
         r.removeFromTop (4);
         auto row = r.removeFromTop (26);
@@ -3927,7 +4347,7 @@ private:
                        juce::dontSendNotification);
         load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
-        e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")), juce::dontSendNotification);
+        e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")) + (midi.pageNote().isNotEmpty() ? "   (" + midi.pageNote() + ")" : juce::String()), juce::dontSendNotification);
         const bool fol = midi.followsClock(), snd = ! fol && midi.sendsClock();
         const int n = engine.notesHeard();
         const juce::String landed = "NOTES IN LAND " + juce::String (std::abs (engine.notesLateMs()), 1) + " MS " + (engine.notesLateMs() >= 0.0f ? "LATE" : "EARLY");
@@ -3957,7 +4377,8 @@ private:
     juce::AudioDeviceSelectorComponent audio;
     sf0::Engine& engine;
     sf0::Midi& midi;
-    juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel;
+    juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel, pagesLabel, slotsLabel;
+    juce::ComboBox pcBox, slotA, slotB;
     juce::TextButton off, send, follow, onBeat, withNotes;
     juce::Slider lead, trim;
     juce::Label lookLabel, glowLabel, hueLabel, brightLabel, pulseLabel;
