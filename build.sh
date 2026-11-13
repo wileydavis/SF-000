@@ -35,6 +35,15 @@ else
 fi
 cmake --build build --config Release -j "$JOBS"
 
+if [ "$(uname)" = "Darwin" ]; then
+  # macOS keeps its own picture of an app's icon and looks again only when the app itself looks
+  # changed: a new Icon.icns inside it does not count. So the app is touched and LaunchServices told.
+  # (If the Dock still shows the old one:  killall Dock Finder )
+  touch "$APP"
+  LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  if [ -x "$LSREG" ]; then "$LSREG" -f "$APP" >/dev/null 2>&1 || true; fi
+fi
+
 echo
 echo "Built: $APP"
 if [ "${1:-}" = "test" ]; then
