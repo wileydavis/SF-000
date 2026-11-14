@@ -2056,15 +2056,31 @@ juce::String Session::takeTray (const var& tray)
         {
             const int k = (int) v.getProperty ("slot", 0) - 1;
             if (k < 0 || k >= 16) continue;
-            // a macro (it sweeps through its ten at most) or a stack (it steps through its own, one to a place of the knob at most)
-            const bool pick = v.getProperty ("kind", "macro").toString() != "macro";
-            auto sn = idsOf (v.getProperty ("uids", var()));
+            // a macro (it sweeps through its ten at most), a stack (it steps through its own, one to a place of the knob at most),
+            // or a knob macro (LEARN's kind: no snapshots, the knobs of the rig it is tied to). A macro may be tied to knobs too.
+            const auto kind = v.getProperty ("kind", "macro").toString();
+            const bool pick = kind == "stack";
+            auto sn = kind == "learn" ? std::vector<juce::int64>() : idsOf (v.getProperty ("uids", var()));
             if (sn.size() > (pick ? 128u : 10u)) sn.resize (pick ? 128u : 10u);
-            if (sn.empty()) continue;
+            std::vector<MacroKnob::Link> ln; juce::Array<var> lnKept;
+            if (! pick)
+                if (auto* ls = v.getProperty ("links", var()).getArray())
+                    for (auto& l : *ls)
+                    {
+                        const int i = engine.find (l.getProperty ("c", "").toString());
+                        const float d = juce::jlimit (-1.0f, 1.0f, (float) (double) l.getProperty ("d", 0.0));
+                        if (reaches (engine, i)) { if (std::abs (d) >= 0.004f) ln.push_back ({ i, d }); }
+                        else lnKept.add (l);                                // (a knob this rig does not have: carried, as a file's is)
+                    }
+            std::sort (ln.begin(), ln.end(), [] (const MacroKnob::Link& x, const MacroKnob::Link& y) { return x.ctl < y.ctl; });
+            if (sn.empty() && ln.empty()) continue;
             auto& knob = knobs[(size_t) k];
-            if (knob.snaps == sn && knob.pick == pick) continue;        // it holds that already
+            bool sameLinks = knob.links.size() == ln.size();
+            for (size_t i = 0; sameLinks && i < ln.size(); ++i) sameLinks = knob.links[i].ctl == ln[i].ctl && std::abs (knob.links[i].amount - ln[i].amount) < 1.0e-4f;
+            if (knob.snaps == sn && knob.pick == pick && sameLinks) continue;        // it holds that already
             if (! knob.snaps.empty() || ! knob.links.empty()) { left.add (juce::String (k + 1)); continue; }
             knob.snaps = sn; knob.pick = pick; knob.picked = 0;
+            knob.links = ln; knob.linksKept = lnKept;
             knob.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 16);
             if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) knob.depth = juce::jlimit (0.0f, 2.0f, (float) d);
             turnSnapKnob (k, value (cx::kSnap + k));

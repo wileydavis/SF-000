@@ -7616,7 +7616,7 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             foreign.getDynamicObject()->setProperty ("id", first);                // (an id this library has in use: it is given another here)
             foreign.getDynamicObject()->setProperty ("name", "FROM AFAR");
             ask ("DELETE", "/api/snapshots/" + far + "?forget=1");
-            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001", "sf0testlearn1" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
             const bool put = send ("POST", "/api/snapshots", obj ({ { "snapshot", foreign } })).first == 200;
             juce::MemoryBlock firstClip;
             ses.clipFile (first).loadFileAsData (firstClip);
@@ -7634,6 +7634,13 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
 
             // and a stack on knob 5: a cue stack (the knob steps through it)
             send ("POST", "/api/stacks", obj ({ { "id", "sf0testcue001" }, { "name", "Dark Ones" }, { "items", list ({ ours[2], far, ours[0] }) }, { "slot", 5 } }));
+            // and a knob macro on knob 7 (LEARN's kind: no snapshots, two of the rig's knobs it turns: one this rig has, one it has not)
+            {
+                juce::Array<var> lk;
+                lk.add (obj ({ { "c", "bass.cutoff" }, { "d", 0.4 } })); lk.add (obj ({ { "c", "nolane.noknob" }, { "d", -0.3 } }));
+                send ("POST", "/api/stacks", obj ({ { "id", "sf0testlearn1" }, { "name", "Open Up" }, { "kind", "learn" }, { "depth", 0.8 }, { "slot", 7 }, { "extra", obj ({ { "links", var (lk) } }) } }));
+            }
+            ses.knobs[6].snaps.clear(); ses.knobs[6].links.clear(); ses.knobs[6].linksKept.clear(); ses.knobs[6].pick = false;
 
             const int nWas = (int) ses.library.size();
             const auto knob1Was = ses.knobs[0].snaps;
@@ -7656,7 +7663,7 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                                   && ses.stacks[1].name == "SET PIECE" && ses.stacks[1].kind == "song" && ses.stacks[1].snaps == std::vector<juce::int64> { first, farId, first };
             check (stacksOk, "the stacks in the tray are here, each with its snapshots in its order (the one on a knob among them); the one not in the tray is not");
             check (ses.knobs[2].snaps == std::vector<juce::int64> { first, farId } && std::abs (ses.knobs[2].depth - 0.7f) < 1.0e-6f && ses.knobs[2].name == "LIFT"
-                   && ! ses.knobs[2].pick && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOBS 3, 5 FILLED") && said.contains ("KNOB 1 HOLDS SOMETHING"),
+                   && ! ses.knobs[2].pick && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOBS 3, 5, 7 FILLED") && said.contains ("KNOB 1 HOLDS SOMETHING"),
                    "a macro goes on its knob where the knob held nothing (knob 3: its snapshots in sweep order, its depth, its name); a knob that holds something is left, and it says so");
             // the stack on knob 5 makes it a knob that steps: a turn comes to one of its snapshots, a press recalls it
             ses.userSet (cx::kSnap + 4, 0.5f);
@@ -7665,6 +7672,19 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             ses.pressSnapKnob (4);
             check (cueStack && ses.baseId == farId && ses.cueing() == 0 && std::abs (ses.value (cx::kSnap + 4) - 0.5f) < 1.0e-6f,
                    "a stack on a knob makes it a cue stack: the knob steps through its snapshots, the one it comes to plays in the headphones (the one LOAD brought, from its clip), and a press recalls it");
+            {
+                const auto& k7 = ses.knobs[6];
+                const bool learnt = k7.snaps.empty() && ! k7.pick && k7.name == "OPEN UP" && std::abs (k7.depth - 0.8f) < 1.0e-4f
+                                    && k7.links.size() == 1 && k7.links[0].ctl == e.find ("bass.cutoff") && std::abs (k7.links[0].amount - 0.4f) < 1.0e-4f && k7.linksKept.size() == 1;
+                // turned, it takes the bass's cutoff with it: 0.4 of its travel at the full turn, times its depth
+                const float cutWas = e.target (e.find ("bass.cutoff"));
+                ses.userSet (cx::kSnap + 6, 1.0f);
+                const float cutFull = e.target (e.find ("bass.cutoff"));
+                ses.userSet (cx::kSnap + 6, 0.0f);
+                check (learnt && std::abs ((cutFull - cutWas) - juce::jmin (0.32f, 1.0f - cutWas)) < 0.01f && std::abs (e.target (e.find ("bass.cutoff")) - cutWas) < 1.0e-4f,
+                       "a knob macro on a knob: LOAD ties the knob to the rig's knobs it names (the one this rig has; the other is carried), and its turn takes them with it");
+                if (! learnt) std::printf ("    (snaps %d pick %d name %s depth %.2f links %d kept %d)\n", (int) k7.snaps.size(), (int) k7.pick, k7.name.toRawUTF8(), k7.depth, (int) k7.links.size(), k7.linksKept.size());
+            }
             const bool sung = ses.arrangement.size() == 3 && ses.arrangement[0].snap == first && ses.arrangement[0].bars == 16 && ses.arrangement[1].snap == farId && ses.arrangement[1].bars == 8
                               && ses.arrangement[2].bars == 4 && std::abs (ses.arrMorphBars (1) - 2.0) < 1.0e-9 && ses.arrMorphBars (0) == 0.0;
             check (sung && said.contains ("THE SONG IS THE ARRANGEMENT"), "a song in the tray is the arrangement, there being none: its parts in order, each its bars and its way in");
@@ -7713,7 +7733,7 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             const auto said3 = on.load();
             check (said3.contains ("NO ANSWER") && said3.contains ("NOTHING WAS CHANGED") && ses.stacks.size() == 2, "with no answer LOAD says so and changes nothing (" + said3 + ")");
             ours.add (far);
-            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001", "sf0testlearn1" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
         }
     }
     for (auto& uid : ours) ask ("DELETE", "/api/snapshots/" + uid + "?forget=1");

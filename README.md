@@ -546,16 +546,18 @@ The library itself is a bench: every snapshot a chip, chips in stacks, stacks th
 themselves (like this one, a song from this one, a mood), macros for the snapshot knobs, and a
 **tray** for what the instrument should load (its own README, in the repo `snapshot-library`).
 
-**LOAD** (beside SET UP) brings what is in the tray:
+**LOAD** (beside SET UP) brings what is on the web library's chassis (its model of SF-000):
 
 - **Its stacks.** **STACK** (it appears once there are any) steps the library screen through
   them, each in its own order, then back to every snapshot. The title says which. A stack taken
   out of the tray there is gone from here at the next LOAD; its snapshots stay.
 - **The snapshots this library lacks**, whole, with their four bars and the definitions they
   name, under the name each has there. One this library has, renamed there, is renamed here.
-- **What is on the tray's knob bays**, each onto its knob *if the knob holds nothing*: a macro
-  (the knob sweeps) or a stack (the knob steps: a cue stack, above). A knob that holds something
-  is left, and the line says which: CLEAR it in MACROS and LOAD again.
+- **What is in the chassis's sixteen pockets**, each onto its knob *if the knob holds nothing*:
+  a macro (the knob sweeps), a stack (the knob steps: a cue stack, above) or a knob macro (the
+  knob is tied to the rig's knobs it names, as LEARN ties them; one made there from two
+  snapshots makes the change from the first to the second, from wherever the rig is). A knob
+  that holds something is left, and the line says which: CLEAR it in MACROS and LOAD again.
 - **A song**, as the arrangement, *if there is none*.
 
 LOAD takes nothing away and writes over nothing. What it brought is not sent back. With no
@@ -945,6 +947,8 @@ Delete `session.json` to start again from the factory rig.
 
 ## Not built yet
 
+- A knob made here does not go up to the web library yet, and the library's knobs cannot be
+  listed and installed from inside SF-000: they come by LOAD, from the chassis there.
 - A snapshot's lanes (its stems) stay on this Mac: ONLINE does not send them and LOAD does not
   bring them yet, so the web library cannot play some of a snapshot's lanes. And a snapshot from
   before has no lanes kept (they could be made again from the snapshot itself, as PRINT renders,

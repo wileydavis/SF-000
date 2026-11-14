@@ -2071,8 +2071,35 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
 421. **A knob's pile is pressed beside its module** to deal it out; on the module are its
      knobs, which turn. *Mine.*
 
+## Knob macros, in the library and through LOAD (Nov 13): forty-second build
+
+422. **A knob macro is a thing in the library**: LEARN's kind of knob, which holds no
+     snapshots but moves, each one of the rig's knobs and how far the whole turn takes it (as
+     a knob's `links` are in the session file: `c` the knob's id, `d` a share of its travel).
+     There it is a stack of kind `learn` with its moves beside it; nothing in the library's
+     tables changed to hold it.
+423. **It is built there from two chips.** *Mine.* Mark two and press KNOB MACRO: every knob
+     that stands differently in the second than in the first is a move, by as much as it
+     differs (the furthest first, sixty-four at most, a difference under half a hundredth
+     left out). So "the change from this sound to that one" becomes a knob that makes that
+     change from wherever the rig is, which a snapshot macro cannot (it goes to the snapshots
+     themselves). Its moves lie on the table as plates; AMOUNT sets one, TAKE OUT takes one
+     off. Not built: adding a move for a knob the two chips did not differ in.
+424. **LOAD ties an empty knob to them.** The knob takes the name, the depth and the moves
+     for the knobs this rig has; a move for a knob it has not is carried, as a file's is. A
+     knob that holds anything is left, as with a macro (387). A macro may have moves as well
+     as snapshots, and LOAD brings both. An SF-000 from before this build reads a knob macro
+     as a stack of nothing and leaves the knob alone.
+425. **Its module's TURN has nothing to play** in the library (there is no rig there to
+     turn), and says so. Its DEPTH is kept, as a macro's is.
+
 ## Not verified
 
+- **Knob macros (422 to 425) are checked on made-up snapshots here and on the rig's own
+  knobs through LOAD** (the bass's cutoff taken 0.4 of its travel, times the depth). Not
+  tried with two of your snapshots: how many knobs differ between two real ones (it may be
+  dozens, most of them small), and whether the knob that results is musical or needs its
+  small moves taken off.
 - **The knob modules and the chassis (418 to 421) are checked by pressing and dragging in a
   browser with no graphics card**, and looked at as pictures. Not seen or handled on the Mac:
   whether a module's name is large enough four by four, and whether 150 pixels for a knob's
