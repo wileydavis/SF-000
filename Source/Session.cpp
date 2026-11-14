@@ -1029,6 +1029,7 @@ bool Session::cue (juce::int64 id)
     std::unique_ptr<Engine::CueClip> clip;
     // narrowed to some of its lanes: those lanes' stems, together (with none of them kept, the whole clip, as before)
     bool narrowed = false;
+    juce::uint32 bed = 0;
     if (s != nullptr && id == cueScopeFor)
     {
         bool whole = cueScope.returns && cueScope.bus;
@@ -1040,6 +1041,13 @@ bool Session::cue (juce::int64 id)
             if (readStems (id, st, &cueScope))
             {
                 narrowed = true;                                        // (nothing of it in this scope is silence, which is the answer)
+                if (cueInSet)
+                {
+                    // the bed: every stem of the set's own that the scope leaves where it is
+                    for (int l = 0; l < kLanes; ++l) if (! cueScope.lane[(size_t) l]) bed |= 1u << l;
+                    if (! cueScope.returns) bed |= (1u << kLanes) | (1u << (kLanes + 1));
+                    if (! cueScope.bus) bed |= 1u << (kLanes + 2);
+                }
                 int len = 0;
                 for (auto& p : st.parts) len = std::max (len, p.second.getNumSamples());
                 clip = std::make_unique<Engine::CueClip>();
@@ -1073,10 +1081,20 @@ bool Session::cue (juce::int64 id)
     }
     retire();
     const auto was = cueId;
+    engine.setCueBed (clip != nullptr ? bed : 0u);
     if (clip == nullptr) { engine.setCue (nullptr); cueId = 0; }
     else { engine.setCue (clip.get()); cueKept.push_back ({ std::move (clip), 0u }); cueId = id; }
     if (cueId != was && onChange) onChange();                       // (the library shows which is in the headphones)
     return cueId != 0;
+}
+
+void Session::setCueInSet (bool on)
+{
+    if (on == cueInSet) return;
+    cueInSet = on;
+    touch();
+    if (cueId != 0) cue (cueId);
+    if (onChange) onChange();
 }
 
 void Session::cueWith (juce::int64 id, const Scope& scope)
@@ -2231,6 +2249,7 @@ var Session::stateVar()
     root->setProperty ("controls", var (other));
     root->setProperty ("activeLane", activeLane);
     root->setProperty ("recallNotes", recallNotes);
+    root->setProperty ("cueInSet", cueInSet);
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
     root->setProperty ("files", fl);
@@ -2363,7 +2382,7 @@ bool Session::load()
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "samples", "arrangement", "stacks" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet", "samples", "arrangement", "stacks" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -2426,6 +2445,7 @@ void Session::takeState (const var& root)
         }
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
     recallNotes = (bool) root.getProperty ("recallNotes", true);
+    cueInSet = (bool) root.getProperty ("cueInSet", false);
     // The samples. What is written is turned into a path to read: a copy in the library by where
     // the library is now; a file written whole (by a build from before copies were kept) is
     // copied in now if it is still where it was, and read from its copy from here on.

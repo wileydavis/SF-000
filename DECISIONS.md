@@ -2027,13 +2027,36 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the headphones with the chosen lanes taken out and the snapshot's put in; and lanes for
      the snapshots taken before, rendered from the snapshot as PRINT renders.
 
+## Forty-first build (Nov 13): the rest of the set under a narrowed cue
+
+410. **You, of the fortieth:** "the stemmed cueing snapshots work awesome." On the Mac, in
+     the headphones. So the first half stays exactly as it is, and the second half is a key.
+411. **IN SET, at the end of the scope's row.** *Mine* (the name and the place). Lit, a
+     narrowed cue has under it every stem of the set's own that the scope leaves out, as it
+     plays now: the headphones have what the set would be after the recall, which is what you
+     first asked ("what it would sound like with those lanes deselected"). Out, the snapshot's
+     lanes alone, as you have it now. It starts out, and is kept as it is left.
+412. **The set's part is taken where the stems are** (as each goes into the mix, before the
+     master) **and set back by the master's delay**, so that it sits to the sample where the
+     set is heard and where the cue's clip is placed. *Mine.* Taken after the master it could
+     not have lanes left out of it. It crosses over in one buffer when a key of the row is
+     pressed, and it does not dip while the cue's clip changes (the clip fades out and in over
+     10 ms each way; the bed stays).
+413. **A whole cue has no bed**, IN SET or not: with every key lit the snapshot is everything,
+     and the clip is it. And a snapshot with no lanes kept has none either (408).
+414. **What it cannot tell you.** The snapshot's lanes are four bars as they were taken, played
+     round; after a real recall those lanes play on from the sequencer, and a morph travels.
+     IN SET is the destination, not the journey.
+
 ## Not verified
 
-- **A snapshot's lanes (fortieth) are checked by measurement**: every stem's level over the
-  bars against what the engine measured of it, the file read back, a cue narrowed to the kick
-  against the kick's stem. Not heard by anyone. Things for your ears: whether lanes without
-  the master are close enough to how they sound in the set to judge a morph by, and whether
-  a lane without its echo (which is in RET) is what you expect to hear.
+- **IN SET (forty-first) is checked by measurement**: the bed against the stems the recorder
+  is handed, sample for sample, at the master's delay; the snapshot's kick over the set
+  without its own. Not heard. For your ears: whether the set's part, which has not been
+  through the master, sits at the right level against the set in the other ear (PHONES), and
+  whether a lane over the set tells you what you need before a recall.
+- **A snapshot's lanes (fortieth): heard on the Mac, and they work** (410). Still yours to
+  say: whether a lane without its echo (which is in RET) is what you expect to hear.
 - **The library's new look (395 to 402) has been seen only as pictures a browser with no
   graphics card drew here**, beside pictures of the dark instrument drawn the same way. Not
   seen: your browser's own drawing of it on the Mac, at two pixels to the point (the picture it

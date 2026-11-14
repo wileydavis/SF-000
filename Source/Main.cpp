@@ -2325,6 +2325,49 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 float back = 0.0f;
                 for (int k = 0; k < round; ++k) { both(); back = std::max (back, e.cueBlock().getMagnitude (0, 128)); }
                 const bool silent = quiet == 0.0f && ses.cueing() == id && std::abs (back - narrow) < 0.005f;
+                {
+                    // IN SET: under a narrowed cue, the rest of the set as it plays now, set back by the master's delay so that it sits where the set is heard
+                    struct Sum : Engine::RecSink
+                    {
+                        juce::uint32 take = 0; std::vector<float> all, now;
+                        void begin (int n) noexcept override { now.assign ((size_t) n, 0.0f); }
+                        void track (int index, const float* l, const float*, int n) noexcept override { if (index >= 1 && ((take >> (index - 1)) & 1u) != 0) for (int i = 0; i < n; ++i) now[(size_t) i] += l[i]; }
+                        void end (int) noexcept override { all.insert (all.end(), now.begin(), now.end()); }
+                    } sum;
+                    e.setRunning (true); plain.setRunning (true);
+                    for (int k = 0; k < perBar * 2; ++k) both();
+                    ses.setCueInSet (true);
+                    auto heardWith = [&] (const Session::Scope& scope, double& worst, double& loudest, double& over)
+                    {
+                        ses.cueWith (id, scope);
+                        sum.take = e.cueBed(); sum.all.clear();
+                        for (int k = 0; k < 40; ++k) both();                         // (the cue's fade, the bed's line)
+                        e.setRecSink (&sum);
+                        std::vector<float> got;
+                        for (int k = 0; k < round; ++k) { both(); for (int i = 0; i < 128; ++i) got.push_back (e.cueBlock().getSample (0, i)); }
+                        e.setRecSink (nullptr);
+                        const size_t lat = (size_t) e.masterLatency();
+                        worst = loudest = over = 0.0;
+                        for (size_t t = lat + 256; t < got.size() && t - lat < sum.all.size(); ++t)
+                        {
+                            const double bed = sum.all[t - lat];
+                            worst = std::max (worst, std::abs ((double) got[t] - bed)); loudest = std::max (loudest, std::abs (bed)); over = std::max (over, std::abs ((double) got[t] - bed));
+                        }
+                    };
+                    double w0 = 0, l0 = 0, o0 = 0, w1 = 0, l1 = 0, o1 = 0;
+                    heardWith (none, w0, l0, o0);                                    // nothing of the snapshot: the headphones have the set's own stems, all of them
+                    const bool allBed = e.cueBed() == (1u << Engine::kStems) - 1u;
+                    heardWith (only, w1, l1, o1);                                    // the snapshot's kick over the set without its own
+                    const bool noKick = e.cueBed() == ((1u << Engine::kStems) - 1u) - 1u;
+                    ses.setCueInSet (false);
+                    const bool gone = e.cueBed() == 0u;
+                    e.setRunning (false); plain.setRunning (false);
+                    for (int k = 0; k < 40; ++k) both();
+                    const bool bedOk = allBed && noKick && gone && l0 > 0.05 && w0 < 1.0e-5 && l1 > 0.05 && std::abs (o1 - (double) narrow) < 0.05 * (double) narrow;
+                    std::printf ("  %s: IN SET: with nothing of a snapshot in scope the headphones have the set's own stems, every sample where the set is heard (peak %.3f, apart by %.1e at most); with its kick in scope they have the set without its own kick, and over that the snapshot's (peak %.3f; alone it was %.3f)\n",
+                                 bedOk ? "ok  " : "FAIL", l0, w0, o1, narrow);
+                    if (! bedOk) ++bad;
+                }
                 ses.cueWith (0, {}); ses.cue (0);
                 for (int k = 0; k < 8; ++k) both();
                 const bool stemsOk = kept && lens && kickPk > 0.05f && on && clipPk > 0.05f
@@ -3175,6 +3218,14 @@ static int uiTest()
         const bool row = countOf (Screen::testIsScope) == kLanes + 3;
         click (firstOf (Screen::testIsScope, 0)); draw();                   // the kick put out
         const bool out = ! sc.testScope (0) && sc.testScope (5);
+        {
+            // IN SET, at the end of the row: the rest of the set under a narrowed cue. It is kept as it is left.
+            const bool key = countOf (Screen::testIsCueSetKey) == 1 && ! ses.cueInSet;
+            click (firstOf (Screen::testIsCueSetKey)); draw();
+            const bool lit = ses.cueInSet && (e.cueBed() == 1u || ! ses.stemsFile (ses.cueing()).existsAsFile());        // (cued with its lanes kept, the kick put out: the bed is the set's own kick)
+            click (firstOf (Screen::testIsCueSetKey)); draw();
+            check (key && lit && ! ses.cueInSet && e.cueBed() == 0u, "IN SET, at the end of that row, puts the lanes that are put out under the cue as the set plays them, and takes them away again");
+        }
         click (firstOf (Screen::testIsRecallKey)); draw();
         const bool took = std::abs (e.target (cut) - 0.15f) < 1.0e-4f && std::abs (e.target (punch) - 0.9f) < 1.0e-4f && sc.testScope (0);
         if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));

@@ -49,6 +49,7 @@ The uid comes back the same (see below); `made` does not.
   "controls":  { "g.tempo": 0.51, ... },      what a snapshot leaves alone: tempo, glide, master, mutes
   "activeLane", "files", "space", "insertFiles":   the rig's own state (samples, impulse responses)
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
+  "cueInSet": false,                          IN SET: under a narrowed cue, the rest of the set as it plays (absent: false)
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ], "pick"? } x 16 ],

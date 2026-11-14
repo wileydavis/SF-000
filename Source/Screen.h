@@ -103,6 +103,7 @@ public:
     static bool testIsScope (const TestHit& h)  { return h.kind == hScope; }
     static bool testIsCueKey (const TestHit& h) { return h.kind == hAct && h.a == aCue; }
     static bool testIsRecallKey (const TestHit& h) { return h.kind == hAct && h.a == aRecallCue; }
+    static bool testIsCueSetKey (const TestHit& h) { return h.kind == hAct && h.a == aCueSet; }
     static bool testIsCard (const TestHit& h)   { return h.kind == hCard; }
     static bool testIsLoadKey (const TestHit& h){ return h.kind == hAct && h.a == aLoad; }
     static bool testIsControl (const TestHit& h, int ctl) { return (h.kind == hKnob || h.kind == hRead) && h.a == ctl; }
@@ -189,7 +190,7 @@ private:
                    hPocket,         // POCKETS: a lane's pocket on the map (a: the lane): dragged, left and right its HOME, up and down its WIDTH
                    hArrPart, hArrBars, hArrMorph };     // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aCueSet, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch, aStack,
