@@ -2471,6 +2471,51 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      to the web library yet (a stack **knob** still does, by 447). That is the fourth stage,
      with the web's copy and this one kept the same both ways.
 
+### What you found that afternoon (forty-ninth build)
+
+478. **You**, 14:34: "bug: when navigating to a new lane but without closing a config panel
+     first, you get unexpected lane selection until you go back and close the config panel.
+     maybe we automatically close the config whenever navigating to another lane?"
+     **Done as you said, and a little wider.** CONFIG shuts when another lane comes to the
+     front, by any hand. *Mine:* and when another module does (an insert, the returns, the
+     master) by a key or a controller; under the mouse it still stays where it was put for
+     those. The same lane brought again leaves it. It used to go along to the new lane, which
+     kept the E16 on CONFIG's page when the lane's own page had been asked for.
+479. **You**, 14:35: "also, a way to take snapshots from the E16 on any page would be nice.
+     Would a double tap on glide work, or maybe pressing 1 and 13 together?"
+     **Knobs 13 and 16 pressed together.** *Mine, because knob 1 cannot be used:* its press
+     swaps the knob to GLIDE inside the E16 and sends SF-000 nothing, so neither a double tap
+     on it nor 1 with 13 can be seen. 13 and 16 are the two bottom corners, their presses
+     reach SF-000 on every page, and the scenes you have already send them. So that the two
+     can be told from one, each now acts as it is let go (or after half a second held), not
+     as it goes down. The E16's display says SNAPSHOT TAKEN. Not on the library's map, where
+     13 and 16 are held.
+480. **You**, 14:44: "Bugs: the macro button on the library page takes you backl to the
+     instrument main, not macros. I made a knob macro that turned some filtersdown and one
+     up., It worked, but when i made some direct adjustments to the knob that turned up, the
+     other filters refused to return to the state with the macro turned down." And at 15:00:
+     "I have been unable to reproduce the knob macro bug so unless you've found it, we can
+     hold on that until it happens again."
+     **MACROS to MAIN:** found one way it happens, and mended it. With the library opened on
+     the screen and the E16 still in its first scene, MACROS sends the E16 to the snapshot
+     page; it says "the first scene's twelfth", SF-000 took it to be in the second, read that
+     as a hand's turn of the page, and put MAIN up. The snapshot page is the twelfth of both
+     scenes: being on either is being there. *I could make that happen here; I do not know
+     that it is what happened on yours.*
+     **The macro:** not found, and held, as you said. The sequence you described is now a
+     check, and passes (the others come back). *One thing does exactly what you saw, by
+     design:* a macro knob **pressed** (a double-click on the screen; knobs 2 and 3 on the
+     E16) past half way keeps what it has pushed and sends the knob home, so the knob reads
+     nothing and the filters stay where they were pushed. Left as it is until you say.
+481. **You**, 14:59: "stack knobs work greate and as expected in non cue mode but in cue mode
+     I don't hear anything in the headphones change from pa. i suspect because we don't have
+     the phones option as the default." And at 15:01: "ignore the cue message. I turned
+     phones on and it works just fine." **Nothing changed in how a cue is played.** *Mine,
+     small:* CUE lit with nowhere for a cue to play (no outputs 3 + 4 open, PHONES out) now
+     says so on the top bar and on the E16's snapshot page, and a stack knob come to a
+     snapshot with no sound kept says that. PHONES is still off each time SF-000 opens, so
+     it cannot be left on for a PA.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2490,6 +2535,10 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   the file. Not seen on your Mac: whether the keys are big enough to hit, and the headphones.
 - **Hearing before adding, and the rack (476, 477)** are pressed in the drawn screen and read
   back from the session file. Not on your Mac.
+- **The forty-ninth build (478 to 481)** is checked with made-up messages from an E16: CONFIG
+  shutting, 13 and 16 together, MACROS from the library with the E16 in the other scene. Not
+  on your E16: whether its two presses reach SF-000 close enough together to count as one, and
+  whether 13 and 16 acting as they are let go feels any slower.
 - **LOAD making room (466)** is checked against the web library's code running here, with a
   new session's TOUR on knob 5 and a module that has another knob for 5. I took your failure
   to be this one from how the code behaves; I have not seen your LOAD line. If TEST STACK 1

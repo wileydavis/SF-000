@@ -3183,12 +3183,22 @@ static int uiTest()
 
         sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick(); draw();
         const bool opened = ses.cfgOpen && ses.cfg.kind == 0 && ses.cfg.lane == 5 && ! sc.testConfigRect().isEmpty();
+        auto pressC = [&] { sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick(); draw(); };
+        // CONFIG is one module's: another lane or module brought to the front by a key or a controller shuts it, and C there opens that one's
         sc.keyPressed (tab); sc.testTick(); draw();
-        const bool along = ses.cfgOpen && ses.cfg.lane == 6 && ses.activeLane == 6;
+        const bool shutByLane = ! ses.cfgOpen && ses.activeLane == 6;
+        pressC();
+        const bool along = shutByLane && ses.cfgOpen && ses.cfg.kind == 0 && ses.cfg.lane == 6;
+        ses.bringLane (6, 1); sc.testTick(); draw();
+        const bool sameKeeps = ses.cfgOpen;                             // (the same lane brought again: as it was)
         ses.bring ({ S::fInsert, 2 }, 1); sc.testTick(); draw();
-        const bool toInsert = ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 6 && ses.cfg.slot == 2;
+        const bool shutByInsert = ! ses.cfgOpen;
+        pressC();
+        const bool toInsert = sameKeeps && shutByInsert && ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 6 && ses.cfg.slot == 2;
         ses.bring ({ S::fMaster, 0 }, 1); sc.testTick(); draw();
-        const bool toMaster = ses.cfgOpen && ses.cfg.kind == 3;         // (the master's CONFIG is its drum bus's)
+        const bool shutByMasterFront = ! ses.cfgOpen;
+        pressC();
+        const bool toMaster = shutByMasterFront && ses.cfgOpen && ses.cfg.kind == 3;         // (the master's CONFIG is its drum bus's)
         int busKnobs = 0, laneKeys = 0;
         for (auto& h : sc.testHits()) for (int k = 0; k < kBusKnobs; ++k) if (Screen::testIsControl (h, cx::kBus + k)) ++busKnobs;
         for (auto& sp : ses.configList()) if (sp.group == "LANES") ++laneKeys;
@@ -3211,7 +3221,7 @@ static int uiTest()
         sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();        // (C: to what is in front now, the master's)
         sc.keyPressed (juce::KeyPress ('c', juce::ModifierKeys(), 'c')); sc.testTick();        // (and shut)
         check (opened && along && toInsert && shutByMaster && mouseLeaves && ! ses.cfgOpen,
-               "C opens CONFIG on what is in front and shuts it; brought to the front by a key or a controller, a lane, an insert or the master (its drum bus: four knobs on its face, the eleven lanes among its CONFIG) takes CONFIG with it and the sequencer strip shuts it; the master's own C opens it; under the mouse it stays where it was put");
+               "C opens CONFIG on what is in front and shuts it; another lane, an insert or the master brought to the front by a key or a controller shuts it, and C there opens that one's (the master's is its drum bus: four knobs on its face, the eleven lanes among its CONFIG); the same lane brought again leaves it; the sequencer strip shuts it; the master's own C opens it; under the mouse it stays where it was put");
 
         ses.wantShowing = 1; sc.testTick();
         const bool toLibrary = sc.testPage() == Screen::pLibrary && ses.showing == 1 && ses.wantShowing == -1;
@@ -6347,6 +6357,111 @@ static int midiTest()
         check (again && namesBack && ! midi.wheelInUse() && recalled && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "P11" && toMaster == "P6" && handTurn,
                "on the snapshot page a stack knob's press is its own, as it goes down (the set goes to its snapshot); knob 16 pressed there opens the library (" + toMap + ") and 16 held in the library shuts it, to that scene's own snapshot page ("
                    + fromMap + "); a snapshot knob turned there leaves the E16 taken to be in that scene (the master next: " + toMaster + "), and its twelfth page turned to by hand brings the snapshot knobs to the front");
+        {
+            // CONFIG is one module's: it shuts when another lane, or another module, comes to the front, and the E16 is left on the page that was asked for
+            ses.bringLane (5, 2); ticks (4); out.clear();
+            press (16, e16::kOpenKey); ticks (3);                       // OPEN on BASS: its CONFIG, and the E16 on CONFIG's page
+            const bool cfgUp = ses.cfgOpen && ses.cfg.kind == 0 && ses.cfg.lane == 5;
+            ses.bringLane (5, 1); ticks (1);
+            const bool sameStays = ses.cfgOpen;                         // (the same lane brought again: as it was)
+            out.clear();
+            answers (3); ticks (3);                                     // the E16 turned by hand to OPEN HAT's page
+            const juce::String sentBack = turns();
+            const bool laneShuts = ! ses.cfgOpen && ses.activeLane == 2 && ses.front.kind == Session::fLane && sentBack.isEmpty();
+            press (16, e16::kOpenKey); ticks (3);                       // OPEN there: OPEN HAT's own CONFIG
+            const bool opensNew = ses.cfgOpen && ses.cfg.kind == 0 && ses.cfg.lane == 2;
+            ses.bring ({ Session::fReturns, 0 }, 0); ticks (1);
+            const bool mouseKeeps = ses.cfgOpen;                        // (another module under the mouse: CONFIG stays where it was put)
+            ses.bringLane (2, 0); ticks (1);
+            ses.bringStop ({ Session::fReturns, 0, 0 }, 1); ticks (3);
+            const bool moduleShuts = ! ses.cfgOpen && ses.front.kind == Session::fReturns;
+            ses.bringLane (2, 0); ticks (1);
+            if (! ses.cfgOpen) ses.openConfig ({ 0, 2, 0 });
+            ses.selectLane (7); ticks (3);                              // (the keyboard's lane, or a click on another lane)
+            const bool keysShut = ! ses.cfgOpen && ses.activeLane == 7;
+            check (cfgUp && sameStays && laneShuts && opensNew && mouseKeeps && moduleShuts && keysShut,
+                   "CONFIG shuts when another lane comes to the front (the E16 turned to it by hand is left on that lane's page, not sent back to CONFIG's: " + (sentBack.isEmpty() ? juce::String ("nothing sent") : sentBack)
+                       + "), or another module by a controller; OPEN there opens that one's; the same lane brought again, and another module under the mouse, leave it open");
+            if (! (cfgUp && sameStays && laneShuts && opensNew && mouseKeeps && moduleShuts && keysShut))
+                std::printf ("    (up %d same %d lane shuts %d opens new %d mouse keeps %d module shuts %d keys %d)\n", (int) cfgUp, (int) sameStays, (int) laneShuts, (int) opensNew, (int) mouseKeeps, (int) moduleShuts, (int) keysShut);
+            // Knobs 13 and 16 pressed together, on any page: SNAPSHOT. Alone, each is its own as it is let go
+            ses.bringLane (3, 0); ticks (4); out.clear();
+            const int libWas = (int) ses.library.size();
+            in (16, e16::kWheelKey, 127); ticks (1);
+            const bool waits = ! midi.wheelInUse();                     // (down, and not yet let go: it may be half of the two)
+            in (16, e16::kOpenKey, 127); ticks (2);
+            const bool taken = (int) ses.library.size() == libWas + 1 && ! midi.wheelInUse() && ! ses.cfgOpen && said (5) == "SNAPSHOT TAKEN";
+            in (16, e16::kWheelKey, 0); in (16, e16::kOpenKey, 0); ticks (2);
+            const bool nothingElse = (int) ses.library.size() == libWas + 1 && ! midi.wheelInUse() && ! ses.cfgOpen;
+            in (16, e16::kOpenKey, 127); in (16, e16::kWheelKey, 127); ticks (2);        // (the other way round: the same)
+            in (16, e16::kOpenKey, 0); in (16, e16::kWheelKey, 0); ticks (2);
+            const bool again = (int) ses.library.size() == libWas + 2 && ! midi.wheelInUse() && ! ses.cfgOpen;
+            in (16, e16::kWheelKey, 127); ticks (1); in (16, e16::kWheelKey, 0); ticks (1);
+            const bool alone = midi.wheelInUse() && (int) ses.library.size() == libWas + 2;      // (13 alone: the wheel, as it is let go)
+            press (16, e16::kWheelKey); ticks (1);
+            in (16, e16::kWheelKey, 127); juce::Thread::sleep (520); ticks (1);
+            const bool heldAlone = midi.wheelInUse();                   // (held alone for half a second: its own, then)
+            in (16, e16::kWheelKey, 0); ticks (1);
+            const bool once = midi.wheelInUse();                        // (and nothing more when it is let go)
+            press (16, e16::kWheelKey); ticks (1);
+            ses.finishTakes (true);
+            while ((int) ses.library.size() > libWas) ses.remove (ses.library.back().id);
+            juce::Thread::sleep (2600); ticks (2); out.clear();
+            check (waits && taken && nothingElse && again && alone && heldAlone && once && ! midi.wheelInUse(),
+                   "knobs 13 and 16 pressed together on a lane's page take a snapshot, in either order, and the E16's display says so; neither the wheel nor OPEN acts; alone, each is its own as it is let go, or after half a second held");
+            if (! (waits && taken && nothingElse && again && alone && heldAlone && once))
+                std::printf ("    (waits %d taken %d [%d of %d, %s] nothing else %d again %d alone %d held %d once %d)\n", (int) waits, (int) taken, (int) ses.library.size(), libWas, said (5).toRawUTF8(), (int) nothingElse, (int) again, (int) alone, (int) heldAlone, (int) once);
+        }
+        {
+            // MACROS pressed in the library, with the E16 in the other scene than it is taken to be in (the library opened on
+            // the screen, the E16 left where it was): its twelfth page is the snapshot module's in either scene, so it is
+            // where it should be, and the designer stays up. (Taken for a hand's turn, it sent the screen to MAIN.)
+            ses.wantShowing = -1;
+            ses.bring ({ Session::fSnap, 0 }, 2); ticks (4); out.clear();
+            press (16, e16::kOpenKey); ticks (2);
+            ses.showing = 1; ses.wantShowing = -1; ticks (4); out.clear();
+            answers (e16::kFocusB + e16::pgMap); ticks (4); out.clear();
+            ses.showing = 2; ticks (6);                                 // (the screen's MACROS key)
+            const juce::String sent = turns(); out.clear();
+            juce::Thread::sleep (1000); ticks (2);
+            answers (e16::kSnapPage); ticks (6);                        // (it says the first scene's twelfth page, after the time an answer is waited for)
+            const bool stays = ses.wantShowing < 0 && ses.showing == 2 && turns().isEmpty();
+            answers (3); ticks (4);                                     // (a lane's page turned to by hand there is still a hand's turn: the main screen)
+            const bool handTurn = ses.wantShowing == 0 && ses.activeLane == 2;
+            check (sent == "P11" && stays && handTurn, "MACROS pressed in the library turns the E16 to the snapshot module's page (" + sent + "); an E16 that turns out to be in the first scene is there too, and the designer stays up; a lane's page turned to by hand is still a hand's turn");
+            if (! (stays && handTurn)) std::printf ("    (sent %s stays %d [want %d] hand turn %d)\n", sent.toRawUTF8(), (int) stays, ses.wantShowing, (int) handTurn);
+            ses.showing = 0; ses.wantShowing = -1; ticks (6); out.clear();
+        }
+        {
+            // A macro knob that turns two filters down and one up; then the one it turns up is adjusted by hand, on the E16.
+            // Turned back, the macro still takes the others back, and leaves the adjusted one where the hand put it, less its push.
+            const int f1 = cx::lane (2, 10), f2 = cx::lane (4, 10), up = cx::lane (6, 10);
+            const auto knobWas = ses.knobs[1];
+            const float w1 = ses.value (f1), w2 = ses.value (f2), w3 = ses.value (up);
+            auto near = [&] (int ctl, float v) { return std::abs (e.target (ctl) - v) < 0.006f; };
+            ses.knobs[1] = MacroKnob(); ses.turnSnapKnob (1, 0.0f);
+            ses.userSet (f1, 0.6f); ses.userSet (f2, 0.6f); ses.userSet (up, 0.4f);
+            ses.learnBegin (1);
+            ses.userSet (f1, 0.3f); ses.userSet (f2, 0.2f); ses.userSet (up, 0.7f);
+            ses.learnKeep();
+            in (16, e16::kKnobCc + 1, 0); ticks (2);
+            const bool home = near (f1, 0.6f) && near (f2, 0.6f) && near (up, 0.4f);
+            in (16, e16::kKnobCc + 1, 127); ticks (2);
+            const bool pushed = near (f1, 0.3f) && near (f2, 0.2f) && near (up, 0.7f);
+            for (int v : { 92, 96, 100, 102 }) { in (7, e16::kKnobCc + 10, v); ticks (1); }      // (lane 7's FILTER, turned up a little by hand)
+            const float put = e.target (up);
+            const bool others = near (f1, 0.3f) && near (f2, 0.2f) && put > 0.72f;
+            for (int v : { 100, 64, 20, 0 }) { in (16, e16::kKnobCc + 1, v); ticks (1); }       // the macro turned back down
+            const bool back = near (f1, 0.6f) && near (f2, 0.6f) && near (up, put - 0.3f);
+            in (16, e16::kKnobCc + 1, 127); ticks (2);
+            const bool again = near (f1, 0.3f) && near (f2, 0.2f) && near (up, put);
+            if (! (home && pushed && others && back && again))
+                std::printf ("    (macro: home %d pushed %d others %d back %d [%.3f %.3f %.3f, put %.3f] again %d)\n", (int) home, (int) pushed, (int) others, (int) back, e.target (f1), e.target (f2), e.target (up), put, (int) again);
+            check (home && pushed && others && back && again, "a macro knob that turns two filters down and one up, the one it turns up then adjusted by hand on the E16: turned back, the macro takes the others back where they were and the adjusted one to where the hand put it less its push; turned up again, all three as they were");
+            in (16, e16::kKnobCc + 1, 0); ticks (2);
+            ses.knobs[1] = knobWas; ses.turnSnapKnob (1, 0.0f);
+            ses.userSet (f1, w1); ses.userSet (f2, w2); ses.userSet (up, w3);
+        }
         ses.bringLane (3, 0); ticks (3); out.clear();
 
         // the E16 sent to one page says it is on another: nothing follows it there, the page is said again, and SETUP says so if it never comes round

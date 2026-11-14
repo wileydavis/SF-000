@@ -69,11 +69,14 @@ void Session::selectLane (int l)
 void Session::bringLane (int l, int by)
 {
     l = juce::jlimit (0, kLanes - 1, l);
+    // CONFIG is one module's, and shuts when another comes to the front: another lane, by any hand; or this lane
+    // from one of its inserts, the returns or the master, by a controller or the keyboard. (It used to go along to
+    // the new lane, which left the E16 on CONFIG's page when the lane's own page was what had been asked for.
+    // OPEN, there, opens the new one's.) The same lane brought again leaves it as it is.
+    const bool anotherLane = l != activeLane, anotherModule = front.kind != fLane;
+    if (cfgOpen && (anotherLane || (anotherModule && by != 0))) cfgOpen = false;
     if (l != activeLane) { activeLane = l; selStep = -1; page = 0; }
     front = { fLane, 0 };
-    // CONFIG keeps to the lane: its instrument's, or the same slot's of this lane's inserts. (Open
-    // on a return it stays there under the mouse; a controller's or the keyboard's lane takes it.)
-    if (cfgOpen && cfg.kind < 2) cfg.lane = l; else if (cfgOpen && by != 0) cfg = { 0, l, 0 };
     frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
     touch();
     if (onChange) onChange();
@@ -83,14 +86,10 @@ void Session::bring (Front f, int by)
 {
     if (f.kind == fLane) { bringLane (activeLane, by); return; }
     f.slot = f.kind == fInsert ? juce::jlimit (0, kSlots - 1, f.slot) : 0;
+    // (another module to the front by a controller or the keyboard: CONFIG shuts, as for another lane. Under the mouse
+    // it stays where it was put. The same module brought again leaves it as it is.)
+    if (cfgOpen && by != 0 && (f.kind != front.kind || f.slot != front.slot)) cfgOpen = false;
     front = f;
-    if (cfgOpen && by != 0)                     // (under the mouse CONFIG stays where it was put)
-    {
-        if (f.kind == fInsert) cfg = { 1, activeLane, f.slot };
-        else if (f.kind == fReturns) { if (cfg.kind != 2) cfg = { 2, 0, 0 }; }
-        else if (f.kind == fMaster) cfg = { 3, 0, 0 };          // (the master's CONFIG is its drum bus's)
-        else cfgOpen = false;                   // (the sequencer strip, the snapshot knobs: no CONFIG)
-    }
     frontAt = juce::Time::getMillisecondCounter(); frontBy = by; ++frontCount;
     if (onChange) onChange();
 }
@@ -143,7 +142,7 @@ void Session::bringStop (Stop s, int by)
         {
             // (an insert of another lane: that lane is the active one, and its insert is what is in front)
             activeLane = l; selStep = -1; page = 0;
-            if (cfgOpen && cfg.kind < 2) cfg.lane = l;
+            cfgOpen = false;                    // (another lane's: CONFIG shuts)
             touch();
         }
     bring ({ s.kind, s.slot }, by);
@@ -351,7 +350,7 @@ void Session::turnSnapKnob (int k, float v)
             {
                 kn.picked = it.id;
                 cueScopeFor = it.id; cueScope = scopeOf (it.lanes);
-                cue (it.id);
+                cueLacked = cue (it.id) ? 0 : it.id;       // (no sound kept with it: the screen says so)
                 if (onChange) onChange();
             }
         }

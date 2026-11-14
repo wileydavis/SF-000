@@ -639,6 +639,8 @@ Midi::Midi (Engine& e, Session& s, bool devices) : juce::Thread ("SF-000 clock")
     for (auto& v : recallIn) v = 0;
     for (auto& v : heldSince) v = 0;
     for (auto& v : heldFired) v = false;
+    for (auto& v : cornerDown) v = 0;
+    for (auto& v : cornerBoth) v = false;
     for (auto& v : bSent) v = -1;
     for (auto& v : bHeardAt) v = 0;
     for (auto& v : genIn) v = -1;
@@ -857,6 +859,24 @@ void Midi::wheelIn (int address, int val, juce::uint32 nowMs)
     if (d != 0) wheelTurn.fetch_add (d);
 }
 
+// The two bottom corners of every page of the E16: knob 13 (the wheel's key) and knob 16 (OPEN). Pressed together
+// they are SNAPSHOT, from whatever page is up. So that the two can be told from one, each acts as it is let go
+// (or, held alone, after half a second: serviceWheel), not as it goes down.
+// (Knob 1 could not be part of it: its press swaps the knob to GLIDE inside the E16, and nothing is sent.)
+void Midi::cornerKey (int which, bool down, juce::uint32 nowMs)
+{
+    const auto me = (size_t) which, other = (size_t) (1 - which);
+    if (down)
+    {
+        cornerBoth[me] = false;
+        cornerDown[me] = nowMs == 0 ? 1u : nowMs;
+        if (cornerDown[other].load() != 0) { cornerBoth[0] = true; cornerBoth[1] = true; snapKeys.fetch_add (1); }
+        return;
+    }
+    const bool was = cornerDown[me].exchange (0) != 0;
+    if (was && ! cornerBoth[me].exchange (false)) (which == 0 ? wheelKeys : openKeys).fetch_add (1);
+}
+
 // Knobs 13 and 14 where a press already recalls (the snapshot page, the library's map): held for
 // half a second they are the wheel and OPEN, and the recall is for a press let go before that.
 void Midi::held (int which, bool down, juce::uint32 nowMs, std::atomic<int>& shortPress, bool wheel)
@@ -941,8 +961,9 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
             if (fromE16) bMark (12, val, nowMs);
             return;
         }
-        if (num == e16::kWheelKey) { if (val >= 64) wheelKeys.fetch_add (1); return; }
-        if (num == e16::kOpenKey)  { if (val >= 64) openKeys.fetch_add (1); return; }
+        // (the wheel's key and OPEN. From the E16 they are its knobs 13 and 16, and act as they are let go: cornerKey. From a sequencer, at once.)
+        if (num == e16::kWheelKey) { if (fromE16) cornerKey (0, val >= 64, nowMs); else if (val >= 64) wheelKeys.fetch_add (1); return; }
+        if (num == e16::kOpenKey)  { if (fromE16) cornerKey (1, val >= 64, nowMs); else if (val >= 64) openKeys.fetch_add (1); return; }
         if (num == e16::kCfgPrevKey || num == e16::kCfgNextKey) { if (val >= 64) cfgStep.fetch_add (num == e16::kCfgNextKey ? 1 : -1); return; }
         if (num == e16::kRetMuteKey || num == e16::kRetMuteKey + 1)
         {
@@ -965,8 +986,8 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
             const int k = num - e16::kPressCc;
             if (fromE16) pageHeard = e16::kSnapPage;
             // (13 and 16 are no knob of the module. A scene from before this has their presses here: the wheel's key and OPEN, at once, as the scene now sends them)
-            if (k == 12) { if (fromE16 && val >= 64) wheelKeys.fetch_add (1); }
-            else if (k == 15) { if (fromE16 && val >= 64) openKeys.fetch_add (1); }
+            if (k == 12) { if (fromE16) cornerKey (0, val >= 64, nowMs); }
+            else if (k == 15) { if (fromE16) cornerKey (1, val >= 64, nowMs); }
             else if (fromE16 && k == 14) held (4, val >= 64, nowMs, presses[(size_t) k], wheel);       // (knob 15, held: MOTION)
             else if (val >= 64) { other(); presses[(size_t) k].fetch_add (1); }
             return;
@@ -1183,6 +1204,8 @@ void Midi::service()
         if (const int v = cfgIn[(size_t) k].exchange (-1); v >= 0) { ses.setConfig (cfgFirst (k / e16::kCfgPer) + k % e16::kCfgPer, v); cfgCacheAge = 0; }
     if (--cfgCacheAge <= 0) { cfgCacheAge = 6; cfgCache = ses.configList(); }
     serviceWheel (now);
+    // knobs 13 and 16 pressed together, on any page: SNAPSHOT, as the key on the screen
+    if (snapKeys.exchange (0) > 0) { ses.take(); snapTakenAt = now == 0 ? 1u : now; }
     if ((openKeys.exchange (0) & 1) != 0)
     {
         if (wheelMode.load()) wheelChoose();        // (what the pointer is on comes to the front first: OPEN is for that)
@@ -1330,7 +1353,11 @@ void Midi::pageCame (int said, juce::uint32 now)
     settling = false;                               // (a hand has turned it since)
     // (its answer to being sent somewhere, or its script starting again on the page it was on: it
     // is where what is in front has it, and nothing comes to the front a second time for that)
-    const bool there = at == whereNow();
+    // (The snapshot module's page is the twelfth of both scenes. If the E16 is in the other scene than it was taken to be
+    // in (the library was opened on the screen and the E16 stayed where it was), its twelfth page is still that page:
+    // it is there. Taken as a hand's turn, it sent the screen back to MAIN when MACROS was pressed in the library.)
+    const Where want = whereNow();
+    const bool there = at == want || (at.page == e16::kSnapPage && want.page == e16::kSnapPage);
     arrived (at);
     if (there) return;
     if (at.scene == 0)
@@ -1494,6 +1521,10 @@ void Midi::serviceWheel (juce::uint32 now)
             bool no = false;
             if (heldFired[(size_t) i].compare_exchange_strong (no, true) && heldSince[(size_t) i].load() != 0) (i == 4 ? motionKeys : i % 2 == 0 ? wheelKeys : openKeys).fetch_add (1);
         }
+    // a corner held alone for half a second: its own, now (and nothing more when it is let go)
+    for (int c = 0; c < 2; ++c)
+        if (const auto since = cornerDown[(size_t) c].load(); since != 0 && (juce::int32) (now - since) >= 500 && ! cornerBoth[(size_t) c].load())
+            if (cornerDown[(size_t) c].exchange (0) != 0) (c == 0 ? wheelKeys : openKeys).fetch_add (1);
     const bool keyed = (wheelKeys.exchange (0) & 1) != 0;
     const int turned = wheelTurn.exchange (0);
     const bool other = otherTurned.exchange (false);
@@ -1707,16 +1738,18 @@ void Midi::sayNames()
             nm[(size_t) k] = ! ses.knobLive (k) ? String ("-") : kn.name.isNotEmpty() ? four (kn.name) : (Session::isStack (k) ? "S" : "M") + String (k + 1);
         }
         nm[12] = "SEL"; nm[15] = "OPEN";            // (the two corners that are no knob of the module: the wheel, and OPEN)
-        title = ses.stackCue ? "SNAPSHOTS CUE" : "SNAPSHOTS";
+        // (CUE lit with no outputs for the headphones and PHONES out: said here too, in place of the page's name)
+        title = ses.stackCue ? (engine.cueIsHeard() ? "SNAPSHOTS CUE" : "CUE: NO PHONES") : "SNAPSHOTS";
         if (const int k = snapTurned; k >= 0 && Session::isStack (k) && juce::Time::getMillisecondCounter() - snapTurnedAt < 4000u)
         {
             const auto& kn = ses.knobs[(size_t) k];
-            if (const auto* sn = kn.picked != 0 ? ses.findSnap (kn.picked) : nullptr) title = String (k + 1) + (ses.stackCue ? " CUE " : " ON ") + sn->name;
+            if (const auto* sn = kn.picked != 0 ? ses.findSnap (kn.picked) : nullptr) title = String (k + 1) + (! ses.stackCue ? " ON " : ses.cueLacked == kn.picked ? " NO CLIP " : " CUE ") + sn->name;
             else if (kn.name.isNotEmpty()) title = String (k + 1) + " " + kn.name;
         }
     }
     if (wheelMode.load() && ses.pointing) { title = "> " + ses.stopName (ses.pointAt); nm[12] = "SEL"; }
 
+    if (snapTakenAt != 0 && juce::Time::getMillisecondCounter() - snapTakenAt < 2500u) title = "SNAPSHOT TAKEN";       // (13 and 16 together: said on whatever page is up)
     title = e16::cleaned (title, 15);
     if (title == "-") title = {};
     String names;

@@ -3507,6 +3507,20 @@ void Screen::timerCallback()
     // a take that ended by itself (the disk) says so
     if (recorder != nullptr)
         if (const bool r = recorder->recording(); r != recWas) { recWas = r; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter(); }
+    // CUE lit (on the module, in the designer, or by knob 4 of the E16) with nowhere for a cue to play: said, on the top
+    // bar. And a stack knob come to a snapshot that has no sound kept with it: said too. (Otherwise the headphones
+    // simply carry on as they were, and nothing says why.)
+    if (ses.stackCue != cueLitWas)
+    {
+        cueLitWas = ses.stackCue;
+        if (cueLitWas && ! eng.cueIsHeard()) { recNote = "CUE HAS NOWHERE TO PLAY. SETUP: TICK OUTPUTS 3 + 4 FOR THE HEADPHONES. OR H: PHONES ON ONE PAIR"; recNoteAt = juce::Time::getMillisecondCounter(); dirty (R (8, 12, 1712, 52)); }
+    }
+    if (ses.cueLacked != cueLackedWas)
+    {
+        cueLackedWas = ses.cueLacked;
+        if (const auto* sn = cueLackedWas != 0 ? ses.findSnap (cueLackedWas) : nullptr)
+        { recNote = "NO SOUND WAS KEPT WITH " + sn->name + " (TAKEN WITH THE CLOCK STOPPED): NOTHING TO HEAR"; recNoteAt = juce::Time::getMillisecondCounter(); dirty (R (8, 12, 1712, 52)); }
+    }
     if (barNow() != barSig) dirty (R (8, 12, 1712, 52));          // RUN and TEMPO, when an outside clock moves them; REC's time
     if (online != nullptr && page == pLibrary && online->stamp() != onlineStamp) dirty (R (23, 980, 1682, 110));    // what ONLINE has to say
     if (online != nullptr && loadAsked)

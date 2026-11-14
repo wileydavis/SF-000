@@ -368,6 +368,8 @@ private:
     bool wasRunning = false;
     juce::uint64 barSig = 0;
     bool recWas = false;
+    bool cueLitWas = false;             // CUE (the stack knobs') as it last was: lit with nowhere for a cue to play is said
+    juce::int64 cueLackedWas = 0;       // the snapshot last said to have no sound kept
     juce::uint32 onlineStamp = 0;               // the online status last drawn
     bool loadAsked = false, loadSeen = false, loadBusy = false;     // LOAD pressed on the snapshot module: asked for, seen at work, its key lit
     juce::String loadWas;                       // (what LOAD had last said when it was asked for)

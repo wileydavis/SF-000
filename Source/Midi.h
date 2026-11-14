@@ -190,6 +190,8 @@ private:
     void takeRecalls();
     void takeExtra (int extra, int val, bool fromE16);
     void held (int which, bool down, juce::uint32 nowMs, std::atomic<int>& shortPress, bool wheel);
+    // The two bottom corners of a page of the E16, 13 (0) and 16 (1): each its own when let go alone, the two together SNAPSHOT
+    void cornerKey (int which, bool down, juce::uint32 nowMs);
     // ---- where the E16 is, and where what is in front would have it
     struct Where { int scene = -1, page = 0; bool operator== (const Where& o) const { return scene == o.scene && page == o.page; } bool operator!= (const Where& o) const { return ! (*this == o); } };
     Where whereNow() const;
@@ -245,6 +247,10 @@ private:
     void wheelIn (int address, int val, juce::uint32 nowMs);
     std::atomic<int> pageHeard { 0 };                           // the page a knob just turned on the E16 is on (as the script would say it)
     std::atomic<juce::uint32> wheelHeardAt { 0 };
+    std::array<std::atomic<juce::uint32>, 2> cornerDown;        // the E16's knob 13 and knob 16, on any page: down since (0: up)
+    std::array<std::atomic<bool>, 2> cornerBoth;                // ... and pressed with the other meanwhile (then it is not its own press)
+    std::atomic<int> snapKeys { 0 };                            // the two together: SNAPSHOT
+    juce::uint32 snapTakenAt = 0;                               // (the E16's display says so for a moment)
     std::array<std::atomic<juce::uint32>, 5> heldSince;         // knobs 13 and 16 of the snapshot page, then of the map, then the snapshot page's 15: down since (0: up)
     std::array<std::atomic<bool>, 5> heldFired;
     int wheelRest = 0;                                          // message thread from here

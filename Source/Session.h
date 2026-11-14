@@ -234,6 +234,9 @@ public:
     // heard through the master). If it is playing, it changes now. id 0: every cue is whole again.
     void cueWith (juce::int64 id, const Scope&);
     juce::int64 cueing() const          { return cueId; }
+    // The snapshot a stack knob last came to with CUE lit that has no sound kept with it (taken with the clock stopped,
+    // or one of the rig's own): there is nothing of it to play in the headphones. 0: none, or the last one had its sound.
+    juce::int64 cueLacked = 0;
     // The parts of the rig the snapshot in the headphones is narrowed to (nullptr: it is not narrowed, or that one is not it)
     const Scope* cueNarrowed (juce::int64 id) const;
     void turnSnapKnob (int k, float v);

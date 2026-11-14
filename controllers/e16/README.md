@@ -104,6 +104,14 @@ Each means the same on every page, behind its press:
   it is the way back. The master has two things behind it: its drum bus's CONFIG, and, pressed
   again, POCKETS (below); pressed once more, back to the master. The sequencer strip has nothing
   behind it.
+- **Knobs 13 and 16 pressed together take a snapshot**, on any page (but the library's map,
+  where they are held). The display says SNAPSHOT TAKEN. So that the two can be told from one,
+  13 and 16 each act as they are let go, or after half a second held, not as they go down.
+  (Knob 1 cannot be part of it: its press swaps the knob to GLIDE inside the E16, and nothing
+  is sent to SF-000.)
+- **CONFIG shuts when you go somewhere else.** Another lane or module brought to the front (the
+  wheel, a page turned by hand) shuts CONFIG and leaves the E16 on that page. OPEN there opens
+  that one's.
 - **The snapshot page has the same corners, at a plain press.** No knob of the module is on 13
   or 16 there: 13 is the wheel (SEL) and 16 is OPEN, as on every page. (They were stack knobs
   with the corners behind a half-second hold. A scene from that build still works: its 13 and

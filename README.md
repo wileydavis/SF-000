@@ -38,7 +38,7 @@ First run:
 | Set GLIDE, then turn a knob | the sound travels there over the GLIDE time: the knob turns green and walks, with a white mark where it is going. It sets off on the next beat while the clock runs. Turn it again on the way and it carries on from where the sound is. OFF: at once |
 | Click a lane's name, or its plate anywhere off the controls | make it the active lane: the inserts and the sequencer strip show it. Its display is the one lit up |
 | Click an insert's plate, the returns', the master's, the snapshot knobs', the sequencer strip's, off the controls | bring that module to the front: its name lights up, and the E16 turns to its page (see MIDI and the E16) |
-| **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it |
+| **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it. It also shuts when another lane comes to the front (by any hand), or another module by a key or a controller: CONFIG is one module's, and the E16 is then on the page that was asked for |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
 | Click an insert's name | step that slot through DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, EMPTY |
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
