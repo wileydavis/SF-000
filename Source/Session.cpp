@@ -1803,7 +1803,17 @@ void Session::regenerate (int l)
     g.type = genType[(size_t) l];
     g.hits = engine.target (cx::gen (l, 0)); g.rotate = engine.target (cx::gen (l, 1));
     g.accents = engine.target (cx::gen (l, 2)); g.seed = engine.target (cx::gen (l, 3));
+    const Pattern was = p;
     generate (p, g);
+    // (a step the generator lights that held nothing is a new step: on a lane that does not follow the key it is
+    // written at the key's note, as one lit by hand is. A step that kept a note under the generator keeps it.)
+    if (const int k = keyRoot(); k > 0 && lanes()[(size_t) l].pitched && ! engine.laneFollowsKey (l))
+    {
+        const int oct = lanes()[(size_t) l].octave;
+        for (int i = 0; i < p.length; ++i)
+            if (auto& st = p.steps[(size_t) i]; st.on && ! was.steps[(size_t) i].on && st.note == 0 && st.octave == oct)
+                { st.note = k; if (k > 5) st.octave = std::max (0, oct - 1); }
+    }
     engine.setPattern (l, p);
 }
 
@@ -1857,7 +1867,7 @@ void Session::setStepKnob (int which, int v7)
     if (i < 0 || i >= p.length) return;
     auto& s = p.steps[(size_t) i];
     const bool pitched = lanes()[(size_t) l].pitched;
-    auto light = [&] { if (! s.on) { clearStep (s, lanes()[(size_t) l].octave); s.on = true; } };
+    auto light = [&] { if (! s.on) lightStep (l, s); };
     switch (which)
     {
         case stVel:     light(); s.vel = 0.15f + 0.85f * (float) v7 / 127.0f; break;
@@ -1886,9 +1896,39 @@ void Session::stepPress()
     if (selStep < 0 || selStep >= p.length) { selStep = 0; page = 0; }       // (none chosen: the first)
     auto& s = p.steps[(size_t) selStep];
     const int oct = lanes()[(size_t) l].octave;
-    if (! s.on) { clearStep (s, oct); s.on = true; } else clearStep (s, oct);
+    if (! s.on) lightStep (l, s); else clearStep (s, oct);
     setPattern (l, p);
     if (onChange) onChange();
+}
+
+int Session::keyRoot() const { return (int) std::lround (value (cx::kKey) * 12.0f) - 1; }
+
+int Session::keyMoves (int l) const
+{
+    const int k = keyRoot();
+    if (k < 0 || ! lanes()[(size_t) l].pitched || ! engine.laneFollowsKey (l)) return 0;
+    return k > 5 ? k - 12 : k;
+}
+
+void Session::lightStep (int l, Step& s) const
+{
+    // A lane that follows the key: written C, which the key moves to its own note. One that does
+    // not (KEY FOLLOW off in its CONFIG) is written at the key's note, the same one a lane that
+    // follows would sound: nothing will move it there.
+    const auto& d = lanes()[(size_t) l];
+    clearStep (s, d.octave);
+    s.on = true;
+    if (const int k = keyRoot(); k >= 0 && d.pitched && ! engine.laneFollowsKey (l))
+    {
+        s.note = k;
+        if (k > 5) s.octave = std::max (0, d.octave - 1);
+    }
+}
+
+juce::String Session::noteSays (const Step& s, int moves)
+{
+    const int n = juce::jlimit (0, 127, 12 * (s.octave + 2) + juce::jlimit (0, 11, s.note) + moves);
+    return juce::String (kNoteNames[n % 12]) + juce::String (n / 12 - 2);
 }
 
 juce::String Session::stepSays() const
@@ -1898,7 +1938,7 @@ juce::String Session::stepSays() const
     const auto& s = p.steps[(size_t) selStep];
     juce::String t (selStep + 1);
     if (! s.on) return t + " OUT";
-    if (lanes()[(size_t) activeLane].pitched) t << " " << kNoteNames[juce::jlimit (0, 11, s.note)] << s.octave;
+    if (lanes()[(size_t) activeLane].pitched) t << " " << noteSays (activeLane, s);
     return t;
 }
 

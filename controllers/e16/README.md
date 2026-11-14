@@ -209,7 +209,8 @@ on pages 3 to 11: 1 [press] GLIDE; on INS 1-3 4 [press] that insert's MUTE; on R
     STEP comes to another. VEL: 15 to 100 hundredths. GATE: up to the whole step at the knob's
     middle; past it the gate runs on, to the next lit step's edge and a little over at the
     knob's top (legato into it: a slide on ACID). RATCH: one to four hits. NOTE and OCT: on
-    lanes that take notes; nothing elsewhere. VEL and GATE light a step that is out, as dragging
+    lanes that take notes; nothing elsewhere. The title says the note as it sounds: with KEY
+    set, a step newly lit is the key's own note, and NOTE at its bottom is that note. VEL and GATE light a step that is out, as dragging
     it on the screen does; RATCH wants it lit.
   - Knobs 14 and 15 pressed nudge the whole pattern a step earlier and later. GATE (knob 4)
     pressed mutes the lane's own sequencer, and pressed again lets it play.

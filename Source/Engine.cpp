@@ -1298,6 +1298,14 @@ Engine::SetupState Engine::motionOff (Target t) const
     return st;
 }
 
+bool Engine::laneFollowsKey (int lane) const
+{
+    if (auto* p = processorFor ({ 0, lane, 0 }))
+        if (const int i = p->paramIndex ("key_follow"); i >= 0 && i < p->numModuleParams())
+            return p->param (i)->getValue() >= 0.5f;
+    return false;
+}
+
 void Engine::setSetup (Target t, const juce::String& id, float v)
 {
     stateMoved();

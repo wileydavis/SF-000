@@ -2516,6 +2516,34 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      snapshot with no sound kept says that. PHONES is still off each time SF-000 opens, so
      it cannot be left on for a PA.
 
+## New notes in the key (Nov 14)
+
+482. **You**, 15:30: "On the sequencer, default newly placed notes to the key if set." And
+     at 15:31: "then continue library work."
+     **What was there.** A new step on BASS, LEAD, CHORD, PAD or VOICE already *sounded* the
+     key's note: parts are written in C and a lane with KEY FOLLOW on (every lane, as it
+     comes) plays them moved by the key (283). But the step *said* what was written, so with
+     KEY at A a new step read `C3` while an A played. What you saw was the label.
+     **Now a step says the note that sounds.** With KEY at A a new step on LEAD reads `A2` and
+     is A2; one you wrote a minor third above the root reads `C3`. Change KEY and every step of
+     a lane that follows reads its new note, as it plays it. NOTE (the key on the screen, the
+     E16's knob 6 on a SEQ page) goes a semitone at a time up from the key's note, so the
+     knob's bottom is the root. The E16's title says the same (`BAS SEQ 7 A0`). With KEY OFF
+     nothing reads differently from before. Nothing stored changes: steps are kept as written,
+     as they always were, and no snapshot or session is touched.
+     *Mine:* the key moves a part up as far as F and down from F# (the suite's law, unchanged),
+     so the octave a step says is the one it sounds in: BASS in A reads `A0`, in D `D1`.
+483. **A lane with KEY FOLLOW off is written at the key's note.** *Mine.* Nothing moves that
+     lane's steps, so "default to the key" has to be done in the writing: a new step there is
+     written at the key's note, the same pitch a following lane would sound (in A, LEAD gets
+     A2). So is a step a generator lights that held nothing (a step that kept a note under the
+     generator keeps it). Changing KEY afterwards does not move them: that is what KEY FOLLOW
+     off means.
+484. **Found on the way: KEY set by anything but the hand left the top bar's KEY as it was**
+     until something else drew the bar again. The bar is now drawn again when KEY changes, and
+     so are the steps (their notes read differently). In practice a recall already drew the
+     whole screen, so I do not think you have seen this one.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2730,4 +2758,8 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   page on the E16 is checked against the scene file and a made-up E16 only.
 - **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
   whether any snapshot of yours has KEY set.
+- **Notes in the key (482 to 484)** are checked on the session and the drawn screens: what a new
+  step holds and says with KEY OFF, at A and at D, with KEY FOLLOW on and off, lit by the
+  mouse, by the E16's STEP and VEL, and by a generator. Not on the Mac, and I have not heard
+  that what a step says is the note that plays: the suite's code does the moving, unchanged.
 - The mix is balanced by measurement: levels, loudness, peak. It needs ears.

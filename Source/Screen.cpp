@@ -24,7 +24,6 @@ namespace night
     const Colour plate (0xff3B3C3A), plate2 (0xff303231), ink (0xffD8D3C8), paper (0xff1A1C1B), key (0xff565955), keyOff (0xff484A47),
                  faint (0xff5A605D), dim (0xff7C807A), room (0xff0D0E0F);
 }
-static const char* const kNotes[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
 // The embedded typefaces. They are let go while JUCE is still up (releaseFonts, from the app's
 // shutdown): left to the end of the process, macOS's typeface is destroyed after the JUCE objects
@@ -461,7 +460,7 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
         return true;
     }
     if (ctl == cx::kTempo) { label = "TEMPO"; what = "60 TO 200 BPM: DRAG IT. FOLLOWING AN OUTSIDE CLOCK, THE TEMPO IS THAT CLOCK'S."; return true; }
-    if (ctl == cx::kKey) { label = "KEY"; what = "THE KEY EVERY PITCHED LANE FOLLOWS: DRAG IT. PARTS ARE WRITTEN IN C."; return true; }
+    if (ctl == cx::kKey) { label = "KEY"; what = "THE KEY EVERY PITCHED LANE FOLLOWS: DRAG IT. THE PARTS MOVE WITH IT, AND THE STEPS SAY THE NOTES AS THEY SOUND. A NEW STEP IS THE KEY'S OWN NOTE."; return true; }
     if (cx::isMot (ctl))
     {
         static const char* const ids[cx::kMotKnobs] = { "wave", "speed", "knob", "amount" };
@@ -665,7 +664,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNudgeL, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP EARLIER." },
                 { aNudgeR, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP LATER." },
                 { aRatchet, "RATCHET", "THE SELECTED STEP PLAYS ONE TO FOUR HITS." },
-                { aNote, "NOTE", "THE SELECTED STEP'S NOTE." },
+                { aNote, "NOTE", "THE SELECTED STEP'S NOTE, AS IT SOUNDS. A NEW STEP IS THE KEY'S NOTE (C WITH KEY OFF): EACH PRESS IS A SEMITONE UP FROM THERE." },
                 { aOctave, "OCTAVE", "THE SELECTED STEP'S OCTAVE." },
                 { aGen0, "RANDOM", "WRITES A NEW PATTERN AT EVERY PRESS (SEED GOES TO A NEW PLACE). WHILE IT IS LIT, HITS, ROTATE, ACCENTS AND SEED REWRITE IT. A RHYTHM CHANGED BY HAND IS YOURS: THE KEY GOES OUT, AND THE KNOBS LET GO." },
                 { aGen1, "EUCLID", "WRITES A PATTERN WITH ITS HITS SPREAD EVENLY. WHILE IT IS LIT, HITS, ROTATE AND ACCENTS REWRITE IT; PRESSED AGAIN, OR ONCE THE RHYTHM IS CHANGED BY HAND, IT LETS GO." },
@@ -1498,6 +1497,7 @@ void Screen::drawSequencer (G& g, R r)
     const int l = ses.activeLane;
     const auto& d = lanes()[(size_t) l];
     const Pattern pat = ses.pattern (l);
+    const int moves = seqMovesWas = ses.keyMoves (l);       // (a step says the note that sounds: the written one, moved by KEY)
     const int len = pat.length;
     const float x0 = r.getX() + 5, y0 = r.getY() + 5, ky = y0 + 40;
 
@@ -1624,7 +1624,7 @@ void Screen::drawSequencer (G& g, R r)
         const bool sel = in && i == ses.selStep;
         const R nb (sx, ky + 44, 40, 16);
         if (sel) { g.setColour (tone (col::black)); g.fillRect (nb); }
-        textRaw (g, d.pitched && on ? String (kNotes[juce::jlimit (0, 11, x.note)]) + String (x.octave) : String (i + 1), nb, fLbl, sel ? (night() ? col::black : col::lit) : tone (col::black));
+        textRaw (g, d.pitched && on ? Session::noteSays (x, moves) : String (i + 1), nb, fLbl, sel ? (night() ? col::black : col::lit) : tone (col::black));
     }
 
     // generators
@@ -2536,14 +2536,14 @@ void Screen::act (int a)
 
 void Screen::stepTap (int i)
 {
-    // An unlit step lights, at velocity 75 and a whole step of gate, and is selected. A lit step is
+    // An unlit step lights, at velocity 75, a whole step of gate and the key's note, and is selected. A lit step is
     // selected first; a second tap puts it out, and it forgets everything it held.
     const int l = ses.activeLane;
     Pattern p = ses.pattern (l);
     if (i >= p.length) return;
     auto& s = p.steps[(size_t) i];
     const int oct = lanes()[(size_t) l].octave;
-    if (! s.on) { clearStep (s, oct); s.on = true; ses.selStep = i; ses.setPattern (l, p); }
+    if (! s.on) { ses.lightStep (l, s); ses.selStep = i; ses.setPattern (l, p); }
     else if (ses.selStep != i) ses.selStep = i;
     else { clearStep (s, oct); ses.setPattern (l, p); }
 }
@@ -2798,7 +2798,7 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             Pattern pat = ses.pattern (ses.activeLane);
             const int i = drag.a;
             auto& s = pat.steps[(size_t) i];
-            if (! s.on) { clearStep (s, lanes()[(size_t) ses.activeLane].octave); s.on = true; }
+            if (! s.on) ses.lightStep (ses.activeLane, s);
             if (drag.axis == 'v') s.vel = juce::jlimit (0.15f, 1.0f, drag.v0 + dy / 60.0f);
             else
             {
@@ -3080,7 +3080,8 @@ juce::uint64 Screen::barNow() const
          | ((juce::uint64) (juce::uint32) std::lround (eng.target (cx::kTempo) * 14000.0f) << 2)
          | ((juce::uint64) (rec ? 1 + ((juce::int64) recorder->seconds() & 0xfffff) : 0) << 20)
          | ((juce::uint64) (rec && recorder->lostSeconds() > 0.0 ? 1 : 0) << 41) | ((juce::uint64) (note ? 1 : 0) << 42)
-         | ((juce::uint64) (ses.learning + 1) << 43) | ((juce::uint64) (ses.learning >= 0 ? ses.learnMoves() : 0) << 48);      // (a knob being taught, and how many it has been shown)
+         | ((juce::uint64) (ses.learning + 1) << 43) | ((juce::uint64) ((ses.learning >= 0 ? ses.learnMoves() : 0) & 0xfff) << 48)      // (a knob being taught, and how many it has been shown)
+         | ((juce::uint64) (ses.keyRoot() + 1) << 60);            // (KEY, when something other than the hand sets it)
 }
 
 // What the MASTER panel's meters and numbers show, to the pixel: it is drawn again only when this changes.
@@ -3510,6 +3511,8 @@ void Screen::timerCallback()
     // CUE lit (on the module, in the designer, or by knob 4 of the E16) with nowhere for a cue to play: said, on the top
     // bar. And a stack knob come to a snapshot that has no sound kept with it: said too. (Otherwise the headphones
     // simply carry on as they were, and nothing says why.)
+    // KEY set, or a lane's KEY FOLLOW: the steps' notes read differently
+    if (page == pMain && ses.keyMoves (ses.activeLane) != seqMovesWas) dirty (seqRect);
     if (ses.stackCue != cueLitWas)
     {
         cueLitWas = ses.stackCue;
@@ -3521,7 +3524,7 @@ void Screen::timerCallback()
         if (const auto* sn = cueLackedWas != 0 ? ses.findSnap (cueLackedWas) : nullptr)
         { recNote = "NO SOUND WAS KEPT WITH " + sn->name + " (TAKEN WITH THE CLOCK STOPPED): NOTHING TO HEAR"; recNoteAt = juce::Time::getMillisecondCounter(); dirty (R (8, 12, 1712, 52)); }
     }
-    if (barNow() != barSig) dirty (R (8, 12, 1712, 52));          // RUN and TEMPO, when an outside clock moves them; REC's time
+    if (barNow() != barSig) dirty (R (8, 12, 1712, 52));          // RUN and TEMPO, when an outside clock moves them; KEY; REC's time
     if (online != nullptr && page == pLibrary && online->stamp() != onlineStamp) dirty (R (23, 980, 1682, 110));    // what ONLINE has to say
     if (online != nullptr && loadAsked)
     {

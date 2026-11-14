@@ -3015,6 +3015,74 @@ static int uiTest()
     check (ses.pattern (7).steps[6].on && std::abs (ses.pattern (7).steps[6].vel - 0.75f) < 0.001f && std::abs (ses.pattern (7).steps[6].gate - 1.0f) < 0.001f,
            "a new step starts at velocity 75 and a whole step of gate");
     {
+        // KEY and the steps: a step newly lit is the key's own note, and a step says the note that sounds
+        const Pattern was = ses.pattern (7);
+        const float keyWas = ses.value (cx::kKey);
+        auto lit = [&] (int i)
+        {
+            Pattern p = ses.pattern (7);
+            if (p.steps[(size_t) i].on) { clearStep (p.steps[(size_t) i], 3); ses.setPattern (7, p); }
+            draw(); click (stepKey (i));
+            return ses.pattern (7).steps[(size_t) i];
+        };
+        ses.userSet (cx::kKey, 0.0f);
+        const auto c = lit (12);
+        const bool plain = c.on && c.note == 0 && c.octave == 3 && ses.keyRoot() < 0 && ses.keyMoves (7) == 0 && ses.noteSays (7, c) == "C3";
+        ses.userSet (cx::kKey, 10.0f / 12.0f);                // A. The lane follows the key: written C, which the key moves down to A
+        const auto a = lit (13);
+        Step third; third.on = true; third.note = 3; third.octave = 3;
+        const bool inA = a.on && a.note == 0 && a.octave == 3 && ses.keyRoot() == 9 && ses.keyMoves (7) == -3 && ses.noteSays (7, a) == "A2"
+                         && ses.noteSays (7, third) == "C3";
+        ses.selStep = 13;
+        const bool e16Says = ses.stepSays() == "14 A2";
+        ses.userSet (cx::kKey, 3.0f / 12.0f);                 // D: up
+        const bool inD = ses.keyMoves (7) == 2 && ses.noteSays (7, a) == "D3";
+        // KEY FOLLOW off in the lane's CONFIG: nothing moves its steps, so a new one is written at the key's note (the one
+        // a lane that follows would sound), and the others say what they are written as
+        e.setSetup ({ 0, 7, 0 }, "key_follow", 0.0f);
+        const auto d = lit (14);
+        const bool ownD = ses.keyMoves (7) == 0 && d.note == 2 && d.octave == 3 && ses.noteSays (7, d) == "D3" && ses.noteSays (7, a) == "C3";
+        ses.userSet (cx::kKey, 10.0f / 12.0f);
+        const auto a2 = lit (15);
+        const bool ownA = a2.note == 9 && a2.octave == 2 && ses.noteSays (7, a2) == "A2";
+        // the E16's STEP pressed, and its VEL turned on an unlit step: the same
+        { Pattern p = ses.pattern (7); clearStep (p.steps[11], 3); clearStep (p.steps[10], 3); ses.setPattern (7, p); }
+        ses.selStep = 11; ses.stepPress();
+        ses.selStep = 10; ses.setStepKnob (Session::stVel, 100);
+        const bool e16 = ses.pattern (7).steps[11].on && ses.pattern (7).steps[11].note == 9 && ses.pattern (7).steps[11].octave == 2
+                         && ses.pattern (7).steps[10].on && ses.pattern (7).steps[10].note == 9;
+        // a generator's new steps on that lane: the same (a step that kept a note under it keeps the note)
+        bool gen = false;
+        {
+            Pattern p = ses.pattern (7);
+            for (int i = 0; i < p.length; ++i) clearStep (p.steps[(size_t) i], 3);
+            p.steps[0].on = true; p.steps[0].note = 5;          // (an F of the hand's)
+            ses.setPattern (7, p);
+            const float hitsWas = ses.value (cx::gen (7, 0));
+            if (ses.genType[7] == 1) ses.pressGenerator (7, 1);  // (let go of, if it was armed)
+            ses.pressGenerator (7, 1);                           // EUCLID
+            ses.userSet (cx::gen (7, 0), 0.5f);
+            const Pattern q = ses.pattern (7);
+            int lit = 0, inKey = 0;
+            for (int i = 1; i < q.length; ++i) if (q.steps[(size_t) i].on) { ++lit; if (q.steps[(size_t) i].note == 9 && q.steps[(size_t) i].octave == 2) ++inKey; }
+            gen = lit > 0 && inKey == lit && (! q.steps[0].on || q.steps[0].note == 5);
+            ses.pressGenerator (7, 1);                           // (let go of: the knob goes back without writing anything)
+            ses.userSet (cx::gen (7, 0), hitsWas);
+        }
+        e.setSetup ({ 0, 7, 0 }, "key_follow", 1.0f);
+        // a lane that holds no notes: as ever
+        ses.selectLane (0);
+        { Pattern p = ses.pattern (0); const Pattern kickWas = p; clearStep (p.steps[3], 3); ses.setPattern (0, p); ses.selStep = 3; ses.stepPress();
+          const auto k = ses.pattern (0).steps[3];
+          check (plain && inA && e16Says && inD && ownD && ownA && e16 && gen && k.on && k.note == 0 && k.octave == 3 && ses.keyMoves (0) == 0,
+                 "with KEY set a step newly lit is the key's note, and a step says the note that sounds (KEY OFF: C3; A: written C3, says A2; D: D3; KEY FOLLOW off: written at the key's note; by the E16 and by a generator too; the kick's as ever)");
+          if (! (plain && inA && e16Says && inD && ownD && ownA && e16 && gen))
+              std::printf ("        plain %d inA %d e16Says %d inD %d ownD %d ownA %d e16 %d gen %d\n", plain, inA, e16Says, inD, ownD, ownA, e16, gen);
+          ses.setPattern (0, kickWas); }
+        ses.selectLane (7);
+        ses.userSet (cx::kKey, keyWas); ses.setPattern (7, was); ses.selStep = 6; draw();
+    }
+    {
         // the strip's M key mutes the sequencer of the lane it shows, and no other
         ses.selectLane (0); draw();
         const int sm = cx::lane (0, cx::kSeqMute);
@@ -7119,6 +7187,35 @@ static int stageTest()
             else rows = -1;
             check (rows == 0 && changed > 0, "GLIDE turned from outside (the E16's knob 1, a sequencer): the time beside its knob is printed again on the sheet (" + juce::String (rows) + " rows are not as a whole printing has them; " + juce::String (changed) + " changed)");
             fromOutside (cx::kGlide, e.control (cx::kGlide).def, 2); fresh();
+        }
+        {
+            // KEY set from outside: the steps of the lane shown say other notes, and are printed again
+            // (the sequencer is given LEAD, which holds notes, without the lane being brought to the front: the eye stays
+            // where it is, and the picture is the same but for the notes and the top bar)
+            const int laneWas = ses.activeLane, ln = 7;
+            const Pattern patWas = ses.pattern (ln);
+            ses.activeLane = ln;
+            { Pattern p = patWas; for (int i : { 0, 4, 8 }) { clearStep (p.steps[(size_t) i], 3); p.steps[(size_t) i].on = true; } ses.setPattern (ln, p); }
+            sc.repaint();
+            const auto before = fresh();
+            fromOutside (cx::kKey, 10.0f / 12.0f, 2);
+            const auto turned = fresh();
+            sc.repaint();
+            const auto all = fresh();
+            int rows = 0, changed = 0;
+            if (turned.isValid() && all.isValid() && turned.getBounds() == all.getBounds() && before.getBounds() == all.getBounds())
+            {
+                const juce::Image::BitmapData a2 (turned, juce::Image::BitmapData::readOnly), c2 (all, juce::Image::BitmapData::readOnly), w2 (before, juce::Image::BitmapData::readOnly);
+                for (int y = 0; y < a2.height; ++y)
+                {
+                    if (std::memcmp (a2.getLinePointer (y), c2.getLinePointer (y), (size_t) a2.width * 4) != 0) ++rows;
+                    if (std::memcmp (w2.getLinePointer (y), c2.getLinePointer (y), (size_t) a2.width * 4) != 0) ++changed;
+                }
+            }
+            else rows = -1;
+            check (lanes()[(size_t) ln].pitched && ses.keyMoves (ln) == -3 && rows == 0 && changed > 0,
+                   "KEY set from outside: the steps' notes and the top bar's KEY are printed again on the sheet (" + juce::String (lanes()[(size_t) ln].name) + ", moved " + juce::String (ses.keyMoves (ln)) + ": " + juce::String (rows) + " rows are not as a whole printing has them; " + juce::String (changed) + " changed)");
+            fromOutside (cx::kKey, 0.0f, 2); ses.setPattern (ln, patWas); ses.activeLane = laneWas; sc.repaint(); fresh();
         }
         check (began == 1 && ended == 1, "the stage said it was starting, and that it was up once it had drawn");
 

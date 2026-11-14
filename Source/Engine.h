@@ -313,6 +313,7 @@ public:
     static juce::uint32 motionSeedFor (Target t)    { return 1u | (0x9E3779B1u * (juce::uint32) (17 + t.kind * 1000 + t.lane * 10 + t.slot)); }
     SetupState motionOff (Target) const;        // the two of them as they are when never set: a snapshot from before they could be set means this
     SFProcessor* processorFor (Target) const;
+    bool laneFollowsKey (int lane) const;       // its KEY FOLLOW, in CONFIG, is on (false: the lane has none, or it is off)
     std::vector<SetupParam> setupParams (Target) const;
     void setSetup (Target, const juce::String& id, float v);
     SetupState getSetup (Target) const;

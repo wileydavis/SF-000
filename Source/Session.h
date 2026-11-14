@@ -452,6 +452,14 @@ public:
     int stepKnob (int which, int has = -1) const;       // where that knob stands, 0 to 127 (a knob of shares: `has` if that is already in the right share). -1: nothing to say
     void setStepKnob (int which, int value7);
     void stepPress();                                   // the chosen step lit; lit, put out (it forgets what it held)
+    // KEY and the steps. Parts are written in C, and a lane that follows the key plays them moved by
+    // it (up as far as F, down from F#: the suite's own law). What a step SAYS is the note that
+    // sounds, and a step newly lit is the key's own note (with no key set: C, as written).
+    int keyRoot() const;                                // KEY as a note, C = 0; -1: none is set
+    int keyMoves (int lane) const;                      // the semitones the lane's steps sound from where they are written (0: no key, or the lane does not follow it)
+    void lightStep (int lane, Step&) const;             // a step as it is first lit: everything as new, its note the key's
+    juce::String noteSays (int lane, const Step& s) const   { return noteSays (s, keyMoves (lane)); }     // "A0": the step's note as it sounds
+    static juce::String noteSays (const Step&, int moves);
     juce::String stepSays() const;                      // the chosen step in a few letters: "7 D#3", "12", or nothing
     void nudgeLane (int lane, int dir);
     void stepInsert (int lane, int slot);
