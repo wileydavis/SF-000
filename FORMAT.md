@@ -56,7 +56,8 @@ The uid comes back the same (see below); `made` does not.
   "stackCue":  true,                          CUE is lit (absent: out)
   "knobsAside"?, "knobsUnseated"?:            knobs waiting to be told to the web library (below)
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
-  "stacks":    [ { "id", "name", "kind", "snaps": [ids], "lanes"?: [n], "here"?: true } ],   the rack: the stacks LOAD brought from the web library, and those kept on the instrument ("here": true; LOAD leaves them). "lanes": one number for each of "snaps", as on a stack knob; absent: every snapshot takes everything (absent: none)
+  "stacks":    [ { "id", "name", "kind", "snaps": [ids], "lanes"?: [n], "here"?: true, "mark"?: "..." } ],   the rack: the stacks the web library has lit for the instrument, and those kept on the instrument ("here": true: made here). "lanes": one number for each of "snaps", as on a stack knob; absent: every snapshot takes everything. "mark": the stack in a line, as the web library and this one last agreed it was (absent: they never have) (absent: none)
+  "stacksGone": [ { "id", "mark", "here" } ],   stacks put out of the rack here that the web library is still to be told of (absent: none)
   "defs":      { "<print>": definition, ... }
 }
 ```
@@ -145,8 +146,10 @@ this build does not have is written back as it was read.
   reads as the longest length it has that is not over it, and plays as no longer than the part.
   A part whose snapshot is not in the library is dropped on reading. What a build does not know
   of a part, or of the arrangement, is carried.
-- **`stacks`** (thirty-eighth build on): the stacks the web library's tray held at the last LOAD,
-  in its order. `id` is the web library's own name for the stack, `kind` is `stack` or `song`,
+- **`stacks`** (thirty-eighth build on): the rack. Until the fiftieth build, the stacks the web
+  library's tray held at the last LOAD; from it, the rack ONLINE keeps the same as the library's
+  (`mark`, `stacksGone`: a stack with no `mark` and no `here` is one an earlier LOAD brought, and
+  is the library's to say), in the library's order. `id` is the web library's own name for the stack, `kind` is `stack` or `song`,
   and `snaps` its snapshots by id, in the stack's order (a song may name one twice). Whatever
   else the library said of a stack (a song's `parts`: `uid`, `bars`, `morph`) is carried beside
   them. A snapshot that is not in the library is dropped from a stack on reading, and a stack

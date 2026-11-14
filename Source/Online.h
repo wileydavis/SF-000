@@ -56,6 +56,10 @@ public:
     // on, once a knob has stood unchanged for a pass; and by LOAD first, whatever ONLINE is (sure: at once). True: it has
     // more to do soon. seated: the knobs that went onto the library's module for the first time.
     bool mirror (bool sure = false, juce::StringArray* seated = nullptr);
+    // The rack, the same here and in the library, each way: a stack kept here goes there; one made, changed, unlit or
+    // removed there is so here (the snapshots it names that this library lacks are brought first). After each pass
+    // while ONLINE is on, and by LOAD (sure). True: it has more to do soon.
+    bool rack (bool sure = false);
     juce::String loadLine() const;
     bool loading() const                    { return loadBusy.load(); }
     int requests() const                    { return asked.load(); }        // sends made so far (the checks)
@@ -90,6 +94,7 @@ private:
     static Reply http (const Setup&, const juce::String& method, const juce::String& path,
                        const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000, CallOff* = nullptr, bool wantBytes = false);
     struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false, stems = false; juce::String name; };       // (stems: its stems are there, or were turned down)
+    int bringOne (const Setup&, const juce::String& uid, bool hasClip, bool& silent, Reply& why);
     void readSetup();
     void writeSetup() const;
     void readLedger();
@@ -113,5 +118,9 @@ private:
     bool noStems = false;                           // the library said it keeps no stems (one from before it did): not offered again this run
     std::array<juce::String, 16> mirrorSeen;        // each knob as the last pass saw it (one that has just changed is given a pass to settle)
     juce::String sentTo;                    // the address the ledger was made against
+    static constexpr int kRackEveryMs = 15000;     // the library is asked for its stacks no oftener, unless the rack here has changed
+    juce::String rackSeen;                  // the rack here as the last look left it
+    bool rackAsked = false;
+    juce::uint32 rackAskedAt = 0;
 };
 } // namespace sf0

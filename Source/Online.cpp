@@ -635,6 +635,203 @@ bool Online::mirror (bool sure, juce::StringArray* seated)
     return soon;
 }
 
+// ----------------------------------------------------------------- one snapshot, brought here
+// A snapshot the web library has and this one lacks: whole, with the definitions it names and its four bars.
+// 1: it is here. 0: the library could not give it (left out). -1: no answer (why: the reply). -2: asked to stop.
+int Online::bringOne (const Setup& s, const String& uid, bool hasClip, bool& silent, Reply& why)
+{
+    ++asked;
+    const auto one = http (s, "GET", "/api/snapshots/" + juce::URL::addEscapeChars (uid, true), nullptr, {}, 20000, &callOff);
+    const var got = juce::JSON::parse (one.body);
+    const var snap = got.getProperty ("snapshot", var());
+    if (one.status != 200 || ! snap.isObject()) { if (one.status == 0 || turnedAway (one.status)) { why = one; return -1; } return 0; }
+    // the definitions it names that this library has not got
+    juce::StringArray want;
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return -2;
+        if (auto* pr = got.getProperty ("prints", var()).getArray())
+            for (auto& p : *pr) if (! ses.definition (p.toString()).isObject()) want.addIfNotAlreadyThere (p.toString());
+    }
+    auto* defs = new juce::DynamicObject();
+    const var defsVar (defs);
+    for (int at = 0; at < want.size(); at += 40)
+    {
+        juce::StringArray part;
+        for (int k = at; k < juce::jmin (want.size(), at + 40); ++k) part.add (want[k]);
+        ++asked;
+        const auto d = http (s, "GET", "/api/defs?prints=" + part.joinIntoString (","), nullptr, {}, 20000, &callOff);
+        if (d.status != 200) { why = d; return -1; }
+        if (auto* o = juce::JSON::parse (d.body).getProperty ("defs", var()).getDynamicObject())
+            for (auto& p : o->getProperties()) defs->setProperty (p.name, p.value);
+    }
+    // its four bars
+    juce::MemoryBlock clip;
+    if (hasClip)
+    {
+        ++asked;
+        auto c = http (s, "GET", "/api/clips/" + juce::URL::addEscapeChars (uid, true), nullptr, {}, 30000, &callOff, true);
+        if (c.status == 200) clip = std::move (c.bytes);
+        else if (c.status == 0) { why = c; return -1; }
+    }
+    juce::int64 id = 0; juce::File clipAt; String nameHere; bool prof = false;
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return -2;
+        id = ses.takeFromLibrary (snap, got.getProperty ("name", "").toString(), defsVar);
+        if (id != 0)
+        {
+            clipAt = ses.clipFile (id);
+            if (const auto* sn = ses.findSnap (id)) { nameHere = sn->name; prof = sn->profile.has; }
+            if (ses.filesMissing (id) > 0) silent = true;
+        }
+    }
+    if (id == 0) return 0;
+    if (clip.getSize() > 0) { clipAt.getParentDirectory().createDirectory(); clipAt.replaceWithData (clip.getData(), clip.getSize()); }
+    // (the library has it: it is not to be sent back)
+    auto& e = ledger[uid];
+    e.snap = true; e.clip = clip.getSize() > 0 || ! hasClip; e.prof = prof; e.name = nameHere; e.gone = false;
+    return 1;
+}
+
+// ------------------------------------------------------------------- the rack, the same each way
+// The stacks of the rack here and the web library's stacks for the instrument, made the same. Session says what is to be
+// done (rackPlan) and does its own part of each step once the library has said yes (rackDone); this asks the library.
+// A stack the library has that names a snapshot this library lacks: the snapshot is brought first, and until it is
+// here the stack is left exactly as it is on both sides. Run after each pass while ONLINE is lit (the library is
+// asked at once when the rack here has changed, and otherwise every so often), and by LOAD (sure). True: more to do soon.
+bool Online::rack (bool sure)
+{
+    const Setup s = setup();
+    if (! s.complete() || (! sure && (! s.on || loadBusy.load()))) return false;
+    // (the pass before this one got no answer, or was turned away: the library is not asked again on top of that)
+    if (! sure) if (const auto was = status().state; was == State::waiting || was == State::refused) return false;
+    auto lineNow = [this] (String& into)
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        into = {};
+        for (auto& st : ses.stacks) into << st.id << "=" << ses.stackPrint (st) << (st.mark.isEmpty() ? "?" : "") << ";";
+        into << "|" << ses.stacksGone.size();
+        return true;
+    };
+    String sig;
+    if (! lineNow (sig)) return false;
+    const auto nowMs = juce::Time::getMillisecondCounter();
+    if (! sure && rackAsked && sig == rackSeen && nowMs - rackAskedAt < (juce::uint32) kRackEveryMs) return false;
+    rackAsked = true; rackAskedAt = nowMs;
+    ++asked;
+    const auto r = http (s, "GET", "/api/stacks", nullptr, {}, 20000, &callOff);
+    const var all = juce::JSON::parse (r.body).getProperty ("stacks", var());
+    if (r.status != 200 || ! all.isArray()) return false;                      // (no answer: at the next look)
+
+    std::set<String> none;
+    juce::StringArray lacking;
+    std::vector<Session::RackStep> plan;
+    auto planNow = [&]
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        lacking.clear();
+        plan = ses.rackPlan (all, none, lacking);
+        return true;
+    };
+    if (! planNow()) return false;
+    if (lacking.size() > 0)
+    {
+        // snapshots its stacks name that are not here: which of them the library still has, and those brought
+        juce::Array<var> uids;
+        for (auto& u : lacking) uids.add (u);
+        auto* q = new juce::DynamicObject();
+        q->setProperty ("uids", uids);
+        const auto text = juce::JSON::toString (var (q), true);
+        const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+        ++asked;
+        const auto h = http (s, "POST", "/api/have", &mb, "application/json", 20000, &callOff);
+        const var have = juce::JSON::parse (h.body).getProperty ("have", var());
+        if (h.status != 200 || ! have.isObject()) return false;
+        const auto want = lacking;
+        bool broughtAny = false;
+        for (auto& uid : want)
+        {
+            if (threadShouldExit() || callOff.off.load()) return false;
+            const var one = have.getProperty (juce::Identifier (uid), var());
+            if (! one.isObject() || (bool) one.getProperty ("gone", false)) { none.insert (uid); continue; }    // (no library has it any more: the stack is what is left of it)
+            Reply why; bool quiet = false;
+            const int got = bringOne (s, uid, (bool) one.getProperty ("clip", false), quiet, why);
+            if (got < 0) { if (broughtAny) writeLedger(); return false; }
+            broughtAny = broughtAny || got == 1;
+        }
+        if (broughtAny) writeLedger();
+        if (! planNow()) return false;
+    }
+
+    auto put = [&] (const String& method, const String& path, const var& body)
+    {
+        const auto text = juce::JSON::toString (body, true);
+        const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+        ++asked;
+        return http (s, method, path, &mb, "application/json", 20000, &callOff).status;
+    };
+    auto only = [] (const char* key, const var& value) { auto* o = new juce::DynamicObject(); o->setProperty (key, value); return var (o); };
+    // (a stack is never sent with a snapshot the library has not got: when it has, at a later look)
+    auto libraryHasAll = [this] (const var& body)
+    {
+        if (auto* items = body.getProperty ("items", var()).getArray())
+            for (auto& it : *items) { const auto e = ledger.find (it.getProperty ("u", "").toString()); if (e == ledger.end() || ! e->second.snap) return false; }
+        return true;
+    };
+    bool again = false;
+    for (auto& step : plan)
+    {
+        if (threadShouldExit() || callOff.off.load()) return false;
+        const String at = "/api/stacks/" + step.id;
+        int st = 200;
+        switch (step.net)
+        {
+            case Session::RackStep::none: break;
+            case Session::RackStep::post:
+            {
+                if (! libraryHasAll (step.body)) continue;
+                auto* o = step.body.getDynamicObject();
+                o->setProperty ("id", step.id); o->setProperty ("kind", "stack"); o->setProperty ("extra", only ("from", "sf000"));
+                st = put ("POST", "/api/stacks", step.body);
+                if (st == 201) st = 200;
+                break;
+            }
+            case Session::RackStep::patch:
+                if (! libraryHasAll (step.body)) continue;
+                st = put ("PATCH", at, step.body);
+                break;
+            case Session::RackStep::restore:
+                if (! libraryHasAll (step.body)) continue;
+                st = put ("PATCH", at, only ("restore", true));
+                if (st == 200) st = put ("PATCH", at, step.body);
+                break;
+            case Session::RackStep::unlight:
+                st = put ("PATCH", at, only ("load", false));
+                if (st == 404) st = 200;                                        // (it is gone there: so it is out)
+                break;
+            case Session::RackStep::removeThere:
+                ++asked;
+                st = http (s, "DELETE", at, nullptr, {}, 20000, &callOff).status;
+                if (st == 404) st = 200;
+                break;
+        }
+        if (st != 200) { if (st == 0 || turnedAway (st)) return false; continue; }     // (no answer: all of it later. Said no to this one: the rest go on)
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        if (! ses.rackDone (step)) again = true;
+    }
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        ses.rackOrder (all);
+    }
+    if (! again) lineNow (rackSeen);
+    return again;
+}
+
 // ------------------------------------------------------------------------------------ LOAD
 void Online::askLoad() { wantLoad = true; notify(); }
 String Online::loadLine() const { const juce::ScopedLock sl (lock); return loadSays; }
@@ -679,59 +876,18 @@ String Online::load()
         const String uid = lacking[i];
         if (callOff.off.load()) return says ("LOAD: STOPPED");
         says ("LOAD: BRINGING " + String (i + 1) + " OF " + String (lacking.size()));
-        ++asked;
-        const auto one = http (s, "GET", "/api/snapshots/" + juce::URL::addEscapeChars (uid, true), nullptr, {}, 20000, &callOff);
-        const var got = juce::JSON::parse (one.body);
-        const var snap = got.getProperty ("snapshot", var());
-        if (one.status != 200 || ! snap.isObject()) { if (one.status == 0 || turnedAway (one.status)) return failed (one); ++lost; continue; }
-        // the definitions it names that this library has not got
-        juce::StringArray want;
-        {
-            const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
-            if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
-            if (auto* pr = got.getProperty ("prints", var()).getArray())
-                for (auto& p : *pr) if (! ses.definition (p.toString()).isObject()) want.addIfNotAlreadyThere (p.toString());
-        }
-        auto* defs = new juce::DynamicObject();
-        const var defsVar (defs);
-        for (int at = 0; at < want.size(); at += 40)
-        {
-            juce::StringArray part;
-            for (int k = at; k < juce::jmin (want.size(), at + 40); ++k) part.add (want[k]);
-            ++asked;
-            const auto d = http (s, "GET", "/api/defs?prints=" + part.joinIntoString (","), nullptr, {}, 20000, &callOff);
-            if (d.status != 200) return failed (d);
-            if (auto* o = juce::JSON::parse (d.body).getProperty ("defs", var()).getDynamicObject())
-                for (auto& p : o->getProperties()) defs->setProperty (p.name, p.value);
-        }
-        // its four bars
-        juce::MemoryBlock clip;
-        if (hasClip[uid])
-        {
-            ++asked;
-            auto c = http (s, "GET", "/api/clips/" + juce::URL::addEscapeChars (uid, true), nullptr, {}, 30000, &callOff, true);
-            if (c.status == 200) clip = std::move (c.bytes);
-            else if (c.status == 0) return failed (c);
-        }
-        juce::int64 id = 0; juce::File clipAt; String nameHere; bool prof = false;
-        {
-            const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
-            if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
-            id = ses.takeFromLibrary (snap, got.getProperty ("name", "").toString(), defsVar);
-            if (id != 0)
-            {
-                clipAt = ses.clipFile (id);
-                if (const auto* sn = ses.findSnap (id)) { nameHere = sn->name; prof = sn->profile.has; }
-                if (ses.filesMissing (id) > 0) ++silent;
-            }
-        }
-        if (id == 0) { ++lost; continue; }
-        if (clip.getSize() > 0) { clipAt.getParentDirectory().createDirectory(); clipAt.replaceWithData (clip.getData(), clip.getSize()); }
-        // (the library has it: it is not to be sent back)
-        auto& e = ledger[uid];
-        e.snap = true; e.clip = clip.getSize() > 0 || ! hasClip[uid]; e.prof = prof; e.name = nameHere; e.gone = false;
-        ++brought;
+        Reply why;
+        bool quiet = false;
+        const int got = bringOne (s, uid, hasClip[uid], quiet, why);
+        if (got == -2) return says ("LOAD: STOPPED");
+        if (got == -1) return failed (why);
+        if (quiet) ++silent;
+        if (got == 1) ++brought; else ++lost;
     }
+    // the rack: made the same as the library's, each way (what was kept here goes up; what the library has for the instrument comes)
+    says ("LOAD: THE RACK");
+    rack (true);
+    if (callOff.off.load()) return says ("LOAD: STOPPED");
     // ---- the knobs. The chassis says what each of the sixteen holds: that is what a show carries. What a knob holds that the
     // library has not got is sent up first, as a module, so that nothing is ever lost by a LOAD; then the chassis's module
     // takes the knob. A knob whose module has been taken off the chassis is emptied; one the library has never seen goes
@@ -896,6 +1052,7 @@ void Online::run()
         if (wantLoad.exchange (false)) load();
         bool more = pass();
         more = mirror() || more;
+        more = rack() || more;
         const auto st = status().state;
         // a clip on its way: soon. Trouble: a little longer each time, two minutes at most. Else: when poked, or every so often.
         const int ms = more && failures == 0 ? 1500 : failures > 0 ? juce::jmin (120000, 5000 * (1 << juce::jmin (5, failures - 1))) : (st == State::upToDate ? 20000 : 60000);

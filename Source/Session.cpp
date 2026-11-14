@@ -2494,7 +2494,7 @@ int Session::stackKeep (int k)
     if (all) st.lanes.clear();
     int at = -1;
     for (int i = 0; i < (int) stacks.size() && at < 0; ++i) if (stacks[(size_t) i].here && stacks[(size_t) i].name == st.name) at = i;
-    if (at >= 0) { st.id = stacks[(size_t) at].id; stacks[(size_t) at] = st; }
+    if (at >= 0) { st.id = stacks[(size_t) at].id; st.mark = stacks[(size_t) at].mark; st.kept = stacks[(size_t) at].kept; stacks[(size_t) at] = st; }     // (the same stack, as it is now: the web library's copy follows)
     else
     {
         st.id = "here";
@@ -2525,9 +2525,252 @@ bool Session::stackOnto (int index, int k)
 void Session::stackForget (int index)
 {
     if (index < 0 || index >= (int) stacks.size()) return;
+    if (const auto& st = stacks[(size_t) index]; st.mark.isNotEmpty())
+    {
+        // (the web library has it: ONLINE takes it out of the rack there too, if it is still as it was)
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("id", st.id); o->setProperty ("mark", st.mark); o->setProperty ("here", st.here);
+        stacksGone.add (var (o));
+    }
     stacks.erase (stacks.begin() + index);
     touch();
     if (onLibrary) onLibrary();
+    if (onChange) onChange();
+}
+
+// ---- the rack and the web library
+static juce::Array<var> offOf (juce::uint32 lanes);
+static juce::uint32 lanesFromOff (const var& off);
+static juce::String rackName (const juce::String& n) { return n.trim().toUpperCase().substring (0, 40); }
+
+juce::String Session::stackPrint (const Stack& st) const
+{
+    // (a song is the web library's to arrange: it is never changed here, so it is always as last agreed)
+    if (st.kind == "song" && ! st.here) return st.mark;
+    juce::String s;
+    s << "stack|" << rackName (st.name) << "|";
+    for (size_t i = 0; i < st.snaps.size(); ++i)
+    {
+        const auto* sn = findSnap (st.snaps[i]);
+        s << (sn != nullptr && sn->uid.isNotEmpty() ? sn->uid : "#" + juce::String (st.snaps[i]));
+        if (const auto m = st.lanesAt (i) & kAllLanes; m != kAllLanes) s << "/" << juce::String::toHexString ((int) m);
+        s << ",";
+    }
+    return s;
+}
+
+juce::String Session::stackPrintOf (const var& there, const std::set<juce::String>& none) const
+{
+    const bool song = there.getProperty ("kind", "").toString() == "song";
+    juce::String s;
+    s << (song ? "song|" : "stack|") << rackName (there.getProperty ("name", "").toString()) << "|";
+    if (auto* items = there.getProperty ("items", var()).getArray())
+        for (auto& it : *items)
+        {
+            const auto u = it.getProperty ("u", "").toString();
+            if (u.isEmpty() || none.count (u) != 0) continue;
+            s << u;
+            if (song) s << ":" << (int) it.getProperty ("bars", 8) << ":" << (int) it.getProperty ("morph", 0);
+            else if (const auto m = lanesFromOff (it.getProperty ("off", var())) & kAllLanes; m != kAllLanes) s << "/" << juce::String::toHexString ((int) m);
+            s << ",";
+        }
+    return s;
+}
+
+juce::var Session::stackBody (const Stack& st, bool& whole) const
+{
+    whole = true;
+    juce::Array<var> items;
+    for (size_t i = 0; i < st.snaps.size(); ++i)
+    {
+        const auto* sn = findSnap (st.snaps[i]);
+        if (sn == nullptr || sn->uid.isEmpty()) { whole = false; continue; }
+        auto* it = new juce::DynamicObject();
+        it->setProperty ("u", sn->uid);
+        if (const auto m = st.lanesAt (i) & kAllLanes; m != kAllLanes) it->setProperty ("off", offOf (m));
+        items.add (var (it));
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("name", st.name);
+    o->setProperty ("items", items);
+    o->setProperty ("load", true);          // (lit for the instrument: that is where it is)
+    return var (o);
+}
+
+std::vector<Session::RackStep> Session::rackPlan (const var& stacksThere, const std::set<juce::String>& none, juce::StringArray& lacking) const
+{
+    std::vector<RackStep> plan;
+    std::set<juce::String> uidsHere;
+    for (auto& x : library) if (x.uid.isNotEmpty()) uidsHere.insert (x.uid);
+    // each stack the library has, by id. For the rack: one of chips (a stack, a song), lit for the instrument, with
+    // something in it. lacks: it names a snapshot that is not here yet (and that some library still has).
+    struct There { var v; bool chips = false, lit = false, lacks = false; juce::String print; };
+    std::map<juce::String, There> there;
+    juce::StringArray order;
+    if (auto* all = stacksThere.getArray())
+        for (auto& v : *all)
+        {
+            There t;
+            t.v = v;
+            const auto id = v.getProperty ("id", "").toString(), kind = v.getProperty ("kind", "").toString();
+            if (id.isEmpty()) continue;
+            t.chips = kind == "stack" || kind == "song";
+            int has = 0;
+            if (auto* items = v.getProperty ("items", var()).getArray())
+                for (auto& it : *items)
+                {
+                    const auto u = it.getProperty ("u", "").toString();
+                    if (u.isEmpty() || none.count (u) != 0) continue;
+                    if (uidsHere.count (u) != 0) ++has;
+                    else if (t.chips && (bool) v.getProperty ("load", false)) { t.lacks = true; lacking.addIfNotAlreadyThere (u); }
+                }
+            t.lit = t.chips && (bool) v.getProperty ("load", false) && (has > 0 || t.lacks);
+            t.print = stackPrintOf (v, none);
+            there[id] = t;
+            order.add (id);
+        }
+    auto goneAt = [this] (const juce::String& id) { for (int i = 0; i < stacksGone.size(); ++i) if (stacksGone[i].getProperty ("id", "").toString() == id) return i; return -1; };
+    std::set<juce::String> idsHere;
+    for (auto& st : stacks)
+    {
+        idsHere.insert (st.id);
+        const auto f = there.find (st.id);
+        const auto line = stackPrint (st);
+        // changed here since the two agreed. (One an earlier build's LOAD brought, before lines were kept, counts as
+        // unchanged: it is the library's, and the library's is taken. One made here that has never gone is always due.)
+        const bool changed = st.here ? line != st.mark : (st.mark.isNotEmpty() && line != st.mark);
+        bool whole = true;
+        RackStep step;
+        step.id = st.id; step.was = line; step.mark = line;
+        step.body = stackBody (st, whole);
+        if (f == there.end())
+        {
+            // the library has no such stack: it never had it, or it was removed there
+            if (st.here && st.mark.isEmpty()) { if (whole) { step.net = RackStep::post; step.here = RackStep::setMark; plan.push_back (step); } }
+            else if (! changed) { step.here = RackStep::drop; plan.push_back (step); }
+            else if (whole) { step.net = RackStep::restore; step.here = RackStep::setMark; plan.push_back (step); }     // (removed there, changed here since: the instrument's stands)
+            continue;
+        }
+        const auto& t = f->second;
+        if (! t.chips || t.lacks) continue;         // (not the rack's; or not all of it is here yet)
+        if (! t.lit)
+        {
+            // unlit for the instrument there, or nothing left in it: it leaves the rack here, unless it was changed here since
+            if (! changed) { step.here = RackStep::drop; plan.push_back (step); }
+            else if (whole) { step.net = RackStep::patch; step.here = RackStep::setMark; plan.push_back (step); }
+            continue;
+        }
+        if (t.print == line) { if (st.mark != line) { step.here = RackStep::setMark; plan.push_back (step); } continue; }
+        if (! changed) { step.here = RackStep::take; step.mark = t.print; step.there = t.v; step.body = var(); plan.push_back (step); }
+        else if (whole)
+        {
+            // (the name goes only if it is another name: one given there in small letters is left as it was written)
+            if (rackName (t.v.getProperty ("name", "").toString()) == rackName (st.name)) step.body.getDynamicObject()->removeProperty ("name");
+            step.net = RackStep::patch; step.here = RackStep::setMark; plan.push_back (step);
+        }
+    }
+    // those the library has for the instrument that are not here: new there, or put out of the rack here
+    for (auto& id : order)
+    {
+        const auto& t = there[id];
+        if (! t.lit || t.lacks || idsHere.count (id) != 0) continue;
+        RackStep step;
+        step.id = id;
+        if (const int g = goneAt (id); g >= 0)
+        {
+            // put out here. If it is still as it was: out there too (one made here is removed there, where it can be put
+            // back; one made there is only unlit for the instrument). Changed there since: it is not, and comes back.
+            step.gone = true;
+            if (t.print == stacksGone[g].getProperty ("mark", "").toString())
+                step.net = (bool) stacksGone[g].getProperty ("here", false) ? RackStep::removeThere : RackStep::unlight;
+            plan.push_back (step);
+            continue;
+        }
+        step.here = RackStep::take; step.mark = t.print; step.there = t.v;
+        plan.push_back (step);
+    }
+    // (put out here, and the library no longer has it for the instrument either: nothing left to say)
+    for (int i = 0; i < stacksGone.size(); ++i)
+    {
+        const auto id = stacksGone[i].getProperty ("id", "").toString();
+        const auto f = there.find (id);
+        if (f == there.end() || ! f->second.lit) { RackStep step; step.id = id; step.gone = true; plan.push_back (step); }
+    }
+    return plan;
+}
+
+bool Session::rackDone (const RackStep& step)
+{
+    bool did = false;
+    if (step.gone)
+        for (int i = stacksGone.size(); --i >= 0;) if (stacksGone[i].getProperty ("id", "").toString() == step.id) { stacksGone.remove (i); did = true; }
+    int at = -1;
+    for (int i = 0; i < (int) stacks.size() && at < 0; ++i) if (stacks[(size_t) i].id == step.id) at = i;
+    const bool asWas = at >= 0 && stackPrint (stacks[(size_t) at]) == step.was;
+    bool ok = true;
+    switch (step.here)
+    {
+        case RackStep::nothing: break;
+        case RackStep::setMark:
+            if (asWas) { if (stacks[(size_t) at].mark != step.mark) { stacks[(size_t) at].mark = step.mark; did = true; } } else ok = false;
+            break;
+        case RackStep::drop:
+            if (asWas) { stacks.erase (stacks.begin() + at); did = true; } else ok = false;
+            break;
+        case RackStep::take:
+        {
+            if (at >= 0 && ! asWas) { ok = false; break; }
+            std::map<juce::String, juce::int64> here;
+            for (auto& x : library) if (x.uid.isNotEmpty()) here[x.uid] = x.id;
+            Stack st;
+            st.id = step.id;
+            st.name = rackName (step.there.getProperty ("name", "").toString());
+            st.kind = step.there.getProperty ("kind", "stack").toString() == "song" ? "song" : "stack";
+            st.here = at >= 0 ? stacks[(size_t) at].here : step.there.getProperty ("extra", var()).getProperty ("from", "").toString() == "sf000";
+            juce::Array<var> parts;
+            bool all = true;
+            if (auto* items = step.there.getProperty ("items", var()).getArray())
+                for (auto& it : *items)
+                    if (const auto f = here.find (it.getProperty ("u", "").toString()); f != here.end())
+                    {
+                        st.snaps.push_back (f->second);
+                        const auto m = st.kind == "song" ? kAllLanes : (lanesFromOff (it.getProperty ("off", var())) & kAllLanes);
+                        st.lanes.push_back (m);
+                        all = all && m == kAllLanes;
+                        if (st.kind == "song")
+                        {
+                            auto* o = new juce::DynamicObject();
+                            o->setProperty ("uid", f->first); o->setProperty ("bars", it.getProperty ("bars", 8)); o->setProperty ("morph", it.getProperty ("morph", 0));
+                            parts.add (var (o));
+                        }
+                    }
+            if (all) st.lanes.clear();
+            if (st.snaps.empty()) { ok = false; break; }
+            auto* keep = new juce::DynamicObject();
+            if (at >= 0) if (auto* was = stacks[(size_t) at].kept.getDynamicObject()) for (auto& q : was->getProperties()) keep->setProperty (q.name, q.value);
+            if (st.kind == "song") keep->setProperty ("parts", parts);
+            st.kept = var (keep);
+            st.mark = step.mark;
+            if (at >= 0) stacks[(size_t) at] = st; else stacks.push_back (st);
+            did = true;
+            break;
+        }
+    }
+    if (did) { touch(); if (onChange) onChange(); }
+    return ok;
+}
+
+void Session::rackOrder (const var& stacksThere)
+{
+    std::map<juce::String, int> place;
+    if (auto* all = stacksThere.getArray())
+        for (int i = 0; i < all->size(); ++i) place[all->getReference (i).getProperty ("id", "").toString()] = i;
+    auto of = [&place] (const Stack& st) { const auto f = place.find (st.id); return f != place.end() ? f->second : std::numeric_limits<int>::max(); };
+    bool inOrder = true;
+    for (size_t i = 1; i < stacks.size(); ++i) inOrder = inOrder && of (stacks[i - 1]) <= of (stacks[i]);
+    if (inOrder) return;
+    std::stable_sort (stacks.begin(), stacks.end(), [&of] (const Stack& a, const Stack& b) { return of (a) < of (b); });
+    touch();
     if (onChange) onChange();
 }
 
@@ -2761,26 +3004,12 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
             if (const auto f = here.find (c.name.toString()); f != here.end())
                 if (const auto* s = findSnap (f->second))
                     if (const auto nm = nameHere (c.value.getProperty ("name", "").toString()); nm.isNotEmpty() && nm != s->name) { rename (f->second, nm); ++renamed; }
-    // the stacks: what the tray holds now is what there is (a stack taken out of the tray there is no longer here; its snapshots are)
-    std::vector<Stack> now;
+    // The stacks are not the tray's to say any more: the rack is kept the same as the library's, each way, by ONLINE
+    // (rackPlan), and LOAD has it done before it comes here. The tray's first song is still the arrangement's.
     var song;
     if (auto* sv = tray.getProperty ("stacks", var()).getArray())
         for (auto& v : *sv)
-        {
-            Stack st;
-            st.id = v.getProperty ("id", "").toString();
-            st.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 40);
-            st.kind = v.getProperty ("kind", "stack").toString();
-            st.snaps = idsOf (v.getProperty ("uids", var()));
-            auto* keep = new juce::DynamicObject();                     // (the list of uids is not kept twice: snaps says it)
-            if (auto* o = v.getDynamicObject()) for (auto& q : o->getProperties()) if (q.name != juce::Identifier ("uids")) keep->setProperty (q.name, q.value);
-            st.kept = var (keep);
-            if (st.snaps.empty()) continue;
-            if (st.kind == "song" && song.isVoid()) song = v;
-            now.push_back (st);
-        }
-    for (auto& st : stacks) if (st.here) now.push_back (st);          // (those kept here are the instrument's own: LOAD leaves them)
-    stacks = now;
+            if (v.getProperty ("kind", "stack").toString() == "song" && song.isVoid() && ! idsOf (v.getProperty ("uids", var())).empty()) song = v;
     // the knobs. With no plan (nobody has seen to what they hold): each module onto its knob if the knob holds nothing. With
     // one: the chassis says what each knob holds, and a knob it may take is taken whatever it held (Online has sent that up).
     juce::StringArray placed, left, changed, cleared, wrongKind;
@@ -3082,12 +3311,14 @@ var Session::stateVar()
             for (auto id : st.snaps) ids.add (id);
             o->setProperty ("snaps", ids);
             if (st.here) o->setProperty ("here", true); else o->removeProperty ("here");
+            if (st.mark.isNotEmpty()) o->setProperty ("mark", st.mark); else o->removeProperty ("mark");
             if (! st.lanes.empty()) { juce::Array<var> ln; for (size_t i = 0; i < st.snaps.size(); ++i) ln.add ((int) (st.lanesAt (i) & kAllLanes)); o->setProperty ("lanes", ln); }
             else o->removeProperty ("lanes");
             sv.add (var (o));
         }
         root->setProperty ("stacks", sv);
     }
+    if (stacksGone.size() > 0) root->setProperty ("stacksGone", stacksGone);
     // The definitions: every one the file has held, and this build's own. Never pruned: a snapshot
     // made long ago still finds what it was made with.
     {
@@ -3282,7 +3513,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -3307,6 +3538,7 @@ void Session::takeState (const var& root)
             st.id = v.getProperty ("id", "").toString(); st.name = v.getProperty ("name", "").toString(); st.kind = v.getProperty ("kind", "stack").toString();
             st.kept = v;
             st.here = (bool) v.getProperty ("here", false);
+            st.mark = v.getProperty ("mark", "").toString();
             const var ln = v.getProperty ("lanes", var());
             bool parts = false;
             if (auto* ids = v.getProperty ("snaps", var()).getArray())
@@ -3365,6 +3597,8 @@ void Session::takeState (const var& root)
     if (auto* as = root.getProperty ("knobsAside", var()).getArray()) knobsAside = *as;
     knobsUnseated.clear();
     if (auto* un = root.getProperty ("knobsUnseated", var()).getArray()) knobsUnseated = *un;
+    stacksGone.clear();
+    if (auto* sg = root.getProperty ("stacksGone", var()).getArray()) stacksGone = *sg;
     stackCue = (bool) root.getProperty ("stackCue", false);
     std::vector<float> fold;                        // (what the knobs of a session from before the two kinds were adding to the scene)
     if (const int module = (int) root.getProperty ("module", 0); module >= 2)

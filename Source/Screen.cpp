@@ -671,7 +671,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRename, "RENAME", "NAMES THE CHOSEN SNAPSHOT." },
                 { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
                 { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
-                { aKeepStack, "KEEP", "KEEPS THIS STACK KNOB'S STACK IN THE RACK, UNDER THE KNOB'S NAME: A COPY, EACH SNAPSHOT WITH THE PARTS IT TAKES. STACKS, BESIDE THE COLUMN, SHOWS THE RACK; A STACK'S ADD PUTS IT ON THE CHOSEN KNOB. NO NETWORK IS ASKED." },
+                { aKeepStack, "KEEP", "KEEPS THIS STACK KNOB'S STACK IN THE RACK, UNDER THE KNOB'S NAME: A COPY, EACH SNAPSHOT WITH THE PARTS IT TAKES. STACKS, BESIDE THE COLUMN, SHOWS THE RACK; A STACK'S ADD PUTS IT ON THE CHOSEN KNOB. NO NETWORK IS NEEDED; WITH ONLINE LIT THE WEB LIBRARY'S RACK IS GIVEN IT TOO, AND KEPT THE SAME AS THIS ONE." },
                 { aClearKnob, "CLEAR", "THE KNOB HOLDS NOTHING: A STACK KNOB'S SNAPSHOTS COME OFF IT (THEY STAY IN THE LIBRARY), A MACRO KNOB IS UNTIED FROM EVERY KNOB." },
                 { aLearn, "LEARN", "FOR THE MACRO KNOBS (1 TO 4). TIES THIS KNOB STRAIGHT TO OTHER KNOBS. IT GOES TO ITS FULL TURN AND THE MAIN SCREEN COMES UP: TURN THE KNOBS IT SHOULD MOVE (HERE OR ON A CONTROLLER) TO WHERE THE FULL TURN TAKES THEM, AND KEEP. LEARN AGAIN ADDS TO WHAT IT HAS; A KNOB TURNED BACK TO WHERE IT WAS IS LET GO." },
                 { aLearnKeep, "KEEP", "TIES THE KNOBS MOVED SINCE LEARN TO THE KNOB BEING TAUGHT. NOTHING CHANGES IN THE SOUND: THE KNOB IS AT ITS FULL TURN, AND TURNED BACK THEY GO BACK TO WHERE THEY WERE." },
@@ -2243,7 +2243,7 @@ void Screen::drawRack (G& g)
     if (n == 0 && vis (g, R (x, 112, 272, 60)))
     {
         g.setColour (tone (col::black)); g.setFont (fLbl);
-        g.drawFittedText ("NO STACKS KEPT. KEEP, BELOW, PUTS THE CHOSEN KNOB'S STACK HERE. LOAD BRINGS THOSE THE WEB LIBRARY HAS FOR THIS SCREEN.", juce::Rectangle<int> ((int) x + 6, 116, 260, 56), juce::Justification::topLeft, 3, 1.0f);
+        g.drawFittedText ("NO STACKS KEPT. KEEP, BELOW, PUTS THE CHOSEN KNOB'S STACK HERE. WITH ONLINE LIT, THE STACKS THE WEB LIBRARY HAS LIT FOR THE INSTRUMENT COME BY THEMSELVES.", juce::Rectangle<int> ((int) x + 6, 116, 260, 56), juce::Justification::topLeft, 4, 0.9f);
     }
     for (int row = 0; row < rows; ++row)
     {
@@ -2264,7 +2264,7 @@ void Screen::drawRack (G& g)
             plate (g, x0 + wTag, y0, name, fLegend, 8, col::white, col::black, 24);
             window (g, ar, col::white); text (g, "ADD", ar, fNote, col::black);
             // what it holds, and whose it is
-            String holds = String ((int) st.snaps.size()) + (st.snaps.size() == 1 ? " SNAPSHOT" : " SNAPSHOTS") + (st.here ? ", KEPT HERE: " : ", FROM THE WEB: ");
+            String holds = String ((int) st.snaps.size()) + (st.snaps.size() == 1 ? " SNAPSHOT" : " SNAPSHOTS") + (! st.here ? ", FROM THE WEB: " : st.mark.isNotEmpty() ? ", HERE AND ON THE WEB: " : ", KEPT HERE: ");
             for (size_t q = 0; q < st.snaps.size(); ++q) if (auto* sn = ses.findSnap (st.snaps[q])) holds << (q > 0 ? " > " : "") << sn->name;
             g.setColour (tone (col::black)); g.setFont (fLbl);
             g.drawFittedText (holds, juce::Rectangle<int> ((int) x0, (int) y0 + 28, 260, 28), juce::Justification::topLeft, 2, 0.8f);

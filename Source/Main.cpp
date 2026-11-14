@@ -4243,9 +4243,7 @@ static int uiTest()
             const bool onto = ses.knobs[(size_t) k2].snaps == std::vector<juce::int64> { c, b, a } && lanesOf (k2, 1) == bParts && lanesOf (k2, 0) == Session::kAllLanes && ses.knobs[(size_t) k2].name == "MY STACK";
             click (rackHit (1, 0)); draw();                             // and again: after what the knob holds
             const bool after = ses.knobs[(size_t) k2].snaps.size() == 6 && lanesOf (k2, 4) == bParts;
-            // LOAD leaves a stack kept here, and takes away one of the web's that the web no longer has for this screen
-            Stack web; web.id = "sfwebstack0001"; web.name = "FROM THE WEB"; web.kind = "stack"; web.snaps = { a };
-            ses.stacks.insert (ses.stacks.begin(), web);
+            // LOAD's tray no longer says what the rack holds (ONLINE keeps it the same as the library's: the check after this one)
             ses.takeTray (juce::JSON::parse (R"({"stacks": [], "knobs": [], "chips": {}})"));
             const bool loadLeaves = ses.stacks.size() == 1 && ses.stacks[0].here && ses.stacks[0].name == "MY STACK";
             // in the session file, with its parts; read back, it is the same
@@ -4261,6 +4259,131 @@ static int uiTest()
             ses.stacks = stacksWere;
             racked = kept && rackUp && again && onto && after && loadLeaves && filedToo && forgot;
             if (! racked) std::printf ("    (the rack: kept %d up %d again %d onto %d after %d load leaves %d filed %d forgot %d)\n", (int) kept, (int) rackUp, (int) again, (int) onto, (int) after, (int) loadLeaves, (int) filedToo, (int) forgot);
+        }
+        // The rack and the web library, kept the same each way. Session says what is to be done, given the library's stacks
+        // (as GET /api/stacks gives them), and does its own part once the library has said yes: here the library is made up.
+        {
+            Engine e4; e4.prepare (48000.0, 128);
+            Session s4 (e4, false);
+            const auto p1 = s4.take(), p2 = s4.take(), p3 = s4.take();
+            auto uidOf = [&] (juce::int64 id) { return s4.findSnap (id)->uid; };
+            const auto u1 = uidOf (p1), u2 = uidOf (p2), u3 = uidOf (p3);
+            const juce::String far = "f0e1d2c3b4a59687-far9";
+            using RS = Session::RackStep;
+            auto item = [] (const juce::String& u, juce::StringArray off = {}) { auto* o = new juce::DynamicObject(); o->setProperty ("u", u); if (off.size() > 0) { juce::Array<juce::var> a2; for (auto& x : off) a2.add (x); o->setProperty ("off", a2); } return juce::var (o); };
+            auto there = [] (const juce::String& id, const juce::String& name, juce::Array<juce::var> items, bool lit = true, const juce::String& kind = "stack", const juce::String& from = {})
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("id", id); o->setProperty ("name", name); o->setProperty ("kind", kind); o->setProperty ("items", items); o->setProperty ("load", lit);
+                if (from.isNotEmpty()) { auto* ex = new juce::DynamicObject(); ex->setProperty ("from", from); o->setProperty ("extra", juce::var (ex)); }
+                return juce::var (o);
+            };
+            auto listOf = [] (std::initializer_list<juce::var> l) { juce::Array<juce::var> a2; for (auto& v : l) a2.add (v); return juce::var (a2); };
+            auto planOf = [&] (const juce::var& lib, juce::StringArray* lacks = nullptr, std::set<juce::String> none = {}) { juce::StringArray l; auto p = s4.rackPlan (lib, none, l); if (lacks != nullptr) *lacks = l; return p; };
+            auto doAll = [&] (const std::vector<RS>& p) { bool ok = true; for (auto& st : p) ok = s4.rackDone (st) && ok; return ok; };
+            const juce::uint32 noKick = Session::kAllLanes & ~1u;
+
+            // 1. kept here, never there: it goes (a stack of chips, lit for the instrument, with the parts each takes), and the two agree
+            Stack mine; mine.id = "hereabcdefghijkl"; mine.name = "MY STACK"; mine.kind = "stack"; mine.here = true; mine.snaps = { p1, p2 }; mine.lanes = { Session::kAllLanes, noKick };
+            s4.stacks = { mine };
+            auto p = planOf (listOf ({}));
+            const bool goes = p.size() == 1 && p[0].net == RS::post && p[0].here == RS::setMark && p[0].id == mine.id && p[0].body["items"].size() == 2
+                              && p[0].body["items"][1]["off"][0].toString() == "kick" && (bool) p[0].body["load"] && doAll (p) && s4.stacks[0].mark == s4.stackPrint (s4.stacks[0]);
+            const auto asSent = there (mine.id, "MY STACK", { item (u1), item (u2, { "kick" }) }, true, "stack", "sf000");
+            const bool settled = planOf (listOf ({ asSent })).empty();
+            // 2. made there: it comes, in the library's order, with its parts; a name in small letters is the same name
+            const auto made = there ("sfwebstack0001", "Night Rollers", { item (u3), item (u1, { "returns" }) });
+            p = planOf (listOf ({ made, asSent }));
+            const bool comes = p.size() == 1 && p[0].net == RS::none && p[0].here == RS::take && doAll (p);
+            s4.rackOrder (listOf ({ made, asSent }));
+            const bool came = comes && s4.stacks.size() == 2 && s4.stacks[0].id == "sfwebstack0001" && s4.stacks[0].name == "NIGHT ROLLERS" && ! s4.stacks[0].here
+                              && s4.stacks[0].snaps == std::vector<juce::int64> { p3, p1 } && (s4.stacks[0].lanesAt (1) & Session::kAllLanes) == (Session::kAllLanes & ~(1u << kLanes))
+                              && planOf (listOf ({ made, asSent })).empty();
+            // 3. changed there: so it is here. Changed here (kept again under its name): that goes. Both: the instrument's stands
+            const auto made2 = there ("sfwebstack0001", "Night Rollers", { item (u1, { "returns" }), item (u3), item (u2) });
+            p = planOf (listOf ({ made2, asSent }));
+            const bool follows = p.size() == 1 && p[0].here == RS::take && p[0].id == "sfwebstack0001" && doAll (p) && s4.stacks[0].snaps == std::vector<juce::int64> { p1, p3, p2 };
+            s4.stacks[1].snaps = { p2, p1 }; s4.stacks[1].lanes.clear();
+            p = planOf (listOf ({ made2, asSent }));
+            const bool sends = p.size() == 1 && p[0].net == RS::patch && p[0].id == mine.id && p[0].body["items"].size() == 2 && p[0].body["items"][0]["u"].toString() == u2
+                               && ! p[0].body.hasProperty ("name") && doAll (p);
+            const auto asSent2 = there (mine.id, "MY STACK", { item (u2), item (u1) }, true, "stack", "sf000");
+            s4.stacks[0].snaps = { p3 }; s4.stacks[0].lanes.clear();
+            const auto made3 = there ("sfwebstack0001", "Night Rollers", { item (u2) });
+            p = planOf (listOf ({ made3, asSent2 }));
+            const bool both = p.size() == 1 && p[0].net == RS::patch && p[0].id == "sfwebstack0001" && p[0].body["items"].size() == 1 && p[0].body["items"][0]["u"].toString() == u3 && doAll (p);
+            const auto made4 = there ("sfwebstack0001", "Night Rollers", { item (u3) });
+            // 4. a stack there that names a snapshot this library has not got: nothing is done about it until it is here
+            //    (it is asked for); one no library has any more is simply not part of the stack
+            juce::StringArray lacks;
+            const auto farOne = there ("sfwebstack0002", "Far Ones", { item (far), item (u1) });
+            p = planOf (listOf ({ made4, asSent2, farOne }), &lacks);
+            const bool waits = p.empty() && lacks.size() == 1 && lacks[0] == far && s4.stacks.size() == 2;
+            p = planOf (listOf ({ made4, asSent2, farOne }), &lacks, { far });
+            const bool without = p.size() == 1 && p[0].here == RS::take && lacks.isEmpty() && doAll (p) && s4.stacks.size() == 3 && s4.stacks[2].snaps == std::vector<juce::int64> { p1 }
+                                 && planOf (listOf ({ made4, asSent2, farOne }), nullptr, { far }).empty();
+            // 5. unlit there for the instrument, or removed there: it leaves the rack here; changed here since, it stays and goes back
+            p = planOf (listOf ({ there ("sfwebstack0001", "Night Rollers", { item (u3) }, false), asSent2 }), nullptr, { far });
+            const bool leaves = p.size() == 2 && p[0].id == "sfwebstack0001" && p[0].here == RS::drop && p[0].net == RS::none && p[1].id == "sfwebstack0002" && p[1].here == RS::drop && doAll (p) && s4.stacks.size() == 1;
+            s4.stacks[0].snaps = { p1 };
+            p = planOf (listOf ({}));
+            const bool back = p.size() == 1 && p[0].net == RS::restore && p[0].here == RS::setMark && doAll (p);
+            const auto asSent3 = there (mine.id, "MY STACK", { item (u1) }, true, "stack", "sf000");
+            // 6. its number here: out of the rack there too. One made here is removed there (it can be put back there); one made
+            //    there is only unlit for the instrument. Changed there since: it is not, and it comes back
+            p = planOf (listOf ({ asSent3, made4 }));
+            doAll (p);                                                   // (the library's again)
+            int webAt = -1, mineAt = -1;
+            for (int i = 0; i < (int) s4.stacks.size(); ++i) { if (s4.stacks[(size_t) i].id == "sfwebstack0001") webAt = i; if (s4.stacks[(size_t) i].id == mine.id) mineAt = i; }
+            bool outThere = webAt >= 0 && mineAt >= 0;
+            if (outThere)
+            {
+                s4.stackForget (webAt);
+                for (int i = 0; i < (int) s4.stacks.size(); ++i) if (s4.stacks[(size_t) i].id == mine.id) mineAt = i;
+                s4.stackForget (mineAt);
+                p = planOf (listOf ({ asSent3, made4 }));
+                bool unlit = false, removed = false;
+                for (auto& st : p) { unlit = unlit || (st.id == "sfwebstack0001" && st.net == RS::unlight && st.gone); removed = removed || (st.id == mine.id && st.net == RS::removeThere && st.gone); }
+                const auto changedThere = there (mine.id, "MY STACK", { item (u1), item (u2) }, true, "stack", "sf000");
+                auto p2nd = planOf (listOf ({ changedThere, made4 }));
+                bool comesBack = false;
+                for (auto& st : p2nd) comesBack = comesBack || (st.id == mine.id && st.net == RS::none && st.gone);
+                outThere = s4.stacks.empty() && s4.stacksGone.size() == 2 && p.size() == 2 && unlit && removed && comesBack && doAll (p) && s4.stacksGone.size() == 0
+                           && planOf (listOf ({})).empty();
+            }
+            // 7. one an earlier build's LOAD brought (no line kept with it, and no parts): it is the library's, and the library's is
+            //    taken. Nothing is sent from it
+            Stack old; old.id = "sfwebstack0003"; old.name = "FROM BEFORE"; old.kind = "stack"; old.snaps = { p1, p2 };
+            s4.stacks = { old };
+            p = planOf (listOf ({ there ("sfwebstack0003", "From Before", { item (u1, { "kick" }), item (u2) }) }));
+            const bool olderOk = p.size() == 1 && p[0].net == RS::none && p[0].here == RS::take && doAll (p) && (s4.stacks[0].lanesAt (0) & Session::kAllLanes) == noKick && s4.stacks[0].mark.isNotEmpty();
+            // 8. a song is the library's to arrange: it comes with its parts, follows the library, and is never sent
+            auto part = [&] (const juce::String& u, int bars) { auto v = item (u); v.getDynamicObject()->setProperty ("bars", bars); v.getDynamicObject()->setProperty ("morph", 1); return v; };
+            const auto song = there ("sfwebsong00001", "Set Piece", { part (u1, 16), part (u2, 8), part (u1, 4) }, true, "song");
+            s4.stacks.clear();
+            p = planOf (listOf ({ song }));
+            const bool sung = p.size() == 1 && p[0].here == RS::take && doAll (p) && s4.stacks.size() == 1 && s4.stacks[0].kind == "song" && s4.stacks[0].snaps == std::vector<juce::int64> { p1, p2, p1 }
+                              && (int) s4.stacks[0].kept["parts"][0]["bars"] == 16 && planOf (listOf ({ song })).empty();
+            s4.remove (p2);                                              // (a snapshot of it deleted here: the song is not sent for that)
+            bool noSend = true;
+            for (auto& st : planOf (listOf ({ song }))) noSend = noSend && st.net == RS::none;
+            // 9. in the session file, with what the two agreed and what is still to be said there
+            Stack again; again.id = "herezyxwvutsrqpo"; again.name = "KEPT"; again.kind = "stack"; again.here = true; again.snaps = { p1 }; again.mark = "stack|KEPT|x,";
+            s4.stacks.push_back (again);
+            s4.stackForget ((int) s4.stacks.size() - 1);
+            Engine e5; e5.prepare (48000.0, 128);
+            Session s5 (e5, false);
+            s5.takeState (s4.stateVar());
+            const bool filed = s5.stacks.size() == 1 && s5.stacks[0].mark == s4.stacks[0].mark && s5.stacksGone.size() == 1 && s5.stacksGone[0]["id"].toString() == "herezyxwvutsrqpo"
+                               && s5.stacksGone[0]["mark"].toString() == "stack|KEPT|x," && (bool) s5.stacksGone[0]["here"];
+            check (goes && settled && came && follows && sends && both && waits && without && leaves && back && outThere && olderOk && sung && noSend && filed,
+                   "the rack and the web library, the same each way: a stack kept here goes there, lit for the instrument, with the parts each snapshot takes; one made there comes, in the library's order; a change "
+                   "on either side is made on the other, and where both changed the instrument's stands; a stack naming a snapshot that is not here waits for it; unlit or removed there, it leaves here "
+                   "(changed here since, it goes back); its number here takes it out there (made here: removed there; made there: unlit); one from before lines were kept is the library's; a song is only ever taken; "
+                   "all of it is in the session file");
+            if (! (goes && settled && came && follows && sends && both && waits && without && leaves && back && outThere && olderOk && sung && noSend && filed))
+                std::printf ("    (goes %d settled %d came %d follows %d sends %d both %d waits %d without %d leaves %d back %d out there %d older %d sung %d no send %d filed %d)\n",
+                             (int) goes, (int) settled, (int) came, (int) follows, (int) sends, (int) both, (int) waits, (int) without, (int) leaves, (int) back, (int) outThere, (int) olderOk, (int) sung, (int) noSend, (int) filed);
         }
         ses.knobs[(size_t) k] = knobWas;
         check (racked, "the rack: KEEP keeps the chosen knob's stack on the instrument under the knob's name, each snapshot with its parts (again under that name: the same one, as it is now); STACKS shows the rack beside the column, "
@@ -8372,10 +8495,10 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             const int onceMore = on.requests() - askedAgain;
             ses.arrSet (0, 12, -1);                                             // (the arrangement changed by hand since)
             const auto said2b = on.load();
-            check ((int) ses.library.size() == nWas + 1 && ses.stacks.size() == 2 && ses.arrangement.size() == 3 && ses.knobs[6].snaps.size() == 2 && ses.knobs[8].snaps.size() == 3 && onceMore == 1
+            check ((int) ses.library.size() == nWas + 1 && ses.stacks.size() == 2 && ses.arrangement.size() == 3 && ses.knobs[6].snaps.size() == 2 && ses.knobs[8].snaps.size() == 3 && onceMore == 2
                    && said2.contains ("NO SNAPSHOT WAS NEW HERE") && ! said2.contains ("KNOB 7") && ! said2.contains ("FILLED") && ! said2.contains ("CHANGED") && ! said2.contains ("ARRANGEMENT")
                    && said2b.contains ("THE ARRANGEMENT WAS LEFT") && ses.arrangement[0].bars == 12,
-                   "LOAD again asks the library once, brings nothing twice and has nothing to say of a knob or an arrangement that hold what the library holds; an arrangement changed since is left as it is (" + said2b + ")");
+                   "LOAD again asks the library twice (its module, its stacks), brings nothing twice and has nothing to say of a knob or an arrangement that hold what the library holds; an arrangement changed since is left as it is (" + said2b + ")");
 
             // it is in the session file, and there when the app opens
             {
@@ -8411,8 +8534,8 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                                     && ses.knobs[9].snaps == std::vector<juce::int64> { first, third } && s1.contains ("KNOB 10 IS ON THE CHASSIS NOW TOO");
                 const int askedThen = on.requests();
                 const auto s2 = on.load();
-                check (wentUp && on.requests() == askedThen + 1 && ses.knobs[9].snaps == std::vector<juce::int64> { first, third } && ! s2.contains ("KNOB 10"),
-                       "a knob made here that the library has never seen goes up into its own place on the module, as it is (each snapshot with the parts it takes); the next LOAD asks once and changes nothing");
+                check (wentUp && on.requests() == askedThen + 2 && ses.knobs[9].snaps == std::vector<juce::int64> { first, third } && ! s2.contains ("KNOB 10"),
+                       "a knob made here that the library has never seen goes up into its own place on the module, as it is (each snapshot with the parts it takes); the next LOAD asks twice (the module, the stacks) and changes nothing");
                 if (! wentUp) std::printf ("    (%s | %s)\n", s1.toRawUTF8(), juce::JSON::toString (up1, true).substring (0, 300).toRawUTF8());
                 // by itself, with ONLINE lit: a knob changed here goes up once it has stood for a pass (no LOAD is asked for)
                 ses.stackSwap (9, 0, 1);
@@ -8481,6 +8604,94 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                 ask ("DELETE", "/api/stacks/" + home + "?forget=1"); ask ("DELETE", "/api/stacks/sf0testmacro3?forget=1");
             }
             for (auto& id : made) ask ("DELETE", "/api/stacks/" + id + "?forget=1");
+            // ---- the rack, the same here and there, each way, with no LOAD
+            {
+                for (auto* id : { "sf0testrack001", "sf0testrack002" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+                const juce::String far2 = "f0e1d2c3b4a59687-far2", nowhere = "f0e1d2c3b4a59687-none1";
+                ask ("DELETE", "/api/snapshots/" + far2 + "?forget=1");
+                auto thereBy = [&] (const juce::String& id) { return ask ("GET", "/api/stacks/" + id); };
+                auto hereBy = [&] (const juce::String& id) -> const Stack* { for (auto& x : ses.stacks) if (x.id == id) return &x; return nullptr; };
+                const auto uFirst = ses.findSnap (first)->uid, uThird = ses.findSnap (third)->uid;
+                const juce::uint32 noBass = Session::kAllLanes & ~(1u << 5);
+                const auto rackWas = ses.stacks;
+                // KEEP: a stack knob's stack kept here goes there by itself (ONLINE is lit; the rack changed, so it is seen to at once)
+                const int kk = 13;                                          // (stack knob 14)
+                const auto knobWas = ses.knobs[(size_t) kk];
+                ses.knobs[(size_t) kk] = MacroKnob();
+                ses.knobs[(size_t) kk].name = "RACK ONE"; ses.stackAdd (kk, first); ses.stackAdd (kk, third, noBass);
+                const int at = ses.stackKeep (kk);
+                const juce::String mineId = at >= 0 ? ses.stacks[(size_t) at].id : juce::String();
+                on.rack();
+                const auto up = thereBy (mineId);
+                const bool wentUp = at >= 0 && up.status == 200 && up.json["name"].toString() == "RACK ONE" && up.json["kind"].toString() == "stack" && (bool) up.json["load"] && up.json["slot"].isVoid()
+                                    && up.json["items"].size() == 2 && up.json["items"][0]["u"].toString() == uFirst && up.json["items"][1]["off"].size() == 1 && up.json["items"][1]["off"][0].toString() == "bass"
+                                    && up.json["extra"]["from"].toString() == "sf000" && hereBy (mineId) != nullptr && hereBy (mineId)->mark.isNotEmpty();
+                // nothing has changed: within a quarter of a minute the library is not even asked; LOAD (sure) asks it, and nothing is done
+                const int askedR = on.requests();
+                const bool rests = ! on.rack() && on.requests() == askedR;
+                const bool sureAsks = ! on.rack (true) && on.requests() == askedR + 1 && thereBy (mineId).json["items"].size() == 2;
+                // changed there: so it is here. Changed here (kept again under its name): so it is there
+                send ("PATCH", "/api/stacks/" + mineId, obj ({ { "items", list ({ obj ({ { "u", uThird }, { "off", list ({ "bass" }) } }), uFirst }) } }));
+                on.rack (true);
+                const bool followed = hereBy (mineId) != nullptr && hereBy (mineId)->snaps == std::vector<juce::int64> { third, first } && (hereBy (mineId)->lanesAt (0) & Session::kAllLanes) == noBass;
+                ses.stackKeep (kk);                                         // (the knob still holds the first, then the third without the bass)
+                on.rack();
+                const auto up2 = thereBy (mineId);
+                const bool sentOn = up2.json["items"].size() == 2 && up2.json["items"][0]["u"].toString() == uFirst && ! up2.json["items"][0].hasProperty ("off")
+                                    && up2.json["items"][1]["off"].size() == 1 && up2.json["name"].toString() == "RACK ONE" && hereBy (mineId)->snaps == std::vector<juce::int64> { first, third };
+                // made there, lit for the instrument: it comes, with a snapshot this library had not got (brought whole, with its
+                // clip) and without one no library has; the library's stack is left exactly as it is
+                var foreign2 = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (first)), true));
+                foreign2.getDynamicObject()->setProperty ("uid", far2); foreign2.getDynamicObject()->setProperty ("name", "SECOND FAR");
+                const bool put2 = send ("POST", "/api/snapshots", obj ({ { "snapshot", foreign2 } })).first == 200
+                                  && Online::requestForTests (st, "PUT", "/api/clips/" + far2, &firstClip, "audio/ogg") == 200;
+                send ("POST", "/api/stacks", obj ({ { "id", "sf0testrack001" }, { "name", "Made There" }, { "load", true }, { "items", list ({ uThird, nowhere, obj ({ { "u", far2 }, { "off", list ({ "kick", "master" }) } }) }) } }));
+                send ("POST", "/api/stacks", obj ({ { "id", "sf0testrack002" }, { "name", "Not For It" }, { "items", list ({ uFirst }) } }));
+                const int libWas = (int) ses.library.size();
+                on.rack (true);
+                juce::int64 far2Id = 0;
+                for (auto& x : ses.library) if (x.uid == far2) far2Id = x.id;
+                juce::MemoryBlock clip2;
+                if (far2Id != 0) ses.clipFile (far2Id).loadFileAsData (clip2);
+                const auto* made1 = hereBy ("sf0testrack001");
+                const bool came = put2 && (int) ses.library.size() == libWas + 1 && far2Id != 0 && clip2 == firstClip && made1 != nullptr && made1->name == "MADE THERE" && ! made1->here
+                                  && made1->snaps == std::vector<juce::int64> { third, far2Id } && (made1->lanesAt (1) & Session::kAllLanes) == (Session::kAllLanes & ~1u & ~(1u << (kLanes + 2)))
+                                  && hereBy ("sf0testrack002") == nullptr && thereBy ("sf0testrack001").json["items"].size() == 3 && ! on.rack (true)
+                                  && thereBy ("sf0testrack001").json["items"].size() == 3;
+                // unlit there: it leaves the rack here, and its snapshots stay
+                send ("PATCH", "/api/stacks/sf0testrack001", obj ({ { "load", false } }));
+                on.rack (true);
+                const bool left = hereBy ("sf0testrack001") == nullptr && ses.findSnap (far2Id) != nullptr;
+                send ("PATCH", "/api/stacks/sf0testrack001", obj ({ { "load", true } }));
+                on.rack (true);
+                // its number here: out of the rack there too. One made there is only unlit for the instrument; one made here is
+                // removed there (where it can be put back)
+                bool outBoth = hereBy ("sf0testrack001") != nullptr;
+                for (int i = 0; i < (int) ses.stacks.size(); ++i) if (ses.stacks[(size_t) i].id == "sf0testrack001") { ses.stackForget (i); break; }
+                for (int i = 0; i < (int) ses.stacks.size(); ++i) if (ses.stacks[(size_t) i].id == mineId) { ses.stackForget (i); break; }
+                on.rack();
+                const auto t1 = thereBy ("sf0testrack001"), t2 = thereBy (mineId);
+                bool inRemoved = false;
+                const auto removedThere = ask ("GET", "/api/stacks?removed=1");
+                if (auto* gone = removedThere.json["stacks"].getArray()) for (auto& v : *gone) inRemoved = inRemoved || v["id"].toString() == mineId;
+                outBoth = outBoth && t1.status == 200 && ! (bool) t1.json["load"] && t1.json["items"].size() == 3 && t2.status == 404 && inRemoved && ses.stacksGone.isEmpty()
+                          && hereBy ("sf0testrack001") == nullptr && hereBy (mineId) == nullptr;
+                on.rack (true);
+                const bool staysOut = hereBy ("sf0testrack001") == nullptr && hereBy (mineId) == nullptr;
+                check (wentUp && rests && sureAsks && followed && sentOn && came && left && outBoth && staysOut,
+                       "the rack by itself, against the library: a stack kept here goes there (lit for the instrument, off its module, each snapshot with its parts); with nothing changed the library is not asked "
+                       "again for a quarter of a minute; changed there it is so here, changed here it is so there; one made there comes, with the snapshot this library lacked (whole, clip to the byte) and "
+                       "without one no library has, and is left as it is there; unlit there it leaves here; its number here unlights one made there and removes one made here");
+                if (! (wentUp && rests && sureAsks && followed && sentOn && came && left && outBoth && staysOut))
+                    std::printf ("    (went up %d rests %d sure asks %d followed %d sent on %d came %d left %d out both %d stays out %d | %s)\n", (int) wentUp, (int) rests, (int) sureAsks, (int) followed, (int) sentOn,
+                                 (int) came, (int) left, (int) outBoth, (int) staysOut, juce::JSON::toString (up.json, true).substring (0, 240).toRawUTF8());
+                ses.knobs[(size_t) kk] = knobWas;
+                ses.stacks = rackWas; ses.stacksGone.clear();
+                if (far2Id != 0) ses.remove (far2Id);
+                for (auto* id : { "sf0testrack001", "sf0testrack002" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+                if (mineId.isNotEmpty()) ask ("DELETE", "/api/stacks/" + mineId + "?forget=1");
+                ask ("DELETE", "/api/snapshots/" + far2 + "?forget=1");
+            }
             // no answer: it says so and changes nothing
             auto dead = st; dead.url = "http://127.0.0.1:9";
             on.setSetup (dead);

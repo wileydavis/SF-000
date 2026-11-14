@@ -547,6 +547,26 @@ that travels), readable by you only. Neither the address nor the strings are in 
   a moment, into its own place on the library's module if that place is free, else into the
   library off the module. A knob emptied here (CLEAR) comes off the library's module and stays
   in the library. A knob is only sent once the library has every snapshot it holds.
+- **So does the rack, and it comes back the other way too.** The stacks in the designer's
+  rack (STACKS, beside the column) and the stacks the web library has lit for the instrument
+  (TO SF-000 there) are kept the same, by themselves, while ONLINE is lit:
+  - A stack kept here (KEEP) is in the library's rack within a moment: lit for the instrument,
+    off its module, each snapshot with the parts it takes.
+  - A stack made or lit there is here within a quarter of a minute, in the library's order. A
+    snapshot it names that this library has not got is brought first, whole, with its four
+    bars; until it is here the stack is left alone on both sides.
+  - Changed there, it changes here. Changed here (KEEP again under its name), it changes
+    there. Changed on both since they last agreed: the instrument's is the one that stands.
+  - Unlit or removed there, it leaves the rack here (its snapshots stay). Changed here since,
+    it stays and goes back.
+  - Its number here takes it out there too: a stack made there is only unlit for the
+    instrument (the library keeps it); one made here is removed there (marked removed, not
+    erased).
+  - A song is the library's to arrange: it comes and follows, and is never sent.
+  - A stack is only sent once the library has every snapshot in it. One holding the rig's own
+    snapshots (which stay at home) stays here.
+  The row of a stack in the rack says which it is: KEPT HERE (not there yet), HERE AND ON THE
+  WEB, or FROM THE WEB.
 - A snapshot renamed here is renamed there. One deleted here stays there.
 - One removed in the web library is not sent again.
 - The snapshots the rig came with (INIT and the rest, CLEAN SLATE) stay at home.
@@ -557,7 +577,10 @@ stacks that fill themselves, a column where a stack knob is built, and a **modul
 of this one's sixteen knobs (its own README, in the repo `snapshot-library`).
 
 **LOAD** (on the snapshot module, and beside SET UP) makes the sixteen knobs what the web
-library's module holds now, and brings nothing else of that library.
+library's module holds now. It sees to the rack first, as ONLINE does, whether ONLINE is lit or
+not. So there are two ways to fill a knob: from the rack here (a stack's ADD: no network, and
+with ONLINE lit the rack is the library's too), or LOAD, for a whole module arranged in the
+browser.
 
 - **The knobs.** Places 1 to 4 there are macro knobs and 5 to 12, 14 and 15 stack knobs, as here (13 and 16 hold none).
   - **LOAD makes room.** A stack knob here that the library cannot be given (it holds the rig's own snapshots, which
@@ -578,9 +601,9 @@ library's module holds now, and brings nothing else of that library.
   - A place holding the other kind (from before the two kinds) is left, and the line says so.
 - **The snapshots this library lacks**, whole, with their four bars and the definitions they
   name, under the name each has there. One this library has, renamed there, is renamed here.
-- **Stacks marked for this screen** (TO SF-000 there): **STACK** (it appears once there are
-  any) steps the library screen through them, each in its own order, then back to every
-  snapshot. One no longer marked there is gone from here at the next LOAD; its snapshots stay.
+- **The rack** (above): the stacks lit for the instrument there (TO SF-000) and those kept
+  here, made the same. **STACK**, on the library screen (it appears once there are any), steps
+  that screen through them, each in its own order, then back to every snapshot.
 - **A song**, as the arrangement, *if there is none*.
 
 LOAD deletes no snapshot. What it brought is not sent back. With no answer from the library it
@@ -665,11 +688,11 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
   - The wheel over the column moves it when it holds more than eleven.
   - **KEEP** (in the strip, where LEARN is for a macro knob) keeps the knob's stack in the
     **rack** under the knob's name: a copy, each snapshot with its parts. **STACKS**, beside
-    the column, shows the rack (the stacks kept here, and those LOAD brought for the library
-    screen); a stack's **ADD** puts it onto the chosen knob, after what the knob holds, and its
+    the column, shows the rack (the stacks kept here, and those the web library has lit for the
+    instrument); a stack's **ADD** puts it onto the chosen knob, after what the knob holds, and its
     number takes it out of the rack. SNAPSHOTS brings the library back.
   The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
-  here goes there by itself. A stack kept in the rack stays on the instrument for now.
+  here goes there by itself. So does the rack, and the library's comes here: see ONLINE.
 - A stack knob has no DEPTH and is tied to nothing. MOTION swings it along its own stack
   (below).
 
@@ -997,7 +1020,7 @@ Two places, and a third for takes.
 
 | IN IT | WHAT |
 |---|---|
-| `session.json` | the snapshots, the snapshot knobs, the arrangement, the stacks LOAD brought, the rig as it was left, each snapshot's profile (its layout and the rules that keep old files readable are in `FORMAT.md`) |
+| `session.json` | the snapshots, the snapshot knobs, the arrangement, the rack (with what the web library and this one last agreed each stack was, and what is still to be said there), the rig as it was left, each snapshot's profile (its layout and the rules that keep old files readable are in `FORMAT.md`) |
 | `clips/` | each snapshot's four bars |
 | `samples/` | SF-000's own copy of every audio file it has been given: a lane's sample or phrase, an insert's impulse responses, SPACE's. Each under its own name, in a folder named for what is in the file (`samples/3fa9c2e1/kick.wav`) |
 | `backups/` | the session as each of the last twenty launches found it. To go back, quit and copy one over `session.json` |

@@ -2,6 +2,7 @@
 // SF-000 session (message thread): what the screens edit. The base scene, the snapshot library,
 // the sixteen snapshot knobs and their morph, the armed generators, and the file it is all kept in.
 #include "Engine.h"
+#include <set>
 #include "Profile.h"
 #include <functional>
 
@@ -90,7 +91,8 @@ struct Stack
     juce::String id, name, kind;        // (id: the web library's own for it; one kept here has an id of its own)
     std::vector<juce::int64> snaps;
     std::vector<juce::uint32> lanes;    // the parts of the rig each snapshot takes, in the same order (none: every one takes everything)
-    bool here = false;                  // kept on the instrument (KEEP, in the designer), not brought by LOAD: LOAD leaves it
+    bool here = false;                  // made on the instrument (KEEP, in the designer), not in the web library
+    juce::String mark;                  // its line (Session::stackPrint) as the web library and this one last agreed it was. Empty: they never have
     juce::var kept;                     // as the file had it: what this build does not know of it is carried
     juce::uint32 lanesAt (size_t i) const { return i < lanes.size() ? lanes[i] : 0xffffffffu; }
 };
@@ -430,7 +432,29 @@ public:
     // A stack of the rack put onto a stack knob: its snapshots, each with its parts, at the end of what the knob
     // holds (a knob that held nothing takes the stack's name too). False: not a stack knob, or no room for them all.
     bool stackOnto (int index, int k);
-    void stackForget (int index);       // out of the rack (one LOAD brought comes back with the next LOAD)
+    void stackForget (int index);       // out of the rack (and, once ONLINE has said so there, out of the web library's rack for the instrument)
+    // ---- the rack and the web library. ONLINE keeps the two the same, each way: a stack kept here goes there (lit for
+    // the instrument, off its module), and one made, changed, unlit or removed there is so here. Where both have changed
+    // the instrument's stands. Nothing is sent that names a snapshot the library lacks; nothing is taken until every
+    // snapshot it names is here. Session decides (rackPlan) and does its own part (rackDone); Online asks the library.
+    juce::Array<juce::var> stacksGone;                      // stacks put out of the rack here that the library is still to be told of: { id, mark, here }
+    juce::String stackPrint (const Stack&) const;           // what it is, in a line: two with the same line are the same stack
+    juce::String stackPrintOf (const juce::var& there, const std::set<juce::String>& none) const;      // the same of one as the library gives it (none: uids no library has any more)
+    juce::var stackBody (const Stack&, bool& whole) const;  // its snapshots as the library takes them. whole: every one has a uid
+    struct RackStep
+    {
+        enum Net { none, post, patch, unlight, removeThere, restore };      // what the library is asked
+        enum Here { nothing, setMark, take, drop };                         // what is done here once it has said yes (with none: at once)
+        Net net = none; Here here = nothing;
+        juce::String id, was, mark;     // was: the stack's line here when this was decided (done only if that still holds). mark: the line the two agree on after
+        juce::var body, there;          // body: what is sent. there: the library's stack (take)
+        bool gone = false;              // it settles one of stacksGone
+    };
+    // What is to be done, given every stack the library has (GET /api/stacks). lacking: the uids its stacks for the
+    // instrument name that are not here and not in `none`: such a stack is left out of the plan until they are.
+    std::vector<RackStep> rackPlan (const juce::var& stacksThere, const std::set<juce::String>& none, juce::StringArray& lacking) const;
+    bool rackDone (const RackStep&);                        // the step's part here. False: the stack changed meanwhile (next time)
+    void rackOrder (const juce::var& stacksThere);          // the library's order; those it has not got after
     // A stack knob holding a snapshot the web library is never given (the rig's own: CLEAN SLATE, INIT and its pushes;
     // or one that is gone): such a knob can never be sent there.
     bool knobStaysHere (int k) const;

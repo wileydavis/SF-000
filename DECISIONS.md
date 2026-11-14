@@ -2544,6 +2544,50 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      so are the steps (their notes read differently). In practice a recall already drew the
      whole screen, so I do not think you have seen this one.
 
+## The rack, the same here and on the web (Nov 14): fiftieth build
+
+485. **The fourth stage of 471: ONLINE both ways, for the rack.** *Yours in 464 and 470 ("With
+     a duplicate online"); the rules are mine.* The stacks in the designer's rack and the
+     stacks the web library has **lit for the instrument** (its TO SF-000 lamp) are one set,
+     kept the same by ONLINE without LOAD:
+     - kept here, it goes there (lit, off the module, each snapshot with its parts);
+     - made or lit there, it comes here, in the library's order (a snapshot it names that is
+       not here is brought first; until then the stack is left alone on both sides);
+     - changed on one side, it changes on the other;
+     - **changed on both since they last agreed: the instrument's stands.** *Mine.* The
+       instrument is the original (470). The other way round is one line: say.
+     - unlit or removed there, it leaves here (changed here since, it stays and goes back);
+     - its number here takes it out there: one made there is unlit (the library keeps it), one
+       made here is removed there. Removed there is marked, not erased: the library can put it
+       back, but its page has no key for that yet, so it would be me doing it. Say if you
+       would rather a stack made here were only unlit too.
+     The library is asked for its stacks at once when the rack here changes, and otherwise
+     every quarter of a minute while ONLINE is lit. That is new traffic: until now an idle
+     ONLINE asked nothing.
+486. **Why the lamp and not every stack.** *Mine.* The library's rack also holds piles you are
+     only sorting with (and 470 keeps the heavy sorting on the web). Its lamp already meant
+     "this one is for the instrument", so that is the set kept the same: nothing arrives
+     that you did not light, and a first ONLINE does not pull the whole library's stacks and
+     their snapshots down. A stack on a knob is still the knob's (447): it is not in the rack
+     unless it is also lit, or kept.
+487. **What LOAD is now.** *Mine; it answers "an option to load from the local library or the
+     remote library" (464) as far as I can see how.* Two ways to fill a knob: a stack's ADD in
+     the rack (local: no network, and with ONLINE lit the rack is the web's too), or LOAD (the
+     whole module as arranged in the browser). LOAD sees to the rack first, lit or not. I did
+     not add a LOAD LOCAL key: the knobs here *are* the local module, so it would have nothing
+     to bring. If you meant something else by it (a second module kept on the instrument to
+     swap in, say), tell me.
+488. **Nothing was changed in the web library.** It already answers everything this needs
+     (its stacks, a stack made, changed, unlit, removed). No deploy.
+489. **Safety of your library.** *Mine.* A stack an earlier build's LOAD brought has no record
+     of what the two agreed, and no parts: it counts as the library's, and the library's is
+     taken over it. Nothing is sent from it. (Sent as it stood here, it would have wiped the
+     parts set on its chips there.) A stack is never taken with a snapshot missing, so it is
+     never sent back shorter than it was. A song is only ever taken.
+     *Known edge:* a snapshot deleted here that a song lit there still names comes back with
+     the song, as it did at LOAD: now within a quarter of a minute instead of at the next LOAD.
+     Unlight the song there, or take the part out of it, to be rid of the snapshot here.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2758,6 +2802,12 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   page on the E16 is checked against the scene file and a made-up E16 only.
 - **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
   whether any snapshot of yours has KEY set.
+- **The rack both ways (485 to 489)** is checked on the session with a made-up library (every
+  rule above), and against the web library's own code running here: kept here and sent, changed
+  each way, made there with a snapshot this library lacked, unlit, put out by its number.
+  **Not against snapshots.drosaka.com, and not on the Mac.** The first time ONLINE is lit on
+  this build, watch the rack: what is lit TO SF-000 there should appear, and nothing there
+  should change. If a stack you did not expect appears or leaves, tell me which.
 - **Notes in the key (482 to 484)** are checked on the session and the drawn screens: what a new
   step holds and says with KEY OFF, at A and at D, with KEY FOLLOW on and off, lit by the
   mouse, by the E16's STEP and VEL, and by a generator. Not on the Mac, and I have not heard
