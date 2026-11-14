@@ -2138,6 +2138,41 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      and shows are kept by name in the web library, so one can be swapped for another there.
      Deleting snapshots from the Mac to match is a third step I would only take on your word.
 
+## The snapshot module rethought (Nov 14)
+
+434. **You** (in full, because everything after this follows from it): "Let's rethink this.
+     The snapshot module (the 16-knob lane in the main instrument interface) is a performance
+     tool that holds two types of things: A macro knob that is a knob that just drives other
+     knobs (leaned), and stack knobs that hold an ordered list of snapshots. The goal of the web
+     library is to be a useful tool for managing large amoutns of snapshots and creating stack
+     knobs to load into the snapshot performance module. I'd divide the snapshot module into
+     two fixed categories, four macro knob slots in knobs 1-4 and stack knob slots in knobs
+     5-16. A knob stack can be used in two ways: 1)when the cue button is selected, it acts as
+     a knob-scrollable preview of snapshots in the stack, you scroll throught the stack then
+     press the knob to morph to that snapshot at whatever the glide time is. 2) when cue is
+     deselected, it directly starts morphing from wherever the instrument is toward the
+     snapshot in the direction the knob is turning, reaching that nexr snapshot, then
+     continuing to morph to the next and so on. I use this mode a lot to find happy sweet spots
+     in between snapshots. The trick here is that when a stack knob starts to turn, it
+     shouldn't jump, it should begin by taking what's playing and morphining to the approah
+     snapshot. The cue toggle should be on the panel of the snapshot module so I can sqitxh
+     the stack knob mode while playing. Move the snapshot button into thew top bar of the
+     instrument alongside record and run. The headphone mode for cue is still a setting inside
+     library. Macro knobs created on the instrument also get saved to the online library. In
+     the library you can load macro knobs into the four module slots, load stack knobs into
+     the 12 slots, create nes stack knobs, and organize snashot chips into useful stacks. I
+     likehow the stem system work for snapshots, but I think it would be even better if, in
+     the library, the snapshot itself carries the buttons for stem selectins that way when
+     constructing stack knobs, I can preconfigure what stems the snapshot will use. This is
+     useful for performance. So in the library, the workflow id I preview chips, deselect
+     stems I don't want, drag that onto stack knob column to the right of the surface where a
+     stack has been dealt. In that column i car add, delete, or reorder the chips. I can
+     select/deselct the stems for each chip (ideally on the chips themselves so its visible
+     which lanes are active) and then, when I like the stack, i can press a button on the
+     column that adds that stack to an available module slot. And then, on the instrument, the
+     snapshot module has a load button that will load whatever the library's current module
+     load looks like into itself."
+
 ## Not verified
 
 - **The new LOAD (428 to 432) is checked against the web library's code running here**: a knob
