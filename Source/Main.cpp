@@ -4093,6 +4093,7 @@ static int uiTest()
     {
         auto col = [&] (int what, int i, int part = 0) { for (auto& h : sc.testHits()) if (Screen::testIsColumn (h, what, i, part)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         auto pickAt = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPick (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto addAt = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPickAdd (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         auto lanesOf = [&] (int kk, int i) { return ses.knobs[(size_t) kk].lanesAt ((size_t) i) & Session::kAllLanes; };
         const int k = 10;                                               // (stack knob 11)
         const auto knobWas = ses.knobs[(size_t) k];
@@ -4101,10 +4102,16 @@ static int uiTest()
         const bool noColumn = col (0, 0).x < 0.0f && pickAt (1).x > 0.0f && pickAt (0).x < 1428.0f;        // (a macro knob chosen: the library alone, two across)
         sc.testPickKnob (k); draw();
         const bool beside = col (0, 0).x < 0.0f && pickAt (0).x > 1428.0f && pickAt (1).x > 1428.0f;        // (a stack knob: the library in one row, the column's place beside it)
-        // three snapshots tapped in the library: they are its stack, in that order
         const auto a = ses.library[0].id, b = ses.library[1].id, c = ses.library[2].id;
-        click (pickAt (0)); draw(); click (pickAt (1)); draw(); click (pickAt (2)); draw();
-        const bool built = ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { a, b, c } && col (0, 2).x > 0.0f && col (0, 3).x < 0.0f;
+        // a card of the library pressed: heard in the headphones, whole, and nothing is put anywhere; pressed again, it stops
+        ses.cueWith (b, Session::scopeOf (1u));                        // (a cue narrowed before: a card heard from here is whole again)
+        click (pickAt (1)); draw();
+        const bool hears = ses.knobs[(size_t) k].snaps.empty() && ses.cueNarrowed (b) == nullptr && (ses.cueing() == b || ! ses.clipFile (b).existsAsFile());
+        click (pickAt (1)); draw();
+        const bool stops = ses.cueing() == 0 && ses.knobs[(size_t) k].snaps.empty();
+        // ADD on three of them: they are its stack, in that order
+        click (addAt (0)); draw(); click (addAt (1)); draw(); click (addAt (2)); draw();
+        const bool built = hears && stops && ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { a, b, c } && col (0, 2).x > 0.0f && col (0, 3).x < 0.0f;
         // a key: the bass (lane 6) put out for the second, then the returns too, then the bass lit again
         click (col (1, 1, 5)); draw();
         const bool out = lanesOf (k, 1) == (Session::kAllLanes & ~(1u << 5)) && lanesOf (k, 0) == Session::kAllLanes;
@@ -4132,7 +4139,7 @@ static int uiTest()
         ses.cue (0); ses.cueWith (0, Session::Scope());
         ses.knobs[(size_t) k] = knobWas;
         check (noColumn && beside && built && out && outToo && litAgain && ends && moved && heard && heardKey && off && inFile,
-               "the column: a stack knob chosen in the designer has its stack beside the library. Snapshots tapped go on it in order; a key puts a part of the rig out for one snapshot or lights it; UP and DN move a snapshot with its keys; its card plays it in the headphones with the parts it takes; its number takes it off; all of it kept in the session");
+               "the column: a stack knob chosen in the designer has its stack beside the library. A snapshot of the library pressed is heard in the headphones, and its ADD puts it on the stack, in order; a key puts a part of the rig out for one snapshot or lights it; UP and DN move a snapshot with its keys; its card plays it in the headphones with the parts it takes; its number takes it off; all of it kept in the session");
         if (! (noColumn && beside && built && out && outToo && litAgain && ends && moved && heard && heardKey && off && inFile))
             std::printf ("    (no column %d beside %d built %d out %d %d lit %d ends %d moved %d heard %d %d off %d file %d)\n", (int) noColumn, (int) beside, (int) built, (int) out, (int) outToo, (int) litAgain, (int) ends, (int) moved, (int) heard, (int) heardKey, (int) off, (int) inFile);
         sc.setPage (Screen::pMain); draw();

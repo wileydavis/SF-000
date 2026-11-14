@@ -2445,6 +2445,14 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      samples. *Not in it:* MOTION on a stack knob swings the sound knobs and not the racks,
      and a macro knob is still not tied to an effect's knobs.
 
+### The library in the instrument: hearing before adding (forty-eighth build)
+
+476. **In the designer a snapshot is heard before it is put on a knob.** *Mine, from how you
+     said you work: "preview chips, deselect stems, and then drag the chip onto a stack knob
+     column" (434).* A card of the library pressed plays in the headphones, whole, its name
+     green; pressed again it stops. Its **ADD** key puts it on the chosen stack knob, where a
+     press on the card used to. In the column a card is heard with only the parts it takes.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:

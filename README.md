@@ -60,7 +60,7 @@ First run:
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
 | **LOAD** (on the snapshot module) | make the sixteen knobs what the web library's module holds now (see ONLINE, below) |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** is here too, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
-| MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and tap snapshots to add them to its stack (see The snapshot module, and A macro knob, below) |
+| MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and ADD snapshots to its stack (see The snapshot module, and A macro knob, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform. SF-000 keeps its own copy (see Where everything is kept) |
@@ -654,7 +654,8 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
 - A stack holds up to 128 snapshots (the places of a controller's knob).
 - **MACROS** is where a stack knob is built, on the instrument alone. Pick a stack knob: its
   stack stands as a **column** of cards beside the library, in the knob's order.
-  - Tap a snapshot in the library: it goes on at the end.
+  - Press a snapshot in the library to hear it in the headphones (again to stop). Its **ADD**
+    key puts it on the stack, at the end.
   - Each card has **a key for every part of the rig**: the eleven lanes, **R** the returns,
     **B** the drum bus, **K** the key. Black: this snapshot takes that part. An empty frame:
     the part is put out, and stays as it is when the knob comes to this snapshot.

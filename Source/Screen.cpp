@@ -1653,10 +1653,14 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
     tag (g, R (x0, y0, wTag, 24), num);
     const bool isBase = s.id == ses.baseId;
+    // (in the designer the card is heard when it is pressed, its name green while it is in the headphones, and ADD puts it on the chosen knob)
+    const bool adds = hitKind == hPick && page == pMacros, heard = s.id == ses.cueing();
     // the base scene's name is the black one; on the dark instrument, the lit one
-    const float wn = plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? (night() ? col::lit : col::black) : col::white, isBase ? (night() ? col::black : col::lit) : col::black, 24);
+    const float wn = adds && heard ? plate (g, x0 + wTag, y0, s.name, fLegend, 8, col::green, col::lit, 24)
+                                   : plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? (night() ? col::lit : col::black) : col::white, isBase ? (night() ? col::black : col::lit) : col::black, 24);
     if (selected && hitKind == hCard) selNameRect = R (x0 + wTag, y0, std::max (wn, 150.0f), 24);
-    if (s.id == ses.cueing()) plate (g, r.getRight() - 6 - (std::ceil (tw (fLegend, "IN THE PHONES")) + 16), y0, "IN THE PHONES", fLegend, 8, col::green, col::lit, 24);
+    if (adds) { const R ar (r.getRight() - 6 - 44, y0, 44, 24); window (g, ar, col::white); text (g, "ADD", ar, fNote, col::black); }
+    else if (heard) plate (g, r.getRight() - 6 - (std::ceil (tw (fLegend, "IN THE PHONES")) + 16), y0, "IN THE PHONES", fLegend, 8, col::green, col::lit, 24);
     else text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
     const float gy = y0 + 28, gh = 30;
     auto box = [&] (float x, float w)
@@ -2066,7 +2070,7 @@ void Screen::drawMacros (G& g)
         const int tied = (int) kn.links.size();
         if (k == ses.learning) order = "BEING TAUGHT: " + String (ses.learnMoves()) + " MOVED. KEEP, OR DROP.";
         else if (! stack && tied > 0) order = "TIED TO " + String (tied) + (tied == 1 ? " KNOB." : " KNOBS.");
-        g.drawFittedText (order.isNotEmpty() ? order : stack ? String ("NO SNAPSHOTS ON IT. TAP SNAPSHOTS ON THE RIGHT, OR LOAD A STACK FROM THE LIBRARY.") : String ("TIED TO NOTHING. PRESS LEARN."),
+        g.drawFittedText (order.isNotEmpty() ? order : stack ? String ("NO SNAPSHOTS ON IT. ADD SNAPSHOTS FROM THE RIGHT, OR LOAD A STACK FROM THE LIBRARY.") : String ("TIED TO NOTHING. PRESS LEARN."),
                           juce::Rectangle<int> ((int) x0, (int) (ky + 68), 258, 30), juce::Justification::topLeft, 2, 1.0f);
         // what it moves, lane by lane (a knob it is tied to: how far the full turn takes it, in hundredths of that knob's travel)
         String moves;
@@ -2091,7 +2095,9 @@ void Screen::drawMacros (G& g)
     {
         const int i = libScroll * across + n;
         if (i >= total) break;
-        drawSnapCard (g, ses.library[(size_t) i], i, R ((column ? 1433.0f : 1151.0f + (float) (n % 2) * 282), 78.0f + (float) (n / across) * 74, 272, 66), false, hPick);
+        const R cr ((column ? 1433.0f : 1151.0f + (float) (n % 2) * 282), 78.0f + (float) (n / across) * 74, 272, 66);
+        drawSnapCard (g, ses.library[(size_t) i], i, cr, false, hPick);
+        hit (R (cr.getRight() - 6 - 44, cr.getY() + 6, 44, 24), hPickAdd, i, 0);
     }
     const R strip (23, 980, 1682, 110);
     panel (g, strip, col::putty);
@@ -2127,7 +2133,7 @@ void Screen::drawMacros (G& g)
         for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
     }
     const String help = "1 TO 4, MACRO KNOBS: PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
-                        "A STACK KNOB (5 TO 12, 14, 15): TAP SNAPSHOTS ON THE RIGHT TO ADD THEM. BESIDE THEM IS ITS STACK, IN ORDER: "
+                        "A STACK KNOB (5 TO 12, 14, 15): A SNAPSHOT ON THE RIGHT PRESSED IS HEARD IN THE HEADPHONES, AND ITS ADD PUTS IT ON THE KNOB. BESIDE THEM IS ITS STACK, IN ORDER: "
                         "A KEY PUTS THAT PART OF THE RIG OUT FOR THAT SNAPSHOT, UP AND DN MOVE IT, ITS NUMBER TAKES IT OFF, THE CARD PLAYS IT IN THE HEADPHONES. "
                         "CUE OUT: A TURN MORPHS THE RIG TOWARD THE NEXT SNAPSHOT. CUE LIT: A TURN PLAYS IT IN THE HEADPHONES. A PRESS TAKES THE SET TO WHERE THE KNOB IS. "
                         "MOTION: A WAVE THAT TURNS A KNOB FOR YOU.";
@@ -2164,7 +2170,7 @@ void Screen::drawColumn (G& g)
     if (n == 0 && vis (g, R (x, 112, 272, 60)))
     {
         g.setColour (tone (col::black)); g.setFont (fLbl);
-        g.drawFittedText ("NO SNAPSHOTS ON IT. TAP ONE ON THE RIGHT TO BEGIN ITS STACK.", juce::Rectangle<int> ((int) x + 6, 116, 260, 40), juce::Justification::topLeft, 2, 1.0f);
+        g.drawFittedText ("NO SNAPSHOTS ON IT. PRESS ADD ON ONE ON THE RIGHT TO BEGIN ITS STACK.", juce::Rectangle<int> ((int) x + 6, 116, 260, 40), juce::Justification::topLeft, 2, 1.0f);
     }
     static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
     for (int row = 0; row < rows; ++row)
@@ -2618,6 +2624,14 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 if (ses.arrAdd (ses.library[(size_t) h->a].id, at)) selPart = at >= 0 ? at : n;
                 break;
             }
+            // (in the designer a card pressed is heard in the headphones, whole; pressed again, it stops. ADD is what puts it on a knob.)
+            const auto id = ses.library[(size_t) h->a].id;
+            if (ses.cueing() == id) ses.cue (0);
+            else { ses.cueWith (0, Session::Scope()); ses.cue (id); }
+            break;
+        }
+        case hPickAdd:
+        {
             // (a stack knob takes it, at the end of its stack. A macro knob holds no snapshots: LEARN is how one is made.)
             if (Session::isStack (selKnob)) ses.stackAdd (selKnob, ses.library[(size_t) h->a].id);
             else { recNote = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON A STACK KNOB"; recNoteAt = juce::Time::getMillisecondCounter(); }

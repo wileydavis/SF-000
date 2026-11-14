@@ -142,6 +142,7 @@ public:
     static bool testIsArrKey (const TestHit& h, int which) { return h.kind == hAct && h.a == aArrange + which; }
     static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
     static bool testIsPick (const TestHit& h, int index) { return h.kind == hPick && h.a == index; }
+    static bool testIsPickAdd (const TestHit& h, int index) { return h.kind == hPickAdd && h.a == index; }
     // the column: what = 0 the card, 1 a key (b: the part), 2 its number (taken off), 3 moved (b: -1 earlier, +1 later)
     static bool testIsColumn (const TestHit& h, int what, int index, int b = 0) { return h.kind == hColCard + what && h.a == index && (what == 0 || what == 2 || h.b == b); }
     int testSelPart() const { return selPart; }
@@ -194,7 +195,8 @@ private:
                    hColCard,        // the card itself: heard in the headphones, with the parts of the rig it takes
                    hColKey,         // one of its keys (b: the part: a lane, then the returns, the drum bus, the key): put out or lit
                    hColOut,         // its number: taken off the stack
-                   hColMove };      // moved earlier or later in the stack (b: -1 or +1)
+                   hColMove,        // moved earlier or later in the stack (b: -1 or +1)
+                   hPickAdd };      // the designer's library: a card's ADD key (a: which snapshot of the library): onto the chosen stack knob
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
