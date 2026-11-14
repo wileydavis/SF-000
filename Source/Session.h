@@ -221,11 +221,6 @@ public:
     // the drum bus (from its stems; a scope that takes all of them is the clip itself, as it was
     // heard through the master). If it is playing, it changes now. id 0: every cue is whole again.
     void cueWith (juce::int64 id, const Scope&);
-    // IN SET: under a narrowed cue, the rest of the set as it plays now (every lane, return and the
-    // drum bus that the scope leaves out). The headphones then have what the set would be after
-    // that recall. Off (as it starts): the snapshot's lanes alone. A whole cue is the clip either way.
-    bool cueInSet = false;
-    void setCueInSet (bool on);
     juce::int64 cueing() const          { return cueId; }
     void turnSnapKnob (int k, float v);
     // A knob that holds a stack (MacroKnob::pick): the snapshot it stands on (0: it holds none),

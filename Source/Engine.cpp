@@ -524,32 +524,17 @@ bool Engine::followClock (double aheadMs)
 void Engine::renderCue (int n, bool run, double ppq0, double beats)
 {
     cueBuf.clear (0, n);
-    {
-        // the bed, set back by the master's delay (every buffer, so that it is in step whenever a cue comes in)
-        const int size = (int) bedLine[0].size(), back = juce::jlimit (0, size - n - 1, masterLat.load());
-        for (int ch = 0; ch < 2 && size > n; ++ch)
-        {
-            const float* in = bedBuf.getReadPointer (ch); float* out = bedOut.getWritePointer (ch); float* line = bedLine[(size_t) ch].data();
-            for (int i = 0; i < n; ++i) { const int w = (bedAt + i) & (size - 1); line[w] = in[i]; out[i] = line[(w - back) & (size - 1)]; }
-        }
-        if (size > n) bedAt = (bedAt + n) & (size - 1);
-    }
     const juce::SpinLock::ScopedTryLockType hold (cueLock);
     if (! hold.isLocked()) return;
     const CueClip* want = cueWant.load();
-    if (cueNow == nullptr && want == nullptr) { cueGain = 0.0f; bedGain = 0.0f; return; }
-    const float* bedL = bedOut.getReadPointer (0); const float* bedR = bedOut.getReadPointer (1);
+    if (cueNow == nullptr && want == nullptr) { cueGain = 0.0f; return; }
     const float step = 1.0f / (float) (0.01 * sr);
     const double perSample = beats / (double) n, held = (double) (maxLat.load() + masterLat.load()) * perSample;
     float* L = cueBuf.getWritePointer (0); float* R = cueBuf.getWritePointer (1);
     for (int i = 0; i < n; ++i)
     {
         if (want != cueNow && cueGain <= 0.0f) { cueNow = want; cuePos = 0.0; }       // one clip out before the next comes in
-        // (the bed stays while one clip gives way to another: it goes only when there is to be no cue)
-        const float bedTo = want != nullptr ? 1.0f : 0.0f;
-        bedGain = bedTo > bedGain ? std::min (bedTo, bedGain + step) : std::max (bedTo, bedGain - step);
-        L[i] = bedL[i] * bedGain; R[i] = bedR[i] * bedGain;
-        if (cueNow == nullptr) { cueGain = 0.0f; if (bedGain <= 0.0f) break; continue; }
+        if (cueNow == nullptr) { cueGain = 0.0f; break; }
         const float target = want == cueNow ? 1.0f : 0.0f;
         cueGain = target > cueGain ? std::min (target, cueGain + step) : std::max (target, cueGain - step);
         const auto& a = cueNow->audio;
@@ -573,8 +558,8 @@ void Engine::renderCue (int n, bool run, double ppq0, double beats)
         const int i0 = juce::jlimit (0, len - 1, (int) pos), i1 = i0 + 1 < len ? i0 + 1 : 0;
         const float f = (float) (pos - (double) i0);
         const float* l = a.getReadPointer (0); const float* r = a.getReadPointer (a.getNumChannels() > 1 ? 1 : 0);
-        L[i] += (l[i0] + (l[i1] - l[i0]) * f) * cueGain;
-        R[i] += (r[i0] + (r[i1] - r[i0]) * f) * cueGain;
+        L[i] = (l[i0] + (l[i1] - l[i0]) * f) * cueGain;
+        R[i] = (r[i0] + (r[i1] - r[i0]) * f) * cueGain;
     }
 }
 
@@ -613,11 +598,6 @@ void Engine::stemOut (RecSink* rec, int index, const float* l, const float* r, i
         juce::FloatVectorOperations::copy (t[0].data(), l + first, n - first);
         juce::FloatVectorOperations::copy (t[1].data(), r + first, n - first);
     }
-    // the bed under a cue: this stem in it or not, crossed over in one buffer
-    float& was = bedWas[(size_t) (index - 1)];
-    const float now = ((bedWant.load() >> (index - 1)) & 1u) != 0 ? 1.0f : 0.0f;
-    if (was > 0.0f || now > 0.0f) { bedBuf.addFromWithRamp (0, 0, l, n, was, now); bedBuf.addFromWithRamp (1, 0, r, n, was, now); }
-    was = now;
 }
 
 
@@ -1443,9 +1423,7 @@ void Engine::prepare (double rate, int block)
     for (auto& m : master) prep (*m);
     prep (*busProc);
     for (int l = 0; l < kLanes; ++l) busWas[(size_t) l] = laneOnBus (l) ? 1.0f : 0.0f;
-    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf, &busBuf, &busDry, &bedBuf, &bedOut }) b->setSize (2, maxBlock, false, true, false);
-    for (auto& t : bedLine) t.assign ((size_t) juce::nextPowerOfTwo (std::max (32768, maxBlock * 4)), 0.0f);
-    bedBuf.clear(); bedOut.clear(); bedAt = 0; bedGain = 0.0f; bedWas.fill (0.0f);
+    for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf, &busBuf, &busDry }) b->setSize (2, maxBlock, false, true, false);
     laneBuf.setSize (2 * kLanes, maxBlock, false, true, false);
     pockets.prepare (sr, maxBlock);
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
@@ -1622,7 +1600,6 @@ void Engine::render (juce::AudioBuffer<float>& out)
     if (rec != nullptr) rec->begin (n);
     {
         // the stems' tapes: silence for this buffer, until each stem that sounds is written over it
-        bedBuf.clear (0, n);
         const int at = (int) (tapePos & (kTape - 1)), first = std::min (n, kTape - at);
         for (auto& st : stemTape) for (auto& t : st)
         {

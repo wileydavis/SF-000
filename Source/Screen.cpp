@@ -675,7 +675,6 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aCue, "CUE", "WHILE IT IS LIT, A TAPPED SNAPSHOT'S BARS ARE HEARD IN THE HEADPHONES, IN TIME WITH THE CLOCK, AND THE SET IS LEFT ALONE." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
-                { aCueSet, "IN SET", "LIT: UNDER THE LANES A NARROWED CUE PLAYS, THE REST OF THE SET AS IT IS NOW. THE HEADPHONES HAVE WHAT THE SET WOULD BE AFTER THE RECALL. OUT: THE SNAPSHOT'S LANES ALONE." },
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
@@ -1762,12 +1761,6 @@ void Screen::drawLibrary (G& g)
                 else textRaw (g, name, kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));        // (put out: still to be read, dimly)
                 hit (kr.expanded (1), hScope, i, 0);
             }
-            // IN SET: the lanes put out are heard too, as the set plays them now
-            const R sr (x0 + 486 + (float) (kLanes + 3) * 40 + 12, y0 + 4, 60, 24);
-            key (g, sr, ses.cueInSet ? col::green : col::putty, pressed (aCueSet) ? 6.0f : 2.0f, ses.cueInSet);
-            if (ses.cueInSet) text (g, "IN SET", sr, fLbl, col::black);
-            else textRaw (g, "IN SET", sr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));
-            hit (sr.expanded (1), hAct, aCueSet, 0);
         }
     }
     // PHONES: one pair of outputs with headphones on it. While a cue plays: the set left, the cue right.
@@ -2260,7 +2253,6 @@ void Screen::act (int a)
         case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
         case aNotes:    ses.setRecallNotes (! ses.recallNotes); repaint(); break;
-        case aCueSet:   ses.setCueInSet (! ses.cueInSet); repaint(); break;
         case aPockets:  setPage (page == pPockets ? pMain : pPockets); break;
         case aArrange:  setPage (page == pArrange ? pMain : pArrange); break;
         case aArrPlay:  if (ses.arrPlaying()) ses.arrStop(); else ses.arrPlay (0); break;

@@ -197,13 +197,6 @@ public:
     void setCue (const CueClip* c)              { cueWant = c; }
     // Silence at once, and the audio thread has let go of every clip when this returns (before clips are destroyed).
     void dropCue()                              { const juce::SpinLock::ScopedLockType g (cueLock); cueWant = nullptr; cueNow = nullptr; cueGain = 0.0f; }
-    // The bed under a cue: those of the set's own stems, as they play now, that are to be heard
-    // with it in the headphones (bit k: stem k, as a snapshot's stems are numbered). They are taken
-    // as they go into the mix and set back by the master's delay, so they sit where the set is
-    // heard; and they are there only while a cue is. A cue of some of a snapshot's lanes over the
-    // rest of the set's own is what the set would be after that recall.
-    void setCueBed (juce::uint32 stems)         { bedWant = stems; }
-    juce::uint32 cueBed() const                 { return bedWant.load(); }
     bool hasCueOutput() const                   { return cueOuts.load(); }       // the device has outputs 3 and 4 open
     // PHONES: one pair of outputs, and headphones on it. While a cue plays, the set is on the left
     // ear (both its sides) and the cue on the right; with none playing the set is as it always
@@ -576,10 +569,6 @@ private:
     static constexpr int kMarks = 64;
     int kTape = 1 << 20;
     std::array<std::vector<float>, 2> tape;
-    std::atomic<juce::uint32> bedWant { 0 };
-    std::array<float, kStems> bedWas {};                        // audio thread: how much of each stem the bed had at the last buffer's end
-    juce::AudioBuffer<float> bedBuf, bedOut;                    // this buffer's bed as it was made, and as it is heard (set back)
-    std::array<std::vector<float>, 2> bedLine; int bedAt = 0; float bedGain = 0.0f;
     std::vector<std::array<std::vector<float>, 2>> stemTape;      // the same stretch of each stem, before the master (so the master's delay ahead of the tape above)
     juce::int64 tapePos = 0;                    // audio thread
     std::atomic<juce::int64> tapeEnd { 0 };

@@ -413,17 +413,11 @@ take everything, as always.
 four bars: each lane, the two returns and what the drum bus did, as they went into the mix
 (`clips/<id>.stems`, about a megabyte). Put a key of the row out and the cue becomes the lanes
 still lit and no others, in time as before: the hat alone, the bass and its echo, whatever the
-recall would bring. All lit again, it is the clip as it was heard. Two things to know. A lane's
+recall would bring. All lit again, it is the clip as it was heard. With PHONES lit that is the
+right ear; the left is the set exactly as it goes to the PA, whatever the scope. Two things to know. A lane's
 echo and reverb are in RET, not in the lane (one tail for all the lanes that fed it). And lanes
 heard this way have not been through the master, so they are a little quieter and plainer than
 in the whole clip. A snapshot taken before this build has no lanes kept: its cue stays whole.
-
-**IN SET**, at the end of that row, puts the rest of the set under them. Lit, the lanes you put
-out are heard as well, as the set is playing them now: the headphones have the snapshot's hat
-over your own kick, bass and everything else, which is what the set would be after the recall.
-Out (as it starts), the snapshot's lanes play alone. The set's part is taken before the master
-too, and set back by the master's delay so that it sits exactly where the set is heard. With
-PHONES lit it is all in the right ear, the set as it is in the left. IN SET stays as you leave it.
 
 ### What a snapshot holds of the playing
 
@@ -952,12 +946,9 @@ Delete `session.json` to start again from the factory rig.
 ## Not built yet
 
 - A snapshot's lanes (its stems) stay on this Mac: ONLINE does not send them and LOAD does not
-  bring them yet, so the web library cannot play some of a snapshot's lanes. And a snapshot
-  from before has no lanes kept (they could be made again from the snapshot itself, as PRINT
-  renders, where its samples are on the Mac).
-- IN SET is what the recall would bring only as far as a recording can say: the snapshot's
-  lanes are four bars as they were taken, not the lanes as they would play on from here, and
-  a morph's travel between the two is not heard.
+  bring them yet, so the web library cannot play some of a snapshot's lanes. And a snapshot from
+  before has no lanes kept (they could be made again from the snapshot itself, as PRINT renders,
+  where its samples are on the Mac).
 - The skin is a first pass, drawn from measurements of the 3D model, not rendered from the model
   itself: no texture maps, one finish per material, and the inside of the displays (the meters,
   the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices

@@ -2023,39 +2023,31 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      say the lanes are empty, which is not true.
 409. **Not built, and what I would do next** (*proposed*): send the stems to the web library
      with the clip and bring them at LOAD (one more thing kept there per snapshot; the bench
-     could then play some of a chip's lanes); the second half of your idea, the set itself in
-     the headphones with the chosen lanes taken out and the snapshot's put in; and lanes for
-     the snapshots taken before, rendered from the snapshot as PRINT renders.
+     could then play some of a chip's lanes); and lanes for the snapshots taken before,
+     rendered from the snapshot as PRINT renders. (I also proposed here the set itself in the
+     headphones with the chosen lanes taken out and the snapshot's put in. It was built and
+     taken out again: 415.)
 
-## Forty-first build (Nov 13): the rest of the set under a narrowed cue
+## The forty-first build, taken out (Nov 13)
 
-410. **You, of the fortieth:** "the stemmed cueing snapshots work awesome." On the Mac, in
-     the headphones. So the first half stays exactly as it is, and the second half is a key.
-411. **IN SET, at the end of the scope's row.** *Mine* (the name and the place). Lit, a
-     narrowed cue has under it every stem of the set's own that the scope leaves out, as it
-     plays now: the headphones have what the set would be after the recall, which is what you
-     first asked ("what it would sound like with those lanes deselected"). Out, the snapshot's
-     lanes alone, as you have it now. It starts out, and is kept as it is left.
-412. **The set's part is taken where the stems are** (as each goes into the mix, before the
-     master) **and set back by the master's delay**, so that it sits to the sample where the
-     set is heard and where the cue's clip is placed. *Mine.* Taken after the master it could
-     not have lanes left out of it. It crosses over in one buffer when a key of the row is
-     pressed, and it does not dip while the cue's clip changes (the clip fades out and in over
-     10 ms each way; the bed stays).
-413. **A whole cue has no bed**, IN SET or not: with every key lit the snapshot is everything,
-     and the clip is it. And a snapshot with no lanes kept has none either (408).
-414. **What it cannot tell you.** The snapshot's lanes are four bars as they were taken, played
-     round; after a real recall those lanes play on from the sequencer, and a morph travels.
-     IN SET is the destination, not the journey.
+415. **IN SET was built, heard and removed the same evening.** It was a key at the end of the
+     scope's row that put the rest of the live set (every stem the scope left out, before the
+     master, set back by the master's delay) under a narrowed cue: my reading of "what it would
+     sound like with those lanes deselected". **You**, of the fortieth: "the stemmed cueing
+     snapshots work awesome." And of this: "I liked it best when I could hear exactly what was
+     playing on the pa in the left headphone, and the cued snapshot [with] whatever parts were
+     selected in the other. no need to [remove] those parts from the left phone." So it is
+     gone, key and engine both (commit 4cfe8a8 has it, and its items 410 to 414, if it is ever
+     wanted). What stands is the fortieth: the left ear is the set as the PA has it, the right
+     is the cued snapshot's lit lanes and nothing else. A session saved while the key existed
+     has `cueInSet` in it; this build lets go of it at the next save.
+416. **What I take from it.** *Mine.* The ear does the comparing: the set in one ear and the
+     candidate in the other is the preview, and mixing them for you takes that away. I will
+     not put the set into the cue again unless you ask.
 
 ## Not verified
 
-- **IN SET (forty-first) is checked by measurement**: the bed against the stems the recorder
-  is handed, sample for sample, at the master's delay; the snapshot's kick over the set
-  without its own. Not heard. For your ears: whether the set's part, which has not been
-  through the master, sits at the right level against the set in the other ear (PHONES), and
-  whether a lane over the set tells you what you need before a recall.
-- **A snapshot's lanes (fortieth): heard on the Mac, and they work** (410). Still yours to
+- **A snapshot's lanes (fortieth): heard on the Mac, and they work** (415). Still yours to
   say: whether a lane without its echo (which is in RET) is what you expect to hear.
 - **The library's new look (395 to 402) has been seen only as pictures a browser with no
   graphics card drew here**, beside pictures of the dark instrument drawn the same way. Not
