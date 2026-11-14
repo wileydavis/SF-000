@@ -142,6 +142,8 @@ public:
     static bool testIsArrKey (const TestHit& h, int which) { return h.kind == hAct && h.a == aArrange + which; }
     static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
     static bool testIsPick (const TestHit& h, int index) { return h.kind == hPick && h.a == index; }
+    // the column: what = 0 the card, 1 a key (b: the part), 2 its number (taken off), 3 moved (b: -1 earlier, +1 later)
+    static bool testIsColumn (const TestHit& h, int what, int index, int b = 0) { return h.kind == hColCard + what && h.a == index && (what == 0 || what == 2 || h.b == b); }
     int testSelPart() const { return selPart; }
     // Legends that are not wholly on the plate they are printed on, as last recorded for the stage (none: as it should be).
     int testLegendCount() const { return (int) legendRects.size(); }
@@ -187,7 +189,12 @@ private:
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
                    hFront,          // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
                    hPocket,         // POCKETS: a lane's pocket on the map (a: the lane): dragged, left and right its HOME, up and down its WIDTH
-                   hArrPart, hArrBars, hArrMorph };     // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
+                   hArrPart, hArrBars, hArrMorph,       // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
+                   // the column (the chosen stack knob's stack, in the designer). a: which of its snapshots
+                   hColCard,        // the card itself: heard in the headphones, with the parts of the rig it takes
+                   hColKey,         // one of its keys (b: the part: a lane, then the returns, the drum bus, the key): put out or lit
+                   hColOut,         // its number: taken off the stack
+                   hColMove };      // moved earlier or later in the stack (b: -1 or +1)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
@@ -305,6 +312,7 @@ private:
     void drawSequencer (G&, R);
     void drawLibrary (G&);
     void drawMacros (G&);
+    void drawColumn (G&);               // the chosen stack knob's stack, as cards in its order, each with its keys
     void drawArrange (G&);
     juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
     juce::String arrSig;
@@ -366,7 +374,7 @@ private:
     // parts are put out first; and all again for the next (0 to 10: the lanes; 11: the returns; 12: the key).
     std::array<bool, kLanes + 3> scopeOn;       // the lanes, the returns, the drum bus, the key
     juce::int64 scopeFor = 0;
-    int selKnob = 0, libScroll = 0;
+    int selKnob = 0, libScroll = 0, colScroll = 0;
     int libStack = -1;                  // the library screen shows this one of the stacks LOAD brought (-1: every snapshot)
     std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;

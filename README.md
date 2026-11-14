@@ -639,9 +639,18 @@ to that snapshot, is pressed onto it, or plays it in the headphones. They are ch
 library, on the chips; in the designer such a snapshot's number is drawn on amber.
 
 - A stack holds up to 128 snapshots (the places of a controller's knob).
-- **MACROS**: pick a stack knob and tap snapshots on the right to add them at the end of
-  its stack; tap one of its numbers to take it off. The web library is where stacks are built
-  and put in order; LOAD brings them.
+- **MACROS** is where a stack knob is built, on the instrument alone. Pick a stack knob: its
+  stack stands as a **column** of cards beside the library, in the knob's order.
+  - Tap a snapshot in the library: it goes on at the end.
+  - Each card has **a key for every part of the rig**: the eleven lanes, **R** the returns,
+    **B** the drum bus, **K** the key. Black: this snapshot takes that part. An empty frame:
+    the part is put out, and stays as it is when the knob comes to this snapshot.
+  - **UP** and **DN** move a snapshot earlier or later. Its number takes it off the stack.
+  - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A
+    key pressed while it plays is heard at once.
+  - The wheel over the column moves it when it holds more than eleven.
+  The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
+  here goes there by itself.
 - A stack knob has no DEPTH and is tied to nothing. MOTION swings it along its own stack
   (below).
 

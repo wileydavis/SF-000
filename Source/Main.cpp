@@ -4028,6 +4028,54 @@ static int uiTest()
                "LEARN in the macro designer brings the main screen up with KEEP and DROP in its top bar; DROP puts the knob back and ties nothing; KEEP ties it, and the macro knob is there to turn");
         sc.setPage (Screen::pMain); draw();
     }
+    // 3c2. the column: a stack knob chosen in the designer has its stack beside the library, and is built there with no network
+    {
+        auto col = [&] (int what, int i, int part = 0) { for (auto& h : sc.testHits()) if (Screen::testIsColumn (h, what, i, part)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto pickAt = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPick (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto lanesOf = [&] (int kk, int i) { return ses.knobs[(size_t) kk].lanesAt ((size_t) i) & Session::kAllLanes; };
+        const int k = 10;                                               // (stack knob 11)
+        const auto knobWas = ses.knobs[(size_t) k];
+        ses.knobs[(size_t) k] = MacroKnob();
+        sc.setPage (Screen::pMacros); sc.testPickKnob (2); draw();
+        const bool noColumn = col (0, 0).x < 0.0f && pickAt (1).x > 0.0f && pickAt (0).x < 1428.0f;        // (a macro knob chosen: the library alone, two across)
+        sc.testPickKnob (k); draw();
+        const bool beside = col (0, 0).x < 0.0f && pickAt (0).x > 1428.0f && pickAt (1).x > 1428.0f;        // (a stack knob: the library in one row, the column's place beside it)
+        // three snapshots tapped in the library: they are its stack, in that order
+        const auto a = ses.library[0].id, b = ses.library[1].id, c = ses.library[2].id;
+        click (pickAt (0)); draw(); click (pickAt (1)); draw(); click (pickAt (2)); draw();
+        const bool built = ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { a, b, c } && col (0, 2).x > 0.0f && col (0, 3).x < 0.0f;
+        // a key: the bass (lane 6) put out for the second, then the returns too, then the bass lit again
+        click (col (1, 1, 5)); draw();
+        const bool out = lanesOf (k, 1) == (Session::kAllLanes & ~(1u << 5)) && lanesOf (k, 0) == Session::kAllLanes;
+        click (col (1, 1, kLanes)); draw();
+        const bool outToo = lanesOf (k, 1) == (Session::kAllLanes & ~(1u << 5) & ~(1u << kLanes));
+        click (col (1, 1, 5)); draw();
+        const bool litAgain = lanesOf (k, 1) == (Session::kAllLanes & ~(1u << kLanes));
+        // moved later: its keys go with it. The first has no earlier and the last no later
+        const bool ends = col (3, 0, -1).x < 0.0f && col (3, 2, 1).x < 0.0f && col (3, 0, 1).x > 0.0f && col (3, 2, -1).x > 0.0f;
+        click (col (3, 1, 1)); draw();
+        const bool moved = ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { a, c, b } && lanesOf (k, 2) == (Session::kAllLanes & ~(1u << kLanes)) && lanesOf (k, 1) == Session::kAllLanes;
+        // the card: in the headphones, with the parts it takes (the returns are not among them); a key pressed while it is there is heard at once
+        click (col (0, 2)); draw();
+        const auto* narrow = ses.cueNarrowed (b);
+        const bool heard = narrow != nullptr && ! narrow->returns && narrow->lane[5] && (ses.cueing() == b || ! ses.clipFile (b).existsAsFile());
+        click (col (1, 2, 0)); draw();
+        const auto* narrower = ses.cueNarrowed (b);
+        const bool heardKey = ses.cueing() != b || (narrower != nullptr && ! narrower->lane[0] && ! narrower->returns);
+        // its number: taken off the stack
+        click (col (2, 0)); draw();
+        const bool off = ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { c, b } && col (0, 2).x < 0.0f;
+        // and it is the session's own: in the file, each with the parts it takes
+        const auto filed = ses.stateVar()["knobs"][k];
+        const bool inFile = filed["snaps"].size() == 2 && filed["lanes"].size() == 2 && (int) filed["lanes"][0] == (int) Session::kAllLanes;
+        ses.cue (0); ses.cueWith (0, Session::Scope());
+        ses.knobs[(size_t) k] = knobWas;
+        check (noColumn && beside && built && out && outToo && litAgain && ends && moved && heard && heardKey && off && inFile,
+               "the column: a stack knob chosen in the designer has its stack beside the library. Snapshots tapped go on it in order; a key puts a part of the rig out for one snapshot or lights it; UP and DN move a snapshot with its keys; its card plays it in the headphones with the parts it takes; its number takes it off; all of it kept in the session");
+        if (! (noColumn && beside && built && out && outToo && litAgain && ends && moved && heard && heardKey && off && inFile))
+            std::printf ("    (no column %d beside %d built %d out %d %d lit %d ends %d moved %d heard %d %d off %d file %d)\n", (int) noColumn, (int) beside, (int) built, (int) out, (int) outToo, (int) litAgain, (int) ends, (int) moved, (int) heard, (int) heardKey, (int) off, (int) inFile);
+        sc.setPage (Screen::pMain); draw();
+    }
     // 3d. MOTION in the macro designer: three rows of four knobs, turned like any other
     {
         auto at = [&] (int ctl) { for (auto& h : sc.testHits()) if (Screen::testIsControl (h, ctl)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
@@ -4516,6 +4564,18 @@ static int shot (const juce::StringArray& args)
     Screen sc (ses);
     const auto page = arg ("--page", "main");
     sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : page == "arrange" ? Screen::pArrange : Screen::pMain);
+    if (page == "macros" && arg ("--knob", "").isNotEmpty())
+    {
+        // (the designer with that knob chosen. A stack knob: a part put out for its second snapshot and two for its fourth, to show the column's keys)
+        const int k = juce::jlimit (0, 15, arg ("--knob", "1").getIntValue() - 1);
+        sc.testPickKnob (k);
+        if (Session::isStack (k) && ses.knobs[(size_t) k].snaps.size() >= 4)
+        {
+            ses.stackLanes (k, 1, Session::kAllLanes & ~(1u << 5));
+            ses.stackLanes (k, 3, Session::kAllLanes & ~1u & ~(1u << kLanes));
+        }
+        sc.testTick();
+    }
     if (page == "arrange")
     {
         // an arrangement made of the snapshots it comes with, caught playing a little way into its third part

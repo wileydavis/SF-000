@@ -2396,6 +2396,28 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      here go straight onto knobs, and LOAD is for what was arranged in the browser. *Not
      built in this build:* it is the next one.
 
+### The library in the instrument: its first part (forty-sixth build)
+
+471. **In stages.** *Mine.* (1) **The column, in the designer**: a stack knob built and kept
+     on the instrument alone. This build. (2) LIBRARY and MACROS as one page: the snapshots,
+     the column and the places together, with FIND. (3) Stacks that are on no knob: a rack of
+     them here, as the web library has, to put on a knob and take off. (4) ONLINE both ways
+     by itself, so the web's copy and this one stay the same without LOAD; LOAD then chooses
+     which of the two a module is taken from. (5) The E16 on that page.
+472. **The column.** With a stack knob chosen in the designer, its stack stands beside the
+     library: one card for each snapshot, in the knob's order. A snapshot tapped in the
+     library goes on at the end. On each card: **a key for every part of the rig** (the eleven
+     lanes, R the returns, B the drum bus, K the key), black while that snapshot takes the
+     part, an empty frame when it is put out; **UP** and **DN** move it earlier or later, its
+     keys with it; **its number** takes it off; **the card itself** plays it in the
+     headphones with the parts it takes, and a key pressed while it plays is heard at once.
+     The wheel over the column moves it when it holds more than eleven. Until now a
+     snapshot's parts could only be chosen in the web library (444). *Mine:* UP and DN rather
+     than a drag, for now: a drag among cards that also scroll is its own piece of work.
+473. **It needs no network, and the web has it anyway.** A stack knob is the session's own,
+     kept in the session file. With ONLINE lit it goes to the web library by itself, as 447
+     has it, each snapshot with its parts.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2411,6 +2433,8 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   `session-before-two-kinds.json` is beside your session if anything is not as you expect.
 - **The E16's corners (449 to 452, 467)** are checked against the scene files object by object
   and with made-up messages, the scenes of the build before included. Not on your E16.
+- **The column (472)** is pressed in the drawn screen: built, keyed, moved, taken off, kept in
+  the file. Not seen on your Mac: whether the keys are big enough to hit, and the headphones.
 - **LOAD making room (466)** is checked against the web library's code running here, with a
   new session's TOUR on knob 5 and a module that has another knob for 5. I took your failure
   to be this one from how the code behaves; I have not seen your LOAD line. If TEST STACK 1

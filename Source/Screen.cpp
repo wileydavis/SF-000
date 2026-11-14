@@ -2082,14 +2082,16 @@ void Screen::drawMacros (G& g)
         }
         g.drawFittedText (moves, juce::Rectangle<int> ((int) x0, (int) (ky + 102), 258, 64), juce::Justification::topLeft, 4, 0.8f);
     }
-    // the library, to pick from
-    const int total = (int) ses.library.size();
-    libScroll = juce::jlimit (0, std::max (0, (total - 1) / 2 - 11), libScroll);
-    for (int n = 0; n < 24; ++n)
+    // A stack knob chosen: its stack is the column, and the library is beside it to pick from. A macro knob: the library alone.
+    const bool column = Session::isStack (selKnob);
+    if (column) drawColumn (g);
+    const int total = (int) ses.library.size(), across = column ? 1 : 2;
+    libScroll = juce::jlimit (0, std::max (0, (total - 1) / across - 11), libScroll);
+    for (int n = 0; n < 12 * across; ++n)
     {
-        const int i = libScroll * 2 + n;
+        const int i = libScroll * across + n;
         if (i >= total) break;
-        drawSnapCard (g, ses.library[(size_t) i], i, R (1151.0f + (float) (n % 2) * 282, 78.0f + (float) (n / 2) * 74, 272, 66), false, hPick);
+        drawSnapCard (g, ses.library[(size_t) i], i, R ((column ? 1433.0f : 1151.0f + (float) (n % 2) * 282), 78.0f + (float) (n / across) * 74, 272, 66), false, hPick);
     }
     const R strip (23, 980, 1682, 110);
     panel (g, strip, col::putty);
@@ -2125,11 +2127,86 @@ void Screen::drawMacros (G& g)
         for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
     }
     const String help = "1 TO 4, MACRO KNOBS: PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
-                        "5 TO 12, 14, 15, STACK KNOBS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN ORDER; TAP A NUMBERED SLOT TO TAKE ONE OUT. "
-                        "CUE OUT: A TURN MORPHS THE RIG TOWARD THE NEXT SNAPSHOT THE WAY IT IS TURNING. CUE LIT: A TURN PLAYS IT IN THE HEADPHONES, A PRESS MORPHS TO IT OVER THE GLIDE. "
-                        "MOTION: A WAVE THAT TURNS A KNOB FOR YOU, IN TIME WITH THE CLOCK: ITS WAVE, HOW LONG, WHICH KNOB, HOW MUCH OF ITS TURN.";
+                        "A STACK KNOB (5 TO 12, 14, 15): TAP SNAPSHOTS ON THE RIGHT TO ADD THEM. BESIDE THEM IS ITS STACK, IN ORDER: "
+                        "A KEY PUTS THAT PART OF THE RIG OUT FOR THAT SNAPSHOT, UP AND DN MOVE IT, ITS NUMBER TAKES IT OFF, THE CARD PLAYS IT IN THE HEADPHONES. "
+                        "CUE OUT: A TURN MORPHS THE RIG TOWARD THE NEXT SNAPSHOT. CUE LIT: A TURN PLAYS IT IN THE HEADPHONES. A PRESS TAKES THE SET TO WHERE THE KNOB IS. "
+                        "MOTION: A WAVE THAT TURNS A KNOB FOR YOU.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
     g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1204, (int) y0 + 2, 466, 94), juce::Justification::centredLeft, 7, 0.8f);
+}
+
+// The column: the chosen stack knob's stack as it is, in its order, beside the library it is built from. Each snapshot
+// is a card with a key for every part of the rig: the eleven lanes, the returns (R), the drum bus (B), the key (K). Lit, this
+// snapshot takes that part; put out, the part stays as it is when the knob comes to this snapshot, is pressed onto it,
+// or plays it in the headphones. The card's number takes it off the stack; UP and DN move it earlier or later; the
+// card itself plays it in the headphones with the parts it takes. All of it is the session's own: no network is asked.
+void Screen::drawColumn (G& g)
+{
+    const int k = selKnob;
+    const auto& kn = ses.knobs[(size_t) k];
+    const int n = (int) kn.snaps.size();
+    const float x = 1151.0f;
+    // its head: whose stack this is, and how many it holds
+    {
+        const R hr (x, 78.0f, 272, 26);
+        if (vis (g, hr))
+        {
+            const String num (k + 1);
+            const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+            tag (g, R (x, 78.0f, wTag, 26), num);
+            const float wn = plate (g, x + wTag, 78.0f, kn.name.isEmpty() ? String ("UNNAMED") : kn.name, fLegend, 8, col::white, col::black);
+            const String count = String (n) + (n == 1 ? " SNAPSHOT" : " SNAPSHOTS");
+            if (x + wTag + wn + 4 + std::ceil (tw (fNote, count)) + 12 <= x + 272) plate (g, x + 272 - (std::ceil (tw (fNote, count)) + 12), 80.0f, count, fNote, 6, col::white, col::black);
+        }
+    }
+    const int rows = 11;
+    colScroll = juce::jlimit (0, std::max (0, n - rows), colScroll);
+    if (n == 0 && vis (g, R (x, 112, 272, 60)))
+    {
+        g.setColour (tone (col::black)); g.setFont (fLbl);
+        g.drawFittedText ("NO SNAPSHOTS ON IT. TAP ONE ON THE RIGHT TO BEGIN ITS STACK.", juce::Rectangle<int> ((int) x + 6, 116, 260, 40), juce::Justification::topLeft, 2, 1.0f);
+    }
+    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
+    for (int row = 0; row < rows; ++row)
+    {
+        const int i = colScroll + row;
+        if (i >= n) break;
+        const R r (x, 110.0f + (float) row * 74, 272, 66);
+        const auto* sn = ses.findSnap (kn.snaps[(size_t) i]);
+        hit (r, hColCard, i, 0);
+        const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+        const String num (i + 1);
+        const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+        const R up (r.getRight() - 6 - 62, y0, 30, 24), dn (r.getRight() - 6 - 30, y0, 30, 24);
+        const juce::uint32 lanes = kn.lanesAt ((size_t) i) & Session::kAllLanes;
+        if (vis (g, r))
+        {
+            const bool heard = sn != nullptr && ses.cueing() == sn->id;
+            card (g, r, heard);
+            tag (g, R (x0, y0, wTag, 24), num);
+            plate (g, x0 + wTag, y0, sn != nullptr ? sn->name : String ("GONE"), fLegend, 8, heard ? col::green : col::white, heard ? col::lit : col::black, 24);
+            // earlier and later (the first has no earlier, the last no later)
+            if (i > 0) { window (g, up, col::white); text (g, "UP", up, fNote, col::black); }
+            if (i < n - 1) { window (g, dn, col::white); text (g, "DN", dn, fNote, col::black); }
+        }
+        hit (R (x0, y0, wTag, 24), hColOut, i, 0);
+        if (i > 0) hit (up, hColMove, i, -1);
+        if (i < n - 1) hit (dn, hColMove, i, 1);
+        // its keys: black with a lit figure while this snapshot takes the part; an empty frame when the part is put out
+        for (int p = 0; p < kLanes + 3; ++p)
+        {
+            const R kr (x0 + (float) p * 18.6f, y0 + 30, 17.0f, 24);
+            const bool takes = ((lanes >> p) & 1u) != 0;
+            if (vis (g, kr))
+            {
+                if (takes) { window (g, kr, col::black); text (g, partName[p], kr, fNote, col::lit); }
+                else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[p], kr, fNote, tone (col::black).withAlpha (0.45f)); }
+            }
+            hit (kr, hColKey, i, p);
+        }
+    }
+    if (n > rows && vis (g, R (x, 926, 272, 40)))
+        text (g, String (colScroll + 1) + " TO " + String (std::min (n, colScroll + rows)) + " OF " + String (n) + " (THE WHEEL, OVER THE COLUMN)", R (x, 928, 272, 16), fNote, col::black, juce::Justification::centredLeft);
 }
 
 // The arrangement: snapshots in a line. Along the top, the line itself: each part as long as its
@@ -2502,6 +2579,33 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             ses.stackDrop (h->a, h->b);
             break;
         }
+        // the column: the chosen stack knob's stack
+        case hColKey:
+        {
+            const auto& kn = ses.knobs[(size_t) selKnob];
+            if (h->a >= (int) kn.snaps.size()) break;
+            const juce::uint32 lanes = (kn.lanesAt ((size_t) h->a) & Session::kAllLanes) ^ (1u << h->b);
+            ses.stackLanes (selKnob, h->a, lanes);
+            // (heard at once, if it is the one in the headphones)
+            if (const auto id = kn.snaps[(size_t) h->a]; ses.cueing() == id) ses.cueWith (id, Session::scopeOf (lanes));
+            break;
+        }
+        case hColOut:   ses.stackDrop (selKnob, h->a); break;
+        case hColMove:
+        {
+            const int to = h->a + h->b;
+            if (to >= 0 && to < (int) ses.knobs[(size_t) selKnob].snaps.size()) ses.stackSwap (selKnob, h->a, to);
+            break;
+        }
+        case hColCard:
+        {
+            const auto& kn = ses.knobs[(size_t) selKnob];
+            if (h->a >= (int) kn.snaps.size()) break;
+            const auto id = kn.snaps[(size_t) h->a];
+            if (ses.cueing() == id) ses.cue (0);
+            else { ses.cueWith (id, Session::scopeOf (kn.lanesAt ((size_t) h->a) & Session::kAllLanes)); ses.cue (id); }
+            break;
+        }
         case hArrPart:  selPart = h->a; break;
         case hArrBars:  selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].bars; break;
         case hArrMorph: selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].morph; break;
@@ -2671,6 +2775,11 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     if (page == pArrange && where (e).x < 1146.0f) { arrScroll = std::max (0, arrScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }      // (its parts; the library beside them, below)
+    if (page == pMacros && Session::isStack (selKnob) && where (e).x >= 1146.0f && where (e).x < 1428.0f)
+    {
+        // (over the column: the column moves; over the library beside it, the library)
+        colScroll = std::max (0, colScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return;
+    }
     if (page == pLibrary || page == pMacros || page == pArrange) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
     if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
