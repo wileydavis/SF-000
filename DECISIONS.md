@@ -1954,8 +1954,58 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        same sheet, the same sums. The photograph itself and your 3D model stay out of the
        repos, as you asked.
 
+## The library made as the instrument is made (Nov 13): the web library's third build
+
+395. **The bench is drawn with the instrument's own sums.** The web library's `public/js/look.js`
+     is `Source/Stage.cpp`'s drawing carried over line for line: the faceplates' finish (the
+     blasted grain, the slow mottling, the scratch sheet, the specks rubbed through along the
+     edges), the case's powder coat (its orange peel, speckle, scuffs, rubbed upper edge), the
+     one sun from behind and to the left at 48 degrees with its colour, the sky and ground, the
+     soft room that shines in everything, the room behind and the warm glow under the case, the
+     glow round what is lit (six sizes down and back up with the same weights, the same gain
+     and knee), the easing of the brightest parts and the grain. One of the bench's units is 66
+     of the instrument's, so its parts are made from the instrument's figures: a plate 1.27 mm
+     high with 7.5-unit corners and a 1.2-unit roll, a case 25.4 mm deep, a display's glass
+     0.51 mm, the two knob caps by their outlines. The scratches are the same sheet
+     (`assets/wear.png`, copied to the library's `public/wear.png`: 613 KB, read once).
+396. **What each thing on the bench now is.** *Mine.* A powder-coated case in the dark room,
+     wider than the window at its near edge so its far corners and the glow show. The rack is
+     a faceplate with a cut-out for every stack; a pile stands on the case inside its cut-out
+     (it is no longer sunk in a pocket). A chip is a plate: the snapshot's card printed on worn
+     anodizing, each chip with its own wear (by its uid), its colour on its edge. The open
+     stack lies on the case itself, as the cards in the instrument's LIBRARY do. The tray is a
+     faceplate with cut-outs, until it becomes the chassis.
+397. **A stack's name plate is one of the instrument's displays**, not a printed plate. *Mine,*
+     and forced: the instrument's sun is behind, so a pile shades what lies in front of it, and
+     print there could not be read. What a display shows is light.
+398. **A pile stands 0.95 of a chip's depth at most and is drawn in at most 96 layers.** *Mine.*
+     Standing on the case it would otherwise hide the name plate of the stack behind it; and
+     the layers of a pile of thousands are too fine to see apart (it is also far less to draw).
+399. **The rack's plate slides between two rails** (there was one, the lip). *Mine:* the case's
+     far edge shows now, so the plate needs something to go under at that end too.
+400. **The pale bench has the pale instrument's plain finishes**, as the instrument does (its
+     wear and powder coat are the dark one's). *Mine.* The room is the same dark room for both.
+401. **The page's own bars are parts too.** *Mine.* The top bar is the case, the two under it
+     faceplates with the same scratch sheet; a key is a cap in a hole that goes down in 45 ms
+     and comes back in 70 (the instrument's figures); what shows a name or a number is a
+     display. They are still the page's own controls (a name is still typed in a field).
+402. **`?plain` after the address draws the scene straight to the window**, eased the same way,
+     without the glow. *Mine.* The bench takes this way by itself where the browser cannot keep
+     a picture with more light in it than a screen shows; the address is there to try if a
+     browser draws the deep way wrong.
+403. **Made and not yet used: the knob caps, their bases, the sixteen lights of a ring, a
+     lamp's lens** (`look.js`). They are for the knob modules and the chassis (394), which are
+     next after the stems.
+
 ## Not verified
 
+- **The library's new look (395 to 402) has been seen only as pictures a browser with no
+  graphics card drew here**, beside pictures of the dark instrument drawn the same way. Not
+  seen: your browser's own drawing of it on the Mac, at two pixels to the point (the picture it
+  keeps is then large: if the bench is slow or comes up black, add `?plain` to the address and
+  tell me which browser), how the glow and the scratches read at that sharpness, and whether
+  the piles' edges in the shade are still easy to tell apart. The sizes of all of it are
+  numbers at the top of `bench.js` and in `look.js`.
 - **The cue stack (thirty-ninth) is checked in the session and through LOAD**, with a clip
   really playing as its cue. Not felt: how a stack of thirty or a hundred sits under an E16
   knob, and whether the cue should stop by itself when the knob is left alone (it plays until
