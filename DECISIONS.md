@@ -2045,8 +2045,38 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      candidate in the other is the preview, and mixing them for you takes that away. I will
      not put the set into the cue again unless you ask.
 
+## Knob modules and the chassis (Nov 13): the web library's fourth build
+
+417. **You:** "it looks great! let's keep building." (Of the library's new look, in your
+     browser.) So the order stands: knob modules, the chassis, then the instrument's side.
+418. **A knob is a module**: a plate 140 by 88 of the instrument's units with its name on a
+     display, what kind it is and how much it holds printed on it, and the instrument's two
+     small knobs, TURN and DEPTH, with their rings of lights. *Mine* (the size: the largest
+     that lets sixteen stand four by four beside a table of four columns in your window).
+     A macro is always a module and rides on the pile of chips it sweeps through; a stack is
+     one once it is on a knob (a cue stack). A knob macro (LEARN's kind) is the third, and
+     is next (394).
+419. **The tray has become the chassis**: a model of SF-000 standing on the bench on a case
+     of its own, sixteen pockets four by four as the instrument's snapshot knobs are, and
+     under them the stacks LOAD brings. *Mine:* four by four, though two by eight would give
+     larger modules, because where a knob is on the instrument is how you know it. A module
+     in a pocket shows its knob's number, on teal if it sweeps and on amber if it steps, as
+     the instrument lights them. What a drop means is as it was (a macro or a stack on a
+     knob, chips on an empty one a cue stack, a stack under the knobs loads).
+420. **The modules' knobs turn under the hand.** *Mine.* Drag up for more, 150 pixels for the
+     whole turn. DEPTH is the macro's depth and is kept when the hand lets go. TURN goes
+     through the chips the knob holds and plays each one it comes to: a cue stack's as the
+     instrument's knob would cue them, a macro's as the places its sweep passes through (the
+     clips, not the morph between them: the library has no rig to morph).
+421. **A knob's pile is pressed beside its module** to deal it out; on the module are its
+     knobs, which turn. *Mine.*
+
 ## Not verified
 
+- **The knob modules and the chassis (418 to 421) are checked by pressing and dragging in a
+  browser with no graphics card**, and looked at as pictures. Not seen or handled on the Mac:
+  whether a module's name is large enough four by four, and whether 150 pixels for a knob's
+  whole turn feels right under your hand.
 - **A snapshot's lanes (fortieth): heard on the Mac, and they work** (415). Still yours to
   say: whether a lane without its echo (which is in RET) is what you expect to hear.
 - **The library's new look (395 to 402) has been seen only as pictures a browser with no
