@@ -582,11 +582,26 @@ void Engine::phonesSplit (float* left, float* right, int n)
 
 // The last bars from the tape. Read behind the audio thread's place: what is copied here was
 // written whole buffers ago and is not written again for many seconds.
-bool Engine::lastHeard (Heard& h, int wantBars) const                          { return heard (h, wantBars, false, 0); }
-bool Engine::heldHeard (Heard& h, juce::uint32 stamp, int wantBars) const      { return heard (h, wantBars, true, stamp); }
+bool Engine::lastHeard (Heard& h, int wantBars, bool stems) const                          { return heard (h, wantBars, false, 0, stems); }
+bool Engine::heldHeard (Heard& h, juce::uint32 stamp, int wantBars, bool stems) const      { return heard (h, wantBars, true, stamp, stems); }
+
+void Engine::stemOut (RecSink* rec, int index, const float* l, const float* r, int n) noexcept
+{
+    if (rec != nullptr) rec->track (index, l, r, n);
+    if (index < 1 || index > (int) stemTape.size()) return;
+    auto& t = stemTape[(size_t) (index - 1)];
+    const int at = (int) (tapePos & (kTape - 1)), first = std::min (n, kTape - at);
+    juce::FloatVectorOperations::copy (t[0].data() + at, l, first);
+    juce::FloatVectorOperations::copy (t[1].data() + at, r, first);
+    if (first < n)
+    {
+        juce::FloatVectorOperations::copy (t[0].data(), l + first, n - first);
+        juce::FloatVectorOperations::copy (t[1].data(), r + first, n - first);
+    }
+}
 
 
-bool Engine::heard (Heard& h, int wantBars, bool heldOnly, juce::uint32 stamp) const
+bool Engine::heard (Heard& h, int wantBars, bool heldOnly, juce::uint32 stamp, bool withStems) const
 {
     h = Heard();
     h.sampleRate = sr;
@@ -640,6 +655,21 @@ bool Engine::heard (Heard& h, int wantBars, bool heldOnly, juce::uint32 stamp) c
     // stopped rig idles at -40 dB, the lead's lane)
     if (h.audio.getMagnitude (0, len) < 1.0e-4f) return false;
     if (bars == 0 && h.audio.getRMSLevel (0, 0, len) < 0.03f) return false;
+    if (withStems && bars > 0 && from - masterLat.load() >= 0 && end - (from - masterLat.load()) <= kTape - 65536)
+    {
+        // (a stem goes into the mix the master's delay before its sound leaves the master: its bars are that much earlier on its tape)
+        const int sat = (int) ((from - masterLat.load()) & (kTape - 1)), sfirst = std::min (len, kTape - sat);
+        h.stems.resize (stemTape.size());
+        for (size_t k = 0; k < stemTape.size(); ++k)
+        {
+            h.stems[k].setSize (2, len);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                h.stems[k].copyFrom (ch, 0, stemTape[k][(size_t) ch].data() + sat, sfirst);
+                if (sfirst < len) h.stems[k].copyFrom (ch, sfirst, stemTape[k][(size_t) ch].data(), len - sfirst);
+            }
+        }
+    }
     if (bars > 0)
     {
         h.bars = bars;
@@ -1399,6 +1429,8 @@ void Engine::prepare (double rate, int block)
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
     kTape = std::max (1 << 20, juce::nextPowerOfTwo ((int) std::ceil (sr * 16.0) + 65536 + maxBlock));
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
+    stemTape.resize ((size_t) kStems);
+    for (auto& st : stemTape) for (auto& t : st) t.assign ((size_t) kTape, 0.0f);
     tapePos = 0; tapeEnd = 0; markCount = 0; runCount = 0;
     liveMidi.ensureSize (8192);
     wallValid = false; wallMs = -1.0; noteKeptN = 0; clkPpq = 0.0; clkWas = false;
@@ -1566,6 +1598,15 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const juce::SpinLock::ScopedTryLockType recHold (recLock);
     RecSink* const rec = recHold.isLocked() ? recSink : nullptr;
     if (rec != nullptr) rec->begin (n);
+    {
+        // the stems' tapes: silence for this buffer, until each stem that sounds is written over it
+        const int at = (int) (tapePos & (kTape - 1)), first = std::min (n, kTape - at);
+        for (auto& st : stemTape) for (auto& t : st)
+        {
+            juce::FloatVectorOperations::clear (t.data() + at, first);
+            if (first < n) juce::FloatVectorOperations::clear (t.data(), n - first);
+        }
+    }
     // When this block is on the wall clock, smoothed, so MIDI in and the clock out keep an even
     // pace however unevenly the device calls. (A test has no device: its clock is the samples.)
     const double durMs = (double) n * 1000.0 / sr, nowMs = wallMs >= 0.0 ? wallMs : virtualMs;
@@ -1888,14 +1929,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
         laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
         for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); double q = 0.0; for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; laneSq[(size_t) l] += q; }
 
-        if (rec != nullptr)
         {
             // the lane as it goes into the mix (a soloed return silences it there, and so here)
-            if (dryMixWas == 1.0f && dryNow == 1.0f) rec->track (1 + l, b2.getReadPointer (0), b2.getReadPointer (1), n);
+            if (dryMixWas == 1.0f && dryNow == 1.0f) stemOut (rec, 1 + l, b2.getReadPointer (0), b2.getReadPointer (1), n);
             else
             {
                 for (int ch = 0; ch < 2; ++ch) recBuf.copyFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas, dryNow);
-                rec->track (1 + l, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
+                stemOut (rec, 1 + l, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
             }
         }
         const float sa = snd[(size_t) cx::lane (l, cx::kSendA)], sb = snd[(size_t) cx::lane (l, cx::kSendB)];
@@ -1921,11 +1961,10 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // leaves them exactly as they came (and what it is recorded as doing is silence).
         auto tb = clock();
         juce::AudioBuffer<float> d2 (busBuf.getArrayOfWritePointers(), 2, n);
-        if (rec != nullptr) for (int ch = 0; ch < 2; ++ch) busDry.copyFrom (ch, 0, d2, ch, 0, n);
+        for (int ch = 0; ch < 2; ++ch) busDry.copyFrom (ch, 0, d2, ch, 0, n);
         if (pan) busProc->panic();
         busProc->processBlock (d2, noMidi);
         for (int ch = 0; ch < 2; ++ch) m2.addFrom (ch, 0, d2, ch, 0, n);
-        if (rec != nullptr)
         {
             for (int ch = 0; ch < 2; ++ch)
             {
@@ -1933,7 +1972,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
                 const float* x = d2.getReadPointer (ch);
                 for (int i = 0; i < n; ++i) w[i] = x[i] - w[i];
             }
-            rec->track (1 + kLanes + 2, busDry.getReadPointer (0), busDry.getReadPointer (1), n);
+            stemOut (rec, 1 + kLanes + 2, busDry.getReadPointer (0), busDry.getReadPointer (1), n);
         }
         profMaster += since (tb);
     }
@@ -1970,14 +2009,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
         for (int ch = 0; ch < 2; ++ch) { const float* x = wet.getReadPointer (ch); for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; }
         retSq[(size_t) k] += q * (double) (rg[k] * rg[k]);
     }
-    if (rec != nullptr)
-        for (int k = 0; k < 2; ++k)
-        {
-            // each return as it goes into the mix
-            const auto& wet = k == 0 ? a2 : bb2;
-            for (int ch = 0; ch < 2; ++ch) recBuf.copyFromWithRamp (ch, 0, wet.getReadPointer (ch), n, retGainWas[k], rg[k]);
-            rec->track (1 + kLanes + k, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
-        }
+    for (int k = 0; k < 2; ++k)
+    {
+        // each return as it goes into the mix
+        const auto& wet = k == 0 ? a2 : bb2;
+        for (int ch = 0; ch < 2; ++ch) recBuf.copyFromWithRamp (ch, 0, wet.getReadPointer (ch), n, retGainWas[k], rg[k]);
+        stemOut (rec, 1 + kLanes + k, recBuf.getReadPointer (0), recBuf.getReadPointer (1), n);
+    }
     retGainWas[0] = rg[0]; retGainWas[1] = rg[1];
 
     float inPk = 0.0f;

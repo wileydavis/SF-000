@@ -88,7 +88,7 @@ this build does not have is written back as it was read.
 
 ```
 {
-  "id":    1794442207135,                     this library's handle for it; its clip is clips/<id>.ogg
+  "id":    1794442207135,                     this library's handle for it; its clip is clips/<id>.ogg, its lanes clips/<id>.stems
   "uid":   "8f39febfd29e418b-1a1cd171f9f",    its name everywhere, for good: libraryId, "-", the id in hex
   "name":  "SNAP 010",
   "time":  1794442207135,
@@ -225,3 +225,21 @@ snapshot taken while something moves has no profile at first; it is added when t
 - Write only under `ext.<yourname>` in a snapshot that exists.
 - Bring the definitions a snapshot names along with it: copy them from `defs`.
 - Leave what you do not know where it is.
+
+## A snapshot's lanes: `clips/<id>.stems`
+
+Beside a snapshot's clip, the same bars of each thing the mix was made of, as it went into the mix
+(before the master). One file:
+
+```
+SF0STEMS1\n
+{"rate": 48000.0, "bars": 4, "stems": [{"key": "kick", "bytes": 81234}, {"key": "bass", "bytes": 90112}, ...]}\n
+<the first stem: an Ogg Vorbis file of that many bytes><the second>...
+```
+
+`key` is a lane's slug (`kick`, `hat`, ... as in control ids), `dub` or `space` (the two returns as
+they go into the mix), or `bus` (what the drum bus did: the bussed lanes' sum as it leaves the bus,
+less their sum as it came). Only stems that sounded are there, in the rig's order. Every stem is
+stereo, as long as the clip to the sample, at the clip's rate. Together they are what the master
+chain was given. The file is written once, when the clip is, and deleted with the snapshot. A
+snapshot may have none (taken before the fortieth build, or with nothing sounding).

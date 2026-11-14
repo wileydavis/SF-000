@@ -193,6 +193,14 @@ public:
     juce::String lastTakenAt { "NONE YET" };
     // The bars a snapshot was taken over, kept beside the session as a small compressed clip.
     juce::File clipFile (juce::int64 id) const;
+    // The lanes of a snapshot's bars, kept beside its clip: each thing the mix was made of (a lane
+    // by its slug, the returns "dub" and "space", "bus": what the drum bus did), as it went into
+    // the mix. Only those that sounded are there. only: those RECALL's scope takes (nullptr: all).
+    juce::File stemsFile (juce::int64 id) const;
+    struct Stems { double rate = 0.0; int bars = 0; std::vector<std::pair<juce::String, juce::AudioBuffer<float>>> parts; };
+    struct Scope;
+    bool readStems (juce::int64 id, Stems&, const Scope* only = nullptr) const;
+    static juce::String stemKey (int index);        // 0 .. Engine::kStems - 1
     void waitForClips();                // until the clips being written are on the disk (tests; quitting)
     // ---- finding snapshots by their sound (those that have one kept)
     // The map: four rows of energy (0 calm .. 3 peak) by four columns of brightness (0 dark .. 3 bright).
@@ -209,6 +217,10 @@ public:
     // Cue: a snapshot's clip in the headphones, apart from the set (0, or one with no clip: silence).
     // The rig itself is not touched.
     bool cue (juce::int64 id);          // false: that snapshot has no sound kept
+    // The cue of that snapshot is to be only what this scope takes of it: its lanes, the returns,
+    // the drum bus (from its stems; a scope that takes all of them is the clip itself, as it was
+    // heard through the master). If it is playing, it changes now. id 0: every cue is whole again.
+    void cueWith (juce::int64 id, const Scope&);
     juce::int64 cueing() const          { return cueId; }
     void turnSnapKnob (int k, float v);
     // A knob that holds a stack (MacroKnob::pick): the snapshot it stands on (0: it holds none),
@@ -466,6 +478,7 @@ private:
     bool dirty = false, useDisk = true;
     juce::ThreadPool clipWriter { 1 };
     juce::int64 cueId = 0;
+    juce::int64 cueScopeFor = 0; Scope cueScope;                // (the scope a cue of that snapshot is narrowed to)
     Profile nowProfile;
     juce::uint32 nowAt = 0;
     // the clips handed to the engine: each kept until a second after it was replaced

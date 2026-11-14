@@ -409,6 +409,15 @@ that part then stays as it is, steps, inserts and CONFIG included, and RECALL ta
 After the recall all are lit again. A tap with CUE off, a snapshot knob and a sequencer's RECALL
 take everything, as always.
 
+**What the scope leaves lit is what is in the headphones.** A snapshot keeps its lanes beside its
+four bars: each lane, the two returns and what the drum bus did, as they went into the mix
+(`clips/<id>.stems`, about a megabyte). Put a key of the row out and the cue becomes the lanes
+still lit and no others, in time as before: the hat alone, the bass and its echo, whatever the
+recall would bring. All lit again, it is the clip as it was heard. Two things to know. A lane's
+echo and reverb are in RET, not in the lane (one tail for all the lanes that fed it). And lanes
+heard this way have not been through the master, so they are a little quieter and plainer than
+in the whole clip. A snapshot taken before this build has no lanes kept: its cue stays whole.
+
 ### What a snapshot holds of the playing
 
 A snapshot is meant to come back sounding as it did, whoever was playing the lanes when it was
@@ -935,6 +944,12 @@ Delete `session.json` to start again from the factory rig.
 
 ## Not built yet
 
+- A snapshot's lanes (its stems) stay on this Mac: ONLINE does not send them and LOAD does not
+  bring them yet, so the web library cannot play some of a snapshot's lanes. The second half of
+  hearing part of a snapshot is not built either: the set itself in the headphones with those
+  lanes taken out and the snapshot's put in their place. And a snapshot from before has no lanes
+  kept (they could be made again from the snapshot itself, as PRINT renders, where its samples
+  are on the Mac).
 - The skin is a first pass, drawn from measurements of the 3D model, not rendered from the model
   itself: no texture maps, one finish per material, and the inside of the displays (the meters,
   the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices

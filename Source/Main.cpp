@@ -2298,6 +2298,42 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             std::printf ("  %s: with the clock stopped it plays on as it was kept; taken away it is silent within a few buffers; a snapshot with no sound kept gives none\n", off ? "ok  " : "FAIL");
             if (! off) ++bad;
             {
+                // its lanes are kept beside the clip, and a cue narrowed to some of them is those lanes alone
+                Session::Stems st;
+                const bool kept = ses.readStems (id, st) && st.parts.size() >= 2 && st.bars == 4;
+                bool lens = kept; float kickPk = 0.0f; juce::String names;
+                for (auto& p : st.parts) { lens = lens && p.second.getNumSamples() == len; names << p.first << " "; if (p.first == "kick") kickPk = p.second.getMagnitude (0, len); }
+                const float clipPk = clip.getMagnitude (0, len);
+                Session::Scope only; only.lane.fill (false); only.returns = only.bus = false; only.lane[0] = true;      // (the kick's lane and nothing else)
+                ses.cueWith (id, only);
+                const bool on = ses.cue (id);
+                const int round = (int) ((double) len / 128.0) + 60;
+                for (int k = 0; k < 8; ++k) both();
+                float narrow = 0.0f;
+                for (int k = 0; k < round; ++k) { both(); narrow = std::max (narrow, e.cueBlock().getMagnitude (0, 128)); }
+                ses.cueWith (id, Session::Scope());                                                               // widened while it plays: the clip itself again
+                for (int k = 0; k < 8; ++k) both();
+                float whole = 0.0f;
+                for (int k = 0; k < round; ++k) { both(); whole = std::max (whole, e.cueBlock().getMagnitude (0, 128)); }
+                Session::Scope none; none.lane.fill (false); none.returns = none.bus = false;
+                ses.cueWith (id, none);                                                                           // nothing of it in scope: silence, and still the cue
+                for (int k = 0; k < 8; ++k) both();
+                float quiet = 0.0f;
+                for (int k = 0; k < 60; ++k) { both(); quiet = std::max (quiet, e.cueBlock().getMagnitude (0, 128)); }
+                ses.cueWith (id, only);                                                                           // a key lit again: its lane is back
+                for (int k = 0; k < 8; ++k) both();
+                float back = 0.0f;
+                for (int k = 0; k < round; ++k) { both(); back = std::max (back, e.cueBlock().getMagnitude (0, 128)); }
+                const bool silent = quiet == 0.0f && ses.cueing() == id && std::abs (back - narrow) < 0.005f;
+                ses.cueWith (0, {}); ses.cue (0);
+                for (int k = 0; k < 8; ++k) both();
+                const bool stemsOk = kept && lens && kickPk > 0.05f && on && clipPk > 0.05f
+                                     && std::abs (narrow / kickPk - whole / clipPk) < 0.03f && std::abs (narrow - whole) > 0.01f && silent;
+                std::printf ("  %s: a snapshot's lanes are kept beside its clip (%s: %d KB), each as long as the clip; a cue narrowed to the kick is the kick's stem (peak %.3f of %.3f), widened it is the clip again (%.3f of %.3f), with nothing in scope it is silent, and a key lit again brings its lane back\n",
+                             stemsOk ? "ok  " : "FAIL", names.trim().toRawUTF8(), (int) (ses.stemsFile (id).getSize() / 1024), narrow, kickPk, whole, clipPk);
+                if (! stemsOk) ++bad;
+            }
+            {
                 // a clip kept at another rate (the interface ran at 96 kHz then, 48 now): stopped, it plays at its own speed
                 Engine e4; e4.prepare (48000.0, 128);
                 Engine::CueClip c4; c4.rate = 96000.0; c4.audio.setSize (2, 96000);
@@ -2330,6 +2366,27 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 const bool four = some && h5.bars == 4 && h5.most == 4 && h5.audio.getNumSamples() == 1024000;
                 std::printf ("  %s: at 96 kHz and 90 a snapshot's four bars are all on the tape (%d bars, %d samples; the tape held 983040)\n", four ? "ok  " : "FAIL", h5.bars, h5.audio.getNumSamples());
                 if (! four) ++bad;
+                {
+                    // the same bars of each stem, from the stems' own tapes: each is as loud as the engine measured it going into the mix
+                    Engine::Heard h6;
+                    const bool got = e5.heldHeard (h6, e5.stateStamp(), 4, true) && (int) h6.stems.size() == Engine::kStems && h6.audio.getNumSamples() == h5.audio.getNumSamples();
+                    auto dbOf = [] (const juce::AudioBuffer<float>& bb)
+                    {
+                        double q = 0.0;
+                        for (int ch = 0; ch < 2; ++ch) { const float* x = bb.getReadPointer (ch); for (int i = 0; i < bb.getNumSamples(); ++i) q += (double) x[i] * x[i]; }
+                        return q > 0.0 ? std::max (-100.0, 10.0 * std::log10 (q / (2.0 * (double) bb.getNumSamples()))) : -100.0;
+                    };
+                    double worst = 0.0; int sounding = 0;
+                    for (int k6 = 0; got && k6 < kLanes + 2; ++k6)
+                    {
+                        const double want = k6 < kLanes ? h6.laneDb[(size_t) k6] : h6.retDb[(size_t) (k6 - kLanes)], is = dbOf (h6.stems[(size_t) k6]);
+                        if (want > -60.0) { ++sounding; worst = std::max (worst, std::abs (is - want)); }
+                        else if (is > -55.0) worst = 99.0;                  // (a lane that was silent has a silent stem)
+                    }
+                    const bool stemsOk = got && sounding >= 3 && worst < 0.5;
+                    std::printf ("  %s: the bars of every stem are on tapes of their own: %d of them sound, each within %.2f dB of what the engine measured of it\n", stemsOk ? "ok  " : "FAIL", sounding, worst);
+                    if (! stemsOk) ++bad;
+                }
                 // a recording under way when the audio starts again at another rate is fed nothing more
                 struct Count : Engine::RecSink { void begin (int n) noexcept override { frames += n; } void track (int, const float*, const float*, int) noexcept override {} void end (int) noexcept override {} int frames = 0; } sink;
                 e5.setRecSink (&sink);

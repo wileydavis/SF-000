@@ -835,6 +835,58 @@ void Session::sign()
 }
 
 juce::File Session::clipFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".ogg"); }
+juce::File Session::stemsFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".stems"); }
+juce::String Session::stemKey (int index)
+{
+    if (index >= 0 && index < kLanes) return lanes()[(size_t) index].slug;
+    return index == kLanes ? "dub" : index == kLanes + 1 ? "space" : "bus";
+}
+
+// A stems file: a line that says what it is, a line of JSON (the rate, the bars, and for each stem
+// its key and how many bytes it is), then the stems one after another, each an Ogg Vorbis file.
+static const char* const kStemsMark = "SF0STEMS1\n";
+bool Session::readStems (juce::int64 id, Stems& out, const Scope* only) const
+{
+    out = Stems();
+    juce::MemoryBlock all;
+    if (! stemsFile (id).loadFileAsData (all) || all.getSize() < 16) return false;
+    const char* d = (const char*) all.getData();
+    const size_t size = all.getSize(), markLen = std::strlen (kStemsMark);
+    if (std::memcmp (d, kStemsMark, markLen) != 0) return false;
+    size_t eol = markLen;
+    while (eol < size && d[eol] != '\n') ++eol;
+    if (eol >= size) return false;
+    const auto head = juce::JSON::parse (juce::String::fromUTF8 (d + markLen, (int) (eol - markLen)));
+    const auto* list = head["stems"].getArray();
+    if (list == nullptr) return false;
+    out.rate = (double) head["rate"]; out.bars = (int) head["bars"];
+    auto wanted = [only] (const juce::String& key)
+    {
+        if (only == nullptr) return true;
+        if (key == "dub" || key == "space") return only->returns;
+        if (key == "bus") return only->bus;
+        for (int l = 0; l < kLanes; ++l) if (key == lanes()[(size_t) l].slug) return only->lane[(size_t) l];
+        return false;
+    };
+    size_t at = eol + 1;
+    juce::OggVorbisAudioFormat ogg;
+    for (const auto& e : *list)
+    {
+        const auto key = e["key"].toString();
+        const auto bytes = (size_t) (juce::int64) e["bytes"];
+        if (bytes == 0 || at + bytes > size) return false;
+        if (wanted (key))
+            if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (new juce::MemoryInputStream (d + at, bytes, false), true) })
+                if (r->lengthInSamples > 1 && r->lengthInSamples < 48000 * 120)
+                {
+                    juce::AudioBuffer<float> b (2, (int) r->lengthInSamples);
+                    r->read (&b, 0, b.getNumSamples(), 0, true, true);
+                    out.parts.push_back ({ key, std::move (b) });
+                }
+        at += bytes;
+    }
+    return true;
+}
 
 void Session::waitForClips() { while (clipWriter.getNumJobs() > 0) juce::Thread::sleep (2); }
 
@@ -844,6 +896,48 @@ void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
     auto audio = std::make_shared<juce::AudioBuffer<float>> (heard.audio);
     const auto file = clipFile (id);
     const double rate = heard.sampleRate;
+    // its lanes, beside it: each stem that sounded, in one file (see readStems)
+    if (! heard.stems.empty())
+    {
+        auto stems = std::make_shared<std::vector<juce::AudioBuffer<float>>> (heard.stems);
+        const auto sfile = stemsFile (id);
+        const int bars = heard.bars;
+        clipWriter.addJob ([stems, sfile, rate, bars]
+        {
+            juce::OggVorbisAudioFormat ogg;
+            juce::Array<juce::var> list;
+            juce::MemoryBlock body;
+            for (size_t k = 0; k < stems->size(); ++k)
+            {
+                const auto& b = (*stems)[k];
+                if (b.getNumSamples() < 2 || b.getMagnitude (0, b.getNumSamples()) < 1.0e-4f) continue;         // (a lane that was silent is left out)
+                juce::MemoryBlock one;
+                {
+                    auto out = std::make_unique<juce::MemoryOutputStream> (one, false);
+                    std::unique_ptr<juce::AudioFormatWriter> w (ogg.createWriterFor (out.get(), rate, 2, 16, {}, 5));
+                    if (w == nullptr) continue;
+                    out.release();
+                    if (! w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples())) continue;
+                }
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("key", stemKey ((int) k)); o->setProperty ("bytes", (juce::int64) one.getSize());
+                list.add (juce::var (o));
+                body.append (one.getData(), one.getSize());
+            }
+            if (list.isEmpty()) { sfile.deleteFile(); return; }
+            auto* h = new juce::DynamicObject();
+            h->setProperty ("rate", rate); h->setProperty ("bars", bars); h->setProperty ("stems", list);
+            const auto head = juce::JSON::toString (juce::var (h), true);
+            sfile.getParentDirectory().createDirectory();
+            const auto part = sfile.getSiblingFile (sfile.getFileName() + ".part");
+            part.deleteFile();
+            bool ok = false;
+            if (auto out = part.createOutputStream())
+                ok = out->write (kStemsMark, std::strlen (kStemsMark)) && out->writeText (head, false, false, nullptr) && out->writeByte ('\n') && out->write (body.getData(), body.getSize());
+            if (ok) part.moveFileTo (sfile); else part.deleteFile();
+        });
+    }
+    else { const auto sfile = stemsFile (id); clipWriter.addJob ([sfile] { sfile.deleteFile(); }); }       // (no lanes for these bars: none from other bars are left beside them)
     clipWriter.addJob ([audio, file, rate]
     {
         file.getParentDirectory().createDirectory();
@@ -933,7 +1027,34 @@ bool Session::cue (juce::int64 id)
     pruneCues();
     const Snapshot* s = id != 0 ? findSnap (id) : nullptr;
     std::unique_ptr<Engine::CueClip> clip;
-    if (s != nullptr)
+    // narrowed to some of its lanes: those lanes' stems, together (with none of them kept, the whole clip, as before)
+    bool narrowed = false;
+    if (s != nullptr && id == cueScopeFor)
+    {
+        bool whole = cueScope.returns && cueScope.bus;
+        for (bool b : cueScope.lane) whole = whole && b;
+        if (! whole)
+        {
+            if (! stemsFile (id).existsAsFile() && ! clipFile (id).existsAsFile()) waitForClips();
+            Stems st;
+            if (readStems (id, st, &cueScope))
+            {
+                narrowed = true;                                        // (nothing of it in this scope is silence, which is the answer)
+                int len = 0;
+                for (auto& p : st.parts) len = std::max (len, p.second.getNumSamples());
+                clip = std::make_unique<Engine::CueClip>();
+                if (len > 1)
+                {
+                    clip->audio.setSize (2, len); clip->audio.clear();
+                    for (auto& p : st.parts) for (int ch = 0; ch < 2; ++ch) clip->audio.addFrom (ch, 0, p.second, ch, 0, p.second.getNumSamples());
+                    clip->bars = st.bars > 0 ? st.bars : (s->profile.has ? s->profile.bars : 0);
+                    clip->rate = st.rate;
+                }
+                else { clip->audio.setSize (2, 4800); clip->audio.clear(); }          // (it is still the cue, so that a key lit again brings its lane back)
+            }
+        }
+    }
+    if (s != nullptr && ! narrowed)
     {
         if (! clipFile (id).existsAsFile()) waitForClips();              // (taken a moment ago: still being written)
         if (auto in = clipFile (id).createInputStream())
@@ -956,6 +1077,12 @@ bool Session::cue (juce::int64 id)
     else { engine.setCue (clip.get()); cueKept.push_back ({ std::move (clip), 0u }); cueId = id; }
     if (cueId != was && onChange) onChange();                       // (the library shows which is in the headphones)
     return cueId != 0;
+}
+
+void Session::cueWith (juce::int64 id, const Scope& scope)
+{
+    cueScopeFor = id; cueScope = scope;
+    if (id != 0 && cueId == id) cue (id);                           // (it is playing: it is made again from what the scope takes now)
 }
 
 juce::int64 Session::take()
@@ -981,7 +1108,7 @@ juce::int64 Session::take()
     const auto id = s.id;
     const auto stamp = engine.stateStamp();
     Engine::Heard heard;
-    const bool heldNow = engine.heldHeard (heard, stamp) && heard.bars >= 4;
+    const bool heldNow = engine.heldHeard (heard, stamp, 4, true) && heard.bars >= 4;
     library.push_back (s);
     sign();
     if (heldNow) settle (id, heard, true);
@@ -989,11 +1116,11 @@ juce::int64 Session::take()
     {
         Waiting w;
         w.id = id; w.stamp = stamp;
-        w.hasBefore = engine.lastHeard (w.before);
+        w.hasBefore = engine.lastHeard (w.before, 4, true);
         waiting.push_back (std::move (w));
         startTimer (400);
     }
-    else if (engine.lastHeard (heard)) settle (id, heard, false);     // the clock is stopped: what was last heard, if anything
+    else if (engine.lastHeard (heard, 4, true)) settle (id, heard, false);     // the clock is stopped: what was last heard, if anything
     touch();
     if (onLibrary) onLibrary();
     return id;
@@ -1018,7 +1145,7 @@ void Session::finishTakes (bool all)
     {
         auto& w = waiting[k];
         Engine::Heard h;
-        const bool some = indexOf (w.id) >= 0 && engine.heldHeard (h, w.stamp);
+        const bool some = indexOf (w.id) >= 0 && engine.heldHeard (h, w.stamp, 4, true);
         const bool moved = engine.stateStamp() != w.stamp || ! engine.isRunning();
         if (indexOf (w.id) < 0) {}                                              // deleted meanwhile
         else if (some && h.bars >= h.most) { settle (w.id, h, true); any = true; }       // four bars (fewer only if the tape cannot hold four: an outside clock slower than 60)
@@ -1216,7 +1343,7 @@ void Session::remove (juce::int64 id)
     library.erase (library.begin() + i);
     waiting.erase (std::remove_if (waiting.begin(), waiting.end(), [id] (const Waiting& w) { return w.id == id; }), waiting.end());
     if (cueId == id) cue (0);
-    if (useDisk) { waitForClips(); clipFile (id).deleteFile(); }
+    if (useDisk) { waitForClips(); clipFile (id).deleteFile(); stemsFile (id).deleteFile(); }
     for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
     arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
     for (auto& st : stacks) st.snaps.erase (std::remove (st.snaps.begin(), st.snaps.end(), id), st.snaps.end());      // (and out of the stacks LOAD brought)

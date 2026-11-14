@@ -1997,8 +1997,43 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      lamp's lens** (`look.js`). They are for the knob modules and the chassis (394), which are
      next after the stems.
 
+## Fortieth build (Nov 13): a snapshot keeps its lanes
+
+404. **You:** "would it make sense to save the snapshot audio as stems, so that previewing a cue
+     could be done with just the lanes that are selected for morph? So if I just wanted the high
+     hat or the bass from a snapshot, I could [preview] what it would sound like with those lanes
+     deselected?" Yes, and the first half is built.
+405. **The engine keeps a tape of every stem beside the tape of its output**: the eleven lanes,
+     the two returns and what the drum bus does, each as it goes into the mix (the same fourteen
+     the recorder is handed). *Mine:* they are always kept, recording or not, which costs fourteen
+     more tapes of sixteen seconds (about 117 MB at 48 kHz) and nothing that can be heard or
+     measured in time: a copy of each buffer. A stem's bars are the master's delay earlier on its
+     tape than the output's are, and are read from there.
+406. **A snapshot's stems are one file beside its clip**, `clips/<id>.stems`: only the stems
+     that sounded, each an Ogg Vorbis file (quality 5, a step under the clip's 6), behind two
+     lines that say what is in it (`FORMAT.md`). *Mine.* One file because a snapshot's lanes are
+     one thing to send, keep and delete; by key because a later rig may have other lanes.
+407. **The scope's keys narrow the cue.** *Mine,* following your words: the row that says what
+     RECALL takes also says what is heard. A key put out while the cue plays changes it at once
+     (a 10 ms fade each way, as any change of cue). With every key lit the cue is the clip
+     itself, through the master as it was heard; narrowed, it is the lit stems added together,
+     which have not been through the master. KEY (the master's part of the scope) and NOTES
+     have no sound of their own and change nothing in the headphones.
+408. **A snapshot with no stems kept is cued whole**, whatever the scope. *Mine.* Silence would
+     say the lanes are empty, which is not true.
+409. **Not built, and what I would do next** (*proposed*): send the stems to the web library
+     with the clip and bring them at LOAD (one more thing kept there per snapshot; the bench
+     could then play some of a chip's lanes); the second half of your idea, the set itself in
+     the headphones with the chosen lanes taken out and the snapshot's put in; and lanes for
+     the snapshots taken before, rendered from the snapshot as PRINT renders.
+
 ## Not verified
 
+- **A snapshot's lanes (fortieth) are checked by measurement**: every stem's level over the
+  bars against what the engine measured of it, the file read back, a cue narrowed to the kick
+  against the kick's stem. Not heard by anyone. Things for your ears: whether lanes without
+  the master are close enough to how they sound in the set to judge a morph by, and whether
+  a lane without its echo (which is in RET) is what you expect to hear.
 - **The library's new look (395 to 402) has been seen only as pictures a browser with no
   graphics card drew here**, beside pictures of the dark instrument drawn the same way. Not
   seen: your browser's own drawing of it on the Mac, at two pixels to the point (the picture it

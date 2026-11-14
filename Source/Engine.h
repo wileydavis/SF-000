@@ -172,8 +172,13 @@ public:
         std::array<float, kLanes> laneDb {};    // each lane's level into the mix over those bars (-100: silent or not known)
         std::array<float, 2> retDb {};          // the two returns'
         float mixDb = -100.0f;                  // all of them together: what the master chain was given
+        // If asked for: the same bars of each thing the mix is made of, as it went into the mix
+        // (kStems of them: the lanes, the two returns, what the drum bus did). Together they are
+        // what the master chain was given; the output above is that after the master.
+        std::vector<juce::AudioBuffer<float>> stems;
     };
-    bool lastHeard (Heard&, int bars = 4) const;      // message thread. false: there was nothing but silence
+    static constexpr int kStems = kLanes + 2 + 1;
+    bool lastHeard (Heard&, int bars = 4, bool stems = false) const;      // message thread. false: there was nothing but silence
     // The sound's state: a number that moves whenever anything a snapshot holds is changed (a knob,
     // a step, an effect, a model, a file), or a lane is muted or soloed. Two moments with the same
     // number are the same rig.
@@ -181,7 +186,7 @@ public:
     // The latest whole bars over which the rig held that state: nothing changed in them, nothing was
     // still travelling, and a bar had passed since it last did (for the tails of what went before).
     // Up to `bars` of them, the newest; h.bars says how many. False: none (or they are off the tape).
-    bool heldHeard (Heard& h, juce::uint32 stamp, int bars = 4) const;
+    bool heldHeard (Heard& h, juce::uint32 stamp, int bars = 4, bool stems = false) const;
 
     // ---- cue: a clip played to the headphones (outputs 3 and 4), apart from the set. While the
     // clock runs it plays in time: its bars on the rig's bars, at the rig's tempo (so its pitch
@@ -564,6 +569,7 @@ private:
     static constexpr int kMarks = 64;
     int kTape = 1 << 20;
     std::array<std::vector<float>, 2> tape;
+    std::vector<std::array<std::vector<float>, 2>> stemTape;      // the same stretch of each stem, before the master (so the master's delay ahead of the tape above)
     juce::int64 tapePos = 0;                    // audio thread
     std::atomic<juce::int64> tapeEnd { 0 };
     // steady, stamp: of the bar that ended at this line (steady: it was held, see heldHeard)
@@ -573,7 +579,10 @@ private:
     int runCount = 0;
     std::atomic<juce::uint32> stateStampV { 1 };
     void stateMoved()                           { stateStampV.fetch_add (1); }
-    bool heard (Heard&, int bars, bool heldOnly, juce::uint32 stamp) const;
+    bool heard (Heard&, int bars, bool heldOnly, juce::uint32 stamp, bool stems) const;
+    // A stem as it goes into the mix (1 to kStems, as the recorder numbers them): onto its own
+    // tape, and to the recorder if one is listening.
+    void stemOut (RecSink*, int index, const float* l, const float* r, int n) noexcept;
     // audio thread: whether the bar being played has been held so far
     juce::uint32 stampSeen = 0;
     bool barMoved = true, settling = true, glidingNow = false;

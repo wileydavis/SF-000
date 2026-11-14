@@ -2289,6 +2289,7 @@ void Screen::act (int a)
                 sc.notes = ses.recallNotes;
                 selSnap = id; ses.recall (id, sc); ses.cue (0);
                 scopeOn.fill (true);                    // (the next recall takes everything again)
+                ses.cueWith (0, {});                    // (and the next cue is whole)
             }
             break;
         case aLibrary:  setPage (pLibrary); break;
@@ -2398,7 +2399,17 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hFront:    ses.bring ({ h->a, h->b }, 0); break;
         case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
         case hFile:     pickLoad (h->a); break;
-        case hScope:    if (h->a >= 0 && h->a < kLanes + 3) scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a]; break;
+        case hScope:
+            if (h->a >= 0 && h->a < kLanes + 3)
+            {
+                scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a];
+                // what is in the headphones is what the recall would bring: the lanes that are lit, and no others
+                Session::Scope sc;
+                for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i];
+                sc.returns = scopeOn[(size_t) kLanes]; sc.bus = scopeOn[(size_t) kLanes + 1];
+                ses.cueWith (scopeFor, sc);
+            }
+            break;
         case hSetup:
             if (h->a < (int) cfgParams.size())
             {
