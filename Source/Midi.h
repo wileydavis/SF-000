@@ -75,6 +75,20 @@ namespace e16
     // on those two pages) opens CONFIG on what is in front and shuts it; on the snapshot knobs it
     // opens the library, and in the library shuts it.
     constexpr int kWheelCc = 31, kWheelKey = 33, kOpenKey = 34, kCfgPrevKey = 35, kCfgNextKey = 36;
+    // THE FOUR CORNER KNOBS mean the same on every page, each behind its press:
+    //   knob 1   GLIDE: the knob is the GLIDE time (its ring green) until it is pressed again
+    //   knob 4   the module's one switch: MUTE on whatever makes sound, CUE on the snapshot knobs
+    //            (a lane's page: that lane's MUTE, CC 63 on its channel. INS 1-3: that insert's MUTE, CC 2 to 4 on the
+    //            FX channel. RETURNS: DUB's MUTE, and knob 8 SPACE's, CC 39 and 40 on channel 16. SEQ: the lane's own
+    //            sequencer muted, CC 5 on the FX channel. MASTER and CONFIG have none.)
+    //   knob 13  lane select: the pointer's wheel
+    //   knob 16  CONFIGURE: OPEN, and on CONFIG's pages SHUT
+    // Where a press is the page's own way of playing (the snapshot knobs, the library's map), 13 and 16 are held for
+    // half a second for these and a short press is still the knob's own; knob 1 of the map and of FIND, and knob 4
+    // of both, stay the library's.
+    constexpr int kMuteKey = 63;                                // on a lane's channel
+    constexpr int kInsMuteKey = 2, kSeqMuteKey = 5;             // on the FX channel (2, 3, 4: INS 1 to 3)
+    constexpr int kRetMuteKey = 39;                             // on channel 16 (39 DUB, 40 SPACE)
     // A page of the second scene says 21 to 32 where the first scene's say 1 to 12 (CC 119).
     constexpr int kFocusB = 20;
     // SF-000 turns the E16's page by Bank Select (the scene) and Program Change (the page), on the
@@ -231,7 +245,7 @@ private:
     void wheelIn (int address, int val, juce::uint32 nowMs);
     std::atomic<int> pageHeard { 0 };                           // the page a knob just turned on the E16 is on (as the script would say it)
     std::atomic<juce::uint32> wheelHeardAt { 0 };
-    std::array<std::atomic<juce::uint32>, 5> heldSince;         // knobs 13 and 14 of the snapshot page, then of the map, then the snapshot page's 15: down since (0: up)
+    std::array<std::atomic<juce::uint32>, 5> heldSince;         // knobs 13 and 16 of the snapshot page, then of the map, then the snapshot page's 15: down since (0: up)
     std::array<std::atomic<bool>, 5> heldFired;
     int wheelRest = 0;                                          // message thread from here
     juce::uint32 wheelBusyAt = 0, wheelPlacedAt = 0;
@@ -271,6 +285,8 @@ private:
     std::array<std::atomic<int>, 4> genIn;
     std::array<std::atomic<int>, Session::kStepKnobs> stepIn;      // the chosen step's knobs, turned (-1: not)
     std::array<std::atomic<int>, 5> seqKeys;                       // STEP pressed, RANDOM, EUCLID, earlier, later: how many times
+    std::array<std::atomic<int>, 5> muteKeys;                      // knob 4 pressed: INS 1 to 3's MUTE, then DUB's and SPACE's: how many times
+    juce::uint32 snapTurnedAt = 0; int snapTurned = -1;            // the snapshot knob last turned on the E16, and when (the page's title names what it is on)
     std::array<std::atomic<int>, e16::kCfgPer * e16::kCfgPages> cfgIn;
     std::vector<Engine::SetupParam> cfgCache;
     int cfgCacheAge = 0;

@@ -50,6 +50,12 @@ public:
     // last one went, for the screen; loading: one is under way.
     void askLoad();
     juce::String load();
+    // The knobs of the snapshot module, kept in the library as they are here. A knob made or changed on the instrument (a
+    // macro knob taught, a stack built) goes up as a module, into its own place on the library's module if that place is
+    // free; one emptied here comes off the module there (and stays in the library). Called after each pass while ONLINE is
+    // on, once a knob has stood unchanged for a pass; and by LOAD first, whatever ONLINE is (sure: at once). True: it has
+    // more to do soon. seated: the knobs that went onto the library's module for the first time.
+    bool mirror (bool sure = false, juce::StringArray* seated = nullptr);
     juce::String loadLine() const;
     bool loading() const                    { return loadBusy.load(); }
     int requests() const                    { return asked.load(); }        // sends made so far (the checks)
@@ -83,7 +89,7 @@ private:
     CallOff callOff;
     static Reply http (const Setup&, const juce::String& method, const juce::String& path,
                        const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000, CallOff* = nullptr, bool wantBytes = false);
-    struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false; juce::String name; };
+    struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false, stems = false; juce::String name; };       // (stems: its stems are there, or were turned down)
     void readSetup();
     void writeSetup() const;
     void readLedger();
@@ -104,6 +110,8 @@ private:
     std::set<juce::String> defsSent;        // definitions it has
     bool asksFirst = true;                  // the library has not yet been asked what it holds
     int failures = 0;
+    bool noStems = false;                           // the library said it keeps no stems (one from before it did): not offered again this run
+    std::array<juce::String, 16> mirrorSeen;        // each knob as the last pass saw it (one that has just changed is given a pass to settle)
     juce::String sentTo;                    // the address the ledger was made against
 };
 } // namespace sf0

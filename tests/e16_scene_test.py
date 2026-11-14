@@ -65,37 +65,40 @@ for n, page in enumerate(scene["pages"][:11], 1):
         ok = ok and t["type"] == 3 and t["mode"] == 14 and t["channel"] == n and t["nr1"] == 11 + p and t["lower"] == 0 and t["upper"] == 127
         ok = ok and e["color"] == (WHITE if p <= 8 else RED if p <= 11 else LIGHT_BLUE)
         seen[(n, t["nr1"])] = seen.get((n, t["nr1"]), 0) + 1
-        if p == 16:
+        if p == 15:
             ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == n and t2["nr1"] == 28 and e["color2"] == PINK
-            ok = ok and t["defaultValue"] == 64 and t2["defaultValue"] == 64 and e["name"] == "HIGH/MID"
+            ok = ok and t["defaultValue"] == 64 and t2["defaultValue"] == 64 and e["name"] == "LOW/MID"
             seen[(n, 28)] = seen.get((n, 28), 0) + 1
         elif p == 1:
             # GLIDE behind a press on knob 1 of every lane's page: one address for all of them
             ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == 16 and t2["nr1"] == 30 and e["color2"] == GREEN
-        elif p in (13, 14):
-            # SEND A pressed is the pointer's wheel, SEND B pressed is OPEN: a CC each, on channel 16, the same from every page
-            ok = ok and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 20 + p and (push["upper"], push["lower"]) == (127, 0)
+        elif p in (13, 16):
+            # SEND A pressed is the pointer's wheel, HIGH pressed is OPEN: a CC each, on channel 16, the same from every page
+            ok = ok and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == (33 if p == 13 else 34) and (push["upper"], push["lower"]) == (127, 0)
+            ok = ok and t2 == TURN_OFF and e["color2"] == 0
+        elif p == 4:
+            # knob 4 pressed is the lane's MUTE: a CC of its own on the lane's channel
+            ok = ok and push["type"] == 2 and push["mode"] == 1 and push["channel"] == n and push["nr1"] == 63 and (push["upper"], push["lower"]) == (127, 0)
             ok = ok and t2 == TURN_OFF and e["color2"] == 0
         else:
             ok = ok and push["type"] == 0 and t2 == TURN_OFF and e["color2"] == 0
     names.append(", ".join(f'{e["name"]} ({e["abbr"]})' for e in page["encoders"][:12]))
-    ok = ok and [e["name"] for e in page["encoders"][12:15]] == ["SEND A", "SEND B", "LOW"]
-check(ok, "pages 1-11, a lane each on its own channel: knob p sends CC 11 + p; 13 SEND A (pressed: the wheel, CC 33 on channel 16), 14 SEND B (pressed: OPEN, CC 34), 15 LOW, "
-          "16 HIGH with a swap press to MID (CC 28, pink)")
+    ok = ok and [e["name"] for e in page["encoders"][12:16]] == ["SEND A", "SEND B", "LOW/MID", "HIGH"]
+check(ok, "pages 1-11, a lane each on its own channel: knob p sends CC 11 + p. The four corners: 1 pressed is GLIDE (a swap, green), 4 pressed the lane's MUTE (CC 63 on its channel), "
+          "13 SEND A (pressed: the wheel, CC 33 on channel 16), 16 HIGH (pressed: OPEN, CC 34). 14 SEND B, 15 LOW with a swap press to MID (CC 28, pink)")
 snap = scene["pages"][11]
 ok = snap["title"] == "SNAP" and snap["channel"] == 16
 for p, e in enumerate(snap["encoders"], 1):
     t, push = e["turn_actions"][0], e["push_action"]
     t2 = e["turn_actions"][1]
-    ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 11 + p and e["color"] == VIOLET
+    # (the four macro knobs white, the twelve stack knobs violet)
+    ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 11 + p and e["color"] == (WHITE if p <= 4 else VIOLET)
     seen[(16, t["nr1"])] = seen.get((16, t["nr1"]), 0) + 1
     if p == 1:
         # GLIDE behind its press, as on a lane's page: the one GLIDE address
         ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == 16 and t2["nr1"] == 30 and e["color2"] == GREEN
-    elif p == 13:
-        # pressed, the pointer's wheel, as on a lane's page
-        ok = ok and t2 == TURN_OFF and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 33 and (push["upper"], push["lower"]) == (127, 0)
     else:
+        # (every other knob's press is its own number: SF-000 makes 4's CUE, and takes 13, 15 and 16 held for the wheel, MOTION and OPEN)
         ok = ok and t2 == TURN_OFF and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 43 + p and (push["upper"], push["lower"]) == (127, 0) and push["output"] == 0
         seen[(16, push["nr1"])] = seen.get((16, push["nr1"]), 0) + 1
 check(ok, "page 12, the snapshot knobs on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up); but knob 1 pressed swaps to GLIDE (green) and knob 13 pressed is the pointer's wheel (CC 33), as on a lane's page")
@@ -223,8 +226,8 @@ e.goto(1)
 e.sent()
 e.move((1, 13, 9000), (1, 21, 7000))
 check(e.rings() == {2: (9000, GREEN), 10: (7000, GREEN)}, f"the kick's knobs 2 and 10 travelling: their rings green, where the sound is ({e.rings()})")
-e.move((9, 13, 4000), (1, 27, 5000), (1, 28, 5000))
-check(e.rings() == {2: (9000, GREEN), 10: (7000, GREEN)}, "another lane's knobs, and knob 16 (HIGH or MID: the script can't tell which is up): no ring touched")
+e.move((9, 13, 4000), (1, 26, 5000), (1, 28, 5000))
+check(e.rings() == {2: (9000, GREEN), 10: (7000, GREEN)}, "another lane's knobs, and knob 15 (LOW or MID: the script can't tell which is up): no ring touched")
 e.turn(10)
 e.move((1, 21, 7100))
 check(e.rings() == {2: (9000, GREEN)}, "knob 10 turned by hand: its ring is the hand's for a moment")
@@ -297,8 +300,8 @@ if os.path.exists(rings_path):
         r.update(25)
         assert r.rings() == {}
     lanes_lit = sorted({p for p, _ in lit})
-    check(len(msgs) > 5 and len(lit) > 5 and 12 not in lanes_lit and not any(i == 16 for _, i in lit),
-          f"SF-000's own reports of a recall with GLIDE on ({len(msgs)} messages): {len(lit)} rings walk green on pages {lanes_lit}, never knob 16, never the snapshot page")
+    check(len(msgs) > 5 and len(lit) > 5 and 12 not in lanes_lit and not any(i == 15 for _, i in lit),
+          f"SF-000's own reports of a recall with GLIDE on ({len(msgs)} messages): {len(lit)} rings walk green on pages {lanes_lit}, never knob 15, never the snapshot page")
 else:
     print(f"     ({rings_path} is not there: run SF-000 --miditest first to play its ring reports to the script)")
 
@@ -313,8 +316,10 @@ if os.path.exists(lib_path):
     ok = ok and all(list(p) == PAGE and len(p["encoders"]) == 16 and 1 <= len(p["title"]) <= 11 for p in lib["pages"])
     ok = ok and all(list(e) == ENCODER and list(e["push_action"]) == PUSH and all(list(t) == TURN for t in e["turn_actions"]) for e in encs)
     ok = ok and all(1 <= len(e["name"]) <= 8 and 1 <= len(e["abbr"]) <= 4 and e["name"] == e["name"].upper() for e in encs)
-    glide_knob = lib["pages"][11]["encoders"][0]         # (the snapshot page's knob 1: GLIDE behind its press, its second turn)
-    ok = ok and all(e["turn_actions"][1] == TURN_OFF and e["color2"] == 0 for e in encs if e is not glide_knob)
+    # (knob 1 of every page but the library's two is GLIDE behind its press: its second turn, green. No other knob has a second.)
+    glides = [p["encoders"][0] for p in lib["pages"][2:]]
+    ok = ok and all(e["push_action"] == PUSH_SWAP and e["turn_actions"][1]["type"] == 3 and (e["turn_actions"][1]["channel"], e["turn_actions"][1]["nr1"]) == (16, 30) and e["color2"] == GREEN for e in glides)
+    ok = ok and all(e["turn_actions"][1] == TURN_OFF and e["color2"] == 0 for e in encs if not any(e is g for g in glides))
     ok = ok and lib["transmitOnSceneEntry"] == 0 and lib["transmitOnPageSwitch"] == 0 and lib["transmitOnPresetLoad"] == 0
     check(ok and lib["title"] == "SF-FX" and [p["title"] for p in lib["pages"]] == ["MAP", "FIND", "INS 1", "INS 2", "INS 3", "RETURNS", "MASTER", "SEQ", "CFG 1", "CFG 2", "CFG 3", "SNAP"],
           f"{os.path.basename(lib_path)}: the same form, twelve pages: " + ", ".join(p["title"] for p in lib["pages"]))
@@ -333,29 +338,36 @@ if os.path.exists(lib_path):
     ok = ok and [e["name"] for e in find["encoders"][:4]] == ["RECENT", "FITS NOW", "MORE", "LESS"]
     ok = ok and all(turn(e) == (14, 12 + i) and push(e) == (14, 44 + i) for i, e in enumerate(find["encoders"][:4]))
     ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in find["encoders"][4:12] + [find["encoders"][14]])
-    ok = ok and turn(find["encoders"][15]) == (16, 30) and find["encoders"][15]["name"] == "GLIDE" and find["encoders"][15]["push_action"]["type"] == 0
-    check(ok, "MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), GLIDE as FIND's knob 16")
+    ok = ok and turn(find["encoders"][13]) == (16, 30) and find["encoders"][13]["name"] == "GLIDE" and find["encoders"][13]["push_action"]["type"] == 0
+    check(ok, "MAP on channel 15 and FIND on 14 (knob p on CC 11 + p, its press on CC 43 + p), GLIDE as FIND's knob 14")
     ok = True
     for sl in range(3):
         pg = pages[2 + sl]
-        ok = ok and pg["channel"] == 13 and all(turn(e) == (13, 8 + sl * 8 + i) and push(e) == (13, 40 + sl * 8 + i) for i, e in enumerate(pg["encoders"][:8]))
+        ok = ok and pg["channel"] == 13 and all(turn(e) == (13, 8 + sl * 8 + i) for i, e in enumerate(pg["encoders"][:8]))
+        # (a place's press is its own, a key among them; but the first is GLIDE behind its press, and the fourth pressed is the insert's MUTE)
+        ok = ok and all(push(e) == (13, 40 + sl * 8 + i) for i, e in enumerate(pg["encoders"][:8]) if i not in (0, 3)) and push(pg["encoders"][3]) == (13, 2 + sl)
         ok = ok and all(turn(e) is None and e["push_action"]["type"] == 0 for e in pg["encoders"][8:12])
-    ok = ok and [turn(e) for e in pages[5]["encoders"][:8]] == [(16, 60 + i) for i in range(8)] and all(e["push_action"]["type"] == 0 for e in pages[5]["encoders"][:12])
+    ok = ok and [turn(e) for e in pages[5]["encoders"][:8]] == [(16, 60 + i) for i in range(8)]
+    # (the returns: 4 pressed is DUB's MUTE, 8 SPACE's)
+    ok = ok and push(pages[5]["encoders"][3]) == (16, 39) and push(pages[5]["encoders"][7]) == (16, 40) and all(e["push_action"]["type"] == 0 for i, e in enumerate(pages[5]["encoders"][:12]) if i not in (0, 3, 7))
     ok = ok and [turn(e) for e in pages[6]["encoders"][:4]] == [(16, 68), (16, 69), (16, 70), None] and [e["name"] for e in pages[6]["encoders"][:3]] == ["TAPE", "COMP", "LIMIT"]
+    ok = ok and all(e["push_action"]["type"] == 0 for e in pages[6]["encoders"][1:12])
     seq = pages[7]["encoders"]
     ok = ok and [turn(e) for e in seq[:12]] == [(13, 70), (13, 64), (13, 65), (13, 66), (13, 67), (13, 68), (13, 69), None, (13, 71), (13, 72), (13, 73), (13, 74)]
     ok = ok and [e["name"] for e in seq[:7]] == ["LENGTH", "STEP", "VELOCITY", "GATE", "RATCHET", "NOTE", "OCTAVE"] and [e["name"] for e in seq[8:12]] == ["HITS", "ROTATE", "ACCENTS", "SEED"]
-    ok = ok and push(seq[1]) == (13, 33) and push(seq[8]) == (13, 34) and push(seq[9]) == (13, 35) and push(seq[14]) == (13, 36) and push(seq[15]) == (13, 37)
-    ok = ok and all(e["push_action"]["type"] == 0 for i, e in enumerate(seq[:12]) if i not in (1, 8, 9)) and turn(seq[14]) is None and turn(seq[15]) is None
+    # (GATE, its fourth, pressed mutes the lane's own sequencer; the nudges are 14 and 15, so that 16 is OPEN as everywhere)
+    ok = ok and push(seq[1]) == (13, 33) and push(seq[8]) == (13, 34) and push(seq[9]) == (13, 35) and push(seq[13]) == (13, 36) and push(seq[14]) == (13, 37) and push(seq[3]) == (13, 5)
+    ok = ok and all(e["push_action"]["type"] == 0 for i, e in enumerate(seq[:12]) if i not in (0, 1, 3, 8, 9)) and turn(seq[13]) is None and turn(seq[14]) is None
     for c in range(3):
         pg = pages[8 + c]
-        ok = ok and all(turn(e) == (13, (76 + n if n < 20 else 102 + n - 20)) and e["push_action"]["type"] == 0 for n, e in enumerate(pg["encoders"][:12], c * 12))
-        ok = ok and [push(e) for e in pg["encoders"][14:]] == [(16, 35), (16, 36)] and all(turn(e) is None for e in pg["encoders"][13:])
+        ok = ok and all(turn(e) == (13, (76 + n if n < 20 else 102 + n - 20)) for n, e in enumerate(pg["encoders"][:12], c * 12)) and all(e["push_action"]["type"] == 0 for e in pg["encoders"][1:12])
+        ok = ok and [push(e) for e in pg["encoders"][13:15]] == [(16, 35), (16, 36)] and all(turn(e) is None for e in pg["encoders"][13:])
     check(ok, "INS 1-3: an insert's eight places on channel 13 (CC 8 + 8 for each slot; pressed, CC 40 + ...); RETURNS and MASTER at the addresses a sequencer has (channel 16, CC 60-70); "
-              "SEQ: LENGTH (CC 70), the step under the hand (STEP VEL GATE RATCH NOTE OCT, CC 64-69; STEP pressed, CC 33), the generator's four in a row of their own (CC 71-74; HITS and ROTATE pressed are RANDOM and EUCLID, CC 34 and 35), and the nudges on 15 and 16 (CC 36, 37), all on channel 13; CFG 1-3: CONFIG's controls, twelve to a page (CC 76-95, then 102-117), with PAGE - and PAGE + on 15 and 16")
+              "SEQ: LENGTH (CC 70), the step under the hand (STEP VEL GATE RATCH NOTE OCT, CC 64-69; STEP pressed, CC 33), the generator's four in a row of their own (CC 71-74; HITS and ROTATE pressed are RANDOM and EUCLID, CC 34 and 35), and the nudges on 14 and 15 (CC 36, 37), all on channel 13; CFG 1-3: CONFIG's controls, twelve to a page (CC 76-95, then 102-117), with PAGE - and PAGE + on 14 and 15 (16 is SHUT)")
     ok = all(turn(pg["encoders"][12]) == (16, 31) and push(pg["encoders"][12]) == (16, 33) and pg["encoders"][12]["name"] == "SELECT"
-             and turn(pg["encoders"][13]) is None and push(pg["encoders"][13]) == (16, 34) for pg in pages[1:11])
-    check(ok, "on pages 2 to 11, knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 14 pressed is OPEN (CC 34)")
+             and turn(pg["encoders"][15]) is None and push(pg["encoders"][15]) == (16, 34) for pg in pages[1:11])
+    check(ok, "the corners, on pages 2 to 11: knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 16 pressed is OPEN (CC 34); from INS 1 on, knob 1 pressed is GLIDE, "
+              "and knob 4 pressed is the module's MUTE where it makes sound (INS 1-3: CC 2 to 4 on channel 13; RETURNS: DUB's, CC 39 on channel 16, and knob 8 SPACE's, CC 40; SEQ: the lane's own sequencer, CC 5 on channel 13)")
     # page 12: the snapshot knobs, the page the first scene's twelfth is, object for object
     check(pages[11] == scene["pages"][11] and all(turn(e) == (16, 12 + i) for i, e in enumerate(pages[11]["encoders"])),
           "page 12 is the snapshot knobs, exactly as the first scene's page 12 has them (channel 16: knob p on CC 11 + p, its press on CC 43 + p), so they are on the same page in either scene")

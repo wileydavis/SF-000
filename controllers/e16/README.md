@@ -59,8 +59,23 @@ and sends to the same port.
   and goes home for Esc on the keyboard (M turns following off altogether).
 - **A page that comes up is told its values**, so a knob's first turn starts where the rig is.
 
-## Knobs 13 and 14, on every page
+## The four corner knobs, on every page
 
+Each means the same on every page, behind its press:
+
+| Knob | Pressed | Where |
+|---|---|---|
+| 1 | **GLIDE**: the knob is the GLIDE time, its ring green, until pressed again | every page but the library's two (FIND has GLIDE as its knob 14) |
+| 4 | **the module's one switch**: MUTE on what makes sound, CUE on the snapshot knobs | a lane's page: that lane's MUTE. INS 1 to 3: that insert's MUTE. RETURNS: DUB's MUTE, and knob 8 SPACE's. SEQ: the lane's own sequencer muted. SNAP: CUE. MASTER and CONFIG: none |
+| 13 | **lane select**: the pointer's wheel | every page |
+| 16 | **CONFIGURE**: OPEN, and on CONFIG's pages SHUT | every page |
+
+- **Knob 1 is GLIDE behind its press.** Its ring turns green and it sets how long knobs and
+  recalls travel (OFF at the bottom, 256 bars at the top). A press swaps it back to the page's
+  own first knob. It is one GLIDE whichever page it is turned on. The E16 does the swap itself
+  (Swap Destination) and keeps a value for each.
+- **Knob 4 pressed is MUTE**, on and off with each press, for what the page holds. SF-000 does
+  the switching, so the E16 has nothing to keep in step: the lamp is the M key on the screen.
 - **Knob 13 is the pointer's wheel: press, turn, press.**
   - **Press**: the pointer is up. On the screen a yellow frame is round the module in front and
     the 3D eye goes home, so the whole rig is in view; the E16's display says `> ` and the
@@ -83,22 +98,21 @@ and sends to the same port.
     a number the E16 did not take cannot throw the pointer.
   - On the second scene's pages knob 13 is nothing else, and a turn takes the pointer up without
     the first press.
-- **Knob 14 pressed is OPEN.** CONFIG for what is in front, and the E16 goes to CONFIG's page;
+- **Knob 16 pressed is OPEN.** CONFIG for what is in front, and the E16 goes to CONFIG's page;
   pressed there (it reads SHUT) CONFIG shuts and the E16 is back on the module's page. The returns
   have two: DUB's, SPACE's, then shut. On the snapshot knobs OPEN is the library; in the library
   it is the way back. The master has two things behind it: its drum bus's CONFIG, and, pressed
   again, POCKETS (below); pressed once more, back to the master. The sequencer strip has nothing
   behind it.
-- **On the snapshot page knob 1 pressed is GLIDE and knob 13 pressed is the wheel**, as on a
-  lane's page: those two snapshot knobs are not recalled by a press on the E16 (a double-click on
-  the screen still does it). Knob 14 there, and knobs 13 and 14 on the library's map, where a
-  press already recalls, are **held for half a second** for OPEN and the wheel. A press let go
-  sooner recalls as before (the recall then comes as the knob is let go, not as it goes down).
+- **Where a press is the knob's own, 13 and 16 are held.** On the snapshot page they are stack
+  knobs, and on the library's map a press recalls: there the wheel and OPEN are those knobs
+  **held for half a second**, and a press let go sooner is the knob's own (it then acts as the
+  knob is let go, not as it goes down).
 - **Knob 15 held for half a second on the snapshot page is MOTION**: the macro designer comes up
   on the screen and the E16 turns to CONFIG's first page, which is then MOTION's twelve knobs,
   a row for each of the three: WAVE, SPD, KNOB, AMNT (the page is titled KNOB MOTION). OPEN
   goes back. With the designer opened on the screen instead, the E16 stays on the snapshot
-  knobs; turn it to CFG 1 by hand and it is MOTION. A short press on knob 15 recalls as before.
+  knobs; turn it to CFG 1 by hand and it is MOTION. A short press on knob 15 is its stack's own.
 
 ## The first scene: SF-000
 
@@ -107,21 +121,29 @@ pages 1-11: a lane each (KCK CHH OHH CLP PRC BAS RMB LED CRD PAD VOX), on the la
  1  2  3  4      the lane's twelve knobs, where the screen has them:
  5  6  7  8      rows 1 and 2 its sound (white), 9-11 its shape (red), 12 LEVEL (light blue)
  9 10 11 12
-13 SEND A [press: the wheel]   14 SEND B [press: OPEN]   15 LOW   16 HIGH [press: MID]
+13 SEND A [press: the wheel]   14 SEND B   15 LOW [press: MID]   16 HIGH [press: OPEN]
+knob 1 [press: GLIDE]   knob 4 [press: the lane's MUTE]
 
-page 12: SNAP, the sixteen snapshot knobs (violet), on channel 16. Press: recall.
-         Knob 1 [press: GLIDE, green, as on a lane's page]. Knob 13 [press: the wheel].
-         Knob 14 held: OPEN (the library).
+page 12: SNAP, the snapshot module's sixteen knobs, on channel 16
+ 1  2  3  4      the four macro knobs (white). 1 [press: GLIDE]; 2, 3 [press: the macro lands]; 4 [press: CUE]
+ 5 ... 16        the twelve stack knobs (violet). Press: the set goes to the stack's snapshot.
+                 13 held: the wheel. 15 held: MOTION. 16 held: OPEN (the library).
 ```
 
-- **Knob 1, pressed, is GLIDE** on every lane's page: its ring turns green and it sets how long
-  knobs and recalls travel (OFF at the bottom, 256 bars at the top). A press swaps it back to the
-  lane's first knob. It is one GLIDE whichever page it is turned on. (On the snapshot page a
-  press recalls, so GLIDE is not there; the second scene has it as knob 16 of FIND.)
-- **Knob 16** is HIGH. A press swaps it to MID and its ring turns pink; a press swaps it back. The
+- **Knob 15** is LOW. A press swaps it to MID and its ring turns pink; a press swaps it back. The
   E16 does this itself (Swap Destination) and keeps a value for each.
-- **A snapshot knob's press** recalls the snapshot the knob is nearest to as the new base, and the
-  knob goes back to zero, as a double-click on the screen does.
+- **The snapshot page.** Knobs 1 to 4 are the macro knobs and 5 to 16 the stack knobs (SF-000's
+  README: The snapshot module).
+  - **CUE (knob 4 pressed)** says how the stack knobs are played. Out: a turn morphs the set
+    toward the stack's next snapshot, and a press goes all the way to the nearest. Lit: a turn
+    goes through the stack in the headphones, and a press takes the set to the one chosen.
+  - **The display names what is there.** SF-000 tells the page each knob's name as it is now
+    (four characters; an empty knob reads `-`). The title reads `SNAPSHOTS`, or `SNAPSHOTS CUE`
+    while CUE is lit, and for four seconds after a stack knob is turned or pressed it names the
+    snapshot that knob is on: `7 ON DARK ROOM`, or `7 CUE DARK ROOM` for the one in the
+    headphones. No scene needs loading for a name to change.
+  - A macro knob's press (1 to 3) lands it on the nearer end of its turn and the knob goes back
+    to zero, as a double-click on the screen does.
 - **A snapshot knob tied to knobs** (LEARN, in the macro designer) is turned and pressed here like
   the others. With no snapshot to land on, its press keeps what it has pushed if the knob is past
   half way, and sends the knob home either way. While one is being taught, the lane knobs turned
@@ -146,13 +168,15 @@ page 8   SEQ      the active lane's sequencer
                     1 LENGTH    2 STEP [press: lit / out]    3 VEL       4 GATE
                     5 RATCH     6 NOTE                       7 OCT       8 -
                     9 HITS [press: RANDOM]   10 ROTATE [press: EUCLID]   11 ACCENTS   12 SEED
-                    15 [press]: nudge a step earlier        16 [press]: a step later
+                    1 [press: GLIDE]   4 [press: the lane's own sequencer muted]
+                    14 [press]: nudge a step earlier        15 [press]: a step later
                     (RANDOM: a new pattern at every press; SEED's every click is a pattern of its own)
 page 9   CFG 1    CONFIG's controls in the order its panel has them, twelve to a page
-page 10  CFG 2      15 [press]: the page before   16 [press]: the next
+page 10  CFG 2      14 [press]: the page before   15 [press]: the next   16 [press]: SHUT
 page 11  CFG 3
 page 12  SNAP     the sixteen snapshot knobs, exactly as the first scene's page 12 has them
-on pages 2 to 11: 13 the pointer's wheel (pressed or not), 14 [press] OPEN
+on pages 2 to 11: 13 the pointer's wheel (pressed or not), 16 [press] OPEN
+on pages 3 to 11: 1 [press] GLIDE; on INS 1-3 4 [press] that insert's MUTE; on RETURNS 4 [press] DUB's MUTE, 8 [press] SPACE's
 ```
 
 - **An insert's page is the active lane's**, whatever effect is in the slot. SF-000 sends the
@@ -173,7 +197,8 @@ on pages 2 to 11: 13 the pointer's wheel (pressed or not), 14 [press] OPEN
     knob's top (legato into it: a slide on ACID). RATCH: one to four hits. NOTE and OCT: on
     lanes that take notes; nothing elsewhere. VEL and GATE light a step that is out, as dragging
     it on the screen does; RATCH wants it lit.
-  - Knobs 15 and 16 pressed nudge the whole pattern a step earlier and later.
+  - Knobs 14 and 15 pressed nudge the whole pattern a step earlier and later. GATE (knob 4)
+    pressed mutes the lane's own sequencer, and pressed again lets it play.
 - **CONFIG's pages** hold whatever CONFIG is open on: an instrument's, an effect's, a return's,
   MOTION's two at the end. SF-000 sends each knob's name (four letters) and a title
   (`BAS CFG 1/3`). INFO on the screen shows each control's number, and resting the mouse on one
@@ -225,13 +250,15 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | WHAT | CHANNEL | NUMBER |
 |---|---|---|
 | a lane page's knob in place p (1-16) | the lane's number | CC 11 + p (12-27) |
-| MID (knob 16 swapped) | the lane's number | CC 28 |
+| MID (knob 15 swapped) | the lane's number | CC 28 |
+| a lane's MUTE, as a key (knob 4 pressed) | the lane's number | CC 63 (127 down, 0 up: each press switches it) |
 | a snapshot knob p | 16 | CC 11 + p (12-27) |
 | a snapshot knob's press | 16 | CC 43 + p (44-59), 127 down and 0 up |
-| GLIDE (knob 1 swapped, on any lane's page; FIND's knob 16) | 16 | CC 30 |
+| GLIDE (knob 1 swapped, on every page but the library's; FIND's knob 14) | 16 | CC 30 |
 | the pointer's wheel, where knob 13 is nothing else | 16 | CC 31 |
-| knob 13 pressed (the wheel), knob 14 pressed (OPEN) | 16 | CC 33, CC 34 (127 down, 0 up) |
-| CONFIG's page before, the next (knobs 15, 16 pressed) | 16 | CC 35, CC 36 |
+| knob 13 pressed (the wheel), knob 16 pressed (OPEN) | 16 | CC 33, CC 34 (127 down, 0 up) |
+| CONFIG's page before, the next (knobs 14, 15 pressed) | 16 | CC 35, CC 36 |
+| DUB's MUTE, SPACE's, as keys (RETURNS' knobs 4 and 8 pressed) | 16 | CC 39, CC 40 |
 | the returns' eight knobs, the master's three, the drum bus's four, POCKETS' four | 16 | CC 60-67, CC 68-70, CC 71-74, CC 75-78 |
 | MOTION on the snapshot knobs: three of WAVE, SPEED, KNOB, AMOUNT (on no page: for a sequencer) | 16 | CC 102-113 |
 | the page that came up | 16 | CC 119: 1-12 in SF-000 (12: the snapshot page), 21-32 in SF-FX |
@@ -242,6 +269,7 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | the active lane's LENGTH; HITS, ROTATE, ACCENTS, SEED | 13 | CC 70; CC 71-74 |
 | the step under the hand: STEP, VEL, GATE, RATCH, NOTE, OCT | 13 | CC 64-69 |
 | STEP pressed; HITS pressed (RANDOM), ROTATE pressed (EUCLID); the nudges | 13 | CC 33; CC 34, 35; CC 36, 37 (127 down, 0 up) |
+| the active lane's three inserts' MUTE, as keys (INS 1-3's knob 4 pressed); its own sequencer's (SEQ's knob 4) | 13 | CC 2, 3, 4; CC 5 |
 | CONFIG's control n (1-36) | 13 | CC 75 + n (76-95), then CC 81 + n (102-117) |
 | **to the E16**: a page of the scene it is in | 12 | Program Change = the page less one, by itself |
 | **to the E16**: a page of the other scene | 12 | CC 0 = 0 and CC 32 = the scene's slot less one, then Program Change = the page less one; the Program Change again when the scene says it is up |

@@ -53,6 +53,7 @@ struct Snapshot
 };
 
 constexpr juce::int64 kCleanSlateId = 999;
+constexpr juce::int64 kInitId = 1000;         // INIT, the rig as it first came up; 1001 to 1005 are the five pushes made from it
 
 // A snapshot knob: 2 to 10 snapshots in sweep order. Turning it moves every knob that differs
 // among them, as an offset from the base scene, so knobs stack.
@@ -65,11 +66,19 @@ struct MacroKnob
     std::vector<juce::int64> snaps;
     std::vector<Link> links;
     float depth = 1.0f;
-    // A knob that holds a stack: it does not sweep through its snapshots, it steps through them.
-    // A turn comes to the next and plays it in the headphones; a press recalls the one it is on,
-    // over the GLIDE time, and the knob stays where it is. DEPTH and MOTION are not for it.
-    bool pick = false;
-    juce::int64 picked = 0;             // the one it is on (0: none come to yet)
+    // A stack knob's snapshots each say which of the rig's parts they take (a bit each: the lanes
+    // in order, then the returns, the drum bus, the master; all of them where this says nothing).
+    std::vector<juce::uint32> lanes;
+    static constexpr juce::uint32 kAll = 0xffffffffu;
+    juce::uint32 lanesAt (size_t i) const       { return i < lanes.size() ? lanes[i] : kAll; }
+    void setLanes (size_t i, juce::uint32 m)    { if (i >= snaps.size()) return; if (lanes.size() <= i) lanes.resize (i + 1, kAll); lanes[i] = m; }
+    void add (juce::int64 id, juce::uint32 m = kAll) { if (m != kAll || ! lanes.empty()) { lanes.resize (snaps.size(), kAll); lanes.push_back (m); } snaps.push_back (id); }
+    void dropAt (size_t i)                      { if (i >= snaps.size()) return; snaps.erase (snaps.begin() + (long) i); if (i < lanes.size()) lanes.erase (lanes.begin() + (long) i); }
+    void swapAt (size_t a, size_t b)            { if (a >= snaps.size() || b >= snaps.size()) return; const auto la = lanesAt (a), lb = lanesAt (b); std::swap (snaps[a], snaps[b]); if (la != lb) { setLanes (a, lb); setLanes (b, la); } }
+    void drop (juce::int64 id)                  { for (size_t i = snaps.size(); i-- > 0;) if (snaps[i] == id) dropAt (i); }
+    void clearSnaps()                           { snaps.clear(); lanes.clear(); }
+    juce::int64 picked = 0;             // a stack knob: the one it was last on (0: none come to yet)
+    float sweptAt = 0.0f;               // a stack knob while CUE is lit: where it stood before it was used to choose
     juce::NamedValueSet more;           // what the file says of it that this build does not know: carried
     juce::Array<juce::var> linksKept;   // links to knobs this build does not have, as the file had them: carried
 };
@@ -222,15 +231,59 @@ public:
     // heard through the master). If it is playing, it changes now. id 0: every cue is whole again.
     void cueWith (juce::int64 id, const Scope&);
     juce::int64 cueing() const          { return cueId; }
+    // The parts of the rig the snapshot in the headphones is narrowed to (nullptr: it is not narrowed, or that one is not it)
+    const Scope* cueNarrowed (juce::int64 id) const;
     void turnSnapKnob (int k, float v);
-    // A knob that holds a stack (MacroKnob::pick): the snapshot it stands on (0: it holds none),
-    // and making a knob one or a sweeping knob again.
-    juce::int64 pickAt (int k) const;
-    void setPick (int k, bool on);
-    // Recall the knob's nearest snapshot as the new base; the knob goes home. A knob that is only
-    // tied to knobs: the nearer end of its turn is kept (past half way, what it has pushed is
-    // where those knobs now stand), and the knob goes home.
+    // ---- The snapshot module's sixteen knobs are of two kinds, by where they are.
+    // Knobs 1 to 4 are MACRO knobs: each is tied to knobs of the rig (LEARN) and turns them.
+    // Knobs 5 to 16 are STACK knobs: each holds an ordered list of snapshots, one at each of even
+    // steps along its turn (one alone: at the top). How a stack knob is played is CUE's to say:
+    //  - CUE out: a turn morphs the set itself, from wherever it is toward the next snapshot in
+    //    the direction of the turn, by as much of the way as the knob has gone of its way there;
+    //    at that snapshot's place the set is that snapshot, and the turn goes on to the next. It
+    //    never jumps: it starts from what is playing. A press goes all the way to the nearest.
+    //  - CUE lit: a turn goes through the stack in the headphones and the set is not touched;
+    //    a press morphs the set to the one the knob is on, over the GLIDE time.
+    // Each snapshot of a stack takes only the parts of the rig its own lanes say.
+    static constexpr int kMacroKnobs = 4;
+    static bool isStack (int k)         { return k >= kMacroKnobs && k < 16; }
+    bool stackCue = false;
+    void setStackCue (bool on);
+    static constexpr juce::uint32 kAllLanes = (1u << (kLanes + 3)) - 1u;
+    static Scope scopeOf (juce::uint32 lanes);
+    static juce::uint32 lanesOf (const Scope&);
+    struct Held { const Snapshot* s = nullptr; juce::int64 id = 0; juce::uint32 lanes = kAllLanes; };
+    std::vector<Held> held (int k) const;                   // a knob's snapshots that are here, in order, each with its lanes
+    static float placeOf (int i, int n)  { return n <= 1 ? 1.0f : (float) i / (float) (n - 1); }
+    int nearest (int k, float v) const;                     // the index (in held) of the snapshot nearest that place of the knob; -1: none
+    juce::int64 pickAt (int k) const;                       // the snapshot a stack knob stands on (0: it holds none)
+    void sweepKnob (int k, float from, float to);           // CUE out: the set, morphed as that turn of the knob has it
+    // A press. Knob 4 (the top right of the module, here and on the E16): CUE, on or off.
+    // A stack knob: the set goes to the snapshot the knob is nearest (the parts of the rig that
+    // snapshot takes), over the GLIDE time; the knob stands on its place. A macro knob (1 to 3):
+    // the nearer end of its turn is kept (past half way, what it has pushed is where those knobs
+    // now stand), and the knob goes home.
+    static constexpr int kCueKnob = 3;
     void pressSnapKnob (int k);
+    // What a stack knob holds, changed by hand (the designer): a snapshot added (with the lanes it takes), one taken out,
+    // two exchanged, one's lanes set. Nothing sounds different for it: the set moves when the knob is turned or pressed.
+    static constexpr int kStackMost = 128;
+    bool stackAdd (int k, juce::int64 id, juce::uint32 lanes = kAllLanes);
+    void stackDrop (int k, int index);
+    void stackSwap (int k, int a, int b);
+    void stackLanes (int k, int index, juce::uint32 lanes);
+    void stackSettle (int k, juce::int64 on);
+    void stacksLeft (int but);
+    std::vector<float> knobsBroughtOver (const std::array<MacroKnob, 16>& read, const std::array<bool, 16>& stepped);
+    void knobClear (int k, bool told = true);               // the knob holds nothing (a macro: what it pushed is let go of). told: the web library is to hear of it
+    // Knobs a session from before the two kinds had that found no slot of their kind (more than four macros, more than
+    // twelve stacks): kept as the file had them, for ONLINE to send to the library as modules off the chassis.
+    juce::Array<juce::var> knobsAside;
+    juce::var asideBody (int i, bool& whole) const;         // one of them as the library takes a module (whole: every snapshot of it has a uid)
+    // Modules of the web library's chassis whose knob was emptied here: each by its id there and the knob it was on, for
+    // ONLINE to take off the chassis there (it stays in the library).
+    juce::Array<juce::var> knobsUnseated;
+    static bool moduleFits (int k, const juce::var& module);    // a module of the chassis is of the kind that knob takes
     bool knobLive (int k) const;        // it does something: two snapshots or more, or a knob it is tied to
     // MOTION (the engine's three: cx::mot): which of them are on that knob, as a bit each (a wave chosen and an amount set)
     int motionOn (int k) const;

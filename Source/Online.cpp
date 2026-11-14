@@ -135,6 +135,7 @@ void Online::readLedger()
             e.gone = (bool) p.value.getProperty ("gone", false); e.refused = (bool) p.value.getProperty ("refused", false);
             e.name = p.value.getProperty ("name", "").toString();
             e.prof = (bool) p.value.getProperty ("prof", false);
+            e.stems = (bool) p.value.getProperty ("stems", false);
             ledger[p.name.toString()] = e;
         }
     if (auto* a = v.getProperty ("defs", var()).getArray()) for (auto& d : *a) defsSent.insert (d.toString());
@@ -150,6 +151,7 @@ void Online::writeLedger() const
         if (kv.second.gone) o->setProperty ("gone", true);
         if (kv.second.refused) o->setProperty ("refused", true);
         if (kv.second.prof) o->setProperty ("prof", true);
+        if (kv.second.stems) o->setProperty ("stems", true);
         o->setProperty ("name", kv.second.name);
         sent->setProperty (kv.first, var (o));
     }
@@ -334,7 +336,7 @@ String Online::body (const String& uid, const std::set<String>& forced, juce::St
 bool Online::pass()
 {
     const Setup s = setup();
-    struct Item { String uid, name; juce::int64 id = 0; bool clipDue = false; juce::File clip; bool prof = false; };
+    struct Item { String uid, name; juce::int64 id = 0; bool clipDue = false; juce::File clip; bool prof = false; juce::File stems; };
     std::vector<Item> items;
     {
         // the library is the message thread's: read with its lock (given up at once if this thread is asked to stop)
@@ -343,7 +345,7 @@ bool Online::pass()
         const auto nowMs = juce::Time::currentTimeMillis();
         for (auto& x : ses.library)
             if (x.id >= kFirstTaken && x.uid.isNotEmpty())
-                items.push_back ({ x.uid, x.name, x.id, x.profile.has && nowMs - x.time.toMilliseconds() < 120000, ses.clipFile (x.id), x.profile.has });
+                items.push_back ({ x.uid, x.name, x.id, x.profile.has && nowMs - x.time.toMilliseconds() < 120000, ses.clipFile (x.id), x.profile.has, ses.stemsFile (x.id) });
     }
     auto left = [&]
     {
@@ -352,7 +354,8 @@ bool Online::pass()
         {
             const auto e = ledger.find (it.uid);
             if (e != ledger.end() && (e->second.gone || e->second.refused)) continue;
-            if (e == ledger.end() || ! e->second.snap || e->second.name != it.name || (it.prof && ! e->second.prof) || (! e->second.clip && it.clip.existsAsFile())) ++n;
+            if (e == ledger.end() || ! e->second.snap || e->second.name != it.name || (it.prof && ! e->second.prof) || (! e->second.clip && it.clip.existsAsFile())
+                || (! e->second.stems && ! noStems && it.stems.existsAsFile())) ++n;
         }
         return n;
     };
@@ -397,10 +400,11 @@ bool Online::pass()
             else
             {
                 e.snap = true; e.clip = (bool) h.getProperty ("clip", false); e.gone = false;
+                e.stems = (bool) h.getProperty ("stems", false);
                 if (was.name.isEmpty()) e.name = it.name;
                 e.prof = e.prof || e.clip;                      // (a clip and a profile arrive together)
             }
-            changed = changed || was.snap != e.snap || was.clip != e.clip || was.gone != e.gone || was.name != e.name;
+            changed = changed || was.snap != e.snap || was.clip != e.clip || was.gone != e.gone || was.name != e.name || was.stems != e.stems;
         }
         asksFirst = false;
     }
@@ -456,11 +460,179 @@ bool Online::pass()
             failures = 0; changed = true;
             if (! (bool) juce::JSON::parse (r.body).getProperty ("gone", false)) e.clip = true; else e.gone = true;
         }
+        // its stems (each lane, the returns and the drum bus on their own): what the library plays a chip from when keys are put out on it
+        if (! e.stems && ! noStems && ! e.gone && e.snap && it.stems.existsAsFile())
+        {
+            juce::MemoryBlock mb;
+            if (! it.stems.loadFileAsData (mb) || mb.getSize() == 0) continue;
+            say (State::working, left(), held());
+            ++asked;
+            const auto r = http (s, "PUT", "/api/stems/" + juce::URL::addEscapeChars (it.uid, true), &mb, "application/octet-stream", 60000, &callOff);
+            if (r.status == 404 || r.status == 501)
+            {
+                // (no such snapshot there: it goes again next pass. No such thing as stems there: a library from before it kept them.)
+                if (juce::JSON::parse (r.body).getProperty ("error", "").toString().contains ("snapshot")) { e.snap = false; changed = true; soon = true; }
+                else noStems = true;
+                continue;
+            }
+            if (r.status == 400 || r.status == 413) { e.stems = true; changed = true; continue; }       // (turned down: not offered again)
+            if (r.status != 200) return fail (r);
+            failures = 0; changed = true;
+            if (! (bool) juce::JSON::parse (r.body).getProperty ("gone", false)) e.stems = true; else e.gone = true;
+        }
     }
     if (changed) writeLedger();
     const int n = left();
     say (n > 0 ? State::working : State::upToDate, n, held());
     return soon || n > 0;
+}
+
+// ----------------------------------------------------------------------- the knobs, kept there
+bool Online::mirror (bool sure, juce::StringArray* seated)
+{
+    const Setup s = setup();
+    if (! s.complete() || (! sure && (! s.on || loadBusy.load()))) return false;
+    struct Now { bool holds = false, whole = false, reseat = false, due = false; String lib, mark, print; var body; };
+    std::array<Now, 16> now;
+    struct Aside { String text; var body; bool whole = false; };
+    std::vector<Aside> aside;
+    juce::Array<var> unseated;
+    auto wholeIn = [this] (const var& body, bool whole)
+    {
+        // (and the library holds every snapshot of it: a module is never sent with a snapshot the library has not got)
+        if (auto* items = body.getProperty ("items", var()).getArray())
+            for (auto& it : *items) { const auto e = ledger.find (it.getProperty ("u", "").toString()); if (e == ledger.end() || ! e->second.snap) whole = false; }
+        return whole;
+    };
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        for (int k = 0; k < 16; ++k)
+        {
+            auto& n = now[(size_t) k];
+            const auto& more = ses.knobs[(size_t) k].more;
+            n.holds = ses.knobHolds (k);
+            n.lib = more.getWithDefault ("lib", "").toString();
+            n.mark = more.getWithDefault ("libmark", "").toString();
+            n.reseat = (bool) more.getWithDefault ("reseat", false) && n.lib.isNotEmpty();
+            n.print = ses.knobPrint (k);
+            n.body = ses.knobBody (k, n.whole);
+            n.whole = wholeIn (n.body, n.whole);
+        }
+        for (int i = 0; i < ses.knobsAside.size(); ++i)
+        {
+            Aside a;
+            a.text = juce::JSON::toString (ses.knobsAside[i], true);
+            a.body = ses.asideBody (i, a.whole);
+            a.whole = wholeIn (a.body, a.whole);
+            aside.push_back (a);
+        }
+        unseated = ses.knobsUnseated;
+    }
+    bool any = unseated.size() > 0, soon = false;
+    for (auto& a : aside) any = any || a.whole;
+    for (int k = 0; k < 16; ++k)
+    {
+        auto& n = now[(size_t) k];
+        any = any || n.reseat;
+        if (! n.holds || n.print == n.mark) { mirrorSeen[(size_t) k] = n.print; continue; }
+        if (! n.whole) continue;                                                // (not all its snapshots are in the library: when they are, a pass later. The rig's own never go, and a knob of those stays here.)
+        if (sure || mirrorSeen[(size_t) k] == n.print) { n.due = true; any = true; }
+        else { mirrorSeen[(size_t) k] = n.print; soon = true; }                 // (just changed: once it has stood a pass)
+    }
+    if (! any) return soon;
+
+    auto put = [&] (const String& method, const String& path, const var& body)
+    {
+        const auto text = juce::JSON::toString (body, true);
+        const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+        ++asked;
+        return http (s, method, path, &mb, "application/json", 20000, &callOff).status;
+    };
+    auto slotOnly = [] (const var& slot) { auto* o = new juce::DynamicObject(); o->setProperty ("slot", slot); return var (o); };
+    auto newId = []
+    {
+        String id ("sf");
+        juce::Random r;
+        for (int i = 0; i < 14; ++i) id << String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+        return id;
+    };
+    // the knobs brought over to another place by the two kinds: the library's module is told where each is now
+    for (int k = 0; k < 16 && ! threadShouldExit(); ++k)
+        if (auto& n = now[(size_t) k]; n.reseat)
+        {
+            const int st = put ("PATCH", "/api/stacks/" + n.lib, slotOnly (k + 1));
+            if (st != 200 && st != 404) return true;                            // (no answer: later)
+            const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+            if (! mm.lockWasGained()) return false;
+            auto& more = ses.knobs[(size_t) k].more;
+            if (more.getWithDefault ("lib", "").toString() == n.lib) { more.remove ("reseat"); if (st == 404) { more.remove ("lib"); more.remove ("libmark"); n.lib = {}; n.mark = {}; } }
+            ses.touch();
+        }
+    // what is on the library's module now
+    ++asked;
+    const auto t = http (s, "GET", "/api/load", nullptr, {}, 20000, &callOff);
+    const var tray = juce::JSON::parse (t.body);
+    if (t.status != 200 || ! tray.isObject()) return true;
+    std::array<String, 16> pocket;
+    if (auto* kn = tray.getProperty ("knobs", var()).getArray())
+        for (auto& v : *kn) { const int k = (int) v.getProperty ("slot", 0) - 1; if (k >= 0 && k < 16) pocket[(size_t) k] = v.getProperty ("id", "").toString(); }
+    // a knob emptied here: its module comes off the library's module (if it is still where it was)
+    for (auto& u : unseated)
+    {
+        if (threadShouldExit()) return false;
+        const String id = u.getProperty ("id", "").toString();
+        const int k = (int) u.getProperty ("slot", 0) - 1;
+        if (k >= 0 && k < 16 && pocket[(size_t) k] == id && id.isNotEmpty())
+        {
+            const int st = put ("PATCH", "/api/stacks/" + id, slotOnly (var()));
+            if (st != 200 && st != 404) return true;
+            pocket[(size_t) k] = {};
+        }
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        for (int i = ses.knobsUnseated.size(); --i >= 0;) if (ses.knobsUnseated[i].getProperty ("id", "").toString() == id) ses.knobsUnseated.remove (i);
+        ses.touch();
+    }
+    // the knobs that found no place when the two kinds came: into the library, off its module
+    for (auto& a : aside)
+    {
+        if (threadShouldExit()) return false;
+        if (! a.whole) continue;
+        a.body.getDynamicObject()->setProperty ("id", newId());
+        const int st = put ("POST", "/api/stacks", a.body);
+        if (st != 200 && st != 201) return true;
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        for (int i = ses.knobsAside.size(); --i >= 0;) if (juce::JSON::toString (ses.knobsAside[i], true) == a.text) { ses.knobsAside.remove (i); break; }
+        ses.touch();
+    }
+    // each knob made or changed here
+    for (int k = 0; k < 16 && ! threadShouldExit(); ++k)
+    {
+        auto& n = now[(size_t) k];
+        if (! n.due) continue;
+        String id = n.lib;
+        bool isNew = false;
+        int st = id.isNotEmpty() ? put ("PATCH", "/api/stacks/" + id, n.body) : 404;
+        if (st == 404)
+        {
+            // (the library has never seen it, or no longer has it: a module of its own, on the library's module if its place there is free)
+            id = newId(); isNew = true;
+            n.body.getDynamicObject()->setProperty ("id", id);
+            if (pocket[(size_t) k].isEmpty() || pocket[(size_t) k] == n.lib) n.body.getDynamicObject()->setProperty ("slot", k + 1);
+            st = put ("POST", "/api/stacks", n.body);
+        }
+        if (st != 200 && st != 201) return true;
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        if (ses.knobPrint (k) != n.print) { soon = true; continue; }            // (changed again meanwhile: next time)
+        auto& more = ses.knobs[(size_t) k].more;
+        more.set ("lib", id); more.set ("libmark", n.print);
+        if (isNew && seated != nullptr && n.body.hasProperty ("slot")) seated->add (String (k + 1));
+        ses.touch();
+    }
+    return soon;
 }
 
 // ------------------------------------------------------------------------------------ LOAD
@@ -474,7 +646,12 @@ String Online::load()
     if (! s.complete()) return says ("LOAD: SET UP THE LIBRARY'S ADDRESS AND KEY FIRST");
     loadBusy = true;
     struct Done { std::atomic<bool>& b; ~Done() { b = false; } } done { loadBusy };
-    says ("LOAD: ASKING THE LIBRARY WHAT ITS TRAY HOLDS");
+    // what is here goes up first (a knob made or changed here, one brought over to another place): then the library's module is asked for
+    juce::StringArray seatedNow;
+    says ("LOAD: SENDING THE KNOBS AS THEY ARE HERE");
+    mirror (true, &seatedNow);
+    if (callOff.off.load()) return says ("LOAD: STOPPED");
+    says ("LOAD: ASKING THE LIBRARY WHAT ITS MODULE HOLDS");
     auto failed = [&] (const Reply& r) { return says (String ("LOAD: ") + (r.status == 0 ? "NO ANSWER FROM THE LIBRARY" : turnedAway (r.status) ? "THE LIBRARY TURNED SF-000 AWAY" : "THE LIBRARY SAID " + String (r.status)) + ". NOTHING WAS CHANGED"); };
     ++asked;
     const auto t = http (s, "GET", "/api/load", nullptr, {}, 20000, &callOff);
@@ -603,6 +780,7 @@ String Online::load()
         {
             auto& n = now[(size_t) k]; auto& p = plan[(size_t) k];
             const var& in = pocket[(size_t) k];
+            if (in.isObject() && ! Session::moduleFits (k, in)) continue;      // (the other kind in that place: the knob is left as it is, and takeTray says so)
             const String pid = in.isObject() ? in.getProperty ("id", "").toString() : String();
             const bool edited = n.holds && n.print != n.mark;
             // the knob as it is, into the library as a module of its own (in a pocket of the chassis, or off it): its id, or none
@@ -662,6 +840,7 @@ String Online::load()
         const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
         if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
         line = ses.takeTray (tray, &plan);
+        for (auto& k : seatedNow) sentUp.addIfNotAlreadyThere (k);
         if (sentUp.size() > 0) line << ". " << (sentUp.size() == 1 ? "KNOB " : "KNOBS ") << sentUp.joinIntoString (", ") << (sentUp.size() == 1 ? " IS" : " ARE") << " ON THE CHASSIS NOW TOO";
         if (keptBack.size() > 0) line << ". " << (keptBack.size() == 1 ? "KNOB " : "KNOBS ") << keptBack.joinIntoString (", ") << (keptBack.size() == 1 ? " WAS LEFT AS IT IS" : " WERE LEFT AS THEY ARE")
                                          << ": THE LIBRARY HAS NOT GOT ALL " << (keptBack.size() == 1 ? "ITS" : "THEIR") << " SNAPSHOTS YET (ONLINE SENDS THEM), OR DID NOT ANSWER";
@@ -680,7 +859,8 @@ void Online::run()
     while (! threadShouldExit())
     {
         if (wantLoad.exchange (false)) load();
-        const bool more = pass();
+        bool more = pass();
+        more = mirror() || more;
         const auto st = status().state;
         // a clip on its way: soon. Trouble: a little longer each time, two minutes at most. Else: when poked, or every so often.
         const int ms = more && failures == 0 ? 1500 : failures > 0 ? juce::jmin (120000, 5000 * (1 << juce::jmin (5, failures - 1))) : (st == State::upToDate ? 20000 : 60000);

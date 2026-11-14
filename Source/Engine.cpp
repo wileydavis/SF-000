@@ -1483,9 +1483,10 @@ void Engine::knobMotion (double beats, int n)
     {
         if (swing[(size_t) k] == 0.0f) continue;
         // the knob swung, as far as its own travel lets it; and everything it moves, by its own law
-        const float v = cur[(size_t) (cx::kSnap + k)], v2 = juce::jlimit (0.0f, 1.0f, v + swing[(size_t) k]);
+        const float held = laws != nullptr ? laws->knob[(size_t) k].centre : -1.0f;
+        const float v = held >= 0.0f ? held : cur[(size_t) (cx::kSnap + k)], v2 = juce::jlimit (0.0f, 1.0f, v + swing[(size_t) k]);
         if (v2 == v) continue;
-        mOff[(size_t) (cx::kSnap + k)] = v2 - v;
+        if (held < 0.0f) mOff[(size_t) (cx::kSnap + k)] = v2 - v;        // (the knob is seen to swing, unless it is being used to choose)
         if (laws == nullptr) continue;
         const auto& law = laws->knob[(size_t) k];
         for (const auto& r : law.rows) mOff[(size_t) r.ctl] += law.at (r, v2) - law.at (r, v);

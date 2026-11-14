@@ -51,13 +51,16 @@ First run:
 | RANDOM | a new pattern at every press: SEED goes to a new one of its 128 places, so the four knobs still say what plays. While the key is lit, HITS, ROTATE, ACCENTS and SEED rewrite the pattern. Change the rhythm by hand (a step lit or put out, a velocity, a gate, a ratchet, a nudge) and the key goes out: the pattern is yours, and the knobs leave it alone. A note or an octave is not rhythm, and the key stays lit |
 | EUCLID | a pattern with its hits spread evenly, at once; while the key is lit, HITS, ROTATE and ACCENTS rewrite it. Press it again, or change the rhythm by hand, and it lets go |
 | **REC** (top bar) | press: start a take. Its key turns red and its name becomes the time it has run. **Hold** the key to end it. See Recording, below |
-| SNAPSHOT | keep everything on the main screen as a new snapshot. If the clock is running, the last four bars are kept with it as a clip and it is given a profile: nothing to name or tag (see The library, below) |
-| Turn a snapshot knob | push the rig from where it is toward that knob's snapshots, over the GLIDE time |
+| **SNAPSHOT** (top bar, beside REC and RUN) | keep everything on the main screen as a new snapshot. If the clock is running, the last four bars are kept with it as a clip and it is given a profile: nothing to name or tag (see The library, below) |
+| Turn knob 1 to 4 of the snapshot module (a **macro knob**) | push the knobs it is tied to, from wherever they stand, over the GLIDE time |
+| Turn knob 5 to 16 (a **stack knob**) | **CUE** out: morph the set from wherever it is toward the next of the knob's snapshots, the way the knob is going. **CUE** lit: go through its snapshots in the headphones; a press takes the set to the one chosen (see The snapshot module, below) |
 | Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
 | **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
-| Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
-| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** brings what the web library's tray holds, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
-| MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, press **LEARN** to tie it straight to knobs, or **STEPS** to make it a cue stack that steps through its snapshots (see A knob that holds a stack, and A knob tied to knobs, below) |
+| Double-click a stack knob (its press on the E16) | the set goes to its nearest snapshot, over the GLIDE time |
+| **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
+| **LOAD** (on the snapshot module) | make the sixteen knobs what the web library's module holds now (see ONLINE, below) |
+| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** is here too, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
+| MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick one of 5 to 16 and tap snapshots to add them to its stack (see The snapshot module, and A macro knob, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform. SF-000 keeps its own copy (see Where everything is kept) |
@@ -537,102 +540,113 @@ Client Secret). CHECK asks the library whether they let SF-000 in; KEEP stores t
 `online.json` with this computer's settings (not in the library folder, which may be on a drive
 that travels), readable by you only. Neither the address nor the strings are in the code.
 
+- **Its stems go too**: each lane, the two returns and the drum bus on their own (about a
+  megabyte a snapshot). The web library plays a chip from them when keys are put out on it.
+- **So do the knobs of the snapshot module**, as they are made or changed here: a macro knob
+  you have taught, a stack you have changed, a name. Each goes once it has stood unchanged for
+  a moment, into its own place on the library's module if that place is free, else into the
+  library off the module. A knob emptied here (CLEAR) comes off the library's module and stays
+  in the library. A knob is only sent once the library has every snapshot it holds.
 - A snapshot renamed here is renamed there. One deleted here stays there.
 - One removed in the web library is not sent again.
 - The snapshots the rig came with (INIT and the rest, CLEAN SLATE) stay at home.
 - Each time it connects it asks the library what it holds, so the two never drift.
 
-The library itself is a bench: every snapshot a chip, chips in stacks, stacks that fill
-themselves (like this one, a song from this one, a mood), macros for the snapshot knobs, and a
-**tray** for what the instrument should load (its own README, in the repo `snapshot-library`).
+The library itself is a bench: every snapshot a chip with a key for each lane, chips in stacks,
+stacks that fill themselves, a column where a stack knob is built, and a **module**: its model
+of this one's sixteen knobs (its own README, in the repo `snapshot-library`).
 
-**LOAD** (beside SET UP) brings what is on the web library's chassis (its model of SF-000), and
-nothing else of that library: the chips, stacks and knobs you have put there.
+**LOAD** (on the snapshot module, and beside SET UP) makes the sixteen knobs what the web
+library's module holds now, and brings nothing else of that library.
 
-- **Its stacks.** **STACK** (it appears once there are any) steps the library screen through
-  them, each in its own order, then back to every snapshot. The title says which. A stack taken
-  out of the tray there is gone from here at the next LOAD; its snapshots stay.
+- **The sixteen knobs.** Places 1 to 4 there are macro knobs and 5 to 16 stack knobs, as here.
+  Each snapshot of a stack comes with the parts of the rig chosen for it there (its keys).
+  - A place's module goes onto its knob **whatever the knob held**. What it held is not lost:
+    it went to the library when it was made (above), or goes now, and is in the library's
+    rack, off the module, to be put back for another show.
+  - A module **taken off the module** there comes off its knob here. The library still has it.
+  - A knob **made here** is on the library's module already, or goes onto it now.
+  - The same module on both sides: changed here since the two last agreed, what is here goes
+    up and stays; changed there and not here, it comes down.
+  - A knob is only ever replaced or emptied once the library has all of it. If one of its
+    snapshots has not reached the library, or the library does not answer, the knob is left
+    exactly as it is and the line says which. (The five snapshots the rig comes with never go
+    to the library, so a knob holding them stays as it is.)
+  - A place holding the other kind (from before the two kinds) is left, and the line says so.
 - **The snapshots this library lacks**, whole, with their four bars and the definitions they
   name, under the name each has there. One this library has, renamed there, is renamed here.
-- **The sixteen knobs, as the chassis's sixteen pockets have them.** The chassis is what the
-  instrument carries for a show, and LOAD makes the knobs match it: a macro (the knob sweeps),
-  a stack (the knob steps: a cue stack, above) or a knob macro (the knob is tied to the rig's
-  knobs it names, as LEARN ties them; one made there from two snapshots makes the change from
-  the first to the second, from wherever the rig is).
-  - A pocket's module goes onto its knob **whatever the knob held**. What it held is not lost:
-    if the library has not got it, it is sent up first, as a module of its own (it is then in
-    the library's rack, off the chassis, to be put back for another show).
-  - A module **taken off the chassis** there comes off its knob here. The library still has it.
-  - A knob **made here that the library has never seen** goes up into its own pocket of the
-    chassis, so the chassis shows what the instrument has. The first LOAD after this build
-    does that for every knob you have.
-  - The same module on both sides: changed here since the last LOAD, what is here goes up and
-    stays; changed there and not here, it comes down.
-  - A knob is only ever replaced or emptied once the library has all of it. If one of its
-    snapshots has not reached the library (ONLINE sends them), or the library does not
-    answer, the knob is left exactly as it is and the line says which.
+- **Stacks marked for this screen** (TO SF-000 there): **STACK** (it appears once there are
+  any) steps the library screen through them, each in its own order, then back to every
+  snapshot. One no longer marked there is gone from here at the next LOAD; its snapshots stay.
 - **A song**, as the arrangement, *if there is none*.
 
-LOAD deletes no snapshot. What it brought is not sent back. With no
-answer from the library it says so and changes nothing. If a snapshot it brings names a sample
-that is not on this computer, it says how many do: the web library does not keep samples yet,
-so that lane will be silent until the file is here.
+LOAD deletes no snapshot. What it brought is not sent back. With no answer from the library it
+says so and changes nothing. What it did is said on the top bar for a few seconds, and stays on
+the library screen. If a snapshot it brings names a sample that is not on this computer, it
+says how many do: the web library does not keep samples yet, so that lane will be silent until
+the file is here.
 
-### Recording
+### The snapshot module: four macro knobs, twelve stack knobs
 
-REC writes a take to `Music/SF-000/`, or to the folder set for TAKES in SETUP (an external disk,
-say), in a folder named for the moment it began. It starts at once, whether or not the clock is
-running, and goes on until its key is held. Quitting ends and keeps it. If the folder set for
-takes is not there when REC is pressed (its disk is not plugged in), the take is made in
-`Music/SF-000/` and says so.
+The sixteen knobs are two kinds, by place. **1 to 4 are macro knobs**: each drives other knobs
+(next section). **5 to 16 are stack knobs**: each holds snapshots in an order, one at each of
+even steps along its turn (three: at the bottom, half way and the top; one alone: at the top).
+**CUE**, on the module's panel, says how the stack knobs are played, and can be changed while
+playing. Knob 4 pressed is CUE too, on the screen and on the E16.
 
-| FILE | WHAT |
-|---|---|
-| `00 SET.wav` | the set: the output, after the limiter. 24-bit |
-| `01 KICK.wav` to `11 VOICE.wav` | each lane as it went into the mix: after its inserts, EQ, MUTE and SOLO. 32-bit float, so none can clip |
-| `12 DUB.wav`, `13 SPACE.wav` | the two returns as they went into the mix. 32-bit float |
-| `14 DRUM BUS.wav` | what the drum bus did: the lanes on it as the bus made them, less those lanes as they came. 32-bit float |
-| `take.txt` | when, how long, what was kept, and anything lost |
-| `session-at-start.json` | the rig as it stood when the take began |
+**CUE out: a turn morphs the set itself.**
 
-- The lanes, the returns and `14 DRUM BUS` added together are what the master chain was given.
-  Each begins with the master chain's look-ahead in silence (181 samples at 48 kHz), so it lines
-  up with the set. A lane's file is the lane before the bus: leave `14 DRUM BUS` out and the
-  drums are as they were without it. (It is only right beside the lanes at the level they were
-  recorded: it is the difference the bus made to them together.)
-- A lane or return that was silent all take is not kept, nor `14 DRUM BUS` if the bus was at rest
-  throughout. `take.txt` names them.
-- A take is about 19 GB an hour at 48 kHz. The bar says how many hours the disk has room for as it
-  starts, and the take ends by itself, kept, with a minute of room left.
-- The audio thread never waits for the disk. If the disk falls behind by more than four seconds,
-  whole buffers are left out of every file alike (the files stay in step), the key turns amber, and
-  `take.txt` says how much was lost.
-- The files' lengths are written into them every ten seconds, so a take cut short by a crash or a
-  pulled plug still opens, up to there. Past 4 GB a file is written as RF64.
-- MIDI and knob moves are not recorded yet.
+- From wherever the set is, it goes toward the next snapshot in the direction the knob is
+  turning, by as much of the way as the knob has gone of its way to that snapshot's place. So
+  the first click of a turn moves the sound a little: it never jumps, whatever was recalled or
+  moved since the knob was last touched.
+- At a snapshot's place the set is that snapshot. Turn on and it heads for the next one;
+  turn back and it heads for the one behind. Stop anywhere between two for a place between
+  them.
+- It moves what can morph: the sound knobs. A snapshot's notes, switches and effects come
+  when the knob is **pressed** (double-click; its press on the E16), which goes all the way to
+  the nearest snapshot, as a recall does.
+- The macro knobs stay on top of whatever a stack knob does.
+- Standing on one of its snapshots, a stack knob shows that snapshot's name. Lit teal.
 
-### A knob that holds a stack: STEPS
+**CUE lit: a turn chooses, a press goes.**
 
-A snapshot knob is one of three things: a **snapshot macro** (it sweeps through its snapshots,
-and what they differ in moves with it), a **knob macro** (LEARN, below: it moves the knobs you
-tie it to), or a **cue stack**. A cue stack does not move the sound. It is a list to choose from:
+- A turn goes through the stack in the headphones, each snapshot in time with the set, and
+  the set is not touched. The knob's name plate says which. Lit amber.
+- A press morphs the set to the one the knob is on, over the GLIDE time. The knob stays there.
+- CUE put out without a press: each stack knob goes back to where it stood, and nothing has
+  moved. (Where the headphones are plugged in is PHONES, in the library screen.)
 
-- **Turn** it and it steps through its snapshots. The one it comes to plays in the headphones,
-  in time with the set, and the knob's name plate says which.
-- **Press** it (double-click; its knob's press on the E16) and that one is recalled, over the
-  GLIDE time. The knob stays where it is, on the one you chose.
-- It is lit **amber** where a sweeping knob is teal, on the main screen and in the designer.
-- In **MACROS**, **STEPS** makes the picked knob one (or a sweeping knob again). It takes up to
-  128 snapshots, one to a place of a controller's knob; DEPTH and MOTION are not for it.
-- LOAD brings one for every stack that is on a knob in the web library's tray (drop chips on a
-  knob bay there). A macro is made there on purpose and put on a knob the same way.
+**Each snapshot of a stack takes only the parts of the rig chosen for it**: any of the lanes,
+the returns, the drum bus, the key. A part that was put out stays as it is when the knob comes
+to that snapshot, is pressed onto it, or plays it in the headphones. They are chosen in the web
+library, on the chips; in the designer such a snapshot's number is drawn on amber.
 
-### A knob tied to knobs: LEARN
+- A stack holds up to 128 snapshots (the places of a controller's knob).
+- **MACROS**: pick a knob of 5 to 16 and tap snapshots on the right to add them at the end of
+  its stack; tap one of its numbers to take it off. The web library is where stacks are built
+  and put in order; LOAD brings them.
+- A stack knob has no DEPTH and is tied to nothing. MOTION swings it along its own stack
+  (below).
 
-A snapshot knob can be made without snapshots: one knob that moves the knobs you pick, on the
-lanes you pick, each as far as you show it.
+**A session from before the two kinds** is brought over the first time this build opens it.
+A knob that is where its kind now lives stays. A knob holding snapshots on 1 to 4 moves to the
+first free knob of 5 to 16, and a knob tied to knobs on 5 to 16 to the first free of 1 to 4,
+in order; one that had both becomes two; MOTION follows its knob. **A knob that swept through
+snapshots is a stack knob now**, which is not the same: it used to add how far its snapshots
+were from its first on top of the set, by its DEPTH; now it takes the set to them. What the
+sweeping knobs were adding when SF-000 was last closed is put into the set, so it opens
+sounding as it was left. The four a session came with are the exception: a knob on 1 to 4 that
+still holds INIT and one of the rig's own pushes (ENERGY, BUILD, ACID, DIST) becomes a macro
+knob where it is, tied to what its push moves, and does what it did. The file as it was is
+kept beside the session as `session-before-two-kinds.json`.
 
-1. **MACROS**, pick one of the sixteen knobs, press **LEARN**. The main screen comes up with
+### A macro knob: LEARN
+
+Knobs 1 to 4: one knob that moves the knobs you pick, on the lanes you pick, each as far as you
+show it.
+
+1. **MACROS**, pick one of knobs 1 to 4, press **LEARN**. The main screen comes up with
    `LEARNING` and the knob's number in the top bar, and that knob goes to its full turn.
 2. **Set the rig as that knob's full turn should leave it**: turn any lane's sound knobs, sends
    and EQ, and the returns' knobs, on the screen or on the E16. Each one moved lights yellow, and
@@ -641,21 +655,21 @@ lanes you pick, each as far as you show it.
    at its full turn. Turn it back and those knobs go back to where they were, each by its own
    share. **DROP** puts them back and ties nothing.
 
-- It pushes **from wherever those knobs stand**, like every snapshot knob: an offset from the
-  base scene, so it stacks with the others and works after any recall.
+- It pushes **from wherever those knobs stand**: an offset on top of the set, so the four add
+  up, and they stay on top of whatever a recall or a stack knob does.
 - Up or down is whichever way you turned each knob: one knob can open the bass's filter while it
   shortens the hats.
 - **LEARN again adds** to what the knob has. A tied knob turned back to where the knob's zero
-  has it is let go. CLEAR unties everything (and takes its snapshots off).
+  has it is let go. CLEAR unties everything.
 - The macro designer lists what a knob is tied to and how far its full turn takes each, in
   hundredths of that knob's travel (`BASS: CUTOFF +50`). DEPTH scales the lot, to twice.
-- A knob can hold snapshots and be tied to knobs too: the two add up.
-- **Pressed** (double-click; its knob's press on the E16), a knob that has no snapshot to land on
-  lands on the nearer end of its own turn: past half way what it has pushed stays and the knob
-  goes home, ready to push again; short of it the knobs go back.
+- **Pressed** (double-click; its knob's press on the E16), knobs 1 to 3 land on the nearer end
+  of their turn: past half way what the knob has pushed stays and the knob goes home, ready to
+  push again; short of it the knobs go back. **Knob 4's press is CUE**, so it has no such press.
+- A macro knob made here goes to the web library by itself while ONLINE is lit (see ONLINE).
 - While a knob is being taught it stands at its full turn and cannot be turned. A recall made
   meanwhile starts the measuring again from the recalled scene.
-- It reaches what a snapshot knob reaches: a lane's sound knobs, its sends and EQ, the returns'
+- It reaches what can morph: a lane's sound knobs, its sends and EQ, the returns'
   knobs, the drum bus's four. Not an insert's knobs, TAPE, COMP, LIMIT, tempo or the sequencer:
   moved while learning, those are ordinary changes and stay.
 
@@ -696,14 +710,19 @@ has only its upper half to go to; stand the knob half way for the whole swing).
   to in words (`SINE  1 BAR  1 ENERGY  +40`).
 - **Without the mouse.** On the E16, hold knob 15 on the snapshot knobs' page for half a second:
   the macro designer comes up and the E16 turns to MOTION's twelve knobs (a row for each: WAVE,
-  SPD, KNOB, AMNT). OPEN is the way back. (A short press on knob 15 still recalls its nearest
-  snapshot.) They also have addresses of their own for a sequencer: channel 16, CC 102 to 113.
+  SPD, KNOB, AMNT). OPEN is the way back. (A short press on knob 15 is still that stack knob's
+  own.) They also have addresses of their own for a sequencer: channel 16, CC 102 to 113.
+- **On a stack knob** the wave swings the knob along its own stack: the set follows the path
+  through its snapshots, on top of where the set is. With CUE lit the swing is about where the
+  knob stood when CUE was lit, so it keeps running while you choose. A stack of one has no
+  path and does not swing.
 
 ### Snapshots that come with it
 
 CLEAN SLATE (always first in the library) puts every knob where the rig starts it, with no steps
-and no inserts. INIT is the rig as it first comes up, patterns and all. The other five are the
-pushes behind the ENERGY, BUILD, ACID, DIST and WARP knobs.
+and no inserts. INIT is the rig as it first comes up, patterns and all. The other five are what the four
+macro knobs of a new session push toward (ENERGY, BUILD, ACID, DIST) and, all five in a row,
+the stack on knob 5 (TOUR).
 
 ### MIDI and the E16
 
@@ -748,7 +767,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
   until it is turned again; **press** it and that one is recalled to the set, over the GLIDE
   time. Page 2 is **FIND**: RECENT (the newest first), FITS NOW (nearest in sound to what is
   playing), MORE and LESS (a step up or down in energy from what is playing, nearest step first),
-  and knob 16 is GLIDE. A ring shows where its knob is among what it holds; an empty square's
+  and knob 14 is GLIDE. A ring shows where its knob is among what it holds; an empty square's
   ring sits at nought.
 - **A sequencer can play all of it.** Every address below is heard on any port, so the ONE's
   modulation lanes can turn knobs, set GLIDE and recall snapshots. **I** on the keyboard shows
@@ -761,9 +780,12 @@ Open SETUP to see what is connected. Nothing needs choosing.
 | its three inserts' eight places (whatever effect is in the slot) | the lane's number | 32 to 39, 40 to 47, 48 to 55 |
 | its MUTE, SOLO, and the mute of its own sequencer (64 and over: on) | the lane's number | 56, 57, 58 |
 | its pocket's HOME, WIDTH, HOLD, YIELD (POCKETS) | the lane's number | 59, 60, 61, 62 |
-| the sixteen snapshot knobs: a turn | 16 | 12 to 27 |
+| the sixteen snapshot knobs (1 to 4 macro, 5 to 16 stack): a turn | 16 | 12 to 27 |
 | GLIDE | 16 | 30 |
-| a snapshot knob's press: recall its nearest (64 and over) | 16 | 44 to 59 |
+| a snapshot knob's press (64 and over). 1 to 3: the macro knob lands. 4: CUE. 5 to 16: the set goes to the stack's nearest snapshot | 16 | 44 to 59 |
+| MUTE as a key, each press on or off (the E16's knob 4): a lane's | the lane's number | 63 |
+| the same for DUB's MUTE and SPACE's | 16 | 39, 40 |
+| the same for the active lane's three inserts, and for its own sequencer | 13 | 2, 3, 4; 5 |
 | the DUB return's four knobs, the SPACE return's four | 16 | 60 to 63, 64 to 67 |
 | TAPE, COMP, LIMIT | 16 | 68, 69, 70 |
 | the drum bus's DRIVE, CRUNCH, PUNCH, BOOM | 16 | 71, 72, 73, 74 |
@@ -795,12 +817,28 @@ Open SETUP to see what is connected. Nothing needs choosing.
 - **The E16.** Two scenes: load `controllers/e16/SF-000.oxie16` and `SF-000-FX.oxie16` (see
   `controllers/e16/README.md`, which has the three settings to make on the E16 and in SETUP).
   In the first, pages 1-11 are the lanes: the twelve knobs where the screen has them, then SEND A,
-  SEND B, LOW and HIGH. Press knob 16 and it is MID (its ring turns pink); press again for HIGH.
-  Press knob 1 and it is GLIDE (its ring turns green), the same GLIDE on every lane's page; press
-  again for the lane's first knob. Page 12 is the sixteen snapshot knobs (knob 1 pressed is GLIDE
-  there too, and knob 13 pressed the wheel); a press on any of the others recalls that
-  knob's nearest snapshot. (Knob 15 held for half a second is MOTION: see MOTION, above.) The rings follow the rig, and a travelling knob's ring walks green. A
-  page that comes up is told its values again, so a knob's first turn starts where the rig is.
+  SEND B, LOW and HIGH. Page 12 is the sixteen knobs of the snapshot module: 1 to 4 the macro
+  knobs (white), 5 to 16 the stack knobs. The rings follow the rig, and a travelling knob's ring
+  walks green. A page that comes up is told its values again, so a knob's first turn starts
+  where the rig is.
+- **The four corner knobs mean the same on every page, each behind its press:**
+
+  | Knob | Pressed | |
+  |---|---|---|
+  | 1 | **GLIDE**: the knob is the GLIDE time (its ring green) until it is pressed again | every page but the library's two (FIND has a GLIDE knob of its own, knob 14) |
+  | 4 | **the module's one switch**: MUTE on what makes sound, CUE on the snapshot knobs | a lane's page: that lane's MUTE. INS 1 to 3: that insert's MUTE. RETURNS: DUB's MUTE (and knob 8 SPACE's). SEQ: the lane's own sequencer muted. SNAP: CUE. MASTER and CONFIG: none |
+  | 13 | **lane select**: the pointer's wheel (below) | every page |
+  | 16 | **CONFIGURE**: OPEN (below); on CONFIG's pages SHUT | every page |
+
+  On a lane's page knob 15 pressed is MID (its ring turns pink; press again for LOW). On the
+  snapshot page 13 and 16 are stack knobs, so a short press is the stack's own (with CUE lit
+  it is how a choice is taken) and **held for half a second** they are the wheel and OPEN;
+  knob 15 held is MOTION. The library's MAP is the same: 13 and 16 held, every other press
+  recalls.
+- **The snapshot page names its knobs as they are now**: SF-000 tells the E16's display each
+  knob's name (four characters), says CUE in the page's title while it is lit, and for a few
+  seconds after a stack knob is turned or pressed the title names the snapshot it is on
+  (`7 ON DARK ROOM`, `7 CUE DARK ROOM`). No scene needs loading for a name to change.
 - **Every knob on the screen has a page**, so nothing needs the mouse. The second scene (SF-FX)
   holds what the first has no room for: the active lane's three inserts (INS 1 to 3: the eight
   places where the screen has them; a key among them, THROW or FREEZE, is its knob's press), the
@@ -821,7 +859,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
   what is in front. (The E16's own PC Mode must be Page and its PC Receive Channel 12. If it ends
   on another page than the one in front, SETUP's E16 line says what was asked and what it said.)
 - **Knob 13 pressed is the pointer's wheel, on every page: press, turn, press.** The first press
-  (on the library's map, where a press recalls, hold it for half a second)
+  (on the snapshot knobs and the library's map, where a press is the knob's own, hold it for half a second)
   takes the pointer up: a yellow frame round the module in front, and the 3D eye home so the
   whole rig is in view. Its turns move the frame, three clicks to the next: a lane, then those
   of its inserts that have an effect in them (the three insert panels show the lane the pointer
@@ -832,10 +870,10 @@ Open SETUP to see what is connected. Nothing needs choosing.
   to its page, the eye flies in and stays, and knob 13 is the page's own again. Turn any other
   knob instead and the pointer is put down with nothing chosen; eight seconds untouched does the
   same. On a lane's page knob 13 is SEND A: the wheel never moves SEND A.
-- **Knob 14 pressed is OPEN** (held, on those same two pages): CONFIG for what is in front, and
+- **Knob 16 pressed is OPEN** (held, on those same two pages): CONFIG for what is in front, and
   on CONFIG's pages SHUT. On the master, the press that shuts its CONFIG opens POCKETS, and the
   next is the way back. On the snapshot knobs it opens the library; in the library it is the
-  way back. On CONFIG's pages knobs 15 and 16 pressed are the page before and the next.
+  way back. On CONFIG's pages knobs 14 and 15 pressed are the page before and the next.
 
 ## Checks
 

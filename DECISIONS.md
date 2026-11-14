@@ -2172,8 +2172,176 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      column that adds that stack to an available module slot. And then, on the instrument, the
      snapshot module has a load button that will load whatever the library's current module
      load looks like into itself."
+435. **You**, four minutes on: "I do want to be able to add modulation tho the muldule knobs
+     still." So MOTION stays on all sixteen (443).
+436. **You**: "Maybe the top right knob (knob 4) in the snapshot module e16 page can toggle cue
+     mode on/off with a press". Then: "in fact, can we standardize so that every e16 page has
+     four potential toggle knobs (knob1=glide time, knob4= toggle a single module parameter
+     (cue in snapshot's case), knob13=lane select, knob 16=configure." Then: "knob 4 could be
+     mute on any sound producing module." (449 to 452.)
+437. **You**: "curious if it's possible to have the instrument itself upload the e16 scenes to
+     the device when it plugs in. if so, that would mean the instrument could build the scenes
+     and pages more dynamically, even including names for things that change (like a named
+     stack knob)." (453.)
+
+### The instrument's module (forty-fourth build)
+
+438. **Two kinds by place.** Knobs 1 to 4 are macro knobs: each is tied to other knobs
+     (LEARN), has a DEPTH, and adds its push on top of the scene, as before. Knobs 5 to 16 are
+     stack knobs: each holds snapshots in an order, one at each of even steps along its turn
+     (one alone: at the top). A stack knob has no DEPTH and is tied to nothing; a macro knob
+     holds no snapshots. LEARN is offered for 1 to 4 only, and a snapshot tapped in the
+     designer goes onto 5 to 16 only. *Mine:* a stack holds 128 at most (the E16's knob has
+     128 places).
+439. **CUE out: the turn morphs the set, and never jumps.** *The rule is yours; the sums are
+     mine.* For each bit of a turn, the scene under the macro knobs goes toward the next
+     snapshot in the direction of the turn, by as much of what is left of the way as the knob
+     went of what was left of its way to that snapshot's place. So from anywhere (a recall,
+     knobs moved by hand, another stack knob) the first click moves the sound a little toward
+     the snapshot ahead; at that snapshot's place the set is that snapshot; the turn carries
+     on to the next. Turned back, it heads for the one behind. Nothing is remembered between
+     turns, so there is nothing to jump from. Sound knobs travel over the GLIDE time, as under
+     any hand. *Mine:* only what can morph moves this way (the knobs); a snapshot's notes,
+     switches and effects come when the knob is **pressed**, which goes all the way to the
+     nearest snapshot, as a recall. Macro knobs stay on top of whatever a stack knob does.
+440. **CUE lit: the turn chooses, the press goes.** A turn goes through the stack in the
+     headphones (the snapshot nearest the knob, from its lanes: 444) and the set is not
+     touched. A press morphs the set to the one the knob is on, over the GLIDE time, and the
+     knob stays there. *Mine:* putting CUE out without pressing puts each stack knob back
+     where it stood (the set has not moved, so neither has its knob), and stops the cue.
+441. **CUE is one key for the module**, on its panel where SNAPSHOT was, lit amber; it is in
+     the designer's strip too, and it is knob 4's press (449). The stack knobs are lit teal
+     while their turns move the set and amber while they choose; the macro knobs white. A
+     stack knob standing on one of its snapshots shows that snapshot's name in place of its
+     own. CUE is kept with the session.
+442. **SNAPSHOT is in the top bar**, left of REC. **LOAD is on the module**, beside CUE: the
+     same LOAD the library screen has. What it said is on the top bar for a few seconds.
+     PHONES stays in the library screen, as you said.
+443. **MOTION on a stack knob swings it along its own stack.** *Mine.* The wave moves the
+     knob's place; the set follows the stack's path through its snapshots (how each differs
+     from the first), on top of where the set is. With CUE lit the swing is about where the
+     knob stood when CUE was lit, so a wave keeps running while you choose. A stack of one has
+     no path and does not swing. A stack of more than sixteen is read at sixteen even places.
+444. **Each snapshot of a stack takes only the parts of the rig chosen for it**: the lanes,
+     the returns, the drum bus, the key, as RECALL TAKES has them. Turned to (CUE out),
+     pressed, or heard in the headphones (CUE lit), a part that was put out stays as it is.
+     They are chosen in the web library (458); the designer draws such a snapshot's number on
+     amber. *Not built:* choosing them on the instrument.
+445. **What your knobs become.** *Mine, and the one thing here that changes what you have.* A
+     knob that is where its kind now lives stays. A knob with snapshots on 1 to 4 moves to the
+     first free knob of 5 to 16; a knob tied to knobs on 5 to 16 moves to the first free of 1
+     to 4; in the order they were in. A knob that had both becomes two. MOTION follows its
+     knob, and so does where the knob stood. One that finds no knob of its kind is kept in the
+     session file and sent to the library, off its module. **Your sweep macros become stack
+     knobs**, which is not the same thing: a sweep macro added how far its snapshots were from
+     its first one on top of the set, by its DEPTH, and several could be combined; a stack
+     knob takes the set to its snapshots. What the sweep macros were adding when you last
+     closed SF-000 is put into the set, so it opens sounding as you left it. The session file
+     as it was is kept beside it as `session-before-two-kinds.json`, and is never overwritten.
+     **One exception: the four the rig came with.** A knob on 1 to 4 that still holds exactly
+     INIT and one of the rig's five pushes (ENERGY, BUILD, ACID and DIST as a session first
+     had them) becomes a macro knob where it is, tied to every knob its push moves by as much
+     as it moves it (a move under 0.4% of a turn is left out). It does what it did, adding its
+     push to wherever the rig is, and it stays under the hand it was under. Moved to a stack
+     knob it would have taken the whole set to the push instead, and knobs 1 to 4 would have
+     opened empty.
+446. **A new session's knobs.** *Mine.* ENERGY, BUILD, ACID and DIST are macro knobs now (tied
+     to exactly what each used to sweep, so they sound as they did); knob 5 is a stack of the
+     five snapshots the rig comes with, called TOUR.
+447. **Knobs made here go to the library by themselves.** With ONLINE lit, a knob made or
+     changed on the instrument (a macro knob taught, a stack changed, a name) is sent once it
+     has stood unchanged for a pass, into its own place on the library's module if that place
+     is free, else into the library off the module. A knob emptied here (CLEAR) comes off the
+     library's module and stays in the library. LOAD does the same first, whatever ONLINE is.
+     *Mine:* a knob is sent only when the library has every snapshot it holds, so the rig's
+     own five (which never go to the library) keep TOUR at home.
+448. **LOAD, by kind.** The library's module is places 1 to 4 for macro knobs and 5 to 16 for
+     stack knobs, as here. LOAD takes each as before (428 to 432) and brings each snapshot of
+     a stack with its parts. A place holding the other kind is left and said. A stack knob is
+     no longer also a stack on the library screen unless it is marked for that there.
+
+### The E16's four corners
+
+449. **Every page, behind a press:** knob 1 GLIDE (the knob is the GLIDE time, its ring
+     green, until pressed again); knob 4 the module's one switch; knob 13 the pointer's wheel
+     (lane select); knob 16 CONFIGURE (OPEN; on CONFIG's pages SHUT).
+450. **Knob 4, page by page.** *Yours: MUTE on anything that makes sound, CUE on the snapshot
+     knobs. Mine, which mute:* a lane's page, that lane's MUTE; INS 1 to 3, that insert's
+     MUTE; RETURNS, DUB's MUTE, and knob 8 SPACE's, since the page holds two; SEQ, the lane's
+     own sequencer muted. MASTER and CONFIG have none.
+451. **What moved to make room.** MID is behind LOW (knob 15) on a lane's page, where it was
+     behind HIGH. OPEN is knob 16 everywhere, where it was 14. SEQ's nudges are 14 and 15;
+     CONFIG's PAGE - and PAGE + are 14 and 15. FIND's GLIDE knob is 14.
+452. **Where a press already plays.** *Mine.* On the snapshot page 13 and 16 are stack knobs:
+     a short press is the stack's own (it must be: with CUE lit the press is how a choice is
+     taken), and held for half a second they are the wheel and OPEN, as 13 and 14 were. Knob 4
+     is a macro knob whose press is CUE, so its macro gives up the press that lands it on the
+     nearer end of its turn (1 to 3 keep theirs). Knob 1 there is GLIDE behind its press, as
+     it was. On the library's MAP, 13 and 16 held; its other presses recall. MAP's and FIND's
+     knobs 1 and 4 stay the library's.
+453. **Scenes are not sent to the E16 by SF-000.** I found the scene file's form (it is how
+     SF-000 writes them) and nothing published on how the OXI App puts one on the device. Not
+     built on a guess. **What it was wanted for is done another way:** the script in both
+     scenes already takes names from SF-000, so the snapshot page is told its sixteen knobs'
+     names as they are now (four characters each), its title says CUE while it is lit, and
+     for four seconds after a stack knob is turned or pressed the title names the snapshot it
+     is on. No scene needs loading for a name to change.
+454. **Both scenes changed: load them onto the E16 again.**
+
+### The web library's module (its sixth build)
+
+455. **Its module is the instrument's**: places 1 to 4 take a macro knob (white), 5 to 16 a
+     stack knob (teal). The library refuses the other kind in a place, and says which goes
+     where. *Mine:* what was already on a place of the other kind is moved the way 445 moves
+     your knobs, by the same rule, so the two still agree place for place.
+456. **The column**, between the table and the module, is the stack knob being built: its
+     chips one under another in the order the knob goes through them. Chips are dragged in
+     (and onto a place among the others), dragged within it to reorder, and dragged out of it
+     to take them out. At its head: its name, how many it holds, **ADD TO MODULE** (the first
+     free stack place; pressed again, it comes off) and NEW (an empty column; the one that was
+     there stays in the rack). The first chip put into an empty column begins a new stack
+     knob. A stack dragged onto the column, or a stack knob pressed on the module, comes into
+     it. STACK KNOB (where MACRO was) makes one of the marked chips.
+457. **Every chip carries its keys**, along its foot: one for each lane (with how much of that
+     lane the snapshot plays standing in it), then R, B and K for the returns, the drum bus
+     and the key. Lit, the part comes with the snapshot; put out, it is left alone.
+458. **Where a key's setting is kept.** In the column, and on the table when a stack of your
+     own is dealt, the stack keeps it. On a chip lying anywhere else it is kept by the page
+     until the chip goes into a stack, and goes in with it: preview, put out, drag. *Mine:* it
+     is not kept across a reload until then.
+459. **Heard with its keys.** A chip pressed with keys put out plays from its stems, each part
+     on its own, the ones put out silent; a key pressed while it plays is heard at once. With
+     all its keys lit it plays its clip, as before. ONLINE now sends each snapshot's stems
+     (about a megabyte each). One whose stems are not in the library plays whole and says so;
+     its keys still say what it takes.
+460. **Macro knobs** are made on the instrument (LEARN) and arrive by 447, or here from two
+     marked chips (KNOB MACRO), and are dragged onto places 1 to 4.
 
 ## Not verified
+
+- **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
+  the turn that never jumps (from a place that is none of its snapshots, onto one, between
+  two, back, on to the next), a part put out, CUE lit and out, knob 4's press, MOTION on a
+  stack knob, LOAD and the mirror against the web library's code running here. **Not heard.**
+  Whether a turn through your own snapshots finds the places between them that you use it for
+  is the whole point and only you can say.
+- **Your session's knobs brought over (445)** are checked on the session file of Nov 11 that
+  the tests keep (its four that hold the rig's own pushes become macro knobs where they are,
+  its fifth stays a stack knob, and a knob of your own snapshots put on knob 2 goes to knob 6
+  with its place, its MOTION and its sound) and on made-up ones. Not on yours.
+  `session-before-two-kinds.json` is beside your session if anything is not as you expect.
+- **The E16's corners (449 to 452)** are checked against the scene files object by object and
+  with made-up messages. Not on your E16: whether the E16 sends a knob's press while the same
+  knob has a swap on it (it does not need to: no corner has both), and how a half-second hold
+  feels on 13 and 16 of the snapshot page.
+- **The snapshot page's names (453)** go by the same message the insert and CONFIG pages
+  use, checked against a mock of the script. Not seen on the E16's display.
+- **The column and the keys (456 to 459)** are pressed and dragged in a browser with no
+  graphics card, and looked at as pictures. The keys are small (about 14 pixels wide at your
+  window's size): whether they are easy to hit is yours to say. **Stems in the page have not
+  been heard at all**: they are checked to arrive whole and to be read; whether your browser
+  decodes Ogg (Safari did not for a long time) decides whether a chip with keys out plays its
+  parts or falls back to its whole clip.
 
 - **The new LOAD (428 to 432) is checked against the web library's code running here**: a knob
   sent up into its pocket, kept when changed here, brought down when changed there, swapped

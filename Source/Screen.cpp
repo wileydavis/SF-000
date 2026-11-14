@@ -572,14 +572,19 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             const auto& kn = ses.knobs[(size_t) h.a];
             int held = 0;
             for (auto id : kn.snaps) if (ses.findSnap (id) != nullptr) ++held;
-            t.title = "SNAPSHOT KNOB " + String (h.a + 1) + (kn.name.isNotEmpty() ? ": " + kn.name : String());
-            body = "TURN IT TO PUSH THE RIG FROM WHERE IT IS TOWARD THE " + String (held) + " SNAPSHOTS IT HOLDS, IN THE ORDER THE MACRO DESIGNER SHOWS. DOUBLE-CLICK: RECALL THE NEAREST AS THE NEW BASE SCENE.";
-            if (held < 2 && ! kn.links.empty())
-                body = "TIED TO " + String ((int) kn.links.size()) + (kn.links.size() == 1 ? " KNOB" : " KNOBS") + " (LEARN, IN THE MACRO DESIGNER, WHICH LISTS THEM). TURN IT AND EACH GOES ITS OWN WAY, FROM WHERE IT STANDS. "
-                       "DOUBLE-CLICK: PAST HALF WAY, WHAT IT HAS PUSHED IS KEPT AND THE KNOB GOES HOME; SHORT OF IT, THEY GO BACK.";
-            else if (! kn.links.empty()) body += " IT IS ALSO TIED TO " + String ((int) kn.links.size()) + (kn.links.size() == 1 ? " KNOB." : " KNOBS.");
-            midi = "MIDI: CHANNEL 16. CC " + String (e16::kKnobCc + h.a) + " TURNS IT. CC " + String (e16::kPressCc + h.a) + " (64 AND OVER) RECALLS ITS NEAREST. CC " + String (ccx::kRecall + h.a)
-                 + " RECALLS THE ONE ITS VALUE NAMES: 1 THE FIRST IT HOLDS, " + String (std::max (2, held)) + " THE LAST. A VALUE SAID AGAIN DOES NOTHING; 0 IS NONE.";
+            const bool stack = Session::isStack (h.a);
+            t.title = String (stack ? "STACK KNOB " : "MACRO KNOB ") + String (h.a + 1) + (kn.name.isNotEmpty() ? ": " + kn.name : String());
+            if (stack)
+                body = "IT HOLDS " + String (held) + (held == 1 ? " SNAPSHOT" : " SNAPSHOTS") + ", IN THE ORDER THE MACRO DESIGNER SHOWS. "
+                     + (ses.stackCue ? "CUE IS LIT: A TURN GOES THROUGH THEM IN THE HEADPHONES AND THE SET IS NOT TOUCHED. DOUBLE-CLICK: THE SET GOES TO THE ONE IT IS ON, OVER THE GLIDE TIME."
+                                     : "CUE IS OUT: A TURN MORPHS THE SET FROM WHEREVER IT IS TOWARD THE NEXT ONE THE WAY THE KNOB IS GOING, AND ON TO THE ONE AFTER. DOUBLE-CLICK: ALL THE WAY TO THE NEAREST.");
+            else
+                body = (kn.links.empty() ? String ("TIED TO NOTHING YET: LEARN, IN THE MACRO DESIGNER, TIES IT TO KNOBS. ")
+                                         : "TIED TO " + String ((int) kn.links.size()) + (kn.links.size() == 1 ? " KNOB" : " KNOBS") + " (LEARN, IN THE MACRO DESIGNER, WHICH LISTS THEM). TURN IT AND EACH GOES ITS OWN WAY, FROM WHERE IT STANDS. ")
+                     + (h.a == Session::kCueKnob ? String ("DOUBLE-CLICK (ITS PRESS ON THE E16): CUE, ON OR OFF.")
+                                                 : String ("DOUBLE-CLICK: PAST HALF WAY, WHAT IT HAS PUSHED IS KEPT AND THE KNOB GOES HOME; SHORT OF IT, THEY GO BACK."));
+            midi = "MIDI: CHANNEL 16. CC " + String (e16::kKnobCc + h.a) + " TURNS IT. CC " + String (e16::kPressCc + h.a) + " (64 AND OVER) IS ITS PRESS."
+                 + (stack ? " CC " + String (ccx::kRecall + h.a) + " RECALLS THE ONE ITS VALUE NAMES: 1 THE FIRST IT HOLDS, " + String (std::max (2, held)) + " THE LAST. A VALUE SAID AGAIN DOES NOTHING; 0 IS NONE." : String());
             below = true;
             break;
         }
@@ -654,7 +659,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
                 { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
-                { aMacros, "MACROS", "THE MACRO DESIGNER: WHICH SNAPSHOTS EACH SNAPSHOT KNOB HOLDS, IN SWEEP ORDER, AND LEARN, WHICH TIES A KNOB STRAIGHT TO OTHER KNOBS. A KNOB'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
+                { aMacros, "MACROS", "THE DESIGNER FOR THE SIXTEEN KNOBS. 1 TO 4 ARE MACRO KNOBS: LEARN TIES ONE STRAIGHT TO OTHER KNOBS. 5 TO 16 ARE STACK KNOBS: EACH HOLDS SNAPSHOTS IN AN ORDER (THE WEB LIBRARY IS WHERE STACKS ARE BUILT; ONE CAN BE MADE HERE TOO). A STACK'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
+                { aStackCue, "CUE", "HOW THE STACK KNOBS (5 TO 16) ARE PLAYED. OUT: A TURN MORPHS THE SET ITSELF, FROM WHEREVER IT IS TOWARD THE NEXT SNAPSHOT THE WAY THE KNOB IS GOING, THEN ON TO THE ONE AFTER; A PRESS GOES ALL THE WAY TO THE NEAREST. LIT: A TURN GOES THROUGH THE STACK IN THE HEADPHONES AND THE SET IS NOT TOUCHED; A PRESS MORPHS THE SET TO THE ONE THE KNOB IS ON, OVER THE GLIDE TIME. KNOB 4 PRESSED (HERE AND ON THE E16) IS THIS KEY." },
                 { aMain, "MAIN", "BACK TO THE MAIN SCREEN." },
                 { aNudgeL, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP EARLIER." },
                 { aNudgeR, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP LATER." },
@@ -666,9 +672,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRename, "RENAME", "NAMES THE CHOSEN SNAPSHOT." },
                 { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
                 { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
-                { aClearKnob, "CLEAR", "TAKES EVERY SNAPSHOT OFF THIS KNOB, AND UNTIES IT FROM EVERY KNOB." },
-                { aKnobPick, "STEPS", "THIS KNOB HOLDS A STACK: IT STEPS THROUGH ITS SNAPSHOTS AND DOES NOT SWEEP. A TURN COMES TO THE NEXT AND PLAYS IT IN THE HEADPHONES; A PRESS RECALLS THE ONE IT IS ON, OVER THE GLIDE TIME. LIT AMBER HERE AND ON THE MAIN SCREEN. DEPTH AND MOTION ARE NOT FOR IT." },
-                { aLearn, "LEARN", "TIES THIS KNOB STRAIGHT TO OTHER KNOBS. IT GOES TO ITS FULL TURN AND THE MAIN SCREEN COMES UP: TURN THE KNOBS IT SHOULD MOVE (HERE OR ON A CONTROLLER) TO WHERE THE FULL TURN TAKES THEM, AND KEEP. LEARN AGAIN ADDS TO WHAT IT HAS; A KNOB TURNED BACK TO WHERE IT WAS IS LET GO." },
+                { aClearKnob, "CLEAR", "THE KNOB HOLDS NOTHING: A STACK KNOB'S SNAPSHOTS COME OFF IT (THEY STAY IN THE LIBRARY), A MACRO KNOB IS UNTIED FROM EVERY KNOB." },
+                { aLearn, "LEARN", "FOR THE MACRO KNOBS (1 TO 4). TIES THIS KNOB STRAIGHT TO OTHER KNOBS. IT GOES TO ITS FULL TURN AND THE MAIN SCREEN COMES UP: TURN THE KNOBS IT SHOULD MOVE (HERE OR ON A CONTROLLER) TO WHERE THE FULL TURN TAKES THEM, AND KEEP. LEARN AGAIN ADDS TO WHAT IT HAS; A KNOB TURNED BACK TO WHERE IT WAS IS LET GO." },
                 { aLearnKeep, "KEEP", "TIES THE KNOBS MOVED SINCE LEARN TO THE KNOB BEING TAUGHT. NOTHING CHANGES IN THE SOUND: THE KNOB IS AT ITS FULL TURN, AND TURNED BACK THEY GO BACK TO WHERE THEY WERE." },
                 { aLearnDrop, "DROP", "PUTS BACK THE KNOBS MOVED SINCE LEARN AND TIES NOTHING." },
                 { aCfgClose, "X", "CLOSES CONFIG." },
@@ -678,7 +683,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
-                { aFetch, "LOAD", "BRINGS WHAT IS IN THE WEB LIBRARY'S TRAY: ITS STACKS, THE MACROS ON ITS KNOBS (ONTO KNOBS THAT HOLD NOTHING), A SONG AS THE ARRANGEMENT (IF THERE IS NONE), AND THE SNAPSHOTS THIS LIBRARY LACKS. IT TAKES NOTHING AWAY." },
+                { aFetch, "LOAD", "MAKES THE SIXTEEN KNOBS WHAT THE WEB LIBRARY'S MODULE HOLDS NOW: ITS FOUR MACRO KNOBS, ITS TWELVE STACK KNOBS (EACH SNAPSHOT WITH THE LANES CHOSEN FOR IT THERE), AND THE SNAPSHOTS THIS LIBRARY LACKS. WHAT A KNOB HELD HERE IS SENT TO THE LIBRARY FIRST, SO NOTHING IS LOST. A SONG COMES AS THE ARRANGEMENT (IF THERE IS NONE)." },
                 { aStack, "STACK", "THE STACKS LOAD BROUGHT, ONE AFTER ANOTHER, THEN EVERY SNAPSHOT AGAIN." },
                 { aArrange, "ARRANGE", "THE ARRANGEMENT: SNAPSHOTS IN A LINE, EACH FOR SO MANY BARS, EACH REACHED BY A MORPH FROM THE ONE BEFORE. PLAYED FROM THE CLOCK, AND PRINTED TO FILES FOR A RELEASE. A ON THE KEYBOARD TOO. LIT GREEN WHILE IT PLAYS." },
                 { aArrPlay, "PLAY", "PLAYS THE ARRANGEMENT FROM ITS FIRST PART. FROM STOPPED: THAT PART IS RECALLED AT ONCE AND THE CLOCK STARTS FROM THE TOP. WITH THE CLOCK RUNNING: IT COMES IN ON THE NEXT BAR LINE. EACH PART AFTER IS RECALLED SO AS TO SET OFF ON ITS OWN BAR LINE; AT THE END THE CLOCK STOPS. PRESSED WHILE IT PLAYS: STOP." },
@@ -867,15 +872,18 @@ void Screen::drawBar (G& g)
             key (g, R (kx + 96, 17.5f, 40, 40), col::white, pressed (aLearnDrop) ? 6.0f : 2.0f);
             text (g, "DROP", R (kx + 142, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
             const int n = ses.learnMoves();
-            const float tx = kx + 196, tw2 = std::max (60.0f, 932.0f - tx);
+            const float tx = kx + 196, tw2 = std::max (60.0f, 796.0f - tx);
             text (g, "SET THE KNOBS AS ITS FULL TURN SHOULD LEAVE THEM.", R (tx, 20, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
             text (g, n == 0 ? String ("NONE MOVED YET.") : String (n) + " MOVED (LIT YELLOW).", R (tx, 38, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
         }
         else if (info)
         {
-            text (g, "INFO (I): THE NUMBER ON A CONTROL IS ITS MIDI CC. A LANE'S NUMBER IS ITS CHANNEL, AND ITS INSERTS ARE ON IT TOO.", R (23 + w + 16, 20, 760, 17), fLbl, col::black, juce::Justification::centredLeft);
-            text (g, "THE RETURNS, THE MASTER, GLIDE AND THE SNAPSHOT KNOBS ARE ON CHANNEL 16. REST THE MOUSE ON A CONTROL FOR WHAT IT DOES.", R (23 + w + 16, 38, 760, 17), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "INFO (I): A CONTROL'S NUMBER IS ITS MIDI CC. A LANE'S IS ITS CHANNEL; ITS INSERTS ARE ON IT TOO.", R (23 + w + 16, 20, 780.0f - (23 + w + 16), 17), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "RETURNS, MASTER, GLIDE, SNAPSHOT KNOBS: CHANNEL 16. REST THE MOUSE ON A CONTROL FOR WHAT IT DOES.", R (23 + w + 16, 38, 780.0f - (23 + w + 16), 17), fLbl, col::black, juce::Justification::centredLeft);
         }
+        // SNAPSHOT: everything on the main screen, kept (beside REC and RUN: the three keys of a set)
+        key (g, R (808, 17.5f, 40, 40), col::yellow, pressed (aSnapshot) ? 6.0f : 2.0f);
+        text (g, "SNAPSHOT", R (854, 17.5f, 92, 40), fLegend, col::black, juce::Justification::centredLeft);
         // REC: press to start a take, hold to end it. The time it has run stands in for its name.
         {
             const bool on = recorder != nullptr && recorder->recording();
@@ -884,8 +892,8 @@ void Screen::drawBar (G& g)
             String t ("REC");
             if (on) { const auto s = (juce::int64) recorder->seconds(); t = String (s / 3600) + ":" + String ((s / 60) % 60).paddedLeft ('0', 2) + ":" + String (s % 60).paddedLeft ('0', 2); }
             text (g, t, R (996, 17.5f, 70, 40), fLegend, col::black, juce::Justification::centredLeft);
-            if (page == pMain && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000)
-                plate (g, 940.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
+            if ((page == pMain || page == pMacros) && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000)
+                plate (g, 798.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
         }
         // (PHONES lit: this output is split while a cue plays, and the key says so wherever one is)
         text (g, eng.phones() ? "PHONES" : "SETUP", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
@@ -911,6 +919,7 @@ void Screen::drawBar (G& g)
         hit (R (learnKeysX(), 17.5f, 40, 40).expanded (3), hAct, aLearnKeep, 0);
         hit (R (learnKeysX() + 96, 17.5f, 40, 40).expanded (3), hAct, aLearnDrop, 0);
     }
+    hit (R (808, 17.5f, 40, 40), hAct, aSnapshot, 0);
     hit (R (950, 17.5f, 40, 40), hAct, aRec, 0);
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
     hit (R (1176, 17.5f, 40, 40), hAct, aRun, 0);
@@ -1328,14 +1337,16 @@ void Screen::drawSnapPanel (G& g, R r)
             if (vis (g, R (cxm - 40, y, 80, 58)))
             {
                 if (seen (g, lit ? kr : R (cxm - 40, y, 80, 58))) lastShown[(size_t) (cx::kSnap + k)] = v;
-                // (a knob that holds a stack is lit amber, and while the snapshot it has come to plays in the headphones it says which)
+                // (a macro knob is lit white. A stack knob: teal while its turns morph the set, amber while CUE has it choosing in
+                // the headphones. Standing on one of its snapshots, it says which: the one in the headphones, or the one the set has come to.)
                 const auto& kn = ses.knobs[(size_t) k];
-                const auto light = kn.pick ? col::amber : col::teal;
+                const bool stack = Session::isStack (k);
+                const auto light = ! stack ? col::white : ses.stackCue ? col::amber : col::teal;
                 knobCtl = cx::kSnap + k; knobLight = light;
                 knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, light);
                 knobCtl = -1;
                 if (info) number (g, cx::kSnap + k, R (cxm - 14, y + 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
-                const Snapshot* on = kn.pick && ses.cueing() != 0 && ses.cueing() == kn.picked ? ses.findSnap (kn.picked) : nullptr;
+                const Snapshot* on = stack && kn.picked != 0 && (! ses.stackCue || ses.cueing() == kn.picked) ? ses.findSnap (kn.picked) : nullptr;
                 text (g, on != nullptr ? on->name : kn.name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
             hit (kr.expanded (4, 2), hSnapKnob, k, 0);
@@ -1343,13 +1354,12 @@ void Screen::drawSnapPanel (G& g, R r)
         else if (vis (g, kr)) hollow (g, cxm, y + 20, 40, true);
     }
     const float ky = r.getBottom() - 62;
-    const R bar (x0, ky, 84, 40);
-    if (vis (g, R (x0, ky, 262, 60)))
+    // CUE: how the stack knobs are played (lit: they choose in the headphones; out: they morph the set). LOAD: the module, as the web library has it now.
+    actKey (g, aStackCue, x0, ky, 42, "CUE", ses.stackCue ? col::amber : col::putty, 3, true, ses.stackCue);
     {
-        key (g, bar, col::yellow, pressed (aSnapshot) ? 6.0f : 2.0f);
-        text (g, "SNAPSHOT", R (x0, ky + 43, 84, 14), fLbl, col::black);
+        const bool loading = online != nullptr && online->loading();
+        actKey (g, aFetch, x0 + 44, ky, 42, "LOAD", loading ? col::yellow : col::white, 3, online != nullptr && online->setup().complete(), loading);
     }
-    hit (bar, hAct, aSnapshot, 0);
     actKey (g, aLibrary, x0 + 88, ky, 56, "LIBRARY", col::white);
     actKey (g, aMacros, x0 + 146, ky, 56, "MACROS", col::white);
     actKey (g, aArrange, x0 + 204, ky, 56, "ARRANGE", ses.arrPlaying() ? col::green : col::white);
@@ -1737,7 +1747,6 @@ void Screen::drawLibrary (G& g)
                                     : String (total) + (total == 1 ? " SNAPSHOT" : " SNAPSHOTS"));
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aMacros, x0 + 66, ky, 64, "MACROS", col::white, 5);
-    actKey (g, aSnapshot, x0 + 160, ky, 64, "SNAPSHOT", col::yellow, 5);
     const bool has = ses.findSnap (selSnap) != nullptr;
     actKey (g, aRename, x0 + 226, ky, 64, "RENAME", col::yellow, 5, has);
     actKey (g, aDelete, x0 + 308, ky, 64, "HOLD: DELETE", col::red, 5, has);
@@ -1748,7 +1757,16 @@ void Screen::drawLibrary (G& g)
     // first. Put out, a part stays as it is now. The next snapshot starts with all of them again.
     {
         const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap;
-        if (id != scopeFor) { scopeFor = id; scopeOn.fill (true); }
+        if (id != scopeFor)
+        {
+            // (one a stack knob put in the headphones comes with the parts that stack gives it)
+            scopeFor = id; scopeOn.fill (true);
+            if (const auto* sc = ses.cueNarrowed (id))
+            {
+                for (int i = 0; i < kLanes; ++i) scopeOn[(size_t) i] = sc->lane[(size_t) i];
+                scopeOn[(size_t) kLanes] = sc->returns; scopeOn[(size_t) kLanes + 1] = sc->bus; scopeOn[(size_t) kLanes + 2] = sc->master;
+            }
+        }
         if (cueMode && ses.findSnap (id) != nullptr)
         {
             text (g, "RECALL TAKES", R (x0 + 386, y0 + 4, 96, 24), fLbl, col::black, juce::Justification::centredLeft);
@@ -1981,41 +1999,53 @@ void Screen::drawMacros (G& g)
             for (int u = 0; u < cx::kMotUnits; ++u) if ((on >> u) & 1) ms << " " << String (u + 1);
             plate (g, mvX - 2 - (std::ceil (tw (fNote, ms)) + 12), y0, ms, fNote, 6, col::green, col::black);
         }
-        // the knob itself, its depth, its snapshots in sweep order
+        // the knob itself; a macro knob's depth; a stack knob's snapshots in their order
         const float ky = y0 + 40;
+        const bool stack = Session::isStack (k);
         if (ses.knobLive (k))
         {
             const float v = eng.shown (cx::kSnap + k);
             lastShown[(size_t) (cx::kSnap + k)] = v;
-            knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, k == ses.learning ? col::yellow : kn.pick ? col::amber : col::teal);
+            knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, k == ses.learning ? col::yellow : ! stack ? col::white : ses.stackCue ? col::amber : col::teal);
             hit (R (x0 + 8, ky - 2, 48, 44), hSnapKnob, k, 0);
         }
         else hollow (g, x0 + 32, ky + 20, 40, true);
         legend (g, x0 + 32, ky + 43, "TURN");
-        knob (g, x0 + 98, ky + 20, 40, kn.depth * 0.5f, Kind::Knob, 0, col::lit);
-        hit (R (x0 + 74, ky - 2, 48, 44), hDepth, k, 0);
-        legend (g, x0 + 98, ky + 43, "DEPTH");
-        for (int s = 0; s < 10; ++s)
-        {
-            const R sr (x0 + 134 + (float) (s % 5) * 25.6f, ky + (float) (s / 5) * 30, 23, 26);
-            if (s < (int) kn.snaps.size())
-            {
-                const int li = ses.indexOf (kn.snaps[(size_t) s]);
-                window (g, sr, col::black);
-                text (g, String (li + 1), sr, fLbl, col::lit);
-                hit (sr, hSlot, k, s);
-            }
-            else { g.setColour (tone (col::sea)); g.drawRect (sr.reduced (0.5f), 1.0f); }
-        }
         String order;
-        for (size_t s = 0; s < kn.snaps.size(); ++s)
-            if (auto* sn = ses.findSnap (kn.snaps[s])) order << (s > 0 ? "  >  " : "") << sn->name;
+        if (! stack)
+        {
+            knob (g, x0 + 98, ky + 20, 40, kn.depth * 0.5f, Kind::Knob, 0, col::lit);
+            hit (R (x0 + 74, ky - 2, 48, 44), hDepth, k, 0);
+            legend (g, x0 + 98, ky + 43, "DEPTH");
+            plate (g, x0 + 134, ky + 8, k == Session::kCueKnob ? "PRESS: CUE" : "MACRO KNOB", fNote, 6, col::white, col::black);
+        }
+        else
+        {
+            // (fifteen of them shown; a stack with more says how many more. One that does not take every part of the rig is drawn amber.)
+            const int n = (int) kn.snaps.size();
+            for (int s = 0; s < 15; ++s)
+            {
+                const R sr (x0 + 74 + (float) (s % 5) * 37.0f, ky + (float) (s / 5) * 21, 34, 19);
+                if (s == 14 && n > 15) { text (g, "+" + String (n - 14), sr, fLbl, col::black); continue; }
+                if (s < n)
+                {
+                    const int li = ses.indexOf (kn.snaps[(size_t) s]);
+                    const bool some = (kn.lanesAt ((size_t) s) & Session::kAllLanes) != Session::kAllLanes;
+                    window (g, sr, some ? col::amber : col::black);
+                    text (g, String (li + 1), sr, fLbl, some ? col::black : col::lit);
+                    hit (sr, hSlot, k, s);
+                }
+                else { g.setColour (tone (col::sea)); g.drawRect (sr.reduced (0.5f), 1.0f); }
+            }
+            for (size_t s = 0; s < kn.snaps.size(); ++s)
+                if (auto* sn = ses.findSnap (kn.snaps[s])) order << (s > 0 ? "  >  " : "") << sn->name;
+        }
         g.setColour (tone (col::black)); g.setFont (fLbl);
         // (a knob tied straight to knobs says so; one being taught says that)
         const int tied = (int) kn.links.size();
-        if (k == ses.learning) order = "BEING TAUGHT: " + String (ses.learnMoves()) + " MOVED. KEEP, OR DROP." + (order.isEmpty() ? String() : "   " + order);
-        else if (tied > 0) order = "TIED TO " + String (tied) + (tied == 1 ? " KNOB" : " KNOBS") + (order.isEmpty() ? String (".") : ".   " + order);
-        g.drawFittedText (order.isEmpty() ? String ("NOTHING ON IT. TAP SNAPSHOTS ON THE RIGHT, OR PRESS LEARN.") : order,
+        if (k == ses.learning) order = "BEING TAUGHT: " + String (ses.learnMoves()) + " MOVED. KEEP, OR DROP.";
+        else if (! stack && tied > 0) order = "TIED TO " + String (tied) + (tied == 1 ? " KNOB." : " KNOBS.");
+        g.drawFittedText (order.isNotEmpty() ? order : stack ? String ("NO SNAPSHOTS ON IT. TAP SNAPSHOTS ON THE RIGHT, OR LOAD A STACK FROM THE LIBRARY.") : String ("TIED TO NOTHING. PRESS LEARN."),
                           juce::Rectangle<int> ((int) x0, (int) (ky + 68), 258, 30), juce::Justification::topLeft, 2, 1.0f);
         // what it moves, lane by lane (a knob it is tied to: how far the full turn takes it, in hundredths of that knob's travel)
         String moves;
@@ -2027,7 +2057,7 @@ void Screen::drawMacros (G& g)
             else moves << ", ";
             moves << (i >= cx::kPkG && i < cx::kPkG + kPkGlobals ? "POCKETS " : cx::isPk (i) ? "POCKET " : "") << eng.control (i).label << (i >= cx::space (1, 0) && i < cx::space (1, 4) ? " (CONV)" : "");
             for (const auto& l : kn.links)
-                if (l.ctl == i) { const int far = (int) std::lround (l.amount * kn.depth * 100.0f); moves << (far >= 0 ? " +" : " -") << std::abs (far); }
+                if (! stack && l.ctl == i) { const int far = (int) std::lround (l.amount * kn.depth * 100.0f); moves << (far >= 0 ? " +" : " -") << std::abs (far); }
         }
         g.drawFittedText (moves, juce::Rectangle<int> ((int) x0, (int) (ky + 102), 258, 64), juce::Justification::topLeft, 4, 0.8f);
     }
@@ -2049,10 +2079,10 @@ void Screen::drawMacros (G& g)
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
     actKey (g, aRenameKnob, x0 + 160, ky, 64, "RENAME", col::yellow, 5);
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
-    // (a knob that holds a stack moves nothing, so there is nothing to teach it: LEARN is not there while STEPS is lit)
-    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, ! ses.knobs[(size_t) selKnob].pick, ses.learning == selKnob);
-    // STEPS: this knob holds a stack. It steps through its snapshots (a turn: the next, in the headphones; a press: recalled) and does not sweep.
-    { const bool steps = ses.knobs[(size_t) selKnob].pick; actKey (g, aKnobPick, x0 + 358, ky, 64, "STEPS", steps ? col::amber : col::putty, 5, ses.learning != selKnob, steps); }
+    // (LEARN is for the four macro knobs: a stack knob holds snapshots and is tied to nothing)
+    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, ! Session::isStack (selKnob), ses.learning == selKnob);
+    // CUE: how the stack knobs are played, as on the module's own panel
+    actKey (g, aStackCue, x0 + 358, ky, 64, "CUE", ses.stackCue ? col::amber : col::putty, 5, true, ses.stackCue);
     // MOTION: three waves, each put on a snapshot knob. The knob swings in time with the clock, and what it moves goes with it.
     motSig = motionSig();
     for (int u = 0; u < cx::kMotUnits; ++u)
@@ -2073,9 +2103,10 @@ void Screen::drawMacros (G& g)
         plate (g, ux + w + 2, y0, says, fNote, 6, on ? col::green : col::white, col::black);
         for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
     }
-    const String help = "PICK A KNOB. TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10); TAP A NUMBERED SLOT TO TAKE IT OUT. OR PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
-                        "STEPS: THE KNOB HOLDS A STACK: A TURN COMES TO THE NEXT SNAPSHOT AND PLAYS IT IN THE HEADPHONES, A PRESS RECALLS IT. "
-                        "MOTION: A WAVE THAT TURNS A SNAPSHOT KNOB FOR YOU, IN TIME WITH THE CLOCK. CHOOSE ITS WAVE, HOW LONG IT IS, WHICH KNOB, AND HOW MUCH OF THE KNOB'S TURN.";
+    const String help = "1 TO 4, MACRO KNOBS: PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
+                        "5 TO 16, STACK KNOBS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN ORDER; TAP A NUMBERED SLOT TO TAKE ONE OUT. "
+                        "CUE OUT: A TURN MORPHS THE RIG TOWARD THE NEXT SNAPSHOT THE WAY IT IS TURNING. CUE LIT: A TURN PLAYS IT IN THE HEADPHONES, A PRESS MORPHS TO IT OVER THE GLIDE. "
+                        "MOTION: A WAVE THAT TURNS A KNOB FOR YOU, IN TIME WITH THE CLOCK: ITS WAVE, HOW LONG, WHICH KNOB, HOW MUCH OF ITS TURN.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
     g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1204, (int) y0 + 2, 466, 94), juce::Justification::centredLeft, 7, 0.8f);
 }
@@ -2279,7 +2310,7 @@ void Screen::act (int a)
         case aPkReset:  ses.pocketsReset(); pkNote = "EVERY POCKET IS WHERE THE RIG STARTS IT"; pkNoteAt = juce::Time::getMillisecondCounter(); break;
         case aOnline:   if (online != nullptr) online->setOn (! online->on()); break;
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
-        case aFetch:    if (online != nullptr && ! online->loading()) online->askLoad(); break;
+        case aFetch:    if (online != nullptr && ! online->loading()) { loadWas = online->loadLine(); online->askLoad(); loadAsked = page != pLibrary; loadSeen = false; } break;
         case aStack:    libStack = libStack + 1 >= (int) ses.stacks.size() ? -1 : libStack + 1; libScroll = 0; break;
         case aRecallCue:
             if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr)
@@ -2327,14 +2358,8 @@ void Screen::act (int a)
             break;
         case aLearnKeep: ses.learnKeep(); break;
         case aLearnDrop: ses.learnDrop(); break;
-        case aClearKnob:
-            if (ses.learning == selKnob) ses.learnDrop();
-            ses.setPick (selKnob, false);
-            ses.knobs[(size_t) selKnob].links.clear();
-            ses.knobs[(size_t) selKnob].snaps.clear();
-            ses.turnSnapKnob (selKnob, 0.0f);
-            break;
-        case aKnobPick: ses.setPick (selKnob, ! ses.knobs[(size_t) selKnob].pick); break;
+        case aClearKnob: ses.knobClear (selKnob); break;
+        case aStackCue:  ses.setStackCue (! ses.stackCue); break;
         default: break;
     }
     repaint();
@@ -2452,9 +2477,8 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hKnobCard: selKnob = h->a; break;
         case hSlot:
         {
-            auto& sn = ses.knobs[(size_t) h->a].snaps;
             selKnob = h->a;
-            if (h->b < (int) sn.size()) { sn.erase (sn.begin() + h->b); ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
+            ses.stackDrop (h->a, h->b);
             break;
         }
         case hArrPart:  selPart = h->a; break;
@@ -2469,8 +2493,9 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 if (ses.arrAdd (ses.library[(size_t) h->a].id, at)) selPart = at >= 0 ? at : n;
                 break;
             }
-            auto& sn = ses.knobs[(size_t) selKnob].snaps;
-            if (sn.size() < (ses.knobs[(size_t) selKnob].pick ? 128u : 10u)) { sn.push_back (ses.library[(size_t) h->a].id); ses.turnSnapKnob (selKnob, ses.value (cx::kSnap + selKnob)); }       // (a stack: as many as the knob has places)
+            // (a stack knob takes it, at the end of its stack. A macro knob holds no snapshots: LEARN is how one is made.)
+            if (Session::isStack (selKnob)) ses.stackAdd (selKnob, ses.library[(size_t) h->a].id);
+            else { recNote = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON 5 TO 16"; recNoteAt = juce::Time::getMillisecondCounter(); }
             break;
         }
         default: break;
@@ -3265,6 +3290,20 @@ void Screen::timerCallback()
         if (const bool r = recorder->recording(); r != recWas) { recWas = r; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter(); }
     if (barNow() != barSig) dirty (R (8, 12, 1712, 52));          // RUN and TEMPO, when an outside clock moves them; REC's time
     if (online != nullptr && page == pLibrary && online->stamp() != onlineStamp) dirty (R (23, 980, 1682, 110));    // what ONLINE has to say
+    if (online != nullptr && loadAsked)
+    {
+        // LOAD, asked for from the snapshot module: its key is lit while it works, and what it did is said on the top bar (in full on the library screen)
+        const bool busy = online->loading();
+        if (busy != loadBusy) { loadBusy = busy; juce::Component::repaint(); }
+        if (! busy && (loadSeen || online->loadLine() != loadWas))         // (done: it was seen at work, or was too quick to see and has said something new)
+        {
+            loadAsked = loadSeen = false;
+            String said = online->loadLine();
+            if (said.length() > 92) said = said.substring (0, said.substring (0, 74).lastIndexOfChar (' ')) + " (THE REST: LIBRARY)";
+            sayOnBar (said);
+        }
+        loadSeen = loadSeen || busy;
+    }
     const float want = cfgOpen && page == pMain ? 1.0f : 0.0f;
     if (cfgT != want)
     {

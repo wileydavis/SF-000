@@ -311,15 +311,7 @@ void Session::userSet (int i, float v, bool sounding)
 {
     if (i < 0 || i >= cx::kCount) return;
     v = juce::jlimit (0.0f, 1.0f, v);
-    if (i >= cx::kSnap)
-    {
-        const int k = i - cx::kSnap;
-        turnSnapKnob (k, v);
-        // a knob that holds a stack, under a hand: the snapshot it has come to is heard in the headphones
-        if (auto& kn = knobs[(size_t) k]; kn.pick)
-            if (const auto id = pickAt (k); id != 0 && (id != kn.picked || cueId != id)) { kn.picked = id; cue (id); if (onChange) onChange(); }
-        return;
-    }
+    if (i >= cx::kSnap) { turnSnapKnob (i - cx::kSnap, v); return; }
     const auto& c = engine.control (i);
     base[(size_t) i] = c.morph && i < kMorphEnd ? v - offset[(size_t) i] : v;
     // a sound knob under the hand travels over the GLIDE time, as a recalled one does (OFF: at once)
@@ -336,8 +328,43 @@ void Session::userSet (int i, float v, bool sounding)
 
 void Session::turnSnapKnob (int k, float v)
 {
-    if (k != learning) engine.set (cx::kSnap + k, v);       // (the knob being taught stands at its full turn)
-    applyMorph (glideBeats());
+    if (k < 0 || k >= 16) return;
+    v = juce::jlimit (0.0f, 1.0f, v);
+    if (! isStack (k))
+    {
+        if (k != learning) engine.set (cx::kSnap + k, v);   // (the knob being taught stands at its full turn)
+        applyMorph (glideBeats());
+        touch();
+        return;
+    }
+    const float was = engine.target (cx::kSnap + k);
+    auto& kn = knobs[(size_t) k];
+    if (stackCue)
+    {
+        // CUE lit: the turn goes through the stack in the headphones (each snapshot with the parts it takes). The set is not touched.
+        engine.set (cx::kSnap + k, v);
+        const auto h = held (k);
+        if (const int at = nearest (k, v); at >= 0)
+        {
+            const auto& it = h[(size_t) at];
+            if (it.id != kn.picked || cueId != it.id)
+            {
+                kn.picked = it.id;
+                cueScopeFor = it.id; cueScope = scopeOf (it.lanes);
+                cue (it.id);
+                if (onChange) onChange();
+            }
+        }
+    }
+    else
+    {
+        // CUE out: the set itself, from where it is toward the next snapshot the way the knob is going
+        const auto on = kn.picked;
+        sweepKnob (k, was, v);
+        engine.set (cx::kSnap + k, v);
+        applyMorph (glideBeats());
+        if (kn.picked != on && onChange) onChange();        // (it has come to one, or left it: the panel names the one it stands on)
+    }
     touch();
 }
 
@@ -348,31 +375,114 @@ bool Session::knobLive (int k) const
     if (k < 0 || k >= 16) return false;
     const auto& kn = knobs[(size_t) k];
     if (! kn.links.empty() || k == learning) return true;
-    int held = 0;
-    for (auto id : kn.snaps) if (findSnap (id) != nullptr) ++held;
-    return held >= (kn.pick ? 1 : 2);           // (a stack of one is still something to press)
+    if (! isStack (k)) return false;
+    for (auto id : kn.snaps) if (findSnap (id) != nullptr) return true;           // (a stack of one is something to turn toward, and to press)
+    return false;
+}
+
+Session::Scope Session::scopeOf (juce::uint32 m)
+{
+    Scope sc;
+    for (int l = 0; l < kLanes; ++l) sc.lane[(size_t) l] = ((m >> l) & 1u) != 0;
+    sc.returns = ((m >> kLanes) & 1u) != 0; sc.bus = ((m >> (kLanes + 1)) & 1u) != 0; sc.master = ((m >> (kLanes + 2)) & 1u) != 0;
+    return sc;
+}
+
+juce::uint32 Session::lanesOf (const Scope& sc)
+{
+    juce::uint32 m = 0;
+    for (int l = 0; l < kLanes; ++l) if (sc.lane[(size_t) l]) m |= 1u << l;
+    if (sc.returns) m |= 1u << kLanes;
+    if (sc.bus) m |= 1u << (kLanes + 1);
+    if (sc.master) m |= 1u << (kLanes + 2);
+    return m;
+}
+
+std::vector<Session::Held> Session::held (int k) const
+{
+    std::vector<Held> h;
+    if (k < 0 || k >= 16) return h;
+    const auto& kn = knobs[(size_t) k];
+    for (size_t i = 0; i < kn.snaps.size(); ++i)
+        if (const auto* sn = findSnap (kn.snaps[i])) h.push_back ({ sn, kn.snaps[i], i < kn.lanes.size() ? (kn.lanes[i] & kAllLanes) : kAllLanes });
+    return h;
+}
+
+int Session::nearest (int k, float v) const
+{
+    int n = 0;
+    if (k >= 0 && k < 16) for (auto id : knobs[(size_t) k].snaps) if (findSnap (id) != nullptr) ++n;
+    if (n == 0) return -1;
+    return n == 1 ? 0 : juce::jlimit (0, n - 1, (int) std::lround (v * (float) (n - 1)));
 }
 
 juce::int64 Session::pickAt (int k) const
 {
-    if (k < 0 || k >= 16) return 0;
-    std::vector<juce::int64> ids;
-    for (auto id : knobs[(size_t) k].snaps) if (findSnap (id) != nullptr) ids.push_back (id);
-    if (ids.empty()) return 0;
-    return ids[(size_t) juce::jlimit (0, (int) ids.size() - 1, (int) std::lround (engine.target (cx::kSnap + k) * (float) (ids.size() - 1)))];
+    const auto h = held (k);
+    const int at = nearest (k, engine.target (cx::kSnap + k));
+    return at >= 0 ? h[(size_t) at].id : 0;
 }
 
-void Session::setPick (int k, bool on)
+void Session::setStackCue (bool on)
 {
-    if (k < 0 || k >= 16 || k == learning) return;
-    auto& kn = knobs[(size_t) k];
-    if (kn.pick == on) return;
-    if (cueId != 0 && std::find (kn.snaps.begin(), kn.snaps.end(), cueId) != kn.snaps.end()) cue (0);
-    kn.pick = on; kn.picked = 0;
-    engine.set (cx::kSnap + k, 0.0f);           // (what it had swept the sound to is let go, or it begins at its first)
-    applyMorph (glideBeats());
+    if (on == stackCue) return;
+    stackCue = on;
+    for (int k = kMacroKnobs; k < 16; ++k)
+    {
+        auto& kn = knobs[(size_t) k];
+        // lit: each stack knob remembers where it stood, to be used to choose. Out: it goes back there (the set did not move meanwhile)
+        if (on) kn.sweptAt = engine.target (cx::kSnap + k);
+        else engine.set (cx::kSnap + k, kn.sweptAt);
+        kn.picked = 0;
+    }
+    if (! on) cue (0);
+    lawsSig = 0;
+    motionLaws();
     touch();
     if (onChange) onChange();
+}
+
+// CUE out, a stack knob turned from one place to another: the set goes toward the next snapshot in the
+// direction of the turn by as much of the way as the knob went of its way to that snapshot's place.
+// It is worked out from what is playing (the scene under the macro knobs), so there is nothing to
+// jump from; at a snapshot's place the scene is that snapshot, for the parts of the rig it takes.
+void Session::sweepKnob (int k, float from, float to)
+{
+    const auto h = held (k);
+    const int n = (int) h.size();
+    if (n == 0 || from == to) return;
+    const float dir = to > from ? 1.0f : -1.0f;
+    float at = from;
+    for (int guard = 0; guard < 256 && dir * (to - at) > 1.0e-6f; ++guard)
+    {
+        int next = -1;
+        if (dir > 0.0f) { for (int i = 0; i < n; ++i) if (placeOf (i, n) > at + 1.0e-6f) { next = i; break; } }
+        else            { for (int i = n - 1; i >= 0; --i) if (placeOf (i, n) < at - 1.0e-6f) { next = i; break; } }
+        if (next < 0) break;                            // (past its last: nothing further to go toward)
+        const float span = std::abs (placeOf (next, n) - at), step = std::min (std::abs (to - at), span);
+        const float f = span > 1.0e-6f ? step / span : 1.0f;
+        const auto& snap = *h[(size_t) next].s;
+        const auto sc = scopeOf (h[(size_t) next].lanes);
+        for (int i = 0; i < kMorphEnd && i < (int) snap.values.size(); ++i)
+        {
+            if (! engine.control (i).morph || snap.values[(size_t) i] < 0.0f) continue;
+            const bool takes = i < cx::kRet ? sc.lane[(size_t) juce::jmin (kLanes - 1, i / cx::kPerLane)]
+                             : i < cx::kBus ? sc.returns : i < cx::kRetMS ? sc.bus : (i >= cx::kMaster && i < cx::kSnap) ? sc.master : true;
+            if (takes) base[(size_t) i] += (snap.values[(size_t) i] - base[(size_t) i]) * f;
+        }
+        at += dir * step;
+        knobs[(size_t) k].picked = step >= span ? h[(size_t) next].id : 0;
+    }
+    stacksLeft (k);
+    baseId = 0;
+}
+
+// The set has gone somewhere by another way (another stack knob, a recall): no other stack knob stands on a snapshot
+// of its own any more. (With CUE lit a knob's snapshot is the one it has chosen in the headphones: left as it is.)
+void Session::stacksLeft (int but)
+{
+    if (stackCue) return;
+    for (int k = kMacroKnobs; k < 16; ++k) if (k != but) knobs[(size_t) k].picked = 0;
 }
 
 void Session::applyMorph (double glide)
@@ -382,22 +492,9 @@ void Session::applyMorph (double glide)
     {
         const auto& kn = knobs[(size_t) k];
         const float v = engine.target (cx::kSnap + k);
-        if (v <= 0.0f || kn.pick) continue;         // (a knob that holds a stack chooses; it moves nothing)
-        // the knobs it is tied to: each its own share of the turn
+        if (v <= 0.0f || isStack (k)) continue;     // (a stack knob moves the scene itself as it is turned: sweepKnob. It adds nothing on top.)
+        // a macro knob: the knobs it is tied to, each its own share of the turn
         for (const auto& l : kn.links) if (reaches (engine, l.ctl)) offset[(size_t) l.ctl] += kn.depth * l.amount * v;
-        std::vector<const Snapshot*> ss;
-        for (auto id : kn.snaps) if (auto* s = findSnap (id)) ss.push_back (s);
-        if (ss.size() < 2) continue;
-        const float p = v * (float) (ss.size() - 1);
-        const int a = juce::jmin ((int) ss.size() - 2, (int) p);
-        const float f = p - (float) a;
-        for (int i = 0; i < kMorphEnd; ++i)
-        {
-            if (! engine.control (i).morph) continue;
-            const float s0 = ss[0]->values[(size_t) i], sa = ss[(size_t) a]->values[(size_t) i], sb = ss[(size_t) a + 1]->values[(size_t) i];
-            if (s0 < 0.0f || sa < 0.0f || sb < 0.0f) continue;
-            offset[(size_t) i] += kn.depth * (sa + (sb - sa) * f - s0);
-        }
     }
     for (int i = 0; i < kMorphEnd; ++i)
     {
@@ -428,7 +525,7 @@ void Session::motionLaws()
 {
     std::array<bool, 16> on {};
     bool any = false;
-    for (int k = 0; k < 16; ++k) { on[(size_t) k] = motionOn (k) != 0 && knobLive (k) && ! knobs[(size_t) k].pick; any = any || on[(size_t) k]; }
+    for (int k = 0; k < 16; ++k) { on[(size_t) k] = motionOn (k) != 0 && knobLive (k); any = any || on[(size_t) k]; }
     // has anything a law is made from changed?
     juce::uint64 sig = any ? 1469598103934665603ull : 0ull;
     auto mix = [&sig] (juce::uint64 v) { sig = (sig ^ v) * 1099511628211ull; };
@@ -437,7 +534,8 @@ void Session::motionLaws()
     {
         if (! on[(size_t) k]) continue;
         const auto& kn = knobs[(size_t) k];
-        mix ((juce::uint64) k + 1); mixF (kn.depth);
+        mix ((juce::uint64) k + 1); mixF (kn.depth); mix (stackCue ? 2u : 1u); if (stackCue) mixF (kn.sweptAt);
+        for (auto m : kn.lanes) mix (m);
         for (auto id : kn.snaps) { mix ((juce::uint64) id); mix (findSnap (id) != nullptr ? 2u : 3u); }
         mix (0xABCDu);
         for (const auto& l : kn.links) { mix ((juce::uint64) (l.ctl + 7)); mixF (l.amount); }
@@ -451,22 +549,36 @@ void Session::motionLaws()
         if (! on[(size_t) k]) continue;
         const auto& kn = knobs[(size_t) k];
         auto& law = laws->knob[(size_t) k];
-        std::vector<const Snapshot*> ss;
-        for (auto id : kn.snaps) if (auto* sn = findSnap (id)) ss.push_back (sn);
-        if (ss.size() > (size_t) Engine::KnobLaw::kNodes) ss.resize ((size_t) Engine::KnobLaw::kNodes);
-        law.nodes = ss.size() >= 2 ? (int) ss.size() : 0;
+        // a stack knob's law is its own path: at each of its snapshots' places, how far that snapshot has a control from the
+        // first one that speaks of it. (More snapshots than a law has places: the path is read at that many even places.)
+        const auto hs = isStack (k) ? held (k) : std::vector<Held>();
+        const int n = (int) hs.size();
+        law.nodes = n >= 2 ? juce::jmin (n, Engine::KnobLaw::kNodes) : 0;
+        law.centre = isStack (k) && stackCue ? kn.sweptAt : -1.0f;
         for (int i = 0; i < kMorphEnd; ++i)
         {
             if (! engine.control (i).morph) continue;
             Engine::KnobLaw::Row r;
             r.ctl = i;
-            for (const auto& l : kn.links) if (l.ctl == i) r.link += kn.depth * l.amount;
+            if (! isStack (k)) for (const auto& l : kn.links) if (l.ctl == i) r.link += kn.depth * l.amount;
             bool moves = r.link != 0.0f;
+            const bool laneCtl = i < cx::kRet, retCtl = i >= cx::kRet && i < cx::kBus, busCtl = i >= cx::kBus && i < cx::kRetMS, masCtl = i >= cx::kMaster && i < cx::kSnap;
+            auto speaks = [&] (const Held& it)
+            {
+                if (i >= (int) it.s->values.size() || it.s->values[(size_t) i] < 0.0f) return false;
+                const auto sc = scopeOf (it.lanes);
+                return laneCtl ? sc.lane[(size_t) juce::jmin (kLanes - 1, i / cx::kPerLane)] : retCtl ? sc.returns : busCtl ? sc.bus : masCtl ? sc.master : true;
+            };
+            float first = 0.0f; bool got = false;
             for (int j = 0; j < law.nodes; ++j)
             {
-                const float s0 = ss[0]->values[(size_t) i], sj = ss[(size_t) j]->values[(size_t) i];
-                r.node[(size_t) j] = s0 < 0.0f || sj < 0.0f ? Engine::KnobLaw::kNone : kn.depth * (sj - s0);
-                moves = moves || (r.node[(size_t) j] != 0.0f && r.node[(size_t) j] < Engine::KnobLaw::kNone * 0.5f);
+                // (the snapshot at this place of the law: the stack's own, or the nearest of them where there are more than places)
+                const auto& it = hs[(size_t) (law.nodes == n ? j : (int) std::lround ((float) j / (float) (law.nodes - 1) * (float) (n - 1)))];
+                if (! speaks (it)) { r.node[(size_t) j] = Engine::KnobLaw::kNone; continue; }
+                const float val = it.s->values[(size_t) i];
+                if (! got) { first = val; got = true; }
+                r.node[(size_t) j] = val - first;
+                moves = moves || r.node[(size_t) j] != 0.0f;
             }
             if (moves) law.rows.push_back (r);
         }
@@ -476,15 +588,14 @@ void Session::motionLaws()
 
 void Session::pressSnapKnob (int k)
 {
-    if (k == learning) return;
-    const auto& kn = knobs[(size_t) k];
-    std::vector<juce::int64> ids;
-    for (auto id : kn.snaps) if (findSnap (id) != nullptr) ids.push_back (id);
-    if (ids.empty())
+    if (k < 0 || k >= 16 || k == learning) return;
+    if (k == kCueKnob) { setStackCue (! stackCue); return; }
+    auto& kn = knobs[(size_t) k];
+    if (! isStack (k))
     {
-        // Tied to knobs and nothing else: there is no snapshot to land on, so it lands on the
-        // nearer end of its own turn. Past half way what it would push at full is where those
-        // knobs stand from now on; short of it they go back. Either way the knob goes home.
+        // A macro knob: there is no snapshot to land on, so it lands on the nearer end of its own
+        // turn. Past half way what it would push at full is where those knobs stand from now on;
+        // short of it they go back. Either way the knob goes home.
         if (kn.links.empty()) return;
         if (engine.target (cx::kSnap + k) >= 0.5f)
             for (const auto& l : kn.links)
@@ -495,18 +606,95 @@ void Session::pressSnapKnob (int k)
         if (onChange) onChange();
         return;
     }
-    const float v = engine.target (cx::kSnap + k);
-    const auto id = ids[(size_t) juce::jlimit (0, (int) ids.size() - 1, (int) std::lround (v * (float) (ids.size() - 1)))];
-    if (kn.pick)
+    // A stack knob: the set goes to the one it is nearest (the one in the headphones, with CUE lit), over the GLIDE time
+    const auto h = held (k);
+    const int at = nearest (k, engine.target (cx::kSnap + k));
+    if (at < 0) return;
+    const auto it = h[(size_t) at];
+    auto sc = scopeOf (it.lanes);
+    sc.notes = recallNotes;
+    kn.sweptAt = placeOf (at, (int) h.size());              // (where the set now is, along this knob)
+    engine.set (cx::kSnap + k, kn.sweptAt);
+    recall (it.id, sc);
+    kn.picked = it.id;
+    if (stackCue) { cue (0); lawsSig = 0; motionLaws(); }
+}
+
+bool Session::stackAdd (int k, juce::int64 id, juce::uint32 lanes)
+{
+    if (! isStack (k) || findSnap (id) == nullptr) return false;
+    auto& kn = knobs[(size_t) k];
+    if ((int) kn.snaps.size() >= kStackMost) return false;
+    // Where the knob stands goes on meaning the snapshot it stood on (the places move as the stack grows)
+    const auto on = kn.picked;
+    kn.add (id, lanes & kAllLanes);
+    stackSettle (k, on);
+    return true;
+}
+
+void Session::stackDrop (int k, int index)
+{
+    if (! isStack (k)) return;
+    auto& kn = knobs[(size_t) k];
+    if (index < 0 || index >= (int) kn.snaps.size()) return;
+    const auto on = kn.picked == kn.snaps[(size_t) index] ? 0 : kn.picked;
+    kn.dropAt ((size_t) index);
+    kn.picked = on;
+    stackSettle (k, on);
+}
+
+void Session::stackSwap (int k, int a, int b)
+{
+    if (! isStack (k)) return;
+    auto& kn = knobs[(size_t) k];
+    const auto on = kn.picked;
+    kn.swapAt ((size_t) a, (size_t) b);
+    stackSettle (k, on);
+}
+
+void Session::stackLanes (int k, int index, juce::uint32 lanes)
+{
+    if (! isStack (k)) return;
+    knobs[(size_t) k].setLanes ((size_t) index, lanes & kAllLanes);
+    lawsSig = 0; motionLaws();
+    touch();
+    if (onChange) onChange();
+}
+
+// The stack is not what it was: a knob standing on one of its snapshots goes to that one's new place (nothing is heard
+// to change: a stack knob adds nothing by standing anywhere), and MOTION's law for it is made again.
+void Session::stackSettle (int k, juce::int64 on)
+{
+    auto& kn = knobs[(size_t) k];
+    const auto h = held (k);
+    if (on != 0 && ! stackCue)
+        for (int i = 0; i < (int) h.size(); ++i)
+            if (h[(size_t) i].id == on) { engine.set (cx::kSnap + k, placeOf (i, (int) h.size())); break; }
+    if (h.empty()) { kn.picked = 0; if (! stackCue) engine.set (cx::kSnap + k, 0.0f); }
+    lawsSig = 0; motionLaws();
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::knobClear (int k, bool told)
+{
+    if (k < 0 || k >= 16) return;
+    if (learning == k) learnDrop();
+    auto& kn = knobs[(size_t) k];
+    if (const auto lib = kn.more.getWithDefault ("lib", "").toString(); lib.isNotEmpty() && told)
     {
-        // a knob that holds a stack: the one it is on is recalled, and it stays on it
-        knobs[(size_t) k].picked = id;
-        recall (id);
-        cue (0);
-        return;
+        // (the module it was, in the web library: to be taken off the chassis there too)
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("id", lib); o->setProperty ("slot", k + 1);
+        knobsUnseated.add (var (o));
     }
+    kn.links.clear(); kn.linksKept.clear(); kn.clearSnaps(); kn.name = {}; kn.depth = 1.0f; kn.picked = 0; kn.sweptAt = 0.0f;
+    kn.more.remove ("lib"); kn.more.remove ("libmark"); kn.more.remove ("reseat");
     engine.set (cx::kSnap + k, 0.0f);
-    recall (id);
+    applyMorph (glideBeats());
+    lawsSig = 0; motionLaws();
+    touch();
+    if (onChange) onChange();
 }
 
 bool Session::recallFromKnob (int k, int n)
@@ -530,8 +718,8 @@ std::vector<int> Session::knobScope (int k) const
         if (! engine.control (i).morph) continue;
         bool tied = false;
         for (const auto& l : kn.links) tied = tied || l.ctl == i;
-        if (tied) { out.push_back (i); continue; }
-        if (ss.size() < 2) continue;
+        if (tied && ! isStack (k)) { out.push_back (i); continue; }
+        if (! isStack (k) || ss.size() < 2) continue;
         float lo = 2.0f, hi = -2.0f; bool all = true;
         for (auto* s : ss) { const float v = s->values[(size_t) i]; if (v < 0.0f) { all = false; break; } lo = std::min (lo, v); hi = std::max (hi, v); }
         if (all && hi - lo > 1e-4f) out.push_back (i);
@@ -544,8 +732,7 @@ std::vector<int> Session::knobScope (int k) const
 // knobs is remembered. What the hand then does to a knob changes that scene, as it always does.
 void Session::learnBegin (int k)
 {
-    if (k >= 0 && k < 16 && knobs[(size_t) k].pick) return;      // (a knob that holds a stack moves nothing: there is nothing to teach it)
-    if (k < 0 || k >= 16) return;
+    if (k < 0 || k >= kMacroKnobs) return;          // (the four macro knobs are the ones that are taught)
     if (learning >= 0) learnKeep();
     auto& kn = knobs[(size_t) k];
     if (kn.depth < 0.1f) kn.depth = 1.0f;           // (a knob with its depth at nothing can be shown nothing)
@@ -1079,6 +1266,8 @@ bool Session::cue (juce::int64 id)
     return cueId != 0;
 }
 
+const Session::Scope* Session::cueNarrowed (juce::int64 id) const { return id != 0 && cueScopeFor == id ? &cueScope : nullptr; }
+
 void Session::cueWith (juce::int64 id, const Scope& scope)
 {
     cueScopeFor = id; cueScope = scope;
@@ -1288,6 +1477,7 @@ void Session::recallWhole (juce::int64 id)
 {
     if (auto* s = findSnap (id))
     {
+        stacksLeft (-1);
         const Snapshot copy = *s;
         applySnapshot (copy, recallGlide());
         baseId = id;
@@ -1302,6 +1492,7 @@ void Session::recall (juce::int64 id, const Scope& scope)
     if (scope.all()) { recallWhole (id); return; }
     auto* s = findSnap (id);
     if (s == nullptr) return;
+    stacksLeft (-1);
     // The snapshot, with every part that is not chosen put back as it stands now: applied whole,
     // those parts find nothing to change. (A sound knob's place here is the scene under the
     // snapshot knobs, not what they have made of it: that is what a recall sets.)
@@ -1344,7 +1535,7 @@ void Session::remove (juce::int64 id)
     waiting.erase (std::remove_if (waiting.begin(), waiting.end(), [id] (const Waiting& w) { return w.id == id; }), waiting.end());
     if (cueId == id) cue (0);
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); stemsFile (id).deleteFile(); }
-    for (auto& k : knobs) k.snaps.erase (std::remove (k.snaps.begin(), k.snaps.end(), id), k.snaps.end());
+    for (auto& k : knobs) { k.drop (id); if (k.picked == id) k.picked = 0; }
     arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
     for (auto& st : stacks) st.snaps.erase (std::remove (st.snaps.begin(), st.snaps.end(), id), st.snaps.end());      // (and out of the stacks LOAD brought)
     if (baseId == id) baseId = 0;
@@ -2013,16 +2204,49 @@ int Session::filesMissing (juce::int64 id) const
 }
 
 // ---- a knob as the web library keeps one
-bool Session::knobHolds (int k) const { const auto& kn = knobs[(size_t) k]; return ! kn.snaps.empty() || ! kn.links.empty(); }
+bool Session::knobHolds (int k) const { const auto& kn = knobs[(size_t) k]; return isStack (k) ? ! kn.snaps.empty() : ! kn.links.empty(); }
+
+// The parts of the rig a snapshot of a stack does not take, as the web library names them: a lane by its slug, then
+// "returns", "bus", "master". (What is not named is taken: a lane a later rig adds comes with the rest.)
+static juce::Array<var> offOf (juce::uint32 lanes)
+{
+    juce::Array<var> off;
+    for (int l = 0; l < kLanes; ++l) if (((lanes >> l) & 1u) == 0) off.add (juce::String (sf0::lanes()[(size_t) l].slug));
+    if (((lanes >> kLanes) & 1u) == 0) off.add ("returns");
+    if (((lanes >> (kLanes + 1)) & 1u) == 0) off.add ("bus");
+    if (((lanes >> (kLanes + 2)) & 1u) == 0) off.add ("master");
+    return off;
+}
+static juce::uint32 lanesFromOff (const var& off)
+{
+    juce::uint32 m = Session::kAllLanes;
+    if (auto* a = off.getArray())
+        for (auto& o : *a)
+        {
+            const auto key = o.toString();
+            if (key == "returns") m &= ~(1u << kLanes);
+            else if (key == "bus") m &= ~(1u << (kLanes + 1));
+            else if (key == "master") m &= ~(1u << (kLanes + 2));
+            else for (int l = 0; l < kLanes; ++l) if (key == sf0::lanes()[(size_t) l].slug) m &= ~(1u << l);
+        }
+    return m;
+}
 
 juce::String Session::knobPrint (int k) const
 {
     const auto& kn = knobs[(size_t) k];
     juce::String s;
-    s << (kn.pick ? "stack" : kn.snaps.empty() ? "learn" : "macro") << "|" << kn.name << "|" << juce::String (kn.pick ? 0.0f : kn.depth, 3) << "|";
-    for (auto id : kn.snaps) { const auto* sn = findSnap (id); s << (sn != nullptr && sn->uid.isNotEmpty() ? sn->uid : juce::String (id)) << ","; }
+    s << (isStack (k) ? "stack" : "learn") << "|" << kn.name << "|" << juce::String (isStack (k) ? 0.0f : kn.depth, 3) << "|";
+    if (isStack (k))
+        for (size_t i = 0; i < kn.snaps.size(); ++i)
+        {
+            const auto* sn = findSnap (kn.snaps[i]);
+            s << (sn != nullptr && sn->uid.isNotEmpty() ? sn->uid : juce::String (kn.snaps[i]));
+            if (const auto m = kn.lanesAt (i) & kAllLanes; m != kAllLanes) s << "/" << juce::String::toHexString ((int) m);
+            s << ",";
+        }
     s << "|";
-    for (const auto& l : kn.links) s << engine.control (l.ctl).id << ":" << juce::String (l.amount, 3) << ",";
+    if (! isStack (k)) for (const auto& l : kn.links) s << engine.control (l.ctl).id << ":" << juce::String (l.amount, 3) << ",";
     return s;
 }
 
@@ -2032,47 +2256,65 @@ juce::var Session::knobBody (int k, bool& whole) const
     whole = true;
     auto* o = new juce::DynamicObject();
     o->setProperty ("name", kn.name.isNotEmpty() ? kn.name : "KNOB " + juce::String (k + 1));
-    o->setProperty ("kind", kn.pick ? "stack" : kn.snaps.empty() ? "learn" : "macro");
+    o->setProperty ("kind", isStack (k) ? "stack" : "learn");
     juce::Array<var> items;
-    for (auto id : kn.snaps)
-    {
-        const auto* sn = findSnap (id);
-        if (sn == nullptr || sn->uid.isEmpty()) { whole = false; continue; }
-        auto* it = new juce::DynamicObject();
-        it->setProperty ("u", sn->uid);
-        items.add (var (it));
-    }
+    if (isStack (k))
+        for (size_t i = 0; i < kn.snaps.size(); ++i)
+        {
+            const auto* sn = findSnap (kn.snaps[i]);
+            if (sn == nullptr || sn->uid.isEmpty()) { whole = false; continue; }
+            auto* it = new juce::DynamicObject();
+            it->setProperty ("u", sn->uid);
+            if (const auto m = kn.lanesAt (i) & kAllLanes; m != kAllLanes) it->setProperty ("off", offOf (m));
+            items.add (var (it));
+        }
     o->setProperty ("items", items);
-    if (! kn.pick) o->setProperty ("depth", kn.depth);
     auto* ex = new juce::DynamicObject();
-    juce::Array<var> ls;
-    for (const auto& l : kn.links)
+    if (! isStack (k))
     {
-        auto* lo = new juce::DynamicObject();
-        lo->setProperty ("c", engine.control (l.ctl).id); lo->setProperty ("d", l.amount);
-        ls.add (var (lo));
+        o->setProperty ("depth", kn.depth);
+        juce::Array<var> ls;
+        for (const auto& l : kn.links)
+        {
+            auto* lo = new juce::DynamicObject();
+            lo->setProperty ("c", engine.control (l.ctl).id); lo->setProperty ("d", l.amount);
+            ls.add (var (lo));
+        }
+        for (auto& v : kn.linksKept) ls.add (v);
+        if (ls.size() > 0) ex->setProperty ("links", ls);
     }
-    for (auto& v : kn.linksKept) ls.add (v);
-    if (ls.size() > 0) ex->setProperty ("links", ls);
     ex->setProperty ("from", "sf000");
     o->setProperty ("extra", var (ex));
     return var (o);
 }
 
-// A module of the chassis as a knob would hold it: its snapshots that are here, the knobs of this rig it is tied to.
-struct ModuleHere { bool pick = false; std::vector<juce::int64> sn; std::vector<MacroKnob::Link> ln; juce::Array<var> lnKept; juce::String name; float depth = -1.0f; };
-static ModuleHere moduleHere (const var& v, const Engine& engine, const std::map<juce::String, juce::int64>& here)
+// A module of the chassis as the knob in that slot would hold it. A stack slot (5 to 16): its snapshots that are here,
+// each with the parts of the rig it takes. A macro slot (1 to 4): the knobs of this rig it is tied to. A module of the
+// other kind for its slot holds nothing a knob there could take (wrong: so the slot is left, and said).
+struct ModuleHere { bool stack = false, wrong = false; std::vector<juce::int64> sn; std::vector<juce::uint32> lanes; std::vector<MacroKnob::Link> ln; juce::Array<var> lnKept; juce::String name; float depth = -1.0f; };
+static ModuleHere moduleHere (const var& v, int slot, const Engine& engine, const std::map<juce::String, juce::int64>& here)
 {
     ModuleHere m;
-    // a macro (it sweeps through its ten at most), a stack (it steps through its own, one to a place of the knob at most),
-    // or a knob macro (LEARN's kind: no snapshots, the knobs of the rig it is tied to). A macro may be tied to knobs too.
-    const auto kind = v.getProperty ("kind", "macro").toString();
-    m.pick = kind == "stack";
-    if (kind != "learn")
+    m.stack = Session::isStack (slot);
+    const auto kind = v.getProperty ("kind", "stack").toString();
+    if (m.stack)
+    {
+        // (a library from before the two kinds may call a knob's stack of snapshots a "macro": it is a stack)
+        const var off = v.getProperty ("off", var());
         if (auto* a = v.getProperty ("uids", var()).getArray())
-            for (auto& u : *a) if (const auto f = here.find (u.toString()); f != here.end()) m.sn.push_back (f->second);
-    if (m.sn.size() > (m.pick ? 128u : 10u)) m.sn.resize (m.pick ? 128u : 10u);
-    if (! m.pick)
+            for (int i = 0; i < a->size() && (int) m.sn.size() < Session::kStackMost; ++i)
+                if (const auto f = here.find ((*a)[i].toString()); f != here.end())
+                {
+                    m.sn.push_back (f->second);
+                    m.lanes.push_back (off.isArray() && i < off.size() ? lanesFromOff (off[i]) : Session::kAllLanes);
+                }
+        m.wrong = kind == "learn";
+        bool all = true;
+        for (auto l : m.lanes) all = all && l == Session::kAllLanes;
+        if (all) m.lanes.clear();
+    }
+    else
+    {
         if (auto* ls = v.getProperty ("links", var()).getArray())
             for (auto& l : *ls)
             {
@@ -2081,25 +2323,76 @@ static ModuleHere moduleHere (const var& v, const Engine& engine, const std::map
                 if (Session::reaches (engine, i)) { if (std::abs (d) >= 0.004f) m.ln.push_back ({ i, d }); }
                 else m.lnKept.add (l);                                  // (a knob this rig does not have: carried, as a file's is)
             }
-    std::sort (m.ln.begin(), m.ln.end(), [] (const MacroKnob::Link& x, const MacroKnob::Link& y) { return x.ctl < y.ctl; });
+        std::sort (m.ln.begin(), m.ln.end(), [] (const MacroKnob::Link& x, const MacroKnob::Link& y) { return x.ctl < y.ctl; });
+        m.wrong = m.ln.empty() && m.lnKept.isEmpty();
+        if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) m.depth = juce::jlimit (0.0f, 2.0f, (float) d);
+    }
     m.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 16);
-    if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) m.depth = juce::jlimit (0.0f, 2.0f, (float) d);
     return m;
 }
 static bool holdsThat (const MacroKnob& knob, const ModuleHere& m)
 {
-    bool same = knob.snaps == m.sn && knob.pick == m.pick && knob.links.size() == m.ln.size();
+    if (m.stack)
+    {
+        bool same = knob.snaps == m.sn;
+        for (size_t i = 0; same && i < m.sn.size(); ++i) same = (knob.lanesAt (i) & Session::kAllLanes) == (i < m.lanes.size() ? m.lanes[i] : Session::kAllLanes);
+        return same;
+    }
+    bool same = knob.links.size() == m.ln.size();
     for (size_t i = 0; same && i < m.ln.size(); ++i) same = knob.links[i].ctl == m.ln[i].ctl && std::abs (knob.links[i].amount - m.ln[i].amount) < 1.0e-4f;
     return same;
+}
+
+bool Session::moduleFits (int k, const var& module)
+{
+    const auto kind = module.getProperty ("kind", "stack").toString();
+    if (isStack (k)) return kind != "learn";
+    if (auto* ls = module.getProperty ("links", var()).getArray()) return ! ls->isEmpty();
+    return false;
+}
+
+// A knob kept aside (knobsBroughtOver), as the library takes a module: off the chassis.
+juce::var Session::asideBody (int i, bool& whole) const
+{
+    whole = true;
+    if (i < 0 || i >= knobsAside.size()) return {};
+    const var a = knobsAside[i];
+    const bool stack = a.getProperty ("kind", "stack").toString() != "learn";
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("name", a.getProperty ("name", "").toString().isNotEmpty() ? a.getProperty ("name", "").toString() : juce::String ("FROM BEFORE"));
+    o->setProperty ("kind", stack ? "stack" : "learn");
+    juce::Array<var> items;
+    const var ln = a.getProperty ("lanes", var());
+    if (auto* ids = a.getProperty ("snaps", var()).getArray())
+        for (int n = 0; stack && n < ids->size(); ++n)
+        {
+            const auto* sn = findSnap ((juce::int64) (*ids)[n]);
+            if (sn == nullptr) continue;
+            if (sn->uid.isEmpty()) { whole = false; continue; }
+            auto* it = new juce::DynamicObject();
+            it->setProperty ("u", sn->uid);
+            if (const auto m = ln.isArray() && n < ln.size() ? ((juce::uint32) (int) ln[n] & kAllLanes) : kAllLanes; m != kAllLanes) it->setProperty ("off", offOf (m));
+            items.add (var (it));
+        }
+    o->setProperty ("items", items);
+    auto* ex = new juce::DynamicObject();
+    if (! stack)
+    {
+        o->setProperty ("depth", a.getProperty ("depth", 1.0));
+        ex->setProperty ("links", a.getProperty ("links", var()));
+    }
+    ex->setProperty ("from", "sf000");
+    o->setProperty ("extra", var (ex));
+    return var (o);
 }
 
 bool Session::knobIs (int k, const var& module) const
 {
     std::map<juce::String, juce::int64> here;
     for (auto& s : library) if (s.uid.isNotEmpty()) here[s.uid] = s.id;
-    const auto m = moduleHere (module, engine, here);
+    const auto m = moduleHere (module, k, engine, here);
     const auto& knob = knobs[(size_t) k];
-    return holdsThat (knob, m) && knob.name == m.name && (m.pick || m.depth < 0.0f || std::abs (knob.depth - m.depth) < 1.0e-4f);
+    return ! m.wrong && holdsThat (knob, m) && knob.name == m.name && (m.stack || m.depth < 0.0f || std::abs (knob.depth - m.depth) < 1.0e-4f);
 }
 
 juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>* plan)
@@ -2141,14 +2434,15 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
     stacks = now;
     // the knobs. With no plan (nobody has seen to what they hold): each module onto its knob if the knob holds nothing. With
     // one: the chassis says what each knob holds, and a knob it may take is taken whatever it held (Online has sent that up).
-    juce::StringArray placed, left, changed, cleared;
+    juce::StringArray placed, left, changed, cleared, wrongKind;
     std::array<bool, 16> inPocket {};
     if (auto* kn = tray.getProperty ("knobs", var()).getArray())
         for (auto& v : *kn)
         {
             const int k = (int) v.getProperty ("slot", 0) - 1;
             if (k < 0 || k >= 16) continue;
-            const auto m = moduleHere (v, engine, here);
+            const auto m = moduleHere (v, k, engine, here);
+            if (m.wrong) { wrongKind.add (juce::String (k + 1)); inPocket[(size_t) k] = true; continue; }       // (not a knob's to take: what the knob holds is left)
             if (m.sn.empty() && m.ln.empty()) continue;
             inPocket[(size_t) k] = true;
             auto& knob = knobs[(size_t) k];
@@ -2158,15 +2452,22 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
             {
                 if (held && ! may) { left.add (juce::String (k + 1)); continue; }
                 if (learning == k) learnDrop();
-                knob.snaps = m.sn; knob.pick = m.pick; knob.picked = 0;
+                const auto on = knob.picked;
+                knob.snaps = m.sn; knob.lanes = m.lanes; knob.picked = 0;
                 knob.links = m.ln; knob.linksKept = m.lnKept;
+                // (a stack knob that stood on a snapshot the new stack holds too goes to that one's place in it; else it stays where it is)
+                if (m.stack) { for (auto id : m.sn) if (id == on) knob.picked = on; }
             }
             if (! same || may)
             {
                 knob.name = m.name;
                 if (m.depth >= 0.0f) knob.depth = m.depth;
             }
-            if (! same) { turnSnapKnob (k, value (cx::kSnap + k)); (held ? changed : placed).add (juce::String (k + 1)); }
+            if (! same)
+            {
+                if (m.stack) stackSettle (k, knob.picked); else applyMorph (glideBeats());
+                (held ? changed : placed).add (juce::String (k + 1));
+            }
             if (plan != nullptr && may) { knob.more.set ("lib", v.getProperty ("id", "").toString()); knob.more.set ("libmark", knobPrint (k)); }
         }
     if (plan != nullptr)
@@ -2177,11 +2478,7 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
             if (p.what == KnobPlan::clear && ! inPocket[(size_t) k] && knobHolds (k))
             {
                 // taken off the chassis there: it comes off here (the library has it)
-                if (learning == k) learnDrop();
-                setPick (k, false);
-                knob.links.clear(); knob.linksKept.clear(); knob.snaps.clear(); knob.name = {};
-                knob.more.remove ("lib"); knob.more.remove ("libmark");
-                turnSnapKnob (k, 0.0f);
+                knobClear (k, false);            // (the chassis there already says so)
                 cleared.add (juce::String (k + 1));
             }
             else if (p.what == KnobPlan::leave && p.lib.isNotEmpty()) { knob.more.set ("lib", p.lib); knob.more.set ("libmark", knobPrint (k)); }
@@ -2221,6 +2518,8 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
     if (placed.size() > 0) line << ", " << (placed.size() == 1 ? "KNOB " : "KNOBS ") << placed.joinIntoString (", ") << " FILLED";
     if (changed.size() > 0) line << ", " << (changed.size() == 1 ? "KNOB " : "KNOBS ") << changed.joinIntoString (", ") << " CHANGED (WHAT " << (changed.size() == 1 ? "IT" : "THEY") << " HELD IS IN THE LIBRARY)";
     if (cleared.size() > 0) line << ", " << (cleared.size() == 1 ? "KNOB " : "KNOBS ") << cleared.joinIntoString (", ") << " EMPTIED (OFF THE CHASSIS; IN THE LIBRARY)";
+    if (wrongKind.size() > 0) line << ". " << (wrongKind.size() == 1 ? "KNOB " : "KNOBS ") << wrongKind.joinIntoString (", ") << (wrongKind.size() == 1 ? " WAS" : " WERE")
+                                   << " LEFT: THE MODULE THERE HAS THE OTHER KIND IN THAT PLACE (1 TO 4 ARE MACRO KNOBS, 5 TO 16 STACK KNOBS)";
     if (left.size() > 0 && plan == nullptr) line << ". " << (left.size() == 1 ? "KNOB " : "KNOBS ") << left.joinIntoString (", ") << (left.size() == 1 ? " HOLDS" : " HOLD") << " SOMETHING AND " << (left.size() == 1 ? "WAS" : "WERE") << " LEFT: CLEAR IT AND LOAD AGAIN";
     if (sung > 0) line << ". THE SONG IS THE ARRANGEMENT (" << count (sung, "PART", "PARTS") << ")";
     if (songLeft) line << ". THE ARRANGEMENT WAS LEFT AS IT IS (CLEAR IT TO TAKE THE SONG)";
@@ -2385,10 +2684,16 @@ var Session::stateVar()
         auto* o = new juce::DynamicObject();
         o->setProperty ("name", k.name);
         o->setProperty ("depth", k.depth);
-        if (k.pick) o->setProperty ("pick", true);
         juce::Array<var> ids;
         for (auto id : k.snaps) ids.add (id);
         o->setProperty ("snaps", ids);
+        {
+            // a stack knob's snapshots, each with the parts of the rig it takes (said only where one does not take them all)
+            bool some = false;
+            for (size_t i = 0; i < k.snaps.size(); ++i) some = some || (k.lanesAt (i) & kAllLanes) != kAllLanes;
+            if (some) { juce::Array<var> ln; for (size_t i = 0; i < k.snaps.size(); ++i) ln.add ((int) (k.lanesAt (i) & kAllLanes)); o->setProperty ("lanes", ln); }
+            if (stackCue && k.sweptAt != 0.0f) o->setProperty ("at", k.sweptAt);
+        }
         if (! k.links.empty() || k.linksKept.size() > 0)
         {
             // the knobs it is tied to: each by its id, and how far the full turn takes it (FORMAT.md)
@@ -2408,6 +2713,10 @@ var Session::stateVar()
     }
     root->setProperty ("library", lib);
     root->setProperty ("knobs", kn);
+    root->setProperty ("module", 2);                // (the snapshot module's two kinds: knobs 1 to 4 macro, 5 to 16 stack)
+    if (stackCue) root->setProperty ("stackCue", true);
+    if (knobsAside.size() > 0) root->setProperty ("knobsAside", knobsAside);
+    if (knobsUnseated.size() > 0) root->setProperty ("knobsUnseated", knobsUnseated);
     if (! arrangement.empty() || arrMore.size() > 0) root->setProperty ("arrangement", arrToVar());
     if (! stacks.empty())
     {
@@ -2473,15 +2782,149 @@ bool Session::load()
         if (f.getSize() > 0) f.copyFileTo (f.getSiblingFile ("session-unreadable-" + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S") + ".json"));
         return false;
     }
+    // From before the snapshot module's two kinds of knob: its knobs are about to be brought over (knobsBroughtOver).
+    // The file as it is goes aside first, and is not one of the twenty backups that come and go.
+    if (root.hasProperty ("knobs") && (int) root.getProperty ("module", 0) < 2)
+        if (const auto keep = f.getSiblingFile ("session-before-two-kinds.json"); ! keep.existsAsFile()) f.copyFileTo (keep);
     takeState (root);
     return true;
+}
+
+// A session from before the snapshot module had two kinds of knob. Any of its sixteen could hold snapshots (to sweep
+// through, adding how far each was from the first on top of the scene; or to step through), knobs it was tied to, or
+// both. Now knobs 1 to 4 are macro knobs and 5 to 16 stack knobs:
+//  - a knob that is where its kind now lives stays where it is;
+//  - a knob with snapshots on 1 to 4 goes to the first free knob of 5 to 16; a knob tied to knobs on 5 to 16 goes to the
+//    first free of 1 to 4 (the same rule the web library puts its own chassis right by, so the two still agree);
+//  - a knob that had both is two knobs now: its snapshots a stack knob, its ties a macro knob;
+//  - one that finds no free knob of its kind is kept aside (ONLINE sends it to the library, off the chassis);
+//  - but a knob on 1 to 4 that still holds what the rig came with (INIT and one of its five pushes: ENERGY and the
+//    rest) is a macro knob in its place, tied to what that push moves by as much as it moves it (a move smaller than
+//    0.4% of a knob's turn is left out). That is what it did before, adding its push to wherever the rig is, and it
+//    is what those knobs are: a stack knob would take the whole set to the push.
+// MOTION goes with the knob it was on, and each knob's place on its turn goes with it. What the sweeping knobs were
+// adding to the scene is returned, to be put into the scene itself: nothing sounds different for the change.
+std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& asRead, const std::array<bool, 16>& stepped)
+{
+    auto read = asRead;
+    for (int k = 0; k < kMacroKnobs; ++k)
+    {
+        auto& kn = read[(size_t) k];
+        if (stepped[(size_t) k] || kn.snaps.size() != 2 || kn.snaps[0] != kInitId || kn.snaps[1] <= kInitId || kn.snaps[1] > kInitId + 5) continue;
+        const auto* from = findSnap (kn.snaps[0]);
+        const auto* to = findSnap (kn.snaps[1]);
+        if (from == nullptr || to == nullptr) continue;
+        for (int i = 0; i < kMorphEnd; ++i)
+        {
+            if (! engine.control (i).morph || from->values[(size_t) i] < 0.0f || to->values[(size_t) i] < 0.0f) continue;
+            const float d = to->values[(size_t) i] - from->values[(size_t) i];
+            if (std::abs (d) < 0.004f) continue;
+            bool had = false;
+            for (auto& l : kn.links) if (l.ctl == i) { l.amount = juce::jlimit (-1.0f, 1.0f, l.amount + d); had = true; }
+            if (! had) kn.links.push_back ({ i, d });
+        }
+        std::sort (kn.links.begin(), kn.links.end(), [] (const MacroKnob::Link& x, const MacroKnob::Link& y) { return x.ctl < y.ctl; });
+        kn.clearSnaps();
+    }
+    std::vector<float> fold ((size_t) kMorphEnd, 0.0f);
+    std::array<float, 16> was {};
+    for (int k = 0; k < 16; ++k) was[(size_t) k] = engine.target (cx::kSnap + k);
+    for (int k = 0; k < 16; ++k)
+    {
+        const auto& kn = read[(size_t) k];
+        const float v = was[(size_t) k];
+        if (stepped[(size_t) k] || v <= 0.0f) continue;
+        std::vector<const Snapshot*> ss;
+        for (auto id : kn.snaps) if (auto* sn = findSnap (id)) ss.push_back (sn);
+        if (ss.size() < 2) continue;
+        const float p = v * (float) (ss.size() - 1);
+        const int a = juce::jmin ((int) ss.size() - 2, (int) p);
+        const float f = p - (float) a;
+        for (int i = 0; i < kMorphEnd; ++i)
+        {
+            if (! engine.control (i).morph) continue;
+            const float s0 = ss[0]->values[(size_t) i], sa = ss[(size_t) a]->values[(size_t) i], sb = ss[(size_t) a + 1]->values[(size_t) i];
+            if (s0 < 0.0f || sa < 0.0f || sb < 0.0f) continue;
+            fold[(size_t) i] += kn.depth * (sa + (sb - sa) * f - s0);
+        }
+    }
+    std::array<MacroKnob, 16> now;
+    std::array<bool, 16> full {};
+    std::array<int, 16> to; to.fill (-1);
+    std::array<float, 16> at {};
+    auto aside = [this] (const MacroKnob& kn, bool stack)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", kn.name); o->setProperty ("kind", stack ? "stack" : "learn"); o->setProperty ("depth", kn.depth);
+        juce::Array<var> ids, ln, ls;
+        for (size_t i = 0; i < kn.snaps.size(); ++i) { ids.add (kn.snaps[i]); ln.add ((int) (kn.lanesAt (i) & kAllLanes)); }
+        o->setProperty ("snaps", ids); o->setProperty ("lanes", ln);
+        for (const auto& l : kn.links) { auto* lo = new juce::DynamicObject(); lo->setProperty ("c", engine.control (l.ctl).id); lo->setProperty ("d", l.amount); ls.add (var (lo)); }
+        for (auto& v : kn.linksKept) ls.add (v);
+        o->setProperty ("links", ls);
+        for (auto& m : kn.more) o->setProperty (m.name, m.value);
+        knobsAside.add (var (o));
+    };
+    auto stackOf = [] (MacroKnob kn) { kn.links.clear(); kn.linksKept.clear(); kn.depth = 1.0f; return kn; };
+    auto macroOf = [] (MacroKnob kn, bool split) { kn.clearSnaps(); if (split) { kn.more.remove ("lib"); kn.more.remove ("libmark"); } return kn; };
+    auto tied = [] (const MacroKnob& kn) { return ! kn.links.empty() || kn.linksKept.size() > 0; };
+    // those that stay
+    for (int k = 0; k < 16; ++k)
+    {
+        const auto& kn = read[(size_t) k];
+        if (isStack (k) && ! kn.snaps.empty()) { now[(size_t) k] = stackOf (kn); full[(size_t) k] = true; to[(size_t) k] = k; at[(size_t) k] = was[(size_t) k]; }
+        else if (! isStack (k) && kn.snaps.empty() && tied (kn)) { now[(size_t) k] = macroOf (kn, false); full[(size_t) k] = true; to[(size_t) k] = k; at[(size_t) k] = was[(size_t) k]; }
+    }
+    // those that move, in order
+    auto freeOf = [&full] (bool stack) { for (int k = stack ? kMacroKnobs : 0; k < (stack ? 16 : kMacroKnobs); ++k) if (! full[(size_t) k]) return k; return -1; };
+    for (int k = 0; k < 16; ++k)
+    {
+        const auto& kn = read[(size_t) k];
+        const bool hasS = ! kn.snaps.empty(), hasL = tied (kn);
+        if (hasS && ! isStack (k))
+        {
+            if (const int f = freeOf (true); f >= 0)
+            {
+                now[(size_t) f] = stackOf (kn); full[(size_t) f] = true; to[(size_t) k] = f; at[(size_t) f] = was[(size_t) k];
+                if (now[(size_t) f].more.contains ("lib")) now[(size_t) f].more.set ("reseat", true);       // (the library is told its new knob at the next LOAD)
+            }
+            else aside (stackOf (kn), true);
+        }
+        if (hasL && (isStack (k) || hasS))
+        {
+            // (tied to knobs, on a stack knob's place or on a knob that had snapshots too: a macro knob of its own)
+            if (const int f = freeOf (false); f >= 0)
+            {
+                now[(size_t) f] = macroOf (kn, hasS); full[(size_t) f] = true; at[(size_t) f] = was[(size_t) k];
+                if (! hasS) { to[(size_t) k] = f; if (now[(size_t) f].more.contains ("lib")) now[(size_t) f].more.set ("reseat", true); }
+            }
+            else aside (macroOf (kn, hasS), false);
+        }
+    }
+    for (int k = 0; k < 16; ++k)
+    {
+        knobs[(size_t) k] = now[(size_t) k];
+        knobs[(size_t) k].picked = 0; knobs[(size_t) k].sweptAt = at[(size_t) k];
+        engine.set (cx::kSnap + k, full[(size_t) k] ? at[(size_t) k] : 0.0f);
+        base[(size_t) (cx::kSnap + k)] = engine.target (cx::kSnap + k);
+    }
+    // MOTION: each unit goes with the knob it was on (a knob that is no longer anywhere: the unit is put out)
+    for (int u = 0; u < cx::kMotUnits; ++u)
+    {
+        const int on = juce::jlimit (0, 15, (int) std::lround (engine.target (cx::mot (u, 2)) * 15.0f));
+        if (to[(size_t) on] == on) continue;
+        if (to[(size_t) on] >= 0) engine.set (cx::mot (u, 2), (float) to[(size_t) on] / 15.0f);
+        else if (! read[(size_t) on].snaps.empty() || tied (read[(size_t) on])) engine.set (cx::mot (u, 0), 0.0f);
+        base[(size_t) cx::mot (u, 2)] = engine.target (cx::mot (u, 2)); base[(size_t) cx::mot (u, 0)] = engine.target (cx::mot (u, 0));
+    }
+    return fold;
 }
 
 // The session made what a file's contents say (see stateVar).
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -2509,31 +2952,39 @@ void Session::takeState (const var& root)
                 for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) st.snaps.push_back ((juce::int64) id);
             if (! st.snaps.empty()) stacks.push_back (st);              // (its snapshots have all gone: so has the stack)
         }
+    // The knobs, as the file has them
+    std::array<MacroKnob, 16> read;
+    std::array<bool, 16> stepped {};                // (a session from before the two kinds: the knobs that held a stack to step through)
     if (auto* kn = root.getProperty ("knobs", var()).getArray())
         for (int k = 0; k < 16 && k < kn->size(); ++k)
         {
             const juce::var o = (*kn)[k];
-            knobs[(size_t) k].name = o.getProperty ("name", "").toString();
-            knobs[(size_t) k].depth = juce::jlimit (0.0f, 2.0f, (float) o.getProperty ("depth", 1.0));
-            knobs[(size_t) k].pick = (bool) o.getProperty ("pick", false);
-            knobs[(size_t) k].picked = 0;
-            knobs[(size_t) k].snaps.clear();
+            auto& r = read[(size_t) k];
+            r.name = o.getProperty ("name", "").toString();
+            r.depth = juce::jlimit (0.0f, 2.0f, (float) o.getProperty ("depth", 1.0));
+            stepped[(size_t) k] = (bool) o.getProperty ("pick", false);
+            r.sweptAt = juce::jlimit (0.0f, 1.0f, (float) o.getProperty ("at", 0.0));
+            const var ln = o.getProperty ("lanes", var());
             if (auto* ids = o.getProperty ("snaps", var()).getArray())
-                for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) knobs[(size_t) k].snaps.push_back ((juce::int64) id);
-            knobs[(size_t) k].links.clear();
-            knobs[(size_t) k].linksKept.clear();
+                for (int i = 0; i < ids->size(); ++i)
+                    if (findSnap ((juce::int64) (*ids)[i]) != nullptr)
+                        r.add ((juce::int64) (*ids)[i], ln.isArray() && i < ln.size() ? ((juce::uint32) (int) ln[i] & kAllLanes) : MacroKnob::kAll);
             if (auto* ls = o.getProperty ("links", var()).getArray())
                 for (auto& l : *ls)
                 {
                     const int i = engine.find (l.getProperty ("c", "").toString());
                     const float d = juce::jlimit (-1.0f, 1.0f, (float) (double) l.getProperty ("d", 0.0));
-                    if (reaches (engine, i)) { if (std::abs (d) >= 0.004f) knobs[(size_t) k].links.push_back ({ i, d }); }
-                    else knobs[(size_t) k].linksKept.add (l);       // (a knob this build does not have, or cannot push: carried)
+                    if (reaches (engine, i)) { if (std::abs (d) >= 0.004f) r.links.push_back ({ i, d }); }
+                    else r.linksKept.add (l);       // (a knob this build does not have, or cannot push: carried)
                 }
-            knobs[(size_t) k].more.clear();
             if (auto* ko = o.getDynamicObject())
                 for (auto& p : ko->getProperties())
-                    if (p.name != juce::Identifier ("name") && p.name != juce::Identifier ("depth") && p.name != juce::Identifier ("snaps") && p.name != juce::Identifier ("links") && p.name != juce::Identifier ("pick")) knobs[(size_t) k].more.set (p.name, p.value);
+                {
+                    static const char* const mine[] = { "name", "depth", "snaps", "links", "pick", "lanes", "at" };
+                    bool is = false;
+                    for (auto* m : mine) is = is || p.name == juce::Identifier (m);
+                    if (! is) r.more.set (p.name, p.value);
+                }
         }
     if (auto* other = root.getProperty ("controls", var()).getDynamicObject())
         for (auto& p : other->getProperties())
@@ -2542,6 +2993,22 @@ void Session::takeState (const var& root)
             if (i >= 0 && ! engine.control (i).snapshot) { engine.set (i, (float) p.value); base[(size_t) i] = engine.target (i); }
             if (i < 0) controlsMore.set (p.name, p.value);
         }
+    knobsAside.clear();
+    if (auto* as = root.getProperty ("knobsAside", var()).getArray()) knobsAside = *as;
+    knobsUnseated.clear();
+    if (auto* un = root.getProperty ("knobsUnseated", var()).getArray()) knobsUnseated = *un;
+    stackCue = (bool) root.getProperty ("stackCue", false);
+    std::vector<float> fold;                        // (what the knobs of a session from before the two kinds were adding to the scene)
+    if ((int) root.getProperty ("module", 0) >= 2)
+    {
+        for (int k = 0; k < 16; ++k)
+        {
+            knobs[(size_t) k] = read[(size_t) k];
+            if (isStack (k)) { knobs[(size_t) k].links.clear(); knobs[(size_t) k].linksKept.clear(); }
+            else knobs[(size_t) k].clearSnaps();
+        }
+    }
+    else fold = knobsBroughtOver (read, stepped);
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
     recallNotes = (bool) root.getProperty ("recallNotes", true);
     // The samples. What is written is turned into a path to read: a copy in the library by where
@@ -2591,6 +3058,15 @@ void Session::takeState (const var& root)
         foundIn (was);
         applySnapshot (was, 0.0);
     }
+    if (! fold.empty())
+    {
+        // (brought over: what its sweeping knobs were adding is in the scene now, so it sounds as it was left)
+        for (int i = 0; i < kMorphEnd && i < (int) fold.size(); ++i)
+            if (fold[(size_t) i] != 0.0f && engine.control (i).morph) base[(size_t) i] = juce::jlimit (0.0f, 1.0f, base[(size_t) i] + fold[(size_t) i]);
+        applyMorph (0.0);
+        dirty = true;
+    }
+    lawsSig = 0;
     motionLaws();
     warmInserts();
 }
@@ -2677,8 +3153,20 @@ void Session::makeFactory()
     derive (1005, "WARP FAR",  { { "pad.detune", 1.0f }, { "pad.color", .9f }, { "chord.detune", .9f }, { "perc.size", .12f }, { "perc.tension", .9f },
                                  { "perc.material", .85f }, { "lead.color", .9f }, { "kick.pitch_time", .95f }, { "kick.tune", .3f }, { "closed_hat.tune", .2f },
                                  { "open_hat.tune", .75f }, { "voice.tune", .25f }, { "rumble.size", 1.0f }, { "bass.glide", .7f } });
-    static const char* const names[] = { "ENERGY", "BUILD", "ACID", "DIST", "WARP" };
-    for (int k = 0; k < 5; ++k) { knobs[(size_t) k].name = names[k]; knobs[(size_t) k].snaps = { 1000, 1001 + k }; }
+    // The four macro knobs: each tied to the knobs one of those snapshots moves, by how far it moves them from the clean
+    // slate. The first stack knob (5): the five of them in a row, to sweep through or to choose from with CUE lit.
+    static const char* const names[] = { "ENERGY", "BUILD", "ACID", "DIST" };
+    const auto* clean = findSnap (1000);
+    for (int k = 0; k < kMacroKnobs; ++k)
+    {
+        knobs[(size_t) k].name = names[k];
+        const auto* to = findSnap (1001 + k);
+        for (int i = 0; clean != nullptr && to != nullptr && i < kMorphEnd; ++i)
+            if (engine.control (i).morph && clean->values[(size_t) i] >= 0.0f && to->values[(size_t) i] >= 0.0f)
+                if (const float d = to->values[(size_t) i] - clean->values[(size_t) i]; std::abs (d) >= 0.004f) knobs[(size_t) k].links.push_back ({ i, d });
+    }
+    knobs[(size_t) kMacroKnobs].name = "TOUR";
+    for (int k = 0; k < 5; ++k) knobs[(size_t) kMacroKnobs].add (1001 + k);
     baseId = 1000;
 }
 } // namespace sf0

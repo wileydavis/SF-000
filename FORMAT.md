@@ -51,7 +51,10 @@ The uid comes back the same (see below); `made` does not.
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
-  "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ], "pick"? } x 16 ],
+  "knobs":     [ { "name", "depth", "snaps": [ids], "lanes"?: [masks], "links": [ { "c": id, "d": amount } ], "at"? } x 16 ],
+  "module":    2,                             the snapshot module has two kinds of knob: 1 to 4 macro, 5 to 16 stack (absent: a session from before)
+  "stackCue":  true,                          CUE is lit (absent: out)
+  "knobsAside"?, "knobsUnseated"?:            knobs waiting to be told to the web library (below)
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
   "stacks":    [ { "id", "name", "kind", "snaps": [ids] } ],          the stacks LOAD brought from the web library (absent: none)
   "defs":      { "<print>": definition, ... }
@@ -76,10 +79,26 @@ seen) are the id of the module it is there, and what it held when the two last a
 name, depth, snapshots' uids and links in one line). LOAD goes by them: a knob whose line is
 still its `libmark` has not been changed here since. A build from before carries both.
 
-A knob with `"pick": true` (thirty-ninth build on) holds a stack: it steps through its `snaps`
-(up to 128) and recalls the one it is on when pressed; it does not sweep through them, and
-`depth` is not used. Absent, the knob sweeps. A build from before reads such a knob as a macro
-of that many snapshots and carries `pick` back out.
+**The two kinds of knob** (forty-fourth build on; `"module": 2`). The first four of `knobs` are
+macro knobs: `links` and `depth`, no `snaps`. The other twelve are stack knobs: `snaps` in their
+order (up to 128), no `links`, `depth` not used.
+
+- `lanes`, on a stack knob, is one number for each of its `snaps`, in the same order: a bit for
+  each part of the rig that snapshot takes (bit 0 the first lane, ... bit 10 the eleventh, bit
+  11 the returns, 12 the drum bus, 13 the key). Absent: every snapshot takes everything.
+- `at`, on a stack knob while `stackCue` is true: where the knob stood when CUE was lit (the
+  knob's own value, `snap.kN` in `controls`, is then where it has been turned to choose).
+- A session with no `"module"` is from before the two kinds: any of its sixteen could hold
+  `snaps`, `links` or both, and `"pick": true` marked one that stepped through its snapshots.
+  SF-000 brings it over when it opens it (README: The snapshot module) and keeps the file as
+  it was beside it, as `session-before-two-kinds.json`.
+- `knobsAside`: knobs of such a session that found no knob of their kind (`name`, `kind`
+  "stack" or "learn", `snaps`, `lanes`, `links`, `depth`). ONLINE sends each to the web library,
+  off its module, and takes it out of this list.
+- `knobsUnseated`: `{ "id", "slot" }` for each module of the web library whose knob was emptied
+  here, until ONLINE has taken it off the library's module.
+- A knob's `reseat` (beside `lib`): it was brought over to another place, and the web library's
+  module has not been told yet.
 
 A knob's `links` are the knobs it is tied to (LEARN): `c` is the knob's id as `values` has it
 (`bass.cutoff`), `d` how far the full turn takes it, as a share of that knob's whole travel from
@@ -248,3 +267,19 @@ less their sum as it came). Only stems that sounded are there, in the rig's orde
 stereo, as long as the clip to the sample, at the clip's rate. Together they are what the master
 chain was given. The file is written once, when the clip is, and deleted with the snapshot. A
 snapshot may have none (taken before the fortieth build, or with nothing sounding).
+
+ONLINE sends this file as it is to the web library (`PUT /api/stems/<uid>`, forty-fourth build
+on), which keeps it whole and gives one stem of it by its key (`GET /api/stems/<uid>?key=bass`).
+
+## A knob in the web library
+
+A knob of the snapshot module is a stack there (`/api/stacks`). A **stack knob** is kind
+`stack` with `items` in order, each `{ "u": uid, "off"?: [parts] }`: `off` names the parts of
+the rig that snapshot does **not** take, a lane by its slug, then `returns`, `bus`, `master`
+(absent: it takes everything; a part not named is taken, so a lane a later rig adds comes with
+the rest). A **macro knob** is kind `learn` with no items and `extra.links` as a knob's `links`
+are here, and `depth`. `slot` is its place on the library's module, 1 to 16 (absent: off it): 1
+to 4 take a macro knob, 5 to 16 a stack knob, and the library refuses the other kind. A kind
+`macro` there is from before the two kinds: a stack knob if it has items. `GET /api/load` gives
+the module as `knobs`: `{ id, slot, kind, name, depth, uids, off?, links? }`, `off` one list
+for each of `uids`.

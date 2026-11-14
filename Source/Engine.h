@@ -328,10 +328,11 @@ public:
     // would, with nothing waiting on the screen. What the knobs show is what sounds.
     struct KnobLaw
     {
-        static constexpr int kNodes = 10;
+        static constexpr int kNodes = 16;
         static constexpr float kNone = 1.0e9f;          // (that snapshot says nothing of this control)
         struct Row { int ctl = -1; float link = 0.0f; std::array<float, kNodes> node {}; };
         int nodes = 0;                                  // how many snapshots it sweeps (0: it is only tied to knobs)
+        float centre = -1.0f;                           // where its swing is about, if not where the knob stands (a stack knob while CUE is lit: where it was left)
         std::vector<Row> rows;                          // every control it moves
         // how far the snapshot knob at v has that control from where the base scene has it
         float at (const Row& r, float v) const
