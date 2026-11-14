@@ -87,9 +87,12 @@ struct MacroKnob
 // order (kind "song": parts in a line). The library screen shows one at a time.
 struct Stack
 {
-    juce::String id, name, kind;        // (id: the web library's own for it)
+    juce::String id, name, kind;        // (id: the web library's own for it; one kept here has an id of its own)
     std::vector<juce::int64> snaps;
+    std::vector<juce::uint32> lanes;    // the parts of the rig each snapshot takes, in the same order (none: every one takes everything)
+    bool here = false;                  // kept on the instrument (KEEP, in the designer), not brought by LOAD: LOAD leaves it
     juce::var kept;                     // as the file had it: what this build does not know of it is carried
+    juce::uint32 lanesAt (size_t i) const { return i < lanes.size() ? lanes[i] : 0xffffffffu; }
 };
 
 class Session : private juce::Timer
@@ -417,6 +420,14 @@ public:
     // A stack knob taken to another stack knob, one that holds nothing: all it is goes with it (its snapshots and their
     // parts, its name, where it stands, which module of the library it is), and MOTION follows it. LOAD makes room so.
     bool knobMove (int from, int to);
+    // The rack: stacks kept on the instrument, off the knobs (and those LOAD brought for the library screen).
+    // A stack knob's stack kept under its name: a copy, each snapshot with the parts it takes. One kept here under
+    // that name before is replaced by it. Gives its place among the stacks, or -1.
+    int stackKeep (int k);
+    // A stack of the rack put onto a stack knob: its snapshots, each with its parts, at the end of what the knob
+    // holds (a knob that held nothing takes the stack's name too). False: not a stack knob, or no room for them all.
+    bool stackOnto (int index, int k);
+    void stackForget (int index);       // out of the rack (one LOAD brought comes back with the next LOAD)
     // A stack knob holding a snapshot the web library is never given (the rig's own: CLEAN SLATE, INIT and its pushes;
     // or one that is gone): such a knob can never be sent there.
     bool knobStaysHere (int k) const;

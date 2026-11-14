@@ -4137,7 +4137,56 @@ static int uiTest()
         const auto filed = ses.stateVar()["knobs"][k];
         const bool inFile = filed["snaps"].size() == 2 && filed["lanes"].size() == 2 && (int) filed["lanes"][0] == (int) Session::kAllLanes;
         ses.cue (0); ses.cueWith (0, Session::Scope());
+        // The rack. KEEP: the chosen knob's stack is kept on the instrument under the knob's name, a copy, each snapshot with its parts
+        bool racked = false;
+        {
+            auto keepKey = [&] { for (auto& h : sc.testHits()) if (Screen::testIsKeepStack (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            auto rackHit = [&] (int what, int i) { for (auto& h : sc.testHits()) if (Screen::testIsRack (h, what, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            const auto stacksWere = ses.stacks;
+            ses.stacks.clear();
+            const juce::uint32 bParts = Session::kAllLanes & ~(1u << kLanes) & ~1u;       // (the second: not the returns, not the kick)
+            ses.knobs[(size_t) k].name = "MY STACK";
+            draw(); click (keepKey()); draw();
+            const bool kept = ses.stacks.size() == 1 && ses.stacks[0].here && ses.stacks[0].name == "MY STACK" && ses.stacks[0].snaps == std::vector<juce::int64> { c, b }
+                              && (ses.stacks[0].lanesAt (1) & Session::kAllLanes) == bParts && (ses.stacks[0].lanesAt (0) & Session::kAllLanes) == Session::kAllLanes
+                              && ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { c, b };       // (and the knob still holds it)
+            click (addAt (0)); draw();                                  // (the rack came up beside the column: the snapshots are not there to add)
+            const bool rackUp = ses.knobs[(size_t) k].snaps.size() == 2 && rackHit (1, 0).x > 0.0f && pickAt (0).x < 0.0f;
+            click (rackHit (0, 0)); draw();                             // SNAPSHOTS: the library again
+            click (addAt (0)); draw();
+            click (keepKey()); draw();                                  // kept again under the same name: the same one, as it is now
+            const bool again = ses.stacks.size() == 1 && ses.stacks[0].snaps == std::vector<juce::int64> { c, b, a };
+            // its ADD: onto another stack knob that holds nothing, its parts and its name with it
+            const int k2 = 13;                                          // (stack knob 14)
+            const auto knob2Was = ses.knobs[(size_t) k2];
+            ses.knobs[(size_t) k2] = MacroKnob();
+            sc.testPickKnob (k2); draw();
+            click (rackHit (1, 0)); draw();
+            const bool onto = ses.knobs[(size_t) k2].snaps == std::vector<juce::int64> { c, b, a } && lanesOf (k2, 1) == bParts && lanesOf (k2, 0) == Session::kAllLanes && ses.knobs[(size_t) k2].name == "MY STACK";
+            click (rackHit (1, 0)); draw();                             // and again: after what the knob holds
+            const bool after = ses.knobs[(size_t) k2].snaps.size() == 6 && lanesOf (k2, 4) == bParts;
+            // LOAD leaves a stack kept here, and takes away one of the web's that the web no longer has for this screen
+            Stack web; web.id = "sfwebstack0001"; web.name = "FROM THE WEB"; web.kind = "stack"; web.snaps = { a };
+            ses.stacks.insert (ses.stacks.begin(), web);
+            ses.takeTray (juce::JSON::parse (R"({"stacks": [], "knobs": [], "chips": {}})"));
+            const bool loadLeaves = ses.stacks.size() == 1 && ses.stacks[0].here && ses.stacks[0].name == "MY STACK";
+            // in the session file, with its parts; read back, it is the same
+            Engine e3; e3.prepare (48000.0, 128);
+            Session s3 (e3, false);
+            s3.takeState (ses.stateVar());
+            const bool filedToo = s3.stacks.size() == 1 && s3.stacks[0].here && s3.stacks[0].snaps == ses.stacks[0].snaps && (s3.stacks[0].lanesAt (1) & Session::kAllLanes) == bParts && s3.stacks[0].id == ses.stacks[0].id && s3.stacks[0].id.startsWith ("here");
+            // its number: out of the rack
+            draw(); click (rackHit (2, 0)); draw();
+            const bool forgot = ses.stacks.empty();
+            click (rackHit (0, 0)); draw();
+            ses.knobs[(size_t) k2] = knob2Was;
+            ses.stacks = stacksWere;
+            racked = kept && rackUp && again && onto && after && loadLeaves && filedToo && forgot;
+            if (! racked) std::printf ("    (the rack: kept %d up %d again %d onto %d after %d load leaves %d filed %d forgot %d)\n", (int) kept, (int) rackUp, (int) again, (int) onto, (int) after, (int) loadLeaves, (int) filedToo, (int) forgot);
+        }
         ses.knobs[(size_t) k] = knobWas;
+        check (racked, "the rack: KEEP keeps the chosen knob's stack on the instrument under the knob's name, each snapshot with its parts (again under that name: the same one, as it is now); STACKS shows the rack beside the column, "
+                       "and a stack's ADD puts it onto the chosen knob, after what the knob holds; LOAD leaves a stack kept here; it is in the session file; its number takes it out of the rack");
         check (noColumn && beside && built && out && outToo && litAgain && ends && moved && heard && heardKey && off && inFile,
                "the column: a stack knob chosen in the designer has its stack beside the library. A snapshot of the library pressed is heard in the headphones, and its ADD puts it on the stack, in order; a key puts a part of the rig out for one snapshot or lights it; UP and DN move a snapshot with its keys; its card plays it in the headphones with the parts it takes; its number takes it off; all of it kept in the session");
         if (! (noColumn && beside && built && out && outToo && litAgain && ends && moved && heard && heardKey && off && inFile))
@@ -4641,6 +4690,15 @@ static int shot (const juce::StringArray& args)
         {
             ses.stackLanes (k, 1, Session::kAllLanes & ~(1u << 5));
             ses.stackLanes (k, 3, Session::kAllLanes & ~1u & ~(1u << kLanes));
+        }
+        if (args.contains ("--rack"))
+        {
+            // (its stack kept in the rack, and a second one beside it, with the rack up beside the column)
+            ses.stackKeep (k);
+            Stack two; two.id = "herepicture0001"; two.name = "BREAKS"; two.kind = "stack"; two.here = true;
+            for (int i = 1; i < 4 && i < (int) ses.library.size(); ++i) two.snaps.push_back (ses.library[(size_t) i].id);
+            ses.stacks.push_back (two);
+            sc.testShowRack (true);
         }
         sc.testTick();
     }

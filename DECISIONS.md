@@ -2453,6 +2453,24 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      green; pressed again it stops. Its **ADD** key puts it on the chosen stack knob, where a
      press on the card used to. In the column a card is heard with only the parts it takes.
 
+477. **The rack, on the instrument.** *The third stage of 471; the shape is mine.* A stack
+     can be kept off the knobs and put back on one, with no network.
+     - **KEEP** (the designer's strip, with a stack knob chosen; where LEARN is for a macro
+       knob) keeps that knob's stack in the rack under the knob's name: a copy, each snapshot
+       with the parts it takes. The knob goes on holding it. Kept again under the same name,
+       it is the same one, as it is now.
+     - Beside the column are two plates, **SNAPSHOTS** and **STACKS**. STACKS shows the rack:
+       the stacks kept here and those LOAD brought for the library screen. A stack's **ADD**
+       puts its snapshots, with their parts, onto the chosen knob after what the knob holds
+       (an empty, unnamed knob takes the stack's name). Its number takes it out of the rack.
+     - This is **loading from the local library**. LOAD is still the web library's module.
+     - LOAD leaves a stack kept here. The session file keeps them (`here`, and `lanes` where a
+       snapshot leaves a part out).
+     *A copy, not the same object:* changing the knob's stack afterwards does not change the
+     one in the rack until KEEP is pressed again. *Not built:* a stack kept here does not go
+     to the web library yet (a stack **knob** still does, by 447). That is the fourth stage,
+     with the web's copy and this one kept the same both ways.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2470,6 +2488,8 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   and with made-up messages, the scenes of the build before included. Not on your E16.
 - **The column (472)** is pressed in the drawn screen: built, keyed, moved, taken off, kept in
   the file. Not seen on your Mac: whether the keys are big enough to hit, and the headphones.
+- **Hearing before adding, and the rack (476, 477)** are pressed in the drawn screen and read
+  back from the session file. Not on your Mac.
 - **LOAD making room (466)** is checked against the web library's code running here, with a
   new session's TOUR on knob 5 and a module that has another knob for 5. I took your failure
   to be this one from how the code behaves; I have not seen your LOAD line. If TEST STACK 1

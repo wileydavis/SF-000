@@ -143,6 +143,9 @@ public:
     static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
     static bool testIsPick (const TestHit& h, int index) { return h.kind == hPick && h.a == index; }
     static bool testIsPickAdd (const TestHit& h, int index) { return h.kind == hPickAdd && h.a == index; }
+    // the rack: what = 0 its tab (index: 0 the snapshots, 1 the stacks), 1 a stack's ADD, 2 its number (out of the rack)
+    static bool testIsRack (const TestHit& h, int what, int index) { return h.kind == hRackTab + what && h.a == index; }
+    static bool testIsKeepStack (const TestHit& h) { return h.kind == hAct && h.a == aKeepStack; }
     // the column: what = 0 the card, 1 a key (b: the part), 2 its number (taken off), 3 moved (b: -1 earlier, +1 later)
     static bool testIsColumn (const TestHit& h, int what, int index, int b = 0) { return h.kind == hColCard + what && h.a == index && (what == 0 || what == 2 || h.b == b); }
     int testSelPart() const { return selPart; }
@@ -176,6 +179,7 @@ public:
     double testPrintMs() const { return printMs; }
     double testSendMs() const { return sendMs; }
     void testRenameKnob() { act (aRenameKnob); }
+    void testShowRack (bool on) { rackList = on; }
     void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
     void testPickKnob (int k) { selKnob = juce::jlimit (0, 15, k); }
     bool testEditing() const { return editor != nullptr; }
@@ -196,9 +200,13 @@ private:
                    hColKey,         // one of its keys (b: the part: a lane, then the returns, the drum bus, the key): put out or lit
                    hColOut,         // its number: taken off the stack
                    hColMove,        // moved earlier or later in the stack (b: -1 or +1)
-                   hPickAdd };      // the designer's library: a card's ADD key (a: which snapshot of the library): onto the chosen stack knob
+                   hPickAdd,        // the designer's library: a card's ADD key (a: which snapshot of the library): onto the chosen stack knob
+                   // the rack, beside the column: the stacks kept on the instrument and those LOAD brought
+                   hRackTab,        // which of the two is beside the column (a: 0 the snapshots, 1 the stacks)
+                   hRackAdd,        // a stack's ADD key (a: which stack): its snapshots onto the chosen stack knob
+                   hRackOut };      // its number: out of the rack
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aKeepStack, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch, aStack,
@@ -315,6 +323,7 @@ private:
     void drawLibrary (G&);
     void drawMacros (G&);
     void drawColumn (G&);               // the chosen stack knob's stack, as cards in its order, each with its keys
+    void drawRack (G&);                 // the stacks kept, beside the column, to put onto the chosen knob
     void drawArrange (G&);
     juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
     juce::String arrSig;
@@ -376,7 +385,8 @@ private:
     // parts are put out first; and all again for the next (0 to 10: the lanes; 11: the returns; 12: the key).
     std::array<bool, kLanes + 3> scopeOn;       // the lanes, the returns, the drum bus, the key
     juce::int64 scopeFor = 0;
-    int selKnob = 0, libScroll = 0, colScroll = 0;
+    int selKnob = 0, libScroll = 0, colScroll = 0, rackScroll = 0;
+    bool rackList = false;              // the designer, a stack knob chosen: the stacks are beside the column (out: the snapshots)
     int libStack = -1;                  // the library screen shows this one of the stacks LOAD brought (-1: every snapshot)
     std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;

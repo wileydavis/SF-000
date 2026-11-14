@@ -56,7 +56,7 @@ The uid comes back the same (see below); `made` does not.
   "stackCue":  true,                          CUE is lit (absent: out)
   "knobsAside"?, "knobsUnseated"?:            knobs waiting to be told to the web library (below)
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
-  "stacks":    [ { "id", "name", "kind", "snaps": [ids] } ],          the stacks LOAD brought from the web library (absent: none)
+  "stacks":    [ { "id", "name", "kind", "snaps": [ids], "lanes"?: [n], "here"?: true } ],   the rack: the stacks LOAD brought from the web library, and those kept on the instrument ("here": true; LOAD leaves them). "lanes": one number for each of "snaps", as on a stack knob; absent: every snapshot takes everything (absent: none)
   "defs":      { "<print>": definition, ... }
 }
 ```

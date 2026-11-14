@@ -663,8 +663,13 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
   - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A
     key pressed while it plays is heard at once.
   - The wheel over the column moves it when it holds more than eleven.
+  - **KEEP** (in the strip, where LEARN is for a macro knob) keeps the knob's stack in the
+    **rack** under the knob's name: a copy, each snapshot with its parts. **STACKS**, beside
+    the column, shows the rack (the stacks kept here, and those LOAD brought for the library
+    screen); a stack's **ADD** puts it onto the chosen knob, after what the knob holds, and its
+    number takes it out of the rack. SNAPSHOTS brings the library back.
   The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
-  here goes there by itself.
+  here goes there by itself. A stack kept in the rack stays on the instrument for now.
 - A stack knob has no DEPTH and is tied to nothing. MOTION swings it along its own stack
   (below).
 

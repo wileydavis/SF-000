@@ -1760,7 +1760,10 @@ void Session::remove (juce::int64 id)
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); stemsFile (id).deleteFile(); }
     for (auto& k : knobs) { k.drop (id); if (k.picked == id) k.picked = 0; }
     arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
-    for (auto& st : stacks) st.snaps.erase (std::remove (st.snaps.begin(), st.snaps.end(), id), st.snaps.end());      // (and out of the stacks LOAD brought)
+    for (auto& st : stacks)                                             // (and out of the stacks: those LOAD brought, those kept here; its parts go with it)
+        for (size_t i = st.snaps.size(); i-- > 0;)
+            if (st.snaps[i] == id) { st.snaps.erase (st.snaps.begin() + (long) i); if (i < st.lanes.size()) st.lanes.erase (st.lanes.begin() + (long) i); }
+    stacks.erase (std::remove_if (stacks.begin(), stacks.end(), [] (const Stack& st) { return st.here && st.snaps.empty(); }), stacks.end());
     if (baseId == id) baseId = 0;
     applyMorph (0.0);
     sweepSamples();                     // the samples only it held go with it
@@ -2437,6 +2440,58 @@ bool Session::knobStaysHere (int k) const
     return false;
 }
 
+int Session::stackKeep (int k)
+{
+    if (! isStack (k) || ! knobHolds (k)) return -1;
+    const auto& kn = knobs[(size_t) k];
+    Stack st;
+    st.name = kn.name.isNotEmpty() ? kn.name : "STACK " + juce::String (k + 1);
+    st.kind = "stack"; st.here = true;
+    for (size_t i = 0; i < kn.snaps.size(); ++i)
+        if (findSnap (kn.snaps[i]) != nullptr) { st.snaps.push_back (kn.snaps[i]); st.lanes.push_back (kn.lanesAt (i) & kAllLanes); }
+    if (st.snaps.empty()) return -1;
+    bool all = true;
+    for (auto l : st.lanes) all = all && l == kAllLanes;
+    if (all) st.lanes.clear();
+    int at = -1;
+    for (int i = 0; i < (int) stacks.size() && at < 0; ++i) if (stacks[(size_t) i].here && stacks[(size_t) i].name == st.name) at = i;
+    if (at >= 0) { st.id = stacks[(size_t) at].id; stacks[(size_t) at] = st; }
+    else
+    {
+        st.id = "here";
+        juce::Random r;
+        for (int i = 0; i < 12; ++i) st.id << juce::String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+        stacks.push_back (st);
+        at = (int) stacks.size() - 1;
+    }
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+    return at;
+}
+
+bool Session::stackOnto (int index, int k)
+{
+    if (! isStack (k) || index < 0 || index >= (int) stacks.size()) return false;
+    const auto st = stacks[(size_t) index];
+    auto& kn = knobs[(size_t) k];
+    if ((int) (kn.snaps.size() + st.snaps.size()) > kStackMost) return false;
+    const bool empty = kn.snaps.empty();
+    bool any = false;
+    for (size_t i = 0; i < st.snaps.size(); ++i) any = stackAdd (k, st.snaps[i], st.lanesAt (i) & kAllLanes) || any;
+    if (any && empty && kn.name.isEmpty()) { kn.name = st.name.substring (0, 24); touch(); if (onChange) onChange(); }
+    return any;
+}
+
+void Session::stackForget (int index)
+{
+    if (index < 0 || index >= (int) stacks.size()) return;
+    stacks.erase (stacks.begin() + index);
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+}
+
 bool Session::knobMove (int from, int to)
 {
     if (from == to || from < 0 || to < 0 || from >= 16 || to >= 16 || ! isStack (from) || ! isStack (to) || ! knobHolds (from) || knobHolds (to)) return false;
@@ -2685,6 +2740,7 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
             if (st.kind == "song" && song.isVoid()) song = v;
             now.push_back (st);
         }
+    for (auto& st : stacks) if (st.here) now.push_back (st);          // (those kept here are the instrument's own: LOAD leaves them)
     stacks = now;
     // the knobs. With no plan (nobody has seen to what they hold): each module onto its knob if the knob holds nothing. With
     // one: the chassis says what each knob holds, and a knob it may take is taken whatever it held (Online has sent that up).
@@ -2986,6 +3042,9 @@ var Session::stateVar()
             juce::Array<var> ids;
             for (auto id : st.snaps) ids.add (id);
             o->setProperty ("snaps", ids);
+            if (st.here) o->setProperty ("here", true); else o->removeProperty ("here");
+            if (! st.lanes.empty()) { juce::Array<var> ln; for (size_t i = 0; i < st.snaps.size(); ++i) ln.add ((int) (st.lanesAt (i) & kAllLanes)); o->setProperty ("lanes", ln); }
+            else o->removeProperty ("lanes");
             sv.add (var (o));
         }
         root->setProperty ("stacks", sv);
@@ -3208,8 +3267,18 @@ void Session::takeState (const var& root)
             Stack st;
             st.id = v.getProperty ("id", "").toString(); st.name = v.getProperty ("name", "").toString(); st.kind = v.getProperty ("kind", "stack").toString();
             st.kept = v;
+            st.here = (bool) v.getProperty ("here", false);
+            const var ln = v.getProperty ("lanes", var());
+            bool parts = false;
             if (auto* ids = v.getProperty ("snaps", var()).getArray())
-                for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) st.snaps.push_back ((juce::int64) id);
+                for (int i = 0; i < ids->size(); ++i)
+                    if (const auto id = (juce::int64) (*ids)[i]; findSnap (id) != nullptr)
+                    {
+                        st.snaps.push_back (id);
+                        st.lanes.push_back (ln.isArray() && i < ln.size() ? ((juce::uint32) (int) ln[i] & kAllLanes) : kAllLanes);
+                        parts = parts || st.lanes.back() != kAllLanes;
+                    }
+            if (! parts) st.lanes.clear();
             if (! st.snaps.empty()) stacks.push_back (st);              // (its snapshots have all gone: so has the stack)
         }
     // The knobs, as the file has them
