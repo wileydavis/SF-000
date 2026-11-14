@@ -261,25 +261,42 @@ String minified (const String& src)
 }
 } // namespace
 
-// The sixteen snapshot knobs: a page of their own, the twelfth, in both scenes (so they are on
-// the same page whichever scene the E16 is in). Knobs 1 to 4 are the macro knobs, 5 to 16 the
-// stack knobs. A press is the knob's own (a stack knob: the set goes to the snapshot it is on),
-// and the four corners are as on every page: knob 1 is GLIDE behind its press (the ring green),
-// knob 4 pressed is CUE, and 13 and 16 held for half a second are the wheel and OPEN (the
-// library); 15 held is MOTION. SF-000 tells the page its knobs' names as they are now.
+// The snapshot module's knobs: a page of their own, the twelfth, in both scenes (so they are on
+// the same page whichever scene the E16 is in). Knobs 1 to 4 are the macro knobs; 5 to 12, 14 and
+// 15 the stack knobs, whose press is their own (the set goes to the snapshot the knob is on).
+// The four corners are as on every page: knob 1 is GLIDE behind its press (the ring green), knob
+// 4 pressed is CUE, 13 is the pointer's wheel and 16 pressed is OPEN (the library). No knob of the
+// module is on 13 or 16, so that those two are what they are everywhere. 15 held is MOTION.
+// SF-000 tells the page its knobs' names as they are now.
 static std::vector<Enc> snapEncs (const Engine& eng, const juce::StringArray& snapNames)
 {
     std::vector<Enc> encs;
     for (int p = 1; p <= 16; ++p)
     {
         Enc e;
+        if (p == 13)
+        {
+            // (the pointer's wheel, as on a page of the second scene where knob 13 is nothing else: a turn takes it up, a press chooses)
+            e.name = "SELECT"; e.abbr = "SEL"; e.colour = kPink;
+            e.channel = kSnapChannel; e.number = kWheelCc; e.def = 0;
+            e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kWheelKey;
+            encs.push_back (e);
+            continue;
+        }
+        if (p == 16)
+        {
+            e.name = "OPEN"; e.abbr = "OPEN"; e.colour = kPink;
+            e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kOpenKey;
+            encs.push_back (e);
+            continue;
+        }
         const String given = cleaned (snapNames[p - 1], 8) == "-" ? String() : snapNames[p - 1];
         e.name = given.isNotEmpty() ? cleaned (given, 8) : "SNAP " + String (p);
         e.abbr = given.isNotEmpty() ? cleaned (given.removeCharacters (" "), 4) : "S" + String (p);
         e.colour = kViolet;
         e.channel = kSnapChannel; e.number = kKnobCc + p - 1; e.def = 0;
         e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kPressCc + p - 1;
-        e.colour = p <= Session::kMacroKnobs ? kWhite : kViolet;      // (the four macro knobs, then the twelve stack knobs)
+        e.colour = p <= Session::kMacroKnobs ? kWhite : kViolet;      // (the four macro knobs, then the ten stack knobs)
         if (p == 1)
         {
             e.press = 2; e.channel2 = kSnapChannel; e.number2 = kGlideCc; e.colour2 = kGreen;
@@ -947,7 +964,9 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         {
             const int k = num - e16::kPressCc;
             if (fromE16) pageHeard = e16::kSnapPage;
-            if (fromE16 && (k == 12 || k == 15)) held (k == 12 ? 0 : 1, val >= 64, nowMs, presses[(size_t) k], wheel);          // (knobs 13 and 16, held: the wheel, and OPEN)
+            // (13 and 16 are no knob of the module. A scene from before this has their presses here: the wheel's key and OPEN, at once, as the scene now sends them)
+            if (k == 12) { if (fromE16 && val >= 64) wheelKeys.fetch_add (1); }
+            else if (k == 15) { if (fromE16 && val >= 64) openKeys.fetch_add (1); }
             else if (fromE16 && k == 14) held (4, val >= 64, nowMs, presses[(size_t) k], wheel);       // (knob 15, held: MOTION)
             else if (val >= 64) { other(); presses[(size_t) k].fetch_add (1); }
             return;
@@ -1028,6 +1047,13 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     const int slot = e16::slotFor (ch, num);
     if (slot < 0) return;
     if (fromE16) pageHeard = slot >= kLanes * e16::kPerLane ? (int) e16::kSnapPage : slot / e16::kPerLane + 1;
+    if (const int sk = slot - kLanes * e16::kPerLane; sk == 12 || sk == 15)
+    {
+        // 13 and 16 of the snapshot page are no knob of the module. A scene from before this sends 13's turns here:
+        // they are the pointer's wheel's, as the wheel's own address is (a turn takes it up).
+        if (fromE16 && sk == 12) { wheelIn (ch * 128 + num, val, nowMs); sent[(size_t) slot] = val; heardAt[(size_t) slot] = nowMs; }
+        return;
+    }
     if (wheel && isKnob13 (slot))
     {
         wheelIn (ch * 128 + num, val, nowMs);
@@ -1501,11 +1527,7 @@ void Midi::serviceWheel (juce::uint32 now)
 bool Midi::wheelKnob (WheelKnob& k) const
 {
     k = {};
-    if ((e16At.scene == 0 || e16At.scene == 1) && e16At.page == e16::kSnapPage)
-    {
-        k.slot = kLanes * e16::kPerLane + 12;       // (the snapshot knobs' page, in either scene: its thirteenth)
-        e16::addressOf (k.slot, k.ch, k.num);
-    }
+    if ((e16At.scene == 0 || e16At.scene == 1) && e16At.page == e16::kSnapPage) { k.ch = e16::kSnapChannel; k.num = e16::kWheelCc; k.own = true; }  // (the snapshot module's page, in either scene: its 13 is the wheel and nothing else)
     else if (e16At.scene == 1 && e16At.page >= e16::pgFind) { k.ch = e16::kSnapChannel; k.num = e16::kWheelCc; k.own = true; }  // (a page where knob 13 is the wheel and nothing else)
     else if (e16At.scene == 1 && e16At.page == e16::pgMap) { k.ch = e16::kMapChannel; k.num = e16::kKnobCc + 12; k.lib = true; }
     else if (e16At.scene == 0 && e16At.page >= 1 && e16At.page < e16::kSnapPage)
@@ -1684,6 +1706,7 @@ void Midi::sayNames()
             const auto& kn = ses.knobs[(size_t) k];
             nm[(size_t) k] = ! ses.knobLive (k) ? String ("-") : kn.name.isNotEmpty() ? four (kn.name) : (Session::isStack (k) ? "S" : "M") + String (k + 1);
         }
+        nm[12] = "SEL"; nm[15] = "OPEN";            // (the two corners that are no knob of the module: the wheel, and OPEN)
         title = ses.stackCue ? "SNAPSHOTS CUE" : "SNAPSHOTS";
         if (const int k = snapTurned; k >= 0 && Session::isStack (k) && juce::Time::getMillisecondCounter() - snapTurnedAt < 4000u)
         {

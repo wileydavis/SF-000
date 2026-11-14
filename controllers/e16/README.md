@@ -104,10 +104,13 @@ Each means the same on every page, behind its press:
   it is the way back. The master has two things behind it: its drum bus's CONFIG, and, pressed
   again, POCKETS (below); pressed once more, back to the master. The sequencer strip has nothing
   behind it.
-- **Where a press is the knob's own, 13 and 16 are held.** On the snapshot page they are stack
-  knobs, and on the library's map a press recalls: there the wheel and OPEN are those knobs
-  **held for half a second**, and a press let go sooner is the knob's own (it then acts as the
-  knob is let go, not as it goes down).
+- **The snapshot page has the same corners, at a plain press.** No knob of the module is on 13
+  or 16 there: 13 is the wheel (SEL) and 16 is OPEN, as on every page. (They were stack knobs
+  with the corners behind a half-second hold. A scene from that build still works: its 13 and
+  16 on that page are taken as the same corners.)
+- **On the library's map 13 and 16 are held.** Every press there recalls, so the wheel and the
+  way back are those knobs **held for half a second**, and a press let go sooner is the knob's
+  own (it then acts as the knob is let go, not as it goes down).
 - **Knob 15 held for half a second on the snapshot page is MOTION**: the macro designer comes up
   on the screen and the E16 turns to CONFIG's first page, which is then MOTION's twelve knobs,
   a row for each of the three: WAVE, SPD, KNOB, AMNT (the page is titled KNOB MOTION). OPEN
@@ -124,19 +127,22 @@ pages 1-11: a lane each (KCK CHH OHH CLP PRC BAS RMB LED CRD PAD VOX), on the la
 13 SEND A [press: the wheel]   14 SEND B   15 LOW [press: MID]   16 HIGH [press: OPEN]
 knob 1 [press: GLIDE]   knob 4 [press: the lane's MUTE]
 
-page 12: SNAP, the snapshot module's sixteen knobs, on channel 16
+page 12: SNAP, the snapshot module, on channel 16
  1  2  3  4      the four macro knobs (white). 1 [press: GLIDE]; 2, 3 [press: the macro lands]; 4 [press: CUE]
- 5 ... 16        the twelve stack knobs (violet). Press: the set goes to the stack's snapshot.
-                 13 held: the wheel. 15 held: MOTION. 16 held: OPEN (the library).
+ 5  6  7  8      stack knobs (violet). Press: the set goes to where the knob is
+ 9 10 11 12      (a snapshot on its place; between two, that far between them).
+13 SELECT [the wheel; press: its key]   14, 15 stack knobs [15 held: MOTION]   16 OPEN [press: the library]
 ```
 
 - **Knob 15** is LOW. A press swaps it to MID and its ring turns pink; a press swaps it back. The
   E16 does this itself (Swap Destination) and keeps a value for each.
-- **The snapshot page.** Knobs 1 to 4 are the macro knobs and 5 to 16 the stack knobs (SF-000's
-  README: The snapshot module).
+- **The snapshot page.** Knobs 1 to 4 are the macro knobs; 5 to 12, 14 and 15 the stack knobs;
+  13 and 16 the wheel and OPEN (SF-000's README: The snapshot module).
   - **CUE (knob 4 pressed)** says how the stack knobs are played. Out: a turn morphs the set
-    toward the stack's next snapshot, and a press goes all the way to the nearest. Lit: a turn
-    goes through the stack in the headphones, and a press takes the set to the one chosen.
+    toward the stack's next snapshot. Lit: a turn goes through the stack in the headphones.
+  - **A stack knob's press** takes the set to where the knob is, over the GLIDE time, and the
+    knob stays there: on a snapshot's place that snapshot, whole; between two, every sound knob
+    that far between them.
   - **The display names what is there.** SF-000 tells the page each knob's name as it is now
     (four characters; an empty knob reads `-`). The title reads `SNAPSHOTS`, or `SNAPSHOTS CUE`
     while CUE is lit, and for four seconds after a stack knob is turned or pressed it names the

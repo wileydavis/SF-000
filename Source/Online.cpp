@@ -737,9 +737,9 @@ String Online::load()
     // takes the knob. A knob whose module has been taken off the chassis is emptied; one the library has never seen goes
     // up into its own pocket, so the chassis shows what the instrument has.
     std::array<Session::KnobPlan, 16> plan;
-    juce::StringArray sentUp, keptBack;
+    juce::StringArray sentUp, keptBack, stuck, movedSay;
     {
-        struct Now { bool holds = false, whole = false, same = false; String lib, mark, print; var body; };
+        struct Now { bool holds = false, whole = false, same = false, never = false; String lib, mark, print, name; var body; };
         std::array<Now, 16> now;
         std::array<var, 16> pocket;
         if (auto* kn = tray.getProperty ("knobs", var()).getArray())
@@ -756,6 +756,8 @@ String Online::load()
                 n.print = ses.knobPrint (k);
                 n.body = ses.knobBody (k, n.whole);
                 n.same = pocket[(size_t) k].isObject() && ses.knobIs (k, pocket[(size_t) k]);
+                n.never = ses.knobStaysHere (k);
+                n.name = ses.knobs[(size_t) k].name.isNotEmpty() ? ses.knobs[(size_t) k].name : "UNNAMED";
                 // (whole: and the library holds every snapshot of it. A knob that is not whole is never sent, so never replaced.)
                 if (auto* items = n.body.getProperty ("items", var()).getArray())
                     for (auto& it : *items) { const auto e = ledger.find (it.getProperty ("u", "").toString()); if (e == ledger.end() || ! e->second.snap) n.whole = false; }
@@ -776,6 +778,33 @@ String Online::load()
             for (int i = 0; i < 14; ++i) id << String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
             return id;
         };
+        // LOAD makes room. A stack knob here that the library cannot be given (it holds the rig's own snapshots, which never
+        // go there; or ones ONLINE has not sent yet), on a place the library's module has another knob for: it goes to the
+        // first stack knob that is free here and on the module, as it is, and the module's knob takes its place. Nothing
+        // is lost, and a knob that can never be sent no longer holds its place against the library for good.
+        {
+            std::vector<std::pair<int, int>> moves;
+            for (int k = Session::kMacroKnobs; k < 16; ++k)
+            {
+                auto& n = now[(size_t) k];
+                const var& in = pocket[(size_t) k];
+                if (! Session::isStack (k) || ! in.isObject() || ! Session::moduleFits (k, in) || ! n.holds || n.same || n.whole) continue;
+                if (n.lib == in.getProperty ("id", "").toString()) continue;            // (the module's own knob, changed here: it stays until it can go up)
+                if (n.lib.isNotEmpty() && n.print == n.mark) continue;                  // (the library has it as it is: nothing to keep)
+                int f = -1;
+                for (int j = Session::kMacroKnobs; j < 16 && f < 0; ++j) if (Session::isStack (j) && ! now[(size_t) j].holds && ! pocket[(size_t) j].isObject()) f = j;
+                if (f < 0) { if (n.never) stuck.add (String (k + 1)); continue; }
+                moves.push_back ({ k, f });
+                movedSay.add ("WHAT KNOB " + String (k + 1) + " HELD (" + n.name + ") IS ON KNOB " + String (f + 1) + " NOW");
+                now[(size_t) f] = n; n = Now();
+            }
+            if (! moves.empty())
+            {
+                const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+                if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+                for (auto& m : moves) ses.knobMove (m.first, m.second);
+            }
+        }
         for (int k = 0; k < 16 && ! threadShouldExit(); ++k)
         {
             auto& n = now[(size_t) k]; auto& p = plan[(size_t) k];
@@ -812,7 +841,7 @@ String Online::load()
                     safe = st == 200 || (st == 404 && asNew (0).isNotEmpty());
                 }
                 else if (! safe) safe = asNew (0).isNotEmpty();
-                if (safe) p.what = Session::KnobPlan::take; else keptBack.add (String (k + 1));
+                if (safe) p.what = Session::KnobPlan::take; else if (! stuck.contains (String (k + 1))) keptBack.add (String (k + 1));
             }
             else if (n.holds)
             {
@@ -831,7 +860,7 @@ String Online::load()
                     // (the library no longer has that module: the knob is all there is of it, and goes up as a new one)
                 }
                 if (const String id = asNew (k + 1); id.isNotEmpty()) { p.lib = id; sentUp.add (String (k + 1)); }
-                else keptBack.add (String (k + 1));
+                else if (! n.never) keptBack.add (String (k + 1));     // (a knob of the rig's own snapshots stays here, and nothing wants its place: nothing to say)
             }
         }
     }
@@ -842,8 +871,14 @@ String Online::load()
         line = ses.takeTray (tray, &plan);
         for (auto& k : seatedNow) sentUp.addIfNotAlreadyThere (k);
         if (sentUp.size() > 0) line << ". " << (sentUp.size() == 1 ? "KNOB " : "KNOBS ") << sentUp.joinIntoString (", ") << (sentUp.size() == 1 ? " IS" : " ARE") << " ON THE CHASSIS NOW TOO";
-        if (keptBack.size() > 0) line << ". " << (keptBack.size() == 1 ? "KNOB " : "KNOBS ") << keptBack.joinIntoString (", ") << (keptBack.size() == 1 ? " WAS LEFT AS IT IS" : " WERE LEFT AS THEY ARE")
-                                         << ": THE LIBRARY HAS NOT GOT ALL " << (keptBack.size() == 1 ? "ITS" : "THEIR") << " SNAPSHOTS YET (ONLINE SENDS THEM), OR DID NOT ANSWER";
+        // (what was not as asked comes first: the line is cut short on the main screen)
+        String first;
+        if (stuck.size() > 0) first << (stuck.size() == 1 ? "KNOB " : "KNOBS ") << stuck.joinIntoString (", ") << (stuck.size() == 1 ? " WAS LEFT AS IT IS: IT HOLDS" : " WERE LEFT AS THEY ARE: THEY HOLD")
+                                    << " THE RIG'S OWN SNAPSHOTS, WHICH STAY HERE, AND NO STACK KNOB IS FREE TO MOVE " << (stuck.size() == 1 ? "IT" : "THEM") << " TO. CLEAR ONE IN THE DESIGNER, THEN LOAD. ";
+        if (keptBack.size() > 0) first << (keptBack.size() == 1 ? "KNOB " : "KNOBS ") << keptBack.joinIntoString (", ") << (keptBack.size() == 1 ? " WAS LEFT AS IT IS" : " WERE LEFT AS THEY ARE")
+                                       << ": THE LIBRARY HAS NOT GOT ALL " << (keptBack.size() == 1 ? "ITS" : "THEIR") << " SNAPSHOTS YET (ONLINE SENDS THEM), OR DID NOT ANSWER. ";
+        if (movedSay.size() > 0) first << movedSay.joinIntoString (". ") << ". ";
+        line = first + line;
         // (a chip named there is named here now: that is not a rename to send back)
         for (auto& x : ses.library) if (const auto e = ledger.find (x.uid); e != ledger.end() && hasClip.count (x.uid) != 0) e->second.name = x.name;
     }

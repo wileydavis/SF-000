@@ -91,19 +91,30 @@ ok = snap["title"] == "SNAP" and snap["channel"] == 16
 for p, e in enumerate(snap["encoders"], 1):
     t, push = e["turn_actions"][0], e["push_action"]
     t2 = e["turn_actions"][1]
-    # (the four macro knobs white, the twelve stack knobs violet)
+    if p == 13:
+        # the pointer's wheel and nothing else, as on the second scene's pages: the wheel's own address, its key on the press, pink
+        ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 31 and e["color"] == PINK and e["name"] == "SELECT" and t2 == TURN_OFF \
+             and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 33 and (push["upper"], push["lower"]) == (127, 0)
+        continue
+    if p == 16:
+        # OPEN: a key, with nothing to turn
+        ok = ok and t["type"] == 0 and e["color"] == PINK and e["name"] == "OPEN" and t2 == TURN_OFF \
+             and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 34 and (push["upper"], push["lower"]) == (127, 0)
+        continue
+    # (the four macro knobs white, the ten stack knobs violet)
     ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 11 + p and e["color"] == (WHITE if p <= 4 else VIOLET)
     seen[(16, t["nr1"])] = seen.get((16, t["nr1"]), 0) + 1
     if p == 1:
         # GLIDE behind its press, as on a lane's page: the one GLIDE address
         ok = ok and push == PUSH_SWAP and t2["type"] == 3 and t2["mode"] == 14 and t2["channel"] == 16 and t2["nr1"] == 30 and e["color2"] == GREEN
     else:
-        # (every other knob's press is its own number: SF-000 makes 4's CUE, and takes 13, 15 and 16 held for the wheel, MOTION and OPEN)
+        # (every other knob's press is its own number: SF-000 makes 4's CUE, and takes 15 held for MOTION)
         ok = ok and t2 == TURN_OFF and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 43 + p and (push["upper"], push["lower"]) == (127, 0) and push["output"] == 0
         seen[(16, push["nr1"])] = seen.get((16, push["nr1"]), 0) + 1
-check(ok, "page 12, the snapshot knobs on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up); but knob 1 pressed swaps to GLIDE (green) and knob 13 pressed is the pointer's wheel (CC 33), as on a lane's page")
+check(ok, "page 12, the snapshot module on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up). The four corners, as on every page: 1 pressed swaps to GLIDE (green), "
+          "4's press is CUE's, 13 is the pointer's wheel and nothing else (CC 31, its key CC 33), 16 is OPEN (CC 34) and turns nothing. No knob of the module is on 13 or 16")
 check(all(v == 1 for v in seen.values()) and not any(num in RESERVED for _, num in seen) and not ({(16, 119), (16, 31), (16, 33), (16, 34), (16, 35), (16, 36)} & set(seen)),
-      f"{len(seen)} addresses, each used once, none on a number MIDI keeps for itself; CC 119 on channel 16 is left for the page, 31 and 33 to 36 for the wheel and the keys")
+      f"{len(seen)} addresses, each used once, none on a number MIDI keeps for itself; CC 119 on channel 16 is left for the page, 31 and 33 to 36 for the wheel and the keys (no knob's own)")
 for n, row in enumerate(names, 1):
     print(f"       page {n:2d} {CODES[n - 1]}: {row}")
 print("       page 12 SNAP: " + " ".join(e["name"] for e in snap["encoders"]))
@@ -369,8 +380,9 @@ if os.path.exists(lib_path):
     check(ok, "the corners, on pages 2 to 11: knob 13 is the pointer's wheel (CC 31 on channel 16; pressed, CC 33) and knob 16 pressed is OPEN (CC 34); from INS 1 on, knob 1 pressed is GLIDE, "
               "and knob 4 pressed is the module's MUTE where it makes sound (INS 1-3: CC 2 to 4 on channel 13; RETURNS: DUB's, CC 39 on channel 16, and knob 8 SPACE's, CC 40; SEQ: the lane's own sequencer, CC 5 on channel 13)")
     # page 12: the snapshot knobs, the page the first scene's twelfth is, object for object
-    check(pages[11] == scene["pages"][11] and all(turn(e) == (16, 12 + i) for i, e in enumerate(pages[11]["encoders"])),
-          "page 12 is the snapshot knobs, exactly as the first scene's page 12 has them (channel 16: knob p on CC 11 + p, its press on CC 43 + p), so they are on the same page in either scene")
+    check(pages[11] == scene["pages"][11] and all(turn(e) == (16, 12 + i) for i, e in enumerate(pages[11]["encoders"]) if i not in (12, 15))
+          and turn(pages[11]["encoders"][12]) == (16, 31) and push(pages[11]["encoders"][12]) == (16, 33) and turn(pages[11]["encoders"][15]) is None and push(pages[11]["encoders"][15]) == (16, 34),
+          "page 12 is the snapshot module, exactly as the first scene's page 12 has it (channel 16: knob p on CC 11 + p, its press on CC 43 + p; 13 the wheel and 16 OPEN, as on pages 2 to 11), so it is on the same page in either scene")
     used = {}
     for pg in pages[:11]:
         for e in pg["encoders"]:

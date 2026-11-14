@@ -659,8 +659,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
                 { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
-                { aMacros, "MACROS", "THE DESIGNER FOR THE SIXTEEN KNOBS. 1 TO 4 ARE MACRO KNOBS: LEARN TIES ONE STRAIGHT TO OTHER KNOBS. 5 TO 16 ARE STACK KNOBS: EACH HOLDS SNAPSHOTS IN AN ORDER (THE WEB LIBRARY IS WHERE STACKS ARE BUILT; ONE CAN BE MADE HERE TOO). A STACK'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
-                { aStackCue, "CUE", "HOW THE STACK KNOBS (5 TO 16) ARE PLAYED. OUT: A TURN MORPHS THE SET ITSELF, FROM WHEREVER IT IS TOWARD THE NEXT SNAPSHOT THE WAY THE KNOB IS GOING, THEN ON TO THE ONE AFTER; A PRESS GOES ALL THE WAY TO THE NEAREST. LIT: A TURN GOES THROUGH THE STACK IN THE HEADPHONES AND THE SET IS NOT TOUCHED; A PRESS MORPHS THE SET TO THE ONE THE KNOB IS ON, OVER THE GLIDE TIME. KNOB 4 PRESSED (HERE AND ON THE E16) IS THIS KEY." },
+                { aMacros, "MACROS", "THE DESIGNER FOR THE SIXTEEN KNOBS. 1 TO 4 ARE MACRO KNOBS: LEARN TIES ONE STRAIGHT TO OTHER KNOBS. 5 TO 12, 14 AND 15 ARE STACK KNOBS (13 AND 16 ARE THE E16'S LANE WHEEL AND OPEN, AND HOLD NONE): EACH HOLDS SNAPSHOTS IN AN ORDER (THE WEB LIBRARY IS WHERE STACKS ARE BUILT; ONE CAN BE MADE HERE TOO). A STACK'S SNAPSHOTS ARE ALSO WHAT RECALL (CC 80 TO 95 ON CHANNEL 16) PICKS FROM." },
+                { aStackCue, "CUE", "HOW THE STACK KNOBS (5 TO 12, 14, 15) ARE PLAYED. OUT: A TURN MORPHS THE SET ITSELF, FROM WHEREVER IT IS TOWARD THE NEXT SNAPSHOT THE WAY THE KNOB IS GOING, THEN ON TO THE ONE AFTER; A PRESS GOES ALL THE WAY TO THE NEAREST. LIT: A TURN GOES THROUGH THE STACK IN THE HEADPHONES AND THE SET IS NOT TOUCHED; A PRESS MORPHS THE SET TO THE ONE THE KNOB IS ON, OVER THE GLIDE TIME. KNOB 4 PRESSED (HERE AND ON THE E16) IS THIS KEY." },
                 { aMain, "MAIN", "BACK TO THE MAIN SCREEN." },
                 { aNudgeL, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP EARLIER." },
                 { aNudgeR, "NUDGE", "MOVES THE WHOLE PATTERN ONE STEP LATER." },
@@ -683,7 +683,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
-                { aFetch, "LOAD", "MAKES THE SIXTEEN KNOBS WHAT THE WEB LIBRARY'S MODULE HOLDS NOW: ITS FOUR MACRO KNOBS, ITS TWELVE STACK KNOBS (EACH SNAPSHOT WITH THE LANES CHOSEN FOR IT THERE), AND THE SNAPSHOTS THIS LIBRARY LACKS. WHAT A KNOB HELD HERE IS SENT TO THE LIBRARY FIRST, SO NOTHING IS LOST. A SONG COMES AS THE ARRANGEMENT (IF THERE IS NONE)." },
+                { aFetch, "LOAD", "MAKES THE SIXTEEN KNOBS WHAT THE WEB LIBRARY'S MODULE HOLDS NOW: ITS FOUR MACRO KNOBS, ITS TEN STACK KNOBS (EACH SNAPSHOT WITH THE LANES CHOSEN FOR IT THERE), AND THE SNAPSHOTS THIS LIBRARY LACKS. WHAT A KNOB HELD HERE IS SENT TO THE LIBRARY FIRST, SO NOTHING IS LOST. A SONG COMES AS THE ARRANGEMENT (IF THERE IS NONE)." },
                 { aStack, "STACK", "THE STACKS LOAD BROUGHT, ONE AFTER ANOTHER, THEN EVERY SNAPSHOT AGAIN." },
                 { aArrange, "ARRANGE", "THE ARRANGEMENT: SNAPSHOTS IN A LINE, EACH FOR SO MANY BARS, EACH REACHED BY A MORPH FROM THE ONE BEFORE. PLAYED FROM THE CLOCK, AND PRINTED TO FILES FOR A RELEASE. A ON THE KEYBOARD TOO. LIT GREEN WHILE IT PLAYS." },
                 { aArrPlay, "PLAY", "PLAYS THE ARRANGEMENT FROM ITS FIRST PART. FROM STOPPED: THAT PART IS RECALLED AT ONCE AND THE CLOCK STARTS FROM THE TOP. WITH THE CLOCK RUNNING: IT COMES IN ON THE NEXT BAR LINE. EACH PART AFTER IS RECALLED SO AS TO SET OFF ON ITS OWN BAR LINE; AT THE END THE CLOCK STOPS. PRESSED WHILE IT PLAYS: STOP." },
@@ -1331,6 +1331,12 @@ void Screen::drawSnapPanel (G& g, R r)
     {
         const float cxm = x0 + (float) (k % 4) * 66 + 32, y = body + (float) (k / 4) * 61;
         const R kr (cxm - 20, y, 40, 40);
+        if (Session::isCorner (k))
+        {
+            // (no knob of the module: on the E16 these two corners are the lane wheel and OPEN, as on every page. INFO says so.)
+            if (info && vis (g, R (cxm - 40, y, 80, 58))) text (g, k == 12 ? "E16 LANE" : "E16 OPEN", R (cxm - 40, y + 12, 80, 14), fLbl, col::black);
+            continue;
+        }
         if (ses.knobLive (k))
         {
             const float v = eng.shown (cx::kSnap + k);
@@ -1979,6 +1985,21 @@ void Screen::drawMacros (G& g)
     {
         const R r (23.0f + (float) (k % 4) * 282, 78.0f + (float) (k / 4) * 224, 272, 216);
         const auto& kn = ses.knobs[(size_t) k];
+        if (Session::isCorner (k))
+        {
+            // (13 and 16 hold no knob: on the E16 those corners are the lane wheel and OPEN, pressed, as on every page)
+            if (vis (g, r))
+            {
+                card (g, r, false);
+                tag (g, R (r.getX() + 6, r.getY() + 6, 30, 26), String (k + 1));
+                plate (g, r.getX() + 36, r.getY() + 6, k == 12 ? "E16: LANE" : "E16: OPEN", fLegend, 8, col::white, col::black);
+                g.setColour (tone (col::black)); g.setFont (fLbl);
+                g.drawFittedText (k == 12 ? "NO KNOB HERE. ON THE E16, KNOB 13 PRESSED IS THE LANE WHEEL, AS ON EVERY PAGE."
+                                          : "NO KNOB HERE. ON THE E16, KNOB 16 PRESSED IS OPEN, AS ON EVERY PAGE.",
+                                  juce::Rectangle<int> ((int) r.getX() + 6, (int) r.getY() + 46, 258, 30), juce::Justification::topLeft, 2, 1.0f);
+            }
+            continue;
+        }
         const bool sel = k == selKnob;
         hit (r, hKnobCard, k, 0);
         if (vis (g, r)) card (g, r, sel);
@@ -2104,7 +2125,7 @@ void Screen::drawMacros (G& g)
         for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
     }
     const String help = "1 TO 4, MACRO KNOBS: PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
-                        "5 TO 16, STACK KNOBS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN ORDER; TAP A NUMBERED SLOT TO TAKE ONE OUT. "
+                        "5 TO 12, 14, 15, STACK KNOBS: TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN ORDER; TAP A NUMBERED SLOT TO TAKE ONE OUT. "
                         "CUE OUT: A TURN MORPHS THE RIG TOWARD THE NEXT SNAPSHOT THE WAY IT IS TURNING. CUE LIT: A TURN PLAYS IT IN THE HEADPHONES, A PRESS MORPHS TO IT OVER THE GLIDE. "
                         "MOTION: A WAVE THAT TURNS A KNOB FOR YOU, IN TIME WITH THE CLOCK: ITS WAVE, HOW LONG, WHICH KNOB, HOW MUCH OF ITS TURN.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
@@ -2495,7 +2516,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             }
             // (a stack knob takes it, at the end of its stack. A macro knob holds no snapshots: LEARN is how one is made.)
             if (Session::isStack (selKnob)) ses.stackAdd (selKnob, ses.library[(size_t) h->a].id);
-            else { recNote = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON 5 TO 16"; recNoteAt = juce::Time::getMillisecondCounter(); }
+            else { recNote = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON A STACK KNOB"; recNoteAt = juce::Time::getMillisecondCounter(); }
             break;
         }
         default: break;
@@ -3280,7 +3301,9 @@ void Screen::timerCallback()
                 // (on the 3D stage a knob's lights are the drawing thread's own business, read from
                 // the engine: nothing of the sheet or the record changes when one travels, so none
                 // of either is made again. A snapshot gliding moves a hundred at once.)
-                if (three && h.kind == hKnob) { lastShown[(size_t) ctl] = eng.shown (ctl); ringsMoved = true; continue; }
+                // (GLIDE is the one knob whose value is printed beside it, on the sheet: that is printed again, here as on the flat screen)
+                if (three && h.kind == hKnob && ctl != cx::kGlide) { lastShown[(size_t) ctl] = eng.shown (ctl); ringsMoved = true; continue; }
+                if (three && h.kind == hKnob) ringsMoved = true;
                 dirty (ctl == cx::lane (ses.activeLane, cx::kSeqMute) ? seqRect : h.r.expanded (14, 6));       // a sequencer's mute greys its steps
             }
         }

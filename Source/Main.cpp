@@ -2687,10 +2687,40 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                     over = over && ! s2.knobHolds (1) && s2.knobs[5].name == "MINE" && s2.knobs[5].snaps == std::vector<juce::int64> { a, b } && std::abs (e2.target (cx::kSnap + 5) - 0.5f) < 1.0e-6f
                            && e2.target (cx::kSnap + 1) == 0.0f && e2.valueText (cx::mot (0, 2)) == "6" && (bool) s2.knobs[5].more.getWithDefault ("reseat", false) == false && worst < 1.0e-4f;
                     if (! over) std::printf ("    (worst %.5f over %d that differ; knob 6 %s at %.2f; motion on %s)\n", worst, moved, s2.knobs[5].name.toRawUTF8(), e2.target (cx::kSnap + 5), e2.valueText (cx::mot (0, 2)).toRawUTF8());
+                    // (and a session of the build before this one, where 13 and 16 were stack knobs: a stack on either goes to the first
+                    // free stack knob, as it is, with where it stood, its MOTION and which module of the library it is; nothing else moves)
+                    {
+                        var two = s2.stateVar();
+                        two.getDynamicObject()->setProperty ("module", 2);
+                        auto stackOn = [&] (int place, const char* name, const char* lib)
+                        {
+                            auto* k = new juce::DynamicObject();
+                            juce::Array<var> sn; sn.add (b); sn.add (a);
+                            k->setProperty ("name", name); k->setProperty ("depth", 1.0); k->setProperty ("snaps", sn);
+                            if (lib != nullptr) k->setProperty ("lib", lib);
+                            two["knobs"].getArray()->set (place, var (k));
+                        };
+                        stackOn (12, "THIRTEEN", "sflib0000000013"); stackOn (15, "SIXTEEN", nullptr);
+                        two["controls"].getDynamicObject()->setProperty ("snap.k13", 0.75);
+                        two["controls"].getDynamicObject()->setProperty ("mot.1_knob", 12.0 / 15.0);
+                        Engine e3; e3.prepare (48000.0, 128);
+                        Session s3 (e3, false);
+                        s3.takeState (two);
+                        float moved3 = 0.0f;
+                        for (int i = 0; i < cx::kRetMS; ++i) if (e3.control (i).morph) moved3 = std::max (moved3, std::abs (e3.target (i) - e2.target (i)));
+                        const bool corners = ! s3.knobHolds (12) && ! s3.knobHolds (15) && s3.knobs[12].snaps.empty() && s3.knobs[15].snaps.empty()
+                                             && s3.knobs[4].name == "WARP" && s3.knobs[5].name == "MINE"
+                                             && s3.knobs[6].name == "THIRTEEN" && s3.knobs[6].snaps == std::vector<juce::int64> { b, a } && std::abs (e3.target (cx::kSnap + 6) - 0.75f) < 1.0e-6f
+                                             && s3.knobs[6].more.getWithDefault ("lib", "").toString() == "sflib0000000013" && (bool) s3.knobs[6].more.getWithDefault ("reseat", false)
+                                             && s3.knobs[7].name == "SIXTEEN" && e3.target (cx::kSnap + 12) == 0.0f && e3.valueText (cx::mot (0, 2)) == "7" && moved3 < 1.0e-6f
+                                             && (int) s3.stateVar()["module"] == 3 && s3.knobsAside.isEmpty();
+                        if (! corners) std::printf ("    (13 and 16: knob 7 %s at %.2f, knob 8 %s, motion on %s, the set moved %.5f)\n", s3.knobs[6].name.toRawUTF8(), e3.target (cx::kSnap + 6), s3.knobs[7].name.toRawUTF8(), e3.valueText (cx::mot (0, 2)).toRawUTF8(), moved3);
+                        over = over && corners;
+                    }
                 });
                 const auto aside = state.getSiblingFile ("session-before-two-kinds.json");
-                const bool asItWas = aside.existsAsFile() && aside.loadFileAsString() == fixture.loadFileAsString() && (int) juce::JSON::parse (state)["module"] == 2;
-                std::printf ("  %s: its knobs are brought over to the two kinds: the four that hold what the rig came with are macro knobs in their places, tied to what each pushed; the fifth is a stack knob; a knob of the hand's own snapshots on a macro knob's place goes to the first free stack knob with its place on its turn, its MOTION and its sound as it was; and the file as it was is kept beside it\n",
+                const bool asItWas = aside.existsAsFile() && aside.loadFileAsString() == fixture.loadFileAsString() && (int) juce::JSON::parse (state)["module"] == 3;
+                std::printf ("  %s: its knobs are brought over to the two kinds: the four that hold what the rig came with are macro knobs in their places, tied to what each pushed; the fifth is a stack knob; a knob of the hand's own snapshots on a macro knob's place goes to the first free stack knob with its place on its turn, its MOTION and its sound as it was; a session of the build before this one, with stacks on 13 and 16, has them on the next free stack knobs; and the file as it was is kept beside it\n",
                              over && asItWas ? "ok  " : "FAIL");
                 if (! (over && asItWas)) ++bad;
             }
@@ -3832,9 +3862,9 @@ static int uiTest()
             const bool afterRecall = s2.knobs[1].links.size() == 1 && std::abs (s2.knobs[1].links[0].amount - (at (cut) - cutInit)) < 1e-4f;
             check (landed && backAgain && afterRecall, "its press, with no snapshot to land on: past half way what it has pushed stays and the knob goes home, short of it they go back; a recall while one is taught starts the measuring again");
             {
-                // A stack knob (5 to 16). CUE out: a turn morphs the set itself, from wherever it is toward the next snapshot the way
+                // A stack knob (5 to 12, 14, 15). CUE out: a turn morphs the set itself, from wherever it is toward the next snapshot the way
                 // the knob is going, and never jumps. CUE lit: a turn chooses in the headphones, and a press takes the set there.
-                const int k = 12, bassLane = cut / cx::kPerLane;
+                const int k = 11, bassLane = cut / cx::kPerLane;
                 auto& kn = s2.knobs[(size_t) k];
                 const auto knobWas = kn;
                 const bool notTaught = (s2.learnBegin (k), s2.learning < 0);
@@ -3845,7 +3875,8 @@ static int uiTest()
                 s2.finishTakes (true);
                 s2.recall (ta);
                 kn.clearSnaps();
-                const bool held = s2.stackAdd (k, ta) && s2.stackAdd (k, tb) && s2.stackAdd (k, tc) && ! s2.stackAdd (3, ta) && s2.knobLive (k) && s2.knobs[3].snaps.empty();
+                const bool held = s2.stackAdd (k, ta) && s2.stackAdd (k, tb) && s2.stackAdd (k, tc) && ! s2.stackAdd (3, ta) && s2.knobLive (k) && s2.knobs[3].snaps.empty()
+                                  && ! s2.stackAdd (12, ta) && ! s2.stackAdd (15, ta) && ! s2.knobLive (12) && Session::isStack (13) && Session::isStack (14);      // (13 and 16 are no knob of the module)
                 // from somewhere that is none of them: the first of the turn moves it a little, toward the one ahead
                 s2.userSet (cut, 0.10f);
                 s2.userSet (cx::kSnap + k, 0.05f);                                  // (a tenth of the way to the second one's place, half way round)
@@ -3889,19 +3920,30 @@ static int uiTest()
                 const bool motion = s2.motionOn (k) != 0 && push > 0.05f && knobOff == 0.0f;
                 s2.userSet (cx::mot (0, 0), 0.0f); s2.userSet (cx::mot (0, 3), 0.5f);
                 s2.pressSnapKnob (k);
-                const bool pressed = s2.baseId == tb && std::abs (at (cut) - 0.75f) < 1e-5f && std::abs (at (cx::kSnap + k) - 0.5f) < 1.0e-6f && s2.cueing() == 0;
-                // chosen and not pressed: CUE out puts the knob back where the set is, and nothing has moved
-                s2.userSet (cx::kSnap + k, 0.0f);
+                const bool onPlace = s2.baseId == tb && std::abs (at (cut) - 0.75f) < 1e-5f && std::abs (at (cx::kSnap + k) - 0.5f) < 1.0e-6f && s2.cueing() == 0;
+                // pressed between two: the set goes to what lies that far between them, and the knob stays where it was left
+                s2.userSet (cx::kSnap + k, 0.25f);                                  // (half way from the first, whose cutoff is 0.25, to the second, whose is 0.75)
+                const bool hearsFirstOrSecond = s2.pickAt (k) == ta || s2.pickAt (k) == tb;
+                s2.pressSnapKnob (k);
+                const bool pressed = onPlace && hearsFirstOrSecond && s2.baseId == 0 && kn.picked == 0 && std::abs (at (cut) - 0.50f) < 1e-5f && std::abs (at (cx::kSnap + k) - 0.25f) < 1.0e-6f && s2.cueing() == 0;
+                // chosen and not pressed: CUE out leaves the knob where it was left, and nothing has moved
+                s2.userSet (cx::kSnap + k, 0.8f);
                 s2.setStackCue (false);
-                const bool putBack = std::abs (at (cx::kSnap + k) - 0.5f) < 1.0e-6f && std::abs (at (cut) - 0.75f) < 1e-5f && s2.cueing() == 0 && ! s2.stackCue;
+                const bool putBack = std::abs (at (cx::kSnap + k) - 0.8f) < 1.0e-6f && std::abs (at (cut) - 0.50f) < 1e-5f && s2.cueing() == 0 && ! s2.stackCue;
                 // knob 4 pressed is CUE
                 s2.pressSnapKnob (Session::kCueKnob);
                 const bool byKnob4 = s2.stackCue;
                 s2.pressSnapKnob (Session::kCueKnob);
-                // CUE out, a press: all the way to the nearest, notes and all
+                // CUE out, a press: the set goes to what the knob's place says, wherever it had got to. Between two: that far
+                // between them. On a snapshot's place: that snapshot, notes and all. The knob is not moved by either.
                 s2.userSet (cx::kSnap + k, 0.9f);
+                s2.userSet (cut, 0.10f);
                 s2.pressSnapKnob (k);
-                const bool landed = s2.baseId == tc && std::abs (at (cut) - 0.50f) < 1e-5f && at (cx::kSnap + k) == 1.0f && ! s2.stackCue && byKnob4;
+                const bool blended = s2.baseId == 0 && std::abs (at (cut) - (0.75f + (0.50f - 0.75f) * 0.8f)) < 1e-4f && std::abs (at (cx::kSnap + k) - 0.9f) < 1.0e-6f;
+                s2.userSet (cx::kSnap + k, 1.0f);
+                s2.userSet (cut, 0.10f);
+                s2.pressSnapKnob (k);
+                const bool landed = blended && s2.baseId == tc && std::abs (at (cut) - 0.50f) < 1e-5f && at (cx::kSnap + k) == 1.0f && ! s2.stackCue && byKnob4;
                 // one alone is at the top of the turn
                 s2.stackDrop (k, 0); s2.stackDrop (k, 0);
                 s2.userSet (cut, 0.10f);
@@ -3910,7 +3952,7 @@ static int uiTest()
                 // the file: the lanes a snapshot of a stack takes, and that this session has the two kinds
                 s2.stackAdd (k, ta, Session::kAllLanes & ~(1u << bassLane));
                 const auto sv = s2.stateVar();
-                const bool filed = (int) sv["module"] == 2 && sv["knobs"][k]["lanes"].size() == 2 && (int) sv["knobs"][k]["lanes"][1] == (int) (Session::kAllLanes & ~(1u << bassLane))
+                const bool filed = (int) sv["module"] == 3 && sv["knobs"][k]["lanes"].size() == 2 && (int) sv["knobs"][k]["lanes"][1] == (int) (Session::kAllLanes & ~(1u << bassLane))
                                    && ! sv["knobs"][k].hasProperty ("pick") && ! sv["knobs"][2].hasProperty ("lanes");
                 if (! (notTaught && held && noJump && onSecond && between && turnedBack && onThird && under && lanesKept && lanesThen && chooses && motion && pressed && putBack && landed && one && filed))
                     std::printf ("    (not taught %d held %d no jump %d [%.4f] on the second %d between %d back %d on the third %d under %d lanes %d %d chooses %d motion %d [push %.3f knob %.3f] pressed %d put back %d landed %d one %d [%.4f] filed %d)\n",
@@ -3919,7 +3961,7 @@ static int uiTest()
                        "a stack knob, CUE out: a turn morphs the set from wherever it is toward the next snapshot the way the knob is going (it does not jump), is that snapshot at its place, goes on to the next, and turned back heads for the one it left; the macro knobs stay on top of it");
                 check (lanesKept && lanesThen, "a snapshot of a stack that does not take a lane leaves that lane as it is, and the next one takes it again");
                 check (chooses && motion && pressed && putBack && landed,
-                       "CUE lit: a turn chooses in the headphones and the set is not touched, MOTION still swings what the knob holds, and a press takes the set to the one chosen; CUE out again without a press puts the knob back; knob 4 pressed is CUE; a press with CUE out goes all the way to the nearest");
+                       "CUE lit: a turn chooses in the headphones and the set is not touched, MOTION still swings what the knob holds, and a press takes the set to what the knob's place says (a snapshot on its place; between two, that far between them) and leaves the knob there; CUE out again leaves the knob where it was left; knob 4 pressed is CUE; a press with CUE out does the same");
                 check (one && filed, "a stack of one is at the top of its turn; the session file says which parts each snapshot of a stack takes");
                 kn = knobWas;
                 s2.userSet (cx::kSnap + k, 0.0f);
@@ -6029,36 +6071,45 @@ static int midiTest()
         out.clear();
         press (16, e16::kWheelKey); ticks (1);
         const bool namesBack = said (5).isEmpty() && name (13).isEmpty() && said (4).length() == 65;
-        // the snapshot page, where a press recalls: knob 13 held is the wheel, and a press let go at once still recalls
+        // the snapshot page. Its corners are what they are on every page: 13 is the pointer's wheel (pressed, the pointer is up
+        // at once; its turns are the pointer's) and 16 pressed is OPEN. No knob of the module is on either. A stack knob's
+        // press is its own, as it goes down.
         turnsTo (12); ticks (3);
         {
             std::vector<juce::int64> two;                               // (two that are not the base, so that a recall of either shows)
             for (auto& sn : ses.library) if (sn.id != ses.baseId && two.size() < 2) two.push_back (sn.id);
-            ses.knobs[12].snaps = two;
+            ses.knobs[11].snaps = two;                                  // (stack knob 12)
+            ses.knobs[12].snaps = two;                                  // (and were 13 given some, as a file might: it is no knob, and holds nothing a hand can reach)
         }
-        ses.turnSnapKnob (12, 1.0f);
+        ses.turnSnapKnob (11, 1.0f);
         const auto baseWas = ses.baseId;
-        in (16, e16::kPressCc + 12, 127); ticks (1);
-        const bool notYet = ses.baseId == baseWas && ! midi.wheelInUse();
-        in (16, e16::kPressCc + 12, 0); ticks (1);
+        in (16, e16::kPressCc + 11, 127); ticks (1);
         const bool recalled = ses.baseId != baseWas && ! midi.wheelInUse();
+        in (16, e16::kPressCc + 11, 0); ticks (1);
         const auto baseThen = ses.baseId;
-        in (16, e16::kPressCc + 12, 127); juce::Thread::sleep (420); ticks (1);
-        const bool heldIs = midi.wheelInUse() && ses.pointing && ses.pointAt.kind == Session::fSnap;
-        in (16, e16::kPressCc + 12, 0); ticks (1);
-        const bool noRecall = ses.baseId == baseThen && midi.wheelInUse();
-        // OPEN on the snapshot knobs is the library; in the library it is the way back
+        const bool notYet = ! ses.knobLive (12) && ! ses.knobHolds (15);
+        ses.turnSnapKnob (12, 0.7f); ses.pressSnapKnob (12);
+        const bool noKnob = ses.value (cx::kSnap + 12) == 0.0f && ses.baseId == baseThen;
+        // knob 13 pressed: the wheel's key, as the scene has it
+        juce::Thread::sleep (310); ticks (1); out.clear();
         press (16, e16::kWheelKey); ticks (1);
-        // (the scene now has knob 13's press on the snapshot page as the wheel's own key, as on a lane's page: at once, and its turns are the pointer's)
-        const bool keyOff = ! midi.wheelInUse();
-        const float snap13 = ses.value (cx::kSnap + 12);
-        press (16, e16::kWheelKey); ticks (1);
-        const int stood = ccOut (16, e16::kKnobCc + 12);
-        for (int v = stood - 1; v >= stood - 3; --v) { in (16, e16::kKnobCc + 12, v); ticks (1); }
-        const bool byKey = keyOff && midi.wheelInUse() && ses.pointing && ses.pointAt == Session::Stop { Session::fLane, kLanes - 1, 0 } && ses.value (cx::kSnap + 12) == snap13 && ses.front.kind == Session::fSnap;
+        const bool heldIs = midi.wheelInUse() && ses.pointing && ses.pointAt.kind == Session::fSnap && said (5).startsWith ("> ") && name (13) == "SEL";
+        const int stood = ccOut (16, e16::kWheelCc);                    // (its number: where the pointer stands among the stops)
+        for (int v = stood - 1; v >= stood - 3; --v) { in (16, e16::kWheelCc, v); ticks (1); }
+        const bool byKey = heldIs && stood >= 0 && midi.wheelInUse() && ses.pointAt == Session::Stop { Session::fLane, kLanes - 1, 0 } && ses.front.kind == Session::fSnap && ses.baseId == baseThen;
         in (16, e16::kKnobCc + 2, 0); ticks (2);                         // (another knob: the pointer is put down)
+        const bool noRecall = ! midi.wheelInUse() && ses.baseId == baseThen;
+        // a scene from before this build has 13's press and turns, and 16's press, on the module's own addresses: they are the same corners
+        in (16, e16::kPressCc + 12, 127); ticks (1); in (16, e16::kPressCc + 12, 0); ticks (1);
+        const bool oldKey = midi.wheelInUse() && ses.baseId == baseThen;
+        in (16, e16::kKnobCc + 12, 40); ticks (1); in (16, e16::kKnobCc + 12, 37); ticks (1);
+        const bool oldTurn = midi.wheelInUse() && ses.pointing && ses.value (cx::kSnap + 12) == 0.0f;
+        in (16, e16::kKnobCc + 2, 0); ticks (2);
+        ses.turnSnapKnob (2, 0.0f);
+        const bool keyOff = ! midi.wheelInUse() && oldKey && oldTurn && noKnob;
         out.clear();
-        in (16, e16::kPressCc + 15, 127); juce::Thread::sleep (420); ticks (1); in (16, e16::kPressCc + 15, 0); ticks (1);        // (knob 16, held: OPEN)
+        // OPEN on the snapshot knobs is the library; in the library it is the way back
+        press (16, e16::kOpenKey); ticks (1);                           // (knob 16 pressed: OPEN)
         const bool asksLibrary = ses.wantShowing == 1;
         ses.showing = 1; ses.wantShowing = -1; ticks (1);               // (the screen takes it up)
         const juce::String toMap = turns(); out.clear();
@@ -6104,9 +6155,11 @@ static int midiTest()
         answers (e16::kFocusB + e16::kSnapPage); ticks (1);              // turned to it by hand in the second scene: the snapshot knobs come to the front
         const bool handTurn = ses.front.kind == Session::fSnap && turns().isEmpty();
         ses.turnSnapKnob (3, 0.0f);
-        check (byKey, "the wheel's own key with the snapshot knobs in front (a page whose knob 13 has it): the pointer is up at once, a turn back takes it to VOICE, and snapshot knob 13 is not moved");
-        check (again && namesBack && ! midi.wheelInUse() && notYet && recalled && heldIs && noRecall && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "P11" && toMaster == "P6" && handTurn,
-               "on the snapshot page knob 13 held for half a second is the wheel, and a press let go before that is still the stack knob's own (as it is let go: the set goes to its snapshot); knob 16 held there opens the library (" + toMap + ") and held in the library shuts it, to that scene's own snapshot page ("
+        check (byKey && noRecall, "the snapshot page's knob 13 is the pointer's wheel, as on every page: pressed, the pointer is up at once and the page says what it is on; a turn back takes it to VOICE; nothing of the module is moved or recalled by it");
+        check (keyOff && notYet, "13 and 16 are no knob of the module (given snapshots, neither holds any a turn or a press can reach); a scene from before this build, which has their presses and 13's turns on the module's addresses, gets the same corners");
+        if (! (byKey && noRecall && keyOff && notYet)) std::printf ("    (held %d stood %d by key %d no recall %d | old key %d old turn %d no knob %d not yet %d | %s)\n", (int) heldIs, stood, (int) byKey, (int) noRecall, (int) oldKey, (int) oldTurn, (int) noKnob, (int) notYet, said (5).toRawUTF8());
+        check (again && namesBack && ! midi.wheelInUse() && recalled && asksLibrary && toMap == "B0=0 B32=1 P0" && asksBack && fromMap == "P11" && toMaster == "P6" && handTurn,
+               "on the snapshot page a stack knob's press is its own, as it goes down (the set goes to its snapshot); knob 16 pressed there opens the library (" + toMap + ") and 16 held in the library shuts it, to that scene's own snapshot page ("
                    + fromMap + "); a snapshot knob turned there leaves the E16 taken to be in that scene (the master next: " + toMaster + "), and its twelfth page turned to by hand brings the snapshot knobs to the front");
         ses.bringLane (3, 0); ticks (3); out.clear();
 
@@ -6372,13 +6425,18 @@ static int midiTest()
             const auto a = first["pages"][11], b = lib["pages"][11];
             bool same = a["title"].toString() == "SNAP" && b["title"].toString() == "SNAP" && (int) b["channel"] == e16::kSnapChannel && b["encoders"].size() == 16;
             for (int p = 0; p < 16 && same; ++p)
-                same = juce::JSON::toString (a["encoders"][p], true) == juce::JSON::toString (b["encoders"][p], true)
-                       && (int) b["encoders"][p]["turn_actions"][0]["channel"] == e16::kSnapChannel && (int) b["encoders"][p]["turn_actions"][0]["nr1"] == e16::kKnobCc + p
+            {
+                same = juce::JSON::toString (a["encoders"][p], true) == juce::JSON::toString (b["encoders"][p], true);
+                if (p == 12 || p == 15) continue;                       // (the two corners that are no knob of the module: below)
+                same = same && (int) b["encoders"][p]["turn_actions"][0]["channel"] == e16::kSnapChannel && (int) b["encoders"][p]["turn_actions"][0]["nr1"] == e16::kKnobCc + p
                        && (p == 0 || (int) b["encoders"][p]["push_action"]["nr1"] == e16::kPressCc + p);
-            // (knob 1 pressed is GLIDE, as on every page; every other knob's press is its own: 4 is CUE, and 13 and 16 held are the wheel and OPEN)
-            same = same && (int) b["encoders"][0]["turn_actions"][1]["nr1"] == e16::kGlideCc && (int) b["encoders"][0]["turn_actions"][1]["channel"] == e16::kSnapChannel;
+            }
+            // (the corners, as on every page: knob 1 pressed is GLIDE; 4's press is CUE's; 13 is the wheel, on the wheel's own address with its key; 16 pressed is OPEN and turns nothing)
+            same = same && (int) b["encoders"][0]["turn_actions"][1]["nr1"] == e16::kGlideCc && (int) b["encoders"][0]["turn_actions"][1]["channel"] == e16::kSnapChannel
+                   && (int) b["encoders"][12]["turn_actions"][0]["nr1"] == e16::kWheelCc && (int) b["encoders"][12]["push_action"]["nr1"] == e16::kWheelKey && b["encoders"][12]["name"].toString() == "SELECT"
+                   && (int) b["encoders"][15]["push_action"]["nr1"] == e16::kOpenKey && (int) b["encoders"][15]["turn_actions"][0]["type"] == 0 && b["encoders"][15]["name"].toString() == "OPEN";
             check (same && b["encoders"][5]["name"].toString() == "OPEN UP" && b["encoders"][1]["name"].toString() == "SNAP 2",
-                   "the second scene's twelfth page is the snapshot knobs too: the same sixteen, on the same addresses and with the same names, as the first scene's twelfth");
+                   "the second scene's twelfth page is the snapshot knobs too: knob for knob the first scene's twelfth, on the same addresses and with the same names, its 13 the wheel and its 16 OPEN as on every page");
         }
         Session::stateFileForTests = juce::File();
         tmp.deleteRecursively();
@@ -6740,6 +6798,27 @@ static int stageTest()
         }
         else differ = -1;
         check (differ == 0, "a part of the sheet printed again gives the picture a whole printing gives (" + juce::String (differ) + " rows differ)");
+        {
+            // GLIDE turned from outside (as the E16's knob 1, pressed, turns it; said here to be a sequencer's, so that the eye
+            // does not go to it and the picture is the same but for that): its time is printed on the sheet beside its knob, and is printed again
+            fromOutside (cx::kGlide, 0.7f, 2);
+            const auto turned = fresh();
+            sc.repaint();
+            const auto all = fresh();
+            int rows = 0, changed = 0;
+            if (turned.isValid() && all.isValid() && turned.getBounds() == all.getBounds() && whole.getBounds() == all.getBounds())
+            {
+                const juce::Image::BitmapData a2 (turned, juce::Image::BitmapData::readOnly), c2 (all, juce::Image::BitmapData::readOnly), w2 (whole, juce::Image::BitmapData::readOnly);
+                for (int y = 0; y < a2.height; ++y)
+                {
+                    if (std::memcmp (a2.getLinePointer (y), c2.getLinePointer (y), (size_t) a2.width * 4) != 0) ++rows;
+                    if (std::memcmp (w2.getLinePointer (y), c2.getLinePointer (y), (size_t) a2.width * 4) != 0) ++changed;
+                }
+            }
+            else rows = -1;
+            check (rows == 0 && changed > 0, "GLIDE turned from outside (the E16's knob 1, a sequencer): the time beside its knob is printed again on the sheet (" + juce::String (rows) + " rows are not as a whole printing has them; " + juce::String (changed) + " changed)");
+            fromOutside (cx::kGlide, e.control (cx::kGlide).def, 2); fresh();
+        }
         check (began == 1 && ended == 1, "the stage said it was starting, and that it was up once it had drawn");
 
         // 3b. nothing is built again that has not changed
@@ -7800,8 +7879,9 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             auto libOf = [&] (int k) { return ses.knobs[(size_t) k].more.getWithDefault ("lib", "").toString(); };
             juce::StringArray made;                                             // (the modules this check's knobs become there: taken out again at the end)
             auto noteMade = [&] { for (int k = 0; k < 16; ++k) if (libOf (k).startsWith ("sf") && ! libOf (k).startsWith ("sf0test")) made.addIfNotAlreadyThere (libOf (k)); };
-            // here: macro knobs 1, 3 and 4 emptied (2 keeps what a new session gives it: BUILD); stack knob 5 keeps its own (TOUR: the rig's own snapshots, which never go to the library)
+            // here: macro knobs 1, 3 and 4 emptied (2 keeps what a new session gives it: BUILD); stack knob 5 keeps its own (TOUR: the rig's own snapshots, which never go to the library), with MOTION 1 set to it
             ses.knobClear (0, false); ses.knobClear (2, false); ses.knobClear (3, false);
+            ses.userSet (cx::mot (0, 2), 4.0f / 15.0f);
             const auto knob2Was = ses.knobs[1].links.size();
             const auto knob5Was = ses.knobs[4].snaps;
 
@@ -7824,16 +7904,18 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                                   && ses.stacks[1].name == "SET PIECE" && ses.stacks[1].kind == "song" && ses.stacks[1].snaps == std::vector<juce::int64> { first, farId, first };
             check (stacksOk, "the stacks marked for the library screen are here, each with its snapshots in its order; the one not marked is not, and a stack that is on a knob is the knob's");
             {
-                // the stack knobs: 7 and 9 filled; 5 left as it is, whatever its place there holds, because the library has not got what it holds here
+                // the stack knobs: 5, 7 and 9 filled. What 5 held here can never go to the library (the rig's own snapshots), so it
+                // makes room: it is on 6 now, the first stack knob free here and there, as it was, and MOTION went with it
                 const auto& k7 = ses.knobs[6];
                 const juce::uint32 noKickNoReturns = Session::kAllLanes & ~1u & ~(1u << kLanes);
                 const bool seven = k7.snaps == std::vector<juce::int64> { first, farId } && k7.name == "LIFT" && k7.links.empty() && (k7.lanesAt (0) & Session::kAllLanes) == Session::kAllLanes
                                    && (k7.lanesAt (1) & Session::kAllLanes) == noKickNoReturns && libOf (6) == "sf0testmacro1";
                 const bool nine = ses.knobs[8].name == "DARK ONES" && ses.knobs[8].snaps == std::vector<juce::int64> { third, farId, first };
-                const bool five = ses.knobs[4].snaps == knob5Was && ! knob5Was.empty();
-                check (seven && nine && five && said.contains ("KNOBS 7, 9 FILLED") && said.contains ("KNOB 5 WAS LEFT AS IT IS") && said.contains ("THE LIBRARY HAS NOT GOT ALL"),
-                       "the module's stack knobs go on their knobs, each snapshot with the parts of the rig chosen for it there (knob 7's second: not the kick, not the returns); a knob holding snapshots the library has not got is left as it is, and it says so");
-                if (! (seven && nine && five)) std::printf ("    (7 %d 9 %d 5 %d | %s)\n", (int) seven, (int) nine, (int) five, said.toRawUTF8());
+                const bool five = ses.knobs[4].name == "OTHER" && ses.knobs[4].snaps == std::vector<juce::int64> { third, first } && libOf (4) == "sf0testmacro2";
+                const bool six = ses.knobs[5].snaps == knob5Was && ! knob5Was.empty() && ses.knobs[5].name == "TOUR" && libOf (5).isEmpty() && e.valueText (cx::mot (0, 2)) == "6";
+                check (seven && nine && five && six && said.contains ("KNOBS 5, 7, 9 FILLED") && said.startsWith ("LOADED: WHAT KNOB 5 HELD (TOUR) IS ON KNOB 6 NOW") && ! said.contains ("LEFT AS"),
+                       "the module's stack knobs go on their knobs, each snapshot with the parts of the rig chosen for it there (knob 7's second: not the kick, not the returns); a knob here that can never go to the library (the rig's own snapshots) makes room for the module's: it is on the next free stack knob, as it was, with its MOTION, and LOAD says so first");
+                if (! (seven && nine && five && six)) std::printf ("    (7 %d 9 %d 5 %d 6 %d | %s)\n", (int) seven, (int) nine, (int) five, (int) six, said.toRawUTF8());
                 // CUE lit: a turn of knob 9 comes to one of its snapshots in the headphones; a press takes the set to it
                 ses.setStackCue (true);
                 ses.userSet (cx::kSnap + 8, 0.5f);

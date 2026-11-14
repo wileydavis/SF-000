@@ -236,7 +236,7 @@ public:
     void turnSnapKnob (int k, float v);
     // ---- The snapshot module's sixteen knobs are of two kinds, by where they are.
     // Knobs 1 to 4 are MACRO knobs: each is tied to knobs of the rig (LEARN) and turns them.
-    // Knobs 5 to 16 are STACK knobs: each holds an ordered list of snapshots, one at each of even
+    // Knobs 5 to 12, 14 and 15 are STACK knobs: each holds an ordered list of snapshots, one at each of even
     // steps along its turn (one alone: at the top). How a stack knob is played is CUE's to say:
     //  - CUE out: a turn morphs the set itself, from wherever it is toward the next snapshot in
     //    the direction of the turn, by as much of the way as the knob has gone of its way there;
@@ -246,7 +246,12 @@ public:
     //    a press morphs the set to the one the knob is on, over the GLIDE time.
     // Each snapshot of a stack takes only the parts of the rig its own lanes say.
     static constexpr int kMacroKnobs = 4;
-    static bool isStack (int k)         { return k >= kMacroKnobs && k < 16; }
+    static constexpr int kStackKnobs = 10;
+    // 13 and 16 are no knob of the module: on the E16 they are two of the four corners every page has (13 the lane
+    // wheel, 16 OPEN), and a stack knob there would need its press for itself. So: 1 to 4 macro, 5 to 12 and 14, 15 stack.
+    static bool isCorner (int k)        { return k == 12 || k == 15; }
+    static bool isMacro (int k)         { return k >= 0 && k < kMacroKnobs; }
+    static bool isStack (int k)         { return k >= kMacroKnobs && k < 16 && ! isCorner (k); }
     bool stackCue = false;
     void setStackCue (bool on);
     static constexpr juce::uint32 kAllLanes = (1u << (kLanes + 3)) - 1u;
@@ -274,7 +279,7 @@ public:
     void stackLanes (int k, int index, juce::uint32 lanes);
     void stackSettle (int k, juce::int64 on);
     void stacksLeft (int but);
-    std::vector<float> knobsBroughtOver (const std::array<MacroKnob, 16>& read, const std::array<bool, 16>& stepped);
+    std::vector<float> knobsBroughtOver (const std::array<MacroKnob, 16>& read, const std::array<bool, 16>& stepped, bool twoKinds = false);
     void knobClear (int k, bool told = true);               // the knob holds nothing (a macro: what it pushed is let go of). told: the web library is to hear of it
     // Knobs a session from before the two kinds had that found no slot of their kind (more than four macros, more than
     // twelve stacks): kept as the file had them, for ONLINE to send to the library as modules off the chassis.
@@ -408,6 +413,12 @@ public:
     juce::var knobBody (int k, bool& whole) const;          // as the library takes a module. whole: every snapshot of it has a uid
     bool knobIs (int k, const juce::var& module) const;     // it holds what that module of the chassis is (name and depth too)
     struct KnobPlan { enum What { leave, take, clear }; What what = leave; juce::String lib; };      // (lib: the module the knob is now known to be)
+    // A stack knob taken to another stack knob, one that holds nothing: all it is goes with it (its snapshots and their
+    // parts, its name, where it stands, which module of the library it is), and MOTION follows it. LOAD makes room so.
+    bool knobMove (int from, int to);
+    // A stack knob holding a snapshot the web library is never given (the rig's own: CLEAN SLATE, INIT and its pushes;
+    // or one that is gone): such a knob can never be sent there.
+    bool knobStaysHere (int k) const;
     juce::String takeTray (const juce::var& tray, const std::array<KnobPlan, 16>* plan = nullptr);
     // Audio files a snapshot names that are not on this computer (a sample only the machine it was taken on has).
     int filesMissing (juce::int64 id) const;

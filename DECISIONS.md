@@ -2317,6 +2317,85 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
 460. **Macro knobs** are made on the instrument (LEARN) and arrive by 447, or here from two
      marked chips (KNOB MACRO), and are dragged onto places 1 to 4.
 
+## What you found in it the same morning (Nov 14)
+
+461. **You**, 11:29: "i bult a stack knob called test stack 1 in the library but it won't load
+     into the chassis" (466.)
+462. **You**, 11:34: "some other bugs: the e16 snapshot page doesn't have the select toggle
+     (knob 13). The glide label doesn't update as you turn the knob." (467, 469.)
+463. **You**, 11:37: "if need be we can not have snapshots on the four corner knobs to retain
+     the cinsistent interface functionality. I'd rather have fewer macros/snapshots than
+     inconsistent ui" (467.)
+464. **You**, 11:40: "also, it might make sense to build the online lobrary functionality and
+     ui right into the device itself, one that uses the locl snapshot repo. Wioth a duplicate
+     online, and an option to load from the local library or the remote library." And: "so
+     when clicking the library button on the instrument, it goes to a similar style macro
+     designed/stacks page. thoughts?" To what I answered (470), at 11:49: "sounds good." and
+     "afterr the fixes, start building the integrated library".
+465. **You**, 11:49: "Also, when cued, sometimes the stack knob stays where I left it but
+     sometimes it resets to zero when i turn it again. it should stay where it was left. And
+     recalls should go to the interpolated position between the snapshots if thats where i
+     pressed the recall." (468.)
+
+### The forty-fifth build
+
+466. **LOAD makes room.** *Mine, and it undoes a rule of mine that was wrong.* A stack knob
+     that holds any of the rig's own snapshots (CLEAN SLATE, INIT and its five pushes) can
+     never be given to the web library, which is never sent those; and LOAD would not replace
+     a knob the library had not got. So such a knob (TOUR in a new session, WARP in yours)
+     held its place against the library for good, and the library, which cannot see it, put
+     your new stack knob on that very place. Now: a stack knob here that the library cannot be
+     given, on a place its module has another knob for, goes to the first stack knob that is
+     free both here and on the module, as it is (its snapshots and their parts, its name,
+     where it stood, its MOTION), and the module's knob takes the place. LOAD says so first:
+     "WHAT KNOB 5 HELD (WARP) IS ON KNOB 6 NOW". With no stack knob free it is left, and LOAD
+     says why and what to do. A knob of the rig's own snapshots that nothing wants the place
+     of is no longer reported at every LOAD. The knobs are listed in their own order.
+467. **13 and 16 are no knob of the module.** *Yours (463); which knobs, mine.* The four
+     corners are the same on every page of the E16, the snapshot page included: knob 1 is
+     GLIDE behind its press, knob 4 pressed is CUE, **knob 13 is the lane wheel** (a press
+     takes the pointer up at once, its turns are the pointer's, a press chooses) and **knob 16
+     pressed is OPEN**. A stack knob needs its press for itself, so none is on 13 or 16: the
+     stack knobs are **5 to 12, 14 and 15, ten of them**. *Mine:* the four macro knobs stay on
+     1 to 4. A macro's own press is not needed (it was a shortcut), so 1 and 4 already work as
+     the corners do everywhere, the knob's own turn with the corner behind its press; taking
+     them off would cost two macro knobs and change nothing you can feel. This replaces 452's
+     half-second holds on 13 and 16 (15 held is still MOTION).
+     A session with a stack on 13 or 16 has it moved to the first free stack knob when it
+     opens, by 445's rule; the web library does the same to its module, and refuses a knob on
+     those two places. On the screen the two seats are bare (INFO names them), and their cards
+     in the designer say what they are. The scenes you have still work: their 13 and 16 on
+     that page are taken as the same corners. The new ones give them their names and colour.
+468. **A press takes the set to where the knob is, and the knob stays there.** *Yours (465);
+     the sums are mine.* With CUE lit or out: on a snapshot's place (to within a click of the
+     E16's knob) the set goes to that snapshot, whole, for the parts of the rig it takes, as
+     before. **Between two it goes that far between them**: every knob of the rig to as far
+     between where the two snapshots have it as the knob stands between their places, over
+     the GLIDE time. A part only one of the two takes goes between where that one has it and
+     where it stands now. *Mine:* what is not a knob (the notes, the effects in the rack, a
+     sample) belongs to a snapshot and comes only with a press on its place; between two it
+     is left as it is. The headphones still play the nearer snapshot: a mix of two is not
+     something there is a clip of. **What reset the knob:** a press used to put it on the
+     nearest snapshot's place, which for anything short of half way to the second one is
+     nought. And **putting CUE out no longer puts the stack knobs back** where they stood
+     before it was lit (440): each stays where it was left, and its next turn goes on from
+     there, from wherever the set is, as any turn with CUE out does.
+469. **GLIDE's time is printed again in 3D.** On the 3D stage a knob that travels is only lit
+     differently, and nothing is printed; but GLIDE's time is printed beside its knob, and it
+     was left as it was. Seen now that knob 1 of every page turns it. A check holds a part
+     printing against a whole one, and fails without the fix.
+470. **The library, in the instrument.** *Yours (464); what I answered, and you agreed to.* A
+     live instrument should be whole on its own: 466 came from the seam between two libraries,
+     and a show without a network could not arrange its own knobs. To be built natively, in
+     the instrument's own cards, as the designer is: LIBRARY opens the snapshots as cards with
+     their keys, a column where a stack is built and put in order, and the places to put it
+     on. Not the web page inside the app: that would be the mouse only, its previews would not
+     be the headphones' cue, and the E16 could not drive it. The heavy sorting (AUTO SORT,
+     moods, LIKE THIS, tags in bulk) stays on the web. The instrument's library is the
+     original and ONLINE keeps the web's the same, stacks and module included; stacks made
+     here go straight onto knobs, and LOAD is for what was arranged in the browser. *Not
+     built in this build:* it is the next one.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2330,10 +2409,14 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   its fifth stays a stack knob, and a knob of your own snapshots put on knob 2 goes to knob 6
   with its place, its MOTION and its sound) and on made-up ones. Not on yours.
   `session-before-two-kinds.json` is beside your session if anything is not as you expect.
-- **The E16's corners (449 to 452)** are checked against the scene files object by object and
-  with made-up messages. Not on your E16: whether the E16 sends a knob's press while the same
-  knob has a swap on it (it does not need to: no corner has both), and how a half-second hold
-  feels on 13 and 16 of the snapshot page.
+- **The E16's corners (449 to 452, 467)** are checked against the scene files object by object
+  and with made-up messages, the scenes of the build before included. Not on your E16.
+- **LOAD making room (466)** is checked against the web library's code running here, with a
+  new session's TOUR on knob 5 and a module that has another knob for 5. I took your failure
+  to be this one from how the code behaves; I have not seen your LOAD line. If TEST STACK 1
+  still does not come, the line LOAD prints (in full on the library screen) says why.
+- **The press between two snapshots (468)** is checked in numbers (half way between two is
+  half way for a knob both have). Not heard.
 - **The snapshot page's names (453)** go by the same message the insert and CONFIG pages
   use, checked against a mock of the script. Not seen on the E16's display.
 - **The column and the keys (456 to 459)** are pressed and dragged in a browser with no

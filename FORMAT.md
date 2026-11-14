@@ -52,7 +52,7 @@ The uid comes back the same (see below); `made` does not.
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "lanes"?: [masks], "links": [ { "c": id, "d": amount } ], "at"? } x 16 ],
-  "module":    2,                             the snapshot module has two kinds of knob: 1 to 4 macro, 5 to 16 stack (absent: a session from before)
+  "module":    3,                             the snapshot module's knobs: 1 to 4 macro; 5 to 12, 14, 15 stack; 13 and 16 none (2: 13 and 16 were stack knobs too. Absent: a session from before the two kinds)
   "stackCue":  true,                          CUE is lit (absent: out)
   "knobsAside"?, "knobsUnseated"?:            knobs waiting to be told to the web library (below)
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
@@ -279,7 +279,7 @@ the rig that snapshot does **not** take, a lane by its slug, then `returns`, `bu
 (absent: it takes everything; a part not named is taken, so a lane a later rig adds comes with
 the rest). A **macro knob** is kind `learn` with no items and `extra.links` as a knob's `links`
 are here, and `depth`. `slot` is its place on the library's module, 1 to 16 (absent: off it): 1
-to 4 take a macro knob, 5 to 16 a stack knob, and the library refuses the other kind. A kind
+to 4 take a macro knob; 5 to 12, 14 and 15 a stack knob; 13 and 16 nothing; and the library refuses the other kind. A kind
 `macro` there is from before the two kinds: a stack knob if it has items. `GET /api/load` gives
 the module as `knobs`: `{ id, slot, kind, name, depth, uids, off?, links? }`, `off` one list
 for each of `uids`.
