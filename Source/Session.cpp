@@ -476,6 +476,14 @@ void Session::sweepKnob (int k, float from, float to)
             if (! engine.control (i).morph || snap.values[(size_t) i] < 0.0f) continue;
             if (scopeTakes (sc, i)) base[(size_t) i] += (snap.values[(size_t) i] - base[(size_t) i]) * f;
         }
+        {
+            // the effects in the racks go with it (sweepSlots). How far the knob is between the place behind it and the one ahead:
+            const float ahead = placeOf (next, n), behind = (next - (int) dir >= 0 && next - (int) dir < n) ? placeOf (next - (int) dir, n) : (dir > 0.0f ? 0.0f : 1.0f);
+            const float whole = std::abs (ahead - behind);
+            const float g0 = whole > 1.0e-6f ? juce::jlimit (0.0f, 1.0f, std::abs (at - behind) / whole) : 1.0f;
+            const float g1 = whole > 1.0e-6f ? juce::jlimit (0.0f, 1.0f, std::abs (at + dir * step - behind) / whole) : 1.0f;
+            sweepSlots (h[(size_t) next], f, g0, g1);
+        }
         at += dir * step;
         knobs[(size_t) k].picked = step >= span ? h[(size_t) next].id : 0;
     }
@@ -647,6 +655,13 @@ void Session::pressSnapKnob (int k)
             if (! ta && ! tb) continue;
             const float now = base[(size_t) i], va = ta ? A.s->values[(size_t) i] : now, vb = tb ? B.s->values[(size_t) i] : now;
             base[(size_t) i] = juce::jlimit (0.0f, 1.0f, va + (vb - va) * f);
+        }
+        // the effects in the racks, that far between the two (slotBetween): a lane neither takes is left as it is
+        for (int l = 0; l < kLanes; ++l)
+        {
+            if (! sa.lane[(size_t) l] && ! sb.lane[(size_t) l]) continue;
+            for (int s = 0; s < kSlots; ++s)
+                slotTo (l, s, slotBetween (slotOf (sa.lane[(size_t) l] ? A.s : nullptr, l, s), slotOf (sb.lane[(size_t) l] ? B.s : nullptr, l, s), f), recallGlide());
         }
         stacksLeft (k);
         kn.picked = 0;                                      // (between two: it stands on neither)
@@ -1440,6 +1455,175 @@ bool Session::insertStays (const Snapshot& s, int l, int k) const
         if (v >= 0.0f && ct.used && ! ct.glides && ct.kind != Kind::Hold && std::abs (v - engine.target (i)) > 1.0e-4f) return false;
     }
     return true;
+}
+
+// ------------------------------------------------------------------- effects, between two snapshots
+// An effect is part of a sound, so a place between two snapshots has their effects between them too.
+//  - The same effect in a slot of both: its knobs go between the two (a knob that turns; a menu or a switch is the
+//    nearer one's, as is its CONFIG).
+//  - An effect in one and nothing in the other: the effect, with its MIX as far up as the place is toward it. Half way
+//    from dry to a reverb is half the reverb.
+//  - Two different effects: one slot holds one effect, so the way from one to the other is through dry. The first
+//    half of the way its MIX comes down to nothing; at half way the other takes the slot with its MIX at nothing, and
+//    comes up over the second half.
+// (Every effect of this rig has a MIX. One without would simply be the nearer snapshot's.)
+int Session::mixCellOf (int type)
+{
+    if (type < 0 || type >= (int) effects().size()) return -1;
+    const auto& d = effects()[(size_t) type];
+    for (int c = 0; c < kCells; ++c) if (d.cells[c].label != nullptr && juce::String (d.cells[c].param) == "mix") return c;
+    return -1;
+}
+
+// (a knob of an effect that turns: its place can be anywhere between two. A menu, a switch: one or the other. A key held: neither's.)
+static char cellKind (int type, int c)
+{
+    if (type < 0 || type >= (int) effects().size() || effects()[(size_t) type].cells[c].label == nullptr) return 0;
+    return effects()[(size_t) type].cells[c].kind;
+}
+
+Session::SlotSide Session::slotOf (const Snapshot* s, int l, int k) const
+{
+    SlotSide side;
+    side.from = s;
+    side.type = s != nullptr ? s->inserts[(size_t) l][(size_t) k] : engine.insertType (l, k);
+    for (int c = 0; c < kCells; ++c)
+    {
+        const int i = cx::ins (l, k, c);
+        side.cells[(size_t) c] = s != nullptr ? (i < (int) s->values.size() ? s->values[(size_t) i] : -1.0f) : (engine.control (i).used ? engine.target (i) : -1.0f);
+    }
+    return side;
+}
+
+Session::SlotSide Session::slotBetween (const SlotSide& a, const SlotSide& b, float f)
+{
+    f = juce::jlimit (0.0f, 1.0f, f);
+    const SlotSide& near = f < 0.5f ? a : b;
+    auto withMix = [] (SlotSide s, float share)
+    {
+        if (const int m = mixCellOf (s.type); m >= 0 && s.cells[(size_t) m] >= 0.0f) s.cells[(size_t) m] = juce::jlimit (0.0f, 1.0f, s.cells[(size_t) m] * share);
+        for (int c = 0; c < kCells; ++c) if (cellKind (s.type, c) == 'h') s.cells[(size_t) c] = -1.0f;
+        return s;
+    };
+    if (a.type == b.type)
+    {
+        SlotSide out = near;                                // (its menus, its switches, its CONFIG: the nearer one's. The rig as it stands: left as they are)
+        for (int c = 0; c < kCells; ++c)
+        {
+            const char kind = cellKind (a.type, c);
+            const float va = a.cells[(size_t) c], vb = b.cells[(size_t) c];
+            if (kind == 'h') out.cells[(size_t) c] = -1.0f;
+            else if (kind == 'u' || kind == 'b') out.cells[(size_t) c] = va < 0.0f ? vb : vb < 0.0f ? va : va + (vb - va) * f;
+        }
+        return out;
+    }
+    if (a.type < 0) return mixCellOf (b.type) >= 0 ? withMix (b, f) : (f >= 0.5f ? withMix (b, 1.0f) : a);
+    if (b.type < 0) return mixCellOf (a.type) >= 0 ? withMix (a, 1.0f - f) : (f < 0.5f ? withMix (a, 1.0f) : b);
+    return f < 0.5f ? withMix (a, mixCellOf (a.type) >= 0 ? 1.0f - 2.0f * f : 1.0f) : withMix (b, mixCellOf (b.type) >= 0 ? 2.0f * f - 1.0f : 1.0f);
+}
+
+// A slot brought to that. An effect that is already there stays, and its knobs travel; one that is not (or whose
+// menus, switches or CONFIG are to be another's) comes whole, crossed over, as a recall brings one.
+void Session::slotTo (int l, int k, const SlotSide& to, double glide)
+{
+    bool stays = engine.insertType (l, k) == to.type;
+    if (stays && to.type < 0) return;
+    if (stays && to.from != nullptr)
+    {
+        if (to.from->hasInsFiles && ! engine.insertHolds (l, k, to.type, to.from->insFiles[(size_t) l][(size_t) k])) stays = false;
+        if (stays && to.from->hasSetup && setupDiffers (engine.getSetup ({ 1, l, k }), withMotion (engine, { 1, l, k }, to.from->insSetup[(size_t) l][(size_t) k]))) stays = false;
+    }
+    for (int c = 0; stays && c < kCells; ++c)
+    {
+        const int i = cx::ins (l, k, c);
+        const auto& ct = engine.control (i);
+        const float v = to.cells[(size_t) c];
+        if (v >= 0.0f && ct.used && ! ct.glides && ct.kind != Kind::Hold && std::abs (v - engine.target (i)) > 1.0e-4f) stays = false;
+    }
+    if (! stays)
+    {
+        // (a key that is held, or a switch nothing says anything of: not held, off. The slot's last effect may have left anything there.)
+        float cells[kCells];
+        for (int c = 0; c < kCells; ++c) { const char kind = cellKind (to.type, c); cells[c] = to.cells[(size_t) c] < 0.0f && (kind == 'h' || kind == 't') ? 0.0f : to.cells[(size_t) c]; }
+        const bool theirs = to.type >= 0 && to.from != nullptr;
+        if (theirs && to.from->hasInsFiles) engine.expectInsertFiles (l, k, to.from->insFiles[(size_t) l][(size_t) k]);
+        engine.setInsertType (l, k, to.type, false, theirs && to.from->hasSetup ? &to.from->insSetup[(size_t) l][(size_t) k] : nullptr, glide, cells);
+        if (to.type < 0) return;
+    }
+    for (int c = 0; c < kCells; ++c)
+    {
+        const int i = cx::ins (l, k, c);
+        const float v = to.cells[(size_t) c];
+        if (v < 0.0f || ! engine.control (i).used) continue;
+        base[(size_t) i] = v;
+        engine.set (i, v, stays && engine.control (i).glides ? glide : 0.0);
+    }
+}
+
+// CUE out, a stack knob turned a little toward a snapshot: the racks of the lanes that snapshot takes go that much of
+// the way too. f: how much of what was left of the way this turn covered (as for the sound knobs). g0, g1: how far
+// between the place behind the knob and the one ahead it stood, and stands now. Worked out from what is in the rack,
+// so there is nothing to jump from.
+void Session::sweepSlots (const Held& toward, float f, float g0, float g1)
+{
+    const auto sc = scopeOf (toward.lanes);
+    const double glide = glideBeats();
+    const bool arrived = f >= 1.0f - 1.0e-6f, crossed = g0 < 0.5f && g1 >= 0.5f;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        if (! sc.lane[(size_t) l]) continue;
+        for (int k = 0; k < kSlots; ++k)
+        {
+            const SlotSide there = slotOf (toward.s, l, k);
+            SlotSide here = slotOf (nullptr, l, k);
+            if (here.type < 0 && there.type < 0) continue;
+            const int hm = mixCellOf (here.type), tm = mixCellOf (there.type);
+            if (here.type == there.type)
+            {
+                // the same effect: its knobs go that much of the way; its menus, switches and CONFIG are the snapshot's from half way on
+                bool moved = false;
+                for (int c = 0; c < kCells; ++c)
+                {
+                    const char kind = cellKind (here.type, c);
+                    const float hv = here.cells[(size_t) c], tv = there.cells[(size_t) c];
+                    if (kind == 'h') { here.cells[(size_t) c] = -1.0f; continue; }
+                    if (tv < 0.0f || hv < 0.0f) continue;
+                    if (kind == 'u' || kind == 'b') { if (std::abs (tv - hv) > 1.0e-6f) { here.cells[(size_t) c] = hv + (tv - hv) * f; moved = true; } }
+                    else if (g1 >= 0.5f && std::abs (tv - hv) > 1.0e-4f) { here.cells[(size_t) c] = tv; moved = true; }
+                }
+                if (crossed || arrived) here.from = toward.s;
+                if (moved || here.from != nullptr) slotTo (l, k, here, glide);
+            }
+            else if (here.type < 0)
+            {
+                // nothing there, an effect ahead: it is put in with its MIX at nothing, and comes up as the knob goes
+                if (tm >= 0) slotTo (l, k, slotBetween (here, there, f), glide);
+                else if (g1 >= 0.5f) slotTo (l, k, there, glide);
+            }
+            else if (there.type < 0)
+            {
+                // an effect there, nothing ahead: its MIX comes down as the knob goes, and at the snapshot's place it is taken out
+                if (arrived || (hm < 0 && g1 >= 0.5f)) slotTo (l, k, there, glide);
+                else if (hm >= 0 && here.cells[(size_t) hm] >= 0.0f) { here.cells[(size_t) hm] *= 1.0f - f; for (int c = 0; c < kCells; ++c) if (c != hm) here.cells[(size_t) c] = -1.0f; slotTo (l, k, here, glide); }
+            }
+            else if (g1 < 0.5f && hm >= 0)
+            {
+                // another effect ahead, and the knob short of half way: this one's MIX comes down, to be nothing at half way
+                if (here.cells[(size_t) hm] >= 0.0f) { here.cells[(size_t) hm] *= (0.5f - g1) / std::max (1.0e-6f, 0.5f - g0); for (int c = 0; c < kCells; ++c) if (c != hm) here.cells[(size_t) c] = -1.0f; slotTo (l, k, here, glide); }
+            }
+            else if (g1 >= 0.5f && (g0 < 0.5f || hm < 0 || here.cells[(size_t) hm] <= 1.0e-4f || arrived))
+            {
+                // half way, or past it with this one's MIX at nothing: the one ahead takes the slot, its MIX as far up as the knob is past half way
+                slotTo (l, k, slotBetween (SlotSide(), there, tm >= 0 ? juce::jlimit (0.0f, 1.0f, (g1 - 0.5f) * 2.0f) : 1.0f), glide);
+            }
+            else if (hm >= 0 && here.cells[(size_t) hm] >= 0.0f)
+            {
+                // past half way with another effect still sounding (the set came here some other way): its MIX comes down as the
+                // knob goes, so nothing jumps, and at the snapshot's place the one ahead takes the slot
+                here.cells[(size_t) hm] *= 1.0f - f; for (int c = 0; c < kCells; ++c) if (c != hm) here.cells[(size_t) c] = -1.0f; slotTo (l, k, here, glide);
+            }
+        }
+    }
 }
 
 void Session::applySnapshot (const Snapshot& s, double glide, const std::array<bool, kLanes>* notes)

@@ -3963,6 +3963,67 @@ static int uiTest()
                 check (chooses && motion && pressed && putBack && landed,
                        "CUE lit: a turn chooses in the headphones and the set is not touched, MOTION still swings what the knob holds, and a press takes the set to what the knob's place says (a snapshot on its place; between two, that far between them) and leaves the knob there; CUE out again leaves the knob where it was left; knob 4 pressed is CUE; a press with CUE out does the same");
                 check (one && filed, "a stack of one is at the top of its turn; the session file says which parts each snapshot of a stack takes");
+                {
+                    // The effects in the racks are part of a sound: between two snapshots they are between them too.
+                    // Four snapshots, by the bass's first slot: dry; a DELAY (feedback 0.2, MIX 0.6); the DELAY again (feedback 0.8, MIX 0.2); a REVERB (MIX 0.4).
+                    const int L = bassLane, dlyFb = cx::ins (L, 0, 1), dlyMix = cx::ins (L, 0, 6), revMix = cx::ins (L, 0, 7);
+                    auto rackTo = [&] (int type) { while (e2.insertType (L, 0) != type) s2.stepInsert (L, 0); };
+                    auto mixNow = [&] { const int m = Session::mixCellOf (e2.insertType (L, 0)); return m < 0 ? -1.0f : e2.target (cx::ins (L, 0, m)); };
+                    rackTo (-1);
+                    const auto dry = s2.take();
+                    rackTo (0); s2.userSet (dlyFb, 0.2f); s2.userSet (dlyMix, 0.6f);
+                    const auto d1 = s2.take();
+                    s2.userSet (dlyFb, 0.8f); s2.userSet (dlyMix, 0.2f);
+                    const auto d2 = s2.take();
+                    rackTo (1); s2.userSet (revMix, 0.4f);
+                    const auto rv = s2.take();
+                    s2.finishTakes (true);
+                    kn.clearSnaps();
+                    for (auto id : { dry, d1, d2, rv }) s2.stackAdd (k, id);          // (their places: 0, a third, two thirds, the top)
+                    const bool mixes = Session::mixCellOf (0) == 6 && Session::mixCellOf (1) == 7 && Session::mixCellOf (-1) < 0;
+                    auto pressAt = [&] (float v) { s2.setStackCue (true); s2.userSet (cx::kSnap + k, v); s2.pressSnapKnob (k); s2.setStackCue (false); };
+                    // pressed between two (CUE lit, so that the turn to the place changes nothing by itself)
+                    s2.recall (dry);
+                    pressAt (1.0f / 6.0f);                                      // half way from dry to the first DELAY: the DELAY, at half its MIX
+                    const bool fromDry = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.3f) < 1e-4f && std::abs (e2.target (dlyFb) - 0.2f) < 1e-4f;
+                    pressAt (0.5f);                                             // half way between the two DELAYs: every knob of it half way
+                    const bool sameOne = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.4f) < 1e-4f && std::abs (e2.target (dlyFb) - 0.5f) < 1e-4f;
+                    pressAt (2.0f / 3.0f + 0.25f / 3.0f);                       // a quarter of the way from the second DELAY to the REVERB: the DELAY, its MIX half down
+                    const bool firstHalf = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.1f) < 1e-4f && std::abs (e2.target (dlyFb) - 0.8f) < 1e-4f;
+                    pressAt (2.0f / 3.0f + 0.75f / 3.0f);                       // three quarters: the REVERB, its MIX half up
+                    const bool secondHalf = e2.insertType (L, 0) == 1 && std::abs (mixNow() - 0.2f) < 1e-4f;
+                    pressAt (0.0f);                                             // on dry's place: dry, whole
+                    const bool backDry = e2.insertType (L, 0) == -1 && s2.baseId == dry;
+                    // CUE out, turned: the rack goes with the sound, and nothing jumps
+                    s2.userSet (cx::kSnap + k, 1.0f / 60.0f);                    // (a twentieth of the way to the DELAY: it is in, almost silent)
+                    const bool comesIn = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.03f) < 1e-4f;
+                    s2.userSet (cx::kSnap + k, 1.0f / 6.0f);
+                    const bool halfIn = std::abs (mixNow() - 0.3f) < 1e-4f && std::abs (e2.target (dlyFb) - 0.2f) < 1e-4f;
+                    s2.userSet (cx::kSnap + k, 1.0f / 12.0f);                    // turned back: half of what is left of the way to dry
+                    const bool backsOff = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.15f) < 1e-4f;
+                    s2.userSet (cx::kSnap + k, 0.0f);
+                    const bool goesOut = e2.insertType (L, 0) == -1;
+                    s2.userSet (cx::kSnap + k, 1.0f / 3.0f); s2.userSet (cx::kSnap + k, 0.5f);
+                    const bool between = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.4f) < 1e-4f && std::abs (e2.target (dlyFb) - 0.5f) < 1e-4f;
+                    s2.userSet (cx::kSnap + k, 2.0f / 3.0f);
+                    s2.userSet (cx::kSnap + k, 2.0f / 3.0f + 0.25f / 3.0f);      // toward the REVERB: the DELAY's MIX comes down, to be nothing at half way
+                    const bool down = e2.insertType (L, 0) == 0 && std::abs (mixNow() - 0.1f) < 1e-4f;
+                    s2.userSet (cx::kSnap + k, 2.0f / 3.0f + 0.75f / 3.0f);      // past half way: the REVERB has the slot, half up
+                    const bool up = e2.insertType (L, 0) == 1 && std::abs (mixNow() - 0.2f) < 1e-4f;
+                    s2.userSet (cx::kSnap + k, 1.0f);
+                    const bool there = e2.insertType (L, 0) == 1 && std::abs (mixNow() - 0.4f) < 1e-4f;
+                    // a snapshot that does not take the bass leaves the bass's rack alone, pressed or turned
+                    s2.stackLanes (k, 2, Session::kAllLanes & ~(1u << L));
+                    s2.userSet (cx::kSnap + k, 0.8f);
+                    const bool laneOut = e2.insertType (L, 0) == 1 && std::abs (mixNow() - 0.4f) < 1e-4f;
+                    s2.stackLanes (k, 2, Session::kAllLanes);
+                    const bool all = mixes && fromDry && sameOne && firstHalf && secondHalf && backDry && comesIn && halfIn && backsOff && goesOut && between && down && up && there && laneOut;
+                    if (! all) std::printf ("    (mixes %d | pressed: from dry %d same %d first half %d second half %d back dry %d | turned: comes in %d half %d backs off %d out %d between %d down %d up %d there %d lane out %d | type %d mix %.4f)\n",
+                                            (int) mixes, (int) fromDry, (int) sameOne, (int) firstHalf, (int) secondHalf, (int) backDry, (int) comesIn, (int) halfIn, (int) backsOff, (int) goesOut, (int) between, (int) down, (int) up, (int) there, (int) laneOut, e2.insertType (L, 0), mixNow());
+                    check (all, "the effects in the racks go between two snapshots too: an effect one has and the other has not comes with its MIX as far up as the place is toward it; the same effect in both has each knob between the two; "
+                                "two different effects cross through dry (the first's MIX down to nothing at half way, then the other's up); pressed between two or turned with CUE out, and never with a jump; a lane a snapshot does not take keeps its rack");
+                    rackTo (-1);
+                }
                 kn = knobWas;
                 s2.userSet (cx::kSnap + k, 0.0f);
                 s2.recall (1000);

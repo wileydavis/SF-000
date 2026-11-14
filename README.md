@@ -608,9 +608,9 @@ playing. Knob 4 pressed is CUE too, on the screen and on the E16.
 - At a snapshot's place the set is that snapshot. Turn on and it heads for the next one;
   turn back and it heads for the one behind. Stop anywhere between two for a place between
   them.
-- It moves what can morph: the sound knobs. A snapshot's notes, switches and effects come
-  when the knob is **pressed on that snapshot's place** (double-click; its press on the E16),
-  as a recall does.
+- It moves the sound knobs **and the effects in the racks** (below). A snapshot's notes, its
+  lane's model and its samples come when the knob is **pressed on that snapshot's place**
+  (double-click; its press on the E16), as a recall does.
 - The macro knobs stay on top of whatever a stack knob does.
 - Standing on one of its snapshots, a stack knob shows that snapshot's name. Lit teal.
 
@@ -627,11 +627,24 @@ the knob stays where it was left.
   parts of the rig it takes.
 - Between two: every sound knob goes as far between where the two snapshots have it as the
   stack knob stands between their places. Half way between a closed filter and an open one is
-  half open. Notes, effects and samples are a snapshot's own and are left as they are.
+  half open. The effects in the racks go with it (below). Notes and samples are a snapshot's
+  own and are left as they are.
 - With CUE lit the headphones play the nearer of the two; a mix of two is not something there
   is a clip of.
 - Putting CUE out moves no knob: each stays where it was left, and its next turn goes on from
   there.
+
+**Effects between two snapshots.** An effect is part of a sound, so a place between two
+snapshots has their racks between them too, pressed or turned.
+
+- The same effect in a slot of both: each of its knobs goes between the two.
+- An effect in one, nothing in the other: the effect, its MIX as far up as the place is toward
+  the snapshot that has it. Half way from dry to a reverb is half the reverb.
+- Two different effects in the same slot: through dry. The first one's MIX comes down to
+  nothing by half way, the other takes the slot there and comes up over the second half.
+- A menu or a switch of an effect (a delay's TIME, FREEZE) and its CONFIG are the nearer
+  snapshot's, changed once at half way.
+- A lane a snapshot does not take keeps its rack.
 
 **Each snapshot of a stack takes only the parts of the rig chosen for it**: any of the lanes,
 the returns, the drum bus, the key. A part that was put out stays as it is when the knob comes

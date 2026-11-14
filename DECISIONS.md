@@ -2418,6 +2418,33 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      kept in the session file. With ONLINE lit it goes to the web library by itself, as 447
      has it, each snapshot with its parts.
 
+### Effects between snapshots (forty-seventh build)
+
+474. **You**, 13:31: "Blends between snapshots should include the insert effects. Effects are
+     a fundamental part of a sound. And continue building."
+475. **The racks go between two snapshots as the sound knobs do.** *The rule is yours; how,
+     mine.* This replaces the part of 439 and 468 that left a snapshot's effects for a press
+     on its place. Pressed between two, or turned with CUE out:
+     - **The same effect in a slot of both:** each of its knobs goes between the two.
+     - **An effect in one and nothing in the other:** the effect, with its MIX as far up as the
+       place is toward the snapshot that has it. Half way from dry to a reverb is half the
+       reverb. Turned onto the dry snapshot's place, it is taken out.
+     - **Two different effects in the same slot:** a slot holds one effect, so the way between
+       them is through dry. Over the first half the first one's MIX comes down to nothing; at
+       half way the other takes the slot with its MIX at nothing and comes up over the second
+       half. *Mine, and the one place I could not give you a true mix of the two.*
+     - A knob of an effect that is a menu or a switch (a delay's TIME, FREEZE), and its
+       CONFIG, are the nearer snapshot's: they change once, at half way, and the effect is
+       crossed over as a recall crosses one. THROW is never held by it.
+     - A lane that a snapshot does not take keeps its rack.
+     - Turned, it is worked out from what is in the rack now, like the sound knobs, so the
+       first click of a turn never jumps. If the set got between two places some other way,
+       with another effect sounding past half way, that effect's MIX comes down as the knob
+       goes and the snapshot's own takes the slot at its place.
+     *Still a snapshot's own, with a press on its place:* the notes, the lane's model and its
+     samples. *Not in it:* MOTION on a stack knob swings the sound knobs and not the racks,
+     and a macro knob is still not tied to an effect's knobs.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2441,6 +2468,11 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   still does not come, the line LOAD prints (in full on the library screen) says why.
 - **The press between two snapshots (468)** is checked in numbers (half way between two is
   half way for a knob both have). Not heard.
+- **Effects between snapshots (475)** are checked in numbers on one slot (dry, a DELAY, the
+  DELAY again, a REVERB): what is in the rack and where its MIX and FEEDBACK stand, pressed and
+  turned. **Not heard**, and that is what matters here: whether a reverb coming up under a
+  turn sounds like a blend, and whether an effect crossed over at half way (a delay's TIME
+  differing, or another effect taking the slot) is clean with your GLIDE.
 - **The snapshot page's names (453)** go by the same message the insert and CONFIG pages
   use, checked against a mock of the script. Not seen on the E16's display.
 - **The column and the keys (456 to 459)** are pressed and dragged in a browser with no

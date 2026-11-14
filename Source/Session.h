@@ -256,6 +256,7 @@ public:
     void setStackCue (bool on);
     static constexpr juce::uint32 kAllLanes = (1u << (kLanes + 3)) - 1u;
     static Scope scopeOf (juce::uint32 lanes);
+    static int mixCellOf (int type);                        // an effect's MIX among its eight knobs, or -1 (effects(): Rig.h)
     static juce::uint32 lanesOf (const Scope&);
     struct Held { const Snapshot* s = nullptr; juce::int64 id = 0; juce::uint32 lanes = kAllLanes; };
     std::vector<Held> held (int k) const;                   // a knob's snapshots that are here, in order, each with its lanes
@@ -516,6 +517,14 @@ private:
     double heardFrom = 0.0;             // nothing before this song position is known (the clock set off there, or the log reaches no further back)
     bool laneJumps (const Snapshot&, int lane) const;           // its instrument is to change in a way that cannot travel
     bool insertStays (const Snapshot&, int lane, int slot) const;
+    // ---- a slot of a lane's rack, between two snapshots (a stack knob pressed between two, or turned with CUE out)
+    // The effect in a slot and its knobs, as a snapshot has them or as the rig stands (from: whose CONFIG and files
+    // the effect has if it is to be put in; nullptr: the rig's own, as they are).
+    struct SlotSide { int type = -1; std::array<float, kCells> cells; const Snapshot* from = nullptr; SlotSide() { cells.fill (-1.0f); } };
+    SlotSide slotOf (const Snapshot*, int lane, int slot) const;        // nullptr: the rig as it stands
+    static SlotSide slotBetween (const SlotSide& a, const SlotSide& b, float f);
+    void slotTo (int lane, int slot, const SlotSide&, double glideBeats);
+    void sweepSlots (const Held& toward, float f, float g0, float g1);
     void regenerate (int lane);
     void makeFactory();
     void ensureCleanSlate();
