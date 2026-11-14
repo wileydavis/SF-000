@@ -2093,8 +2093,59 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
 425. **Its module's TURN has nothing to play** in the library (there is no rig there to
      turn), and says so. Its DEPTH is kept, as a macro's is.
 
+## Chips onto the chassis (Nov 14)
+
+426. **You:** "I only want to load specific snapshots or macros, not the whole online
+     library." LOAD has only ever brought what is on the chassis (383), but a single chip had
+     no way onto it except by making a stack first or giving it a knob. Now: **a chip dropped
+     on the chassis itself, under its knobs, is for SF-000.** *Mine* (how): it goes into one
+     stack called TO SF-000, made the first time and added to after, which LOAD brings like
+     any other. Taken out of that stack, or the stack taken off the chassis, it is no longer
+     brought (what SF-000 already has, it keeps). The page now says "chassis" wherever it said
+     "tray".
+
+## Forty-third build (Nov 14): the chassis is what the instrument carries
+
+427. **You:** "load doesn't bring in a macro I just made. So the idea is that i want to be
+     able to load up the instrument with only good things for a specific show, then change
+     those out for a different show. The library holds and organizes everything, and lets me
+     stock the instrument with just what i want at that time. While the library holds
+     everything." LOAD had only ever added: a knob that held something was left (387), which is
+     almost certainly why the macro did not arrive. That rule is gone.
+428. **LOAD makes the sixteen knobs what the chassis says.** A pocket's module goes onto its
+     knob whatever the knob held; a module taken off the chassis comes off its knob.
+429. **Nothing is lost by it.** *Mine,* and the one rule over the rest. Before a knob is
+     replaced or emptied, the library must have what it held: if it has not, the knob is sent
+     up first as a module of its own (off the chassis, in the rack). If that cannot be done
+     (one of its snapshots has not reached the library, or the library does not answer) the
+     knob is left exactly as it is, and the line says which.
+430. **A knob made on the instrument that the library has never seen goes up into its own
+     pocket.** *Mine.* So the first LOAD of this build puts everything your knobs hold onto the
+     chassis, and from then on the chassis is the truth. Without this the first LOAD would
+     have emptied every knob the chassis did not know of.
+431. **The same module on both sides: here wins if it was changed here.** *Mine.* Changed on
+     the instrument since the last LOAD (a snapshot added, DEPTH, its name), what is here goes
+     up and stays. Not changed here, the library's comes down. Changed on both sides, the
+     instrument's is kept and the library's change is lost: the instrument is where a knob is
+     tuned by ear.
+432. **How a knob knows.** Each knob keeps the id of its module in the library and a line of
+     what it held when the two last agreed (`lib`, `libmark` in the session file). A knob
+     whose line has not changed is as the library has it.
+433. **Snapshots are not taken off the instrument.** *Mine, for now.* "Only good things for a
+     show" is true of the knobs after this build, and of what LOAD brings; the library screen
+     still lists every snapshot this Mac has. *Proposed next:* the library screen shows the
+     show (what is on the chassis, and what has been taken since) unless asked for everything;
+     and shows are kept by name in the web library, so one can be swapped for another there.
+     Deleting snapshots from the Mac to match is a third step I would only take on your word.
+
 ## Not verified
 
+- **The new LOAD (428 to 432) is checked against the web library's code running here**: a knob
+  sent up into its pocket, kept when changed here, brought down when changed there, swapped
+  for another with what it held kept in the library, emptied when taken off the chassis, and
+  left alone when the library has not got its snapshots. Not run against your library through
+  Cloudflare Access, and not on your session: the first LOAD there will send up every knob
+  you have, and I have not seen that happen with real ones.
 - **Knob macros (422 to 425) are checked on made-up snapshots here and on the rig's own
   knobs through LOAD** (the bass's cutoff taken 0.4 of its travel, times the depth). Not
   tried with two of your snapshots: how many knobs differ between two real ones (it may be

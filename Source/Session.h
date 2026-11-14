@@ -347,7 +347,15 @@ public:
     // The tray itself: its stacks replace the stacks loaded before; a macro goes on its knob if the
     // knob holds nothing (or holds that macro already); a song becomes the arrangement if there is
     // none. Nothing here is ever taken away by it. Says what it did.
-    juce::String takeTray (const juce::var& tray);
+    // ---- a knob as the web library keeps one (a module). LOAD makes the sixteen knobs what the
+    // library's chassis says: Online first sends up whatever a knob holds that the library has
+    // not got, so nothing is lost, and then tells takeTray what may be done with each knob.
+    bool knobHolds (int k) const;
+    juce::String knobPrint (int k) const;                   // what it holds, in a line: two knobs with the same line hold the same
+    juce::var knobBody (int k, bool& whole) const;          // as the library takes a module. whole: every snapshot of it has a uid
+    bool knobIs (int k, const juce::var& module) const;     // it holds what that module of the chassis is (name and depth too)
+    struct KnobPlan { enum What { leave, take, clear }; What what = leave; juce::String lib; };      // (lib: the module the knob is now known to be)
+    juce::String takeTray (const juce::var& tray, const std::array<KnobPlan, 16>* plan = nullptr);
     // Audio files a snapshot names that are not on this computer (a sample only the machine it was taken on has).
     int filesMissing (juce::int64 id) const;
     std::vector<int> knobScope (int k) const;   // the controls a snapshot knob moves

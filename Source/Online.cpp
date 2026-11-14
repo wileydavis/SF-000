@@ -555,11 +555,116 @@ String Online::load()
         e.snap = true; e.clip = clip.getSize() > 0 || ! hasClip[uid]; e.prof = prof; e.name = nameHere; e.gone = false;
         ++brought;
     }
+    // ---- the knobs. The chassis says what each of the sixteen holds: that is what a show carries. What a knob holds that the
+    // library has not got is sent up first, as a module, so that nothing is ever lost by a LOAD; then the chassis's module
+    // takes the knob. A knob whose module has been taken off the chassis is emptied; one the library has never seen goes
+    // up into its own pocket, so the chassis shows what the instrument has.
+    std::array<Session::KnobPlan, 16> plan;
+    juce::StringArray sentUp, keptBack;
+    {
+        struct Now { bool holds = false, whole = false, same = false; String lib, mark, print; var body; };
+        std::array<Now, 16> now;
+        std::array<var, 16> pocket;
+        if (auto* kn = tray.getProperty ("knobs", var()).getArray())
+            for (auto& v : *kn) { const int k = (int) v.getProperty ("slot", 0) - 1; if (k >= 0 && k < 16) pocket[(size_t) k] = v; }
+        {
+            const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+            if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+            for (int k = 0; k < 16; ++k)
+            {
+                auto& n = now[(size_t) k];
+                n.holds = ses.knobHolds (k);
+                n.lib = ses.knobs[(size_t) k].more.getWithDefault ("lib", "").toString();
+                n.mark = ses.knobs[(size_t) k].more.getWithDefault ("libmark", "").toString();
+                n.print = ses.knobPrint (k);
+                n.body = ses.knobBody (k, n.whole);
+                n.same = pocket[(size_t) k].isObject() && ses.knobIs (k, pocket[(size_t) k]);
+                // (whole: and the library holds every snapshot of it. A knob that is not whole is never sent, so never replaced.)
+                if (auto* items = n.body.getProperty ("items", var()).getArray())
+                    for (auto& it : *items) { const auto e = ledger.find (it.getProperty ("u", "").toString()); if (e == ledger.end() || ! e->second.snap) n.whole = false; }
+            }
+        }
+        auto put = [&] (const String& method, const String& path, const var& body)
+        {
+            const auto text = juce::JSON::toString (body, true);
+            const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+            ++asked;
+            const auto r = http (s, method, path, &mb, "application/json", 20000, &callOff);
+            return r.status;
+        };
+        auto newId = []
+        {
+            String id ("sf");
+            juce::Random r;
+            for (int i = 0; i < 14; ++i) id << String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+            return id;
+        };
+        for (int k = 0; k < 16 && ! threadShouldExit(); ++k)
+        {
+            auto& n = now[(size_t) k]; auto& p = plan[(size_t) k];
+            const var& in = pocket[(size_t) k];
+            const String pid = in.isObject() ? in.getProperty ("id", "").toString() : String();
+            const bool edited = n.holds && n.print != n.mark;
+            // the knob as it is, into the library as a module of its own (in a pocket of the chassis, or off it): its id, or none
+            auto asNew = [&] (int slot) -> String
+            {
+                if (! n.whole) return {};
+                const String id = newId();
+                n.body.getDynamicObject()->setProperty ("id", id);
+                if (slot > 0) n.body.getDynamicObject()->setProperty ("slot", slot);
+                const int st = put ("POST", "/api/stacks", n.body);
+                return st == 200 || st == 201 ? id : String();
+            };
+            if (in.isObject())
+            {
+                if (! n.holds || n.same) { p.what = Session::KnobPlan::take; continue; }                // nothing to lose
+                if (n.lib == pid)
+                {
+                    // the same module: the library's, unless it was changed here since (then what is here goes up, and stays)
+                    if (! edited) p.what = Session::KnobPlan::take;
+                    else if (n.whole && put ("PATCH", "/api/stacks/" + pid, n.body) == 200) p.lib = pid;
+                    else keptBack.add (String (k + 1));
+                    continue;
+                }
+                // another module has its pocket: what it holds goes up first, unless the library has it as it is
+                bool safe = n.lib.isNotEmpty() && ! edited;
+                if (! safe && n.lib.isNotEmpty() && n.whole)
+                {
+                    const int st = put ("PATCH", "/api/stacks/" + n.lib, n.body);
+                    safe = st == 200 || (st == 404 && asNew (0).isNotEmpty());
+                }
+                else if (! safe) safe = asNew (0).isNotEmpty();
+                if (safe) p.what = Session::KnobPlan::take; else keptBack.add (String (k + 1));
+            }
+            else if (n.holds)
+            {
+                if (n.lib.isNotEmpty())
+                {
+                    // it came from the chassis, and its pocket there is empty now: taken off there, so it comes off here
+                    ++asked;
+                    const auto g = http (s, "GET", "/api/stacks/" + n.lib, nullptr, {}, 20000, &callOff);
+                    if (g.status == 200)
+                    {
+                        if (! edited || (n.whole && put ("PATCH", "/api/stacks/" + n.lib, n.body) == 200)) p.what = Session::KnobPlan::clear;
+                        else keptBack.add (String (k + 1));
+                        continue;
+                    }
+                    if (g.status != 404) continue;                      // (no answer about it: it is left as it is)
+                    // (the library no longer has that module: the knob is all there is of it, and goes up as a new one)
+                }
+                if (const String id = asNew (k + 1); id.isNotEmpty()) { p.lib = id; sentUp.add (String (k + 1)); }
+                else keptBack.add (String (k + 1));
+            }
+        }
+    }
     String line;
     {
         const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
         if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
-        line = ses.takeTray (tray);
+        line = ses.takeTray (tray, &plan);
+        if (sentUp.size() > 0) line << ". " << (sentUp.size() == 1 ? "KNOB " : "KNOBS ") << sentUp.joinIntoString (", ") << (sentUp.size() == 1 ? " IS" : " ARE") << " ON THE CHASSIS NOW TOO";
+        if (keptBack.size() > 0) line << ". " << (keptBack.size() == 1 ? "KNOB " : "KNOBS ") << keptBack.joinIntoString (", ") << (keptBack.size() == 1 ? " WAS LEFT AS IT IS" : " WERE LEFT AS THEY ARE")
+                                         << ": THE LIBRARY HAS NOT GOT ALL " << (keptBack.size() == 1 ? "ITS" : "THEIR") << " SNAPSHOTS YET (ONLINE SENDS THEM), OR DID NOT ANSWER";
         // (a chip named there is named here now: that is not a rename to send back)
         for (auto& x : ses.library) if (const auto e = ledger.find (x.uid); e != ledger.end() && hasClip.count (x.uid) != 0) e->second.name = x.name;
     }

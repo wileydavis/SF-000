@@ -7663,8 +7663,8 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                                   && ses.stacks[1].name == "SET PIECE" && ses.stacks[1].kind == "song" && ses.stacks[1].snaps == std::vector<juce::int64> { first, farId, first };
             check (stacksOk, "the stacks in the tray are here, each with its snapshots in its order (the one on a knob among them); the one not in the tray is not");
             check (ses.knobs[2].snaps == std::vector<juce::int64> { first, farId } && std::abs (ses.knobs[2].depth - 0.7f) < 1.0e-6f && ses.knobs[2].name == "LIFT"
-                   && ! ses.knobs[2].pick && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOBS 3, 5, 7 FILLED") && said.contains ("KNOB 1 HOLDS SOMETHING"),
-                   "a macro goes on its knob where the knob held nothing (knob 3: its snapshots in sweep order, its depth, its name); a knob that holds something is left, and it says so");
+                   && ! ses.knobs[2].pick && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOBS 3, 5, 7 FILLED") && said.contains ("LEFT AS") && said.contains ("THE LIBRARY HAS NOT GOT ALL"),
+                   "a macro goes on its knob where the knob held nothing (knob 3: its snapshots in sweep order, its depth, its name); a knob holding snapshots the library has not got is left as it is, whatever its pocket holds, and it says so");
             // the stack on knob 5 makes it a knob that steps: a turn comes to one of its snapshots, a press recalls it
             ses.userSet (cx::kSnap + 4, 0.5f);
             const bool cueStack = ses.knobs[4].pick && ses.knobs[4].name == "DARK ONES" && ses.knobs[4].snaps == std::vector<juce::int64> { third, farId, first }
@@ -7727,6 +7727,57 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             ses.remove (farId);
             check (outOfTray && ses.stacks[0].snaps == std::vector<juce::int64> { first, first } && ses.arrangement.size() == 2,
                    "a stack taken out of the tray there is no longer here, and its snapshots are; a snapshot deleted here leaves its stacks");
+            {
+                // LOAD makes the sixteen knobs what the chassis says, and nothing is lost by it.
+                auto stackThere = [&] (const juce::String& id) { return ask ("GET", "/api/stacks/" + id).json; };
+                auto libOf = [&] (int k) { return ses.knobs[(size_t) k].more.getWithDefault ("lib", "").toString(); };
+                // a knob made here that the library has never seen, its pocket there empty: it goes up into that pocket
+                ses.knobs[9] = MacroKnob();
+                ses.knobs[9].name = "HOME MADE"; ses.knobs[9].snaps = { first, third }; ses.knobs[9].depth = 1.5f;
+                const auto s1 = on.load();
+                const auto home = libOf (9);
+                const var up1 = stackThere (home);
+                const bool wentUp = home.isNotEmpty() && (int) up1.getProperty ("slot", 0) == 10 && up1.getProperty ("kind", "").toString() == "macro" && up1.getProperty ("name", "").toString() == "HOME MADE"
+                                    && std::abs ((double) up1.getProperty ("depth", 0.0) - 1.5) < 1.0e-4 && up1.getProperty ("items", var()).size() == 2
+                                    && ses.knobs[9].snaps == std::vector<juce::int64> { first, third } && s1.contains ("KNOB 10 IS ON THE CHASSIS NOW TOO");
+                const int askedThen = on.requests();
+                const auto s2 = on.load();
+                check (wentUp && on.requests() == askedThen + 1 && ses.knobs[9].snaps == std::vector<juce::int64> { first, third } && std::abs (ses.knobs[9].depth - 1.5f) < 1.0e-4f && ! s2.contains ("KNOB 10"),
+                       "a knob made here that the library has never seen goes up into its own pocket of the chassis, as it is; the next LOAD asks once and changes nothing");
+                if (! wentUp) std::printf ("    (%s | %s)\n", s1.toRawUTF8(), juce::JSON::toString (up1, true).substring (0, 200).toRawUTF8());
+                // changed here: what is here goes up, and stays. Changed there (and not here): it comes down.
+                ses.knobs[9].snaps = { third, first };
+                on.load();
+                const var up2 = stackThere (home);
+                const bool localWon = ses.knobs[9].snaps == std::vector<juce::int64> { third, first } && up2.getProperty ("items", var()).size() == 2
+                                      && up2.getProperty ("items", var())[0].getProperty ("u", "").toString() == ses.findSnap (third)->uid;
+                send ("PATCH", "/api/stacks/" + home, obj ({ { "name", "From There" }, { "depth", 0.25 } }));
+                on.load();
+                check (localWon && ses.knobs[9].name == "FROM THERE" && std::abs (ses.knobs[9].depth - 0.25f) < 1.0e-4f && ses.knobs[9].snaps == std::vector<juce::int64> { third, first },
+                       "the same module: changed here, what is here goes up and stays; changed there and not here, it comes down");
+                // another module put in its pocket there: the knob becomes that one, and what it held is still in the library, off the chassis
+                send ("POST", "/api/stacks", obj ({ { "id", "sf0testmacro3" }, { "name", "Show Two" }, { "kind", "macro" }, { "items", list ({ ours[0], ours[2] }) }, { "depth", 0.5 }, { "slot", 10 } }));
+                const auto s3 = on.load();
+                const var kept = stackThere (home);
+                const bool swapped = ses.knobs[9].name == "SHOW TWO" && libOf (9) == "sf0testmacro3" && ses.knobs[9].snaps.size() == 2 && s3.contains ("KNOB 10 CHANGED")
+                                     && kept.getProperty ("name", "").toString() == "From There" && (int) kept.getProperty ("slot", 0) == 0
+                                     && kept.getProperty ("items", var()).size() == 2;
+                // a knob changed here and not yet sent, with another module in its pocket: it is sent up first, then changed
+                ses.knobs[9].name = "MINE NOW"; ses.knobs[9].depth = 0.9f;
+                send ("PATCH", "/api/stacks/" + home, obj ({ { "slot", 10 } }));                                   // (the first one back in the pocket)
+                on.load();
+                const var mine = stackThere ("sf0testmacro3");
+                check (swapped && mine.getProperty ("name", "").toString() == "MINE NOW" && std::abs ((double) mine.getProperty ("depth", 0.0) - 0.9) < 1.0e-4
+                       && ses.knobs[9].name == "FROM THERE" && libOf (9) == home,
+                       "another module in its pocket: the knob becomes that one, and what it held is in the library, off the chassis, as it last was here");
+                if (! swapped) std::printf ("    (%s | %s | lib %s)\n", s3.toRawUTF8(), juce::JSON::toString (kept, true).substring (0, 160).toRawUTF8(), libOf (9).toRawUTF8());
+                // taken off the chassis there: the knob is emptied here
+                send ("PATCH", "/api/stacks/" + home, obj ({ { "slot", var() } }));
+                const auto s4 = on.load();
+                check (! ses.knobHolds (9) && s4.contains ("KNOB 10 EMPTIED") && stackThere (home).getProperty ("name", "").toString() == "From There",
+                       "a module taken off the chassis there is taken off its knob here; the library still has it (" + s4 + ")");
+                ask ("DELETE", "/api/stacks/" + home + "?forget=1"); ask ("DELETE", "/api/stacks/sf0testmacro3?forget=1");
+            }
             // no answer: it says so and changes nothing
             auto dead = st; dead.url = "http://127.0.0.1:9";
             on.setSetup (dead);

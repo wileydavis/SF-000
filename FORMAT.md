@@ -71,6 +71,11 @@ if there is none does it read the path itself. That is how a snapshot from befor
 kept, which is not rewritten (rule 3), still finds its sample once the original has gone. Two
 entries may name one `file` (the same audio given from two places).
 
+A knob's `lib` and `libmark` (forty-third build on; absent on a knob the web library has never
+seen) are the id of the module it is there, and what it held when the two last agreed (its kind,
+name, depth, snapshots' uids and links in one line). LOAD goes by them: a knob whose line is
+still its `libmark` has not been changed here since. A build from before carries both.
+
 A knob with `"pick": true` (thirty-ninth build on) holds a stack: it steps through its `snaps`
 (up to 128) and recalls the one it is on when pressed; it does not sweep through them, and
 `depth` is not used. Absent, the knob sweeps. A build from before reads such a knob as a macro

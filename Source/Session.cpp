@@ -2012,7 +2012,97 @@ int Session::filesMissing (juce::int64 id) const
     return n;
 }
 
-juce::String Session::takeTray (const var& tray)
+// ---- a knob as the web library keeps one
+bool Session::knobHolds (int k) const { const auto& kn = knobs[(size_t) k]; return ! kn.snaps.empty() || ! kn.links.empty(); }
+
+juce::String Session::knobPrint (int k) const
+{
+    const auto& kn = knobs[(size_t) k];
+    juce::String s;
+    s << (kn.pick ? "stack" : kn.snaps.empty() ? "learn" : "macro") << "|" << kn.name << "|" << juce::String (kn.pick ? 0.0f : kn.depth, 3) << "|";
+    for (auto id : kn.snaps) { const auto* sn = findSnap (id); s << (sn != nullptr && sn->uid.isNotEmpty() ? sn->uid : juce::String (id)) << ","; }
+    s << "|";
+    for (const auto& l : kn.links) s << engine.control (l.ctl).id << ":" << juce::String (l.amount, 3) << ",";
+    return s;
+}
+
+juce::var Session::knobBody (int k, bool& whole) const
+{
+    const auto& kn = knobs[(size_t) k];
+    whole = true;
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("name", kn.name.isNotEmpty() ? kn.name : "KNOB " + juce::String (k + 1));
+    o->setProperty ("kind", kn.pick ? "stack" : kn.snaps.empty() ? "learn" : "macro");
+    juce::Array<var> items;
+    for (auto id : kn.snaps)
+    {
+        const auto* sn = findSnap (id);
+        if (sn == nullptr || sn->uid.isEmpty()) { whole = false; continue; }
+        auto* it = new juce::DynamicObject();
+        it->setProperty ("u", sn->uid);
+        items.add (var (it));
+    }
+    o->setProperty ("items", items);
+    if (! kn.pick) o->setProperty ("depth", kn.depth);
+    auto* ex = new juce::DynamicObject();
+    juce::Array<var> ls;
+    for (const auto& l : kn.links)
+    {
+        auto* lo = new juce::DynamicObject();
+        lo->setProperty ("c", engine.control (l.ctl).id); lo->setProperty ("d", l.amount);
+        ls.add (var (lo));
+    }
+    for (auto& v : kn.linksKept) ls.add (v);
+    if (ls.size() > 0) ex->setProperty ("links", ls);
+    ex->setProperty ("from", "sf000");
+    o->setProperty ("extra", var (ex));
+    return var (o);
+}
+
+// A module of the chassis as a knob would hold it: its snapshots that are here, the knobs of this rig it is tied to.
+struct ModuleHere { bool pick = false; std::vector<juce::int64> sn; std::vector<MacroKnob::Link> ln; juce::Array<var> lnKept; juce::String name; float depth = -1.0f; };
+static ModuleHere moduleHere (const var& v, const Engine& engine, const std::map<juce::String, juce::int64>& here)
+{
+    ModuleHere m;
+    // a macro (it sweeps through its ten at most), a stack (it steps through its own, one to a place of the knob at most),
+    // or a knob macro (LEARN's kind: no snapshots, the knobs of the rig it is tied to). A macro may be tied to knobs too.
+    const auto kind = v.getProperty ("kind", "macro").toString();
+    m.pick = kind == "stack";
+    if (kind != "learn")
+        if (auto* a = v.getProperty ("uids", var()).getArray())
+            for (auto& u : *a) if (const auto f = here.find (u.toString()); f != here.end()) m.sn.push_back (f->second);
+    if (m.sn.size() > (m.pick ? 128u : 10u)) m.sn.resize (m.pick ? 128u : 10u);
+    if (! m.pick)
+        if (auto* ls = v.getProperty ("links", var()).getArray())
+            for (auto& l : *ls)
+            {
+                const int i = engine.find (l.getProperty ("c", "").toString());
+                const float d = juce::jlimit (-1.0f, 1.0f, (float) (double) l.getProperty ("d", 0.0));
+                if (Session::reaches (engine, i)) { if (std::abs (d) >= 0.004f) m.ln.push_back ({ i, d }); }
+                else m.lnKept.add (l);                                  // (a knob this rig does not have: carried, as a file's is)
+            }
+    std::sort (m.ln.begin(), m.ln.end(), [] (const MacroKnob::Link& x, const MacroKnob::Link& y) { return x.ctl < y.ctl; });
+    m.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 16);
+    if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) m.depth = juce::jlimit (0.0f, 2.0f, (float) d);
+    return m;
+}
+static bool holdsThat (const MacroKnob& knob, const ModuleHere& m)
+{
+    bool same = knob.snaps == m.sn && knob.pick == m.pick && knob.links.size() == m.ln.size();
+    for (size_t i = 0; same && i < m.ln.size(); ++i) same = knob.links[i].ctl == m.ln[i].ctl && std::abs (knob.links[i].amount - m.ln[i].amount) < 1.0e-4f;
+    return same;
+}
+
+bool Session::knobIs (int k, const var& module) const
+{
+    std::map<juce::String, juce::int64> here;
+    for (auto& s : library) if (s.uid.isNotEmpty()) here[s.uid] = s.id;
+    const auto m = moduleHere (module, engine, here);
+    const auto& knob = knobs[(size_t) k];
+    return holdsThat (knob, m) && knob.name == m.name && (m.pick || m.depth < 0.0f || std::abs (knob.depth - m.depth) < 1.0e-4f);
+}
+
+juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>* plan)
 {
     std::map<juce::String, juce::int64> here;
     for (auto& s : library) if (s.uid.isNotEmpty()) here[s.uid] = s.id;
@@ -2049,42 +2139,52 @@ juce::String Session::takeTray (const var& tray)
             now.push_back (st);
         }
     stacks = now;
-    // the macros: each on its knob, if the knob holds nothing
-    juce::StringArray placed, left;
+    // the knobs. With no plan (nobody has seen to what they hold): each module onto its knob if the knob holds nothing. With
+    // one: the chassis says what each knob holds, and a knob it may take is taken whatever it held (Online has sent that up).
+    juce::StringArray placed, left, changed, cleared;
+    std::array<bool, 16> inPocket {};
     if (auto* kn = tray.getProperty ("knobs", var()).getArray())
         for (auto& v : *kn)
         {
             const int k = (int) v.getProperty ("slot", 0) - 1;
             if (k < 0 || k >= 16) continue;
-            // a macro (it sweeps through its ten at most), a stack (it steps through its own, one to a place of the knob at most),
-            // or a knob macro (LEARN's kind: no snapshots, the knobs of the rig it is tied to). A macro may be tied to knobs too.
-            const auto kind = v.getProperty ("kind", "macro").toString();
-            const bool pick = kind == "stack";
-            auto sn = kind == "learn" ? std::vector<juce::int64>() : idsOf (v.getProperty ("uids", var()));
-            if (sn.size() > (pick ? 128u : 10u)) sn.resize (pick ? 128u : 10u);
-            std::vector<MacroKnob::Link> ln; juce::Array<var> lnKept;
-            if (! pick)
-                if (auto* ls = v.getProperty ("links", var()).getArray())
-                    for (auto& l : *ls)
-                    {
-                        const int i = engine.find (l.getProperty ("c", "").toString());
-                        const float d = juce::jlimit (-1.0f, 1.0f, (float) (double) l.getProperty ("d", 0.0));
-                        if (reaches (engine, i)) { if (std::abs (d) >= 0.004f) ln.push_back ({ i, d }); }
-                        else lnKept.add (l);                                // (a knob this rig does not have: carried, as a file's is)
-                    }
-            std::sort (ln.begin(), ln.end(), [] (const MacroKnob::Link& x, const MacroKnob::Link& y) { return x.ctl < y.ctl; });
-            if (sn.empty() && ln.empty()) continue;
+            const auto m = moduleHere (v, engine, here);
+            if (m.sn.empty() && m.ln.empty()) continue;
+            inPocket[(size_t) k] = true;
             auto& knob = knobs[(size_t) k];
-            bool sameLinks = knob.links.size() == ln.size();
-            for (size_t i = 0; sameLinks && i < ln.size(); ++i) sameLinks = knob.links[i].ctl == ln[i].ctl && std::abs (knob.links[i].amount - ln[i].amount) < 1.0e-4f;
-            if (knob.snaps == sn && knob.pick == pick && sameLinks) continue;        // it holds that already
-            if (! knob.snaps.empty() || ! knob.links.empty()) { left.add (juce::String (k + 1)); continue; }
-            knob.snaps = sn; knob.pick = pick; knob.picked = 0;
-            knob.links = ln; knob.linksKept = lnKept;
-            knob.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 16);
-            if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) knob.depth = juce::jlimit (0.0f, 2.0f, (float) d);
-            turnSnapKnob (k, value (cx::kSnap + k));
-            placed.add (juce::String (k + 1));
+            const bool may = plan != nullptr && (*plan)[(size_t) k].what == KnobPlan::take;
+            const bool same = holdsThat (knob, m), held = knobHolds (k);
+            if (! same)
+            {
+                if (held && ! may) { left.add (juce::String (k + 1)); continue; }
+                if (learning == k) learnDrop();
+                knob.snaps = m.sn; knob.pick = m.pick; knob.picked = 0;
+                knob.links = m.ln; knob.linksKept = m.lnKept;
+            }
+            if (! same || may)
+            {
+                knob.name = m.name;
+                if (m.depth >= 0.0f) knob.depth = m.depth;
+            }
+            if (! same) { turnSnapKnob (k, value (cx::kSnap + k)); (held ? changed : placed).add (juce::String (k + 1)); }
+            if (plan != nullptr && may) { knob.more.set ("lib", v.getProperty ("id", "").toString()); knob.more.set ("libmark", knobPrint (k)); }
+        }
+    if (plan != nullptr)
+        for (int k = 0; k < 16; ++k)
+        {
+            const auto& p = (*plan)[(size_t) k];
+            auto& knob = knobs[(size_t) k];
+            if (p.what == KnobPlan::clear && ! inPocket[(size_t) k] && knobHolds (k))
+            {
+                // taken off the chassis there: it comes off here (the library has it)
+                if (learning == k) learnDrop();
+                setPick (k, false);
+                knob.links.clear(); knob.linksKept.clear(); knob.snaps.clear(); knob.name = {};
+                knob.more.remove ("lib"); knob.more.remove ("libmark");
+                turnSnapKnob (k, 0.0f);
+                cleared.add (juce::String (k + 1));
+            }
+            else if (p.what == KnobPlan::leave && p.lib.isNotEmpty()) { knob.more.set ("lib", p.lib); knob.more.set ("libmark", knobPrint (k)); }
         }
     // a song: the arrangement, if there is none
     int sung = 0; bool songLeft = false;
@@ -2119,7 +2219,9 @@ juce::String Session::takeTray (const var& tray)
     auto count = [] (int n, const char* one, const char* many) { return juce::String (n) + " " + (n == 1 ? one : many); };
     juce::String line = count ((int) stacks.size(), "STACK", "STACKS");
     if (placed.size() > 0) line << ", " << (placed.size() == 1 ? "KNOB " : "KNOBS ") << placed.joinIntoString (", ") << " FILLED";
-    if (left.size() > 0) line << ". " << (left.size() == 1 ? "KNOB " : "KNOBS ") << left.joinIntoString (", ") << (left.size() == 1 ? " HOLDS" : " HOLD") << " SOMETHING AND " << (left.size() == 1 ? "WAS" : "WERE") << " LEFT: CLEAR IT AND LOAD AGAIN";
+    if (changed.size() > 0) line << ", " << (changed.size() == 1 ? "KNOB " : "KNOBS ") << changed.joinIntoString (", ") << " CHANGED (WHAT " << (changed.size() == 1 ? "IT" : "THEY") << " HELD IS IN THE LIBRARY)";
+    if (cleared.size() > 0) line << ", " << (cleared.size() == 1 ? "KNOB " : "KNOBS ") << cleared.joinIntoString (", ") << " EMPTIED (OFF THE CHASSIS; IN THE LIBRARY)";
+    if (left.size() > 0 && plan == nullptr) line << ". " << (left.size() == 1 ? "KNOB " : "KNOBS ") << left.joinIntoString (", ") << (left.size() == 1 ? " HOLDS" : " HOLD") << " SOMETHING AND " << (left.size() == 1 ? "WAS" : "WERE") << " LEFT: CLEAR IT AND LOAD AGAIN";
     if (sung > 0) line << ". THE SONG IS THE ARRANGEMENT (" << count (sung, "PART", "PARTS") << ")";
     if (songLeft) line << ". THE ARRANGEMENT WAS LEFT AS IT IS (CLEAR IT TO TAKE THE SONG)";
     if (renamed > 0) line << ". " << juce::String (renamed) << " RENAMED";

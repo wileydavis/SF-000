@@ -546,21 +546,34 @@ The library itself is a bench: every snapshot a chip, chips in stacks, stacks th
 themselves (like this one, a song from this one, a mood), macros for the snapshot knobs, and a
 **tray** for what the instrument should load (its own README, in the repo `snapshot-library`).
 
-**LOAD** (beside SET UP) brings what is on the web library's chassis (its model of SF-000):
+**LOAD** (beside SET UP) brings what is on the web library's chassis (its model of SF-000), and
+nothing else of that library: the chips, stacks and knobs you have put there.
 
 - **Its stacks.** **STACK** (it appears once there are any) steps the library screen through
   them, each in its own order, then back to every snapshot. The title says which. A stack taken
   out of the tray there is gone from here at the next LOAD; its snapshots stay.
 - **The snapshots this library lacks**, whole, with their four bars and the definitions they
   name, under the name each has there. One this library has, renamed there, is renamed here.
-- **What is in the chassis's sixteen pockets**, each onto its knob *if the knob holds nothing*:
-  a macro (the knob sweeps), a stack (the knob steps: a cue stack, above) or a knob macro (the
-  knob is tied to the rig's knobs it names, as LEARN ties them; one made there from two
-  snapshots makes the change from the first to the second, from wherever the rig is). A knob
-  that holds something is left, and the line says which: CLEAR it in MACROS and LOAD again.
+- **The sixteen knobs, as the chassis's sixteen pockets have them.** The chassis is what the
+  instrument carries for a show, and LOAD makes the knobs match it: a macro (the knob sweeps),
+  a stack (the knob steps: a cue stack, above) or a knob macro (the knob is tied to the rig's
+  knobs it names, as LEARN ties them; one made there from two snapshots makes the change from
+  the first to the second, from wherever the rig is).
+  - A pocket's module goes onto its knob **whatever the knob held**. What it held is not lost:
+    if the library has not got it, it is sent up first, as a module of its own (it is then in
+    the library's rack, off the chassis, to be put back for another show).
+  - A module **taken off the chassis** there comes off its knob here. The library still has it.
+  - A knob **made here that the library has never seen** goes up into its own pocket of the
+    chassis, so the chassis shows what the instrument has. The first LOAD after this build
+    does that for every knob you have.
+  - The same module on both sides: changed here since the last LOAD, what is here goes up and
+    stays; changed there and not here, it comes down.
+  - A knob is only ever replaced or emptied once the library has all of it. If one of its
+    snapshots has not reached the library (ONLINE sends them), or the library does not
+    answer, the knob is left exactly as it is and the line says which.
 - **A song**, as the arrangement, *if there is none*.
 
-LOAD takes nothing away and writes over nothing. What it brought is not sent back. With no
+LOAD deletes no snapshot. What it brought is not sent back. With no
 answer from the library it says so and changes nothing. If a snapshot it brings names a sample
 that is not on this computer, it says how many do: the web library does not keep samples yet,
 so that lane will be silent until the file is here.
