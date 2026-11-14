@@ -667,6 +667,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
                 { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
                 { aClearKnob, "CLEAR", "TAKES EVERY SNAPSHOT OFF THIS KNOB, AND UNTIES IT FROM EVERY KNOB." },
+                { aKnobPick, "STEPS", "THIS KNOB HOLDS A STACK: IT STEPS THROUGH ITS SNAPSHOTS AND DOES NOT SWEEP. A TURN COMES TO THE NEXT AND PLAYS IT IN THE HEADPHONES; A PRESS RECALLS THE ONE IT IS ON, OVER THE GLIDE TIME. LIT AMBER HERE AND ON THE MAIN SCREEN. DEPTH AND MOTION ARE NOT FOR IT." },
                 { aLearn, "LEARN", "TIES THIS KNOB STRAIGHT TO OTHER KNOBS. IT GOES TO ITS FULL TURN AND THE MAIN SCREEN COMES UP: TURN THE KNOBS IT SHOULD MOVE (HERE OR ON A CONTROLLER) TO WHERE THE FULL TURN TAKES THEM, AND KEEP. LEARN AGAIN ADDS TO WHAT IT HAS; A KNOB TURNED BACK TO WHERE IT WAS IS LET GO." },
                 { aLearnKeep, "KEEP", "TIES THE KNOBS MOVED SINCE LEARN TO THE KNOB BEING TAUGHT. NOTHING CHANGES IN THE SOUND: THE KNOB IS AT ITS FULL TURN, AND TURNED BACK THEY GO BACK TO WHERE THEY WERE." },
                 { aLearnDrop, "DROP", "PUTS BACK THE KNOBS MOVED SINCE LEARN AND TIES NOTHING." },
@@ -1327,11 +1328,15 @@ void Screen::drawSnapPanel (G& g, R r)
             if (vis (g, R (cxm - 40, y, 80, 58)))
             {
                 if (seen (g, lit ? kr : R (cxm - 40, y, 80, 58))) lastShown[(size_t) (cx::kSnap + k)] = v;
-                knobCtl = cx::kSnap + k; knobLight = col::teal;
-                knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, col::teal);
+                // (a knob that holds a stack is lit amber, and while the snapshot it has come to plays in the headphones it says which)
+                const auto& kn = ses.knobs[(size_t) k];
+                const auto light = kn.pick ? col::amber : col::teal;
+                knobCtl = cx::kSnap + k; knobLight = light;
+                knob (g, cxm, y + 20, 40, v, Kind::Knob, 0, light);
                 knobCtl = -1;
                 if (info) number (g, cx::kSnap + k, R (cxm - 14, y + 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
-                text (g, ses.knobs[(size_t) k].name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
+                const Snapshot* on = kn.pick && ses.cueing() != 0 && ses.cueing() == kn.picked ? ses.findSnap (kn.picked) : nullptr;
+                text (g, on != nullptr ? on->name : kn.name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
             hit (kr.expanded (4, 2), hSnapKnob, k, 0);
         }
@@ -1982,7 +1987,7 @@ void Screen::drawMacros (G& g)
         {
             const float v = eng.shown (cx::kSnap + k);
             lastShown[(size_t) (cx::kSnap + k)] = v;
-            knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, k == ses.learning ? col::yellow : col::teal);
+            knob (g, x0 + 32, ky + 20, 40, v, Kind::Knob, 0, k == ses.learning ? col::yellow : kn.pick ? col::amber : col::teal);
             hit (R (x0 + 8, ky - 2, 48, 44), hSnapKnob, k, 0);
         }
         else hollow (g, x0 + 32, ky + 20, 40, true);
@@ -2044,12 +2049,15 @@ void Screen::drawMacros (G& g)
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
     actKey (g, aRenameKnob, x0 + 160, ky, 64, "RENAME", col::yellow, 5);
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
-    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, true, ses.learning == selKnob);
+    // (a knob that holds a stack moves nothing, so there is nothing to teach it: LEARN is not there while STEPS is lit)
+    actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, ! ses.knobs[(size_t) selKnob].pick, ses.learning == selKnob);
+    // STEPS: this knob holds a stack. It steps through its snapshots (a turn: the next, in the headphones; a press: recalled) and does not sweep.
+    { const bool steps = ses.knobs[(size_t) selKnob].pick; actKey (g, aKnobPick, x0 + 358, ky, 64, "STEPS", steps ? col::amber : col::putty, 5, ses.learning != selKnob, steps); }
     // MOTION: three waves, each put on a snapshot knob. The knob swings in time with the clock, and what it moves goes with it.
     motSig = motionSig();
     for (int u = 0; u < cx::kMotUnits; ++u)
     {
-        const float ux = x0 + 386 + (float) u * 262;
+        const float ux = x0 + 434 + (float) u * 254;
         const float w = title (g, ux, y0, "MOTION " + String (u + 1));
         const int target = (int) std::lround (eng.target (cx::mot (u, 2)) * 15.0f);
         const bool waveOn = eng.valueText (cx::mot (u, 0)) != "OFF", on = (ses.motionOn (target) >> u) & 1;
@@ -2060,15 +2068,16 @@ void Screen::drawMacros (G& g)
             const auto& nm = ses.knobs[(size_t) target].name;
             says << "  " << eng.valueText (cx::mot (u, 1)) << "  " << (nm.isEmpty() ? "KNOB " + String (target + 1) : String (target + 1) + " " + nm) << "  " << eng.valueText (cx::mot (u, 3));
         }
-        const float room = 256.0f - w - 4.0f;
+        const float room = 248.0f - w - 4.0f;
         while (says.length() > 4 && std::ceil (tw (fNote, says)) + 12.0f > room) says = says.dropLastCharacters (1);
         plate (g, ux + w + 2, y0, says, fNote, 6, on ? col::green : col::white, col::black);
         for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
     }
     const String help = "PICK A KNOB. TAP SNAPSHOTS ON THE RIGHT TO ADD THEM IN SWEEP ORDER (2 TO 10); TAP A NUMBERED SLOT TO TAKE IT OUT. OR PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
+                        "STEPS: THE KNOB HOLDS A STACK: A TURN COMES TO THE NEXT SNAPSHOT AND PLAYS IT IN THE HEADPHONES, A PRESS RECALLS IT. "
                         "MOTION: A WAVE THAT TURNS A SNAPSHOT KNOB FOR YOU, IN TIME WITH THE CLOCK. CHOOSE ITS WAVE, HOW LONG IT IS, WHICH KNOB, AND HOW MUCH OF THE KNOB'S TURN.";
     g.setColour (tone (col::black)); g.setFont (fLbl);
-    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1180, (int) y0 + 2, 490, 94), juce::Justification::centredLeft, 6, 0.85f);
+    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1204, (int) y0 + 2, 466, 94), juce::Justification::centredLeft, 7, 0.8f);
 }
 
 // The arrangement: snapshots in a line. Along the top, the line itself: each part as long as its
@@ -2319,10 +2328,12 @@ void Screen::act (int a)
         case aLearnDrop: ses.learnDrop(); break;
         case aClearKnob:
             if (ses.learning == selKnob) ses.learnDrop();
+            ses.setPick (selKnob, false);
             ses.knobs[(size_t) selKnob].links.clear();
             ses.knobs[(size_t) selKnob].snaps.clear();
             ses.turnSnapKnob (selKnob, 0.0f);
             break;
+        case aKnobPick: ses.setPick (selKnob, ! ses.knobs[(size_t) selKnob].pick); break;
         default: break;
     }
     repaint();
@@ -2448,7 +2459,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 break;
             }
             auto& sn = ses.knobs[(size_t) selKnob].snaps;
-            if (sn.size() < 10) { sn.push_back (ses.library[(size_t) h->a].id); ses.turnSnapKnob (selKnob, ses.value (cx::kSnap + selKnob)); }
+            if (sn.size() < (ses.knobs[(size_t) selKnob].pick ? 128u : 10u)) { sn.push_back (ses.library[(size_t) h->a].id); ses.turnSnapKnob (selKnob, ses.value (cx::kSnap + selKnob)); }       // (a stack: as many as the knob has places)
             break;
         }
         default: break;

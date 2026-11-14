@@ -311,7 +311,15 @@ void Session::userSet (int i, float v, bool sounding)
 {
     if (i < 0 || i >= cx::kCount) return;
     v = juce::jlimit (0.0f, 1.0f, v);
-    if (i >= cx::kSnap) { turnSnapKnob (i - cx::kSnap, v); return; }
+    if (i >= cx::kSnap)
+    {
+        const int k = i - cx::kSnap;
+        turnSnapKnob (k, v);
+        // a knob that holds a stack, under a hand: the snapshot it has come to is heard in the headphones
+        if (auto& kn = knobs[(size_t) k]; kn.pick)
+            if (const auto id = pickAt (k); id != 0 && (id != kn.picked || cueId != id)) { kn.picked = id; cue (id); if (onChange) onChange(); }
+        return;
+    }
     const auto& c = engine.control (i);
     base[(size_t) i] = c.morph && i < kMorphEnd ? v - offset[(size_t) i] : v;
     // a sound knob under the hand travels over the GLIDE time, as a recalled one does (OFF: at once)
@@ -342,7 +350,29 @@ bool Session::knobLive (int k) const
     if (! kn.links.empty() || k == learning) return true;
     int held = 0;
     for (auto id : kn.snaps) if (findSnap (id) != nullptr) ++held;
-    return held >= 2;
+    return held >= (kn.pick ? 1 : 2);           // (a stack of one is still something to press)
+}
+
+juce::int64 Session::pickAt (int k) const
+{
+    if (k < 0 || k >= 16) return 0;
+    std::vector<juce::int64> ids;
+    for (auto id : knobs[(size_t) k].snaps) if (findSnap (id) != nullptr) ids.push_back (id);
+    if (ids.empty()) return 0;
+    return ids[(size_t) juce::jlimit (0, (int) ids.size() - 1, (int) std::lround (engine.target (cx::kSnap + k) * (float) (ids.size() - 1)))];
+}
+
+void Session::setPick (int k, bool on)
+{
+    if (k < 0 || k >= 16 || k == learning) return;
+    auto& kn = knobs[(size_t) k];
+    if (kn.pick == on) return;
+    if (cueId != 0 && std::find (kn.snaps.begin(), kn.snaps.end(), cueId) != kn.snaps.end()) cue (0);
+    kn.pick = on; kn.picked = 0;
+    engine.set (cx::kSnap + k, 0.0f);           // (what it had swept the sound to is let go, or it begins at its first)
+    applyMorph (glideBeats());
+    touch();
+    if (onChange) onChange();
 }
 
 void Session::applyMorph (double glide)
@@ -352,7 +382,7 @@ void Session::applyMorph (double glide)
     {
         const auto& kn = knobs[(size_t) k];
         const float v = engine.target (cx::kSnap + k);
-        if (v <= 0.0f) continue;
+        if (v <= 0.0f || kn.pick) continue;         // (a knob that holds a stack chooses; it moves nothing)
         // the knobs it is tied to: each its own share of the turn
         for (const auto& l : kn.links) if (reaches (engine, l.ctl)) offset[(size_t) l.ctl] += kn.depth * l.amount * v;
         std::vector<const Snapshot*> ss;
@@ -398,7 +428,7 @@ void Session::motionLaws()
 {
     std::array<bool, 16> on {};
     bool any = false;
-    for (int k = 0; k < 16; ++k) { on[(size_t) k] = motionOn (k) != 0 && knobLive (k); any = any || on[(size_t) k]; }
+    for (int k = 0; k < 16; ++k) { on[(size_t) k] = motionOn (k) != 0 && knobLive (k) && ! knobs[(size_t) k].pick; any = any || on[(size_t) k]; }
     // has anything a law is made from changed?
     juce::uint64 sig = any ? 1469598103934665603ull : 0ull;
     auto mix = [&sig] (juce::uint64 v) { sig = (sig ^ v) * 1099511628211ull; };
@@ -467,6 +497,14 @@ void Session::pressSnapKnob (int k)
     }
     const float v = engine.target (cx::kSnap + k);
     const auto id = ids[(size_t) juce::jlimit (0, (int) ids.size() - 1, (int) std::lround (v * (float) (ids.size() - 1)))];
+    if (kn.pick)
+    {
+        // a knob that holds a stack: the one it is on is recalled, and it stays on it
+        knobs[(size_t) k].picked = id;
+        recall (id);
+        cue (0);
+        return;
+    }
     engine.set (cx::kSnap + k, 0.0f);
     recall (id);
 }
@@ -506,6 +544,7 @@ std::vector<int> Session::knobScope (int k) const
 // knobs is remembered. What the hand then does to a knob changes that scene, as it always does.
 void Session::learnBegin (int k)
 {
+    if (k >= 0 && k < 16 && knobs[(size_t) k].pick) return;      // (a knob that holds a stack moves nothing: there is nothing to teach it)
     if (k < 0 || k >= 16) return;
     if (learning >= 0) learnKeep();
     auto& kn = knobs[(size_t) k];
@@ -1890,13 +1929,15 @@ juce::String Session::takeTray (const var& tray)
         {
             const int k = (int) v.getProperty ("slot", 0) - 1;
             if (k < 0 || k >= 16) continue;
+            // a macro (it sweeps through its ten at most) or a stack (it steps through its own, one to a place of the knob at most)
+            const bool pick = v.getProperty ("kind", "macro").toString() != "macro";
             auto sn = idsOf (v.getProperty ("uids", var()));
-            if (sn.size() > 10) sn.resize (10);
+            if (sn.size() > (pick ? 128u : 10u)) sn.resize (pick ? 128u : 10u);
             if (sn.empty()) continue;
             auto& knob = knobs[(size_t) k];
-            if (knob.snaps == sn) continue;                             // it holds that macro already
+            if (knob.snaps == sn && knob.pick == pick) continue;        // it holds that already
             if (! knob.snaps.empty() || ! knob.links.empty()) { left.add (juce::String (k + 1)); continue; }
-            knob.snaps = sn;
+            knob.snaps = sn; knob.pick = pick; knob.picked = 0;
             knob.name = v.getProperty ("name", "").toString().trim().toUpperCase().substring (0, 16);
             if (const var d = v.getProperty ("depth", var()); d.isDouble() || d.isInt()) knob.depth = juce::jlimit (0.0f, 2.0f, (float) d);
             turnSnapKnob (k, value (cx::kSnap + k));
@@ -2099,6 +2140,7 @@ var Session::stateVar()
         auto* o = new juce::DynamicObject();
         o->setProperty ("name", k.name);
         o->setProperty ("depth", k.depth);
+        if (k.pick) o->setProperty ("pick", true);
         juce::Array<var> ids;
         for (auto id : k.snaps) ids.add (id);
         o->setProperty ("snaps", ids);
@@ -2228,6 +2270,8 @@ void Session::takeState (const var& root)
             const juce::var o = (*kn)[k];
             knobs[(size_t) k].name = o.getProperty ("name", "").toString();
             knobs[(size_t) k].depth = juce::jlimit (0.0f, 2.0f, (float) o.getProperty ("depth", 1.0));
+            knobs[(size_t) k].pick = (bool) o.getProperty ("pick", false);
+            knobs[(size_t) k].picked = 0;
             knobs[(size_t) k].snaps.clear();
             if (auto* ids = o.getProperty ("snaps", var()).getArray())
                 for (auto& id : *ids) if (findSnap ((juce::int64) id) != nullptr) knobs[(size_t) k].snaps.push_back ((juce::int64) id);
@@ -2244,7 +2288,7 @@ void Session::takeState (const var& root)
             knobs[(size_t) k].more.clear();
             if (auto* ko = o.getDynamicObject())
                 for (auto& p : ko->getProperties())
-                    if (p.name != juce::Identifier ("name") && p.name != juce::Identifier ("depth") && p.name != juce::Identifier ("snaps") && p.name != juce::Identifier ("links")) knobs[(size_t) k].more.set (p.name, p.value);
+                    if (p.name != juce::Identifier ("name") && p.name != juce::Identifier ("depth") && p.name != juce::Identifier ("snaps") && p.name != juce::Identifier ("links") && p.name != juce::Identifier ("pick")) knobs[(size_t) k].more.set (p.name, p.value);
         }
     if (auto* other = root.getProperty ("controls", var()).getDynamicObject())
         for (auto& p : other->getProperties())

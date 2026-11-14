@@ -1896,8 +1896,70 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      it brought that name a file this computer has not got and says so. Today that can only
      happen with a snapshot deleted here and brought back, or taken on another computer.
 
+## Thirty-ninth build (Nov 13): a knob that holds a stack
+
+389. **You:** "I see macro creation as a separate process. Dragging chips onto a knob should be a
+     way of creating curated categories that can be added to the instruments library which can
+     then be scrolled though via knob to cue and select a chip to morph to. And creating a
+     macro in the library is similar but it creates a new macro that can be added to the
+     instrument onto a knob. So the snapshot knobs can contain macros or library stacks."
+     And after: "there are three snapshot knob tyoes: snapshot macro, knob control macro, and
+     snapshot cue stack."
+390. **A snapshot knob can hold a stack, and then it chooses; it does not sweep.** A turn steps
+     through the stack and plays the one it comes to in the headphones; a press recalls that
+     one over GLIDE; the knob stays on it. *Mine:* it behaves as the E16's MAP and FIND knobs
+     already do (a turn cues, a press recalls), so there is one way of choosing a snapshot by
+     knob and not two; it is the knob's own position that says which (a stack of thirty is
+     about four clicks a snapshot), so the screen, the keyboard, a sequencer and the E16 all
+     work it alike; it is lit amber, and its plate names the snapshot while it is cued.
+391. **STEPS, in the designer, makes any knob one.** *Mine:* so a cue stack does not have to
+     come from the web library, and so the designer says which kind a knob is. It takes 128
+     snapshots where a macro takes ten. DEPTH and MOTION leave it alone: there is nothing to
+     scale or to swing.
+392. **On the bench, chips dropped on a knob are a cue stack on it; a macro is made on purpose.**
+     As you said it. LOAD is told which a knob is (`kind`), and a stack on a knob is among the
+     instrument's stacks too, so the same list is under STACK on the library screen.
+393. **You, on what the library is to become:** "more realistic looking 3d (3js?) and have the
+     same look as the chips and equipment in the instrument. And creating macro creates a little
+     module with the two knobs (knob and amount). And then have a model of the instrument that
+     I can 'load' macros and chips onto by dragging them into the chassis ... A hands on
+     tactile experience second only to real hardware." "I can have multiple snapshot modules
+     (collections of macros) that can be dropped into the chassis as a whole module." "I'd like
+     to be able to build all three types in the library. And have a library of premade macro,
+     stack, and learn knobs to install in the instrument. The instrument then can access the
+     library and I can install macros into the macro pockets in the instrument chassis."
+394. **Not built yet; what I take it to mean, and what I would decide.** *proposed,* all of it:
+     - **A knob is a thing in the library**, of one of three kinds (snapshot macro, knob macro,
+       cue stack), shown as a small module with its two knobs. All three are made there. A knob
+       macro needs the rig's knobs to choose from: the library has every definition a snapshot
+       names, so it can list them by lane.
+     - **The sixteen pockets of the chassis are the sixteen snapshot knobs.** A knob module is
+       dropped into one. A **snapshot module** is sixteen of them as one thing; dropped into the
+       chassis it replaces all sixteen at LOAD, and the sixteen it replaces are first kept in
+       the library as a module, so nothing is lost. (A single knob still leaves a full pocket
+       alone, as now.)
+     - **The instrument reaches the library itself**: in MACROS, a list of the library's knobs
+       to put in the picked pocket, bringing the snapshots it needs.
+     - **A knob made on the instrument is saved to the library by itself.** You: "knob macros
+       made on the instrument then saved to the cloud, almost la like a snapshot but a macro.
+       Creating a 3d knob macro module in the library." So: a key in MACROS that sends the
+       picked knob (whichever of the three kinds it is), and it arrives on the bench as a
+       module. And the sixteen together, as a snapshot module, when asked.
+     - **The look is the instrument's own, carried over.** You again: "match the scuffed
+       faceplates, the rendering, etc of the app instrument as best you can in web 3d. The goal
+       is that the whole ecosystem feels like interacting with tangible objects rather than
+       abstracted data." The stage's finish is a shader (grain, mottling, worn edges, how the
+       light falls) and a sheet of scratches, `assets/wear.png`, which is already in this repo
+       (made from your photograph by `tools/wear.py`). Both can go to the web as they are: the
+       same sheet, the same sums. The photograph itself and your 3D model stay out of the
+       repos, as you asked.
+
 ## Not verified
 
+- **The cue stack (thirty-ninth) is checked in the session and through LOAD**, with a clip
+  really playing as its cue. Not felt: how a stack of thirty or a hundred sits under an E16
+  knob, and whether the cue should stop by itself when the knob is left alone (it plays until
+  the press, or until something else is cued, as the MAP page's does).
 - **LOAD (thirty-eighth) is checked end to end against the web library's own code running on
   this machine**: a snapshot brought whole with its clip to the byte, stacks, a macro onto an
   empty knob and not onto a full one, a song as the arrangement, nothing doubled or sent back,

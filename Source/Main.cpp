@@ -3724,6 +3724,55 @@ static int uiTest()
             s2.learnKeep();
             const bool afterRecall = s2.knobs[9].links.size() == 1 && std::abs (s2.knobs[9].links[0].amount - (at (cut) - cutInit)) < 1e-4f;
             check (landed && backAgain && afterRecall, "its press, with no snapshot to land on: past half way what it has pushed stays and the knob goes home, short of it they go back; a recall while one is taught starts the measuring again");
+            {
+                // a knob that holds a stack (STEPS): it steps through its snapshots and moves nothing; a turn cues, a press recalls
+                const int k = 12;
+                auto& kn = s2.knobs[(size_t) k];
+                const auto knobWas = kn;
+                kn.links.clear();
+                // three snapshots that differ in a knob a snapshot knob can reach (so that a sweep through them is heard to move it)
+                s2.userSet (cut, 0.25f); const auto ta = s2.take();
+                s2.userSet (cut, 0.75f); const auto tb = s2.take();
+                s2.userSet (cut, 0.50f); const auto tc = s2.take();
+                s2.finishTakes (true);
+                s2.recall (ta);
+                kn.snaps = { ta, tb, tc };
+                const bool sweeps = s2.knobLive (k) && ! kn.pick;
+                s2.userSet (cx::kSnap + k, 0.5f);
+                std::vector<float> swept; for (int i = 0; i < cx::kRetMS; ++i) swept.push_back (e2.target (i));
+                s2.userSet (cx::kSnap + k, 0.0f);
+                std::vector<float> home; for (int i = 0; i < cx::kRetMS; ++i) home.push_back (e2.target (i));
+                s2.setPick (k, true);
+                s2.userSet (cx::kSnap + k, 0.5f);
+                std::vector<float> stepped; for (int i = 0; i < cx::kRetMS; ++i) stepped.push_back (e2.target (i));
+                const auto mid = tb;
+                const bool onMid = s2.pickAt (k) == mid && kn.picked == mid && (s2.cueing() == mid || ! s2.clipFile (mid).existsAsFile());
+                const bool movesNothing = swept != home && stepped == home;
+                s2.userSet (cx::mot (0, 0), 0.2f); s2.userSet (cx::mot (0, 2), (float) k / 15.0f); s2.userSet (cx::mot (0, 3), 1.0f);
+                juce::AudioBuffer<float> mb (2, 512);
+                e2.setRunning (true);
+                for (int blk = 0; blk < 80; ++blk) e2.render (mb);
+                float push = 0.0f;
+                for (int i = 0; i < cx::kRetMS; ++i) push = std::max (push, std::abs (e2.motionPush (i)));
+                e2.setRunning (false);
+                const bool noMotion = s2.motionOn (k) != 0 && push == 0.0f;
+                s2.userSet (cx::mot (0, 0), 0.0f); s2.userSet (cx::mot (0, 3), 0.5f);
+                s2.pressSnapKnob (k);
+                const bool pressed = s2.baseId == mid && std::abs (e2.target (cx::kSnap + k) - 0.5f) < 1.0e-6f && s2.cueing() == 0;
+                s2.userSet (cx::kSnap + k, 1.0f);
+                const bool last = s2.pickAt (k) == tc;
+                kn.snaps = { tc };
+                const bool one = s2.knobLive (k) && s2.pickAt (k) == tc;
+                const bool filed = (bool) s2.stateVar()["knobs"][k]["pick"] && ! s2.stateVar()["knobs"][8].hasProperty ("pick");
+                s2.setPick (k, false);
+                const bool back = ! kn.pick && e2.target (cx::kSnap + k) == 0.0f && ! s2.knobLive (k);
+                if (! (sweeps && onMid && movesNothing && noMotion && pressed && last && one && filed && back))
+                    std::printf ("    (sweeps %d on the middle one %d moves nothing %d [swept differs %d, stepped as at home %d] no motion %d pressed %d last %d one %d filed %d back %d)\n", (int) sweeps, (int) onMid, (int) movesNothing, (int) (swept != home), (int) (stepped == home), (int) noMotion, (int) pressed, (int) last, (int) one, (int) filed, (int) back);
+                check (sweeps && onMid && movesNothing && noMotion && pressed && last && one && filed && back,
+                       "a knob that holds a stack (STEPS) steps through its snapshots and moves no sound: a turn comes to one and cues it, MOTION does not swing it, a press recalls the one it is on and the knob stays there; it is in the file, and STEPS out makes it a sweeping knob again");
+                kn = knobWas;
+                s2.turnSnapKnob (k, 0.0f);
+            }
             s2.knobs[8].name = "OPEN UP";
             s2.touch(); s2.save();
         }
@@ -7510,7 +7559,7 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             foreign.getDynamicObject()->setProperty ("id", first);                // (an id this library has in use: it is given another here)
             foreign.getDynamicObject()->setProperty ("name", "FROM AFAR");
             ask ("DELETE", "/api/snapshots/" + far + "?forget=1");
-            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
             const bool put = send ("POST", "/api/snapshots", obj ({ { "snapshot", foreign } })).first == 200;
             juce::MemoryBlock firstClip;
             ses.clipFile (first).loadFileAsData (firstClip);
@@ -7526,9 +7575,13 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             send ("POST", "/api/stacks", obj ({ { "id", "sf0testsong01" }, { "name", "Set Piece" }, { "kind", "song" }, { "load", true },
                                                 { "items", list ({ obj ({ { "u", ours[0] }, { "bars", 16 }, { "morph", 0 } }), obj ({ { "u", far }, { "bars", 8 }, { "morph", 2 } }), obj ({ { "u", ours[0] }, { "bars", 4 }, { "morph", 1 } }) }) } }));
 
+            // and a stack on knob 5: a cue stack (the knob steps through it)
+            send ("POST", "/api/stacks", obj ({ { "id", "sf0testcue001" }, { "name", "Dark Ones" }, { "items", list ({ ours[2], far, ours[0] }) }, { "slot", 5 } }));
+
             const int nWas = (int) ses.library.size();
             const auto knob1Was = ses.knobs[0].snaps;
             ses.knobs[2].snaps.clear(); ses.knobs[2].links.clear();
+            ses.knobs[4].snaps.clear(); ses.knobs[4].links.clear(); ses.knobs[4].pick = false;
             while (! ses.arrangement.empty()) ses.arrRemove (0);
             const int askedWas = on.requests();
             const auto said = on.load();
@@ -7542,12 +7595,19 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                    "LOAD brings the snapshot this library lacks: whole (every knob where it was), under the name it has there, with an id of its own here and its clip to the byte (" + said + ")");
             check (ses.findSnap (third) != nullptr && ses.findSnap (third)->name == "NAMED THERE", "one this library has, named there since, is named so here");
             const juce::int64 farId = got != nullptr ? got->id : 0;
-            const bool stacksOk = ses.stacks.size() == 2 && ses.stacks[0].name == "NIGHT ROLLERS" && ses.stacks[0].kind == "stack" && ses.stacks[0].snaps == std::vector<juce::int64> { farId, first, third }
+            const bool stacksOk = ses.stacks.size() == 3 && ses.stacks[2].name == "DARK ONES" && ses.stacks[2].snaps == std::vector<juce::int64> { third, farId, first } && ses.stacks[0].name == "NIGHT ROLLERS" && ses.stacks[0].kind == "stack" && ses.stacks[0].snaps == std::vector<juce::int64> { farId, first, third }
                                   && ses.stacks[1].name == "SET PIECE" && ses.stacks[1].kind == "song" && ses.stacks[1].snaps == std::vector<juce::int64> { first, farId, first };
-            check (stacksOk, "the stacks in the tray are here, each with its snapshots in its order; the one not in the tray is not");
+            check (stacksOk, "the stacks in the tray are here, each with its snapshots in its order (the one on a knob among them); the one not in the tray is not");
             check (ses.knobs[2].snaps == std::vector<juce::int64> { first, farId } && std::abs (ses.knobs[2].depth - 0.7f) < 1.0e-6f && ses.knobs[2].name == "LIFT"
-                   && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOB 3 FILLED") && said.contains ("KNOB 1 HOLDS SOMETHING"),
+                   && ! ses.knobs[2].pick && ses.knobs[0].snaps == knob1Was && ! knob1Was.empty() && said.contains ("KNOBS 3, 5 FILLED") && said.contains ("KNOB 1 HOLDS SOMETHING"),
                    "a macro goes on its knob where the knob held nothing (knob 3: its snapshots in sweep order, its depth, its name); a knob that holds something is left, and it says so");
+            // the stack on knob 5 makes it a knob that steps: a turn comes to one of its snapshots, a press recalls it
+            ses.userSet (cx::kSnap + 4, 0.5f);
+            const bool cueStack = ses.knobs[4].pick && ses.knobs[4].name == "DARK ONES" && ses.knobs[4].snaps == std::vector<juce::int64> { third, farId, first }
+                                  && ses.pickAt (4) == farId && ses.cueing() == farId;
+            ses.pressSnapKnob (4);
+            check (cueStack && ses.baseId == farId && ses.cueing() == 0 && std::abs (ses.value (cx::kSnap + 4) - 0.5f) < 1.0e-6f,
+                   "a stack on a knob makes it a cue stack: the knob steps through its snapshots, the one it comes to plays in the headphones (the one LOAD brought, from its clip), and a press recalls it");
             const bool sung = ses.arrangement.size() == 3 && ses.arrangement[0].snap == first && ses.arrangement[0].bars == 16 && ses.arrangement[1].snap == farId && ses.arrangement[1].bars == 8
                               && ses.arrangement[2].bars == 4 && std::abs (ses.arrMorphBars (1) - 2.0) < 1.0e-9 && ses.arrMorphBars (0) == 0.0;
             check (sung && said.contains ("THE SONG IS THE ARRANGEMENT"), "a song in the tray is the arrangement, there being none: its parts in order, each its bars and its way in");
@@ -7566,8 +7626,8 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             const auto said2 = on.load();
             ses.arrSet (0, 12, -1);                                             // (the arrangement changed by hand since)
             const auto said2b = on.load();
-            check ((int) ses.library.size() == nWas + 1 && ses.stacks.size() == 2 && ses.arrangement.size() == 3 && ses.knobs[2].snaps.size() == 2
-                   && said2.contains ("NO SNAPSHOT WAS NEW HERE") && ! said2.contains ("KNOB 3") && ! said2.contains ("ARRANGEMENT")
+            check ((int) ses.library.size() == nWas + 1 && ses.stacks.size() == 3 && ses.arrangement.size() == 3 && ses.knobs[2].snaps.size() == 2 && ses.knobs[4].pick
+                   && said2.contains ("NO SNAPSHOT WAS NEW HERE") && ! said2.contains ("KNOB 3") && ! said2.contains ("FILLED") && ! said2.contains ("ARRANGEMENT")
                    && said2b.contains ("THE ARRANGEMENT WAS LEFT") && ses.arrangement[0].bars == 12,
                    "LOAD again brings nothing twice and has nothing to say of a knob or an arrangement that hold what the tray holds; an arrangement changed since is left as it is (" + said2b + ")");
 
@@ -7579,14 +7639,14 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                 s2.takeState (ses.stateVar());
                 bool farThereToo = false;
                 for (auto& x : s2.library) farThereToo = farThereToo || (x.uid == far && x.name == "FAR ROLLER");
-                check (farThereToo && s2.stacks.size() == 2 && s2.stacks[0].id == "sf0teststack1" && s2.stacks[0].snaps == ses.stacks[0].snaps && s2.stacks[1].kind == "song"
+                check (farThereToo && s2.stacks.size() == 3 && s2.stacks[0].id == "sf0teststack1" && s2.stacks[0].snaps == ses.stacks[0].snaps && s2.stacks[1].kind == "song" && s2.knobs[4].pick
                        && s2.stateVar()["stacks"][0]["name"].toString() == "NIGHT ROLLERS" && s2.stateVar()["stacks"][1]["parts"].size() == 3,
                        "the stacks are in the session file (with what the library said of each that this build does not use: carried), and there when it opens");
             }
             // a stack taken out of the tray there is gone here at the next LOAD; its snapshots stay. One deleted here leaves its stacks.
             send ("PATCH", "/api/stacks/sf0teststack1", obj ({ { "load", false } }));
             on.load();
-            const bool outOfTray = ses.stacks.size() == 1 && ses.stacks[0].kind == "song" && (int) ses.library.size() == nWas + 1;
+            const bool outOfTray = ses.stacks.size() == 2 && ses.stacks[0].kind == "song" && (int) ses.library.size() == nWas + 1;
             ses.remove (farId);
             check (outOfTray && ses.stacks[0].snaps == std::vector<juce::int64> { first, first } && ses.arrangement.size() == 2,
                    "a stack taken out of the tray there is no longer here, and its snapshots are; a snapshot deleted here leaves its stacks");
@@ -7594,9 +7654,9 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             auto dead = st; dead.url = "http://127.0.0.1:9";
             on.setSetup (dead);
             const auto said3 = on.load();
-            check (said3.contains ("NO ANSWER") && said3.contains ("NOTHING WAS CHANGED") && ses.stacks.size() == 1, "with no answer LOAD says so and changes nothing (" + said3 + ")");
+            check (said3.contains ("NO ANSWER") && said3.contains ("NOTHING WAS CHANGED") && ses.stacks.size() == 2, "with no answer LOAD says so and changes nothing (" + said3 + ")");
             ours.add (far);
-            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+            for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
         }
     }
     for (auto& uid : ours) ask ("DELETE", "/api/snapshots/" + uid + "?forget=1");

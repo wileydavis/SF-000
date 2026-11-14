@@ -110,6 +110,7 @@ public:
     static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
     static bool testIsOnline (const TestHit& h, bool setUp) { return h.kind == hAct && h.a == (setUp ? aOnlineSetup : aOnline); }
     static bool testIsStackKey (const TestHit& h) { return h.kind == hAct && h.a == aStack; }
+    static bool testIsStepsKey (const TestHit& h) { return h.kind == hAct && h.a == aKnobPick; }
     static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
     int testLibStack() const { return libStack; }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
@@ -191,7 +192,8 @@ private:
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
-               aFetch, aStack };       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
+               aFetch, aStack,
+               aKnobPick };            // the macro designer: STEPS (the knob holds a stack: it steps through its snapshots, it does not sweep)       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
 
     void timerCallback() override;
     void handleAsyncUpdate() override;

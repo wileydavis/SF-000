@@ -65,6 +65,11 @@ struct MacroKnob
     std::vector<juce::int64> snaps;
     std::vector<Link> links;
     float depth = 1.0f;
+    // A knob that holds a stack: it does not sweep through its snapshots, it steps through them.
+    // A turn comes to the next and plays it in the headphones; a press recalls the one it is on,
+    // over the GLIDE time, and the knob stays where it is. DEPTH and MOTION are not for it.
+    bool pick = false;
+    juce::int64 picked = 0;             // the one it is on (0: none come to yet)
     juce::NamedValueSet more;           // what the file says of it that this build does not know: carried
     juce::Array<juce::var> linksKept;   // links to knobs this build does not have, as the file had them: carried
 };
@@ -206,6 +211,10 @@ public:
     bool cue (juce::int64 id);          // false: that snapshot has no sound kept
     juce::int64 cueing() const          { return cueId; }
     void turnSnapKnob (int k, float v);
+    // A knob that holds a stack (MacroKnob::pick): the snapshot it stands on (0: it holds none),
+    // and making a knob one or a sweeping knob again.
+    juce::int64 pickAt (int k) const;
+    void setPick (int k, bool on);
     // Recall the knob's nearest snapshot as the new base; the knob goes home. A knob that is only
     // tied to knobs: the nearer end of its turn is kept (past half way, what it has pushed is
     // where those knobs now stand), and the knob goes home.

@@ -57,7 +57,7 @@ First run:
 | **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
 | Double-click a snapshot knob | recall its nearest snapshot as the new base scene |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** brings what the web library's tray holds, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
-| MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, or press **LEARN** to tie it straight to knobs (see A knob tied to knobs, below) |
+| MACROS | the macro designer: pick a knob, tap snapshots to add them in sweep order, press **LEARN** to tie it straight to knobs, or **STEPS** to make it a cue stack that steps through its snapshots (see A knob that holds a stack, and A knob tied to knobs, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be |
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform. SF-000 keeps its own copy (see Where everything is kept) |
@@ -543,8 +543,9 @@ themselves (like this one, a song from this one, a mood), macros for the snapsho
   out of the tray there is gone from here at the next LOAD; its snapshots stay.
 - **The snapshots this library lacks**, whole, with their four bars and the definitions they
   name, under the name each has there. One this library has, renamed there, is renamed here.
-- **The macros on the tray's knob bays**, each onto its knob *if the knob holds nothing*. A knob
-  that holds something is left, and the line says which: CLEAR it in MACROS and LOAD again.
+- **What is on the tray's knob bays**, each onto its knob *if the knob holds nothing*: a macro
+  (the knob sweeps) or a stack (the knob steps: a cue stack, above). A knob that holds something
+  is left, and the line says which: CLEAR it in MACROS and LOAD again.
 - **A song**, as the arrangement, *if there is none*.
 
 LOAD takes nothing away and writes over nothing. What it brought is not sent back. With no
@@ -584,6 +585,22 @@ takes is not there when REC is pressed (its disk is not plugged in), the take is
 - The files' lengths are written into them every ten seconds, so a take cut short by a crash or a
   pulled plug still opens, up to there. Past 4 GB a file is written as RF64.
 - MIDI and knob moves are not recorded yet.
+
+### A knob that holds a stack: STEPS
+
+A snapshot knob is one of three things: a **snapshot macro** (it sweeps through its snapshots,
+and what they differ in moves with it), a **knob macro** (LEARN, below: it moves the knobs you
+tie it to), or a **cue stack**. A cue stack does not move the sound. It is a list to choose from:
+
+- **Turn** it and it steps through its snapshots. The one it comes to plays in the headphones,
+  in time with the set, and the knob's name plate says which.
+- **Press** it (double-click; its knob's press on the E16) and that one is recalled, over the
+  GLIDE time. The knob stays where it is, on the one you chose.
+- It is lit **amber** where a sweeping knob is teal, on the main screen and in the designer.
+- In **MACROS**, **STEPS** makes the picked knob one (or a sweeping knob again). It takes up to
+  128 snapshots, one to a place of a controller's knob; DEPTH and MOTION are not for it.
+- LOAD brings one for every stack that is on a knob in the web library's tray (drop chips on a
+  knob bay there). A macro is made there on purpose and put on a knob the same way.
 
 ### A knob tied to knobs: LEARN
 

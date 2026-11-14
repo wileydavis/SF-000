@@ -51,7 +51,7 @@ The uid comes back the same (see below); `made` does not.
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
-  "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ] } x 16 ],
+  "knobs":     [ { "name", "depth", "snaps": [ids], "links": [ { "c": id, "d": amount } ], "pick"? } x 16 ],
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
   "stacks":    [ { "id", "name", "kind", "snaps": [ids] } ],          the stacks LOAD brought from the web library (absent: none)
   "defs":      { "<print>": definition, ... }
@@ -70,6 +70,11 @@ reader given a whole path looks for an entry whose `from` is that path and reads
 if there is none does it read the path itself. That is how a snapshot from before copies were
 kept, which is not rewritten (rule 3), still finds its sample once the original has gone. Two
 entries may name one `file` (the same audio given from two places).
+
+A knob with `"pick": true` (thirty-ninth build on) holds a stack: it steps through its `snaps`
+(up to 128) and recalls the one it is on when pressed; it does not sweep through them, and
+`depth` is not used. Absent, the knob sweeps. A build from before reads such a knob as a macro
+of that many snapshots and carries `pick` back out.
 
 A knob's `links` are the knobs it is tied to (LEARN): `c` is the knob's id as `values` has it
 (`bass.cutoff`), `d` how far the full turn takes it, as a share of that knob's whole travel from
