@@ -97,6 +97,16 @@ struct Stack
     juce::uint32 lanesAt (size_t i) const { return i < lanes.size() ? lanes[i] : 0xffffffffu; }
 };
 
+// A knob kept by itself, off the module: a macro knob (what it is tied to) or a stack knob (its snapshots in order, each
+// with its parts), to be put on a place of any module later.
+struct KeptKnob
+{
+    juce::String id;
+    bool stack = false;
+    juce::var knob;                     // as the session file keeps a knob (its name is in it)
+    juce::String name() const           { return knob.getProperty ("name", "").toString(); }
+};
+
 // A module: the snapshot module's knobs as a set (four macro knobs, ten stack knobs), kept under a name. The rig carries
 // one at a time, chosen from those kept here: a set's worth of knobs for each set.
 struct Module
@@ -450,6 +460,14 @@ public:
     // holds (a knob that held nothing takes the stack's name too). False: not a stack knob, or no room for them all.
     bool stackOnto (int index, int k);
     void stackForget (int index);       // out of the rack (and, once ONLINE has said so there, out of the web library's rack for the instrument)
+    // ---- the knobs kept: a collection of macro knobs and stack knobs, each a copy, to put on a place of whatever module is
+    // in the chassis. No network is asked.
+    std::vector<KeptKnob> keptKnobs;
+    int knobKeep (int k);                                   // that knob, as it is, kept under its name (one of its kind kept under that name before is replaced). Its place, or -1: it holds nothing
+    enum PutSays { putDone, putWrongKind, putHolds, putNothing };
+    PutSays knobPut (int index, int k);                     // a kept knob onto that place: only one of the place's kind, and only where the knob holds nothing
+    void knobForget (int index);
+    juce::String keptSays (int index) const;                // what it is, in a line
     // ---- modules. The sixteen knobs here ARE the module in the chassis (moduleAt), and it is always one of the kept
     // ones: what is changed while playing changes that module. LOAD puts another in its place, whole, and the one that
     // was there is kept as it stood. Nothing is heard to change when one is loaded: what the macro knobs were adding

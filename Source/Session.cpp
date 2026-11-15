@@ -2653,6 +2653,83 @@ juce::var Session::moduleMotionNow() const
     return var (o);
 }
 
+// ---- the knobs kept
+int Session::knobKeep (int k)
+{
+    if (k < 0 || k >= 16 || isCorner (k) || ! knobHolds (k)) return -1;
+    KeptKnob kk;
+    kk.stack = isStack (k);
+    MacroKnob copy = knobs[(size_t) k];
+    if (copy.name.isEmpty()) copy.name = (kk.stack ? "STACK " : "MACRO ") + juce::String (k + 1);
+    copy.picked = 0; copy.sweptAt = 0.0f;
+    // (a copy is its own: not the web library's module that the knob on the module is)
+    copy.more.remove ("lib"); copy.more.remove ("libmark"); copy.more.remove ("reseat");
+    kk.knob = knobVar (copy);
+    int at = -1;
+    for (int i = 0; i < (int) keptKnobs.size() && at < 0; ++i) if (keptKnobs[(size_t) i].stack == kk.stack && keptKnobs[(size_t) i].name() == copy.name) at = i;
+    if (at >= 0) { kk.id = keptKnobs[(size_t) at].id; keptKnobs[(size_t) at] = kk; }      // (kept again under its name: the same one, as it is now)
+    else
+    {
+        kk.id = "knob";
+        juce::Random r;
+        for (int i = 0; i < 12; ++i) kk.id << juce::String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+        keptKnobs.push_back (kk);
+        at = (int) keptKnobs.size() - 1;
+    }
+    touch();
+    if (onChange) onChange();
+    return at;
+}
+
+Session::PutSays Session::knobPut (int index, int k)
+{
+    if (index < 0 || index >= (int) keptKnobs.size() || k < 0 || k >= 16 || isCorner (k)) return putWrongKind;
+    const auto& kk = keptKnobs[(size_t) index];
+    if (kk.stack != isStack (k)) return putWrongKind;
+    if (knobHolds (k)) return putHolds;
+    MacroKnob made = knobFrom (kk.knob);
+    if (kk.stack ? made.snaps.empty() : made.links.empty()) return putNothing;      // (its snapshots are gone from the library, or this rig has none of the knobs it was tied to)
+    if (learning == k) learnDrop();
+    made.picked = 0; made.sweptAt = 0.0f;
+    knobs[(size_t) k] = made;
+    engine.set (cx::kSnap + k, 0.0f);           // (it starts at rest)
+    base[(size_t) (cx::kSnap + k)] = 0.0f;
+    applyMorph (0.0);
+    lawsSig = 0; motionLaws();
+    touch();
+    if (onChange) onChange();
+    return putDone;
+}
+
+void Session::knobForget (int index)
+{
+    if (index < 0 || index >= (int) keptKnobs.size()) return;
+    keptKnobs.erase (keptKnobs.begin() + index);
+    touch();
+    if (onChange) onChange();
+}
+
+juce::String Session::keptSays (int index) const
+{
+    if (index < 0 || index >= (int) keptKnobs.size()) return {};
+    const auto& kk = keptKnobs[(size_t) index];
+    juce::String t;
+    if (kk.stack)
+    {
+        int n = 0;
+        juce::String names;
+        if (auto* ids = kk.knob.getProperty ("snaps", var()).getArray())
+            for (auto& id : *ids) if (const auto* sn = findSnap ((juce::int64) id)) { names << (n > 0 ? " > " : "") << sn->name; ++n; }
+        t << "STACK KNOB, " << n << (n == 1 ? " SNAPSHOT: " : " SNAPSHOTS: ") << names;
+    }
+    else
+    {
+        const int n = kk.knob.getProperty ("links", var()).size();
+        t << "MACRO KNOB, TIED TO " << n << (n == 1 ? " KNOB" : " KNOBS");
+    }
+    return t;
+}
+
 static juce::String moduleNamed (juce::String want, const std::vector<Module>& all, int but = -1)
 {
     want = want.trim().toUpperCase().substring (0, 24);
@@ -3532,6 +3609,17 @@ var Session::stateVar()
         }
         if (mv.size() > 0) { root->setProperty ("modules", mv); root->setProperty ("moduleAt", moduleAt); }
     }
+    if (! keptKnobs.empty())
+    {
+        juce::Array<var> kv;
+        for (auto& kk : keptKnobs)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("id", kk.id); o->setProperty ("kind", kk.stack ? "stack" : "macro"); o->setProperty ("knob", kk.knob);
+            kv.add (var (o));
+        }
+        root->setProperty ("keptKnobs", kv);
+    }
     root->setProperty ("module", 3);                // (the snapshot module's two kinds: knobs 1 to 4 macro; 5 to 12, 14 and 15 stack; 13 and 16 none. 2: 13 and 16 were stack knobs too)
     if (stackCue) root->setProperty ("stackCue", true);
     if (knobsAside.size() > 0) root->setProperty ("knobsAside", knobsAside);
@@ -3751,7 +3839,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -3837,6 +3925,14 @@ void Session::takeState (const var& root)
     if (auto* un = root.getProperty ("knobsUnseated", var()).getArray()) knobsUnseated = *un;
     stacksGone.clear();
     if (auto* sg = root.getProperty ("stacksGone", var()).getArray()) stacksGone = *sg;
+    keptKnobs.clear();
+    if (auto* kv = root.getProperty ("keptKnobs", var()).getArray())
+        for (auto& v : *kv)
+        {
+            KeptKnob kk;
+            kk.id = v.getProperty ("id", "").toString(); kk.stack = v.getProperty ("kind", "").toString() == "stack"; kk.knob = v.getProperty ("knob", var());
+            if (kk.id.isNotEmpty() && kk.knob.isObject()) keptKnobs.push_back (kk);
+        }
     modules.clear(); moduleAt = root.getProperty ("moduleAt", "").toString();
     if (auto* mv = root.getProperty ("modules", var()).getArray())
         for (auto& v : *mv)

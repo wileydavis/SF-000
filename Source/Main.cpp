@@ -3149,6 +3149,7 @@ static int uiTest()
         }
     }
     ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
+    sc.testShowModules (false); sc.testShowRack (false);        // (and MODULES, STACKS and KNOBS were: the designer shows the knob and the library again)
     for (int i = cx::kMot; i < cx::kSnap; ++i) ses.userSet (i, ses.engine.control (i).def);       // (and MOTION's knobs were among those dragged: off again)
     // every CONFIG panel: each lane, the lead's two inserts, both returns
     std::vector<Engine::Target> targets;
@@ -4239,20 +4240,24 @@ static int uiTest()
         // The rack. KEEP: the chosen knob's stack is kept on the instrument under the knob's name, a copy, each snapshot with its parts
         bool racked = false;
         {
-            auto keepKey = [&] { for (auto& h : sc.testHits()) if (Screen::testIsKeepStack (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            auto keepKey = [&] { for (auto& h : sc.testHits()) if (Screen::testIsRackKeep (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };      // (KEEP, at the head of the stacks)
             auto rackHit = [&] (int what, int i) { for (auto& h : sc.testHits()) if (Screen::testIsRack (h, what, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
             const auto stacksWere = ses.stacks;
             ses.stacks.clear();
             const juce::uint32 bParts = Session::kAllLanes & ~(1u << kLanes) & ~1u;       // (the second: not the returns, not the kick)
             ses.knobs[(size_t) k].name = "MY STACK";
-            draw(); click (keepKey()); draw();
-            const bool kept = ses.stacks.size() == 1 && ses.stacks[0].here && ses.stacks[0].name == "MY STACK" && ses.stacks[0].snaps == std::vector<juce::int64> { c, b }
+            draw();
+            const bool keepHidden = keepKey().x < 0.0f;                 // (with the snapshots beside the column, it is not there)
+            click (rackHit (0, 1)); draw();                             // STACKS
+            click (keepKey()); draw();
+            const bool kept = keepHidden && ses.stacks.size() == 1 && ses.stacks[0].here && ses.stacks[0].name == "MY STACK" && ses.stacks[0].snaps == std::vector<juce::int64> { c, b }
                               && (ses.stacks[0].lanesAt (1) & Session::kAllLanes) == bParts && (ses.stacks[0].lanesAt (0) & Session::kAllLanes) == Session::kAllLanes
                               && ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { c, b };       // (and the knob still holds it)
             click (addAt (0)); draw();                                  // (the rack came up beside the column: the snapshots are not there to add)
             const bool rackUp = ses.knobs[(size_t) k].snaps.size() == 2 && rackHit (1, 0).x > 0.0f && pickAt (0).x < 0.0f;
             click (rackHit (0, 0)); draw();                             // SNAPSHOTS: the library again
             click (addAt (0)); draw();
+            click (rackHit (0, 1)); draw();
             click (keepKey()); draw();                                  // kept again under the same name: the same one, as it is now
             const bool again = ses.stacks.size() == 1 && ses.stacks[0].snaps == std::vector<juce::int64> { c, b, a };
             // its ADD: onto another stack knob that holds nothing, its parts and its name with it
@@ -4687,6 +4692,92 @@ static int uiTest()
             std::printf ("    (one %d list %d copied %d [%s] lifted %d loaded %d [%.3f, %s] back %d empty %d keeps %d filed %d before %d removed %d)\n", (int) one, (int) listUp, (int) copied, s9.moduleName().toRawUTF8(), (int) lifted, (int) loaded,
                          s9.value (cut), sc9.testBarNote().toRawUTF8(), (int) back, (int) empty, (int) keepsOwn, (int) filed, (int) fromBefore, (int) removed);
     }
+    // 3g. The knobs kept: one knob of the module, macro or stack, kept under its name and put on a place of any module.
+    // (Its own rig, made after the POCKETS check and never played: the suite's Bus is one rig's.)
+    {
+        Engine e11; e11.prepare (48000.0, 128);
+        Session s11 (e11, false);
+        Screen sc11 (s11);
+        sc11.setSize ((int) Screen::kW, (int) Screen::kH);
+        auto draw11 = [&] { sc11.createComponentSnapshot (sc11.getLocalBounds(), false, 0.25f); };
+        auto ev11 = [&] (juce::Point<float> p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc11, &sc11, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        auto click11 = [&] (juce::Point<float> p) { sc11.mouseDown (ev11 (p)); sc11.mouseUp (ev11 (p)); };
+        auto tabAt = [&] (int which) { for (auto& h : sc11.testHits()) if (Screen::testIsTab (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto keptAt = [&] (int what, int i) { for (auto& h : sc11.testHits()) if (Screen::testIsKept (h, what, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-4f; };
+        const int cut = cx::lane (5, 2);
+        s11.userSet (cx::kGlide, 0.0f);
+        const auto energy = s11.knobs[0];                               // (as the session comes: ENERGY on 1, the TOUR stack on 5)
+        const auto tour = s11.knobs[4];
+        const bool comes = energy.name == "ENERGY" && ! energy.links.empty() && tour.snaps.size() > 1 && s11.keptKnobs.empty();
+        // a macro knob chosen: SNAPSHOTS and KNOBS beside it (no STACKS: it holds none). KNOBS: nothing kept yet, and KEEP at their head
+        sc11.setPage (Screen::pMacros); sc11.testPickKnob (0); draw11();
+        const bool tabs = tabAt (0).x > 0.0f && tabAt (1).x < 0.0f && tabAt (2).x > 0.0f && keptAt (0, 0).x < 0.0f;
+        click11 (tabAt (2)); draw11();
+        click11 (keptAt (0, 0)); draw11();
+        const bool keptMacro = s11.keptKnobs.size() == 1 && ! s11.keptKnobs[0].stack && s11.keptKnobs[0].name() == "ENERGY" && s11.keptSays (0).startsWith ("MACRO KNOB, TIED TO " + juce::String ((int) energy.links.size()) + " KNOB")
+                               && s11.knobs[0].links.size() == energy.links.size() && sc11.testBarNote().contains ("KEPT WITH THE KNOBS AS ENERGY") && keptAt (2, 0).x > 0.0f;
+        // a stack knob chosen: STACKS is there too; kept the same way, with its snapshots and the parts each takes
+        const juce::uint32 noKick = Session::kAllLanes & ~1u;
+        s11.knobs[4].lanes = { Session::kAllLanes, noKick };
+        sc11.testPickKnob (4); draw11();
+        const bool tabs3 = tabAt (1).x > 0.0f && keptAt (1, 0).x < 0.0f;        // (and the macro knob kept has no PUT here: this place takes a stack knob)
+        click11 (keptAt (0, 0)); draw11();
+        const bool keptStack = s11.keptKnobs.size() == 2 && s11.keptKnobs[1].stack && s11.keptKnobs[1].name() == tour.name && s11.keptSays (1).startsWith ("STACK KNOB, " + juce::String ((int) tour.snaps.size()) + " SNAPSHOTS: ")
+                               && keptAt (1, 1).x > 0.0f && keptAt (1, 0).x < 0.0f;
+        // PUT, on a place that holds something: refused, and said. On one that holds nothing: the knob, whole, at rest, with nothing heard to change
+        const float cutWas = s11.value (cut);
+        click11 (keptAt (1, 1)); draw11();
+        const bool refused = s11.knobs[4].snaps == tour.snaps && sc11.testBarNote().contains ("HOLDS SOMETHING");
+        s11.knobClear (6);
+        sc11.testPickKnob (6); draw11();
+        click11 (keptAt (1, 1)); draw11();
+        const bool putStack = s11.knobs[6].snaps == tour.snaps && s11.knobs[6].name == tour.name && s11.knobs[6].lanes.size() > 1 && (s11.knobs[6].lanes[1] & Session::kAllLanes) == noKick
+                              && s11.value (cx::kSnap + 6) == 0.0f && near (s11.value (cut), cutWas) && sc11.testBarNote().contains ("IS ON KNOB 7");
+        // the wrong kind is refused whoever asks (a stack knob on 1 to 4, a macro knob on 5 up; never the wheel's or OPEN's knob)
+        s11.knobClear (1);
+        const bool wrong = s11.knobPut (1, 1) == Session::putWrongKind && s11.knobPut (0, 7) == Session::putWrongKind && s11.knobPut (1, 12) == Session::putWrongKind && s11.knobPut (0, 15) == Session::putWrongKind && ! s11.knobHolds (1);
+        // the macro knob, onto 2: tied to the same knobs, as far; turned, it moves them
+        sc11.testPickKnob (1); draw11();
+        click11 (keptAt (1, 0)); draw11();
+        bool putMacro = s11.knobs[1].name == "ENERGY" && s11.knobs[1].links.size() == energy.links.size() && s11.value (cx::kSnap + 1) == 0.0f;
+        for (size_t i = 0; i < energy.links.size() && putMacro; ++i) putMacro = s11.knobs[1].links[i].ctl == energy.links[i].ctl && near (s11.knobs[1].links[i].amount, energy.links[i].amount);
+        // what is changed on the place is the module's: the kept one stays as it was. Kept again under its name: the same one, as it is now
+        s11.knobs[1].links = { { cut, 0.3f } };
+        const bool own = s11.keptSays (0).startsWith ("MACRO KNOB, TIED TO " + juce::String ((int) energy.links.size()) + " KNOB");
+        const auto idWas = s11.keptKnobs[0].id;
+        click11 (keptAt (0, 0)); draw11();
+        const bool again = s11.keptKnobs.size() == 2 && s11.keptKnobs[0].id == idWas && s11.keptSays (0) == "MACRO KNOB, TIED TO 1 KNOB";
+        // a knob that holds nothing is not kept; one with no name is kept under what it is
+        s11.knobClear (2);
+        sc11.testPickKnob (2); draw11();
+        const bool nothing = keptAt (0, 0).x < 0.0f && s11.knobKeep (2) < 0 && s11.knobKeep (12) < 0 && s11.keptKnobs.size() == 2;
+        s11.knobs[2].links = { { cut, -0.2f } }; s11.knobs[2].name = {};
+        const bool unnamed = s11.knobKeep (2) == 2 && s11.keptKnobs[2].name() == "MACRO 3";
+        // the session file holds them; read back, they are the same, and go onto a place of another module
+        Engine e12; e12.prepare (48000.0, 128);
+        Session s12 (e12, false);
+        s12.takeState (s11.stateVar());
+        bool filed = s12.keptKnobs.size() == 3 && s12.keptKnobs[1].stack && s12.keptKnobs[1].id == s11.keptKnobs[1].id && s12.keptSays (1) == s11.keptSays (1) && s12.keptKnobs[2].name() == "MACRO 3";
+        s12.moduleNew ("other set");
+        filed = filed && ! s12.knobHolds (8) && s12.knobPut (1, 8) == Session::putDone && s12.knobs[8].snaps == tour.snaps && s12.moduleName() == "OTHER SET"
+                && s12.knobPut (2, 0) == Session::putDone && s12.knobs[0].links.size() == 1;
+        s12.moduleLoad (0);                                             // (and the module it was kept from is as it was left)
+        filed = filed && s12.knobs[0].name == "ENERGY" && ! s12.knobHolds (8);
+        // a session from before them reads as it did; its number: out of those kept, and the place it was put on keeps its own
+        auto old = s11.stateVar();
+        old.getDynamicObject()->removeProperty ("keptKnobs");
+        s12.takeState (old);
+        const bool fromBefore = s12.keptKnobs.empty() && s12.knobs[6].snaps == tour.snaps;
+        sc11.testPickKnob (6); draw11();
+        click11 (keptAt (2, 1)); draw11();
+        const bool out = s11.keptKnobs.size() == 2 && ! s11.keptKnobs[1].stack && s11.knobs[6].snaps == tour.snaps;
+        const bool ok = comes && tabs && keptMacro && tabs3 && keptStack && refused && putStack && wrong && putMacro && own && again && nothing && unnamed && filed && fromBefore && out;
+        check (ok, "the knobs kept: KEEP, at the head of KNOBS, keeps the chosen knob under its name (a macro knob with what it is tied to, a stack knob with its snapshots and their parts); PUT puts one on a place of its kind that holds nothing, "
+                   "at rest, with nothing heard to change; a place that holds something and the wrong kind of place are refused; the kept one is not changed by the place; they are in the session file, and go into another module");
+        if (! ok) std::printf ("    (comes %d tabs %d macro %d [%s] tabs3 %d stack %d refused %d put stack %d wrong %d put macro %d own %d again %d nothing %d unnamed %d filed %d before %d out %d: %s)\n", (int) comes, (int) tabs, (int) keptMacro,
+                               s11.keptSays (0).toRawUTF8(), (int) tabs3, (int) keptStack, (int) refused, (int) putStack, (int) wrong, (int) putMacro, (int) own, (int) again, (int) nothing, (int) unnamed, (int) filed, (int) fromBefore, (int) out, sc11.testBarNote().toRawUTF8());
+    }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
         Engine e3; e3.prepare (48000.0, 512);
@@ -5107,6 +5198,18 @@ static int shot (const juce::StringArray& args)
             for (int i = 1; i < 4 && i < (int) ses.library.size(); ++i) two.snaps.push_back (ses.library[(size_t) i].id);
             ses.stacks.push_back (two);
             sc.testShowRack (true);
+        }
+        if (args.contains ("--kept"))
+        {
+            // (the knobs kept, beside it: the first macro knob, the first two stack knobs, and a macro knob of another set)
+            ses.knobKeep (0); ses.knobKeep (4);
+            auto lift = ses.knobs[0]; const auto was = ses.knobs[3];
+            lift.name = "LIFT"; lift.links = { { cx::lane (5, 2), 0.3f }, { cx::lane (7, 2), 0.2f } };
+            ses.knobs[3] = lift; ses.knobKeep (3); ses.knobs[3] = was;
+            auto dub = ses.knobs[4]; const auto was2 = ses.knobs[6];
+            dub.name = "DUB OUT"; while (dub.snaps.size() > 3) dub.dropAt (0);
+            ses.knobs[6] = dub; ses.knobKeep (6); ses.knobs[6] = was2;
+            sc.testShowKept (true);
         }
         sc.testTick();
     }

@@ -551,7 +551,7 @@ that travels), readable by you only. Neither the address nor the strings are in 
 - **So does the rack, and it comes back the other way too.** The stacks in the designer's
   rack (STACKS, beside the column) and the stacks the web library has lit for the instrument
   (TO SF-000 there) are kept the same, by themselves, while ONLINE is lit:
-  - A stack kept here (KEEP) is in the library's rack within a moment: lit for the instrument,
+  - A stack kept here (KEEP, at the head of STACKS) is in the library's rack within a moment: lit for the instrument,
     off its module, each snapshot with the parts it takes.
   - A stack made or lit there is here within a quarter of a minute, in the library's order. A
     snapshot it names that this library has not got is brought first, whole, with its four
@@ -632,6 +632,24 @@ one at a time. No network is asked.
 - The module in the chassis is always one of the kept ones: what you change while playing
   changes it. A session from before modules has one, MODULE 1.
 
+### Knobs kept by themselves
+
+A knob of the module can be kept by itself, to put on a place of any module. No network is
+asked.
+
+- **KNOBS**, a plate beside the chosen knob in the designer (with SNAPSHOTS, and STACKS for a
+  stack knob), shows the knobs kept: each a card with its number, its name and what it is.
+- **KEEP KNOB n**, at the head of the list, keeps the chosen knob under its name, as it is: a
+  macro knob with every knob it is tied to and how far it takes each, a stack knob with its
+  snapshots and the parts each takes. Kept again under the same name, it is the same one as it
+  is now.
+- **PUT**, on a kept knob's card, puts it on the chosen place. It shows only where the kind
+  fits (a macro knob on 1 to 4, a stack knob on 5 to 12, 14 or 15), and the place must hold
+  nothing: CLEAR it first. The knob starts at rest and nothing is heard to change.
+- A kept knob is a copy, and so is the one put: what you change on the place changes the
+  module's knob, not the kept one. Its number takes it out of those kept; modules that have it
+  keep theirs.
+
 ### The snapshot module: four macro knobs, ten stack knobs
 
 The knobs are two kinds, by place. **1 to 4 are macro knobs**: each drives other knobs
@@ -710,11 +728,12 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
   - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A
     key pressed while it plays is heard at once.
   - The wheel over the column moves it when it holds more than eleven.
-  - **KEEP** (in the strip, where LEARN is for a macro knob) keeps the knob's stack in the
-    **rack** under the knob's name: a copy, each snapshot with its parts. **STACKS**, beside
-    the column, shows the rack (the stacks kept here, and those the web library has lit for the
-    instrument); a stack's **ADD** puts it onto the chosen knob, after what the knob holds, and its
-    number takes it out of the rack. SNAPSHOTS brings the library back.
+  - **STACKS**, beside the column, shows the **rack**: the stacks kept here, and those the web
+    library has lit for the instrument. **KEEP KNOB 5'S STACK**, at its head, keeps the knob's
+    snapshots there under the knob's name: a copy, each snapshot with its parts. A stack's
+    **ADD** puts it onto the chosen knob, after what the knob holds, and its number takes it
+    out of the rack. SNAPSHOTS brings the library back.
+  - **KNOBS** shows the knobs kept by themselves (next section).
   The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
   here goes there by itself. So does the rack, and the library's comes here: see ONLINE.
 - A stack knob has no DEPTH and is tied to nothing. MOTION swings it along its own stack
@@ -986,6 +1005,7 @@ build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page librar
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work
+build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer with that knob chosen and the knobs kept beside it (--rack: the stacks; --modules: the modules)
 build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)

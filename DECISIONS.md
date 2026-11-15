@@ -2806,8 +2806,50 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      *Not built:* the knob collection (a macro or stack knob kept by itself, to put into a
      module); LIBRARY and MACROS as one page; anything for modules on the E16.
 
+## Knobs, kept by themselves (Nov 14, 22:00): fifty-second build
+
+506. **You**, 22:02: "continue"
+     **The second of 497's three: a knob kept by itself, to put into any module.** On the
+     instrument alone; no network is asked and nothing was built on the web (498).
+     - **KNOBS**, a third plate beside the chosen knob in the designer (with SNAPSHOTS, and
+       STACKS for a stack knob), shows the knobs kept: each a card with its number, its name
+       and what it is (MACRO KNOB, TIED TO 13 KNOBS; STACK KNOB, 5 SNAPSHOTS: their names).
+     - **KEEP KNOB n**, at the head of that list, keeps the chosen knob under its name, as it
+       is: a macro knob with every knob it is tied to and how far it takes each, a stack knob
+       with its snapshots and the parts each takes. Kept again under the same name, it is the
+       same one as it is now. A knob that holds nothing is not kept; one with no name is kept
+       as MACRO 3 or STACK 7.
+     - **PUT**, on a kept knob's card, puts it on the chosen place of whatever module is in
+       the chassis. It shows only where the kind fits: a macro knob on 1 to 4, a stack knob on
+       5 to 12, 14 or 15. Its number takes it out of those kept.
+     - In the session file (`keptKnobs`), so a knob kept while one module is in the chassis is
+       there for every other.
+507. **PUT only goes onto a place that holds nothing.** *Mine.* Onto one that holds something
+     it says KNOB 5 HOLDS SOMETHING: CLEAR IT FIRST, and changes nothing. A press that wiped
+     out a knob you built would be the worst thing this page could do; CLEAR is one key away
+     and is your own doing. The knob put starts at rest and nothing is heard to change.
+508. **A kept knob is a copy, and so is the one put.** *Mine, as 504.* What you change on the
+     place changes the module's knob, not the kept one (KEEP again to make it so). Taking it
+     out of those kept leaves every module that has it alone.
+509. **KEEP is at the head of the list it goes into; the strip's KEEP is gone.** *Mine.* The
+     strip had KEEP for a stack knob only (it kept the knob's snapshots as a stack), in the
+     place LEARN has for a macro knob, and there was no room there for a second one. Now both
+     lists start the same way: KNOBS with KEEP KNOB 5, STACKS with KEEP KNOB 5'S STACK. One
+     keeps the knob to put on a place; the other keeps its snapshots in their order, to add to
+     any stack knob (and, with ONLINE lit, they go to the web library's rack as before).
+     STACKS and their sync are otherwise as they were.
+510. **Beside a macro knob the kept knobs are two across**, as the snapshots are there; beside
+     a stack knob's column, one. The snapshots beside a macro knob now start under the plates
+     (eleven rows of two, where there were twelve).
+     *Not built:* stacks made in the library without a knob; LIBRARY and MACROS as one page
+     with find; anything for modules or kept knobs on the E16; dragging in the column.
+
 ## Not verified
 
+- **The knobs kept (506 to 510)** are pressed in the drawn screen and read back from the
+  session file: kept, put on a place of each kind, refused where the place holds something or
+  is the wrong kind, kept again, put into another module. Not on your Mac, and not with your
+  own knobs. **Modules (502 to 505)** the same.
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
   the turn that never jumps (from a place that is none of its snapshots, onto one, between
   two, back, on to the next), a part put out, CUE lit and out, knob 4's press, MOTION on a

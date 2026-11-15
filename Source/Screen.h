@@ -145,7 +145,6 @@ public:
     static bool testIsPickAdd (const TestHit& h, int index) { return h.kind == hPickAdd && h.a == index; }
     // the rack: what = 0 its tab (index: 0 the snapshots, 1 the stacks), 1 a stack's ADD, 2 its number (out of the rack)
     static bool testIsRack (const TestHit& h, int what, int index) { return h.kind == hRackTab + what && h.a == index; }
-    static bool testIsKeepStack (const TestHit& h) { return h.kind == hAct && h.a == aKeepStack; }
     // the column: what = 0 the card, 1 a key (b: the part), 2 its number (taken off), 3 moved (b: -1 earlier, +1 later)
     static bool testIsColumn (const TestHit& h, int what, int index, int b = 0) { return h.kind == hColCard + what && h.a == index && (what == 0 || what == 2 || h.b == b); }
     int testSelPart() const { return selPart; }
@@ -179,7 +178,9 @@ public:
     double testPrintMs() const { return printMs; }
     double testSendMs() const { return sendMs; }
     void testRenameKnob() { act (aRenameKnob); }
-    void testShowRack (bool on) { rackList = on; }
+    void testShowRack (bool on) { rackList = on; knobList = false; }
+    void testShowKept (bool on) { knobList = on; if (on) rackList = false; }
+    static bool testIsRackKeep (const TestHit& h) { return h.kind == hRackKeep; }
     void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
     void testPickKnob (int k) { selKnob = juce::jlimit (0, 15, k); }
     bool testEditing() const { return editor != nullptr; }
@@ -188,6 +189,8 @@ public:
     static bool testIsNewTrack (const TestHit& h) { return h.kind == hAct && h.a == aNewTrack; }
     static bool testIsModKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aModules : which == 1 ? aModLoad : which == 2 ? aModNew : which == 3 ? aModCopy : which == 4 ? aModRename : aModOut); }
     static bool testIsModCard (const TestHit& h, int index) { return h.kind == hModCard && h.a == index; }
+    static bool testIsTab (const TestHit& h, int which) { return h.kind == hRackTab && h.a == which; }      // 0 SNAPSHOTS, 1 STACKS, 2 KNOBS
+    static bool testIsKept (const TestHit& h, int what, int index) { return what == 0 ? h.kind == hKeptKeep : h.kind == (what == 1 ? hKeptPut : hKeptOut) && h.a == index; }
     bool testModulesShown() const { return page == pMacros && modList; }
     void testShowModules (bool on) { modList = on; selMod = ses.moduleIndex(); }
     juce::String testBarNote() const { return recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs() ? recNote : juce::String(); }     // what the top bar is saying now
@@ -211,9 +214,10 @@ private:
                    hRackTab,        // which of the two is beside the column (a: 0 the snapshots, 1 the stacks)
                    hRackAdd,        // a stack's ADD key (a: which stack): its snapshots onto the chosen stack knob
                    hRackOut,        // its number: out of the rack
-                   hModCard };      // a module kept, in the designer's list: chosen
+                   hModCard,        // a module kept, in the designer's list: chosen
+                   hKeptKeep, hKeptPut, hKeptOut, hRackKeep };      // the knobs kept: KEEP (the chosen knob into them), a kept one's PUT (onto the chosen knob), its number (out)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aKeepStack, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch, aStack,
@@ -404,6 +408,9 @@ private:
     juce::int64 scopeFor = 0;
     int selKnob = 0, libScroll = 0, colScroll = 0, rackScroll = 0;
     bool rackList = false;              // the designer, a stack knob chosen: the stacks are beside the column (out: the snapshots)
+    bool knobList = false;              // ... or the knobs kept are (either kind of knob chosen)
+    int keptScroll = 0;
+    void drawKept (G&, float x);
     int libStack = -1;                  // the library screen shows this one of the stacks LOAD brought (-1: every snapshot)
     std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;

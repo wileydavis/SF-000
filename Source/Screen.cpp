@@ -638,6 +638,36 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             body = "CLICK: LIGHT AND SELECT IT; LIT AND SELECTED, PUT IT OUT. DRAG UP OR DOWN: VELOCITY. DRAG LEFT OR RIGHT: GATE (PAST THE STEP'S EDGE IT RUNS ON, AND TIES INTO THE NEXT LIT STEP).";
             midi = "ON THE E16'S SEQ PAGE THE CHOSEN STEP IS SIX KNOBS: STEP GOES THROUGH THE PATTERN (PRESSED: LIT, OR OUT), AND VEL, GATE, RATCH, NOTE AND OCT ARE THAT STEP'S. CHANNEL " + String ((int) e16::kFxChannel) + ", CC " + String ((int) e16::kStepCc) + " TO " + String ((int) e16::kStepCc + 5) + ".";
             break;
+        case hRackTab:
+            t.title = h.a == 0 ? "SNAPSHOTS" : h.a == 1 ? "STACKS" : "KNOBS";
+            body = h.a == 0 ? "THE LIBRARY BESIDE THE KNOB: A SNAPSHOT'S ADD PUTS IT ON THE CHOSEN STACK KNOB; A TAP IS HEARD IN THE HEADPHONES."
+                 : h.a == 1 ? "THE STACKS KEPT: SNAPSHOTS IN AN ORDER, EACH WITH THE PARTS IT TAKES, UNDER A NAME. A STACK'S ADD PUTS ITS SNAPSHOTS ON THE CHOSEN STACK KNOB. WITH ONLINE LIT THEY ARE KEPT THE SAME AS THE ONES THE WEB LIBRARY HAS LIT FOR THE INSTRUMENT."
+                 : "THE KNOBS KEPT: MACRO KNOBS AND STACK KNOBS, EACH AS IT WAS WHEN IT WAS KEPT, TO PUT ON A PLACE OF WHATEVER MODULE IS IN THE CHASSIS. THEY ARE THE INSTRUMENT'S OWN: NO NETWORK IS ASKED.";
+            break;
+        case hRackKeep:
+            t.title = "KEEP: THE STACK";
+            body = "KEEPS THE CHOSEN KNOB'S SNAPSHOTS AS A STACK, UNDER THE KNOB'S NAME: A COPY, EACH SNAPSHOT WITH THE PARTS IT TAKES. KEPT AGAIN UNDER THE SAME NAME, IT IS THE SAME ONE AS IT IS NOW.";
+            break;
+        case hRackAdd:
+            t.title = "ADD";
+            body = "PUTS THIS STACK'S SNAPSHOTS ON THE CHOSEN STACK KNOB, AFTER WHAT IT HOLDS, EACH WITH ITS PARTS. A KNOB THAT HELD NOTHING AND HAS NO NAME TAKES THE STACK'S.";
+            break;
+        case hRackOut:
+            t.title = "OUT OF THE STACKS";
+            body = "TAKES THIS STACK OUT OF THOSE KEPT. ITS SNAPSHOTS STAY IN THE LIBRARY, AND ON ANY KNOB THAT HOLDS THEM.";
+            break;
+        case hKeptKeep:
+            t.title = "KEEP: THE KNOB";
+            body = "KEEPS THE CHOSEN KNOB WITH THE KNOBS KEPT, UNDER ITS NAME: A COPY, AS IT IS NOW. A MACRO KNOB WITH EVERY KNOB IT IS TIED TO AND HOW FAR IT TAKES EACH; A STACK KNOB WITH ITS SNAPSHOTS AND THEIR PARTS. KEPT AGAIN UNDER THE SAME NAME, IT IS THE SAME ONE AS IT IS NOW.";
+            break;
+        case hKeptPut:
+            t.title = "PUT";
+            body = "PUTS THIS KNOB ON THE CHOSEN PLACE: A MACRO KNOB ON 1 TO 4, A STACK KNOB ON 5 TO 12, 14 OR 15. THE PLACE MUST HOLD NOTHING (CLEAR IT FIRST). IT STARTS AT REST, AND NOTHING IS HEARD TO CHANGE. THE KEPT ONE STAYS AS IT IS: WHAT IS CHANGED ON THE PLACE CHANGES THE MODULE'S, NOT IT.";
+            break;
+        case hKeptOut:
+            t.title = "OUT OF THE KNOBS";
+            body = "TAKES THIS KNOB OUT OF THOSE KEPT. A MODULE THAT HAS IT ON A PLACE KEEPS ITS OWN.";
+            break;
         case hPageSel:
             t.title = "STEPS " + String (h.a * 16 + 1) + " TO " + String (h.a * 16 + 16);
             body = "A PAGE OF THE PATTERN. CLICK TO SEE ITS 16 STEPS (THE LEFT AND RIGHT ARROW KEYS TOO).";
@@ -678,7 +708,6 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aRename, "RENAME", "NAMES THE CHOSEN SNAPSHOT." },
                 { aDelete, "DELETE", "HOLD TO DELETE THE CHOSEN SNAPSHOT." },
                 { aRenameKnob, "RENAME", "NAMES THIS SNAPSHOT KNOB." },
-                { aKeepStack, "KEEP", "KEEPS THIS STACK KNOB'S STACK IN THE RACK, UNDER THE KNOB'S NAME: A COPY, EACH SNAPSHOT WITH THE PARTS IT TAKES. STACKS, BESIDE THE COLUMN, SHOWS THE RACK; A STACK'S ADD PUTS IT ON THE CHOSEN KNOB. NO NETWORK IS NEEDED; WITH ONLINE LIT THE WEB LIBRARY'S RACK IS GIVEN IT TOO, AND KEPT THE SAME AS THIS ONE." },
                 { aClearKnob, "CLEAR", "THE KNOB HOLDS NOTHING: A STACK KNOB'S SNAPSHOTS COME OFF IT (THEY STAY IN THE LIBRARY), A MACRO KNOB IS UNTIED FROM EVERY KNOB." },
                 { aLearn, "LEARN", "FOR THE MACRO KNOBS (1 TO 4). TIES THIS KNOB STRAIGHT TO OTHER KNOBS. IT GOES TO ITS FULL TURN AND THE MAIN SCREEN COMES UP: TURN THE KNOBS IT SHOULD MOVE (HERE OR ON A CONTROLLER) TO WHERE THE FULL TURN TAKES THEM, AND KEEP. LEARN AGAIN ADDS TO WHAT IT HAS; A KNOB TURNED BACK TO WHERE IT WAS IS LET GO." },
                 { aLearnKeep, "KEEP", "TIES THE KNOBS MOVED SINCE LEARN TO THE KNOB BEING TAUGHT. NOTHING CHANGES IN THE SOUND: THE KNOB IS AT ITS FULL TURN, AND TURNED BACK THEY GO BACK TO WHERE THEY WERE." },
@@ -2119,28 +2148,32 @@ void Screen::drawMacros (G& g)
     const bool column = ! modList && Session::isStack (selKnob);
     if (modList) drawModules (g);
     if (column) drawColumn (g);
-    const bool rack = column && rackList;
-    if (column)
+    const bool kept = ! modList && knobList, rack = column && rackList && ! kept;
+    if (! modList)
     {
-        // (beside the column: the snapshots it is built from, or the stacks kept in the rack. Two plates to choose by, the chosen one black.)
-        const String t1 ("SNAPSHOTS"), t2 = "STACKS " + String ((int) ses.stacks.size());
-        const float w1 = std::ceil (tw (fLegend, t1)) + 16, w2 = std::ceil (tw (fLegend, t2)) + 16;
-        if (vis (g, R (1433.0f, 78.0f, 272, 26)))
+        // The plates over what is beside the knob: SNAPSHOTS (to add to a stack knob, or to hear), STACKS (a stack knob: the
+        // stacks of snapshots, to add whole), KNOBS (the knobs kept, of either kind, to put on a place). The chosen one black.
+        float tx = column ? 1433.0f : 1151.0f;
+        auto tab = [&] (const String& t, int which, bool on)
         {
-            plate (g, 1433.0f, 78.0f, t1, fLegend, 8, rack ? col::white : col::black, rack ? col::black : col::lit);
-            plate (g, 1433.0f + w1 + 2, 78.0f, t2, fLegend, 8, rack ? col::black : col::white, rack ? col::lit : col::black);
-        }
-        hit (R (1433.0f, 78.0f, w1, 26), hRackTab, 0, 0);
-        hit (R (1433.0f + w1 + 2, 78.0f, w2, 26), hRackTab, 1, 0);
+            const float w = std::ceil (tw (fNote, t)) + 14;
+            if (vis (g, R (tx, 78.0f, w, 26))) plate (g, tx, 78.0f, t, fNote, 7, on ? col::black : col::white, on ? col::lit : col::black);
+            hit (R (tx, 78.0f, w, 26), hRackTab, which, 0);
+            tx += w + 2;
+        };
+        tab ("SNAPSHOTS", 0, ! rack && ! kept);
+        if (column) tab ("STACKS " + String ((int) ses.stacks.size()), 1, rack);
+        tab ("KNOBS " + String ((int) ses.keptKnobs.size()), 2, kept);
     }
     if (rack) drawRack (g);
-    const int total = rack || modList ? 0 : (int) ses.library.size(), across = column ? 1 : 2, rows = column ? 11 : 12;
+    if (kept) drawKept (g, column ? 1433.0f : 1151.0f);
+    const int total = rack || modList || kept ? 0 : (int) ses.library.size(), across = column ? 1 : 2, rows = 11;
     libScroll = juce::jlimit (0, std::max (0, (total - 1) / across - (rows - 1)), libScroll);
     for (int n = 0; n < rows * across; ++n)
     {
         const int i = libScroll * across + n;
         if (i >= total) break;
-        const R cr ((column ? 1433.0f : 1151.0f + (float) (n % 2) * 282), (column ? 110.0f : 78.0f) + (float) (n / across) * 74, 272, 66);
+        const R cr ((column ? 1433.0f : 1151.0f + (float) (n % 2) * 282), 110.0f + (float) (n / across) * 74, 272, 66);
         drawSnapCard (g, ses.library[(size_t) i], i, cr, false, hPick);
         hit (R (cr.getRight() - 6 - 44, cr.getY() + 6, 44, 24), hPickAdd, i, 0);
     }
@@ -2154,8 +2187,8 @@ void Screen::drawMacros (G& g)
     actKey (g, aRenameKnob, x0 + 160, ky, 64, "RENAME", col::yellow, 5);
     actKey (g, aClearKnob, x0 + 226, ky, 64, "CLEAR", col::yellow, 5);
     // (LEARN is for the four macro knobs: a stack knob holds snapshots and is tied to nothing)
-    if (Session::isStack (selKnob)) actKey (g, aKeepStack, x0 + 292, ky, 64, "KEEP", col::yellow, 5, ses.knobHolds (selKnob));       // (a stack knob: its stack kept in the rack)
-    else actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, true, ses.learning == selKnob);
+    // (a knob is kept at the head of the list it goes into: KNOBS, or a stack knob's snapshots as a stack under STACKS)
+    if (! Session::isStack (selKnob)) actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, true, ses.learning == selKnob);
     // CUE: how the stack knobs are played, as on the module's own panel
     actKey (g, aStackCue, x0 + 358, ky, 64, "CUE", ses.stackCue ? col::amber : col::putty, 5, true, ses.stackCue);
     // THE MODULE in the chassis, by name, and MODULES: the ones kept. With the list up, what is done with the chosen one.
@@ -2277,6 +2310,56 @@ void Screen::drawColumn (G& g)
 // The rack, beside the column: the stacks kept on the instrument (KEEP) and those LOAD brought for the library screen.
 // A stack's ADD puts its snapshots, each with the parts it takes, onto the chosen stack knob, after what the knob
 // holds; its number takes it out of the rack. Nothing here asks the network for anything.
+// The knobs kept, in the designer, beside the chosen knob: KEEP at their head (the chosen knob, as it is, into them), then
+// each as a card with its number (out of them), its name, what it is, and PUT where it is the kind the chosen place takes.
+void Screen::drawKept (G& g, float x)
+{
+    // (beside a stack knob's column there is room for one across; beside a macro knob, two, as the snapshots are there)
+    const int n = (int) ses.keptKnobs.size(), rows = 10, across = Session::isStack (selKnob) ? 1 : 2;
+    keptScroll = juce::jlimit (0, std::max (0, (n - 1) / across - (rows - 1)), keptScroll);
+    const bool can = ses.knobHolds (selKnob);
+    const auto& chosen = ses.knobs[(size_t) selKnob];
+    const String keep = "KEEP KNOB " + String (selKnob + 1) + (chosen.name.isNotEmpty() ? ": " + chosen.name : String());
+    const R kr (x, 110.0f, 272, 28);
+    if (vis (g, kr))
+    {
+        key (g, R (x, 112.0f, 24, 24), can ? col::yellow : col::putty, 2.0f);
+        text (g, can ? keep : String ("THIS KNOB HOLDS NOTHING TO KEEP"), R (x + 30, 112.0f, 240, 24), fLbl, col::black, juce::Justification::centredLeft);
+    }
+    if (can) hit (kr, hKeptKeep, 0, 0);
+    if (n == 0 && vis (g, R (x, 146, 272, 60)))
+    {
+        g.setColour (tone (col::black)); g.setFont (fLbl);
+        g.drawFittedText ("NO KNOBS KEPT. KEEP PUTS THE CHOSEN KNOB HERE, AS IT IS: A MACRO KNOB WITH WHAT IT IS TIED TO, A STACK KNOB WITH ITS SNAPSHOTS AND THEIR PARTS. TO PUT ON A PLACE OF ANY MODULE.",
+                          juce::Rectangle<int> ((int) x + 6, 150, 260, 56), juce::Justification::topLeft, 4, 0.9f);
+    }
+    for (int at = 0; at < rows * across; ++at)
+    {
+        const int i = keptScroll * across + at;
+        if (i >= n) break;
+        const auto& kk = ses.keptKnobs[(size_t) i];
+        const R r (x + (float) (at % across) * 282, 146.0f + (float) (at / across) * 74, 272, 66);
+        const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+        const String num (i + 1);
+        const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+        const R pr (r.getRight() - 6 - 44, y0, 44, 24);
+        const bool fits = kk.stack == Session::isStack (selKnob);
+        if (vis (g, r))
+        {
+            card (g, r, false);
+            tag (g, R (x0, y0, wTag, 24), num);
+            String name = kk.name();
+            while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > pr.getX() - 4) name = name.dropLastCharacters (1);
+            plate (g, x0 + wTag, y0, name, fLegend, 8, col::white, col::black, 24);
+            if (fits) { window (g, pr, col::white); text (g, "PUT", pr, fNote, col::black); }
+            g.setColour (tone (col::black)); g.setFont (fLbl);
+            g.drawFittedText (ses.keptSays (i), juce::Rectangle<int> ((int) x0, (int) y0 + 28, 260, 28), juce::Justification::topLeft, 2, 0.8f);
+        }
+        hit (R (x0, y0, wTag, 24), hKeptOut, i, 0);
+        if (fits) hit (pr, hKeptPut, i, 0);
+    }
+}
+
 // The modules kept, in the designer, where the column and the library stand: each a card with its number, its name and
 // what it holds. The one in the chassis says so. A card pressed is the chosen one: LOAD, RENAME and HOLD: OUT are for it.
 void Screen::drawModules (G& g)
@@ -2316,20 +2399,31 @@ void Screen::drawModules (G& g)
 
 void Screen::drawRack (G& g)
 {
-    const int n = (int) ses.stacks.size(), rows = 11;
+    const int n = (int) ses.stacks.size(), rows = 10;
     const float x = 1433.0f;
     rackScroll = juce::jlimit (0, std::max (0, n - rows), rackScroll);
-    if (n == 0 && vis (g, R (x, 112, 272, 60)))
+    // (at their head, as the knobs kept have theirs: KEEP, the chosen knob's snapshots into them as a stack)
+    const bool can = ! ses.knobs[(size_t) selKnob].snaps.empty();
+    const auto& chosen = ses.knobs[(size_t) selKnob];
+    const R kr (x, 110.0f, 272, 28);
+    if (vis (g, kr))
+    {
+        key (g, R (x, 112.0f, 24, 24), can ? col::yellow : col::putty, 2.0f);
+        text (g, can ? "KEEP KNOB " + String (selKnob + 1) + "'S STACK" + (chosen.name.isNotEmpty() ? ": " + chosen.name : String()) : String ("THIS KNOB HOLDS NO SNAPSHOTS TO KEEP"),
+              R (x + 30, 112.0f, 240, 24), fLbl, col::black, juce::Justification::centredLeft);
+    }
+    if (can) hit (kr, hRackKeep, 0, 0);
+    if (n == 0 && vis (g, R (x, 146, 272, 60)))
     {
         g.setColour (tone (col::black)); g.setFont (fLbl);
-        g.drawFittedText ("NO STACKS KEPT. KEEP, BELOW, PUTS THE CHOSEN KNOB'S STACK HERE. WITH ONLINE LIT, THE STACKS THE WEB LIBRARY HAS LIT FOR THE INSTRUMENT COME BY THEMSELVES.", juce::Rectangle<int> ((int) x + 6, 116, 260, 56), juce::Justification::topLeft, 4, 0.9f);
+        g.drawFittedText ("NO STACKS KEPT. KEEP PUTS THE CHOSEN KNOB'S SNAPSHOTS HERE AS A STACK. WITH ONLINE LIT, THE STACKS THE WEB LIBRARY HAS LIT FOR THE INSTRUMENT COME BY THEMSELVES.", juce::Rectangle<int> ((int) x + 6, 150, 260, 56), juce::Justification::topLeft, 4, 0.9f);
     }
     for (int row = 0; row < rows; ++row)
     {
         const int i = rackScroll + row;
         if (i >= n) break;
         const auto& st = ses.stacks[(size_t) i];
-        const R r (x, 110.0f + (float) row * 74, 272, 66);
+        const R r (x, 146.0f + (float) row * 74, 272, 66);
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
         const String num (i + 1);
         const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
@@ -2601,12 +2695,6 @@ void Screen::act (int a)
             if (auto* s = ses.findSnap (selSnap); s != nullptr && ! selNameRect.isEmpty())
                 beginEdit (selNameRect, s->name, [this, id = selSnap] (String t) { ses.rename (id, t); });
             return;
-        case aKeepStack:
-        {
-            // (the chosen stack knob's stack, kept in the rack; the rack comes up beside the column to show it)
-            if (const int at = ses.stackKeep (selKnob); at >= 0) { rackList = true; rackScroll = std::max (0, at - 10); recNote = "KEPT IN THE RACK AS " + ses.stacks[(size_t) at].name; recNoteAt = juce::Time::getMillisecondCounter(); }
-            break;
-        }
         case aRenameKnob:
             if (! selNameRect.isEmpty())
                 beginEdit (selNameRect, ses.knobs[(size_t) selKnob].name, [this, k = selKnob] (String t) { ses.knobs[(size_t) k].name = t.trim().toUpperCase().substring (0, 10); ses.touch(); });
@@ -2786,7 +2874,37 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             else { ses.cueWith (0, Session::Scope()); ses.cue (id); }
             break;
         }
-        case hRackTab:  rackList = h->a == 1; break;
+        case hRackTab:  rackList = h->a == 1; knobList = h->a == 2; break;
+        case hRackKeep:
+            // (the chosen stack knob's snapshots, each with its parts, into the stacks kept under the knob's name)
+            if (const int at = ses.stackKeep (selKnob); at >= 0)
+            {
+                rackScroll = std::max (0, at - 9);
+                recNote = "KEPT WITH THE STACKS AS " + ses.stacks[(size_t) at].name; recNoteAt = juce::Time::getMillisecondCounter();
+            }
+            break;
+        case hKeptKeep:
+            // (the chosen knob, as it is, into the knobs kept)
+            if (const int at = ses.knobKeep (selKnob); at >= 0)
+            {
+                keptScroll = std::max (0, at / (Session::isStack (selKnob) ? 1 : 2) - 9);
+                recNote = "KEPT WITH THE KNOBS AS " + ses.keptKnobs[(size_t) at].name(); recNoteAt = juce::Time::getMillisecondCounter();
+            }
+            break;
+        case hKeptOut:  ses.knobForget (h->a); break;
+        case hKeptPut:
+        {
+            const String name = h->a < (int) ses.keptKnobs.size() ? ses.keptKnobs[(size_t) h->a].name() : String();
+            switch (ses.knobPut (h->a, selKnob))
+            {
+                case Session::putDone:    recNote = name + " IS ON KNOB " + String (selKnob + 1); break;
+                case Session::putHolds:   recNote = "KNOB " + String (selKnob + 1) + " HOLDS SOMETHING: CLEAR IT FIRST (KEEP IT, IF IT IS WORTH KEEPING)"; break;
+                case Session::putNothing: recNote = "NOTHING OF " + name + " IS LEFT HERE: ITS SNAPSHOTS ARE GONE FROM THE LIBRARY"; break;
+                default:                  recNote = "A MACRO KNOB GOES ON 1 TO 4, A STACK KNOB ON 5 TO 12, 14 OR 15"; break;
+            }
+            recNoteAt = juce::Time::getMillisecondCounter();
+            break;
+        }
         case hRackOut:  ses.stackForget (h->a); break;
         case hModCard:  selMod = h->a; break;
         case hRackAdd:
@@ -2958,7 +3076,8 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
         // (over the column: the column moves; over the library beside it, the library)
         colScroll = std::max (0, colScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return;
     }
-    if (page == pMacros && Session::isStack (selKnob) && rackList && where (e).x >= 1428.0f) { rackScroll = std::max (0, rackScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (page == pMacros && knobList && ! modList && where (e).x >= (Session::isStack (selKnob) ? 1428.0f : 1146.0f)) { keptScroll = std::max (0, keptScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (page == pMacros && Session::isStack (selKnob) && rackList && ! knobList && where (e).x >= 1428.0f) { rackScroll = std::max (0, rackScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (page == pLibrary || page == pMacros || page == pArrange) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
     if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
