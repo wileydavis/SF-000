@@ -4621,6 +4621,72 @@ static int uiTest()
             std::printf ("    (before %d tap %d reset %d [lit %d effects %d at start %d quiet %d macro %.2f key %d tempo %d base %lld note '%s'] hidden %d)\n", (int) before, (int) tapNothing, (int) reset, lit(), effects(), (int) atStart, (int) quiet,
                          s8.value (cx::kSnap + 0), s8.keyRoot(), (int) (s8.value (cx::kTempo) == tempoWas), (long long) s8.baseId, sc8.testBarNote().toRawUTF8(), (int) hidden);
     }
+    {
+        // MODULES: sets of knobs kept under names. The one in the chassis is always one of them; COPY keeps it again under
+        // another name; LOAD puts another in the chassis, whole, and nothing is heard to change; all of it is in the file.
+        Engine e9; e9.prepare (48000.0, 512);
+        Session s9 (e9, false);
+        Screen sc9 (s9);
+        sc9.setSize ((int) Screen::kW, (int) Screen::kH);
+        auto draw9 = [&] { sc9.createComponentSnapshot (sc9.getLocalBounds(), false, 0.25f); };
+        auto ev9 = [&] (juce::Point<float> p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc9, &sc9, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        auto click9 = [&] (juce::Point<float> p) { sc9.mouseDown (ev9 (p)); sc9.mouseUp (ev9 (p)); };
+        auto keyAt = [&] (int which) { for (auto& h : sc9.testHits()) if (Screen::testIsModKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto cardAt = [&] (int i) { for (auto& h : sc9.testHits()) if (Screen::testIsModCard (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-4f; };
+        const int cut = cx::lane (5, 2);
+        s9.userSet (cx::kGlide, 0.0f);
+        // as it comes: one module, MODULE 1, in the chassis, holding the knobs the session has
+        const bool one = s9.modules.size() == 1 && s9.moduleIndex() == 0 && s9.moduleName() == "MODULE 1" && s9.moduleSays (0).contains ("4 MACRO KNOBS") && s9.moduleSays (0).contains ("ENERGY");
+        const auto energyLinks = s9.knobs[0].links.size();
+        const auto tour = s9.knobs[4].snaps;
+        // the module's own LOAD, on the main screen: the designer, on the list of them
+        draw9();
+        click9 (keyAt (0)); draw9();
+        const bool listUp = sc9.testModulesShown() && cardAt (0).x > 0.0f && keyAt (2).x > 0.0f;
+        // COPY: kept again under another name, and the chassis holds the copy. Changed, the first is as it was
+        click9 (keyAt (3)); draw9();
+        const bool copied = s9.modules.size() == 2 && s9.moduleIndex() == 1 && s9.moduleName() == "MODULE 1 2" && s9.knobs[4].snaps == tour && s9.knobs[0].links.size() == energyLinks;
+        s9.moduleRename (1, "warehouse set");
+        s9.knobs[0].name = "LIFT"; s9.knobs[0].links = { { cut, 0.3f } };
+        s9.knobClear (4);
+        s9.userSet (cut, 0.40f);
+        s9.turnSnapKnob (0, 1.0f);                                      // LIFT full up: the bass's knob sounds at 0.70
+        const bool lifted = near (s9.value (cut), 0.70f) && s9.moduleName() == "WAREHOUSE SET";
+        // LOAD the first: its knobs are back, whole; nothing is heard to change (what LIFT was adding stays), and the knobs are at rest
+        draw9(); click9 (cardAt (0)); draw9(); click9 (keyAt (1)); draw9();
+        const bool loaded = s9.moduleIndex() == 0 && s9.knobs[0].name == "ENERGY" && s9.knobs[0].links.size() == energyLinks && s9.knobs[4].snaps == tour
+                            && near (s9.value (cut), 0.70f) && s9.value (cx::kSnap + 0) == 0.0f && sc9.testBarNote().contains ("IS IN THE CHASSIS");
+        // and back: the copy as it was left
+        s9.moduleLoad (1);
+        const bool back = s9.knobs[0].name == "LIFT" && s9.knobs[0].links.size() == 1 && ! s9.knobHolds (4) && s9.value (cx::kSnap + 0) == 0.0f && near (s9.value (cut), 0.70f);
+        // NEW: nothing on its knobs, kept, in the chassis. The one in the chassis cannot be taken out; another can
+        const int fresh = s9.moduleNew ("dub set");
+        bool empty = fresh == 2 && s9.moduleIndex() == 2 && s9.moduleName() == "DUB SET";
+        for (int k = 0; k < 16; ++k) empty = empty && ! s9.knobHolds (k);
+        const bool keepsOwn = ! s9.moduleRemove (2) && s9.modules.size() == 3;
+        // the file: all three, which one is in the chassis, each as it was left
+        Engine e10; e10.prepare (48000.0, 128);
+        Session s10 (e10, false);
+        s10.takeState (s9.stateVar());
+        bool filed = s10.modules.size() == 3 && s10.moduleIndex() == 2 && s10.moduleName() == "DUB SET" && s10.modules[1].name == "WAREHOUSE SET";
+        s10.moduleLoad (1);
+        filed = filed && s10.knobs[0].name == "LIFT" && s10.knobs[0].links.size() == 1;
+        s10.moduleLoad (0);
+        filed = filed && s10.knobs[0].name == "ENERGY" && s10.knobs[4].snaps == tour;
+        // a session from before modules: its knobs are MODULE 1
+        auto old = s9.stateVar();
+        old.getDynamicObject()->removeProperty ("modules"); old.getDynamicObject()->removeProperty ("moduleAt");
+        s10.takeState (old);
+        const bool fromBefore = s10.modules.size() == 1 && s10.moduleName() == "MODULE 1" && s10.moduleIndex() == 0;
+        const bool removed = s9.moduleRemove (1) && s9.modules.size() == 2 && s9.moduleName() == "DUB SET";
+        check (one && listUp && copied && lifted && loaded && back && empty && keepsOwn && filed && fromBefore && removed,
+               "modules: a session's knobs are MODULE 1; LOAD on the snapshot module opens the list; COPY keeps the one in the chassis again and the chassis holds the copy; LOAD puts another in, whole, with nothing heard to change "
+               "and its knobs at rest; the one left is as it was; NEW is an empty one; the one in the chassis cannot be taken out; all of them are in the session file");
+        if (! (one && listUp && copied && lifted && loaded && back && empty && keepsOwn && filed && fromBefore && removed))
+            std::printf ("    (one %d list %d copied %d [%s] lifted %d loaded %d [%.3f, %s] back %d empty %d keeps %d filed %d before %d removed %d)\n", (int) one, (int) listUp, (int) copied, s9.moduleName().toRawUTF8(), (int) lifted, (int) loaded,
+                         s9.value (cut), sc9.testBarNote().toRawUTF8(), (int) back, (int) empty, (int) keepsOwn, (int) filed, (int) fromBefore, (int) removed);
+    }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
         Engine e3; e3.prepare (48000.0, 512);
@@ -5017,6 +5083,12 @@ static int shot (const juce::StringArray& args)
     Screen sc (ses);
     const auto page = arg ("--page", "main");
     sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : page == "arrange" ? Screen::pArrange : Screen::pMain);
+    if (page == "macros" && args.contains ("--modules"))
+    {
+        // (the modules kept: three of them, the first in the chassis)
+        ses.moduleCopy ("WAREHOUSE SET"); ses.moduleNew ("DUB SET"); ses.moduleLoad (0);
+        sc.testShowModules (true);
+    }
     if (page == "macros" && arg ("--knob", "").isNotEmpty())
     {
         // (the designer with that knob chosen. A stack knob: a part put out for its second snapshot and two for its fourth, to show the column's keys)

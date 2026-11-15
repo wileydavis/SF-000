@@ -22,6 +22,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     if (useDisk) engine.keepFile = [this] (const juce::String& path) { return keepSample (path); };       // every audio file the rig is given: the library's own copy of it
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
     ensureCleanSlate();
+    modulesReady();
     findLibraryId (idInFile);
     sign();
     if (useDisk) startTimer (3000);
@@ -2575,6 +2576,223 @@ void Session::stackForget (int index)
     if (onChange) onChange();
 }
 
+// ---- modules
+juce::var Session::knobVar (const MacroKnob& k) const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("name", k.name);
+    o->setProperty ("depth", k.depth);
+    juce::Array<var> ids;
+    for (auto id : k.snaps) ids.add (id);
+    o->setProperty ("snaps", ids);
+    {
+        // a stack knob's snapshots, each with the parts of the rig it takes (said only where one does not take them all)
+        bool some = false;
+        for (size_t i = 0; i < k.snaps.size(); ++i) some = some || (k.lanesAt (i) & kAllLanes) != kAllLanes;
+        if (some) { juce::Array<var> ln; for (size_t i = 0; i < k.snaps.size(); ++i) ln.add ((int) (k.lanesAt (i) & kAllLanes)); o->setProperty ("lanes", ln); }
+        if (stackCue && k.sweptAt != 0.0f) o->setProperty ("at", k.sweptAt);
+    }
+    if (! k.links.empty() || k.linksKept.size() > 0)
+    {
+        // the knobs it is tied to: each by its id, and how far the full turn takes it (FORMAT.md)
+        juce::Array<var> ls;
+        for (const auto& l : k.links)
+        {
+            auto* lo = new juce::DynamicObject();
+            lo->setProperty ("c", engine.control (l.ctl).id);
+            lo->setProperty ("d", l.amount);
+            ls.add (var (lo));
+        }
+        for (auto& v : k.linksKept) ls.add (v);
+        o->setProperty ("links", ls);
+    }
+    for (auto& m : k.more) o->setProperty (m.name, m.value);
+    return var (o);
+}
+
+MacroKnob Session::knobFrom (const var& o) const
+{
+    MacroKnob r;
+    r.name = o.getProperty ("name", "").toString();
+    r.depth = juce::jlimit (0.0f, 2.0f, (float) o.getProperty ("depth", 1.0));
+    const var ln = o.getProperty ("lanes", var());
+    if (auto* ids = o.getProperty ("snaps", var()).getArray())
+        for (int i = 0; i < ids->size(); ++i)
+            if (findSnap ((juce::int64) (*ids)[i]) != nullptr)
+                r.add ((juce::int64) (*ids)[i], ln.isArray() && i < ln.size() ? ((juce::uint32) (int) ln[i] & kAllLanes) : MacroKnob::kAll);
+    if (auto* ls = o.getProperty ("links", var()).getArray())
+        for (auto& l : *ls)
+        {
+            const int i = engine.find (l.getProperty ("c", "").toString());
+            const float d = juce::jlimit (-1.0f, 1.0f, (float) (double) l.getProperty ("d", 0.0));
+            if (reaches (engine, i)) { if (std::abs (d) >= 0.004f) r.links.push_back ({ i, d }); }
+            else r.linksKept.add (l);
+        }
+    if (auto* ko = o.getDynamicObject())
+        for (auto& p : ko->getProperties())
+        {
+            static const char* const mine[] = { "name", "depth", "snaps", "links", "pick", "lanes", "at" };
+            bool is = false;
+            for (auto* m : mine) is = is || p.name == juce::Identifier (m);
+            if (! is) r.more.set (p.name, p.value);
+        }
+    return r;
+}
+
+juce::var Session::moduleKnobsNow() const
+{
+    juce::Array<var> kn;
+    for (auto& k : knobs) kn.add (knobVar (k));
+    return var (kn);
+}
+
+juce::var Session::moduleMotionNow() const
+{
+    auto* o = new juce::DynamicObject();
+    for (int i = cx::kMot; i < cx::kSnap; ++i) o->setProperty (engine.control (i).id, engine.target (i));
+    return var (o);
+}
+
+static juce::String moduleNamed (juce::String want, const std::vector<Module>& all, int but = -1)
+{
+    want = want.trim().toUpperCase().substring (0, 24);
+    if (want.isEmpty()) want = "MODULE " + juce::String ((int) all.size() + 1);
+    auto taken = [&] (const juce::String& n) { for (int i = 0; i < (int) all.size(); ++i) if (i != but && all[(size_t) i].name == n) return true; return false; };
+    juce::String name = want;
+    for (int n = 2; taken (name); ++n) name = want.substring (0, 21) + " " + juce::String (n);
+    return name;
+}
+
+static juce::String moduleId()
+{
+    juce::String id ("mod");
+    juce::Random r;
+    for (int i = 0; i < 13; ++i) id << juce::String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+    return id;
+}
+
+int Session::moduleIndex() const
+{
+    for (int i = 0; i < (int) modules.size(); ++i) if (modules[(size_t) i].id == moduleAt) return i;
+    return -1;
+}
+
+juce::String Session::moduleName() const { const int i = moduleIndex(); return i >= 0 ? modules[(size_t) i].name : juce::String(); }
+
+void Session::modulesReady()
+{
+    if (moduleIndex() >= 0) return;
+    // (a session from before modules, or a new one: the knobs it has are its first module)
+    Module m;
+    m.id = moduleId(); m.name = moduleNamed ("MODULE 1", modules);
+    m.knobs = moduleKnobsNow(); m.motion = moduleMotionNow();
+    modules.push_back (m);
+    moduleAt = m.id;
+}
+
+int Session::moduleCopy (const juce::String& name)
+{
+    modulesReady();
+    const int was = moduleIndex();
+    modules[(size_t) was].knobs = moduleKnobsNow(); modules[(size_t) was].motion = moduleMotionNow();       // (the one it is a copy of, kept as it stands)
+    Module m;
+    m.id = moduleId();
+    m.name = moduleNamed (name.isNotEmpty() ? name : modules[(size_t) was].name, modules);
+    modules.push_back (m);
+    moduleAt = m.id;
+    // (the copy is its own: a knob of it is not the web library's module that the first one's knob is)
+    for (auto& k : knobs) { k.more.remove ("lib"); k.more.remove ("libmark"); k.more.remove ("reseat"); }
+    modules.back().knobs = moduleKnobsNow(); modules.back().motion = moduleMotionNow();
+    touch();
+    if (onChange) onChange();
+    return (int) modules.size() - 1;
+}
+
+int Session::moduleNew (const juce::String& name)
+{
+    modulesReady();
+    Module m;
+    m.id = moduleId(); m.name = moduleNamed (name, modules);
+    juce::Array<var> kn;
+    for (int k = 0; k < 16; ++k) kn.add (knobVar (MacroKnob()));
+    m.knobs = var (kn);
+    modules.push_back (m);
+    moduleLoad ((int) modules.size() - 1);
+    return (int) modules.size() - 1;
+}
+
+bool Session::moduleLoad (int index)
+{
+    modulesReady();
+    const int was = moduleIndex();
+    if (index < 0 || index >= (int) modules.size() || index == was) return false;
+    modules[(size_t) was].knobs = moduleKnobsNow(); modules[(size_t) was].motion = moduleMotionNow();       // (the one in the chassis, kept as it stands)
+    if (learning >= 0) learnDrop();
+    cue (0);
+    // What the macro knobs were adding stays in the sound: it becomes the scene, so nothing is heard to change as the
+    // knobs that were adding it leave.
+    for (int i = 0; i < kMorphEnd; ++i) if (engine.control (i).morph && offset[(size_t) i] != 0.0f) base[(size_t) i] = juce::jlimit (0.0f, 1.0f, base[(size_t) i] + offset[(size_t) i]);
+    const Module m = modules[(size_t) index];
+    for (int k = 0; k < 16; ++k)
+    {
+        knobs[(size_t) k] = m.knobs.isArray() && k < m.knobs.size() && ! isCorner (k) ? knobFrom (m.knobs[k]) : MacroKnob();
+        knobs[(size_t) k].picked = 0; knobs[(size_t) k].sweptAt = 0.0f;
+        engine.set (cx::kSnap + k, 0.0f);       // (its knobs start at rest)
+        base[(size_t) (cx::kSnap + k)] = 0.0f;
+    }
+    // MOTION as that module has it (one that says nothing of it: off)
+    for (int i = cx::kMot; i < cx::kSnap; ++i)
+    {
+        const auto& c = engine.control (i);
+        const float v = m.motion.isObject() && m.motion.hasProperty (juce::Identifier (c.id)) ? juce::jlimit (0.0f, 1.0f, (float) m.motion.getProperty (juce::Identifier (c.id), c.def)) : c.def;
+        engine.set (i, v); base[(size_t) i] = engine.target (i);
+    }
+    moduleAt = m.id;
+    baseId = 0;
+    applyMorph (0.0);
+    lawsSig = 0; motionLaws();
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
+void Session::moduleRename (int index, const juce::String& name)
+{
+    if (index < 0 || index >= (int) modules.size() || name.trim().isEmpty()) return;
+    modules[(size_t) index].name = moduleNamed (name, modules, index);
+    touch();
+    if (onChange) onChange();
+}
+
+bool Session::moduleRemove (int index)
+{
+    if (index < 0 || index >= (int) modules.size() || index == moduleIndex()) return false;
+    modules.erase (modules.begin() + index);
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
+juce::String Session::moduleSays (int index) const
+{
+    if (index < 0 || index >= (int) modules.size()) return {};
+    const var kn = index == moduleIndex() ? moduleKnobsNow() : modules[(size_t) index].knobs;
+    juce::StringArray macro, stack;
+    for (int k = 0; k < 16 && kn.isArray() && k < kn.size(); ++k)
+    {
+        if (isCorner (k)) continue;
+        const var o = kn[k];
+        const bool holds = isStack (k) ? o.getProperty ("snaps", var()).size() > 0 : o.getProperty ("links", var()).size() > 0;
+        if (! holds) continue;
+        const auto nm = o.getProperty ("name", "").toString();
+        (isStack (k) ? stack : macro).add (nm.isNotEmpty() ? nm : "KNOB " + juce::String (k + 1));
+    }
+    juce::String t;
+    t << macro.size() << (macro.size() == 1 ? " MACRO KNOB" : " MACRO KNOBS") << (macro.isEmpty() ? "" : ": " + macro.joinIntoString (", "))
+      << ".  " << stack.size() << (stack.size() == 1 ? " STACK KNOB" : " STACK KNOBS") << (stack.isEmpty() ? "" : ": " + stack.joinIntoString (", "));
+    return t;
+}
+
 // ---- the rack and the web library
 static juce::Array<var> offOf (juce::uint32 lanes);
 static juce::uint32 lanesFromOff (const var& off);
@@ -3297,40 +3515,23 @@ var Session::stateVar()
 
     juce::Array<var> lib, kn;
     for (auto& s : library) lib.add (snapToVar (s, engine));
-    for (auto& k : knobs)
-    {
-        auto* o = new juce::DynamicObject();
-        o->setProperty ("name", k.name);
-        o->setProperty ("depth", k.depth);
-        juce::Array<var> ids;
-        for (auto id : k.snaps) ids.add (id);
-        o->setProperty ("snaps", ids);
-        {
-            // a stack knob's snapshots, each with the parts of the rig it takes (said only where one does not take them all)
-            bool some = false;
-            for (size_t i = 0; i < k.snaps.size(); ++i) some = some || (k.lanesAt (i) & kAllLanes) != kAllLanes;
-            if (some) { juce::Array<var> ln; for (size_t i = 0; i < k.snaps.size(); ++i) ln.add ((int) (k.lanesAt (i) & kAllLanes)); o->setProperty ("lanes", ln); }
-            if (stackCue && k.sweptAt != 0.0f) o->setProperty ("at", k.sweptAt);
-        }
-        if (! k.links.empty() || k.linksKept.size() > 0)
-        {
-            // the knobs it is tied to: each by its id, and how far the full turn takes it (FORMAT.md)
-            juce::Array<var> ls;
-            for (const auto& l : k.links)
-            {
-                auto* lo = new juce::DynamicObject();
-                lo->setProperty ("c", engine.control (l.ctl).id);
-                lo->setProperty ("d", l.amount);
-                ls.add (var (lo));
-            }
-            for (auto& v : k.linksKept) ls.add (v);
-            o->setProperty ("links", ls);
-        }
-        for (auto& m : k.more) o->setProperty (m.name, m.value);
-        kn.add (var (o));
-    }
+    for (auto& k : knobs) kn.add (knobVar (k));
     root->setProperty ("library", lib);
     root->setProperty ("knobs", kn);
+    {
+        // the modules kept: the one in the chassis as its knobs stand now, the others as they were left
+        juce::Array<var> mv;
+        for (auto& m : modules)
+        {
+            const bool here = m.id == moduleAt;
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("id", m.id); o->setProperty ("name", m.name);
+            o->setProperty ("knobs", here ? moduleKnobsNow() : m.knobs);
+            o->setProperty ("motion", here ? moduleMotionNow() : m.motion);
+            mv.add (var (o));
+        }
+        if (mv.size() > 0) { root->setProperty ("modules", mv); root->setProperty ("moduleAt", moduleAt); }
+    }
     root->setProperty ("module", 3);                // (the snapshot module's two kinds: knobs 1 to 4 macro; 5 to 12, 14 and 15 stack; 13 and 16 none. 2: 13 and 16 were stack knobs too)
     if (stackCue) root->setProperty ("stackCue", true);
     if (knobsAside.size() > 0) root->setProperty ("knobsAside", knobsAside);
@@ -3550,7 +3751,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -3636,6 +3837,15 @@ void Session::takeState (const var& root)
     if (auto* un = root.getProperty ("knobsUnseated", var()).getArray()) knobsUnseated = *un;
     stacksGone.clear();
     if (auto* sg = root.getProperty ("stacksGone", var()).getArray()) stacksGone = *sg;
+    modules.clear(); moduleAt = root.getProperty ("moduleAt", "").toString();
+    if (auto* mv = root.getProperty ("modules", var()).getArray())
+        for (auto& v : *mv)
+        {
+            Module m;
+            m.id = v.getProperty ("id", "").toString(); m.name = v.getProperty ("name", "").toString();
+            m.knobs = v.getProperty ("knobs", var()); m.motion = v.getProperty ("motion", var());
+            if (m.id.isNotEmpty()) modules.push_back (m);
+        }
     stackCue = (bool) root.getProperty ("stackCue", false);
     std::vector<float> fold;                        // (what the knobs of a session from before the two kinds were adding to the scene)
     if (const int module = (int) root.getProperty ("module", 0); module >= 2)
@@ -3722,6 +3932,7 @@ void Session::warmInserts()
                 for (int k = 0; k < kSlots; ++k)
                     if (const auto& refs = s.insFiles[(size_t) l][(size_t) k]; ! refs.empty())
                         engine.warmInsert (l, k, s.inserts[(size_t) l][(size_t) k], refs);
+    modulesReady();
 }
 
 // ------------------------------------------------------------------------- what it starts with

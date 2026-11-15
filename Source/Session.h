@@ -97,6 +97,15 @@ struct Stack
     juce::uint32 lanesAt (size_t i) const { return i < lanes.size() ? lanes[i] : 0xffffffffu; }
 };
 
+// A module: the snapshot module's knobs as a set (four macro knobs, ten stack knobs), kept under a name. The rig carries
+// one at a time, chosen from those kept here: a set's worth of knobs for each set.
+struct Module
+{
+    juce::String id, name;
+    juce::var knobs;                    // sixteen, each as the session file keeps a knob
+    juce::var motion;                   // MOTION on its knobs: each of MOTION's controls by its id
+};
+
 class Session : private juce::Timer
 {
 public:
@@ -441,6 +450,21 @@ public:
     // holds (a knob that held nothing takes the stack's name too). False: not a stack knob, or no room for them all.
     bool stackOnto (int index, int k);
     void stackForget (int index);       // out of the rack (and, once ONLINE has said so there, out of the web library's rack for the instrument)
+    // ---- modules. The sixteen knobs here ARE the module in the chassis (moduleAt), and it is always one of the kept
+    // ones: what is changed while playing changes that module. LOAD puts another in its place, whole, and the one that
+    // was there is kept as it stood. Nothing is heard to change when one is loaded: what the macro knobs were adding
+    // stays in the scene, and the new module's knobs start at rest. No network is asked.
+    std::vector<Module> modules;
+    juce::String moduleAt;                                  // the id of the module in the chassis
+    void modulesReady();                                    // there is at least one, and the one in the chassis is among them (a session from before modules: its knobs are MODULE 1)
+    int moduleIndex() const;                                // the place among `modules` of the one in the chassis
+    juce::String moduleName() const;
+    int moduleNew (const juce::String& name = {});          // an empty module, kept, and put in the chassis. Its place
+    int moduleCopy (const juce::String& name = {});         // the one in the chassis kept again under another name: the chassis holds the copy from then on. Its place
+    bool moduleLoad (int index);                            // that module into the chassis, whole. False: no such one, or it is the one there
+    void moduleRename (int index, const juce::String&);
+    bool moduleRemove (int index);                          // out of the kept ones. Never the one in the chassis
+    juce::String moduleSays (int index) const;              // what it holds, in a line
     // ---- the rack and the web library. ONLINE keeps the two the same, each way: a stack kept here goes there (lit for
     // the instrument, off its module), and one made, changed, unlit or removed there is so here. Where both have changed
     // the instrument's stands. Nothing is sent that names a snapshot the library lacks; nothing is taken until every
@@ -461,6 +485,10 @@ public:
     // What is to be done, given every stack the library has (GET /api/stacks). lacking: the uids its stacks for the
     // instrument name that are not here and not in `none`: such a stack is left out of the plan until they are.
     std::vector<RackStep> rackPlan (const juce::var& stacksThere, const std::set<juce::String>& none, juce::StringArray& lacking) const;
+    juce::var knobVar (const MacroKnob&) const;             // a knob as the session file keeps one
+    MacroKnob knobFrom (const juce::var&) const;            // ... and read back (a snapshot that is gone is left out, a tie to a knob this rig lacks is carried)
+    juce::var moduleKnobsNow() const;                       // the sixteen as they stand
+    juce::var moduleMotionNow() const;
     bool rackDone (const RackStep&);                        // the step's part here. False: the stack changed meanwhile (next time)
     void rackOrder (const juce::var& stacksThere);          // the library's order; those it has not got after
     // A stack knob holding a snapshot the web library is never given (the rig's own: CLEAN SLATE, INIT and its pushes;

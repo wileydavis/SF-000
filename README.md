@@ -59,7 +59,7 @@ First run:
 | Double-click a stack knob (its press on the E16) | the set goes to its nearest snapshot, over the GLIDE time |
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
 | **HOLD: NEW** (top bar, beside the flag) | held: a new track. The rig as it starts: no steps, no effects in the racks, every knob where the rig starts it, every MUTE and SOLO out, the macro knobs at rest. TEMPO, the master, the snapshot module's knobs and the library stay. A tap does nothing |
-| **LOAD** (on the snapshot module) | make the sixteen knobs what the web library's module holds now (see ONLINE, below) |
+| **LOAD** (on the snapshot module) | the modules kept on the instrument: choose one, and LOAD puts it in the chassis, whole (see Modules, below). The web library's module is **WEB LOAD**, in the library |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** is here too, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and ADD snapshots to its stack (see The snapshot module, and A macro knob, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
@@ -612,6 +612,25 @@ says so and changes nothing. What it did is said on the top bar for a few second
 the library screen. If a snapshot it brings names a sample that is not on this computer, it
 says how many do: the web library does not keep samples yet, so that lane will be silent until
 the file is here.
+
+### Modules: a set of knobs for each set
+
+The snapshot module's knobs are a **module**: its four macro knobs, its ten stack knobs, and
+MOTION as it is set on them, under a name. The instrument keeps as many as you make and carries
+one at a time. No network is asked.
+
+- **MODULES**, on the designer's strip beside the module's name (or **LOAD** on the snapshot
+  module's own panel), shows the modules kept where the column and the library stand: each a
+  card with its number, its name and what it holds. The one in the chassis says so. Press a
+  card to choose it.
+- **LOAD** puts the chosen one in the chassis, whole. The one that was there is kept as it
+  stood. Nothing is heard to change: what the macro knobs were adding stays in the sound, and
+  the new module's knobs start at rest.
+- **COPY** keeps the one in the chassis again under another name; the chassis holds the copy
+  from then on. **NEW** is a module with nothing on its knobs. **RENAME** names the chosen one.
+  **HOLD: OUT** takes the chosen one out, never the one in the chassis.
+- The module in the chassis is always one of the kept ones: what you change while playing
+  changes it. A session from before modules has one, MODULE 1.
 
 ### The snapshot module: four macro knobs, ten stack knobs
 

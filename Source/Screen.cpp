@@ -654,6 +654,12 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             static const A acts[] = {
                 { aRun, "RUN", "STARTS AND STOPS THE CLOCK (THE SPACE BAR TOO)." },
                 { aPanic, "PANIC", "SILENCES EVERY VOICE AND TAIL." },
+                { aModules, "MODULES", "THE MODULES KEPT ON THE INSTRUMENT: EACH A SET OF KNOBS (FOUR MACRO KNOBS, TEN STACK KNOBS) UNDER A NAME, ONE FOR EACH SET YOU PLAY. THE ONE IN THE CHASSIS IS ALWAYS ONE OF THEM, AND WHAT YOU CHANGE CHANGES IT. PRESSED AGAIN: BACK TO THE KNOB." },
+                { aModLoad, "LOAD", "PUTS THE CHOSEN MODULE IN THE CHASSIS, WHOLE. THE ONE THAT WAS THERE IS KEPT AS IT STOOD. NOTHING IS HEARD TO CHANGE: WHAT THE MACRO KNOBS WERE ADDING STAYS IN THE SOUND, AND THE NEW KNOBS START AT REST. NO NETWORK IS ASKED." },
+                { aModNew, "NEW", "A NEW MODULE WITH NOTHING ON ITS KNOBS, KEPT, AND PUT IN THE CHASSIS." },
+                { aModCopy, "COPY", "KEEPS THE MODULE IN THE CHASSIS AGAIN UNDER ANOTHER NAME. THE CHASSIS HOLDS THE COPY FROM THEN ON: CHANGE IT FOR ANOTHER SET AND THE FIRST STAYS AS IT WAS." },
+                { aModRename, "RENAME", "THE CHOSEN MODULE'S NAME: TYPE, THEN RETURN." },
+                { aModOut, "HOLD: OUT", "HELD: TAKES THE CHOSEN MODULE OUT OF THOSE KEPT. NOT THE ONE IN THE CHASSIS." },
                 { aNewTrack, "HOLD: NEW", "HELD: A NEW TRACK. THE RIG AS IT STARTS: NO STEPS, NO EFFECTS IN THE RACKS, EVERY KNOB WHERE THE RIG STARTS IT, EVERY MUTE AND SOLO OUT, THE MACRO KNOBS AT REST. TEMPO, THE MASTER, THE SNAPSHOT MODULE'S KNOBS AND THE LIBRARY STAY. TAKE A SNAPSHOT FIRST IF WHAT IS PLAYING IS WORTH KEEPING." },
                 { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (THE KEY IS GREEN AND READS PHONES WHILE PHONES IS ON.)" },
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
@@ -684,7 +690,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
                 { aOnlineSetup, "SET UP", "THE WEB LIBRARY'S ADDRESS AND ITS KEY." },
-                { aFetch, "LOAD", "MAKES THE SIXTEEN KNOBS WHAT THE WEB LIBRARY'S MODULE HOLDS NOW: ITS FOUR MACRO KNOBS, ITS TEN STACK KNOBS (EACH SNAPSHOT WITH THE LANES CHOSEN FOR IT THERE), AND THE SNAPSHOTS THIS LIBRARY LACKS. WHAT A KNOB HELD HERE IS SENT TO THE LIBRARY FIRST, SO NOTHING IS LOST. A SONG COMES AS THE ARRANGEMENT (IF THERE IS NONE)." },
+                { aFetch, "WEB LOAD", "MAKES THE SIXTEEN KNOBS WHAT THE WEB LIBRARY'S MODULE HOLDS NOW: ITS FOUR MACRO KNOBS, ITS TEN STACK KNOBS (EACH SNAPSHOT WITH THE LANES CHOSEN FOR IT THERE), AND THE SNAPSHOTS THIS LIBRARY LACKS. WHAT A KNOB HELD HERE IS SENT TO THE LIBRARY FIRST, SO NOTHING IS LOST. A SONG COMES AS THE ARRANGEMENT (IF THERE IS NONE)." },
                 { aStack, "STACK", "THE STACKS LOAD BROUGHT, ONE AFTER ANOTHER, THEN EVERY SNAPSHOT AGAIN." },
                 { aArrange, "ARRANGE", "THE ARRANGEMENT: SNAPSHOTS IN A LINE, EACH FOR SO MANY BARS, EACH REACHED BY A MORPH FROM THE ONE BEFORE. PLAYED FROM THE CLOCK, AND PRINTED TO FILES FOR A RELEASE. A ON THE KEYBOARD TOO. LIT GREEN WHILE IT PLAYS." },
                 { aArrPlay, "PLAY", "PLAYS THE ARRANGEMENT FROM ITS FIRST PART. FROM STOPPED: THAT PART IS RECALLED AT ONCE AND THE CLOCK STARTS FROM THE TOP. WITH THE CLOCK RUNNING: IT COMES IN ON THE NEXT BAR LINE. EACH PART AFTER IS RECALLED SO AS TO SET OFF ON ITS OWN BAR LINE; AT THE END THE CLOCK STOPS. PRESSED WHILE IT PLAYS: STOP." },
@@ -1385,7 +1391,8 @@ void Screen::drawSnapPanel (G& g, R r)
     actKey (g, aStackCue, x0, ky, 42, "CUE", ses.stackCue ? col::amber : col::putty, 3, true, ses.stackCue);
     {
         const bool loading = online != nullptr && online->loading();
-        actKey (g, aFetch, x0 + 44, ky, 42, "LOAD", loading ? col::yellow : col::white, 3, online != nullptr && online->setup().complete(), loading);
+        // LOAD: a module kept on the instrument, into the chassis (the designer's list of them). The web library's module is LOAD in the library.
+        actKey (g, aModules, x0 + 44, ky, 42, "LOAD", col::white, 3, true);
     }
     actKey (g, aLibrary, x0 + 88, ky, 56, "LIBRARY", col::white);
     actKey (g, aMacros, x0 + 146, ky, 56, "MACROS", col::white);
@@ -1836,7 +1843,7 @@ void Screen::drawLibrary (G& g)
     actKey (g, aOnlineSetup, x0 + 810, ky, 64, "SET UP", col::white, 5);
     // LOAD: what the web library's tray holds, brought here (its stacks, its macros, a song, and the snapshots this library lacks)
     const bool loading = online->loading();
-    actKey (g, aFetch, x0 + 876, ky, 64, "LOAD", loading ? col::yellow : col::white, 5, online->setup().complete(), loading);
+    actKey (g, aFetch, x0 + 876, ky, 64, "WEB LOAD", loading ? col::yellow : col::white, 5, online->setup().complete(), loading);
     const String said = online->loadLine();
     text (g, online->line(), R (x0 + 964, ky, 696, 20), fLbl, col::black, juce::Justification::centredLeft);
     text (g, said.isNotEmpty() ? said : help, R (x0 + 964, ky + 20, 696, 20), fLbl, col::black, juce::Justification::centredLeft);
@@ -2109,7 +2116,8 @@ void Screen::drawMacros (G& g)
         g.drawFittedText (moves, juce::Rectangle<int> ((int) x0, (int) (ky + 102), 258, 64), juce::Justification::topLeft, 4, 0.8f);
     }
     // A stack knob chosen: its stack is the column, and the library is beside it to pick from. A macro knob: the library alone.
-    const bool column = Session::isStack (selKnob);
+    const bool column = ! modList && Session::isStack (selKnob);
+    if (modList) drawModules (g);
     if (column) drawColumn (g);
     const bool rack = column && rackList;
     if (column)
@@ -2126,7 +2134,7 @@ void Screen::drawMacros (G& g)
         hit (R (1433.0f + w1 + 2, 78.0f, w2, 26), hRackTab, 1, 0);
     }
     if (rack) drawRack (g);
-    const int total = rack ? 0 : (int) ses.library.size(), across = column ? 1 : 2, rows = column ? 11 : 12;
+    const int total = rack || modList ? 0 : (int) ses.library.size(), across = column ? 1 : 2, rows = column ? 11 : 12;
     libScroll = juce::jlimit (0, std::max (0, (total - 1) / across - (rows - 1)), libScroll);
     for (int n = 0; n < rows * across; ++n)
     {
@@ -2150,6 +2158,24 @@ void Screen::drawMacros (G& g)
     else actKey (g, aLearn, x0 + 292, ky, 64, ses.learning == selKnob ? "KEEP" : "LEARN", ses.learning == selKnob ? col::green : col::yellow, 5, true, ses.learning == selKnob);
     // CUE: how the stack knobs are played, as on the module's own panel
     actKey (g, aStackCue, x0 + 358, ky, 64, "CUE", ses.stackCue ? col::amber : col::putty, 5, true, ses.stackCue);
+    // THE MODULE in the chassis, by name, and MODULES: the ones kept. With the list up, what is done with the chosen one.
+    {
+        const float mx = x0 + 434 + (float) cx::kMotUnits * 254 + 8;
+        const float w = title (g, mx, y0, "MODULE");
+        String nm = ses.moduleName();
+        while (nm.length() > 3 && std::ceil (tw (fNote, nm)) + 12.0f > strip.getRight() - 8 - (mx + w + 2)) nm = nm.dropLastCharacters (1);
+        plate (g, mx + w + 2, y0, nm, fNote, 6, col::white, col::black);
+        actKey (g, aModules, mx, ky, 64, "MODULES", modList ? col::green : col::white, 5, true, modList);
+        if (modList)
+        {
+            const bool other = selMod >= 0 && selMod < (int) ses.modules.size() && selMod != ses.moduleIndex();
+            actKey (g, aModLoad, mx + 76, ky, 64, "LOAD", col::yellow, 5, other);
+            actKey (g, aModNew, mx + 142, ky, 64, "NEW", col::white, 5);
+            actKey (g, aModCopy, mx + 208, ky, 64, "COPY", col::white, 5);
+            actKey (g, aModRename, mx + 274, ky, 64, "RENAME", col::yellow, 5, selMod >= 0);
+            actKey (g, aModOut, mx + 340, ky, 64, "HOLD: OUT", col::red, 5, other);
+        }
+    }
     // MOTION: three waves, each put on a snapshot knob. The knob swings in time with the clock, and what it moves goes with it.
     motSig = motionSig();
     for (int u = 0; u < cx::kMotUnits; ++u)
@@ -2170,13 +2196,8 @@ void Screen::drawMacros (G& g)
         plate (g, ux + w + 2, y0, says, fNote, 6, on ? col::green : col::white, col::black);
         for (int k = 0; k < cx::kMotKnobs; ++k) control (g, cx::mot (u, k), ux + (float) k * 62, ky, 60, k == 3 ? col::teal : col::lit, 40, 15.0f);
     }
-    const String help = "1 TO 4, MACRO KNOBS: PRESS LEARN, TURN THE KNOBS ITS FULL TURN SHOULD MOVE, AND KEEP. "
-                        "A STACK KNOB (5 TO 12, 14, 15): A SNAPSHOT ON THE RIGHT PRESSED IS HEARD IN THE HEADPHONES, AND ITS ADD PUTS IT ON THE KNOB. BESIDE THEM IS ITS STACK, IN ORDER: "
-                        "A KEY PUTS THAT PART OF THE RIG OUT FOR THAT SNAPSHOT, UP AND DN MOVE IT, ITS NUMBER TAKES IT OFF, THE CARD PLAYS IT IN THE HEADPHONES. "
-                        "CUE OUT: A TURN MORPHS THE RIG TOWARD THE NEXT SNAPSHOT. CUE LIT: A TURN PLAYS IT IN THE HEADPHONES. A PRESS TAKES THE SET TO WHERE THE KNOB IS. "
-                        "MOTION: A WAVE THAT TURNS A KNOB FOR YOU.";
-    g.setColour (tone (col::black)); g.setFont (fLbl);
-    g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1204, (int) y0 + 2, 466, 94), juce::Justification::centredLeft, 7, 0.8f);
+    // (the paragraph that stood here, saying what each kind of knob does, made way for the module's name and keys: each key
+    // still says what it does when the pointer rests on it, and the README has the rest)
 }
 
 // The column: the chosen stack knob's stack as it is, in its order, beside the library it is built from. Each snapshot
@@ -2256,6 +2277,43 @@ void Screen::drawColumn (G& g)
 // The rack, beside the column: the stacks kept on the instrument (KEEP) and those LOAD brought for the library screen.
 // A stack's ADD puts its snapshots, each with the parts it takes, onto the chosen stack knob, after what the knob
 // holds; its number takes it out of the rack. Nothing here asks the network for anything.
+// The modules kept, in the designer, where the column and the library stand: each a card with its number, its name and
+// what it holds. The one in the chassis says so. A card pressed is the chosen one: LOAD, RENAME and HOLD: OUT are for it.
+void Screen::drawModules (G& g)
+{
+    const int n = (int) ses.modules.size(), rows = 11, here = ses.moduleIndex();
+    const float x = 1151.0f;
+    selMod = juce::jlimit (0, std::max (0, n - 1), selMod < 0 ? here : selMod);
+    modScroll = juce::jlimit (0, std::max (0, n - rows), modScroll);
+    selModName = {};
+    title (g, x, 78.0f, "MODULES " + String (n));
+    for (int row = 0; row < rows; ++row)
+    {
+        const int i = modScroll + row;
+        if (i >= n) break;
+        const auto& m = ses.modules[(size_t) i];
+        const R r (x, 110.0f + (float) row * 74, 554, 66);
+        const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+        const String num (i + 1);
+        const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+        if (vis (g, r))
+        {
+            card (g, r, i == selMod);
+            tag (g, R (x0, y0, wTag, 24), num);
+            const float wName = plate (g, x0 + wTag, y0, m.name, fLegend, 8, col::white, col::black, 24);
+            if (i == selMod) selModName = R (x0 + wTag, y0, std::max (wName, 220.0f), 24);
+            if (i == here)
+            {
+                const String in ("IN THE CHASSIS");
+                plate (g, r.getRight() - 6 - (std::ceil (tw (fNote, in)) + 12), y0, in, fNote, 6, col::green, col::black, 24);
+            }
+            g.setColour (tone (col::black)); g.setFont (fLbl);
+            g.drawFittedText (ses.moduleSays (i), juce::Rectangle<int> ((int) x0, (int) y0 + 28, 540, 28), juce::Justification::topLeft, 2, 0.8f);
+        }
+        hit (r, hModCard, i, 0);
+    }
+}
+
 void Screen::drawRack (G& g)
 {
     const int n = (int) ses.stacks.size(), rows = 11;
@@ -2508,7 +2566,19 @@ void Screen::act (int a)
             }
             break;
         case aLibrary:  setPage (pLibrary); break;
-        case aMacros:   setPage (pMacros); break;
+        case aMacros:   setPage (pMacros); modList = false; break;
+        // MODULES (the designer's strip) and LOAD (the snapshot module's own panel): the modules kept, to choose one from
+        case aModules:  if (page != pMacros) { setPage (pMacros); modList = true; } else modList = ! modList;
+                        selMod = ses.moduleIndex(); break;
+        case aModLoad:
+            if (ses.moduleLoad (selMod)) { recNote = ses.moduleName() + " IS IN THE CHASSIS"; recNoteAt = juce::Time::getMillisecondCounter(); }
+            break;
+        case aModNew:   selMod = ses.moduleNew(); recNote = "A NEW MODULE, IN THE CHASSIS: " + ses.moduleName(); recNoteAt = juce::Time::getMillisecondCounter(); break;
+        case aModCopy:  selMod = ses.moduleCopy(); recNote = "KEPT AGAIN AS " + ses.moduleName() + ": THE CHASSIS HOLDS THE COPY"; recNoteAt = juce::Time::getMillisecondCounter(); break;
+        case aModRename:
+            if (selMod >= 0 && selMod < (int) ses.modules.size() && ! selModName.isEmpty())
+                beginEdit (selModName, ses.modules[(size_t) selMod].name, [this, i = selMod] (String t) { ses.moduleRename (i, t); });
+            return;
         case aMain:     setPage (pMain); break;
         case aNudgeL:   ses.nudgeLane (l, -1); break;
         case aNudgeR:   ses.nudgeLane (l, 1); break;
@@ -2653,7 +2723,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             break;
         }
         case hAct:
-            if (h->a == aDelete || h->a == aArrClear || h->a == aNewTrack || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these are held
+            if (h->a == aDelete || h->a == aArrClear || h->a == aNewTrack || h->a == aModOut || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these are held
             act (h->a);
             drag.fired = true;                  // (the press that starts a take is not also the hold that ends it)
             if (h->a == aRec) repaint();
@@ -2718,6 +2788,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         }
         case hRackTab:  rackList = h->a == 1; break;
         case hRackOut:  ses.stackForget (h->a); break;
+        case hModCard:  selMod = h->a; break;
         case hRackAdd:
         {
             if (h->a < (int) ses.stacks.size() && ! ses.stackOnto (h->a, selKnob)) { recNote = "NO ROOM ON THAT KNOB FOR ALL OF THEM"; recNoteAt = juce::Time::getMillisecondCounter(); }
@@ -3625,6 +3696,13 @@ void Screen::timerCallback()
         drag.fired = true;
         recorder->stop();
         recWas = false; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter();
+        repaint();
+    }
+    if (mouseIsDown && drag.kind == hAct && drag.a == aModOut && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)
+    {
+        drag.fired = true;
+        const String gone = selMod >= 0 && selMod < (int) ses.modules.size() ? ses.modules[(size_t) selMod].name : String();
+        if (ses.moduleRemove (selMod)) { selMod = ses.moduleIndex(); recNote = gone + " IS OUT OF THE MODULES KEPT"; recNoteAt = juce::Time::getMillisecondCounter(); }
         repaint();
     }
     if (mouseIsDown && drag.kind == hAct && drag.a == aNewTrack && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)

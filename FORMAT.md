@@ -57,6 +57,8 @@ The uid comes back the same (see below); `made` does not.
   "knobsAside"?, "knobsUnseated"?:            knobs waiting to be told to the web library (below)
   "arrangement": { "parts": [ { "snap": id, "bars": 8, "morph": 0 } ] },   snapshots in a line (absent: none)
   "stacks":    [ { "id", "name", "kind", "snaps": [ids], "lanes"?: [n], "here"?: true, "mark"?: "..." } ],   the rack: the stacks the web library has lit for the instrument, and those kept on the instrument ("here": true: made here). "lanes": one number for each of "snaps", as on a stack knob; absent: every snapshot takes everything. "mark": the stack in a line, as the web library and this one last agreed it was (absent: they never have) (absent: none)
+  "modules":   [ { "id", "name", "knobs": [16, each as in "knobs"], "motion": { "<control id>": value } } ],   the modules kept (fifty-first build on). The one in the chassis is written as its knobs stand ("knobs", above, is the same sixteen); absent: one, the session's knobs
+  "moduleAt":  "<id>",                                           which of them is in the chassis
   "stacksGone": [ { "id", "mark", "here" } ],   stacks put out of the rack here that the web library is still to be told of (absent: none)
   "defs":      { "<print>": definition, ... }
 }

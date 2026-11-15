@@ -186,6 +186,10 @@ public:
     bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
     void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
     static bool testIsNewTrack (const TestHit& h) { return h.kind == hAct && h.a == aNewTrack; }
+    static bool testIsModKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aModules : which == 1 ? aModLoad : which == 2 ? aModNew : which == 3 ? aModCopy : which == 4 ? aModRename : aModOut); }
+    static bool testIsModCard (const TestHit& h, int index) { return h.kind == hModCard && h.a == index; }
+    bool testModulesShown() const { return page == pMacros && modList; }
+    void testShowModules (bool on) { modList = on; selMod = ses.moduleIndex(); }
     juce::String testBarNote() const { return recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs() ? recNote : juce::String(); }     // what the top bar is saying now
     juce::String testTagText (int ctl) const { const auto it = tagPics.find (ctl); return it != tagPics.end() ? it->second.key : juce::String(); }
 
@@ -206,9 +210,10 @@ private:
                    // the rack, beside the column: the stacks kept on the instrument and those LOAD brought
                    hRackTab,        // which of the two is beside the column (a: 0 the snapshots, 1 the stacks)
                    hRackAdd,        // a stack's ADD key (a: which stack): its snapshots onto the chosen stack knob
-                   hRackOut };      // its number: out of the rack
+                   hRackOut,        // its number: out of the rack
+                   hModCard };      // a module kept, in the designer's list: chosen
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aKeepStack, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aKeepStack, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch, aStack,
@@ -379,6 +384,10 @@ private:
     bool cueMode = false;                       // the library: a tap is heard in the headphones, not recalled
     juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
     juce::uint32 recNoteAt = 0;
+    bool modList = false;                       // the designer shows the modules kept, in place of the column and the library
+    int selMod = -1, modScroll = 0;             // the module chosen in that list
+    R selModName;                               // where its name is drawn (RENAME types over it)
+    void drawModules (G&);
     int cfgE16Was = -1;                         // the E16's page of CONFIG as the panel last followed it
     int takesWas = 0;                           // the session's count of snapshots taken, as last said on the bar
     juce::uint32 recNoteMs() const              { return recNote.startsWith ("SNAPSHOT TAKEN") ? 3500u : 8000u; }      // how long the bar's note stays

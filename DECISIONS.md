@@ -2773,6 +2773,39 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      being taught or INFO is up (their words stand in that place). Nothing on the E16 for it
      yet: say if it should have one.
 
+## Modules, kept on the instrument (Nov 14, 21:30): fifty-first build
+
+502. **You**, 21:32: "carry on"
+     **The first of 497's three: modules kept under names, on the instrument alone.** No
+     network is asked, and nothing was built on the web (498).
+     - **A module** is the snapshot module's knobs as a set (its four macro knobs, its ten
+       stack knobs, and MOTION as it is set on them), under a name.
+     - **The one in the chassis is always one of the kept ones.** What you change while playing
+       changes that module. A session from before this has one: MODULE 1, its knobs as they are.
+     - **MODULES**, on the designer's strip (right of MOTION, with the module's name), shows
+       them where the column and the library stand: each a card with its number, its name and
+       what it holds; the one in the chassis says so. A card pressed is the chosen one.
+     - **LOAD** puts the chosen one in the chassis, whole. The one that was there is kept as it
+       stood. **COPY** keeps the one in the chassis again under another name, and the chassis
+       holds the copy from then on (change it for another set: the first stays as it was).
+       **NEW** is one with nothing on its knobs. **RENAME**. **HOLD: OUT** takes the chosen one
+       out of those kept; never the one in the chassis.
+     - **LOAD on the snapshot module's own panel now opens that list.** It was the web
+       library's LOAD; that one is **WEB LOAD**, in the library, and does what it did.
+503. **Nothing is heard to change when a module is loaded.** *Mine.* The macro knobs that
+     leave may have been adding something: that stays in the sound (it becomes the scene), and
+     the new module's knobs start at rest. A stack knob of the new module starts at the bottom
+     of its turn with the set wherever it is; its first turn goes from there, as always (439).
+504. **A copy is its own.** *Mine, the first proposal of 495.* A module holds its knobs
+     outright. COPY's knobs are not the web library's modules that the first one's knobs are:
+     with ONLINE lit they go up as new ones. (The web still has one model of the module: what
+     is in the chassis. Loading another module here changes that model, as changing sixteen
+     knobs by hand would. That is as far as the web goes until its turn comes.)
+505. **The paragraph on the designer's strip is gone**, to make room: the one that said what
+     each kind of knob does. Each key still says what it does when the pointer rests on it.
+     *Not built:* the knob collection (a macro or stack knob kept by itself, to put into a
+     module); LIBRARY and MACROS as one page; anything for modules on the E16.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2987,6 +3020,10 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   page on the E16 is checked against the scene file and a made-up E16 only.
 - **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
   whether any snapshot of yours has KEY set.
+- **Modules (502 to 505)** are checked on the session and the drawn screens: kept, copied,
+  loaded (the knobs, their ties and stacks, MOTION, nothing moving in the sound), renamed,
+  taken out, written to the file and read back, and a session from before them. Not on the
+  Mac, and not with a set's worth of your own knobs.
 - **CONFIG four across (500) and HOLD: NEW (501)** are checked on the drawn screens and the
   session. Whether the panel going to the E16's page as you press PAGE + feels right, and
   whether NEW leaves what you want left, are yours to say.
