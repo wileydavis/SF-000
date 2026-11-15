@@ -54,3 +54,14 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   takes its amp decay from DECAY and its filter envelope's amount from ENV AMT, which the SAMPLE
   model otherwise sets to none). With all four as they open, nothing is different: the reference
   render is the same file. See DECISIONS, fifty-seventh build.
+- **WAVETABLE on BASS and LEAD**, and **every lane knob on a sample**, marked `(SF-000)`.
+  `Synth.cpp`: a WAVETABLE model second to last in `bassModels` and `leadModels` (one voice on
+  BASS), with a figure each in `Calibration.h` (set by rms beside their neighbours, not LUFS).
+  WAVETABLE reads a second, detuned wave where its model has a `detune` (the two new ones and
+  PAD's, which also has a sustain of 0.7 where it had 1, so DECAY is heard: PAD's WAVETABLE is
+  not the sound it was). `smp_env` is now KNOBS and opens on: a `shaped` sample voice takes
+  DECAY (and a sustain from its top fifth), ENV AMT, COLOR (a tilt), DETUNE (a second reading)
+  and SPACE (the ensemble), the last two not on a mono model, and in PLAY THROUGH GATE ends it
+  part way. `Drums.cpp` (hats, clap) and `Voice.cpp` (MODEL SAMPLE): TONE tilts a sample.
+  SF-000's `Engine` gives a model's place kept from before the lists grew as the same model.
+  See DECISIONS, fifty-eighth build.

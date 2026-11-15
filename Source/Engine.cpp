@@ -1303,7 +1303,8 @@ Engine::SetupState Engine::sampleOwnOff (Target t) const
     SetupState st;
     if (auto* p = processorFor (t))
         for (const char* id : { "smp_gain", "smp_norm", "smp_play", "smp_env" })
-            if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams()) st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
+            if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams())
+                st.push_back ({ juce::String (id), juce::String (id) == "smp_env" ? 0.0f : p->param (i)->getDefaultValue() });     // (KNOBS: off, as samples played then; it opens on)
     return st;
 }
 
@@ -1362,8 +1363,32 @@ Engine::SetupState Engine::getSetup (Target t) const
     return st;
 }
 
-void Engine::applySetupTo (SFProcessor& p, const std::vector<std::string>& bound, const SetupState& st)
+// A menu's place, kept when its list was one shorter (the newcomer second to last, so the first and the last have not
+// moved): it falls on the shorter list's steps, which but for the two ends are never the longer one's.
+static float grownPlace (const SFProcessor& p, const juce::String& id, float v)
 {
+    if (id != "model" && id != "layer_model") return v;
+    const juce::String name = p.getName();
+    const int now = name == "SF BASS" ? 10 : name == "SF LEAD" ? 12 : 0;
+    if (now == 0) return v;
+    const int i = p.paramIndex (id.toStdString());
+    if (i < 0 || (int) p.allSpecs()[(size_t) i].choices.size() != now) return v;
+    const float was = v * (float) (now - 2);                            // (its place on the list of before)
+    const int k = (int) std::lround (was);
+    if (std::abs (was - (float) k) > 0.02f || k <= 0 || k >= now - 2) return v;
+    return (float) k / (float) (now - 1);
+}
+
+Engine::SetupState Engine::grown (Target t, SetupState st) const
+{
+    if (auto* p = processorFor (t)) for (auto& kv : st) kv.second = grownPlace (*p, kv.first, kv.second);
+    return st;
+}
+
+void Engine::applySetupTo (SFProcessor& p, const std::vector<std::string>& bound, const SetupState& stIn)
+{
+    SetupState st = stIn;
+    for (auto& kv : st) kv.second = grownPlace (p, kv.first, kv.second);
     for (auto& kv : st)
     {
         const int i = p.paramIndex (kv.first.toStdString());

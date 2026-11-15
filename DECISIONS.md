@@ -3063,8 +3063,60 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      on a sample (a second, detuned reading; COLOR as where in the sample a note starts); a
      sample that loops between START and END while its note is held; ROOT set by hand.
 
+## WAVETABLE on every synth lane; every main knob on a sample (Nov 15, 11:49): fifty-eighth build
+
+536. **You**, 11:49: "i'd add wavetable to the other lanes, and I'd make sure that every main
+     knob does something to the sound. Also, I nned a way to play things at transitions.
+     What's a good way to do that (like a stab or riser when hihats come in, etc.)"
+537. **WAVETABLE is a model of BASS, LEAD and CHORD** as it is of PAD (TABLE: its own waves, or
+     eight from the loaded sample; COLOR across them). It is second to last in each list, so
+     the first and the last are who they were, and **a model kept in a snapshot from before is
+     the same model**: a kept place falls on the shorter list's steps, which but for the two
+     ends are never the longer list's, and is read as that entry. Nothing saved is rewritten.
+     Its loudness on each lane is set by rms beside the lane's other models over its own
+     pattern (BASS -17.4 dB among -16.5 to -18.3), *not by LUFS as the suite's figures are*.
+     One voice on BASS. GRANULAR stays PAD's alone: you asked for WAVETABLE.
+538. **Every main knob, with a sample.** Measured by `--audit` (each of a lane's twelve knobs
+     down and up, the difference against the lane's sound; over about -35 dB is plain to hear),
+     with a made tone as the sample. Asleep before: DECAY and ENV AMT on BASS; COLOR, DECAY and
+     ENV AMT on LEAD; DETUNE, DECAY, ENV AMT and SPACE on CHORD; DETUNE, COLOR, DECAY and SPACE
+     on PAD; TONE on the hats and CLAP; TONE and SIGNAL on VOICE; SIZE and WIDTH on RUMBLE.
+     Now, on the four synth lanes, **KNOBS** (the switch that was ENVELOPE, 534) opens **on**
+     and wakes all of them: DECAY (to silence; the top fifth of the knob raises the sustain to
+     all of it, so there is no jump at full), ENV AMT, COLOR (*a tilt, darker or brighter about
+     the centre: mine; it could have been where in the sample a note starts*), DETUNE (a second
+     reading up to 30 cents off) and SPACE (the ensemble), the last two not on BASS; and with
+     PLAY at THROUGH, GATE is how much of the sample plays. TONE tilts a sample on the hats,
+     CLAP and VOICE. PLAIN leaves KNOBS on and puts each knob where it does nothing, and after
+     it each lane is still level with the file in every band.
+     After: BASS, LEAD, CHORD, PAD, the hats and KICK have no knob asleep with a sample but
+     GLIDE on BASS, which needs two different notes to slide between. With WAVETABLE: none on
+     BASS (but GLIDE), LEAD or CHORD; on PAD, DENSITY reads -36 (its echoes of long notes).
+539. *Still asleep with a sample, and yours to say what they should do:* **SIZE and WIDTH on
+     RUMBLE** (a sample there is one mono thump into DARK, GRIT and PUMP: SIZE could be a room
+     behind it, WIDTH the sample's own stereo) and **SIGNAL on VOICE** with MODEL at SAMPLE
+     (SIGNAL is how clean RADIO and the vocoders are; the phrase as it is has nothing to
+     clean). Each opens away from nought (SIZE 60, SIGNAL 60), so whatever they did would
+     change every RUMBLE and VOICE sample you have saved.
+540. **What this changes in sounds you may have.** A snapshot taken before KNOBS existed
+     recalls with it off, and a synth lane's sample sounds as it did. Not kept: **PAD's
+     WAVETABLE** (DETUNE now thickens it, and it settles to 0.7 of its level so that DECAY is
+     heard); **a hat, clap or VOICE sample with TONE away from 50**; and **the rig as it was
+     left** (not a snapshot) if a synth lane was playing a sample: it opens with KNOBS on.
+541. **Transitions: proposed, not built.** See the reply of 11:49. In short: a TRANSITION lane
+     in one of the three empty places, holding a few one-shots that are each a LEAD-IN (ends on
+     the boundary: a riser, a reversed hit, a swell) or a HIT (starts on it: a stab, a crash, an
+     impact); fired by one key, and timed by the machine to the next boundary (4, 8 or 16 bars),
+     so the lead-in ends and the hit lands exactly where the change does; and able to be armed
+     on a recall or an un-mute, so that the change itself waits for the boundary.
+
 ## Not verified
 
+- **WAVETABLE on BASS, LEAD and CHORD, and KNOBS (537, 538)**: measured, not heard. The audit
+  was run with SAMPLE and with WAVETABLE on the lanes that have them, and as the lanes open;
+  **not for every other model of every lane** (about a hundred more, an hour and a half of
+  rendering). COLOR's tilt, DETUNE's 30 cents and the hats' TONE are first guesses at amounts.
+  The conversion of older model places is checked on made-up snapshots, not on your library.
 - **A sample's own controls (531 to 534)** are measured at the lane with your one file and
   with made-up tones: not by ear, not on your Mac. GAIN moves in steps of a block while it is
   turned on a held note (it may be heard as fine grain on a pure tone; not listened for).

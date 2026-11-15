@@ -68,6 +68,9 @@ static std::vector<SynthModel> bassModels()
     { SynthModel x { "SINE SUB", E_SUB }; x.wave = 3; x.filt = F_NONE; x.mono = true; x.dec = 1.0f; x.sus = 1.0f; x.drive = 0.15f; m.push_back (x); }
     { SynthModel x { "OFFBEAT", E_SUB }; x.wave = 1; x.wave2 = 0; x.osc2 = 0.6f; x.detune = 0.05f; x.mono = true; x.dec = 0.18f; x.sus = 0.0f; x.fDec = 0.12f; x.resMul = 1.3f; x.envMul = 1.3f; m.push_back (x); }
     { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.mono = true; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; m.push_back (x); }
+    // (SF-000) WAVETABLE, as PAD has it (TABLE: the built-in waves, or eight from the loaded sample; COLOR across them).
+    // Second to last, so the first and the last of the list are who they were: a place kept from before is told by that.
+    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.6f; x.sus = 0.8f; x.rel = 0.08f; x.envMul = 0.5f; m.push_back (x); }
     { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.8f; x.sus = 0.9f; x.rel = 0.08f; x.fDec = 0.3f; x.envMul = 0.3f; m.push_back (x); }
     return m;
 }
@@ -84,6 +87,8 @@ static std::vector<SynthModel> leadModels()
     { SynthModel x { "FM BELL", E_FM }; x.ratio = 3.5f; x.filt = F_NONE; x.dec = 1.5f; x.sus = 0.0f; x.rel = 1.2f; x.fDec = 0.6f; m.push_back (x); }
     { SynthModel x { "SYNC", E_SYNC }; x.mono = true; x.dec = 0.5f; x.sus = 0.7f; x.fDec = 0.4f; x.filt = F_SVF; m.push_back (x); }
     { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; m.push_back (x); }
+    // (SF-000) WAVETABLE (see BASS), second to last.
+    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; m.push_back (x); }
     { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_NONE; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; m.push_back (x); }
     return m;
 }
@@ -92,7 +97,7 @@ static std::vector<SynthModel> padModels()
     std::vector<SynthModel> m;
     { SynthModel x { "STRING MACHINE", E_SUB }; x.gain = 2.0f; x.wave = 0; x.unison = 4; x.detune = 0.2f; x.wave2 = 0; x.osc2 = 0.5f; x.ratio = 2.0f; x.filt = F_SVF; x.att = 0.3f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 0.8f; x.envMul = 0.1f; x.ensemble = 1.0f; m.push_back (x); }
     { SynthModel x { "POLY PAD", E_SUB }; x.gain = 1.6f; x.wave = 0; x.wave2 = 1; x.osc2 = 0.6f; x.detune = 0.1f; x.sub = 0.3f; x.filt = F_SVF; x.att = 0.5f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.2f; x.fAtt = 0.8f; x.fDec = 2.0f; x.fSus = 0.4f; x.envMul = 0.4f; x.ensemble = 0.7f; m.push_back (x); }
-    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.0f; x.envMul = 0.2f; x.ensemble = 0.3f; m.push_back (x); }
+    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY is heard */; x.rel = 1.0f; x.envMul = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f /* (SF-000) DETUNE acts on it */; m.push_back (x); }
     { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.att = 0.6f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.5f; x.envMul = 0.0f; m.push_back (x); }
     { SynthModel x { "DUB WASH", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.4f; x.detune = 0.05f; x.filt = F_SVF; x.chord = 1; x.att = 0.05f; x.dec = 1.5f; x.sus = 0.6f; x.rel = 1.5f; x.fDec = 1.5f; x.envMul = 0.5f; x.ensemble = 0.5f; m.push_back (x); }
     { SynthModel x { "TAPE LOOP", E_SUB }; x.wave = 2; x.wave2 = 0; x.osc2 = 0.3f; x.detune = 0.03f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.5f; x.envMul = 0.0f; x.wow = 1.0f; x.drive = 0.3f; x.noise = 0.02f; m.push_back (x); }
@@ -279,7 +284,11 @@ public:
         // lane's DECAY and ENV AMT act on it as on a synth model (DECAY at full: no decay); off, they leave it alone.
         p = withSampleGain (std::move (p));
         p.push_back (choice ("smp_play", "PLAY", { "HELD", "THROUGH" }, 0).noPreset().sampleGroup());
-        p.push_back (toggle ("smp_env", "ENVELOPE").noPreset().sampleGroup());
+        // KNOBS (on as a sample opens): every knob of the lane acts on a sample. DECAY is its decay (the top fifth of the
+        // knob brings the sustain up to all of it), ENV AMT sweeps the filter, COLOR tilts it darker or brighter about
+        // the centre, DETUNE adds a second reading a few cents off and SPACE the ensemble (not on a mono model), and in
+        // PLAY THROUGH GATE is how much of the sample plays. Off: as samples played before, all of those asleep.
+        p.push_back (toggle ("smp_env", "KNOBS", true).noPreset().sampleGroup());
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -461,7 +470,9 @@ public:
         bool active = false, releasing = false;
         int note = 60, gen = 0, model = 0, layer = 0, autoOff = -1;
         bool through = false;             // (SF-000) SAMPLE, PLAY THROUGH: letting the note go does not end it
-        bool shaped = false;              // (SF-000) SAMPLE, ENVELOPE on: DECAY and ENV AMT act on it
+        bool shaped = false;              // (SF-000) SAMPLE, KNOBS on: the lane's knobs act on it
+        double spos2 = 0.0, cutPos = 0.0; // (SF-000) the second, detuned reading's place; THROUGH: where GATE ends it (0: at its END)
+        float tilt[2] {};                 // (SF-000) COLOR's tilt on a sample: the low part of each side
         float vel = 1.0f, gain = 1.0f, freq = 110.0f, target = 110.0f, glideCoef = 0.0f, accent = 0.0f;
         float vel0 = 1.0f;                // the note's own velocity (0..1), to play it again on a MODEL change
         float pitch = 60.0f, pitchTuned = 60.0f;   // the note (with chord interval) and the tuned pitch it plays at
@@ -531,6 +542,7 @@ public:
         pitchOffset = c.v (TUNE) + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);
         const int modelA = c.ci (MODEL), modelB = c.ci (LAYERMODEL);
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
+        if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.engine == E_SAMPLE && ! ma.mono && c.v (SENV) > 0.5f) ensembleAmt = 0.3f;      // (SF-000) SPACE on a sample
         const float layer = c.v (LAYER);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
@@ -776,7 +788,12 @@ private:
         // ENV AMT sweeps its filter (updateControls). PLAY THROUGH: the note's end does not end it.
         v.shaped = m.engine == E_SAMPLE && c.v (SENV) > 0.5f;
         v.through = m.engine == E_SAMPLE && c.ci (SPLAY) == 1;
-        if (v.shaped) v.amp.set (m.att + attK, 0.6f * decK, c.v (DECAY) > 0.995f ? 1.0f : 0.0f, m.rel * relMul, v.rate);
+        if (v.shaped)
+        {
+            const float up = clamp01 ((c.v (DECAY) - 0.8f) * 5.0f);          // (the top fifth of DECAY: the sustain comes up to all of it)
+            v.amp.set (m.att + attK, 0.6f * decK, up * up * (3.0f - 2.0f * up), m.rel * relMul, v.rate);
+            v.cutPos = v.through && c.v (GATE) < 0.995f ? v.reg.start + (double) c.v (GATE) * (v.reg.end - v.reg.start) : 0.0;
+        }
         else
         v.amp.set (m.att + attK, m.dec * (m.acid ? 1.0f : decK), m.sus, m.rel * relMul, v.rate);
         v.fenv.set (m.fAtt + attK * 0.5f, m.fDec * decK, m.fSus, m.fRel * relMul, v.rate);
@@ -1017,6 +1034,11 @@ private:
         const auto& k = v.ctl;
         const float res = k.res; juce::ignoreUnused (res);
         const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, gainAll = k.gainAll, subMul = k.subMul;
+        const double wtDet = m.detune > 0.0f ? (double) semis (k.detCents / 100.0f) : 1.0;      // (SF-000) WAVETABLE's second reading
+        // (SF-000) a sample with KNOBS on: DETUNE's mix and COLOR's tilt, worked out once for the block
+        const bool smpKnobs = m.engine == E_SAMPLE && v.shaped;
+        const float smpW = std::min (1.0f, det * 4.0f), smpN = 1.0f / std::sqrt (1.0f + smpW * smpW), smpTilt = smpKnobs ? (color - 0.5f) * 2.0f : 0.0f;
+        const float tiltA = 1.0f - std::exp (-kTwoPi * 1000.0f / (float) v.rate), tiltLo = std::pow (10.0f, -smpTilt * 0.45f), tiltHi = std::pow (10.0f, smpTilt * 0.45f);
         const int uni = k.uni, shape1 = k.shape1, octSub = k.octSub;
         const float* uniR = k.uniR; const float* pw = k.pw; const float* r2 = k.r2;
         const int* oct1 = k.oct1; const int* oct2 = k.oct2;
@@ -1164,21 +1186,28 @@ private:
                 {
                     // TABLE SAMPLE with a sample's frames: COLOR across its eight; else the built-in four.
                     const float scan = clamp01 (color + 0.15f * std::sin (kTwoPi * v.t * 0.13f));
-                    if (tableFrames != nullptr)
+                    auto wave = [&] (double ph)
                     {
-                        const float pos = scan * (float) (kSampleFrames - 1);
-                        const int t0 = std::min (kSampleFrames - 2, (int) pos);
-                        const float fr = pos - (float) t0;
-                        x = lerp (tableFrames->f[(size_t) t0].read (oct1[0], v.ph[0]), tableFrames->f[(size_t) t0 + 1].read (oct1[0], v.ph[0]), fr);
-                    }
-                    else
-                    {
+                        if (tableFrames != nullptr)
+                        {
+                            const float pos = scan * (float) (kSampleFrames - 1);
+                            const int t0 = std::min (kSampleFrames - 2, (int) pos);
+                            const float fr = pos - (float) t0;
+                            return lerp (tableFrames->f[(size_t) t0].read (oct1[0], ph), tableFrames->f[(size_t) t0 + 1].read (oct1[0], ph), fr);
+                        }
                         const float pos = scan * 3.0f;
                         const int t0 = std::min (2, (int) pos);
                         const float fr = pos - (float) t0;
-                        x = lerp (W.frame[t0].read (oct1[0], v.ph[0]), W.frame[t0 + 1].read (oct1[0], v.ph[0]), fr);
-                    }
+                        return lerp (W.frame[t0].read (oct1[0], ph), W.frame[t0 + 1].read (oct1[0], ph), fr);
+                    };
+                    x = wave (v.ph[0]);
                     v.ph[0] += inc; wrap01 (v.ph[0]);
+                    if (m.detune > 0.0f)
+                    {
+                        // (SF-000) DETUNE: a second reading of the same waves a few cents off (the model's detune, by the knob)
+                        x = (x + wave (v.ph[1])) * 0.7071f;
+                        v.ph[1] += inc * wtDet; wrap01 (v.ph[1]);
+                    }
                     break;
                 }
                 case E_GRAIN:
@@ -1238,6 +1267,31 @@ private:
                     xr = smp->read (1, v.spos, rate) * rg;
                     stereo = true;
                     v.spos += rate;
+                    if (v.shaped)
+                    {
+                        // (SF-000) DETUNE: a second reading up to 30 cents off, from the same place (not on a mono model)
+                        if (det > 0.001f && ! m.mono)
+                        {
+                            if (v.spos2 < v.reg.start) v.spos2 = v.spos - rate;
+                            if ((int) v.spos2 + 2 < len)
+                            {
+                                const float rg2 = v.reg.gain (v.spos2) * smpW;
+                                xl = (xl + smp->read (0, v.spos2, rate) * rg2) * smpN;
+                                xr = (xr + smp->read (1, v.spos2, rate) * rg2) * smpN;
+                            }
+                            v.spos2 += rate * (1.0 + (double) det * 0.0175);
+                        }
+                        else v.spos2 = v.spos;
+                        // COLOR: a tilt about 1 kHz, 9 dB each way at its ends, none at the centre
+                        if (std::abs (smpTilt) > 0.002f)
+                        {
+                            v.tilt[0] += tiltA * (xl - v.tilt[0]); v.tilt[1] += tiltA * (xr - v.tilt[1]);
+                            xl = v.tilt[0] * tiltLo + (xl - v.tilt[0]) * tiltHi;
+                            xr = v.tilt[1] * tiltLo + (xr - v.tilt[1]) * tiltHi;
+                        }
+                        // THROUGH: GATE is how much of it plays
+                        if (v.cutPos > 0.0 && v.spos >= v.cutPos && ! v.releasing) { v.amp.off(); v.fenv.off(); v.releasing = true; }
+                    }
                     break;
                 }
             }

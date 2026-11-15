@@ -17,10 +17,11 @@ inline constexpr float kick[7] = { -5.07f, -8.68f, -3.16f, -2.91f, -2.67f, -4.76
 inline constexpr float perc[17] = { 4.11f, 0.45f, 0.13f, -6.83f, -6.77f, -1.64f, 2.09f, -1.89f, -5.45f, -3.18f, -11.87f, 8.45f, 0.0f, -4.57f, -3.57f, 0.0f, 0.0f };
 // RUMBLE: REVERB, DELAY, SUB DRONE, DISTORTED, DUB BOOM, SAMPLE
 inline constexpr float rumble[6] = { -2.92f, -0.35f, -1.85f, -0.32f, -3.51f, 0.0f };
-// BASS: LADDER, MONO 101, SUB OSC, ACID 303, FM, SINE SUB, OFFBEAT, SAMPLE, FM 4-OP
-inline constexpr float bass[9] = { 3.22f, 7.31f, -1.94f, 12.36f, 3.87f, 3.74f, 9.26f, 0.0f, 1.42f };
-// LEAD: ACID 303, MONO 101, MS20, STAB DUB, STAB DETROIT, ORGAN M1, HOOVER, FM BELL, SYNC, SAMPLE, FM 4-OP
-inline constexpr float lead[11] = { 11.88f, 6.22f, 0.41f, 3.17f, 2.23f, 6.23f, 2.84f, -2.38f, -1.11f, 0.0f, 1.06f };
+// BASS: LADDER, MONO 101, SUB OSC, ACID 303, FM, SINE SUB, OFFBEAT, SAMPLE, WAVETABLE (SF-000), FM 4-OP
+// (WAVETABLE's figure: set in SF-000 by the lane's level beside its neighbours' (rms over its own pattern), not by LUFS)
+inline constexpr float bass[10] = { 3.22f, 7.31f, -1.94f, 12.36f, 3.87f, 3.74f, 9.26f, 0.0f, -0.5f, 1.42f };
+// LEAD: ACID 303, MONO 101, MS20, STAB DUB, STAB DETROIT, ORGAN M1, HOOVER, FM BELL, SYNC, SAMPLE, WAVETABLE (SF-000), FM 4-OP
+inline constexpr float lead[12] = { 11.88f, 6.22f, 0.41f, 3.17f, 2.23f, 6.23f, 2.84f, -2.38f, -1.11f, 0.0f, -2.0f, 1.06f };
 // PAD: STRING MACHINE, POLY PAD, WAVETABLE, GRANULAR, DUB WASH, TAPE LOOP, NOISE BED, SAMPLE, FM 4-OP
 inline constexpr float pad[9] = { -3.86f, -8.23f, -4.27f, 3.50f, -0.54f, -3.54f, -7.62f, 0.0f, 4.97f };
 // VOICE: formant choir (no phrase loaded); phrase models relative to SAMPLE

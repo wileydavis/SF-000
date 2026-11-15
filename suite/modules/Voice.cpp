@@ -87,6 +87,8 @@ public:
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
         const float tone = c.v (TONE), sig = c.v (SIGNAL), drive = c.v (DRIVE);
+        // (SF-000) TONE on the phrase as it is (MODEL SAMPLE): a tilt about 1.5 kHz, darker under the centre, brighter over it
+        const float vTilt = (tone - 0.5f) * 2.0f, tiltA = 1.0f - std::exp (-kTwoPi * 1500.0f / (float) sr), tiltLo = std::pow (10.0f, -vTilt * 0.6f), tiltHi = std::pow (10.0f, vTilt * 0.6f);
         const float rate = semis (c.v (TUNE));
         keyShift = c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f;
         // Carrier pitch for VOCODER / ROBOT / CHOIR: C1..C4 from TONE (in the KEY).
@@ -149,6 +151,7 @@ public:
                 }
                 switch (model)
                 {
+                    case 0: if (std::abs (vTilt) > 0.002f) { tiltLp += tiltA * (x - tiltLp); x = tiltLp * tiltLo + (x - tiltLp) * tiltHi; } break;      // (SF-000)
                     case 1: x = radioChain (x, sig); break;
                     case 2: case 3: case 4: x = vocode (x, model, carrierHz, sig); break;
                     default: break;
@@ -210,6 +213,7 @@ public:
 
 private:
     static constexpr int kVb = 16;
+    float tiltLp = 0.0f;        // (SF-000) TONE's tilt on the phrase: its low part
     struct Play { bool active = false, releasing = false; double pos = 0, start = 0; int end = 0, slice = -1, autoOff = -1; float vel = 1, rel = 1, relCoef = 0.999f; SampleRegion reg; };
     struct ChoirVoice { bool active = false; int note = 0, gen = 0; float f = 220, a = 0, target = 0; Osc osc; Svf fm[3]; };
 

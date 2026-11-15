@@ -312,6 +312,10 @@ public:
     // wave when it is recalled, after a voice has crossed over, and after the app has been shut.
     static juce::uint32 motionSeedFor (Target t)    { return 1u | (0x9E3779B1u * (juce::uint32) (17 + t.kind * 1000 + t.lane * 10 + t.slot)); }
     SetupState motionOff (Target) const;        // the two of them as they are when never set: a snapshot from before they could be set means this
+    // A menu that has grown by one (BASS's and LEAD's MODEL and LAYER MODEL: WAVETABLE, second to last). A setup keeps a
+    // menu's place as how far down the list it is; one kept from before the list grew is told by where it falls, and is
+    // given as the same entry of the list as it is now.
+    SetupState grown (Target, SetupState) const;
     SetupState sampleOwnOff (Target) const;     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
     SFProcessor* processorFor (Target) const;
     bool laneFollowsKey (int lane) const;       // its KEY FOLLOW, in CONFIG, is on (false: the lane has none, or it is off)

@@ -386,9 +386,9 @@ sets all of them at once:
 
 | LANES | WHAT PLAIN SETS |
 |---|---|
-| BASS, LEAD, CHORD, PAD | CUTOFF 100, RES 0, ENV AMT 0, DRIVE 0, FILTER centre, GATE 100, LAYER 0 and SPLIT OFF, GLIDE 0, ATTACK 0, POCKET DEPTH 0, ACID, WARP and DRIFT 0, DENSITY 0, CHORD NONE, PLAY THROUGH, ENVELOPE off, the lane's LOW, MID and HIGH centre. **TUNE**, so that the lane's first lit step plays the sample at its own pitch (where that is within two octaves; else TUNE 0, and it says the root) |
-| KICK, CLOSED HAT, OPEN HAT, CLAP | TUNE 0, DECAY 100 (the whole sample), CLICK 0, DRIVE 0, FILTER centre, LAYER 0 and SPLIT OFF, DENSITY 0, KEY TRACK off, the EQ centre. They play a sample at its own pitch whatever the note |
-| VOICE | TUNE 0, GATE 100, ECHO 0, DRIVE 0, FILTER centre, POCKET DEPTH 0, DENSITY 0, SLICE MODE WHOLE (any note is the whole phrase, at its own pitch), the EQ centre |
+| BASS, LEAD, CHORD, PAD | CUTOFF 100, RES 0, ENV AMT 0, DRIVE 0, FILTER centre, GATE 100, LAYER 0 and SPLIT OFF, GLIDE 0, ATTACK 0, POCKET DEPTH 0, ACID, WARP and DRIFT 0, DENSITY 0, CHORD NONE, PLAY THROUGH, KNOBS on with DECAY 100, DETUNE 0, SPACE 0 and COLOR centre, the lane's LOW, MID and HIGH centre. **TUNE**, so that the lane's first lit step plays the sample at its own pitch (where that is within two octaves; else TUNE 0, and it says the root) |
+| KICK, CLOSED HAT, OPEN HAT, CLAP | TUNE 0, DECAY 100 (the whole sample), CLICK 0, TONE centre, DRIVE 0, FILTER centre, LAYER 0 and SPLIT OFF, DENSITY 0, KEY TRACK off, the EQ centre. They play a sample at its own pitch whatever the note |
+| VOICE | TUNE 0, GATE 100, ECHO 0, TONE centre, DRIVE 0, FILTER centre, POCKET DEPTH 0, DENSITY 0, SLICE MODE WHOLE (any note is the whole phrase, at its own pitch), the EQ centre |
 
 It says what it did in CONFIG and in the bar. **It leaves LEVEL, GAIN, NORMALISE, the sends and
 the lane's insert effects** (it names the inserts that still act: LEAD opens with DELAY and RADIO). RUMBLE has no
@@ -403,23 +403,35 @@ PLAIN: it shapes whatever it is given. PERC plays no sample.
   point: one that reads -10 dB comes up 10 dB. On every lane that plays a sample.
 - **PLAY** (BASS, LEAD, CHORD, PAD): **HELD**, the sample sounds while its note is held and
   fades when it is let go, GATE being its length; **THROUGH**, a note plays it to its END
-  however short the note, as a drum does, and the next note starts it again. KICK, the hats,
-  CLAP and VOICE play a sample through as they are.
-- **ENVELOPE** (BASS, LEAD, CHORD, PAD): on, the lane's **DECAY** and **ENV AMT** act on the
-  sample as on a synth model: DECAY is how fast it dies away (at full, it does not), ENV AMT
-  opens the filter at the start of each note, from CUTOFF. Off, as a sample opens, they leave
-  it alone.
+  however short the note, as a drum does, the next note starts it again, and GATE is how much
+  of the sample plays. KICK, the hats, CLAP and VOICE play a sample through as they are.
+- **KNOBS** (BASS, LEAD, CHORD, PAD), on as a sample opens: **every knob of the lane acts on
+  the sample.** DECAY is how fast it dies away (the top fifth of the knob brings the sustain
+  up, to all of it at full); ENV AMT opens the filter at the start of each note, from CUTOFF;
+  COLOR tilts it darker under its centre and brighter over it; DETUNE adds a second reading a
+  few cents off and SPACE the ensemble (neither on BASS, which stays one voice in the middle).
+  Off, those knobs leave a sample alone, as they did before: a snapshot taken before this
+  switch existed recalls with it off, so it sounds as it did. PLAIN leaves it on and puts each
+  knob where it does nothing.
+- On the hats and CLAP, and on VOICE with its MODEL at SAMPLE, **TONE** tilts a sample darker
+  under its centre and brighter over it. (It did nothing to a sample before.)
 
-All four open where they change nothing, and a snapshot holds them. Nothing here makes a lane
+GAIN, NORMALISE and PLAY open where they change nothing, and a snapshot holds all four. Nothing here makes a lane
 louder than its LEVEL: after PLAIN at the LEVEL each lane opens with, a sample is about 15 dB
 under its file on BASS, the hats, the clap and VOICE, and 3 dB under on KICK, before the master
 (which adds about 7 dB as it opens).
 
-**A sample as a wave to play.** PAD has two models that make an instrument of the loaded file
-and not a recording of it: **WAVETABLE** with TABLE (in its CONFIG) at SAMPLE takes eight single
-waves from the sample and COLOR moves across them, at any pitch, for as long as a note is held;
-**GRANULAR** plays grains of it from between START and END, COLOR their length. BASS, LEAD and
-CHORD do not have these two.
+**A sample as a wave to play: WAVETABLE**, a MODEL of BASS, LEAD, CHORD and PAD. With TABLE
+(in CONFIG's WAVETABLE box) at SAMPLE it takes eight single waves from the loaded file and
+COLOR moves across them, at any pitch, for as long as a note is held; with TABLE at BUILT-IN it
+plays four waves of its own. Every knob of the lane acts on it as on any synth model. PAD also
+has **GRANULAR**, which plays grains of the file from between START and END, COLOR their length.
+
+**Every main knob, with a sample or a WAVETABLE.** `--audit` (see Checks) turns each of a lane's
+twelve knobs down and up and measures what the lane's sound does. With a sample, and with
+WAVETABLE, every knob on every lane now moves it, but for: GLIDE on BASS while its steps are all
+one note (it slides between two); SIZE and WIDTH on RUMBLE with a sample; SIGNAL on VOICE with
+its MODEL at SAMPLE (SIGNAL is how clean the other models are).
 
 Measured, not assumed: `--samplecheck` (see Checks) plays a file through a lane and writes what
 came out; after PLAIN it is level with the file across the spectrum to a tenth of a decibel.
@@ -1110,6 +1122,7 @@ SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest block
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
+build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
 build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start

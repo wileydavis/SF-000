@@ -1469,9 +1469,10 @@ juce::String Session::samplePlain (int lane)
         put ("acid", 0.0f); put ("warp", 0.0f); put ("drift", 0.0f);
         choose ("chord", "NONE");
         choose ("smp_play", "THROUGH");             // (a note plays it to its end, however short the step)
-        put ("smp_env", 0.0f);                      // (DECAY and ENV AMT leave it alone)
+        // (KNOBS on: every knob of the lane acts on the sample, and each is put where it does nothing)
+        put ("smp_env", 1.0f); put ("decay", 1.0f); put ("detune", 0.0f); put ("space", 0.0f); put ("color", 0.5f);
     }
-    else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); }      // (the drums: DECAY is how much of it plays)
+    else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); put ("tone", 0.5f); }      // (the drums: DECAY is how much of it plays; TONE tilts a sample about its centre)
     choose ("slice_mode", "WHOLE");                 // (VOICE: any note is the whole phrase, at its own pitch)
     for (int e = 0; e < 3; ++e) userSet (cx::lane (lane, cx::kEqLow + e), 0.5f);
     // Its pitch. A drum and a phrase play at their own whatever the note; the others at the note's, and at their own on their root.
@@ -1577,6 +1578,7 @@ static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState&
 // of it, and means the two of them off (as they were then).
 static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, Engine::SetupState st)
 {
+    st = engine.grown (t, std::move (st));          // (a menu's place from before its list grew)
     bool motion = false, own = false;
     for (auto& kv : st) { motion = motion || Engine::isMotionId (kv.first); own = own || kv.first == "smp_gain"; }
     if (! motion) for (auto& kv : engine.motionOff (t)) st.push_back (kv);

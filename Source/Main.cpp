@@ -2233,7 +2233,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             const auto base = heard ({}, 5.0);
             const auto louder = heard ({ { "smp_gain", 0.625f } }, 5.0), normal = heard ({ { "smp_norm", 1.0f } }, 5.0);
             const auto through = heard ({}, 0.3), held = heard ({ { "smp_play", 0.0f } }, 0.3);
-            const auto shaped = heard ({ { "smp_env", 1.0f }, { "decay", 0.2f } }, 5.0), asleep = heard ({ { "decay", 0.2f } }, 5.0), full = heard ({ { "smp_env", 1.0f }, { "decay", 1.0f } }, 5.0);
+            const auto shaped = heard ({ { "decay", 0.2f } }, 5.0), asleep = heard ({ { "smp_env", 0.0f }, { "decay", 0.2f } }, 5.0), full = heard ({ { "smp_env", 0.0f } }, 5.0);
+            const auto half = heard ({ { "gate", 0.5f } }, 0.3);                // (THROUGH: GATE is how much of it plays)
             const auto dark = heard ({ { "smp_env", 1.0f }, { "decay", 1.0f }, { "cutoff", 0.25f }, { "env_amt", 0.0f } }, 5.0), swept = heard ({ { "smp_env", 1.0f }, { "decay", 1.0f }, { "cutoff", 0.25f }, { "env_amt", 1.0f } }, 5.0);
             bool kept = true;
             {
@@ -2251,30 +2252,79 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 juce::AudioBuffer<float> b (2, 256);
                 auto recall = [&] (juce::int64 id) { ses.recall (id); for (int i = 0; i < 400; ++i) e.render (b); };       // (a recall of another setup crosses the voice over)
                 const auto plainSnap = ses.take();
-                e.setSetup (t, "smp_norm", 1.0f); e.setSetup (t, "smp_gain", 0.75f); e.setSetup (t, "smp_play", 1.0f); e.setSetup (t, "smp_env", 1.0f);
+                e.setSetup (t, "smp_norm", 1.0f); e.setSetup (t, "smp_gain", 0.75f); e.setSetup (t, "smp_play", 1.0f); e.setSetup (t, "smp_env", 0.0f);
                 const auto setSnap = ses.take();
                 recall (plainSnap);
-                const bool offAgain = at ("smp_norm") < 0.5f && std::abs (at ("smp_gain") - 0.5f) < 0.01f && at ("smp_play") < 0.5f && at ("smp_env") < 0.5f;
+                const bool offAgain = at ("smp_norm") < 0.5f && std::abs (at ("smp_gain") - 0.5f) < 0.01f && at ("smp_play") < 0.5f && at ("smp_env") > 0.5f;
                 recall (setSnap);
-                const bool onAgain = at ("smp_norm") > 0.5f && std::abs (at ("smp_gain") - 0.75f) < 0.01f && at ("smp_play") > 0.5f && at ("smp_env") > 0.5f;
+                const bool onAgain = at ("smp_norm") > 0.5f && std::abs (at ("smp_gain") - 0.75f) < 0.01f && at ("smp_play") > 0.5f && at ("smp_env") < 0.5f;
                 for (auto& snap : ses.library)
                     if (snap.id == plainSnap)
                     {
                         auto& st = snap.setup[(size_t) lane];
                         st.erase (std::remove_if (st.begin(), st.end(), [] (const auto& kv) { return kv.first.startsWith ("smp_gain") || kv.first.startsWith ("smp_norm") || kv.first.startsWith ("smp_play") || kv.first.startsWith ("smp_env"); }), st.end());
                     }
-                recall (plainSnap);
+                e.setSetup (t, "smp_env", 1.0f);
+                recall (plainSnap);                                             // (one from before them: KNOBS off, as samples played then)
                 if (! (offAgain && onAgain)) std::printf ("    (off again %d on again %d: norm %.2f gain %.2f play %.2f env %.2f)\n", (int) offAgain, (int) onAgain, at ("smp_norm"), at ("smp_gain"), at ("smp_play"), at ("smp_env"));
                 older = offAgain && onAgain && at ("smp_norm") < 0.5f && std::abs (at ("smp_gain") - 0.5f) < 0.01f && at ("smp_play") < 0.5f && at ("smp_env") < 0.5f;
             }
             kept = kept && older;
+            // WAVETABLE on BASS, LEAD and CHORD, second to last in each list: a model's place kept from before the list grew
+            // is the same model, by setup and by a snapshot's recall; a place kept now is itself; and it sounds, from the
+            // built-in waves and (another sound) from the loaded sample's.
+            bool wavesOk = false; double wtBuilt = -200.0, wtDiffers = -200.0;
+            {
+                Engine e; e.prepare (SR2, 256);
+                Session ses (e, false);
+                auto sp = [&] (int l, const char* id) { for (auto& x : e.setupParams ({ 0, l, 0 })) if (x.id == id) return x; return Engine::SetupParam(); };
+                auto name = [&] (int l, const char* id) { const auto x = sp (l, id); return x.choices[(int) std::lround (x.value * (float) (x.choices.size() - 1))].toUpperCase(); };
+                auto old = [&] (int l, const char* id, int i, int was) { e.applySetup ({ 0, l, 0 }, { { juce::String (id), (float) i / (float) (was - 1) } }); return name (l, id); };
+                const bool lists = sp (5, "model").choices.size() == 10 && sp (7, "model").choices.size() == 12 && sp (8, "model").choices.size() == 12
+                                   && sp (5, "model").choices[8] == "WAVETABLE" && sp (7, "model").choices[10] == "WAVETABLE";
+                const bool bassOld = old (5, "model", 0, 9) == "BASS LADDER" && old (5, "model", 1, 9) == "MONO 101-TYPE" && old (5, "model", 5, 9) == "SINE SUB" && old (5, "model", 7, 9) == "SAMPLE"
+                                     && old (5, "model", 8, 9) == "FM 4-OP" && old (5, "layer_model", 5, 9) == "SINE SUB";
+                const bool leadOld = old (7, "model", 3, 11) == "STAB DUB" && old (7, "model", 9, 11) == "SAMPLE" && old (7, "model", 10, 11) == "FM 4-OP" && old (8, "model", 4, 11) == "STAB DETROIT";
+                bool nowOk = true;
+                for (int i = 0; i < 10; ++i) { e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), (float) i / 9.0f } }); nowOk = nowOk && (int) std::lround (sp (5, "model").value * 9.0f) == i; }
+                for (int i = 0; i < 12; ++i) { e.applySetup ({ 0, 7, 0 }, { { juce::String ("model"), (float) i / 11.0f } }); nowOk = nowOk && (int) std::lround (sp (7, "model").value * 11.0f) == i; }
+                // a snapshot from before: its bass says 5 of 8 (SINE SUB then), and the bass now plays something else
+                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 0.0f } });
+                const auto snapId = ses.take();
+                for (auto& snap : ses.library) if (snap.id == snapId) for (auto& kv : snap.setup[5]) if (kv.first == "model") kv.second = 5.0f / 8.0f;
+                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 2.0f / 9.0f } });
+                juce::AudioBuffer<float> b (2, 256);
+                ses.recall (snapId); for (int i = 0; i < 400; ++i) e.render (b);
+                const bool bySnap = name (5, "model") == "SINE SUB";
+                // it sounds: the bass lane's own pattern, with the built-in waves and with the sample's
+                auto plays = [&] (bool fromSample)
+                {
+                    Engine e2; e2.prepare (SR2, 256);
+                    e2.setSetup ({ 0, 5, 0 }, "model", 8.0f / 9.0f);
+                    e2.loadFile (5, wavFile);
+                    e2.setSetup ({ 0, 5, 0 }, "table", fromSample ? 1.0f : 0.0f);
+                    e2.solo = 5; e2.setRunning (true);
+                    std::vector<float> out; juce::AudioBuffer<float> b2 (2, 256);
+                    for (int i = 0; i < 700; ++i) { e2.render (b2); for (int k = 0; k < 256; ++k) out.push_back (b2.getSample (0, k)); }
+                    return out;
+                };
+                const auto built = plays (false), fromSmp = plays (true);
+                double sb = 0.0, sd = 0.0;
+                for (size_t i = 0; i < built.size(); ++i) { sb += (double) built[i] * built[i]; sd += (double) (built[i] - fromSmp[i]) * (built[i] - fromSmp[i]); }
+                wtBuilt = 10.0 * std::log10 (sb / (double) built.size() + 1e-20); wtDiffers = 10.0 * std::log10 ((sd + 1e-20) / (sb + 1e-20));
+                wavesOk = lists && bassOld && leadOld && nowOk && bySnap && wtBuilt > -40.0 && wtDiffers > -30.0;
+                if (! wavesOk) std::printf ("    (lists %d bass %d lead %d now %d by a snapshot %d)\n", (int) lists, (int) bassOld, (int) leadOld, (int) nowOk, (int) bySnap);
+            }
+            std::printf ("  %s: WAVETABLE is a model of BASS, LEAD and CHORD, second to last; a model's place kept from before is the same model (set, and recalled from a snapshot), and one kept now is itself; "
+                         "the bass plays it at %.1f dB, and with the sample's waves it is another sound (%.1f dB apart)\n", wavesOk ? "ok  " : "FAIL", wtBuilt, wtDiffers);
+            if (! wavesOk) ++bad;
             const bool gainOk = std::abs ((louder.early - base.early) - 6.0) < 0.2 && std::abs ((normal.early - base.early) + peakDb) < 0.2 && peakDb < -1.0;
-            const bool playOk = std::abs (through.late - base.late) < 1.0 && held.late < base.late - 15.0;       // (HELD is fading: the model's release is slow)
+            const bool playOk = std::abs (through.late - base.late) < 1.0 && held.late < base.late - 15.0 && half.late < base.late - 4.0 && std::abs (half.early - base.early) < 0.5;       // (HELD is fading: the model's release is slow)
             const bool envOk = shaped.late < base.late - 40.0 && std::abs (asleep.late - base.late) < 0.2 && std::abs (full.late - base.late) < 0.2 && swept.early > dark.early + 1.0;
             const bool own = gainOk && playOk && envOk && kept;
             std::printf ("  %s: a sample's own controls, from PLAIN: GAIN +6 is +%.1f dB and NORMALISE +%.1f (its loudest point was %.1f); PLAY THROUGH is still sounding 0.6 s after its note was let go (%.1f dB against %.1f held to the end) "
-                         "and HELD is not (%.1f); ENVELOPE on, DECAY 20 takes it to %.1f dB and ENV AMT lifts a dark filter %.1f dB, and off DECAY leaves it (%.1f); a snapshot holds them and brings them back, and one from before them means them as they open\n", own ? "ok  " : "FAIL",
-                         louder.early - base.early, normal.early - base.early, peakDb, through.late, base.late, held.late, shaped.late, swept.early - dark.early, asleep.late);
+                         "and HELD is not (%.1f); with GATE at half it has ended (%.1f); KNOBS on (as PLAIN leaves it), DECAY 20 takes it to %.1f dB and ENV AMT lifts a dark filter %.1f dB, and off DECAY leaves it (%.1f); a snapshot holds them and brings them back, and one from before them means them as they open\n", own ? "ok  " : "FAIL",
+                         louder.early - base.early, normal.early - base.early, peakDb, through.late, base.late, held.late, half.late, shaped.late, swept.early - dark.early, asleep.late);
             if (! own) { ++bad; std::printf ("    (gain %d play %d env %d [full %.1f] kept %d)\n", (int) gainOk, (int) playOk, (int) envOk, full.late, (int) kept); }
         }
         tmp2.deleteRecursively();
@@ -3150,16 +3200,25 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 
 // Every lane knob, turned fully down and fully up against where it starts: how far the lane's sound
 // moves (the difference signal against the sound itself, in dB). A knob that moves nothing is listed.
-static int knobAudit (int only)
+// With --model NAME every lane that has that model plays it (the others are passed over), with --sample FILE that file is
+// loaded on the lane, with --table a WAVETABLE's TABLE is SAMPLE, and with --plain CONFIG's PLAIN was pressed first.
+static int knobAudit (int only, const juce::String& model = {}, const juce::File& file = {}, bool table = false, bool plain = false, bool levelOnly = false)
 {
     using namespace sf0;
-    auto render = [] (int laneIdx, int ctl, float v, bool echoes)
+    auto hasModel = [&] (Engine& e, int laneIdx) { if (model.isEmpty()) return true; for (auto& sp : e.setupParams ({ 0, laneIdx, 0 })) if (sp.id == "model") return sp.choices.contains (model); return false; };
+    auto render = [&] (int laneIdx, int ctl, float v, bool echoes)
     {
         Engine e;
         e.prepare (48000.0, 512);
+        Session ses (e, false);
+        const Engine::Target t { 0, laneIdx, 0 };
+        if (model.isNotEmpty()) for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains (model)) e.setSetup (t, "model", (float) sp.choices.indexOf (model) / (float) std::max (1, sp.choices.size() - 1));
+        if (file.existsAsFile()) e.loadFile (laneIdx, file);
+        if (table) e.setSetup (t, "table", 1.0f);
+        if (plain) ses.samplePlain (laneIdx);
         e.solo = laneIdx;
-        if (echoes) e.set (cx::lane (laneIdx, 9), 0.6f);          // DENSITY up, so the echo knobs have echoes to shape
-        if (ctl >= 0) e.set (ctl, v);
+        if (echoes) ses.userSet (cx::lane (laneIdx, 9), 0.6f);    // DENSITY up, so the echo knobs have echoes to shape
+        if (ctl >= 0) ses.userSet (ctl, v);
         e.setRunning (true);
         const int total = (int) (4 * 4.0 * 48000.0 * 60.0 / e.tempo());
         std::vector<float> out; out.reserve ((size_t) total);
@@ -3186,14 +3245,23 @@ static int knobAudit (int only)
     for (int l = 0; l < kLanes; ++l)
     {
         if (only >= 0 && l != only) continue;
-        const auto base = render (l, -1, 0, false), baseEcho = render (l, -1, 0, true);
         Engine probe;
+        if (! hasModel (probe, l)) continue;
+        if (levelOnly)
+        {
+            // (--level: only how loud the lane is as it plays, to set a new model's figure by its neighbours')
+            const auto x = render (l, -1, 0, false);
+            double sum = 0.0; for (float y : x) sum += (double) y * y;
+            std::printf ("  %-10s %s: %.2f dB rms\n", lanes()[(size_t) l].name, model.isEmpty() ? "as it opens" : model.toRawUTF8(), 10.0 * std::log10 (sum / (double) std::max<size_t> (1, x.size()) + 1e-20));
+            continue;
+        }
+        const auto base = render (l, -1, 0, false), baseEcho = render (l, -1, 0, true);
         std::printf ("  %-10s", lanes()[(size_t) l].name);
         for (int k = 0; k < kLaneKnobs; ++k)
         {
             const int ctl = cx::lane (l, k);
             const juce::String label = probe.control (ctl).label;
-            const bool echo = label.startsWith ("ECHO");
+            const bool echo = label.startsWith ("ECHO") || label == "SPREAD";       // (SPREAD is where the echoes sit)
             const auto& ref = echo ? baseEcho : base;
             const double lo = diffDb (ref, render (l, ctl, 0.0f, echo)), hi = diffDb (ref, render (l, ctl, 1.0f, echo));
             const double best = std::max (lo, hi);
@@ -5429,7 +5497,7 @@ static int uiTest()
         click17 (plainAt());
         const bool set = knobOf ("cutoff") == 1.0f && knobOf ("gate") == 1.0f && knobOf ("layer") == 0.0f && knobOf ("res") == 0.0f && knobOf ("env_amt") == 0.0f && knobOf ("pocket_depth") == 0.0f
                          && std::abs (setupOf ("split").value - 0.5f) < 0.01f && setupOf ("tune").text.startsWith ("-3")
-                         && setupOf ("smp_play").text == "THROUGH" && setupOf ("smp_env").value < 0.5f && setupOf ("smp_gain").id == "smp_gain" && setupOf ("smp_norm").value < 0.5f
+                         && setupOf ("smp_play").text == "THROUGH" && setupOf ("smp_env").value > 0.5f && knobOf ("decay") == 1.0f && setupOf ("smp_gain").id == "smp_gain" && setupOf ("smp_norm").value < 0.5f
                          && e17.target (cx::lane (lane, cx::kEqLow)) == 0.5f;
         const bool told = sc17.testCfgNote().contains ("PLAIN") && sc17.testCfgNote().contains ("C1 PLAYS IT AT ITS OWN PITCH") && sc17.testBarNote().contains ("PLAIN");
         // (a lane that shapes whatever it is given, and one with no sample model, have no PLAIN)
@@ -9967,7 +10035,14 @@ public:
         }
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
-        if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
+        if (args.contains ("--audit"))
+        {
+            const int i = args.indexOf ("--audit");
+            auto opt = [&] (const char* name) { const int at = args.indexOf (name); return at >= 0 && at + 1 < args.size() ? args[at + 1].unquoted() : juce::String(); };
+            const int only = i + 1 < args.size() && args[i + 1].containsOnly ("0123456789") ? args[i + 1].getIntValue() - 1 : -1;
+            setApplicationReturnValue (knobAudit (only, opt ("--model"), opt ("--sample").isNotEmpty() ? juce::File (opt ("--sample")) : juce::File(), args.contains ("--table"), args.contains ("--plain"), args.contains ("--level")));
+            quit(); return;
+        }
         if (args.contains ("--samplecheck"))
         {
             // --samplecheck FILE [--lane N] [--note N] [--out DIR] [--set id=value ...]: what a lane makes of a sample (see sampleCheck)

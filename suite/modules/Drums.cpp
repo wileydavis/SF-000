@@ -529,6 +529,7 @@ public:
         double spos = 0;
         float gate = 1.0e9f;
         SampleRegion reg;                   // SAMPLE: the part of the sample this hit plays
+        float tilt = 0.0f, tiltLp = 0.0f, tiltA = 0.0f, tiltLo = 1.0f, tiltHi = 1.0f;      // (SF-000) TONE on a sample
         // The circuits: the 909's ROM (its sample's own decay, the held 6-bit value), filters, the
         // body's pitch, the snappy noise's level and decay, a DC blocker.
         float romDecay = 0.1f, romHeld = 0.0f, body = 200.0f, snappy = 0.5f, nzDecay = 0.0f, dcX = 0.0f, dcY = 0.0f, lpZ = 0.0f;
@@ -551,6 +552,9 @@ public:
         v.vel = lerp (0.7f, ev.vel, acc) * ev.gain;         // ACCENT shapes the velocity; the DENSITY fade comes after it
         v.tune = semis (c.v (TUNE));
         v.tone = c.v (TONE);
+        // (SF-000) TONE on a sample: a tilt about 2 kHz, darker under the centre, brighter over it, none at it
+        v.tilt = (v.tone - 0.5f) * 2.0f; v.tiltLp = 0.0f;
+        v.tiltA = 1.0f - std::exp (-kTwoPi * 2000.0f / (float) osr); v.tiltLo = std::pow (10.0f, -v.tilt * 0.6f); v.tiltHi = std::pow (10.0f, v.tilt * 0.6f);
         v.decay = m.decay * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * std::pow (0.65f, (float) ev.gen);
         v.noise = m.noise;
         v.pan = 0.5f + (ev.gen == 0 ? 0.0f : ((ev.gen & 1) ? -1.0f : 1.0f) * c.v (SPREAD) * 0.5f * (rng.uni() * 0.5f + 0.5f));
@@ -772,6 +776,7 @@ public:
                 if (g <= 0.0f) { v.active = false; return 0.0f; }
                 y = 0.5f * (s->read (0, v.spos, v.tune * 0.5) + s->read (1, v.spos, v.tune * 0.5)) * g * v.reg.gain (v.spos);
                 v.spos += v.tune * 0.5;
+                if (std::abs (v.tilt) > 0.002f) { v.tiltLp += v.tiltA * (y - v.tiltLp); y = v.tiltLp * v.tiltLo + (y - v.tiltLp) * v.tiltHi; }      // (SF-000) TONE
                 break;
             }
         }
