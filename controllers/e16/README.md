@@ -114,6 +114,10 @@ Each means the same on every page, behind its press:
   one you get), not SEND A or HIGH. A click of knob 16 just before its press does not put the
   pointer down: OPEN with the pointer up still brings what it is on to the front and opens its
   CONFIG.
+- **CONFIG's panel on the screen is laid out as these pages are.** Four across: its first twelve
+  controls are knobs 1 to 12 of CFG 1, place for place, the next twelve CFG 2's, and under each
+  twelve the bottom row's names (SEL, PAGE -, PAGE +, SHUT) with the page's number, lit while
+  the E16 is on it. The panel goes to the page the E16 turns to.
 - **A page the E16 says just after OPEN is not your hand.** For two and a half seconds after
   OPEN opens CONFIG, whatever page the E16 says is its way to CONFIG's page: nothing comes to
   the front for it. And the page it was asked for, said back in the other scene's numbers, is

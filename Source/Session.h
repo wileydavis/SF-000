@@ -171,6 +171,7 @@ public:
     bool configOfFront (int by);        // open on what is in front, or shut (the returns: A, then B, then shut). False: what is in front has none
     std::vector<Engine::SetupParam> configList() const;     // its controls, in the order the panel has them
     void setConfig (int index, int value7);                 // one of them, from a controller (0 to 127; a list: its share of that; a switch: the upper half is on)
+    int cfgE16Page = -1;                // the page of CONFIG the E16 is on (its twelve are the panel's top three rows), or -1: it is not on one
     juce::String cfgTouched;            // the control of CONFIG's a controller last turned (the panel shows its value)
     // ---- POCKETS: the master's page (showing 3). While it is up, a controller's CONFIG pages hold
     // its knobs, twelve to a page: the eleven lanes' HOME and AMOUNT; their WIDTH and CLEAR; their
@@ -205,6 +206,8 @@ public:
     std::array<MacroKnob, 16> knobs;
     juce::int64 baseId = 0;             // the snapshot last recalled or taken
     juce::String lastTakenAt { "NONE YET" };
+    int takes = 0;                      // snapshots taken since the session opened (the key, S, the E16's 13 and 16 together): the screen says each one
+    juce::String takenName;             // ... and the last one's name
     // The bars a snapshot was taken over, kept beside the session as a small compressed clip.
     juce::File clipFile (juce::int64 id) const;
     // The lanes of a snapshot's bars, kept beside its clip: each thing the mix was made of (a lane
@@ -319,6 +322,11 @@ public:
     bool recallFromKnob (int k, int n);
     Snapshot capture() const;
     juce::int64 take();                 // the SNAPSHOT key
+    // A new track: the rig as it starts. CLEAN SLATE whole and at once, its empty steps too whatever NOTES says (no steps,
+    // no effects in the racks, every knob where the rig starts it, every generator let go); and what a snapshot leaves
+    // alone that was the last track's: every MUTE and SOLO out, the macro knobs at rest, nothing cued, the notes heard
+    // from outside forgotten. TEMPO, GLIDE, the master, the snapshot module's knobs and the library stay as they are.
+    void newTrack();
     // A snapshot's sound is the bars the rig held its state through. Taken while something had just
     // moved (or was still travelling), it waits for four such bars; this looks whether they have
     // come. If the rig moves on first it takes what was held, or failing that the bars it was taken

@@ -654,6 +654,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             static const A acts[] = {
                 { aRun, "RUN", "STARTS AND STOPS THE CLOCK (THE SPACE BAR TOO)." },
                 { aPanic, "PANIC", "SILENCES EVERY VOICE AND TAIL." },
+                { aNewTrack, "HOLD: NEW", "HELD: A NEW TRACK. THE RIG AS IT STARTS: NO STEPS, NO EFFECTS IN THE RACKS, EVERY KNOB WHERE THE RIG STARTS IT, EVERY MUTE AND SOLO OUT, THE MACRO KNOBS AT REST. TEMPO, THE MASTER, THE SNAPSHOT MODULE'S KNOBS AND THE LIBRARY STAY. TAKE A SNAPSHOT FIRST IF WHAT IS PLAYING IS WORTH KEEPING." },
                 { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (THE KEY IS GREEN AND READS PHONES WHILE PHONES IS ON.)" },
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
@@ -881,6 +882,12 @@ void Screen::drawBar (G& g)
             text (g, "INFO (I): A CONTROL'S NUMBER IS ITS MIDI CC. A LANE'S IS ITS CHANNEL; ITS INSERTS ARE ON IT TOO.", R (23 + w + 16, 20, 780.0f - (23 + w + 16), 17), fLbl, col::black, juce::Justification::centredLeft);
             text (g, "RETURNS, MASTER, GLIDE, SNAPSHOT KNOBS: CHANNEL 16. REST THE MOUSE ON A CONTROL FOR WHAT IT DOES.", R (23 + w + 16, 38, 780.0f - (23 + w + 16), 17), fLbl, col::black, juce::Justification::centredLeft);
         }
+        // NEW: held, the rig as it starts, for a new track (beside the flag, where LEARN's keys and INFO's lines go when they are up)
+        if (page == pMain && ses.learning < 0 && ! info)
+        {
+            key (g, R (23 + w + 16, 17.5f, 40, 40), col::white, pressed (aNewTrack) ? 6.0f : 2.0f);
+            text (g, "HOLD: NEW", R (23 + w + 16 + 46, 17.5f, 110, 40), fLegend, col::black, juce::Justification::centredLeft);
+        }
         // SNAPSHOT: everything on the main screen, kept (beside REC and RUN: the three keys of a set)
         key (g, R (808, 17.5f, 40, 40), col::yellow, pressed (aSnapshot) ? 6.0f : 2.0f);
         text (g, "SNAPSHOT", R (854, 17.5f, 92, 40), fLegend, col::black, juce::Justification::centredLeft);
@@ -892,7 +899,7 @@ void Screen::drawBar (G& g)
             String t ("REC");
             if (on) { const auto s = (juce::int64) recorder->seconds(); t = String (s / 3600) + ":" + String ((s / 60) % 60).paddedLeft ('0', 2) + ":" + String (s % 60).paddedLeft ('0', 2); }
             text (g, t, R (996, 17.5f, 70, 40), fLegend, col::black, juce::Justification::centredLeft);
-            if ((page == pMain || page == pMacros) && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000)
+            if ((page == pMain || page == pMacros) && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs())
                 plate (g, 798.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
         }
         // (PHONES lit: this output is split while a cue plays, and the key says so wherever one is)
@@ -919,6 +926,7 @@ void Screen::drawBar (G& g)
         hit (R (learnKeysX(), 17.5f, 40, 40).expanded (3), hAct, aLearnKeep, 0);
         hit (R (learnKeysX() + 96, 17.5f, 40, 40).expanded (3), hAct, aLearnDrop, 0);
     }
+    if (page == pMain && ses.learning < 0 && ! info) hit (R (23 + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 16, 17.5f, 40, 40), hAct, aNewTrack, 0);
     hit (R (808, 17.5f, 40, 40), hAct, aSnapshot, 0);
     hit (R (950, 17.5f, 40, 40), hAct, aRec, 0);
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
@@ -1107,84 +1115,97 @@ void Screen::drawConfig (G& g, R r)
     if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
     loadOpen = false;
 
-    // The controls, in boxes by what they belong to. A box goes in the first row with room for
-    // it; one longer than a row runs on into the next; MOTION's two have rows of their own, last.
-    const int cols = 6, total = (int) cfgParams.size();
-    const float cellW = 90.0f, rowH = 126.0f, titleH = 17.0f;         // (a row's box is 106 tall: 20 between one box and the next below)
-    struct Seg { int first, count, row, col; bool head; };
-    std::vector<Seg> segs;
-    std::vector<int> used;                                  // columns taken in each row
-    for (int i = 0; i < total;)
+    // The controls, four across, in the order the E16's CONFIG pages hold them: the first twelve are its first page's
+    // knobs 1 to 12, place for place (the top three rows of its sixteen), the next twelve its second page's, and so
+    // on. Under each twelve stands the E16's bottom row there: SEL (the wheel), PAGE -, PAGE +, SHUT. What the hand
+    // learns on one is where it is on the other. A box with its name still says what a run of controls belongs
+    // to: it stops at a row's end and carries on in the next.
+    const int cols = 4, perPage = e16::kCfgPer, rowsPer = perPage / cols, total = (int) cfgParams.size();
+    const float cellW = 136.0f, rowH = 126.0f, titleH = 17.0f, stripH = 22.0f;
+    const int pages = std::max (1, (total + perPage - 1) / perPage);
+    const float pageH = (float) rowsPer * rowH + stripH, floorY = r.getBottom() - 6;
+    cfgScroll = juce::jlimit (0, pages - 1, cfgScroll);                // (scrolled a page at a time: the page at the top is whole)
+    int lastShown = -1;
+    for (int pg = cfgScroll; pg < pages; ++pg)
     {
-        int n = 1;
-        while (i + n < total && cfgParams[(size_t) (i + n)].group == cfgParams[(size_t) i].group) ++n;
-        const bool own = cfgParams[(size_t) i].ownRow;
-        for (int done = 0; done < n;)
+        const float top = y + (float) (pg - cfgScroll) * pageH;
+        if (top + rowH > floorY) break;
+        for (int rr = 0; rr < rowsPer; ++rr)
         {
-            const int take = std::min (cols, n - done);
-            int row = -1;
-            if (! own && n <= cols) for (size_t q = 0; q < used.size() && row < 0; ++q) if (used[q] + take <= cols) row = (int) q;
-            if (row < 0 && ! own && done > 0 && ! used.empty() && used.back() == 0) row = (int) used.size() - 1;
-            if (row < 0) { row = (int) used.size(); used.push_back (0); }
-            segs.push_back ({ i + done, take, row, used[(size_t) row], done == 0 });
-            used[(size_t) row] = own ? cols : used[(size_t) row] + take;
-            done += take;
-        }
-        i += n;
-    }
-    const int rows = (int) used.size();
-    const int rowsVis = std::max (1, (int) ((r.getBottom() - 6 - y) / rowH));
-    cfgScroll = juce::jlimit (0, std::max (0, rows - rowsVis), cfgScroll);
-    for (const auto& sg : segs)
-    {
-        if (sg.row < cfgScroll || sg.row >= cfgScroll + rowsVis) continue;
-        const float bx = x0 + (float) sg.col * cellW, by = y + (float) (sg.row - cfgScroll) * rowH;
-        const R box (bx + 4, by + 7, (float) sg.count * cellW - 8, 106.0f);          // (8 between one box and the next beside it)
-        const String title = cfgParams[(size_t) sg.first].group;
-        if (title.isNotEmpty() && vis (g, box.expanded (2, 8)))
-        {
-            // the box, and its name on the box's upper edge (a box run on from the row above has none).
-            // The line stops either side of the name: it does not run under it.
-            const R chip (bx + 12, by, std::ceil (tw (fLbl, title)) + 10.0f, 15.0f);
+            const float by = top + (float) rr * rowH;
+            if (by + rowH > floorY) break;
+            const int first = pg * perPage + rr * cols;
+            if (first >= total) break;
+            // the boxes of this row: each run of controls that belong together
+            for (int c = 0; c < cols && first + c < total;)
             {
-                const juce::Graphics::ScopedSaveState state (g);
-                if (sg.head) g.excludeClipRegion (chip.expanded (5.0f, 3.0f).getSmallestIntegerContainer());
-                g.setColour (tone (col::black).withAlpha (0.30f));
-                g.drawRoundedRectangle (box, 5.0f, 1.0f);
-            }
-            if (sg.head) plate (g, chip.getX(), chip.getY(), title, fLbl, 5, col::black, col::white, 15);
-        }
-        for (int q = 0; q < sg.count; ++q)
-        {
-            const int i = sg.first + q;
-            const auto& sp = cfgParams[(size_t) i];
-            const float cxl = bx + (float) q * cellW, cy = by + titleH + 3;
-            const R kr (cxl + 25, cy, 40, 40);
-            if (vis (g, R (cxl - 16, cy, 122, rowH - titleH)))
-            {
-                if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
-                else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
-                else knob (g, cxl + 45, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
-                legend (g, cxl + 45, cy + 43, sp.name);
-                // INFO: its number while CONFIG is open (the E16's CONFIG pages hold the controls in this order, twelve to a page)
-                if (info && sp.kind != Kind::Hold && i < e16::kCfgPer * e16::kCfgPages)
-                    textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxl + 31, cy + 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
-                if (sp.kind == Kind::List)
+                const String title = cfgParams[(size_t) (first + c)].group;
+                int n = 1;
+                while (c + n < cols && first + c + n < total && cfgParams[(size_t) (first + c + n)].group == title) ++n;
+                const float bx = x0 + (float) c * cellW;
+                const R box (bx + 4, by + 7, (float) n * cellW - 8, 106.0f);
+                if (title.isNotEmpty() && vis (g, box.expanded (2, 8)))
                 {
-                    // (inside its box with room to spare; a long name is drawn narrower before it is cut short)
-                    const bool first = q == 0, last = q == sg.count - 1;
-                    const R vr (cxl + (first ? 9.0f : 3.0f), cy + 73, 84.0f - (first ? 6.0f : 0.0f) - (last ? 6.0f : 0.0f), 16);
-                    if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
-                    g.setColour (tone (col::black)); g.setFont (fLbl);
-                    g.drawFittedText (sp.text.toUpperCase(), vr.reduced (2, 0).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.72f);
+                    // (its name on the box's upper edge where the run begins; the line stops either side of the name)
+                    const bool head = first + c == 0 || cfgParams[(size_t) (first + c - 1)].group != title;
+                    const R chip (bx + 12, by, std::ceil (tw (fLbl, title)) + 10.0f, 15.0f);
+                    {
+                        const juce::Graphics::ScopedSaveState state (g);
+                        if (head) g.excludeClipRegion (chip.expanded (5.0f, 3.0f).getSmallestIntegerContainer());
+                        g.setColour (tone (col::black).withAlpha (0.30f));
+                        g.drawRoundedRectangle (box, 5.0f, 1.0f);
+                    }
+                    if (head) plate (g, chip.getX(), chip.getY(), title, fLbl, 5, col::black, col::white, 15);
                 }
+                c += n;
             }
-            hit (kr.expanded (4, 2), hSetup, i, 0);
+            for (int c = 0; c < cols && first + c < total; ++c)
+            {
+                const int i = first + c;
+                const auto& sp = cfgParams[(size_t) i];
+                const float cxm = x0 + (float) c * cellW + cellW * 0.5f, cy = by + titleH + 3;
+                const R kr (cxm - 20, cy, 40, 40);
+                if (vis (g, R (cxm - 61, cy, 122, rowH - titleH)))
+                {
+                    if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
+                    else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
+                    else knob (g, cxm, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
+                    legend (g, cxm, cy + 43, sp.name);
+                    // INFO: its number while CONFIG is open
+                    if (info && sp.kind != Kind::Hold && i < e16::kCfgPer * e16::kCfgPages)
+                        textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxm - 14, cy + 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
+                    if (sp.kind == Kind::List)
+                    {
+                        const R vr (cxm - 50, cy + 73, 100, 16);
+                        if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
+                        g.setColour (tone (col::black)); g.setFont (fLbl);
+                        g.drawFittedText (sp.text.toUpperCase(), vr.reduced (2, 0).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.72f);
+                    }
+                }
+                hit (kr.expanded (4, 2), hSetup, i, 0);
+            }
+            lastShown = pg;
+        }
+        // the E16's bottom row on this page of its CONFIG, under the twelve: which page it is (lit while the E16 is on it),
+        // and its four corners' and keys' names in their places
+        const float sy = top + (float) rowsPer * rowH + 1;
+        if (pg < e16::kCfgPages && sy + 18 <= floorY && vis (g, R (x0, sy - 2, 544, stripH)))
+        {
+            const bool here = ses.cfgE16Page == pg;
+            const String num (pg + 1);
+            const float wTag2 = std::max (22.0f, std::ceil (tw (fLbl, num)) + 10.0f);
+            if (here) plate (g, x0 + 2, sy, num, fLbl, 5, col::lit, col::black, 16); else this->tag (g, R (x0 + 2, sy, wTag2, 16), num);
+            static const char* const corner[4] = { "SEL", "PAGE -", "PAGE +", "SHUT" };
+            for (int c = 0; c < cols; ++c)
+            {
+                const float w = std::ceil (tw (fLbl, corner[c])) + 10.0f;
+                plate (g, x0 + (float) c * cellW + cellW * 0.5f - w * 0.5f, sy, corner[c], fLbl, 5, col::white, col::black, 16);
+            }
         }
     }
-    if (rows > rowsVis)
+    if (cfgScroll > 0 || lastShown < pages - 1)
     {
-        const String more = "ROWS " + String (cfgScroll + 1) + " TO " + String (cfgScroll + rowsVis) + " OF " + String (rows) + ": SCROLL";
+        const String more = "PAGE " + String (cfgScroll + 1) + " OF " + String (pages) + ": SCROLL";
         plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, more)) + 12), r.getBottom() - 27, more, fNote, 6, col::white, col::black, 22);
     }
 }
@@ -2632,7 +2653,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             break;
         }
         case hAct:
-            if (h->a == aDelete || h->a == aArrClear || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these are held
+            if (h->a == aDelete || h->a == aArrClear || h->a == aNewTrack || (h->a == aRec && recorder != nullptr && recorder->recording())) break;       // these are held
             act (h->a);
             drag.fired = true;                  // (the press that starts a take is not also the hold that ends it)
             if (h->a == aRec) repaint();
@@ -3075,7 +3096,7 @@ float Screen::learnKeysX() const
 juce::uint64 Screen::barNow() const
 {
     const bool rec = recorder != nullptr && recorder->recording();
-    const bool note = recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < 8000;
+    const bool note = recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs();
     return (juce::uint64) (eng.isRunning() ? 1 : 0) | (juce::uint64) (eng.following() ? 2 : 0)
          | ((juce::uint64) (juce::uint32) std::lround (eng.target (cx::kTempo) * 14000.0f) << 2)
          | ((juce::uint64) (rec ? 1 + ((juce::int64) recorder->seconds() & 0xfffff) : 0) << 20)
@@ -3511,6 +3532,20 @@ void Screen::timerCallback()
     // CUE lit (on the module, in the designer, or by knob 4 of the E16) with nowhere for a cue to play: said, on the top
     // bar. And a stack knob come to a snapshot that has no sound kept with it: said too. (Otherwise the headphones
     // simply carry on as they were, and nothing says why.)
+    // CONFIG's page on the E16: the panel shows that page's twelve at the top, as the E16's knobs have them
+    if (ses.cfgE16Page != cfgE16Was)
+    {
+        cfgE16Was = ses.cfgE16Page;
+        if (cfgOpen) { if (cfgE16Was >= 0) cfgScroll = cfgE16Was; dirty (cfgRect); }
+    }
+    // A snapshot taken, by whatever hand (the SNAPSHOT key, S, the E16's 13 and 16 together): said on the top bar with
+    // its name, for a few seconds. (The E16's own display says it only on firmware that shows the names it is sent.)
+    if (ses.takes != takesWas)
+    {
+        takesWas = ses.takes;
+        recNote = "SNAPSHOT TAKEN: " + ses.takenName; recNoteAt = juce::Time::getMillisecondCounter();
+        dirty (R (8, 12, 1712, 52));
+    }
     // KEY set, or a lane's KEY FOLLOW: the steps' notes read differently
     if (page == pMain && ses.keyMoves (ses.activeLane) != seqMovesWas) dirty (seqRect);
     if (ses.stackCue != cueLitWas)
@@ -3590,6 +3625,14 @@ void Screen::timerCallback()
         drag.fired = true;
         recorder->stop();
         recWas = false; recNote = recorder->note(); recNoteAt = juce::Time::getMillisecondCounter();
+        repaint();
+    }
+    if (mouseIsDown && drag.kind == hAct && drag.a == aNewTrack && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)
+    {
+        drag.fired = true;
+        ses.newTrack();
+        selSnap = 0; cfgStale = true;
+        recNote = "A NEW TRACK: THE RIG AS IT STARTS. TEMPO AND THE SNAPSHOT MODULE ARE AS THEY WERE"; recNoteAt = juce::Time::getMillisecondCounter();
         repaint();
     }
     if (mouseIsDown && drag.kind == hAct && drag.a == aArrClear && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)

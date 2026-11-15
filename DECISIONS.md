@@ -2731,6 +2731,48 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      ONLINE lit: snapshots sent, the knobs mirrored, the rack kept the same. With ONLINE out,
      none of it does.)
 
+## What the test found, and CONFIG as the E16 has it (Nov 14, 19:50)
+
+499. **You**, 19:49: "1. No notifiction when snapshot taken but it did take a snapshot." and
+     "other than that, it works."
+     **So the rest of the list is as it should be on your Mac and E16**: OPEN on an effect, the
+     pointer's choice, 13 and 16 together, CONFIG shutting, a snapshot as its clip, new notes in
+     the key, the column, the rack, MACROS from the library, LOAD.
+     **A snapshot taken is now said on the top bar, with its name** (`SNAPSHOT TAKEN: SNAP 012`),
+     for a few seconds, by whatever hand took it: the SNAPSHOT key, S, the E16's 13 and 16.
+     Until now the only sign on the screen was the small LAST time on the snapshot module. The
+     E16's own display is sent SNAPSHOT TAKEN as before; it shows it only if its firmware shows
+     the names SF-000 sends, which I cannot see from here.
+500. **You**, 19:55: "Request: on the config pages, can we make the layout for the knobs the e16
+     can control match the 4x4 layout. The helps me with muscle memory."
+     **CONFIG's panel is four across now, in the E16's own order.** Its first twelve controls
+     are the three top rows of the E16's first CONFIG page, place for place; the next twelve
+     its second page's; and so on. Under each twelve stands the E16's bottom row there: SEL,
+     PAGE -, PAGE +, SHUT, with the page's number (lit while the E16 is on that page). The panel
+     goes to the page the E16 turns to, and the wheel over it moves a page at a time.
+     *Mine:* the boxes that say what a run of controls belongs to are kept, and now break at a
+     row's end (a box of six is four and two). The order of the controls is unchanged: it was
+     already the E16's. *Not done:* the order within a module is still the module's own, so a
+     box may straddle two pages; say if a module's CONFIG should be regrouped to fit pages.
+501. **You**, 20:05: "and a button to reset the instrument to a base starting point with no midi
+     notes and knobs centered for starting a new track."
+     **HOLD: NEW**, on the top bar beside the SF-000 flag. Held for most of a second (a tap does
+     nothing: it is not a key to brush past in a set), the rig is as it starts:
+     - no steps in any lane, and every generator let go;
+     - no effects in the racks;
+     - every knob where the rig starts it (that is CLEAN SLATE, which was already in the
+       library: this is that, whole and at once, whatever NOTES and GLIDE say), KEY off;
+     - every MUTE and SOLO out, the macro knobs at rest, nothing cued;
+     - the notes heard from outside forgotten, so the next snapshot does not carry the last
+       track's.
+     **It leaves:** TEMPO, GLIDE, the master (TAPE, COMP, LIMIT), the snapshot module's knobs,
+     the library, the arrangement, and each lane's sample.
+     *Mine:* "knobs centered" read as where the rig starts each knob, not the middle of its
+     turn (a LEVEL in the middle of its turn is not a starting point). It takes no snapshot
+     first: take one if what is playing is worth keeping. The key is not there while a knob is
+     being taught or INFO is up (their words stand in that place). Nothing on the E16 for it
+     yet: say if it should have one.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2945,6 +2987,9 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   page on the E16 is checked against the scene file and a made-up E16 only.
 - **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
   whether any snapshot of yours has KEY set.
+- **CONFIG four across (500) and HOLD: NEW (501)** are checked on the drawn screens and the
+  session. Whether the panel going to the E16's page as you press PAGE + feels right, and
+  whether NEW leaves what you want left, are yours to say.
 - **OPEN on an effect (491)** is checked with a made-up E16 that answers in the first scene's
   numbers, late. Yours has not been seen doing it: `e16.log` (492) is how it will be.
 - **A snapshot as its clip (493)** is checked on the knobs' values (taken with a macro knob up,

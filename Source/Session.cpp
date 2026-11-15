@@ -1346,6 +1346,7 @@ juce::int64 Session::take()
     while (taken (nameFor (n))) ++n;
     s.name = nameFor (n);
     lastTakenAt = s.time.formatted ("%H:%M:%S");
+    ++takes; takenName = s.name;
     // Its sound, with nothing asked: the bars the rig has held this state through, profiled and kept
     // as a clip. Held for four bars already: those. Something has just moved, or is still on its
     // way: it waits for them (finishTakes), so the clip is the snapshot and not the road to it.
@@ -1368,6 +1369,36 @@ juce::int64 Session::take()
     touch();
     if (onLibrary) onLibrary();
     return id;
+}
+
+void Session::newTrack()
+{
+    ensureCleanSlate();
+    cue (0);
+    if (learning >= 0) learnDrop();
+    for (int k = 0; k < kMacroKnobs; ++k) if (engine.target (cx::kSnap + k) != 0.0f) userSet (cx::kSnap + k, 0.0f);        // (the macro knobs at rest: nothing is added to the scene)
+    for (int l = 0; l < kLanes; ++l)
+    {
+        for (int which : { (int) cx::kMute, (int) cx::kSolo, (int) cx::kSeqMute }) if (engine.target (cx::lane (l, which)) > 0.5f) userSet (cx::lane (l, which), 0.0f);
+        for (int sl = 0; sl < kSlots; ++sl)
+        {
+            if (engine.target (cx::insMute (l, sl)) > 0.5f) userSet (cx::insMute (l, sl), 0.0f);
+            if (engine.target (cx::insSolo (l, sl)) > 0.5f) userSet (cx::insSolo (l, sl), 0.0f);
+        }
+    }
+    for (int i = 0; i < 4; ++i) if (engine.target (cx::kRetMS + i) > 0.5f) userSet (cx::kRetMS + i, 0.0f);
+    if (const auto* s = findSnap (kCleanSlateId))
+    {
+        stacksLeft (-1);
+        const Snapshot copy = *s;
+        applySnapshot (copy, 0.0);              // (at once, and with its steps: none)
+        baseId = kCleanSlateId;
+    }
+    for (auto& v : heardLog) v.clear();         // (what came in from outside was the last track's)
+    heardFrom = engine.songPos();
+    selStep = -1; page = 0;
+    touch();
+    if (onChange) onChange();
 }
 
 void Session::settle (juce::int64 id, const Engine::Heard& heard, bool steady)

@@ -58,6 +58,7 @@ First run:
 | **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
 | Double-click a stack knob (its press on the E16) | the set goes to its nearest snapshot, over the GLIDE time |
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
+| **HOLD: NEW** (top bar, beside the flag) | held: a new track. The rig as it starts: no steps, no effects in the racks, every knob where the rig starts it, every MUTE and SOLO out, the macro knobs at rest. TEMPO, the master, the snapshot module's knobs and the library stay. A tap does nothing |
 | **LOAD** (on the snapshot module) | make the sixteen knobs what the web library's module holds now (see ONLINE, below) |
 | LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** is here too, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and ADD snapshots to its stack (see The snapshot module, and A macro knob, below) |
@@ -916,7 +917,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
   POCKETS' four), the sequencer strip (SEQ: LENGTH, the step under the hand as six knobs, STEP
   to go through the pattern and that step's VEL, GATE, RATCH, NOTE and OCT, the generator's four,
   and the nudges: see `controllers/e16/README.md`), CONFIG (CFG 1 to
-  3: its controls in the order its panel has them, twelve to a page; with POCKETS up, every
+  3: its controls in the order its panel has them, twelve to a page (the panel is laid out as the
+  E16 is: four across, each twelve the three top rows of a page, with SEL, PAGE -, PAGE + and SHUT
+  under them, and it goes to the page the E16 is on); with POCKETS up, every
   lane's pocket), and the library's two pages.
   Its page 12 is the snapshot knobs again, as the first scene's page 12: they are on the same page
   whichever scene the E16 is in, and choosing them never loads a scene.

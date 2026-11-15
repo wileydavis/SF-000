@@ -185,6 +185,8 @@ public:
     bool testEditing() const { return editor != nullptr; }
     bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
     void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
+    static bool testIsNewTrack (const TestHit& h) { return h.kind == hAct && h.a == aNewTrack; }
+    juce::String testBarNote() const { return recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs() ? recNote : juce::String(); }     // what the top bar is saying now
     juce::String testTagText (int ctl) const { const auto it = tagPics.find (ctl); return it != tagPics.end() ? it->second.key : juce::String(); }
 
 private:
@@ -206,7 +208,7 @@ private:
                    hRackAdd,        // a stack's ADD key (a: which stack): its snapshots onto the chosen stack knob
                    hRackOut };      // its number: out of the rack
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aKeepStack, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aKeepStack, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch, aStack,
@@ -377,6 +379,9 @@ private:
     bool cueMode = false;                       // the library: a tap is heard in the headphones, not recalled
     juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
     juce::uint32 recNoteAt = 0;
+    int cfgE16Was = -1;                         // the E16's page of CONFIG as the panel last followed it
+    int takesWas = 0;                           // the session's count of snapshots taken, as last said on the bar
+    juce::uint32 recNoteMs() const              { return recNote.startsWith ("SNAPSHOT TAKEN") ? 3500u : 8000u; }      // how long the bar's note stays
     juce::uint64 barNow() const;
     juce::String learnTitle() const;    // the top bar's plate while a knob is being taught
     float learnKeysX() const;           // where KEEP stands in the top bar (DROP is 96 on)

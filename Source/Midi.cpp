@@ -1240,6 +1240,7 @@ void Midi::service()
             cfgPage = to;
         }
     laneNow = ses.activeLane;
+    ses.cfgE16Page = ses.cfgOpen && e16At.scene == 1 && e16At.page >= e16::pgCfg && e16At.page < e16::pgCfg + e16::kCfgPages ? cfgPage : -1;        // (the panel shows that page's twelve at its top)
 
     // A page that has just come up is told its values again, a moment after it has settled.
     if (pageWait > 0 && --pageWait == 0)

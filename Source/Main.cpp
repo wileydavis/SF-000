@@ -3083,6 +3083,21 @@ static int uiTest()
         ses.userSet (cx::kKey, keyWas); ses.setPattern (7, was); ses.selStep = 6; draw();
     }
     {
+        // a snapshot taken, by whatever hand: the top bar says so, with its name, for a few seconds (and then no longer)
+        sc.testTick(); draw();
+        const auto id = ses.take();
+        const bool notYet = ! sc.testBarNote().startsWith ("SNAPSHOT TAKEN");
+        sc.testTick(); draw();
+        const auto* sn = ses.findSnap (id);
+        const bool saidIt = sn != nullptr && sc.testBarNote() == "SNAPSHOT TAKEN: " + sn->name;
+        juce::Thread::sleep (3600); sc.testTick(); draw();
+        const bool gone = sc.testBarNote().isEmpty();
+        ses.finishTakes (true);
+        ses.remove (id);
+        sc.testTick(); draw();
+        check (notYet && saidIt && gone && sc.testBarNote().isEmpty(), "a snapshot taken is said on the top bar with its name (SNAPSHOT TAKEN: SNAP nnn), for a few seconds; one removed, or brought by LOAD, says nothing");
+    }
+    {
         // the strip's M key mutes the sequencer of the lane it shows, and no other
         ses.selectLane (0); draw();
         const int sm = cx::lane (0, cx::kSeqMute);
@@ -3471,6 +3486,9 @@ static int uiTest()
         check (left && byP && backByP && asked3 && sc.testPage() == Screen::pMain && ! e.pocketsWatched(),
                "Esc leaves the page, and it stops looking; P on the keyboard opens and shuts it; a controller that asks for it gets it, with its forty-eight knobs listed for the CONFIG pages");
         // AMOUNT turned up is heard, and shows on the master
+        // (on the rig as it comes up: every panel's controls have been clicked and dragged by now, and what that leaves
+        // playing depends on which of them a panel shows. INIT is the same rig every time.)
+        ses.recall (kInitId); audio (200);
         ses.userSet (cx::kPkG, 1.0f); audio (300);
         float cut = 0.0f; for (int q = 0; q < Pockets::kParts; ++q) for (int k = 0; k < Pockets::kBands; ++k) cut = std::max (cut, e.pocketsForTests().cutNow (q, k));
         ses.userSet (cx::kPkG, 0.0f); audio (300);
@@ -4544,6 +4562,64 @@ static int uiTest()
         sc.recorder = nullptr;
         tmp.deleteRecursively();
         sc.setPage (Screen::pMain); draw();
+    }
+    {
+        // HOLD: NEW, beside the flag: held, the rig is as it starts, for a new track. A tap does nothing.
+        // (A rig of its own, made here and not earlier: the suite's bus is one rig's, and a second rig made and let go
+        // before POCKETS is looked at takes the first one's places on it.)
+        Engine e8; e8.prepare (48000.0, 512);
+        Session s8 (e8, false);
+        Screen sc8 (s8);                                                // (its clock is not started, and it renders nothing: the suite's bus is the one rig's)
+        sc8.setSize ((int) Screen::kW, (int) Screen::kH);
+        auto draw8 = [&] { sc8.createComponentSnapshot (sc8.getLocalBounds(), false, 0.25f); };
+        auto ev8 = [&] (juce::Point<float> p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc8, &sc8, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        auto newKey = [&] { for (auto& h : sc8.testHits()) if (Screen::testIsNewTrack (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto lit = [&] { int n = 0; for (int l = 0; l < kLanes; ++l) { const auto p = s8.pattern (l); for (int i = 0; i < p.length; ++i) n += p.steps[(size_t) i].on ? 1 : 0; } return n; };
+        auto effects = [&] { int n = 0; for (int l = 0; l < kLanes; ++l) for (int k = 0; k < kSlots; ++k) n += e8.insertType (l, k) >= 0 ? 1 : 0; return n; };
+        const int cut = cx::lane (5, 2);
+        s8.userSet (cx::kGlide, 0.0f);
+        // a track under way: steps, an effect, a knob moved, a lane muted, another soloed, a macro knob up, the key set, the tempo moved
+        { Pattern p = s8.pattern (7); p.steps[2].on = true; p.steps[2].note = 5; s8.setPattern (7, p); }
+        e8.setInsertType (5, 0, 0, true);
+        const int effectsWere = effects();
+        s8.userSet (cut, 0.93f);
+        s8.userSet (cx::lane (2, cx::kMute), 1.0f); s8.userSet (cx::lane (4, cx::kSolo), 1.0f); s8.userSet (cx::lane (6, cx::kSeqMute), 1.0f);
+        s8.userSet (cx::kSnap + 0, 0.8f);
+        s8.userSet (cx::kKey, 10.0f / 12.0f);
+        s8.userSet (cx::kTempo, 0.37f);
+        const auto knob5 = s8.knobs[4].snaps;
+        const int libWas = (int) s8.library.size();
+        const float tempoWas = s8.value (cx::kTempo);
+        draw8();
+        const auto at = newKey();
+        const bool before = at.x > 0.0f && lit() > 0 && effectsWere >= 1;
+        // a tap: nothing
+        sc8.mouseDown (ev8 (at)); sc8.testTick(); sc8.mouseUp (ev8 (at)); sc8.testTick();
+        const bool tapNothing = lit() > 0 && effects() == effectsWere && std::abs (s8.value (cut) - 0.93f) < 0.2f && s8.value (cx::lane (2, cx::kMute)) > 0.5f;
+        // held
+        sc8.mouseDown (ev8 (at)); juce::Thread::sleep (760); sc8.testTick(); sc8.mouseUp (ev8 (at));
+        bool atStart = true;
+        for (int i = 0; i < cx::kCount; ++i)
+        {
+            const auto& c = e8.control (i);
+            const int k = i < cx::kRet ? i % cx::kPerLane : -1;
+            if (c.snapshot && c.used && ! (k >= cx::kIns && k < cx::kGen) && std::abs (s8.value (i) - c.def) > 1.0e-4f) atStart = false;
+        }
+        bool quiet = true;
+        for (int l = 0; l < kLanes; ++l) quiet = quiet && s8.value (cx::lane (l, cx::kMute)) < 0.5f && s8.value (cx::lane (l, cx::kSolo)) < 0.5f && s8.value (cx::lane (l, cx::kSeqMute)) < 0.5f;
+        const bool reset = lit() == 0 && effects() == 0 && atStart && quiet && s8.value (cx::kSnap + 0) == 0.0f && s8.keyRoot() < 0
+                           && s8.value (cx::kTempo) == tempoWas && s8.knobs[4].snaps == knob5 && (int) s8.library.size() == libWas && s8.baseId == kCleanSlateId
+                           && sc8.testBarNote().startsWith ("A NEW TRACK");
+        // (the key is not there while a knob is being taught: LEARN's own keys are)
+        s8.learnBegin (2); draw8();
+        const bool hidden = newKey().x < 0.0f;
+        s8.learnDrop(); draw8();
+        check (before && tapNothing && reset && hidden && newKey().x > 0.0f,
+               "HOLD: NEW, beside the flag: a tap does nothing; held, the rig is as it starts (no steps, no effects, every knob where the rig starts it, every mute and solo out, the macro knobs at rest, KEY off) "
+               "and the bar says so; TEMPO, the snapshot module's knobs and the library are as they were");
+        if (! (before && tapNothing && reset && hidden))
+            std::printf ("    (before %d tap %d reset %d [lit %d effects %d at start %d quiet %d macro %.2f key %d tempo %d base %lld note '%s'] hidden %d)\n", (int) before, (int) tapNothing, (int) reset, lit(), effects(), (int) atStart, (int) quiet,
+                         s8.value (cx::kSnap + 0), s8.keyRoot(), (int) (s8.value (cx::kTempo) == tempoWas), (long long) s8.baseId, sc8.testBarNote().toRawUTF8(), (int) hidden);
     }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
@@ -6739,7 +6815,7 @@ static int midiTest()
             // sent with the scene, it loads the second scene (its first page comes up), is sent the page again, and is there
             in (16, e16::kFocusCc, e16::kFocusB + 1); ticks (2);
             in (16, e16::kFocusCc, e16::kFocusB + e16::pgCfg); ticks (2);
-            const bool settled = ses.cfgOpen && ses.activeLane == 9 && midi.pageNote().isEmpty();
+            const bool settled = ses.cfgOpen && ses.activeLane == 9 && midi.pageNote().isEmpty() && ses.cfgE16Page == 0;       // (and the panel is told which of CONFIG's pages the E16 is on: its first)
             // Any other page it says in the two seconds after OPEN is not a hand's turn either (it is on its way): CONFIG
             // stays, nothing else comes to the front, and it is sent to CONFIG's page once more
             press (16, e16::kOpenKey); ticks (3);                       // (shut)
