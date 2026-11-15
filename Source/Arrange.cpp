@@ -38,11 +38,11 @@ double Session::arrMorphBars (int part) const
     return std::min ((double) p.bars, glideBarsFor ((float) juce::jlimit (0, 11, p.morph) / 11.0f));
 }
 
-bool Session::arrAdd (juce::int64 snap, int before)
+bool Session::arrAdd (juce::int64 snap, int before, juce::uint32 lanes)
 {
     if ((int) arrangement.size() >= kArrMost || findSnap (snap) == nullptr) return false;
     ArrPart p;
-    p.snap = snap;
+    p.snap = snap; p.lanes = lanes & kAllLanes;
     // (a part comes in as the one before it is: the same length, the same way in; the first: eight bars, cut)
     const int like = before >= 0 && before < (int) arrangement.size() ? before : (int) arrangement.size() - 1;
     if (like >= 0) { p.bars = arrangement[(size_t) like].bars; p.morph = arrangement[(size_t) like].morph; }
@@ -80,12 +80,20 @@ void Session::arrSet (int part, int bars, int morph)
     touch();
 }
 
-void Session::recallOver (juce::int64 id, double beats, bool notes)
+void Session::arrLanes (int part, juce::uint32 lanes)
+{
+    if (part < 0 || part >= (int) arrangement.size()) return;
+    arrangement[(size_t) part].lanes = lanes & kAllLanes;
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::recallOver (juce::int64 id, double beats, bool notes, juce::uint32 lanes)
 {
     glideOver = std::max (0.0, beats);
-    Scope all;
-    all.notes = notes;
-    recall (id, all);
+    Scope sc = scopeOf (lanes & kAllLanes);         // (all of them: everything, as a recall of the whole snapshot)
+    sc.notes = notes;
+    recall (id, sc);
     glideOver = -1.0;
 }
 
@@ -93,7 +101,7 @@ void Session::arrRecall (int part, double beats)
 {
     if (part < 0 || part >= (int) arrangement.size()) return;
     // (printed, a part brings its notes whatever NOTES says: there is nothing outside to play them)
-    recallOver (arrangement[(size_t) part].snap, beats, printRig || recallNotes);
+    recallOver (arrangement[(size_t) part].snap, beats, printRig || recallNotes, arrangement[(size_t) part].lanes);
 }
 
 void Session::arrPlay (int from)
@@ -172,6 +180,7 @@ var Session::arrToVar() const
         po->setProperty ("snap", p.snap);
         po->setProperty ("bars", p.bars);
         po->setProperty ("morph", glideBarsFor ((float) juce::jlimit (0, 11, p.morph) / 11.0f));       // (in bars: a later build may have other lengths)
+        if ((p.lanes & kAllLanes) != kAllLanes) po->setProperty ("lanes", (juce::int64) (p.lanes & kAllLanes));     // (absent: all of them)
         for (auto& m : p.more) po->setProperty (m.name, m.value);
         parts.add (var (po));
     }
@@ -198,7 +207,8 @@ void Session::arrFromVar (const var& v)
             for (int i = 0; i < 12; ++i) if (glideBarsFor ((float) i / 11.0f) <= mb + 1.0e-9) p.morph = i;      // the nearest length this build has, not over it
             if (auto* po = pv.getDynamicObject())
                 for (auto& q : po->getProperties())
-                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph")) p.more.set (q.name, q.value);
+                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes")) p.more.set (q.name, q.value);
+            if (pv.hasProperty ("lanes")) p.lanes = (juce::uint32) (juce::int64) pv.getProperty ("lanes", (juce::int64) kAllLanes) & kAllLanes;
             arrangement.push_back (p);
         }
 }

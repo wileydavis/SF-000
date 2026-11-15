@@ -1998,6 +1998,79 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                          clipOk ? "ok  " : "FAIL", clip.getNumSamples(), want, first, (int) (ses.clipFile (kickId).getSize() / 1024));
             if (! clipOk) ++bad;
 
+            // A chip pressed is heard, wherever it is shown, and carries the keys for its parts. With a real snapshot that has its
+            // sound kept (the screen checks' own snapshots have none, and pass on silence): beside the knob in MACROS, on a stack
+            // knob's card, and in the library. And when nothing can be heard, the bar says why, and PHONES is there to press.
+            {
+                Screen scr (ses);
+                scr.setSize ((int) Screen::kW, (int) Screen::kH);
+                using Pt = juce::Point<float>;
+                auto drawS = [&] { scr.createComponentSnapshot (scr.getLocalBounds(), false, 0.25f); };
+                auto evS = [&] (Pt p2) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p2, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &scr, &scr, juce::Time::getCurrentTime(), p2, juce::Time::getCurrentTime(), 1, false); };
+                auto clickS = [&] (Pt p2) { scr.mouseDown (evS (p2)); scr.mouseUp (evS (p2)); drawS(); };
+                auto atS = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : scr.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+                const int ki = ses.indexOf (kickId), fi = ses.indexOf (fullId);
+                int quiet = -1;                                         // (one with no sound kept: the first taken, with nothing playing)
+                for (int i = 0; i < (int) ses.library.size(); ++i) if (! ses.clipFile (ses.library[(size_t) i].id).existsAsFile() && ! ses.library[(size_t) i].profile.has) { quiet = i; break; }
+                // (what a device with one pair of outputs is given: the headphones are mixed where the device is fed, not in the rig's own render)
+                juce::AudioBuffer<float> dev (2, 128);
+                auto rightOverLeft = [&]
+                {
+                    double l = 0.0, r = 0.0;
+                    for (int k = 0; k < 600; ++k)
+                    {
+                        float* outs[2] = { dev.getWritePointer (0), dev.getWritePointer (1) };
+                        e.audioDeviceIOCallbackWithContext (nullptr, 0, outs, 2, 128, juce::AudioIODeviceCallbackContext());
+                        for (int n = 0; n < 128; ++n) { l += std::abs (dev.getSample (0, n)); r += std::abs (dev.getSample (1, n)); }
+                    }
+                    return std::pair<double, double> (l, r);
+                };
+                for (int l = 0; l < kLanes; ++l) ses.userSet (cx::lane (l, cx::kMute), 1.0f);       // (the set is silent: what is heard is the snapshot)
+                bars (4.0);
+                // MACROS, a stack knob chosen: the list is beside it. PHONES is on its strip. With it out and no outputs 3 + 4, a press says the headphones have nowhere to play
+                scr.setPage (Screen::pMacros); scr.testPickKnob (5); drawS();
+                int phonesKeys = 0;                                     // (two: the small plate in the bar of every page, and the key on this strip)
+                for (auto& h : scr.testHits()) if (Screen::testIsPhones (h)) ++phonesKeys;
+                const bool keyThere = phonesKeys == 2 && ! e.phones() && ! e.cueIsHeard();
+                clickS (atS ([=] (const Screen::TestHit& h) { return Screen::testIsPick (h, ki); }));
+                const bool plays = ses.cueing() == kickId && scr.testHandId() == kickId && scr.testBarNote().contains ("NOWHERE TO PLAY");
+                // PHONES pressed there: the snapshot is in the right ear (the kick alone, loud against a silent set)
+                clickS (atS ([] (const Screen::TestHit& h) { return Screen::testIsPhones (h); }));
+                const auto lr = rightOverLeft();
+                const bool heard = e.phones() && e.cueIsHeard() && lr.second > 50.0 && lr.second > lr.first * 4.0;
+                // its kick put out on its card: silence in that ear; lit again: back. Pressed again: it stops
+                clickS (atS ([=] (const Screen::TestHit& h) { return Screen::testIsPickKey (h, ki, 0); }));
+                const auto lrOut = rightOverLeft();
+                clickS (atS ([=] (const Screen::TestHit& h) { return Screen::testIsPickKey (h, ki, 0); }));
+                const auto lrIn = rightOverLeft();
+                const bool stems = lrOut.second < lr.second * 0.05 && lrIn.second > lr.second * 0.5;
+                clickS (atS ([=] (const Screen::TestHit& h) { return Screen::testIsPick (h, ki); }));
+                const bool stops = ses.cueing() == 0;
+                // one with no sound kept: nothing plays, and the bar says so
+                bool silentSays = quiet < 0;
+                if (quiet >= 0) { clickS (atS ([=] (const Screen::TestHit& h) { return Screen::testIsPick (h, quiet); })); silentSays = ses.cueing() == 0 && scr.testBarNote().contains ("NO SOUND WAS KEPT"); }
+                // on a stack knob's card, one of its snapshots pressed: heard, with the parts it takes there; it is not taken off
+                ses.stackAdd (5, fullId); ses.stackAdd (5, kickId, Session::kAllLanes & ~(1u << 1));
+                drawS();
+                clickS (atS ([] (const Screen::TestHit& h) { return Screen::testIsSlot (h, 5, 1); }));
+                const auto* narrow = ses.cueNarrowed (kickId);
+                const bool slot = ses.cueing() == kickId && ses.knobs[5].snaps.size() == 2 && narrow != nullptr && ! narrow->lane[1] && narrow->lane[0];
+                ses.cue (0);
+                // the library: a press plays it and puts its keys on its card; the set is not touched until RECALL
+                scr.setPage (Screen::pLibrary); scr.testPlain(); drawS();
+                const float mutedWas = e.target (cx::lane (0, cx::kMute));
+                clickS (atS ([=] (const Screen::TestHit& h) { return Screen::testIsCard (h) && h.a == fi; }));
+                const bool lib = ses.cueing() == fullId && scr.testHandId() == fullId && atS ([=] (const Screen::TestHit& h) { return Screen::testIsPickKey (h, fi, 3); }).x > 0.0f
+                                 && e.target (cx::lane (0, cx::kMute)) == mutedWas && ses.baseId != fullId;
+                clickS (atS ([] (const Screen::TestHit& h) { return Screen::testIsRecallKey (h); }));
+                const bool recalled = ses.baseId == fullId && ses.cueing() == 0;
+                e.setPhones (false);
+                const bool previewOk = keyThere && plays && heard && stems && stops && silentSays && slot && lib && recalled;
+                std::printf ("  %s: a chip pressed is heard, with a real snapshot that has its sound: beside the knob in MACROS (PHONES is on that strip; with nowhere to play, the bar says so), its kick put out on its card is silence, "
+                             "one with no sound says so, one on a stack knob's card plays with its parts and is not taken off; in the library a press plays and RECALL takes\n", previewOk ? "ok  " : "FAIL");
+                if (! previewOk) { ++bad; std::printf ("    (key %d plays %d heard %d [l %.0f r %.0f] stems %d [out %.0f in %.0f] stops %d silent %d slot %d lib %d recalled %d: %s)\n", (int) keyThere, (int) plays, (int) heard, lr.first, lr.second,
+                                                          (int) stems, lrOut.second, lrIn.second, (int) stops, (int) silentSays, (int) slot, (int) lib, (int) recalled, scr.testBarNote().toRawUTF8()); }
+            }
             ses.remove (hatId);
             const bool gone = ! ses.clipFile (hatId).existsAsFile() && ses.clipFile (kickId).existsAsFile();
             std::printf ("  %s: a deleted snapshot's clip goes with it\n", gone ? "ok  " : "FAIL");
@@ -3150,6 +3223,7 @@ static int uiTest()
     }
     ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
     sc.testPlain();        // (and MODULES, STACKS, KNOBS, the finders and a stack's OPEN were: the designer shows the knob and every snapshot again)
+    e.setPhones (false);   // (and PHONES, which is on every page's bar)
     for (int i = cx::kMot; i < cx::kSnap; ++i) ses.userSet (i, ses.engine.control (i).def);       // (and MOTION's knobs were among those dragged: off again)
     // every CONFIG panel: each lane, the lead's two inserts, both returns
     std::vector<Engine::Target> targets;
@@ -3340,19 +3414,18 @@ static int uiTest()
         sc.setPage (Screen::pLibrary); draw();
         auto firstOf = [&] (bool (*is) (const Screen::TestHit&), int nth = 0) { int n = 0; for (auto& h : sc.testHits()) if (is (h) && n++ == nth) return h.r.getCentre(); return juce::Point<float>(); };
         auto countOf = [&] (bool (*is) (const Screen::TestHit&)) { int n = 0; for (auto& h : sc.testHits()) if (is (h)) ++n; return n; };
-        if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (left on by a check above: off, to begin)
+        sc.testPlain(); draw();                                             // (no snapshot is in hand, to begin)
         const bool noneYet = countOf (Screen::testIsScope) == 0;
-        click (firstOf (Screen::testIsCueKey)); draw();
         int cards = countOf (Screen::testIsCard);
-        click (firstOf (Screen::testIsCard, cards - 1)); draw();            // the one just taken: cued (or chosen, if it has no sound kept)
-        const bool row = countOf (Screen::testIsScope) == kLanes + 3;
+        click (firstOf (Screen::testIsCard, cards - 1)); draw();            // the one just taken, pressed: in hand (and heard, if it has a sound kept). The set is not touched
+        const bool row = countOf (Screen::testIsScope) == kLanes + 3 && sc.testHandId() == ses.library.back().id && std::abs (e.target (cut) - 0.9f) < 1.0e-4f;
         click (firstOf (Screen::testIsScope, 0)); draw();                   // the kick put out
         const bool out = ! sc.testScope (0) && sc.testScope (5);
         click (firstOf (Screen::testIsRecallKey)); draw();
         const bool took = std::abs (e.target (cut) - 0.15f) < 1.0e-4f && std::abs (e.target (punch) - 0.9f) < 1.0e-4f && sc.testScope (0);
         if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));
-        check (noneYet && row && out && took, "the library, a snapshot cued: fourteen keys say what RECALL takes (the lanes, the returns, the drum bus, the key); with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
-        if (sc.testCueMode()) { click (firstOf (Screen::testIsCueKey)); draw(); }      // (CUE off again)
+        check (noneYet && row && out && took, "the library, a snapshot pressed: it is in hand and the set is not touched; fourteen keys on its card say what RECALL takes (the lanes, the returns, the drum bus, the key); with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
+        sc.testPlain();
         // STACK: the stacks LOAD brought, one at a time
         {
             const int all = (int) ses.library.size();
@@ -4519,7 +4592,10 @@ static int uiTest()
     {
         auto key = [&] (int which) { for (auto& h : sc.testHits()) if (Screen::testIsArrKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         auto part = [&] (int i, int what) { for (auto& h : sc.testHits()) if (Screen::testIsArrPart (h, i, what)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
-        auto pick = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPick (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto pick = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPickAdd (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };      // (a snapshot's ADD)
+        auto chip = [&] (int i) { for (auto& h : sc.testHits()) if (Screen::testIsPick (h, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto chipKey = [&] (int i, int stem) { for (auto& h : sc.testHits()) if (Screen::testIsPickKey (h, i, stem)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto partKey = [&] (int i, int stem) { for (auto& h : sc.testHits()) if (Screen::testIsArrStem (h, i, stem)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_arrange_ui");
         tmp.deleteRecursively(); tmp.createDirectory();
         Recorder rec (ses.engine);
@@ -4537,6 +4613,41 @@ static int uiTest()
         click (part (0, 0)); draw();
         click (pick (3)); draw();                                                   // (after the one chosen: between the two)
         const bool between = ses.arrangement.size() == 3 && ses.arrangement[1].snap == third && sc.testSelPart() == 1;
+        // A chip pressed beside the arrangement is in hand and is not added by the press; its kick put out on its card, ADD: the
+        // part takes the rest. A part's own keys change what it takes, and the file keeps it. When the arrangement comes to
+        // it, the parts put out stay as they are.
+        bool partStems = false;
+        {
+            sc.testPlain(); draw();
+            click (chip (4)); draw();
+            const auto fourth = ses.library[4].id;
+            const bool notAdded = ses.arrangement.size() == 3 && sc.testHandId() == fourth && chipKey (4, 0).x > 0.0f;
+            click (chipKey (4, 0)); draw();
+            click (pick (4)); draw();
+            const juce::uint32 noKick = Session::kAllLanes & ~1u;
+            const bool withStems = ses.arrangement.size() == 4 && sc.testSelPart() == 2 && ses.arrangement[2].snap == fourth && ses.arrangement[2].lanes == noKick && ses.arrangement[1].lanes == Session::kAllLanes;
+            click (partKey (2, 5)); draw();
+            const bool keyed = ses.arrangement[2].lanes == (noKick & ~(1u << 5));
+            const auto filed = ses.stateVar()["arrangement"]["parts"];
+            const bool inFile = filed.size() == 4 && (juce::int64) filed[2]["lanes"] == (juce::int64) (noKick & ~(1u << 5)) && ! filed[1].hasProperty ("lanes");
+            // (the kick's lane and the bass's are not what the snapshot has; the pad's is)
+            const int kc = cx::lane (0, 5), bc = cx::lane (5, 6), pc = cx::lane (8, 6);
+            const auto* sn4 = ses.findSnap (fourth);
+            ses.userSet (cx::kGlide, 0.0f);
+            ses.userSet (kc, 0.37f); ses.userSet (bc, 0.41f); ses.userSet (pc, 0.43f);
+            ses.arrPlay (2); audio (4);
+            const bool comesIn = sn4 != nullptr && std::abs (ses.engine.target (kc) - 0.37f) < 1.0e-4f && std::abs (ses.engine.target (bc) - 0.41f) < 1.0e-4f
+                                 && std::abs (ses.engine.target (pc) - sn4->values[(size_t) pc]) < 1.0e-4f;
+            ses.arrStop(); ses.engine.setRunning (false); audio (4);
+            // a part pressed: the chosen one, and the one in the headphones (or silent, if its snapshot has no sound kept)
+            click (part (2, 0)); draw();
+            const bool pressed = sc.testSelPart() == 2 && (ses.cueing() == fourth || ! ses.clipFile (fourth).existsAsFile());
+            ses.cue (0);
+            ses.arrRemove (2); sc.testPickPart (1); sc.testPlain(); draw();
+            partStems = notAdded && withStems && keyed && inFile && comesIn && pressed && ses.arrangement.size() == 3;
+            if (! partStems) std::printf ("        (stems: not added %d with %d keyed %d file %d comes in %d [kick %.2f bass %.2f pad %.2f] pressed %d)\n", (int) notAdded, (int) withStems, (int) keyed, (int) inFile, (int) comesIn,
+                                          ses.engine.target (kc), ses.engine.target (bc), ses.engine.target (pc), (int) pressed);
+        }
         dragBy (part (1, 1), 0.0f, -40.0f); draw();
         const int bars = ses.arrangement[1].bars;
         dragBy (part (1, 2), 0.0f, -70.0f); draw();
@@ -4572,8 +4683,9 @@ static int uiTest()
         const bool cleared = ses.arrangement.empty() && sc.testSelPart() == -1;
         sc.keyPressed (juce::KeyPress ('a', juce::ModifierKeys(), 'a')); draw();
         const bool shut = sc.testPage() == Screen::pMain;
+        check (partStems, "the arrangement, a chip beside it pressed: in hand, not added; its ADD puts it in with the parts lit on its card; a part's own keys change what it takes, the file keeps it, and when the arrangement comes to the part the parts put out stay as they are");
         check (onMain && opened && added && between && dragged && later && earlier && removed && plays && stops && printing && locked && escaped && printed && cleared && shut,
-               ("the ARRANGE key opens the arrangement's page; a snapshot tapped there becomes a part after the one chosen; a part's BARS and MORPH are dragged (" + juce::String (bars) + " bars, " + Session::morphName (morph)
+               ("the ARRANGE key opens the arrangement's page; a snapshot's ADD there makes it a part after the one chosen; a part's BARS and MORPH are dragged (" + juce::String (bars) + " bars, " + Session::morphName (morph)
                     + "; a double-click: eight again); EARLIER, LATER and REMOVE; PLAY and STOP; PRINT is rendered by the page a slice at a time (" + juce::String (ticks) + " of them), takes nothing else meanwhile and stops for Esc; CLEAR, held, empties it; A shuts it").toRawUTF8());
         if (! (onMain && opened && added && between && dragged && later && earlier && removed && plays && stops && printing && locked && escaped && printed && cleared && shut))
             std::printf ("        (main %d opened %d added %d between %d dragged %d [%d bars, morph %d, first %d] later %d earlier %d removed %d plays %d stops %d printing %d locked %d escaped %d printed %d [%s] cleared %d shut %d)\n",

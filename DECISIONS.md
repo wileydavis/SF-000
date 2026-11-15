@@ -2931,8 +2931,65 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the wide library page; the E16 on any of this page; carrying on the library page and the
      arrangement (their cards are still only pressed).
 
+## A chip pressed plays, and carries its keys (Nov 15, 08:00): fifty-fifth build
+
+522. **You**, 07:55: "I need to be able to preview the snapshots on thr macro  page"
+     **You**, 08:05, after I said what might be the cause: "that was it. headphones was off
+     and no button."
+     **The preview was there and could not be heard.** A snapshot pressed in MACROS played in
+     the headphones, but PHONES is off every time SF-000 opens, its key was only on the
+     library's strip, and nothing said so.
+     - **PHONES is on the MACROS strip** (its right end), the same key as the library's.
+     - **A press that will not be heard says why**, in the bar: the headphones have nowhere to
+       play (press PHONES or H, or tick outputs 3 + 4), or no sound was kept with that
+       snapshot.
+     - *My fault, found on the way:* a stem key lit again on the snapshot in hand (build 54)
+       left the headphones silent until the snapshot was pressed twice. The checks had only
+       used snapshots with no sound kept, which pass on silence. There is now a check with a
+       real snapshot and its sound, listened to at the device's outputs.
+523. **You**, 07:59: "anywhere the interface shows sound chips, those should be playable and stel
+     selectable."
+     **One chip, on every page.** Pressed, it plays in the headphones; it is then the one in
+     hand, ringed, with a key for every part of the rig on its own card; what is put out is not
+     heard and does not go with it in what is done next.
+     - **MACROS**: the list and the column already did this (518). **The small numbered chips
+       on a stack knob's card play on a press** now, with the parts they take there, and the
+       place is chosen so their keys are in the column. *A press there used to take the chip
+       off the stack, with no warning: that is gone.* Taking one off is in the column.
+     - **The library**: a press plays the chip and puts its keys on it. **RECALL** takes the
+       one in hand to the set with the parts lit; two quick presses on the card do the same.
+       **The CUE key and the row of RECALL TAKES keys on the strip are gone**: the keys are on
+       the chip, and a press never changes the set. *This changes "tap recalls unless CUE is
+       lit", which was yours (the first library). I took your sentence to outrank it; say if
+       one-press recall should come back as a switch.*
+     - **The arrangement**: the chips at the right play on a press and carry their keys; their
+       **ADD** makes a part (a press used to). **A part has the keys on its own card**, and
+       takes only those parts of its snapshot when the arrangement comes to it, in PRINT too. A
+       part pressed is chosen and plays with them. The part cards are taller for the keys:
+       seven rows on the page where there were eight.
+     - What something else puts in the headphones (a stack knob with CUE lit, a card of the
+       column) is the one in hand on whatever page lists it.
+     - Leaving a page stops a snapshot that was pressed on it.
+524. **You**, 08:48: "in the last build, the setup button became phones again"
+     **You**, 08:50: "figured it out. setup button changed to phones when i use the H key
+     command."
+     **SETUP stays SETUP.** That was mine (187: the key turned green and read PHONES while
+     PHONES was on), and a key that changes its name reads as a fault. Now the SETUP key is
+     white and says SETUP whatever is lit, and **PHONES is a small plate of its own under
+     SETUP's name, on every page**: putty while it is out, green while it is lit, and pressed
+     it turns PHONES on or off. So there is a PHONES key wherever a snapshot can be heard,
+     MAIN and the arrangement included. The keys on the library's strip and the MACROS strip
+     stay. PHONES is still off each time SF-000 opens.
+     *Not built:* a song taken from the web library does not bring per-part stems; the E16 on
+     any of this; stems on the snapshot module's knobs on MAIN (they show names, not chips).
+
 ## Not verified
 
+- **A chip pressed plays (522, 523)**: checked with a real snapshot and its sound at the
+  device's outputs for MACROS, a stack knob's card and the library, with PHONES on one pair of
+  outputs. **Not checked with outputs 3 + 4 open** (the checks have two outputs), and not by
+  ear. An arrangement part's stems are checked by what the rig is set to when the part comes
+  in, not by listening to a print.
 - **In hand and carried (518 to 520)** are done in the drawn screen with made-up presses and
   moves, and read back from the session. **Nobody has carried a card with a hand**: how far
   the pointer has to move before a press becomes a carry (8 points here), whether the bar and

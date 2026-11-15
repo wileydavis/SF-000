@@ -57,9 +57,9 @@ public:
     juce::String loadFolder (bool fx) const     { return (fx ? loadFxDir : loadLaneDir).getFullPathName(); }
     void setLoadFolder (bool fx, const juce::String& path) { (fx ? loadFxDir : loadLaneDir) = path.isNotEmpty() ? juce::File (path) : juce::File(); }
     bool testLoadOpen() const                   { return loadOpen; }
-    bool testScope (int i) const                { return scopeOn[(size_t) i]; }
-    bool testCueMode() const                    { return cueMode; }
-    void showCue (int putOut = -1)              { cueMode = true; if (! ses.library.empty()) selSnap = ses.library.back().id; scopeFor = selSnap; scopeOn.fill (true); if (putOut >= 0) scopeOn[(size_t) putOut] = false; repaint(); }     // (the pictures: the library with a snapshot chosen for RECALL)
+    bool testScope (int i) const                { return ((handParts >> i) & 1u) != 0; }      // (a part of the snapshot in hand: lit)
+    juce::int64 testHandId() const              { return handId; }
+    void showCue (int putOut = -1)              { if (! ses.library.empty()) selSnap = handId = ses.library.back().id; handParts = Session::kAllLanes; if (putOut >= 0) handParts &= ~(1u << putOut); repaint(); }     // (the pictures: the library with a snapshot in hand)
     void showLoad (const juce::String& folder)  { setLoadFolder (cfg.kind != 0, folder); openLoad(); repaint(); }     // (the pictures: LOAD's list, open on that folder)
     bool testWatch (juce::uint32 now, bool inFront) { return watchStart (now, inFront); }
     // (these stand in front of the component's own: in 3D a repaint is the sheet and the parts brought up to date)
@@ -100,8 +100,7 @@ public:
     static bool testIsStep (const TestHit& h) { return h.kind == hStep; }
     static bool testIsConfig (const TestHit& h) { return h.kind == hSetup || h.kind == hDisplay; }
     static bool testIsFile (const TestHit& h)   { return h.kind == hFile; }
-    static bool testIsScope (const TestHit& h)  { return h.kind == hScope; }
-    static bool testIsCueKey (const TestHit& h) { return h.kind == hAct && h.a == aCue; }
+    static bool testIsScope (const TestHit& h)  { return h.kind == hPickKey; }        // (a key on the snapshot in hand)
     static bool testIsRecallKey (const TestHit& h) { return h.kind == hAct && h.a == aRecallCue; }
     static bool testIsCard (const TestHit& h)   { return h.kind == hCard; }
     static bool testIsLoadKey (const TestHit& h){ return h.kind == hAct && h.a == aLoad; }
@@ -124,7 +123,7 @@ public:
     juce::Point<float> testColumnGap (int at) const { return { 1287.0f, 110.0f + (float) (at - colScroll) * 74 - 4.0f }; }      // (between the column's cards: before the one at that place)
     static int testPickOf (const TestHit& h) { return h.kind == hPick ? h.a : -1; }
     void testFind (const juce::String& t) { findText = t; }
-    void testPlain() { modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; }
+    void testPlain() { modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; handId = 0; handParts = Session::kAllLanes; ses.cue (0); }
     static bool testIsStackCue (const TestHit& h) { return h.kind == hAct && h.a == aStackCue; }
     static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
     int testLibStack() const { return inAt(); }
@@ -133,6 +132,8 @@ public:
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
     juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
     static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
+    static bool testIsArrStem (const TestHit& h, int part, int stem) { return h.kind == hArrKey && h.a == part && h.b == stem; }      // (a key on a part of the arrangement)
+    static bool testIsSlot (const TestHit& h, int k, int at) { return h.kind == hSlot && h.a == k && h.b == at; }       // (one of the snapshots on a stack knob's card)
     static bool testIsNotesKey (const TestHit& h) { return h.kind == hAct && h.a == aNotes; }      // NOTES: whether a recall brings a snapshot's notes
     // the kinds of thing that say what they are when pointed at with INFO on
     static bool testAnswers (const TestHit& h) { return h.kind == hKnob || h.kind == hToggle || h.kind == hHold || h.kind == hRead || h.kind == hSnapKnob || h.kind == hLane || h.kind == hConfig
@@ -235,9 +236,10 @@ private:
                    hFind,
                    hPickKey,        // a key on the snapshot in hand, beside the knob (a: which snapshot of the library; b: the part): what goes with it when it is added
                    hColPut,         // the column, a stack of the shelf open: ON A KNOB (the first stack knob that holds nothing takes it)
-                   hKeptCard };     // a kept knob's card: carried onto a place         // the head of the snapshots (a: 0 whose they are, 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS, 5 FIND)
+                   hKeptCard,       // a kept knob's card: carried onto a place
+                   hArrKey };       // a key on a part of the arrangement (a: the part; b: the part of the rig)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch,
@@ -405,7 +407,6 @@ private:
     juce::uint32 onlineStamp = 0;               // the online status last drawn
     bool loadAsked = false, loadSeen = false, loadBusy = false;     // LOAD pressed on the snapshot module: asked for, seen at work, its key lit
     juce::String loadWas;                       // (what LOAD had last said when it was asked for)
-    bool cueMode = false;                       // the library: a tap is heard in the headphones, not recalled
     juce::String recNote;                       // what the recorder last had to say, shown for a few seconds
     juce::uint32 recNoteAt = 0;
     bool modList = false;                       // the designer shows the modules kept, in place of the column and the library
@@ -424,8 +425,6 @@ private:
     juce::int64 selSnap = 0;
     // The library, with a snapshot cued or chosen: what RECALL will take from it. All of it, unless
     // parts are put out first; and all again for the next (0 to 10: the lanes; 11: the returns; 12: the key).
-    std::array<bool, kLanes + 3> scopeOn;       // the lanes, the returns, the drum bus, the key
-    juce::int64 scopeFor = 0;
     int selKnob = 0, libScroll = 0, colScroll = 0, rackScroll = 0;
     bool rackList = false;              // the designer, a stack knob chosen: the stacks are beside the column (out: the snapshots)
     bool knobList = false;              // ... or the knobs kept are (either kind of knob chosen)
@@ -459,6 +458,7 @@ private:
     bool placeTakes (int k) const;                      // what is carried can go on that place
     void drop (juce::Point<float>);
     void putKept (int index, int k);
+    void heardSays (juce::int64 id, bool has);
     void drawCarry (G&);
     std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;

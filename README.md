@@ -60,7 +60,7 @@ First run:
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
 | **HOLD: NEW** (top bar, beside the flag) | held: a new track. The rig as it starts: no steps, no effects in the racks, every knob where the rig starts it, every MUTE and SOLO out, the macro knobs at rest. TEMPO, the master, the snapshot module's knobs and the library stay. A tap does nothing |
 | **LOAD** (on the snapshot module) | the modules kept on the instrument: choose one, and LOAD puts it in the chassis, whole (see Modules, below). The web library's module is **WEB LOAD**, in the library |
-| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. The head of the list says whose are listed and in what order (see Finding a snapshot, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
+| LIBRARY | the snapshot library: press a snapshot to hear it in the headphones (its card then shows a key for every part of the rig), **RECALL** to take it to the set with the parts lit, rename, hold DELETE. The head of the list says whose are listed and in what order (see Finding a snapshot, below) |
 | MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and ADD snapshots to its stack (see The snapshot module, and A macro knob, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be. The steps of the sequencer say the notes as the key has moved them, so a part reads as it sounds; on a lane that does not follow, a new step is written at the key's note |
@@ -400,18 +400,34 @@ The lit one is black. FITS NOW, MORE and LESS listen to the set when they are pr
 list stays put until the plate is pressed again. They work together: a stack's snapshots,
 nearest what is playing first, whose names hold DUB.
 
-**CUE** (in the library's strip) turns taps into listening: a tapped snapshot's four bars play in
-the headphones, on outputs 3 + 4, looped. While the clock runs they play in time: on the rig's bars
-and at the rig's tempo (so the pitch moves with the tempo's ratio to the clip's own). The set
-itself is not touched. Tap the card again to stop, another to hear that one, **RECALL** to take the
-one in the headphones to the set. Outputs 3 + 4 have to be ticked in SETUP once.
+#### A chip pressed plays, and carries its keys
+
+One rule for every page that shows snapshots (the library, MACROS, the arrangement):
+
+- **Press a snapshot and it plays in the headphones**: its four bars, on outputs 3 + 4, looped.
+  While the clock runs they play in time: on the rig's bars and at the rig's tempo (so the pitch
+  moves with the tempo's ratio to the clip's own). The set itself is not touched. Press it again
+  to stop, another to hear that one. Outputs 3 + 4 have to be ticked in SETUP once, or PHONES lit.
+- **It is then the one in hand**: its card is ringed, and where the others draw their sound it
+  has **a key for every part of the rig** (lanes 1 to 11, R the returns, B the drum bus, K the
+  key). Put a part out and it is not heard, and does not go with the snapshot in what is done
+  next.
+- **What is done next is the page's own key**: **RECALL** in the library (two quick presses on
+  the card do the same), **ADD** or carrying in MACROS, **ADD** beside the arrangement.
+- **If nothing will be heard, the bar at the top says why**: the snapshot has no sound kept
+  (taken with the clock stopped, or one of the rig's own), or the headphones have nowhere to
+  play. **PHONES** is on the strip of the library and of MACROS, and **H** anywhere.
+
+In the library a press used to recall the snapshot at once unless CUE was lit. There is no CUE
+key there now: a press never changes the set, and RECALL is what does.
 
 **PHONES** (beside CUE, or **H** on any screen) is for playing on headphones with only one pair of
 outputs. While a cue plays, outputs 1 + 2 carry the set in the left ear (both its sides, summed)
 and the cue in the right; when the cue stops, the set is back in both, over 10 ms. With no cue
-playing nothing is different. The SETUP key at the top turns green and reads PHONES while it is
-on. A recording, the meters and a snapshot's kept bars are the set itself whichever way it is.
-It is off every time SF-000 opens, so it cannot be left on for a PA.
+playing nothing is different. A small PHONES plate under SETUP's name, at the top of every page,
+is green while it is on; pressed, it turns PHONES on or off. A recording, the meters and a
+snapshot's kept bars are the set itself whichever way it is. It is off every time SF-000 opens,
+so it cannot be left on for a PA.
 
 Also kept, and not drawn yet: weight (the low end's share), density, tone against texture,
 movement from bar to bar, and how wet (the returns' share). `SF-000 --profiles` prints them for the
@@ -424,11 +440,11 @@ is there at once. Press it the moment you arrive (or while a knob glides) and th
 at once, but its card fills in a few bars later, once four bars of that state have played. If you
 move on first, it keeps the bars that were held; if there were none, the bars it was taken over.
 
-**A recall of part of a snapshot.** With CUE lit and a snapshot cued (or chosen), a row above the
-keys says what RECALL takes: lanes 1 to 11, RET (the returns), BUS (the drum bus) and KEY. Click one to put it out:
+**A recall of part of a snapshot.** The keys on the card of the snapshot in hand say what RECALL
+takes: lanes 1 to 11, R (the returns), B (the drum bus) and K (the key). Click one to put it out:
 that part then stays as it is, steps, inserts and CONFIG included, and RECALL takes the rest.
-After the recall all are lit again. A tap with CUE off, a snapshot knob and a sequencer's RECALL
-take everything, as always.
+After the recall all are lit again. A snapshot knob and a sequencer's RECALL take everything, as
+always.
 
 **What the scope leaves lit is what is in the headphones.** A snapshot keeps its lanes beside its
 four bars: each lane, the two returns and what the drum bus did, as they went into the mix
@@ -507,8 +523,12 @@ line. Each part is a snapshot, how many **BARS** it lasts, and its **MORPH**: ho
 into it takes, from its first bar. CUT: it is simply there. A morph as long as the part: the
 whole of it is one travel from the snapshot before.
 
-- **Making it.** Tap a snapshot in the library at the right: it becomes a part, after the one
-  that is chosen (a part comes in as the one before it is: the same bars, the same morph). Drag
+- **Making it.** Press a snapshot in the list at the right to hear it; its **ADD** makes it a
+  part, after the one that is chosen, taking the parts of the rig lit on its card (a part comes
+  in as the one before it is: the same bars, the same morph). **A part has the same keys on its
+  own card**: what it takes of its snapshot when the arrangement comes to it (the others stay as
+  they are then; PRINT takes it the same way). A part pressed is the chosen one, and plays in
+  the headphones with those parts. Drag
   a part's BARS (1 to 256) and its MORPH (the GLIDE list's own lengths; never longer than the
   part). A double-click puts either back (eight bars; cut). EARLIER and LATER move the chosen
   part, REMOVE takes it out, CLEAR (held) empties the line. Up to 64 parts.
@@ -759,8 +779,8 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
 - A stack holds up to 128 snapshots (the places of a controller's knob).
 - **MACROS** is where a stack knob is built, on the instrument alone. Pick a stack knob: its
   stack stands as a **column** of cards beside the library, in the knob's order.
-  - Press a snapshot in the list to hear it in the headphones (again to stop). It is then the
-    one **in hand**: its card is ringed and shows a key for every part of the rig. Put out
+  - Press a snapshot in the list to hear it in the headphones (again to stop; **PHONES** is at
+    the right end of the strip). It is then the one **in hand**: its card is ringed and shows a key for every part of the rig. Put out
     what should not go with it (heard at once).
   - **Carry it** into the column (press, move, let go between two cards: a yellow bar shows
     where), or onto any stack knob's place on the left (a yellow ring). Its **ADD** key puts

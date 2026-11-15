@@ -355,7 +355,7 @@ public:
     void finishTakes (bool all = false);
     int takesWaiting() const            { return (int) waiting.size(); }
     void recall (juce::int64 id);       // it becomes the base scene; sound knobs travel by GLIDE
-    void recallOver (juce::int64 id, double beats, bool notes);     // the same, travelling over that long whatever GLIDE says
+    void recallOver (juce::int64 id, double beats, bool notes, juce::uint32 lanes = kAllLanes);     // the same, travelling over that long whatever GLIDE says (and only those parts of the rig)
 
     // ---- the arrangement: snapshots in a line. Each part is a snapshot, how many bars it lasts,
     // and how long the way into it takes from its first bar (its MORPH: the GLIDE list's own
@@ -368,6 +368,7 @@ public:
         juce::int64 snap = 0;
         int bars = 8;
         int morph = 0;
+        juce::uint32 lanes = kAllLanes; // the parts of the rig it takes from its snapshot (the others stay as they are when it comes in)
         juce::NamedValueSet more;       // what the file says of it that this build does not know: carried
     };
     std::vector<ArrPart> arrangement;
@@ -377,10 +378,11 @@ public:
     int arrBars() const                 { return arrBarsBefore ((int) arrangement.size()); }
     double arrMorphBars (int part) const;               // its morph in bars, as it will be played (no longer than the part)
     double arrSeconds() const           { return (double) arrBars() * 4.0 * 60.0 / engine.tempo(); }
-    bool arrAdd (juce::int64 snap, int before = -1);    // at the end, or before that part; false: there is no room, or no such snapshot
+    bool arrAdd (juce::int64 snap, int before = -1, juce::uint32 lanes = kAllLanes);    // at the end, or before that part, taking those parts of the rig; false: there is no room, or no such snapshot
     void arrRemove (int part);
     void arrMove (int part, int by);                    // earlier (-1) or later (1)
     void arrSet (int part, int bars, int morph);        // (either below 0: as it is)
+    void arrLanes (int part, juce::uint32 lanes);       // the parts of the rig it takes from its snapshot
     // Playing it. From stopped: its first part (or `from`) is recalled at once and the clock sets
     // off from the top. While the clock runs: that part comes in on the next bar line. At its end
     // the clock stops. RUN stopped by hand puts the arrangement down.

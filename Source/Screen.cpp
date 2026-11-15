@@ -52,7 +52,6 @@ Screen::Screen (Session& s)
       fFlag   (face (BinaryData::BarlowSemiCondensedSemiBold_ttf, BinaryData::BarlowSemiCondensedSemiBold_ttfSize, 36.0f, 0.0f)),
       cfg (s.cfg), cfgOpen (s.cfgOpen)
 {
-    scopeOn.fill (true);
     setOpaque (true);
     setWantsKeyboardFocus (true);
     lastShown.fill (-1.0f);
@@ -65,7 +64,7 @@ Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullp
 void Screen::setPage (Page p)
 {
     endEdit (true);
-    if (p != pLibrary && page == pLibrary && cueMode) ses.cue (0);
+    if (p != page && handId != 0 && ses.cueing() == handId) ses.cue (0);       // (a snapshot pressed on the page being left stops)
     page = p; ses.showing = (int) p;
     eng.watchPockets (p == pPockets);           // (POCKETS looks at the lanes while its page is up, whatever AMOUNT is)
     pkSig.fill (0);
@@ -606,10 +605,6 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             below = true;
             break;
         }
-        case hScope:
-            t.title = "WHAT RECALL TAKES: " + (h.a < kLanes ? String (h.a + 1) + " " + lanes()[(size_t) h.a].name : h.a == kLanes ? String ("THE RETURNS") : h.a == kLanes + 1 ? String ("THE DRUM BUS") : String ("THE KEY"));
-            body = "LIT: THIS PART COMES FROM THE SNAPSHOT WHEN RECALL IS PRESSED. OUT: IT STAYS AS IT IS NOW. CLICK TO PUT IT OUT OR BACK. AFTER A RECALL, AND FOR ANOTHER SNAPSHOT, ALL ARE LIT AGAIN.";
-            break;
         case hPocket:
             t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name + ": ITS POCKET";
             body = "THE YELLOW SHAPE IS THE PART OF THE SPECTRUM THAT IS THIS LANE'S OWN: AS TALL AS ITS HOLD. DRAG IT LEFT AND RIGHT TO MOVE IT (HOME), UP AND DOWN TO WIDEN IT (WIDTH); DOUBLE-CLICK: BACK TO WHERE IT STARTS. "
@@ -652,9 +647,17 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             t.title = "ADD";
             body = "PUTS THIS STACK'S SNAPSHOTS INTO WHAT IS OPEN IN THE COLUMN (THE CHOSEN STACK KNOB, OR ANOTHER STACK), AFTER WHAT IT HOLDS, EACH WITH ITS PARTS. A KNOB THAT HELD NOTHING AND HAS NO NAME TAKES THE STACK'S.";
             break;
+        case hArrKey:
+            t.title = "A PART OF THE RIG";
+            body = "BLACK: WHEN THE ARRANGEMENT REACHES THIS PART, THIS PART OF THE RIG COMES FROM ITS SNAPSHOT. AN EMPTY FRAME: IT STAYS AS IT IS THEN. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. HEARD AT ONCE WHILE THE PART IS IN THE HEADPHONES. PRINT TAKES IT THE SAME WAY.";
+            break;
+        case hSlot:
+            t.title = "A SNAPSHOT OF THIS KNOB'S STACK";
+            body = "PRESSED: HEARD IN THE HEADPHONES WITH THE PARTS IT TAKES HERE (AMBER: NOT ALL OF THEM), AND THE PLACE IS CHOSEN, SO ITS STACK IS IN THE COLUMN: ITS KEYS, ITS ORDER AND TAKING IT OFF ARE THERE.";
+            break;
         case hPickKey:
             t.title = "A PART OF THE RIG";
-            body = "ON THE SNAPSHOT IN HAND (THE ONE LAST PRESSED): BLACK, THIS PART GOES WITH IT WHEN IT IS ADDED; AN EMPTY FRAME, IT DOES NOT. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. HEARD AT ONCE WHILE IT IS IN THE HEADPHONES.";
+            body = "ON THE SNAPSHOT IN HAND (THE ONE LAST PRESSED): BLACK, THIS PART GOES WITH IT WHEN IT IS RECALLED, ADDED TO A STACK OR PUT IN THE ARRANGEMENT; AN EMPTY FRAME, IT DOES NOT (AND STAYS AS IT IS NOW). 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. HEARD AT ONCE WHILE IT IS IN THE HEADPHONES.";
             break;
         case hColPut:
             t.title = "ON A KNOB";
@@ -724,7 +727,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aModRename, "RENAME", "THE CHOSEN MODULE'S NAME: TYPE, THEN RETURN." },
                 { aModOut, "HOLD: OUT", "HELD: TAKES THE CHOSEN MODULE OUT OF THOSE KEPT. NOT THE ONE IN THE CHASSIS." },
                 { aNewTrack, "HOLD: NEW", "HELD: A NEW TRACK. THE RIG AS IT STARTS: NO STEPS, NO EFFECTS IN THE RACKS, EVERY KNOB WHERE THE RIG STARTS IT, EVERY MUTE AND SOLO OUT, THE MACRO KNOBS AT REST. TEMPO, THE MASTER, THE SNAPSHOT MODULE'S KNOBS AND THE LIBRARY STAY. TAKE A SNAPSHOT FIRST IF WHAT IS PLAYING IS WORTH KEEPING." },
-                { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (THE KEY IS GREEN AND READS PHONES WHILE PHONES IS ON.)" },
+                { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (PHONES, UNDER ITS NAME, IS ITS OWN SMALL KEY.)" },
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
                 { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
@@ -747,7 +750,6 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aLearnDrop, "DROP", "PUTS BACK THE KNOBS MOVED SINCE LEARN AND TIES NOTHING." },
                 { aCfgClose, "X", "CLOSES CONFIG." },
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
-                { aCue, "CUE", "WHILE IT IS LIT, A TAPPED SNAPSHOT'S BARS ARE HEARD IN THE HEADPHONES, IN TIME WITH THE CLOCK, AND THE SET IS LEFT ALONE." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
                 { aOnline, "ONLINE", "EACH SNAPSHOT GOES TO THE LIBRARY ON THE WEB AS IT IS TAKEN. GREEN: IT HOLDS THEM ALL. YELLOW: SENDING. AMBER: WAITING. RED: TURNED AWAY." },
@@ -764,7 +766,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER BESIDE IT IS AMOUNT." },
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
-                { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A CUE PLAYS, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO. IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
+                { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A SNAPSHOT PLAYS IN THEM, THE SET IS IN THE LEFT EAR AND THE SNAPSHOT IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO, AND THE SMALL PLATE UNDER SETUP ON EVERY PAGE (GREEN WHILE IT IS LIT). IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
             };
             for (const auto& a : acts) if (a.a == h.a) { t.title = a.title; body = a.body; }
             if (t.title.isEmpty()) return t;
@@ -902,6 +904,12 @@ void Screen::drawAll (G& g)
         g.setColour (col::sea);
         g.fillRoundedRectangle (R (8, 12, 1712, 1092), 8.0f);
     }
+    // (a snapshot something else put in the headphones, a stack knob or a card of the column, is the one in hand, with the parts it plays with)
+    if (const auto c = ses.cueing(); c != 0 && c != handId && ses.findSnap (c) != nullptr)
+    {
+        handId = c; handParts = Session::kAllLanes;
+        if (const auto* sc = ses.cueNarrowed (c)) handParts = Session::lanesOf (*sc) & Session::kAllLanes;
+    }
     drawBar (g);
     if (page == pMain) drawMain (g);
     else if (page == pLibrary) drawLibrary (g);
@@ -969,11 +977,13 @@ void Screen::drawBar (G& g)
             if ((page == pMain || page == pMacros) && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs())
                 plate (g, 798.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
         }
-        // (PHONES lit: this output is split while a cue plays, and the key says so wherever one is)
-        text (g, eng.phones() ? "PHONES" : "SETUP", R (1116, 17.5f, 60, 40), fLegend, col::black, juce::Justification::centredLeft);
+        // SETUP is SETUP whatever is lit. Under its name, on every page, PHONES: a small plate, green while it is lit (this output
+        // is then split while a snapshot plays in the headphones); pressed, it is lit or put out, as H does.
+        text (g, "SETUP", R (1116, 16.5f, 60, 22), fLegend, col::black, juce::Justification::centredLeft);
+        plate (g, 1116.0f, 39.5f, "PHONES", fLbl, 4, eng.phones() ? col::green : col::putty, col::black, 18);
         text (g, "RUN", R (1222, 17.5f, 40, 40), fLegend, col::black, juce::Justification::centredLeft);
         text (g, "PANIC", R (1314, 17.5f, 56, 40), fLegend, col::black, juce::Justification::centredLeft);
-        key (g, R (1070, 17.5f, 40, 40), eng.phones() ? col::green : col::white, pressed (aAudio) ? 6.0f : 2.0f);
+        key (g, R (1070, 17.5f, 40, 40), col::white, pressed (aAudio) ? 6.0f : 2.0f);
         key (g, R (1176, 17.5f, 40, 40), eng.isRunning() ? col::green : col::putty, pressed (aRun) ? 6.0f : 2.0f, eng.isRunning());      // (RUN latches: down while it runs)
         key (g, R (1268, 17.5f, 40, 40), col::red, pressed (aPanic) ? 6.0f : 2.0f);
         // following an outside clock, the tempo is that clock's and says so
@@ -997,6 +1007,7 @@ void Screen::drawBar (G& g)
     hit (R (808, 17.5f, 40, 40), hAct, aSnapshot, 0);
     hit (R (950, 17.5f, 40, 40), hAct, aRec, 0);
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
+    hit (R (1114, 38.5f, 56, 20), hAct, aPhones, 0);         // (PHONES, under SETUP's name: on every page)
     hit (R (1176, 17.5f, 40, 40), hAct, aRun, 0);
     hit (R (1268, 17.5f, 40, 40), hAct, aPanic, 0);
     hit (R (1373, 17.5f, 96, 40), hRead, cx::kTempo, 0);
@@ -1737,8 +1748,9 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
 {
     hit (r, hitKind, index, 0);
     const float x0 = r.getX() + 6, y0 = r.getY() + 6;
-    // (beside the knob, the one in hand has a key for every part of the rig where the others draw their sound: what goes with it when it is added)
-    const bool inHand = hitKind == hPick && page == pMacros && s.id == handId;
+    // (on every page the one in hand has a key for every part of the rig where the others draw their sound: what is heard of
+    // it, and what goes with it when it is recalled, added to a stack or put in the arrangement)
+    const bool inHand = s.id == handId && (hitKind == hPick || hitKind == hCard);
     if (inHand) for (int p = 0; p < kLanes + 3; ++p) hit (R (x0 + (float) p * 18.6f, y0 + 30, 17.0f, 24), hPickKey, index, p);
     if (! vis (g, r)) return;
     card (g, r, selected || inHand);
@@ -1747,13 +1759,12 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     tag (g, R (x0, y0, wTag, 24), num);
     const bool isBase = s.id == ses.baseId;
     // (in the designer the card is heard when it is pressed, its name green while it is in the headphones, and ADD puts it on the chosen knob)
-    const bool adds = hitKind == hPick && page == pMacros, heard = s.id == ses.cueing();
+    const bool adds = hitKind == hPick && (page == pMacros || page == pArrange), heard = s.id == ses.cueing();
     // the base scene's name is the black one; on the dark instrument, the lit one
-    const float wn = adds && heard ? plate (g, x0 + wTag, y0, s.name, fLegend, 8, col::green, col::lit, 24)
+    const float wn = heard ? plate (g, x0 + wTag, y0, s.name, fLegend, 8, col::green, col::lit, 24)
                                    : plate (g, x0 + wTag, y0, s.name, fLegend, 8, isBase ? (night() ? col::lit : col::black) : col::white, isBase ? (night() ? col::black : col::lit) : col::black, 24);
     if (selected && hitKind == hCard) selNameRect = R (x0 + wTag, y0, std::max (wn, 150.0f), 24);
     if (adds) { const R ar (r.getRight() - 6 - 44, y0, 44, 24); window (g, ar, col::white); text (g, "ADD", ar, fNote, col::black); }
-    else if (heard) plate (g, r.getRight() - 6 - (std::ceil (tw (fLegend, "IN THE PHONES")) + 16), y0, "IN THE PHONES", fLegend, 8, col::green, col::lit, 24);
     else text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
     if (inHand)
     {
@@ -1959,47 +1970,15 @@ void Screen::drawLibrary (G& g)
     const bool has = ses.findSnap (selSnap) != nullptr;
     actKey (g, aRename, x0 + 226, ky, 64, "RENAME", col::yellow, 5, has);
     actKey (g, aDelete, x0 + 308, ky, 64, "HOLD: DELETE", col::red, 5, has);
-    // CUE: taps are heard in the headphones; RECALL then takes the one being heard (or the one chosen) to the set
-    actKey (g, aCue, x0 + 386, ky, 64, "CUE", cueMode ? col::green : col::putty, 5, true, cueMode);
-    actKey (g, aRecallCue, x0 + 452, ky, 64, "RECALL", col::yellow, 5, cueMode && (ses.cueing() != 0 || has));
-    // What RECALL takes of it: every lane, the returns and the master, unless some are put out
-    // first. Put out, a part stays as it is now. The next snapshot starts with all of them again.
-    {
-        const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap;
-        if (id != scopeFor)
-        {
-            // (one a stack knob put in the headphones comes with the parts that stack gives it)
-            scopeFor = id; scopeOn.fill (true);
-            if (const auto* sc = ses.cueNarrowed (id))
-            {
-                for (int i = 0; i < kLanes; ++i) scopeOn[(size_t) i] = sc->lane[(size_t) i];
-                scopeOn[(size_t) kLanes] = sc->returns; scopeOn[(size_t) kLanes + 1] = sc->bus; scopeOn[(size_t) kLanes + 2] = sc->master;
-            }
-        }
-        if (cueMode && ses.findSnap (id) != nullptr)
-        {
-            text (g, "RECALL TAKES", R (x0 + 386, y0 + 4, 96, 24), fLbl, col::black, juce::Justification::centredLeft);
-            for (int i = 0; i < kLanes + 3; ++i)
-            {
-                const R kr (x0 + 486 + (float) i * 40, y0 + 4, 36, 24);
-                key (g, kr, scopeOn[(size_t) i] ? col::white : col::putty, 2.0f, scopeOn[(size_t) i]);
-                const String name = i < kLanes ? String (i + 1) : i == kLanes ? String ("RET") : i == kLanes + 1 ? String ("BUS") : String ("KEY");
-                if (scopeOn[(size_t) i]) text (g, name, kr, fLbl, col::black);
-                else textRaw (g, name, kr, fLbl, inkOn (glass (col::putty), col::black).withAlpha (0.5f));        // (put out: still to be read, dimly)
-                hit (kr.expanded (1), hScope, i, 0);
-            }
-        }
-    }
-    // PHONES: one pair of outputs with headphones on it. While a cue plays: the set left, the cue right.
-    actKey (g, aPhones, x0 + 518, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5, true, eng.phones());
+    // RECALL takes the snapshot in hand to the set, with the parts lit on its card (put out, a part stays as it is now)
+    actKey (g, aRecallCue, x0 + 386, ky, 64, "RECALL", col::yellow, 5, ses.findSnap (handId) != nullptr || has);
+    // PHONES: one pair of outputs with headphones on it. While a snapshot plays: the set left, the snapshot right.
+    actKey (g, aPhones, x0 + 452, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5, true, eng.phones());
     // NOTES: whether a recall brings a snapshot's notes
-    actKey (g, aNotes, x0 + 584, ky, 64, "NOTES", ses.recallNotes ? col::green : col::putty, 5, true, ses.recallNotes);
-    const String help = ! cueMode ? (night() ? "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE LIT NAME IS THE BASE SCENE."
-                                             : "TAP A SNAPSHOT TO RECALL IT. SOUND KNOBS TRAVEL OVER THE GLIDE TIME. THE BLACK NAME IS THE BASE SCENE.")
-                      : eng.phones() ? "CUE WITH PHONES LIT: WHILE A SNAPSHOT'S BARS PLAY, THE SET IS IN THE LEFT EAR AND THE CUE IN THE RIGHT. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET."
-                      : ! eng.hasCueOutput() ? "CUE NEEDS OUTPUTS 3 + 4 FOR THE HEADPHONES (TICK THEM IN SETUP), OR PHONES LIT: THEN THIS OUTPUT CARRIES THE SET LEFT AND THE CUE RIGHT."
-                      : "CUE: TAP A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES, IN TIME WITH THE CLOCK. TAP IT AGAIN TO STOP. RECALL TAKES IT TO THE SET.";
-    if (online == nullptr) { text (g, help, R (x0 + 672.0f, ky, 974.0f, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
+    actKey (g, aNotes, x0 + 518, ky, 64, "NOTES", ses.recallNotes ? col::green : col::putty, 5, true, ses.recallNotes);
+    const String help = ! eng.cueIsHeard() ? "A SNAPSHOT PRESSED PLAYS IN THE HEADPHONES. THEY NEED OUTPUTS 3 + 4 (SETUP), OR PHONES LIT: THE SET LEFT, THE SNAPSHOT RIGHT."
+                      : "PRESS A SNAPSHOT TO HEAR ITS BARS IN THE HEADPHONES. ITS KEYS: THE PARTS RECALL TAKES. RECALL (OR TWO QUICK PRESSES) TAKES IT TO THE SET.";
+    if (online == nullptr) { text (g, help, R (x0 + 606.0f, ky, 1040.0f, 40), fLbl, col::black, juce::Justification::centredLeft); return; }
     // ONLINE: each snapshot goes to the library on the web as it is taken. The lamp: green when the
     // library holds them all, yellow while sending, amber when it waits (no network, or not set up), red when turned away.
     const auto st = online->status().state;
@@ -2350,6 +2329,8 @@ void Screen::drawMacros (G& g)
         while (nm.length() > 3 && std::ceil (tw (fNote, nm)) + 12.0f > strip.getRight() - 8 - (mx + w + 2)) nm = nm.dropLastCharacters (1);
         plate (g, mx + w + 2, y0, nm, fNote, 6, col::white, col::black);
         actKey (g, aModules, mx, ky, 64, "MODULES", modList ? col::green : col::white, 5, true, modList);
+        // PHONES, as in the library: a snapshot pressed here is heard in the headphones, and this is how they are had on one pair of outputs
+        actKey (g, aPhones, x0 + 1612, ky, 64, "PHONES", eng.phones() ? col::green : col::putty, 5, true, eng.phones());
         if (modList)
         {
             const bool other = selMod >= 0 && selMod < (int) ses.modules.size() && selMod != ses.moduleIndex();
@@ -2448,6 +2429,18 @@ void Screen::putKept (int index, int k)
         default:                  recNote = "A MACRO KNOB GOES ON 1 TO 4, A STACK KNOB ON 5 TO 12, 14 OR 15"; break;
     }
     recNoteAt = juce::Time::getMillisecondCounter();
+}
+
+// A snapshot was pressed to be heard, beside the knob. If nothing will be heard, the bar says why: it has no sound kept, or
+// the headphones have nowhere to play (no outputs 3 + 4, and PHONES is out).
+void Screen::heardSays (juce::int64 id, bool has)
+{
+    const auto* sn = ses.findSnap (id);
+    if (! has) recNote = "NO SOUND WAS KEPT WITH " + (sn != nullptr ? sn->name : String ("IT")) + " (TAKEN WITH THE CLOCK STOPPED, OR ONE OF THE RIG'S OWN): NOTHING TO HEAR";
+    else if (! eng.cueIsHeard()) recNote = "IT PLAYS IN THE HEADPHONES, AND THEY HAVE NOWHERE TO PLAY. PRESS PHONES (OR H): THE SET LEFT, THE SNAPSHOT RIGHT. OR TICK OUTPUTS 3 + 4 IN SETUP";
+    else return;
+    recNoteAt = juce::Time::getMillisecondCounter();
+    dirty (R (8, 12, 1712, 52));
 }
 
 // What was carried is let go: between two cards of the column, on a place, or nowhere.
@@ -2803,20 +2796,31 @@ void Screen::drawArrange (G& g)
         }
     }
     // the parts
-    const int rows = 8;
+    // (each a card: its number and name; a key for every part of the rig it takes from its snapshot; how long it is and how it comes in)
+    const int rows = 7;
     arrScroll = juce::jlimit (0, std::max (0, (n - 1) / 4 - (rows - 1)), arrScroll);
     for (int q = 0; q < rows * 4; ++q)
     {
         const int i = arrScroll * 4 + q;
         if (i >= n) break;
         const auto& p = ses.arrangement[(size_t) i];
-        const R r (23.0f + (float) (q % 4) * 282, 184.0f + (float) (q / 4) * 98, 272, 92);
+        const R r (23.0f + (float) (q % 4) * 282, 184.0f + (float) (q / 4) * 113, 272, 107);
         hit (r, hArrPart, i, 0);
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
-        const R br (x0, y0 + 34, 66, 40), mr (x0 + 70, y0 + 34, 108, 40);
+        const R br (x0, y0 + 54, 66, 40), mr (x0 + 70, y0 + 54, 108, 40);
         if (i > 0 || true) { hit (br, hArrBars, i, 0); if (i > 0) hit (mr, hArrMorph, i, 0); }
+        for (int k = 0; k < kLanes + 3; ++k) hit (R (x0 + (float) k * 18.6f, y0 + 27, 17.0f, 24), hArrKey, i, k);
         if (! vis (g, r)) continue;
         card (g, r, i == selPart);
+        {
+            static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
+            for (int k = 0; k < kLanes + 3; ++k)
+            {
+                const R kr (x0 + (float) k * 18.6f, y0 + 27, 17.0f, 24);
+                if (((p.lanes >> k) & 1u) != 0) { window (g, kr, col::black); text (g, partName[k], kr, fNote, col::lit); }
+                else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[k], kr, fNote, tone (col::black).withAlpha (0.45f)); }
+            }
+        }
         const String num (i + 1);
         const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
         tag (g, R (x0, y0, wTag, 24), num);
@@ -2829,8 +2833,8 @@ void Screen::drawArrange (G& g)
         // (a morph longer than the part is the whole of the part)
         const bool whole = glideBarsFor ((float) p.morph / 11.0f) > (double) p.bars;
         readout (g, mr, i == 0 ? "COMES IN" : "MORPH", i == 0 ? String ("AT ONCE") : whole ? String ("ALL OF IT") : Session::morphName (p.morph));
-        text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 34, 76, 20), fLbl, col::black, juce::Justification::centredRight);
-        text (g, "FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 54, 76, 20), fLbl, col::black, juce::Justification::centredRight);
+        text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 54, 76, 20), fLbl, col::black, juce::Justification::centredRight);
+        text (g, "FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 74, 76, 20), fLbl, col::black, juce::Justification::centredRight);
     }
     // the library, to take from
     const float top = drawFind (g, 1151.0f, 554.0f, 78.0f);
@@ -2842,7 +2846,9 @@ void Screen::drawArrange (G& g)
         const int at = libScroll * 2 + q;
         if (at >= lib) break;
         const int i = list[(size_t) at];
-        drawSnapCard (g, ses.library[(size_t) i], i, R (1151.0f + (float) (q % 2) * 282, top + (float) (q / 2) * 74, 272, 66), false, hPick);
+        const R cr (1151.0f + (float) (q % 2) * 282, top + (float) (q / 2) * 74, 272, 66);
+        drawSnapCard (g, ses.library[(size_t) i], i, cr, false, hPick);
+        hit (R (cr.getRight() - 6 - 44, cr.getY() + 6, 44, 24), hPickAdd, i, 0);
     }
     const R strip (23, 980, 1682, 110);
     panel (g, strip, col::putty);
@@ -2872,7 +2878,7 @@ void Screen::drawArrange (G& g)
         else now = ses.printNote;
         g.setColour (tone (col::black)); g.setFont (fLegend);
         g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 700, (int) y0, 970, 24), juce::Justification::centredLeft, 1, 0.7f);
-        const String help = "TAP A SNAPSHOT ON THE RIGHT TO ADD IT AFTER THE CHOSEN PART. DRAG A PART'S BARS, AND ITS MORPH: HOW LONG THE WAY INTO IT TAKES, FROM ITS FIRST BAR (CUT: IT IS SIMPLY THERE). "
+        const String help = "PRESS A SNAPSHOT ON THE RIGHT TO HEAR IT; ITS ADD PUTS IT AFTER THE CHOSEN PART, WITH THE PARTS LIT ON IT. A PART'S KEYS: WHAT IT TAKES OF ITS SNAPSHOT. DRAG ITS BARS, AND ITS MORPH: HOW LONG THE WAY INTO IT TAKES (CUT: IT IS SIMPLY THERE). "
                             "THE KNOBS TRAVEL OVER THE MORPH, PATTERNS CHANGE ON THE BAR, AND WHAT CANNOT TRAVEL IS CROSSED OVER, AS IN ANY RECALL. THE SNAPSHOT KNOBS AND THEIR MOTION PLAY OVER IT. "
                             "PRINT RENDERS IT TO FILES: THE TRACK AND ITS PARTS, IN THE FOLDER TAKES GO TO.";
         g.setFont (fLbl);
@@ -2921,7 +2927,6 @@ void Screen::act (int a)
         case aCfgClose: cfgOpen = false; break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
-        case aCue:      cueMode = ! cueMode; if (! cueMode) ses.cue (0); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
         case aNotes:    ses.setRecallNotes (! ses.recallNotes); repaint(); break;
         case aPockets:  setPage (page == pPockets ? pMain : pPockets); break;
@@ -2952,14 +2957,14 @@ void Screen::act (int a)
         case aOnlineSetup: if (onOnlineSetup) onOnlineSetup(); break;
         case aFetch:    if (online != nullptr && ! online->loading()) { loadWas = online->loadLine(); online->askLoad(); loadAsked = page != pLibrary; loadSeen = false; } break;
         case aRecallCue:
-            if (const auto id = ses.cueing() != 0 ? ses.cueing() : selSnap; ses.findSnap (id) != nullptr)
+            // the snapshot in hand (or, with none, the chosen one) to the set, with the parts lit on its card
+            if (const auto id = ses.findSnap (handId) != nullptr ? handId : selSnap; ses.findSnap (id) != nullptr)
             {
-                Session::Scope sc;
-                if (id == scopeFor) { for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i]; sc.returns = scopeOn[(size_t) kLanes]; sc.bus = scopeOn[(size_t) kLanes + 1]; sc.master = scopeOn[(size_t) kLanes + 2]; }
+                Session::Scope sc = id == handId ? Session::scopeOf (handParts) : Session::Scope();
                 sc.notes = ses.recallNotes;
                 selSnap = id; ses.recall (id, sc); ses.cue (0);
-                scopeOn.fill (true);                    // (the next recall takes everything again)
-                ses.cueWith (0, {});                    // (and the next cue is whole)
+                handParts = Session::kAllLanes;         // (the next recall takes everything again)
+                ses.cueWith (0, {});                    // (and the next one heard is whole)
             }
             break;
         case aLibrary:  setPage (pLibrary); break;
@@ -3081,17 +3086,6 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hFront:    ses.bring ({ h->a, h->b }, 0); break;
         case hConfig:   openConfig ({ h->a, h->b / 8, h->b % 8 }); break;
         case hFile:     pickLoad (h->a); break;
-        case hScope:
-            if (h->a >= 0 && h->a < kLanes + 3)
-            {
-                scopeOn[(size_t) h->a] = ! scopeOn[(size_t) h->a];
-                // what is in the headphones is what the recall would bring: the lanes that are lit, and no others
-                Session::Scope sc;
-                for (int i = 0; i < kLanes; ++i) sc.lane[(size_t) i] = scopeOn[(size_t) i];
-                sc.returns = scopeOn[(size_t) kLanes]; sc.bus = scopeOn[(size_t) kLanes + 1];
-                ses.cueWith (scopeFor, sc);
-            }
-            break;
         case hSetup:
             if (h->a < (int) cfgParams.size())
             {
@@ -3126,16 +3120,31 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             if (h->a == aRec) repaint();
             return;
         case hCard:
-            selSnap = ses.library[(size_t) h->a].id;
-            if (! cueMode) ses.recall (selSnap);
-            else if (ses.cueing() == selSnap) ses.cue (0);
-            else ses.cue (selSnap);
+        {
+            // the library: a snapshot pressed is the chosen one and the one in hand (its card shows the keys for its parts), and is
+            // heard in the headphones with the parts that are lit; pressed again, it stops. RECALL is what takes it to the set.
+            const auto id = ses.library[(size_t) h->a].id;
+            selSnap = id;
+            if (id != handId) { handId = id; handParts = Session::kAllLanes; }
+            if (ses.cueing() == id) ses.cue (0);
+            else { if (handParts == Session::kAllLanes) ses.cueWith (0, Session::Scope()); else ses.cueWith (id, Session::scopeOf (handParts)); heardSays (id, ses.cue (id)); }
             break;
+        }
         case hKnobCard: selKnob = h->a; openStack = {}; break;       // (a place chosen: a stack that was open is put away)
         case hSlot:
         {
+            // one of the snapshots on a stack knob's card, pressed: the place is chosen (its stack is in the column, with this one in
+            // view) and the snapshot is heard with the parts it takes there; pressed again, it stops. (It is taken off in the column.)
             selKnob = h->a; openStack = {};
-            ses.stackDrop (h->a, h->b);
+            const auto& kn = ses.knobs[(size_t) selKnob];
+            if (h->b < (int) kn.snaps.size())
+            {
+                const auto id = kn.snaps[(size_t) h->b];
+                const juce::uint32 lanes = kn.lanesAt ((size_t) h->b) & Session::kAllLanes;
+                if (h->b < colScroll || h->b > colScroll + 10) colScroll = std::max (0, h->b - 5);
+                if (ses.cueing() == id) ses.cue (0);
+                else { ses.cueWith (id, Session::scopeOf (lanes)); heardSays (id, ses.cue (id)); }
+            }
             break;
         }
         // the column: the chosen stack knob's stack, or the stack that is open
@@ -3166,19 +3175,34 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 recNoteAt = juce::Time::getMillisecondCounter();
             }
             break;
-        case hArrPart:  selPart = h->a; break;
+        case hArrPart:
+        {
+            // a part of the arrangement pressed: it is the chosen one, and is heard in the headphones with the parts of the rig it takes; pressed again, it stops
+            selPart = h->a;
+            if (h->a < (int) ses.arrangement.size())
+            {
+                const auto& pt = ses.arrangement[(size_t) h->a];
+                if (ses.cueing() == pt.snap) ses.cue (0);
+                else if (ses.findSnap (pt.snap) != nullptr) { ses.cueWith (pt.snap, Session::scopeOf (pt.lanes & Session::kAllLanes)); heardSays (pt.snap, ses.cue (pt.snap)); }
+            }
+            break;
+        }
+        case hArrKey:
+        {
+            // a key on a part: that part of the rig comes from its snapshot when the arrangement reaches it, or stays as it is
+            if (h->a >= (int) ses.arrangement.size()) break;
+            selPart = h->a;
+            const auto id = ses.arrangement[(size_t) h->a].snap;
+            const juce::uint32 lanes = (ses.arrangement[(size_t) h->a].lanes ^ (1u << h->b)) & Session::kAllLanes;
+            ses.arrLanes (h->a, lanes);
+            if (ses.cueing() == id) ses.cueWith (id, Session::scopeOf (lanes));
+            break;
+        }
         case hArrBars:  selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].bars; break;
         case hArrMorph: selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].morph; break;
         case hPick:
         {
-            if (page == pArrange)
-            {
-                // a snapshot tapped: a part after the one that is chosen (with none chosen, at the end)
-                const int n = (int) ses.arrangement.size(), at = selPart >= 0 && selPart + 1 < n ? selPart + 1 : -1;
-                if (ses.arrAdd (ses.library[(size_t) h->a].id, at)) selPart = at >= 0 ? at : n;
-                break;
-            }
-            // (in the designer a card pressed and let go is heard in the headphones; carried, it is put where it is let go. See mouseUp)
+            // (a card pressed and let go is heard in the headphones; in the designer, carried, it is put where it is let go. See mouseUp)
             break;
         }
         case hPickKey:
@@ -3188,7 +3212,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             const auto id = ses.library[(size_t) h->a].id;
             if (id != handId) break;
             handParts = (handParts ^ (1u << h->b)) & Session::kAllLanes;
-            if (ses.cueing() == id) { if (handParts == Session::kAllLanes) ses.cueWith (0, Session::Scope()); else ses.cueWith (id, Session::scopeOf (handParts)); }
+            if (ses.cueing() == id) ses.cueWith (id, Session::scopeOf (handParts));     // (it is made again from the parts lit now; all of them: the clip itself)
             break;
         }
         case hKeptCard: break;      // (carried onto a place: see mouseUp)
@@ -3244,6 +3268,13 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             // (with the parts chosen on its card, if it is the one in hand)
             const auto id = ses.library[(size_t) h->a].id;
             const auto parts = id == handId ? handParts : Session::kAllLanes;
+            if (page == pArrange)
+            {
+                // beside the arrangement: a part after the one that is chosen (with none chosen, at the end), taking those parts of the rig
+                const int n = (int) ses.arrangement.size(), at = selPart >= 0 && selPart + 1 < n ? selPart + 1 : -1;
+                if (ses.arrAdd (id, at, parts)) selPart = at >= 0 ? at : n;
+                break;
+            }
             if (const int os = openAt(); os >= 0) ses.rackAdd (os, id, parts);
             else if (Session::isStack (selKnob)) ses.stackAdd (selKnob, id, parts);
             else { recNote = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON A STACK KNOB"; recNoteAt = juce::Time::getMillisecondCounter(); }
@@ -3382,7 +3413,7 @@ void Screen::mouseUp (const juce::MouseEvent& e)
     if (drag.kind == hDisplay) if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouseUp();
     cfgStale = true;
     if (drag.kind == hStep && ! drag.moved) stepTap (drag.a);
-    if (page == pMacros && drag.page == (int) pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard))
+    if ((page == pMacros || (page == pArrange && drag.kind == hPick)) && drag.page == (int) page && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard))
     {
         if (drag.moved) drop (where (e));
         else if (drag.kind == hPick && drag.a < (int) ses.library.size())
@@ -3392,7 +3423,7 @@ void Screen::mouseUp (const juce::MouseEvent& e)
             const auto id = ses.library[(size_t) drag.a].id;
             if (id != handId) { handId = id; handParts = Session::kAllLanes; }
             if (ses.cueing() == id) ses.cue (0);
-            else { if (handParts == Session::kAllLanes) ses.cueWith (0, Session::Scope()); else ses.cueWith (id, Session::scopeOf (handParts)); ses.cue (id); }
+            else { if (handParts == Session::kAllLanes) ses.cueWith (0, Session::Scope()); else ses.cueWith (id, Session::scopeOf (handParts)); heardSays (id, ses.cue (id)); }
         }
         else if (drag.kind == hColCard)
         {
@@ -3403,7 +3434,7 @@ void Screen::mouseUp (const juce::MouseEvent& e)
                 const auto id = snaps[(size_t) drag.a];
                 const juce::uint32 lanes = (os >= 0 ? ses.stacks[(size_t) os].lanesAt ((size_t) drag.a) : ses.knobs[(size_t) selKnob].lanesAt ((size_t) drag.a)) & Session::kAllLanes;
                 if (ses.cueing() == id) ses.cue (0);
-                else { ses.cueWith (id, Session::scopeOf (lanes)); ses.cue (id); }
+                else { ses.cueWith (id, Session::scopeOf (lanes)); heardSays (id, ses.cue (id)); }
             }
         }
         else if (drag.kind == hRackCard && drag.a < (int) ses.stacks.size())
@@ -3424,6 +3455,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
+        else if (h->kind == hCard && page == pLibrary) act (aRecallCue);    // (the library: two quick presses take it to the set)
         else if (h->kind == hArrBars) ses.arrSet (h->a, 8, -1);            // (eight bars; cut)
         else if (h->kind == hArrMorph) ses.arrSet (h->a, -1, 0);
         else if (h->kind == hSetup && h->a < (int) cfgParams.size())
