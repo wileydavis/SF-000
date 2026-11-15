@@ -2711,6 +2711,16 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      **The words, then.** A **chip** is a snapshot: one thing, two names. A **stack** is a
      collection of chips. A **knob** is a macro knob or a stack knob. A **module** is a set of
      knobs in their places. (495's "library stacks" are just stacks.)
+497. **You**, 19:36: "Explain the last question? There's only one lane for the snapshot module.
+     so the rig loads one module at a time, choosing from a library of modules. But it loads an
+     entire module (4 macro knobs, 10 stack knobs)"
+     **Settled.** One module at a time for the whole rig, chosen from a library of modules, and
+     LOAD brings all of it: its four macro knobs and its ten stack knobs. (I had asked because
+     "loaded into the current lane" could also have meant a module of its own for each lane.
+     It did not: the lane is the snapshot module's own place in the chassis.)
+     *Next, not built:* modules kept under names on the instrument (the one in the chassis is
+     always one of them), and LOAD choosing among them; then the same on the web, kept the
+     same by ONLINE; then the knob collection. The three proposals of 495 stand as proposed.
 
 ## Not verified
 
