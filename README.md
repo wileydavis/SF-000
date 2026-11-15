@@ -436,6 +436,30 @@ its MODEL at SAMPLE (SIGNAL is how clean the other models are).
 Measured, not assumed: `--samplecheck` (see Checks) plays a file through a lane and writes what
 came out; after PLAIN it is level with the file across the spectrum to a tenth of a decibel.
 
+### TRANSITION: a riser into a change, a hit on it
+
+In the bar of the main and the macro pages, beside HOLD: NEW. Two one-shots timed to a bar
+line: a **LEAD-IN** that ends on it and a **HIT** that starts on it. You say when; the machine
+keeps the time, so the lead-in ends and the hit lands on the sample the line falls on.
+
+- **FIRE** (the key, or **T**): the lead-in from now to the next line, the hit on it. Lines are
+  every 4, 8 or 16 bars (BARS); pressed under a beat from one, it is the one after. While it is
+  on its way the key is lit and says the bars left. With the clock stopped the hit plays at once.
+- **ARM** (the plate under FIRE, or **G**): lit, the next recall, mute or solo does not happen
+  at once. It sets the transition off and happens **on the line the transition lands on**, with
+  whatever else you ask for meanwhile (the plate counts what waits). So: ARM, un-mute the hats;
+  the riser runs, and the hats come in on the line with the hit. ARM then goes out. Put out by
+  hand while things wait, they happen at once.
+- **What it plays**, each plate stepped by a press: BARS (4, 8, 16); its level; **IN** (OFF, the
+  built-in RISER, or a file); **HIT** (OFF, the built-in IMPACT, or a file); DUB and SPACE (how
+  much of it also goes into the two returns: a stab with DUB up is thrown into the delay).
+- **A file**: drop a sound file on the IN or the HIT plate. A lead-in's file starts when it must
+  to end on the line (with less time than it is long, part way in, faded up); a hit's plays
+  from its start on the line.
+
+It goes into the mix before the master, so the master's limiter holds it. What it plays is kept
+with the session, not in a snapshot. Not on the E16 or a pad yet: the keys T and G, or the mouse.
+
 ### The library: what a snapshot sounded like
 
 A snapshot taken while the clock runs keeps its sound: the last four whole bars of the output, cut
@@ -1123,6 +1147,7 @@ build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
+build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each
 build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start

@@ -45,7 +45,10 @@ void Session::timerCallback()
     if (printRig) return;                           // (a print's own rig: the print does its looking)
     // The arrangement, while it plays: looked at often, for the part that is next. The rest of
     // what this does is slower work, done about once a second meanwhile.
+    const bool transWas = ! transPend.empty();
+    if (transWas) transTick();                      // (what waits for a transition's line: looked at as often)
     if (arrOn) { arrTick(); if (arrOn && ++arrTicks % 64 != 0) return; }
+    else if (transWas && ! transPend.empty() && ++arrTicks % 64 != 0) return;
     finishTakes();
     engine.tidy();
     pullHeard();
@@ -53,8 +56,164 @@ void Session::timerCallback()
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
     if (const auto now = juce::Time::getMillisecondCounter(); useDisk && dirty && now - savedAt >= 2900) { savedAt = now; save(); }
     pruneCues();
-    if (arrOn) { if (useDisk) startTimer (15); }
+    if (arrOn || ! transPend.empty()) { if (useDisk) startTimer (15); }
     else if (waiting.empty()) { if (useDisk) startTimer (3000); else stopTimer(); }
+}
+
+// ------------------------------------------------------------------------------------ TRANSITION
+static const float kTransDb[6] = { -18.0f, -12.0f, -9.0f, -6.0f, -3.0f, 0.0f };
+static const int kTransSend[6] = { 0, 15, 30, 50, 75, 100 };
+
+void Session::transApply()
+{
+    engine.trans.level = juce::Decibels::decibelsToGain (kTransDb[juce::jlimit (0, 5, transLevelAt)]);
+    engine.trans.toA = (float) kTransSend[juce::jlimit (0, 5, transDubAt)] * 0.01f;
+    engine.trans.toB = (float) kTransSend[juce::jlimit (0, 5, transSpaceAt)] * 0.01f;
+}
+
+void Session::transFire()
+{
+    transApply();
+    transAt = engine.transFire (transBars);
+    if (onChange) onChange();
+}
+
+void Session::transArm()
+{
+    transArmed = ! transArmed;
+    if (! transArmed && ! transPend.empty())
+    {
+        // put out with things waiting: they happen now
+        transDoing = true;
+        for (auto& p : transPend) { if (p.kind == 0) recall (p.id, p.scope); else userSet (p.ctl, p.v, p.sounding); }
+        transDoing = false;
+        transPend.clear();
+    }
+    if (onChange) onChange();
+}
+
+double Session::transBeatsLeft() const
+{
+    if (transAt < 0.0 || ! engine.isRunning()) return 0.0;
+    return std::max (0.0, transAt - engine.songPos());
+}
+
+bool Session::transDefer (TransPend p)
+{
+    if (transDoing || ! transArmed || printRig || ! engine.isRunning()) return false;
+    // the first thing asked for sets the transition off (unless one is already on its way: then it is that one's line)
+    if (transPend.empty() && transBeatsLeft() <= 0.0) { transApply(); transAt = engine.transFire (transBars); }
+    if (transAt < 0.0) return false;
+    transPend.push_back (std::move (p));
+    if (useDisk) startTimer (15);
+    if (onChange) onChange();
+    return true;
+}
+
+void Session::transTick()
+{
+    if (transPend.empty()) return;
+    const bool stopped = ! engine.isRunning();
+    const double pos = engine.songPos();
+    bool did = false;
+    transDoing = true;
+    for (size_t k = 0; k < transPend.size();)
+    {
+        // A recall sets off on the next beat, so it is made inside the beat before the line (as the arrangement makes its own);
+        // a mute or a solo is at once, and is made a moment before the line, so that the line's own first hit is heard.
+        const auto p = transPend[k];
+        if (stopped || pos >= transAt - (p.kind == 0 ? 0.5 : 0.06))
+        {
+            transPend.erase (transPend.begin() + (std::ptrdiff_t) k);
+            if (p.kind == 0) { glideOver = std::max (0.08, glideBeats()); recall (p.id, p.scope); glideOver = -1.0; }
+            else userSet (p.ctl, p.v, p.sounding);
+            did = true;
+        }
+        else ++k;
+    }
+    transDoing = false;
+    if (transPend.empty()) transArmed = false;
+    if (did && onChange) onChange();
+}
+
+void Session::transStep (int what)
+{
+    auto next = [this] (std::atomic<int>& kind, int slot)
+    {
+        // OFF, the built-in, the file (if one was given)
+        const bool file = engine.transFile (slot).isNotEmpty();
+        const int k = kind.load();
+        kind = k == Transition::kOff ? Transition::kBuilt : k == Transition::kBuilt && file ? Transition::kFile : Transition::kOff;
+    };
+    switch (what)
+    {
+        case tBars:  transBars = transBars == 4 ? 8 : transBars == 8 ? 16 : 4; break;
+        case tLevel: transLevelAt = (transLevelAt + 1) % 6; break;
+        case tLead:  next (engine.trans.leadKind, 0); break;
+        case tHit:   next (engine.trans.hitKind, 1); break;
+        case tDub:   transDubAt = (transDubAt + 1) % 6; break;
+        case tSpace: transSpaceAt = (transSpaceAt + 1) % 6; break;
+        default: break;
+    }
+    transApply();
+    touch();
+    if (onChange) onChange();
+}
+
+juce::String Session::transSays (int what) const
+{
+    auto said = [this] (int kind, int slot, const char* built)
+    {
+        if (kind == Transition::kOff) return juce::String ("OFF");
+        if (kind == Transition::kBuilt) return juce::String (built);
+        return juce::File (engine.transFile (slot)).getFileNameWithoutExtension().toUpperCase().substring (0, 10);
+    };
+    switch (what)
+    {
+        case tBars:  return juce::String (transBars) + " BARS";
+        case tLevel: return juce::String ((int) kTransDb[juce::jlimit (0, 5, transLevelAt)]) + " DB";
+        case tLead:  return "IN " + said (engine.trans.leadKind.load(), 0, "RISER");
+        case tHit:   return "HIT " + said (engine.trans.hitKind.load(), 1, "IMPACT");
+        case tDub:   return "DUB " + juce::String (kTransSend[juce::jlimit (0, 5, transDubAt)]);
+        case tSpace: return "SPACE " + juce::String (kTransSend[juce::jlimit (0, 5, transSpaceAt)]);
+        default: return {};
+    }
+}
+
+bool Session::transLoad (int slot, const juce::File& f)
+{
+    if (! engine.transLoad (slot, f)) return false;
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
+var Session::transToVar() const
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("bars", transBars); o->setProperty ("level", transLevelAt); o->setProperty ("dub", transDubAt); o->setProperty ("space", transSpaceAt);
+    o->setProperty ("lead", engine.trans.leadKind.load()); o->setProperty ("hit", engine.trans.hitKind.load());
+    o->setProperty ("leadFile", engine.transFile (0)); o->setProperty ("hitFile", engine.transFile (1));
+    return var (o);
+}
+
+void Session::transFromVar (const var& v)
+{
+    if (v.isObject())
+    {
+        const int bars = (int) v.getProperty ("bars", 8);
+        transBars = bars == 4 || bars == 16 ? bars : 8;
+        transLevelAt = juce::jlimit (0, 5, (int) v.getProperty ("level", 3)); transDubAt = juce::jlimit (0, 5, (int) v.getProperty ("dub", 0)); transSpaceAt = juce::jlimit (0, 5, (int) v.getProperty ("space", 2));
+        // (a file that is no longer there: the slot plays its built-in)
+        for (int slot = 0; slot < 2; ++slot)
+        {
+            const juce::String path = v.getProperty (slot == 0 ? "leadFile" : "hitFile", "").toString();
+            const int kind = juce::jlimit (0, 2, (int) v.getProperty (slot == 0 ? "lead" : "hit", 1));
+            const bool has = path.isNotEmpty() && engine.transLoad (slot, juce::File (path));
+            (slot == 0 ? engine.trans.leadKind : engine.trans.hitKind) = kind == Transition::kFile && ! has ? (int) Transition::kBuilt : kind;
+        }
+    }
+    transApply();
 }
 
 double Session::glideBeats() const { return glideBarsFor (engine.target (cx::kGlide)) * 4.0; }
@@ -312,6 +471,10 @@ void Session::userSet (int i, float v, bool sounding)
 {
     if (i < 0 || i >= cx::kCount) return;
     v = juce::jlimit (0.0f, 1.0f, v);
+    if (transArmed && ! transDoing)
+        for (int l = 0; l < kLanes; ++l)
+            if (i == cx::lane (l, cx::kMute) || i == cx::lane (l, cx::kSolo))
+            { TransPend p; p.kind = 1; p.ctl = i; p.v = v; p.sounding = sounding; if (transDefer (p)) return; break; }      // (ARM: a mute or a solo waits for the line)
     if (i >= cx::kSnap) { turnSnapKnob (i - cx::kSnap, v); return; }
     const auto& c = engine.control (i);
     base[(size_t) i] = c.morph && i < kMorphEnd ? v - offset[(size_t) i] : v;
@@ -1882,6 +2045,7 @@ void Session::recallWhole (juce::int64 id)
 
 void Session::recall (juce::int64 id, const Scope& scope)
 {
+    { TransPend p; p.kind = 0; p.id = id; p.scope = scope; if (transDefer (p)) return; }        // (ARM: it waits for the line)
     if (scope.all()) { recallWhole (id); return; }
     auto* s = findSnap (id);
     if (s == nullptr) return;
@@ -3837,6 +4001,7 @@ var Session::stateVar()
     root->setProperty ("controls", var (other));
     root->setProperty ("activeLane", activeLane);
     root->setProperty ("recallNotes", recallNotes);
+    root->setProperty ("transition", transToVar());
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
     root->setProperty ("files", fl);
@@ -4115,7 +4280,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -4235,6 +4400,7 @@ void Session::takeState (const var& root)
     else fold = knobsBroughtOver (read, stepped);
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
     recallNotes = (bool) root.getProperty ("recallNotes", true);
+    transFromVar (root.getProperty ("transition", var()));
     // The samples. What is written is turned into a path to read: a copy in the library by where
     // the library is now; a file written whole (by a build from before copies were kept) is
     // copied in now if it is still where it was, and read from its copy from here on.

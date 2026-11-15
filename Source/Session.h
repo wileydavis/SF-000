@@ -400,6 +400,23 @@ public:
     int arrPart() const                 { return arrOn ? arrAt : -1; }      // the part playing (-1: none yet, or not playing)
     double arrPos() const;              // where it is, in beats from the arrangement's start (below 0: it has not come in yet)
     void arrTick();                     // (the timer's while it plays; the checks')
+    // ---- TRANSITION: a lead-in that ends on a bar line and a hit that starts on it (Engine::trans), fired by hand.
+    // FIRE sets them off for the next line (every 4, 8 or 16 bars). ARM: lit, the next recall, mute or solo does not
+    // happen at once: it sets the transition off and happens on the line the transition lands on, with whatever else
+    // is asked for meanwhile; ARM then goes out. With the clock stopped nothing waits: FIRE is the hit, at once.
+    int transBars = 8;
+    bool transArmed = false;
+    double transAt = -1.0;                              // the line the last firing lands on, in beats of the song
+    void transFire();
+    void transArm();                                    // lit, or put out (put out: what was waiting happens at once)
+    bool transWaits() const                             { return ! transPend.empty(); }
+    int transWaiting() const                            { return (int) transPend.size(); }
+    double transBeatsLeft() const;                      // until that line (0: none is on its way)
+    void transTick();                                   // (the timer's while something waits; the checks')
+    enum { tBars, tLevel, tLead, tHit, tDub, tSpace };
+    void transStep (int what);                          // a setting, stepped to its next value
+    juce::String transSays (int what) const;
+    bool transLoad (int slot, const juce::File&);       // a file for the lead-in (0) or the hit (1)
     // Printing it: to a folder of its own under `root`, the set (24-bit) and every lane, return
     // and the drum bus as a take has them. The audio must be stopped while it runs: audioPause
     // and audioResume are called for that (the app sets them; a check has no device). printBegin
@@ -664,6 +681,14 @@ private:
     // the arrangement, playing
     bool arrOn = false, arrWait = false;
     int arrAt = -1, arrStarts = 0, arrTicks = 0;
+    struct TransPend { int kind = 0; juce::int64 id = 0; Scope scope; int ctl = -1; float v = 0.0f; bool sounding = true; };
+    std::vector<TransPend> transPend;                   // what waits for the line: recalls (kind 0) and controls set (1)
+    bool transDoing = false;
+    int transLevelAt = 3, transDubAt = 0, transSpaceAt = 2;
+    bool transDefer (TransPend);
+    void transApply();
+    juce::var transToVar() const;
+    void transFromVar (const juce::var&);
     double arrZero = 0.0;               // the song position at which the arrangement's first bar begins
     double glideOver = -1.0;            // a recall travelling over a time of its own (below 0: by GLIDE)
     double recallGlide() const          { return glideOver >= 0.0 ? glideOver : glideBeats(); }

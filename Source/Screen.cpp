@@ -155,6 +155,26 @@ float Screen::tw (const juce::Font& f, const String& s) const
     return w;
 }
 
+float Screen::transX() const { return 23.0f + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 16.0f + 46.0f + 112.0f; }
+
+void Screen::drawTrans (G& g, float x)
+{
+    const double left = ses.transBeatsLeft();
+    const bool going = left > 0.0, waits = ses.transWaits();
+    key (g, R (x, 17.5f, 40, 40), going ? col::amber : col::white, pressed (aTransFire) ? 6.0f : 2.0f, going);
+    // its name; on its way, the bars left to its line
+    text (g, going ? String (left / 4.0, 1) + " BARS" : String ("FIRE"), R (x + 46, 16.5f, 64, 22), fLegend, col::black, juce::Justification::centredLeft);
+    plate (g, x + 46, 39.5f, waits ? "ARM " + String (ses.transWaiting()) : String ("ARM"), fLbl, 4, ses.transArmed ? (waits ? col::red : col::amber) : col::putty, col::black, 18);
+    // what it plays, each stepped by a press: the bars between its lines and its level; its lead-in and its hit; how much also goes to the two returns
+    const float cols[3] = { x + 112, x + 178, x + 292 };
+    const int says[3][2] = { { Session::tBars, Session::tLevel }, { Session::tLead, Session::tHit }, { Session::tDub, Session::tSpace } };
+    for (int c = 0; c < 3; ++c)
+    {
+        plate (g, cols[c], 17.5f, ses.transSays (says[c][0]), fLbl, 4, col::putty, col::black, 18);
+        plate (g, cols[c], 39.5f, ses.transSays (says[c][1]), fLbl, 4, col::putty, col::black, 18);
+    }
+}
+
 float Screen::plate (G& g, float x, float y, const String& s, const juce::Font& f, float padX, Colour bg, Colour fg, float h)
 {
     const float w = std::ceil (tw (f, s)) + padX * 2.0f;
@@ -767,6 +787,14 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
                 { aSamplePlain, "PLAIN", "SETS THIS LANE TO PLAY ITS SAMPLE AS IT WAS RECORDED: THE FILTER OPEN, NO LAYER AND NO CROSSOVER (SPLIT TAKES THE SAMPLE'S OWN LOWS OUT), THE WHOLE NOTE, NO DRIVE, THE LANE'S EQ FLAT. WHERE THE NOTE IS THE PITCH (BASS, LEAD, CHORD, PAD), TUNE IS SET SO THAT THE FIRST LIT STEP PLAYS IT AT ITS OWN. LEVEL, THE SENDS AND THE LANE'S INSERTS ARE LEFT AS THEY ARE. A SAMPLE IS AS LOUD AS ITS FILE: PEAK, HERE, SAYS HOW LOUD THAT IS." },
+                { aTransFire, "FIRE", "TRANSITION (T). SETS OFF A LEAD-IN THAT ENDS ON THE NEXT BAR LINE AND A HIT THAT LANDS ON IT, WHENEVER IT IS PRESSED: THE MACHINE KEEPS THE TIME. LINES ARE EVERY 4, 8 OR 16 BARS; UNDER A BEAT FROM ONE, IT IS THE ONE AFTER. WHILE IT IS ON ITS WAY THE KEY IS LIT AND SAYS THE BARS LEFT. WITH THE CLOCK STOPPED THE HIT PLAYS AT ONCE." },
+                { aTransArm, "ARM", "TRANSITION (G). LIT: THE NEXT RECALL, MUTE OR SOLO DOES NOT HAPPEN AT ONCE. IT SETS THE TRANSITION OFF AND HAPPENS ON THE LINE THE TRANSITION LANDS ON, WITH WHATEVER ELSE IS ASKED FOR MEANWHILE (THE NUMBER WAITING IS SHOWN). ARM THEN GOES OUT. PUT OUT BY HAND, WHAT WAITS HAPPENS AT ONCE." },
+                { aTransBars, "BARS", "TRANSITION: HOW FAR APART ITS LINES ARE. 4, 8 OR 16 BARS." },
+                { aTransLevel, "LEVEL", "TRANSITION: HOW LOUD ITS LEAD-IN AND ITS HIT ARE, INTO THE MIX BEFORE THE MASTER." },
+                { aTransLead, "LEAD-IN", "TRANSITION: WHAT ENDS ON THE LINE. OFF, THE BUILT-IN RISER, OR A FILE DROPPED ON THIS PLATE (IT STARTS WHEN IT MUST TO END ON THE LINE; WITH LESS TIME THAN IT IS LONG, PART WAY IN)." },
+                { aTransHit, "HIT", "TRANSITION: WHAT STARTS ON THE LINE. OFF, THE BUILT-IN IMPACT, OR A FILE DROPPED ON THIS PLATE (A STAB, A CRASH)." },
+                { aTransDub, "TO DUB", "TRANSITION: HOW MUCH OF IT ALSO GOES INTO RETURN A, THE DUB DELAY." },
+                { aTransSpace, "TO SPACE", "TRANSITION: HOW MUCH OF IT ALSO GOES INTO RETURN B, SPACE." },
                 { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A SNAPSHOT PLAYS IN THEM, THE SET IS IN THE LEFT EAR AND THE SNAPSHOT IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO, AND THE SMALL PLATE UNDER SETUP ON EVERY PAGE (GREEN WHILE IT IS LIT). IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
             };
             for (const auto& a : acts) if (a.a == h.a) { t.title = a.title; body = a.body; }
@@ -964,6 +992,7 @@ void Screen::drawBar (G& g)
             key (g, R (23 + w + 16, 17.5f, 40, 40), col::white, pressed (aNewTrack) ? 6.0f : 2.0f);
             text (g, "HOLD: NEW", R (23 + w + 16 + 46, 17.5f, 110, 40), fLegend, col::black, juce::Justification::centredLeft);
         }
+        if (transShown()) drawTrans (g, transX());
         // SNAPSHOT: everything on the main screen, kept (beside REC and RUN: the three keys of a set)
         key (g, R (808, 17.5f, 40, 40), col::yellow, pressed (aSnapshot) ? 6.0f : 2.0f);
         text (g, "SNAPSHOT", R (854, 17.5f, 92, 40), fLegend, col::black, juce::Justification::centredLeft);
@@ -976,7 +1005,14 @@ void Screen::drawBar (G& g)
             if (on) { const auto s = (juce::int64) recorder->seconds(); t = String (s / 3600) + ":" + String ((s / 60) % 60).paddedLeft ('0', 2) + ":" + String (s % 60).paddedLeft ('0', 2); }
             text (g, t, R (996, 17.5f, 70, 40), fLegend, col::black, juce::Justification::centredLeft);
             if ((page == pMain || page == pMacros) && recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs())
-                plate (g, 798.0f - (std::ceil (tw (fNote, recNote)) + 12.0f), 24.5f, recNote, fNote, 6, col::white, col::black);
+            {
+                // (a note goes left from SNAPSHOT as far as TRANSITION's FIRE and ARM, over what it plays; a longer one is cut short)
+                const float most = 798.0f - (transShown() ? transX() + 112.0f : 30.0f);
+                String t = recNote;
+                while (t.length() > 8 && std::ceil (tw (fNote, t)) + 12.0f > most) t = t.dropLastCharacters (4);
+                if (t.length() < recNote.length()) t << "...";
+                plate (g, 798.0f - (std::ceil (tw (fNote, t)) + 12.0f), 24.5f, t, fNote, 6, col::white, col::black);
+            }
         }
         // SETUP is SETUP whatever is lit. Under its name, on every page, PHONES: a small plate, green while it is lit (this output
         // is then split while a snapshot plays in the headphones); pressed, it is lit or put out, as H does.
@@ -1005,6 +1041,14 @@ void Screen::drawBar (G& g)
         hit (R (learnKeysX() + 96, 17.5f, 40, 40).expanded (3), hAct, aLearnDrop, 0);
     }
     if (page == pMain && ses.learning < 0 && ! info) hit (R (23 + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 16, 17.5f, 40, 40), hAct, aNewTrack, 0);
+    if (transShown())
+    {
+        const float x = transX();
+        hit (R (x, 17.5f, 40, 40), hAct, aTransFire, 0);
+        hit (R (x + 44, 38.5f, 64, 20), hAct, aTransArm, 0);
+        const float cols[3] = { x + 112, x + 178, x + 292 }, ws[3] = { 62, 110, 76 };
+        for (int c = 0; c < 3; ++c) { hit (R (cols[c] - 2, 16.5f, ws[c], 20), hAct, aTransBars + c * 2, 0); hit (R (cols[c] - 2, 38.5f, ws[c], 20), hAct, aTransLevel + c * 2, 0); }
+    }
     hit (R (808, 17.5f, 40, 40), hAct, aSnapshot, 0);
     hit (R (950, 17.5f, 40, 40), hAct, aRec, 0);
     hit (R (1070, 17.5f, 40, 40), hAct, aAudio, 0);
@@ -2952,6 +2996,14 @@ void Screen::act (int a)
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
+        case aTransFire:  ses.transFire(); repaint(); break;
+        case aTransArm:   ses.transArm(); repaint(); break;
+        case aTransBars:  ses.transStep (Session::tBars); repaint(); break;
+        case aTransLevel: ses.transStep (Session::tLevel); repaint(); break;
+        case aTransLead:  ses.transStep (Session::tLead); repaint(); break;
+        case aTransHit:   ses.transStep (Session::tHit); repaint(); break;
+        case aTransDub:   ses.transStep (Session::tDub); repaint(); break;
+        case aTransSpace: ses.transStep (Session::tSpace); repaint(); break;
         case aNotes:    ses.setRecallNotes (! ses.recallNotes); repaint(); break;
         case aPockets:  setPage (page == pPockets ? pMain : pPockets); break;
         case aArrange:  setPage (page == pArrange ? pMain : pArrange); break;
@@ -3581,6 +3633,8 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k.getTextCharacter() == 'l' || k.getTextCharacter() == 'L') { if (wantThree) setThree (false); setLit (! lit); if (onLook) onLook(); return true; }
     if (k.getTextCharacter() == 'i' || k.getTextCharacter() == 'I') { setInfo (! info); return true; }
     if (k.getTextCharacter() == 'h' || k.getTextCharacter() == 'H') { act (aPhones); return true; }
+    if (k.getTextCharacter() == 't' || k.getTextCharacter() == 'T') { act (aTransFire); return true; }      // TRANSITION: FIRE
+    if (k.getTextCharacter() == 'g' || k.getTextCharacter() == 'G') { act (aTransArm); return true; }       //             ARM
     if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { act (aNotes); return true; }
     if (k.getTextCharacter() == 'p' || k.getTextCharacter() == 'P') { act (aPockets); return true; }
     if (k.getTextCharacter() == 'a' || k.getTextCharacter() == 'A') { act (aArrange); return true; }
@@ -3616,8 +3670,20 @@ bool Screen::keyPressed (const juce::KeyPress& k)
 
 void Screen::filesDropped (const juce::StringArray& files, int x, int y)
 {
-    if (files.size() == 0 || page != pMain) return;
+    if (files.size() == 0) return;
     const auto p = three && stage != nullptr ? stage->unitsAt ({ (float) x, (float) y }) : logical ({ (float) x, (float) y });
+    // TRANSITION: a file dropped on its lead-in or its hit is what that plays
+    if (transShown())
+        for (int slot = 0; slot < 2; ++slot)
+            if (R (transX() + 176, slot == 0 ? 16.5f : 38.5f, 110, 20).contains (p))
+            {
+                const bool ok = ses.transLoad (slot, juce::File (files[0]));
+                recNote = ok ? String (slot == 0 ? "LEAD-IN: " : "HIT: ") + juce::File (files[0]).getFileName().toUpperCase() : "COULD NOT READ " + juce::File (files[0]).getFileName().toUpperCase();
+                recNoteAt = juce::Time::getMillisecondCounter();
+                repaint();
+                return;
+            }
+    if (page != pMain) return;
     // Where it lands. An open CONFIG panel takes it for whatever that panel is set to (a lane, an
     // insert, a return). Else the panel under the pointer: a lane, an insert that takes files, the
     // returns (for SPACE). Anywhere else, the active lane.

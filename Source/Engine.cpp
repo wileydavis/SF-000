@@ -1298,6 +1298,28 @@ Engine::SetupState Engine::motionOff (Target t) const
     return st;
 }
 
+bool Engine::transLoad (int slot, const juce::File& f)
+{
+    slot = juce::jlimit (0, 1, slot);
+    auto smp = sf::loadSampleFile (f, sr, 120.0);
+    if (smp == nullptr || smp->length() < 8) return false;
+    transKept.push_back (smp);
+    (slot == 0 ? trans.leadSmp : trans.hitSmp) = smp.get();
+    (slot == 0 ? trans.leadKind : trans.hitKind) = Transition::kFile;
+    transFiles[(size_t) slot] = f.getFullPathName();
+    return true;
+}
+
+double Engine::transFire (int bars)
+{
+    if (! running.load()) { trans.askNow = true; trans.askSeq.fetch_add (1); return -1.0; }
+    const double len = (double) juce::jlimit (1, 64, bars) * 4.0, pos = songPos();
+    const double at = std::ceil ((pos + 1.0) / len) * len;
+    trans.askFrom = pos; trans.askAt = at; trans.askNow = false;
+    trans.askSeq.fetch_add (1);
+    return at;
+}
+
 Engine::SetupState Engine::sampleOwnOff (Target t) const
 {
     SetupState st;
@@ -1465,6 +1487,7 @@ void Engine::prepare (double rate, int block)
     for (auto& m : master) prep (*m);
     prep (*busProc);
     for (int l = 0; l < kLanes; ++l) busWas[(size_t) l] = laneOnBus (l) ? 1.0f : 0.0f;
+    transBuf.setSize (2, maxBlock, false, true, true); trans.prepare (sr);
     for (auto* b : { &buf, &mix, &sendA, &sendB, &work, &pre, &ghost, &recBuf, &cueBuf, &busBuf, &busDry }) b->setSize (2, maxBlock, false, true, false);
     laneBuf.setSize (2 * kLanes, maxBlock, false, true, false);
     pockets.prepare (sr, maxBlock);
@@ -1999,6 +2022,21 @@ void Engine::render (juce::AudioBuffer<float>& out)
     dryMixWas = dryNow;
 
     juce::AudioBuffer<float> a2 (sendA.getArrayOfWritePointers(), 2, n), bb2 (sendB.getArrayOfWritePointers(), 2, n), m2 (mix.getArrayOfWritePointers(), 2, n);
+    // TRANSITION: its lead-in and its hit, into the mix (before the master) and by its two amounts into the returns
+    {
+        float* const tl = transBuf.getWritePointer (0); float* const tr = transBuf.getWritePointer (1);
+        juce::FloatVectorOperations::clear (tl, n); juce::FloatVectorOperations::clear (tr, n);
+        if (trans.render (tl, tr, n, run, ppq, beats))
+        {
+            const float ga = trans.toA.load(), gb = trans.toB.load();
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                m2.addFrom (ch, 0, transBuf, ch, 0, n);
+                if (ga > 0.0f) a2.addFrom (ch, 0, transBuf, ch, 0, n, ga);
+                if (gb > 0.0f) bb2.addFrom (ch, 0, transBuf, ch, 0, n, gb);
+            }
+        }
+    }
     {
         // The lanes on the drum bus, together, through it and on to the mix. At rest the bus
         // leaves them exactly as they came (and what it is recorded as doing is silence).

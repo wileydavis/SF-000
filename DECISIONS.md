@@ -3110,8 +3110,39 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      so the lead-in ends and the hit lands exactly where the change does; and able to be armed
      on a recall or an un-mute, so that the change itself waits for the boundary.
 
+## TRANSITION (Nov 15, 13:16): fifty-ninth build
+
+542. **You**, 13:16: "build transition how you think best and then audit." 13:57: "for the
+     wavetable, how do i move through thr table?" 13:58: "table position i mean"
+     (Answered then: COLOR is the place in the table, a main knob on LEAD and PAD and in CONFIG
+     on BASS and CHORD; each note also wanders 15 % about it; a MOTION can move it.)
+543. **TRANSITION, as built.** *All of it mine, by 536 and 542.* Not a lane: two one-shots of
+     the engine's own, a LEAD-IN that ends on a bar line and a HIT that starts on it, into the
+     mix before the master and by two amounts into the returns. **FIRE** (T) sets them off for
+     the next line, every 4, 8 or 16 bars (under a beat from one: the one after); stopped, it
+     is the hit at once. **ARM** (G): the next recall, mute or solo sets the transition off and
+     waits for its line, with whatever else is asked for meanwhile, and ARM goes out. A recall
+     is made inside the beat before the line, as the arrangement makes its own, and travels by
+     GLIDE from the line; a mute or a solo is made a moment (0.06 of a beat) before it, so that
+     the line's own first hit is heard. Built in: a RISER (noise in a band that climbs from
+     180 Hz to 9 kHz, growing as the square of the way) and an IMPACT (a sine falling from 120
+     Hz to 42 under a burst of dark noise). Or a file each, dropped on its plate.
+     It is in the bar beside HOLD: NEW on the main and the macro pages. *A note in the bar now
+     stops at FIRE and ARM (it may cover the plates beside them) and a longer one is cut short.*
+     Measured: the hit lands 181 samples after its line at the outputs whichever line and
+     whenever pressed, and a lead-in's file ends 181 after it too; that is the master's own
+     delay, the same for everything in the mix.
+544. *Not built:* FIRE and ARM on the E16 or a pad of the OXI; a file chosen without the mouse;
+     more than one lead-in and one hit; ARM for a stack knob or a macro knob turned; a lead-in
+     stretched to the time there is (a file plays at its own speed).
+
 ## Not verified
 
+- **TRANSITION (543)**: timed and measured in the checks, not heard, and not on your Mac. The
+  riser and the impact are first guesses at sounds. ARM's waiting is driven by a timer of 15
+  ms: a mute lands up to that much before its line, never after. Not tried with the clock led
+  from outside, with the tempo moved while a transition is on its way, or while the
+  arrangement plays.
 - **WAVETABLE on BASS, LEAD and CHORD, and KNOBS (537, 538)**: measured, not heard. The audit
   was run with SAMPLE and with WAVETABLE on the lanes that have them, and as the lanes open;
   **not for every other model of every lane** (about a hundred more, an hour and a half of

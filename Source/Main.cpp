@@ -2102,6 +2102,109 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
+    // TRANSITION: FIRE's hit lands on the bar line and its lead-in ends on it, to the sample, whenever it was pressed; the
+    // built-in riser grows towards the line and stops on it; ARM makes a recall and a mute wait for the line; with the
+    // clock stopped the hit plays at once.
+    {
+        auto tmpT = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-trans-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
+        tmpT.createDirectory();
+        const double SRT = 48000.0, spb = SRT * 60.0 / 132.0;
+        auto click = [&] (const char* name, int len, int at)
+        {
+            juce::AudioBuffer<float> c (2, len); c.clear();
+            c.setSample (0, at, 0.9f); c.setSample (1, at, 0.9f);
+            const auto f = tmpT.getChildFile (name);
+            juce::WavAudioFormat wf;
+            if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), SRT, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (c, 0, len);
+            return f;
+        };
+        const auto hitFile = click ("hit.wav", 4800, 10), leadFile = click ("lead.wav", 24000, 22000);
+        struct Run { std::vector<float> out; double line = -1.0; bool waited = false, armedAfter = true; double recallAt = -1.0, muteAt = -1.0; };
+        // the rig silent but for the transition, the clock running; FIRE (or an armed recall and mute) at pressBeat
+        auto run = [&] (int bars, double pressBeat, double untilBeat, int leadKind, int hitKind, bool armed)
+        {
+            Run r;
+            Engine e; e.prepare (SRT, 256);
+            Session ses (e, false);
+            for (int l = 0; l < kLanes; ++l) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+            ses.transLoad (0, leadFile); ses.transLoad (1, hitFile);
+            e.trans.leadKind = leadKind; e.trans.hitKind = hitKind;
+            ses.transBars = bars;
+            const int cut = cx::lane (5, 6), mute = cx::lane (7, cx::kMute);
+            ses.userSet (cut, 0.2f); const auto a = ses.take();
+            ses.userSet (cut, 0.9f); const auto bSnap = ses.take();
+            ses.recall (a);
+            juce::ignoreUnused (a);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 200; ++i) e.render (b);
+            e.setRunning (true);
+            bool pressed = false;
+            const float muteWas = e.target (mute);
+            while ((double) r.out.size() < untilBeat * spb)
+            {
+                if (! pressed && (double) r.out.size() >= pressBeat * spb)
+                {
+                    pressed = true;
+                    if (armed)
+                    {
+                        ses.transArm();
+                        ses.recall (bSnap); ses.userSet (mute, muteWas > 0.5f ? 0.0f : 1.0f);
+                        r.waited = ses.transWaiting() == 2 && std::abs (e.target (cut) - 0.2f) < 0.01f && e.target (mute) == muteWas;
+                    }
+                    else ses.transFire();
+                    r.line = ses.transAt;
+                }
+                e.render (b);
+                ses.transTick();
+                if (armed && pressed)
+                {
+                    if (r.recallAt < 0.0 && std::abs (e.target (cut) - 0.9f) < 0.01f) r.recallAt = e.songPos();
+                    if (r.muteAt < 0.0 && e.target (mute) != muteWas) r.muteAt = e.songPos();
+                }
+                for (int i = 0; i < 256; ++i) r.out.push_back (b.getSample (0, i));
+            }
+            r.armedAfter = ses.transArmed;
+            return r;
+        };
+        auto peakAt = [] (const std::vector<float>& x) { size_t at = 0; float pk = 0.0f; for (size_t i = 0; i < x.size(); ++i) if (std::abs (x[i]) > pk) { pk = std::abs (x[i]); at = i; } return pk > 1.0e-3f ? (double) at : -1.0; };
+        auto rms = [&] (const std::vector<float>& x, double b0, double b1) { double sum = 0.0; int n = 0; for (size_t i = (size_t) (b0 * spb); i < (size_t) (b1 * spb) && i < x.size(); ++i) { sum += (double) x[i] * x[i]; ++n; } return 10.0 * std::log10 (sum / std::max (1, n) + 1e-20); };
+        // the hit alone (a click ten samples into its file), pressed at two different moments, for two different lines
+        const auto h1 = run (4, 4.5, 18.0, Transition::kOff, Transition::kFile, false), h2 = run (8, 9.3, 34.0, Transition::kOff, Transition::kFile, false);
+        const double off1 = peakAt (h1.out) - (h1.line * spb + 10.0), off2 = peakAt (h2.out) - (h2.line * spb + 10.0);
+        // the lead-in alone (a click 2000 samples before its file's end)
+        const auto l1 = run (4, 7.2, 18.0, Transition::kFile, Transition::kOff, false);
+        const double offL = peakAt (l1.out) - (l1.line * spb - 2000.0);
+        // the built-in riser and impact
+        const auto b1 = run (4, 1.0, 20.0, Transition::kBuilt, Transition::kBuilt, false);
+        const double early = rms (b1.out, 4.0, 6.0), late = rms (b1.out, 13.0, 15.0), before = rms (b1.out, 0.2, 0.9), hitDb = rms (b1.out, 16.0, 16.5), after = rms (b1.out, 19.0, 20.0);
+        // ARM: a recall and a mute wait for the line
+        const auto ar = run (4, 5.0, 18.0, Transition::kBuilt, Transition::kBuilt, true);
+        // the clock stopped: the hit at once
+        bool atOnce = false;
+        {
+            Engine e; e.prepare (SRT, 256);
+            Session ses (e, false);
+            for (int l = 0; l < kLanes; ++l) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 200; ++i) e.render (b);
+            float quiet = 0.0f; for (int i = 0; i < 256; ++i) quiet = std::max (quiet, std::abs (b.getSample (0, i)));
+            ses.transFire();
+            float pk = 0.0f;
+            for (int k = 0; k < 40; ++k) { e.render (b); for (int i = 0; i < 256; ++i) pk = std::max (pk, std::abs (b.getSample (0, i))); }
+            atOnce = ses.transAt < 0.0 && quiet < 1.0e-4f && pk > 0.02f;
+        }
+        const bool lines = h1.line == 16.0 && h2.line == 32.0 && l1.line == 16.0 && b1.line == 16.0;
+        const bool onTheLine = std::abs (off1 - off2) <= 1.0 && std::abs (off1) <= 400.0 && std::abs (offL - off1) <= 2.0;
+        const bool rises = before < -80.0 && late > early + 6.0 && late > -60.0 && hitDb > -40.0 && after < hitDb - 6.0;
+        const bool armOk = ar.waited && ar.line == 16.0 && ar.recallAt > 15.4 && ar.recallAt <= 16.0 && ar.muteAt > 15.9 && ar.muteAt <= 16.02 && ! ar.armedAfter;
+        const bool transOk = lines && onTheLine && rises && armOk && atOnce;
+        std::printf ("  %s: TRANSITION: the hit lands on its bar line whenever FIRE was pressed (%.0f and %.0f samples from it through the master, two lines) and a lead-in's file ends on it (%.0f); the built-in riser grows "
+                     "(%.1f to %.1f dB) and the impact follows (%.1f dB, then %.1f); armed, a recall and a mute wait and happen at beats %.2f and %.2f of 16, and ARM goes out; stopped, the hit is at once\n",
+                     transOk ? "ok  " : "FAIL", off1, off2, offL, early, late, hitDb, after, ar.recallAt, ar.muteAt);
+        if (! transOk) { ++bad; std::printf ("    (lines %d [%.1f %.1f %.1f] on the line %d rises %d [before %.1f] arm %d [waited %d line %.1f armed after %d] at once %d)\n", (int) lines, h1.line, h2.line, l1.line, (int) onTheLine, (int) rises, before, (int) armOk, (int) ar.waited, ar.line, (int) ar.armedAfter, (int) atOnce); }
+        tmpT.deleteRecursively();
+    }
+
     // PLAIN: a lane set to play its sample as it was recorded. A sample with lows and highs on the BASS lane, whose steps are
     // not on its root: as the lane opens it is cut short, filtered, its lows crossed out and played at another pitch; after
     // PLAIN the lane's own step note plays it flat across the spectrum, and like the file.
@@ -3202,9 +3305,11 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 // moves (the difference signal against the sound itself, in dB). A knob that moves nothing is listed.
 // With --model NAME every lane that has that model plays it (the others are passed over), with --sample FILE that file is
 // loaded on the lane, with --table a WAVETABLE's TABLE is SAMPLE, and with --plain CONFIG's PLAIN was pressed first.
-static int knobAudit (int only, const juce::String& model = {}, const juce::File& file = {}, bool table = false, bool plain = false, bool levelOnly = false)
+// --model ALL: every model the lane has, one line each.
+static int knobAudit (int only, const juce::String& modelArg = {}, const juce::File& file = {}, bool table = false, bool plain = false, bool levelOnly = false)
 {
     using namespace sf0;
+    juce::String model = modelArg == "ALL" ? juce::String() : modelArg;
     auto hasModel = [&] (Engine& e, int laneIdx) { if (model.isEmpty()) return true; for (auto& sp : e.setupParams ({ 0, laneIdx, 0 })) if (sp.id == "model") return sp.choices.contains (model); return false; };
     auto render = [&] (int laneIdx, int ctl, float v, bool echoes)
     {
@@ -3246,6 +3351,11 @@ static int knobAudit (int only, const juce::String& model = {}, const juce::File
     {
         if (only >= 0 && l != only) continue;
         Engine probe;
+        juce::StringArray todo;
+        if (modelArg == "ALL") { for (auto& sp : probe.setupParams ({ 0, l, 0 })) if (sp.id == "model") todo = sp.choices; } else todo.add (modelArg);
+        for (auto& mName : todo)
+        {
+        model = mName;
         if (! hasModel (probe, l)) continue;
         if (levelOnly)
         {
@@ -3256,7 +3366,7 @@ static int knobAudit (int only, const juce::String& model = {}, const juce::File
             continue;
         }
         const auto base = render (l, -1, 0, false), baseEcho = render (l, -1, 0, true);
-        std::printf ("  %-10s", lanes()[(size_t) l].name);
+        std::printf ("  %-10s %-15s", lanes()[(size_t) l].name, model.toRawUTF8());
         for (int k = 0; k < kLaneKnobs; ++k)
         {
             const int ctl = cx::lane (l, k);
@@ -3268,7 +3378,8 @@ static int knobAudit (int only, const juce::String& model = {}, const juce::File
             std::printf (" %s %.0f%s", label.replaceCharacter (' ', '_').toRawUTF8(), best, best < -35.0 ? "(!)" : "");
             if (best < -35.0) ++dead;
         }
-        std::printf ("\n");
+        std::printf ("\n"); std::fflush (stdout);
+        }
     }
     std::printf ("%d knob(s) make no plain difference with the default patterns\n", dead);
     return 0;
@@ -5507,6 +5618,35 @@ static int uiTest()
                    "that the lane's first step plays the sample at its own pitch; CONFIG and the bar say so; the file's loudest point and its root are known");
         if (! ok) std::printf ("    (not yet %d no file %d there %d [root %s peak %.1f] before %d set %d [tune %s split %.2f] told %d [%s] rumble %d)\n", (int) notYet, (int) noFile, (int) there, says.root.toRawUTF8(), says.peakDb, (int) before, (int) set,
                                setupOf ("tune").text.toRawUTF8(), setupOf ("split").value, (int) told, sc17.testCfgNote().toRawUTF8(), (int) notRumble);
+        // TRANSITION, in the bar: FIRE and ARM are there; ARM pressed is lit and pressed again is out; with the clock stopped FIRE
+        // is the hit at once (no line is waited for); BARS steps 8, 16, 4; T and G are FIRE and ARM.
+        {
+            sc17.testPlain(); draw17();
+            auto transAt = [&] (int which) { for (auto& h : sc17.testHits()) if (Screen::testIsTrans (h, which)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+            const bool there = transAt (0).x > 0.0f && transAt (1).x > 0.0f && transAt (2).x > 0.0f && transAt (5).x > 0.0f && transAt (7).x > 0.0f;
+            click17 (transAt (1)); const bool lit = s17.transArmed;
+            click17 (transAt (1)); const bool out = ! s17.transArmed;
+            const int fired = e17.trans.askSeq.load();
+            click17 (transAt (0)); const bool hitNow = e17.trans.askSeq.load() == fired + 1 && s17.transAt < 0.0 && s17.transBeatsLeft() == 0.0;
+            click17 (transAt (2)); const bool sixteen = s17.transBars == 16 && s17.transSays (Session::tBars) == "16 BARS";
+            click17 (transAt (2)); click17 (transAt (2));
+            sc17.keyPressed (juce::KeyPress ('t', juce::ModifierKeys(), 't')); const bool tKey = e17.trans.askSeq.load() == fired + 2;
+            sc17.keyPressed (juce::KeyPress ('g', juce::ModifierKeys(), 'g')); const bool gKey = s17.transArmed;
+            sc17.keyPressed (juce::KeyPress ('g', juce::ModifierKeys(), 'g'));
+            click17 (transAt (5)); const bool hitOff = s17.transSays (Session::tHit) == "HIT OFF";
+            click17 (transAt (5));
+            // what it plays is kept with the session, and is there when it opens again
+            bool keptT = false;
+            {
+                Session::stateFileForTests = tmp3.getChildFile ("trans-state.json");
+                { Engine e2; e2.prepare (48000.0, 128); Session s2 (e2, true); s2.transStep (Session::tBars); s2.transStep (Session::tDub); s2.transStep (Session::tHit); s2.transStep (Session::tLevel); s2.touch(); s2.save(); }
+                { Engine e3; e3.prepare (48000.0, 128); Session s3 (e3, true); keptT = s3.transBars == 16 && s3.transSays (Session::tDub) == "DUB 15" && s3.transSays (Session::tHit) == "HIT OFF" && s3.transSays (Session::tLevel) == "-3 DB" && s3.transSays (Session::tLead) == "IN RISER"; }
+                Session::stateFileForTests = juce::File();
+            }
+            const bool okT = there && lit && out && hitNow && sixteen && s17.transBars == 8 && tKey && gKey && ! s17.transArmed && hitOff && s17.transSays (Session::tHit) == "HIT IMPACT" && keptT;
+            check (okT, "TRANSITION, in the bar: FIRE, ARM and what it plays are there; ARM is lit by a press and put out by another; stopped, FIRE is the hit at once; BARS steps 16, 4, 8; HIT steps to OFF and back; T and G are FIRE and ARM; what it plays is kept with the session");
+            if (! okT) std::printf ("    (there %d lit %d out %d hit now %d sixteen %d bars %d T %d G %d hit off %d: %s)\n", (int) there, (int) lit, (int) out, (int) hitNow, (int) sixteen, s17.transBars, (int) tKey, (int) gKey, (int) hitOff, s17.transSays (Session::tHit).toRawUTF8()); if (! keptT) std::printf ("    (not kept with the session)\n");
+        }
         tmp3.deleteRecursively();
     }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE

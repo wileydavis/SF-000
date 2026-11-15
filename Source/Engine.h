@@ -10,6 +10,7 @@
 #include "Rig.h"
 #include "Sequencer.h"
 #include "Pockets.h"
+#include "Transition.h"
 
 class SFProcessor;
 
@@ -316,7 +317,14 @@ public:
     // menu's place as how far down the list it is; one kept from before the list grew is told by where it falls, and is
     // given as the same entry of the list as it is now.
     SetupState grown (Target, SetupState) const;
-    SetupState sampleOwnOff (Target) const;     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
+    SetupState sampleOwnOff (Target) const;
+    // ---- TRANSITION (Transition.h): a lead-in that ends on a bar line, a hit that starts on it
+    Transition trans;
+    bool transLoad (int slot, const juce::File&);       // a file for the lead-in (0) or the hit (1), which then plays it (a file that cannot be read: false, nothing changed)
+    juce::String transFile (int slot) const             { return transFiles[(size_t) juce::jlimit (0, 1, slot)]; }
+    // FIRE: the lead-in from now to the next line that many bars apart (the one after, if this one is under a beat away), the
+    // hit on it. That line, in beats of the song; or -1 with the clock stopped, when the hit plays at once.
+    double transFire (int bars);     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
     SFProcessor* processorFor (Target) const;
     bool laneFollowsKey (int lane) const;       // its KEY FOLLOW, in CONFIG, is on (false: the lane has none, or it is off)
     std::vector<SetupParam> setupParams (Target) const;
@@ -507,7 +515,9 @@ private:
     double sr = 48000.0;
     int maxBlock = 512;
     bool prepared = false;
-    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost, busBuf, busDry;
+    juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost, busBuf, busDry, transBuf;
+    std::array<juce::String, 2> transFiles;
+    std::vector<std::shared_ptr<const sf::SampleData>> transKept;      // (every file a slot has had: the audio thread may still hold one)
     juce::AudioBuffer<float> laneBuf;                        // every lane's strip, side by side (two channels each): POCKETS sees them all before any reaches the mix
     Pockets pockets;
     std::atomic<bool> pkWatch { false };

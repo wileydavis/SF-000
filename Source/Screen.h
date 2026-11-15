@@ -132,6 +132,7 @@ public:
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
     juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
     static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
+    static bool testIsTrans (const TestHit& h, int which) { return h.kind == hAct && h.a == aTransFire + which; }     // (0 FIRE, 1 ARM, 2 BARS, 3 LEVEL, 4 IN, 5 HIT, 6 DUB, 7 SPACE)
     static bool testIsPlain (const TestHit& h) { return h.kind == hAct && h.a == aSamplePlain; }       // (CONFIG, a lane playing a sample: PLAIN)
     juce::String testCfgNote() const { return cfgNote; }
     static bool testIsArrStem (const TestHit& h, int part, int stem) { return h.kind == hArrKey && h.a == part && h.b == stem; }      // (a key on a part of the arrangement)
@@ -241,7 +242,9 @@ private:
                    hKeptCard,       // a kept knob's card: carried onto a place
                    hArrKey };       // a key on a part of the arrangement (a: the part; b: the part of the rig)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain,
+               aTransFire, aTransArm, aTransBars, aTransLevel, aTransLead, aTransHit, aTransDub, aTransSpace,
+               aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch,
@@ -444,6 +447,10 @@ private:
     std::vector<juce::int64> found;
     juce::String findText;
     R findRect;
+    // TRANSITION, in the bar on the main and the macro pages: FIRE, ARM under its name, and what it plays in three columns
+    float transX() const;
+    bool transShown() const { return (page == pMain || page == pMacros) && ses.learning < 0 && ! info; }
+    void drawTrans (G&, float x);
     float drawFind (G&, float x, float w, float y);     // the row (two, where it is narrow) at the head of the snapshots; where their cards begin
     void pressFind (int what);
     // The snapshot in hand, beside the knob: the one last pressed there, and the parts of the rig chosen on its card. They go
