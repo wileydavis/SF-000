@@ -2668,6 +2668,45 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      *Not changed.* MUTE is the one I would put in if you want the clip exactly: say, and a
      recall sets the mutes of the parts it takes.
 
+## Three objects: chips, knobs, modules (Nov 14, 19:30)
+
+495. **You**, 19:30: "I think of the snapshot module as a collection that can be loaded into the
+     chassis. Both library and macro Uis should allow me to create multiple snapshot modules
+     that can be loaded into the current lane. that way i can create modules for different
+     sets, etc. So the library would contain collections of premade modules that can be loaded
+     into the active chassis. Tghe library does a few things: 1. it l;ets me rename, tag,  and
+     delete snapshots. it lets me organize snapshot chips into library stacks to be able to
+     find good sounds later when building module racks (this is the dynamic stacks and manual
+     stack idea). 2. it lets me build macros (macro and stack knobs) which can also be saved in
+     a collection. 3. it les me build module racks that are made up of macro and stack knobs.
+     So we have three conceptual objects: Soundchips organized in stacks, macros, and modules.
+     The load function simply puts a module that has been saved, into the active lane on the
+     instrument. Soes that mae sense? So eventually I'll have a library of organized chips,
+     premade macro and stack knobs, and modules."
+     **The model, as I read it.** Three kinds of thing, each kept in the library, on the
+     instrument and on the web alike:
+     - **Chips** (snapshots), put into **library stacks** to be found again: by hand, or filled
+       by a rule. A library stack is for finding, and is never played.
+     - **Knobs**: a macro knob (tied to the rig's knobs) or a stack knob (chips in an order,
+       each with its parts). Built in the designer or in the library, and kept in a collection
+       of their own.
+     - **Modules**: a named set of knobs in their places (four macro knobs, ten stack knobs).
+       Many of them, one for each set. **LOAD puts a kept module into the snapshot module's
+       place on the instrument.**
+     **Where what is built differs** (nothing built for this yet):
+     - There is one module, not many: the instrument's sixteen knobs, and the web library's
+       one model of them. LOAD brings that one.
+     - One object, a "stack", does three jobs on the web: a pile for finding chips, a stack
+       knob once it is on the module, a macro knob when it holds ties. The rack kept the same
+       both ways today (485) is that object with its lamp lit.
+     *Proposed, to be agreed:* a module holds its own knobs (a knob put into a module from the
+     collection is a copy, so a module is whole by itself and changing one never changes
+     another); the module on the instrument is always one of the kept modules, changed as you
+     play, so LOAD of another never loses it; modules and knobs are kept the same here and on
+     the web by ONLINE, as the rack is, so LOAD lists them with no network.
+     *Asked:* "into the current lane" and "the active lane": read as the snapshot module's own
+     place in the chassis, not a module for each lane.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
