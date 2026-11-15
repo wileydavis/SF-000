@@ -2706,6 +2706,11 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the web by ONLINE, as the rack is, so LOAD lists them with no network.
      *Asked:* "into the current lane" and "the active lane": read as the snapshot module's own
      place in the chassis, not a module for each lane.
+496. **You**, 19:32: "chips is a term thats interchangeable with snapshot. A chip is the snapshot,
+     a stacks is a collection of chips."
+     **The words, then.** A **chip** is a snapshot: one thing, two names. A **stack** is a
+     collection of chips. A **knob** is a macro knob or a stack knob. A **module** is a set of
+     knobs in their places. (495's "library stacks" are just stacks.)
 
 ## Not verified
 
