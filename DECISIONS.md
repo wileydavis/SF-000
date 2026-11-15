@@ -2721,6 +2721,15 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      *Next, not built:* modules kept under names on the instrument (the one in the chassis is
      always one of them), and LOAD choosing among them; then the same on the web, kept the
      same by ONLINE; then the knob collection. The three proposals of 495 stand as proposed.
+498. **You**, 19:39: "We can hold off on web for now and wait till we get the instrument library
+     working perfectly, then we'll work on the web version which is really about the ability to
+     do more complex analysis off of the instrument. Give me a list of what I need to test now."
+     **The instrument first.** Modules, the knob collection and the one page are built on the
+     instrument alone, with no network, until they are right. The web library is left as it
+     is: nothing more is built there, and nothing in it is changed. What it is for, when its
+     turn comes: analysis too heavy for the instrument. (What is already built still runs with
+     ONLINE lit: snapshots sent, the knobs mirrored, the rack kept the same. With ONLINE out,
+     none of it does.)
 
 ## Not verified
 
