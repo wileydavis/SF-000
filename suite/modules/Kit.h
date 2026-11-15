@@ -40,6 +40,26 @@ inline std::vector<ParamSpec> withRegion (std::vector<ParamSpec> v)
     v.insert (v.end(), r.begin(), r.end());
     return v;
 }
+// (SF-000) The sample's own level, in the SAMPLE group with START and END: GAIN, and NORMALISE (the sample's loudest
+// point brought to full scale; GAIN is from there). Last in a module's list (appended, never moved): gainAt is GAIN's
+// index and NORMALISE follows it. A sample is otherwise as loud as its file, and no louder.
+inline std::vector<ParamSpec> withSampleGain (std::vector<ParamSpec> v)
+{
+    v.push_back (knob ("smp_gain", "GAIN", -24.0f, 24.0f, 0.0f, "dB").noPreset().sampleGroup());
+    v.push_back (toggle ("smp_norm", "NORMALISE").noPreset().sampleGroup());
+    return v;
+}
+inline float sampleLevel (const Ctx& c, int gainAt, const SampleData& s)
+{
+    const float g = std::pow (10.0f, c.v (gainAt) * 0.05f);
+    return c.v (gainAt + 1) > 0.5f && s.peak > 1.0e-4f ? g / s.peak : g;
+}
+inline SampleRegion regionFrom (const Ctx& c, int first, const SampleData& s, int gainAt)
+{
+    auto r = regionFrom (c, first, s);
+    r.level = sampleLevel (c, gainAt, s);
+    return r;
+}
 
 // DRY: off on a return track (wet only), on as an insert. Routing, so songs and presets leave it alone.
 inline ParamSpec dryParam() { auto p = toggle ("dry", "DRY", true).noPreset().forget(); p.song = false; return p; }

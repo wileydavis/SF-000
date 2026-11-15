@@ -1298,6 +1298,15 @@ Engine::SetupState Engine::motionOff (Target t) const
     return st;
 }
 
+Engine::SetupState Engine::sampleOwnOff (Target t) const
+{
+    SetupState st;
+    if (auto* p = processorFor (t))
+        for (const char* id : { "smp_gain", "smp_norm", "smp_play", "smp_env" })
+            if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams()) st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
+    return st;
+}
+
 bool Engine::laneFollowsKey (int lane) const
 {
     if (auto* p = processorFor ({ 0, lane, 0 }))

@@ -386,26 +386,40 @@ sets all of them at once:
 
 | LANES | WHAT PLAIN SETS |
 |---|---|
-| BASS, LEAD, CHORD, PAD | CUTOFF 100, RES 0, ENV AMT 0, DRIVE 0, FILTER centre, GATE 100, LAYER 0 and SPLIT OFF, GLIDE 0, ATTACK 0, POCKET DEPTH 0, ACID, WARP and DRIFT 0, DENSITY 0, CHORD NONE, the lane's LOW, MID and HIGH centre. **TUNE**, so that the lane's first lit step plays the sample at its own pitch (where that is within two octaves; else TUNE 0, and it says the root) |
+| BASS, LEAD, CHORD, PAD | CUTOFF 100, RES 0, ENV AMT 0, DRIVE 0, FILTER centre, GATE 100, LAYER 0 and SPLIT OFF, GLIDE 0, ATTACK 0, POCKET DEPTH 0, ACID, WARP and DRIFT 0, DENSITY 0, CHORD NONE, PLAY THROUGH, ENVELOPE off, the lane's LOW, MID and HIGH centre. **TUNE**, so that the lane's first lit step plays the sample at its own pitch (where that is within two octaves; else TUNE 0, and it says the root) |
 | KICK, CLOSED HAT, OPEN HAT, CLAP | TUNE 0, DECAY 100 (the whole sample), CLICK 0, DRIVE 0, FILTER centre, LAYER 0 and SPLIT OFF, DENSITY 0, KEY TRACK off, the EQ centre. They play a sample at its own pitch whatever the note |
 | VOICE | TUNE 0, GATE 100, ECHO 0, DRIVE 0, FILTER centre, POCKET DEPTH 0, DENSITY 0, SLICE MODE WHOLE (any note is the whole phrase, at its own pitch), the EQ centre |
 
-It says what it did in CONFIG and in the bar. **It leaves LEVEL, the sends and the lane's insert
-effects** (it names the inserts that still act: LEAD opens with DELAY and RADIO). RUMBLE has no
+It says what it did in CONFIG and in the bar. **It leaves LEVEL, GAIN, NORMALISE, the sends and
+the lane's insert effects** (it names the inserts that still act: LEAD opens with DELAY and RADIO). RUMBLE has no
 PLAIN: it shapes whatever it is given. PERC plays no sample.
 
-What PLAIN cannot do for you:
+**A sample's own controls**, in CONFIG's SAMPLE box with START, END and the fades:
 
-- **Level.** Nothing here makes a sample louder than its file, and the lanes open with LEVEL
-  low because their own models are loud. After PLAIN, at the LEVEL each lane opens with, a
-  sample is about 15 dB under its file on BASS, the hats, the clap and VOICE, and 3 dB under on
-  KICK, before the master (which adds about 7 dB as it opens). PEAK, in CONFIG, is the file's
-  loudest point: one that reads -10 dB is a quiet file.
-- **Length.** On BASS, LEAD, CHORD and PAD a sample sounds while its note is held and fades
-  when it is let go, and every step starts it again from START: a long sample needs a long
-  note. On KICK, the hats, CLAP and VOICE, after PLAIN, a step plays the sample through to its
-  end however short the step is. So a loop or a phrase that should simply play is at home on
-  VOICE (which is mono).
+- **GAIN**: the sample's own gain, 24 dB either way, before DRIVE and the filter (so up, DRIVE
+  bites sooner). On every lane that plays a sample.
+- **NORMALISE**: on, the sample's loudest point is brought to full scale, so a quiet file plays
+  as loud as a loud one; GAIN is from there. PEAK, beside the file's name, is that loudest
+  point: one that reads -10 dB comes up 10 dB. On every lane that plays a sample.
+- **PLAY** (BASS, LEAD, CHORD, PAD): **HELD**, the sample sounds while its note is held and
+  fades when it is let go, GATE being its length; **THROUGH**, a note plays it to its END
+  however short the note, as a drum does, and the next note starts it again. KICK, the hats,
+  CLAP and VOICE play a sample through as they are.
+- **ENVELOPE** (BASS, LEAD, CHORD, PAD): on, the lane's **DECAY** and **ENV AMT** act on the
+  sample as on a synth model: DECAY is how fast it dies away (at full, it does not), ENV AMT
+  opens the filter at the start of each note, from CUTOFF. Off, as a sample opens, they leave
+  it alone.
+
+All four open where they change nothing, and a snapshot holds them. Nothing here makes a lane
+louder than its LEVEL: after PLAIN at the LEVEL each lane opens with, a sample is about 15 dB
+under its file on BASS, the hats, the clap and VOICE, and 3 dB under on KICK, before the master
+(which adds about 7 dB as it opens).
+
+**A sample as a wave to play.** PAD has two models that make an instrument of the loaded file
+and not a recording of it: **WAVETABLE** with TABLE (in its CONFIG) at SAMPLE takes eight single
+waves from the sample and COLOR moves across them, at any pitch, for as long as a note is held;
+**GRANULAR** plays grains of it from between START and END, COLOR their length. BASS, LEAD and
+CHORD do not have these two.
 
 Measured, not assumed: `--samplecheck` (see Checks) plays a file through a lane and writes what
 came out; after PLAIN it is level with the file across the spectrum to a tenth of a decibel.

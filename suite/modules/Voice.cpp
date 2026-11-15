@@ -15,14 +15,14 @@ class VoiceModule : public Module
 {
 public:
     // SSTART: the phrase's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIGNAL, TONE, GATE, DENS, FILT, ECHO, DRIVE, LEVEL, MODEL, SLICEMODE, TUNE, ECHOTIME, ECHOFB, PDEPTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART };
+    enum { SIGNAL, TONE, GATE, DENS, FILT, ECHO, DRIVE, LEVEL, MODEL, SLICEMODE, TUNE, ECHOTIME, ECHOFB, PDEPTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM };      // (SF-000) GAIN, NORMALISE
     std::string id() const override { return "VOICE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
+        return withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("gate", "GATE", 0.6f).prim(),
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
@@ -39,7 +39,7 @@ public:
                  pct ("pocket_shape", "POCKET SHAPE", 0.3f),
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() });
+                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP PHRASE (C3 = SLICE 1)"; }
@@ -82,7 +82,7 @@ public:
     {
         echoes.run (c, midi, events, c.v (DENS), echoSpaceBeats (c.ci (ESPACE)), 0.0f, 1.0f, true);
         const SampleData* smp = sample.audio();
-        const SampleRegion reg = smp != nullptr ? regionFrom (c, SSTART, *smp) : SampleRegion();    // a note started now plays in this part
+        const SampleRegion reg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();    // a note started now plays in this part
         const int model = c.ci (MODEL);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);

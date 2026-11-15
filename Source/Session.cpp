@@ -1468,6 +1468,8 @@ juce::String Session::samplePlain (int lane)
         put ("cutoff", 1.0f); put ("res", 0.0f); put ("env_amt", 0.0f); put ("glide", 0.0f); put ("attack", 0.0f);
         put ("acid", 0.0f); put ("warp", 0.0f); put ("drift", 0.0f);
         choose ("chord", "NONE");
+        choose ("smp_play", "THROUGH");             // (a note plays it to its end, however short the step)
+        put ("smp_env", 0.0f);                      // (DECAY and ENV AMT leave it alone)
     }
     else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); }      // (the drums: DECAY is how much of it plays)
     choose ("slice_mode", "WHOLE");                 // (VOICE: any note is the whole phrase, at its own pitch)
@@ -1486,7 +1488,7 @@ juce::String Session::samplePlain (int lane)
         if (stepNote >= 0 && std::abs (st) <= 24 && st != 0 && put ("tune", 0.5f + (float) st / 48.0f))
             told << ". " << stepName << " PLAYS IT AT ITS OWN PITCH (TUNE " << (st > 0 ? "+" : "") << st << " ST; ITS ROOT IS " << says.root << ")";
         else told << (stepNote >= 0 && st == 0 ? ". ITS STEPS ARE ON ITS ROOT, " : ". IT IS AT ITS OWN PITCH ON ") << says.root;
-        told << ". IT PLAYS FOR AS LONG AS A NOTE IS HELD";
+        told << ". A STEP PLAYS IT TO ITS END (PLAY: THROUGH)";
     }
     // (what PLAIN leaves alone that still colours it)
     juce::StringArray ins;
@@ -1575,8 +1577,11 @@ static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState&
 // of it, and means the two of them off (as they were then).
 static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, Engine::SetupState st)
 {
-    for (auto& kv : st) if (Engine::isMotionId (kv.first)) return st;
-    for (auto& kv : engine.motionOff (t)) st.push_back (kv);
+    bool motion = false, own = false;
+    for (auto& kv : st) { motion = motion || Engine::isMotionId (kv.first); own = own || kv.first == "smp_gain"; }
+    if (! motion) for (auto& kv : engine.motionOff (t)) st.push_back (kv);
+    // (and one taken before a sample had controls of its own means them as they open: no gain, HELD, no envelope)
+    if (! own) for (auto& kv : engine.sampleOwnOff (t)) st.push_back (kv);
     return st;
 }
 

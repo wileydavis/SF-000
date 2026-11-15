@@ -43,3 +43,14 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   the bands (its tenth figure is 0 with BANDS off, so an older state's key is what it was), the
   request to the worker carries them, and the display marks each place with its bands. With
   BANDS off nothing is different. See DECISIONS, thirty-second build.
+- **A sample's own controls**, marked `(SF-000)`. `core/Sample.h`: `SampleRegion` carries `level`
+  (1 unless set) and `gain()` multiplies by it, so every read of a sample takes it with the
+  fades'. `modules/Kit.h`: `withSampleGain` appends `smp_gain` (GAIN, 24 dB either way) and
+  `smp_norm` (NORMALISE: the sample's loudest point to full scale) last in a module's list, and
+  `regionFrom (c, first, s, gainAt)` sets the region's level from them. In `Synth.cpp`,
+  `Drums.cpp` (KICK, the hats and clap, RUMBLE) and `Voice.cpp`: the two parameters, last, and
+  that call. `Synth.cpp` also has `smp_play` (HELD, THROUGH: a voice of the SAMPLE model that is
+  `through` is not released by its note's end or by GATE) and `smp_env` (a voice that is `shaped`
+  takes its amp decay from DECAY and its filter envelope's amount from ENV AMT, which the SAMPLE
+  model otherwise sets to none). With all four as they open, nothing is different: the reference
+  render is the same file. See DECISIONS, fifty-seventh build.

@@ -3027,8 +3027,49 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        switch to let a synth lane's sample play through would be another new control.
      - RUMBLE has no PLAIN: it plays a sample for one beat's gate and shapes it.
 
+## A sample's own controls (Nov 15, 10:20): fifty-seventh build
+
+530. **You**, 10:20: "definitels a sample gain and normalize. And is there anything else we
+     can add to make samples more "playable" and reactive to the module standard controls"
+     10:21: "wasn't there a wavetable model?"
+531. **GAIN and NORMALISE**, in CONFIG's SAMPLE box, on every lane that plays a sample (BASS,
+     LEAD, CHORD, PAD, KICK, the hats, CLAP, RUMBLE, VOICE). GAIN is 24 dB either way, before
+     DRIVE and the filter. NORMALISE brings the sample's loudest point to full scale. *Peak,
+     not loudness, is mine: it is what the word means in every editor, and it never clips.*
+     Measured with your file: GAIN +6 is +6.0 dB in every band, NORMALISE +9.7 (its PEAK reads
+     -9.6). Both open where they change nothing; PLAIN leaves them, as it leaves LEVEL.
+     A snapshot holds all four of a sample's controls. One taken before this build says nothing
+     of them and means them as they open, so recalling it puts them back there (as is done for
+     MOTION): an old snapshot does not come back louder because NORMALISE was on when you
+     recalled it.
+532. **What was asleep.** On BASS, LEAD, CHORD and PAD a sample ignored four of the lane's
+     standard controls: DECAY and ENV AMT (the SAMPLE model sets its envelope flat and its
+     filter envelope to none), and DETUNE and COLOR (nothing in a sample reads them). And it
+     stopped when its note did (529).
+533. **PLAY: HELD or THROUGH** (the four synth lanes). *Mine.* THROUGH is the switch 529 said
+     was missing: a note plays the sample to its END however short the note. **PLAIN now sets
+     THROUGH**, so a step plays the whole sample on these lanes as it does on a drum's.
+534. **ENVELOPE** (the four synth lanes). *Mine.* On, DECAY and ENV AMT act on a sample as on a
+     synth model; DECAY at full is no decay. It opens off, because the lanes open with DECAY
+     40 and ENV AMT 45 and a sample loaded would at once be a pluck through a moving filter;
+     and off is what every sample in a snapshot of yours was made with.
+535. **Yes: WAVETABLE is a model of PAD's**, and so is GRANULAR; both use the loaded file
+     (WAVETABLE with TABLE at SAMPLE: eight waves from it, COLOR across them). Checked by
+     playing your file through them. BASS, LEAD and CHORD do not have them.
+     *Not built, and yours to say:* the two models on BASS, LEAD and CHORD (each lane's models
+     are a list with a loudness figure for each, and a snapshot keeps a model as how far down
+     the list it is, as a fraction: a longer list moves every model already saved on that lane
+     unless the snapshots are converted, so it is a change to make on purpose); DETUNE and COLOR
+     on a sample (a second, detuned reading; COLOR as where in the sample a note starts); a
+     sample that loops between START and END while its note is held; ROOT set by hand.
+
 ## Not verified
 
+- **A sample's own controls (531 to 534)** are measured at the lane with your one file and
+  with made-up tones: not by ear, not on your Mac. GAIN moves in steps of a block while it is
+  turned on a held note (it may be heard as fine grain on a pure tone; not listened for).
+  ENVELOPE's decay times (0.15 to 2.4 s) are a first guess. THROUGH on LEAD, CHORD and PAD lets
+  notes of a long sample pile up until they end or the lane runs out of voices.
 - **PLAIN (526)** is measured against one file of yours and against made-up tones, at the
   lane (before the master), with one note held. Not by ear, not on your Mac, and not with a
   drum one-shot, a vocal phrase or a stereo-wide sample: KICK, the hats, CLAP and VOICE come

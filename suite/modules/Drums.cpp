@@ -47,7 +47,7 @@ public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams); then
     // SPLIT and SPLIT HZ [Nov 10] (ids are appended, never moved).
     enum { TUNE, DECAY, PUNCH, CLICK, DRIVE, FILT, DENS, LEVEL, MODEL, LAYERMODEL, LAYER, PTIME, VELSENS, ESPACE, ESWING, KEYTRACK, RES, ALLOCON, KEYFOLLOW, SSTART,
-           SPLIT = SSTART + 4, SPLITHZ };
+           SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM };       // (SF-000) the sample's own GAIN and NORMALISE, last
     std::string id() const override { return "KICK"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
@@ -74,7 +74,8 @@ public:
         // LAYER SPLIT (Kit.h): one kick's lows, the other's punch and click.
         p.push_back (knob ("split", "SPLIT", 0.0f, 1.0f, 0.5f, "SPLIT").layerGroup());
         p.push_back (knob ("split_hz", "SPLIT HZ", 50.0f, 800.0f, 150.0f, "Hz", 200.0f).layerGroup());
-        jassert ((int) p.size() == SPLITHZ + 1);
+        p = withSampleGain (std::move (p));                 // (SF-000)
+        jassert ((int) p.size() == SNORM + 1);
         return p;
     }
     bool acceptsFiles() const override { return true; }
@@ -199,7 +200,7 @@ public:
             if (auto s = smp)
             {
                 // From START; DECAY's gate measures the part that plays.
-                v.reg = regionFrom (c, SSTART, *s);
+                v.reg = regionFrom (c, SSTART, *s, SGAIN);
                 v.phase = v.reg.start;
                 v.gate = sampleGateSeconds (c.v (DECAY), (float) (v.reg.length() / s->sr) / v.srate, gen);
             }
@@ -470,12 +471,12 @@ class PercModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { TUNE, DECAY, TONE, DENS, FILT, ACCENT, DRIVE, LEVEL, MODEL, ESPACE, ESWING, EPROB, CHOKE, SPREAD, RES, ALLOCON, SSTART };
+    enum { TUNE, DECAY, TONE, DENS, FILT, ACCENT, DRIVE, LEVEL, MODEL, ESPACE, ESWING, EPROB, CHOKE, SPREAD, RES, ALLOCON, SSTART, SGAIN = SSTART + 4, SNORM };     // (SF-000) GAIN, NORMALISE
     std::string id() const override { return "PERC"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        return withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
+        return withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
                  pct ("decay", "DECAY", 0.5f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
@@ -490,7 +491,7 @@ public:
                  toggle ("choke", "CHOKE", true),
                  pct ("spread", "SPREAD", 0.3f).slow(),
                  pct ("res", "FILTER RES", 0.1f),
-                 toggle ("alloc", "ALLOC", true).noPreset().forget() });
+                 toggle ("alloc", "ALLOC", true).noPreset().forget() }));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL: SAMPLE)"; }
@@ -612,7 +613,7 @@ public:
                 // From START; DECAY's gate measures the part that plays.
                 if (auto* s = sample.audio())
                 {
-                    v.reg = regionFrom (c, SSTART, *s);
+                    v.reg = regionFrom (c, SSTART, *s, SGAIN);
                     v.spos = v.reg.start;
                     v.gate = sampleGateSeconds (c.v (DECAY), (float) (v.reg.length() / s->sr) / v.tune, ev.gen);
                 }
@@ -849,14 +850,14 @@ class RumbleModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART };
+    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM };     // (SF-000) GAIN, NORMALISE
     std::string id() const override { return "RUMBLE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
+        return withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
                  pct ("dark", "DARK", 0.6f).prim(),
                  pct ("grit", "GRIT", 0.3f).prim().dir (1),
                  pct ("pump", "PUMP", 0.7f).prim(),
@@ -872,7 +873,7 @@ public:
                  pct ("pocket_shape", "POCKET SHAPE", 0.5f).slow(),
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() });
+                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP RUMBLE ONE-SHOT (MODEL: SAMPLE)"; }
@@ -938,7 +939,7 @@ public:
         const float dens = c.v (DENS);
         const double space = echoSpaceBeats (c.ci (ESPACE));
         const SampleData* smp = sample.audio();
-        nextReg = smp != nullptr ? regionFrom (c, SSTART, *smp) : SampleRegion();     // a thump from here on plays this part
+        nextReg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();     // a thump from here on plays this part
         const float modelCal = cal::at (cal::rumble, model);
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
         float gates[Oversampler::kBlock];

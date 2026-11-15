@@ -59,6 +59,7 @@ using SamplePtr = std::shared_ptr<const SampleData>;
 struct SampleRegion
 {
     double start = 0.0, end = 0.0, fadeIn = 0.0, fadeOut = 0.0;    // in the sample's samples; end: one past
+    float level = 1.0f;         // (SF-000) the sample's own gain (GAIN, and NORMALISE's): every read takes it with the fades'
     static SampleRegion of (const SampleData& s, float startFrac, float endFrac, float fadeInMs, float fadeOutMs)
     {
         SampleRegion r;
@@ -83,7 +84,7 @@ struct SampleRegion
         float g = 1.0f;
         if (fadeIn > 0.0 && pos < start + fadeIn) g = rc ((pos - start) / fadeIn);
         if (fadeOut > 0.0 && pos > end - fadeOut) g *= rc ((end - pos) / fadeOut);
-        return g;
+        return g * level;           // (SF-000)
     }
     static float rc (double x) { return x <= 0.0 ? 0.0f : x >= 1.0 ? 1.0f : (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * x)); }
 };

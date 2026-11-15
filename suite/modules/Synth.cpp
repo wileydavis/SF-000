@@ -204,7 +204,9 @@ public:
     enum { CUTOFF, RES, ENVAMT, GATE, DENS, FILT, DRIVE, LEVEL, MODEL, DECAY, ATTACK, ACCENT, GLIDE, TUNE, DETUNE, COLOR,
            LAYERMODEL, LAYER, CHORD, SPACE, PDEPTH, PSHAPE, ESPACE, ESWING, ALLOCON, KEYFOLLOW, SSTART, ACID = SSTART + 4, WARP,
            SPLIT, SPLITHZ, DRIFT, TABLE,
-           FMALGO, FMRATIO, FMLEVEL = FMRATIO + 4, FMDECAY = FMLEVEL + 4, FMFB = FMDECAY + 4, kParams };
+           FMALGO, FMRATIO, FMLEVEL = FMRATIO + 4, FMDECAY = FMLEVEL + 4, FMFB = FMDECAY + 4,
+           SGAIN, SNORM, SPLAY, SENV,       // (SF-000) the sample's own: its gain, NORMALISE, PLAY (held or through), ENVELOPE
+           kParams };
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
         : name (idName), roleId (role), models (std::move (m)), dCut (cutDef), dRes (resDef), dEnv (envDef), dGate (gateDef), dPocket (pDepth) {}
@@ -272,6 +274,12 @@ public:
         for (int k = 0; k < 4; ++k) { auto q = pct ("x", "x", levelDef[k]).engineGroup(); q.id = ids[4 + k]; q.name = names[4 + k]; p.push_back (q); }
         for (int k = 0; k < 4; ++k) { auto q = pct ("x", "x", decayDef[k]).engineGroup(); q.id = ids[8 + k]; q.name = names[8 + k]; p.push_back (q); }
         p.push_back (pct ("fm_feedback", "FEEDBACK", 0.2f).engineGroup());
+        // (SF-000) A sample's own controls, with START and END. GAIN and NORMALISE (Kit.h). PLAY: HELD, it sounds while
+        // its note is held; THROUGH, a note plays it to its END however short the note (a one-shot). ENVELOPE: the
+        // lane's DECAY and ENV AMT act on it as on a synth model (DECAY at full: no decay); off, they leave it alone.
+        p = withSampleGain (std::move (p));
+        p.push_back (choice ("smp_play", "PLAY", { "HELD", "THROUGH" }, 0).noPreset().sampleGroup());
+        p.push_back (toggle ("smp_env", "ENVELOPE").noPreset().sampleGroup());
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -452,6 +460,8 @@ public:
     {
         bool active = false, releasing = false;
         int note = 60, gen = 0, model = 0, layer = 0, autoOff = -1;
+        bool through = false;             // (SF-000) SAMPLE, PLAY THROUGH: letting the note go does not end it
+        bool shaped = false;              // (SF-000) SAMPLE, ENVELOPE on: DECAY and ENV AMT act on it
         float vel = 1.0f, gain = 1.0f, freq = 110.0f, target = 110.0f, glideCoef = 0.0f, accent = 0.0f;
         float vel0 = 1.0f;                // the note's own velocity (0..1), to play it again on a MODEL change
         float pitch = 60.0f, pitchTuned = 60.0f;   // the note (with chord interval) and the tuned pitch it plays at
@@ -513,7 +523,8 @@ public:
         const SampleData* smp = sample.audio();
         // The sample's START..END now: a SAMPLE note started in this block plays it, GRANULAR's
         // grains come from it.
-        blockReg = smp != nullptr ? regionFrom (c, SSTART, *smp) : SampleRegion();
+        blockReg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();
+        for (auto& v : voices) if (v.active) v.reg.level = blockReg.level;        // (SF-000) GAIN reaches a note that is sounding
         // WAVETABLE's frames from the sample, if TABLE says so and there are some.
         tableFrames = c.ci (TABLE) == 1 ? frames.audio() : nullptr;
         if (tableFrames != nullptr && tableFrames->f.size() < (size_t) kSampleFrames) tableFrames = nullptr;
@@ -761,6 +772,12 @@ private:
         v.accent = accent ? c.v (ACCENT) : 0.0f;
         const float decK = std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * std::pow (0.6f, (float) ev.gen) * (1.0f - v.accent * 0.4f);
         const float attK = c.v (ATTACK) * 2.0f;
+        // (SF-000) a sample with ENVELOPE on: DECAY is its amp decay (0.15 to 2.4 s, to silence; at full, none), and
+        // ENV AMT sweeps its filter (updateControls). PLAY THROUGH: the note's end does not end it.
+        v.shaped = m.engine == E_SAMPLE && c.v (SENV) > 0.5f;
+        v.through = m.engine == E_SAMPLE && c.ci (SPLAY) == 1;
+        if (v.shaped) v.amp.set (m.att + attK, 0.6f * decK, c.v (DECAY) > 0.995f ? 1.0f : 0.0f, m.rel * relMul, v.rate);
+        else
         v.amp.set (m.att + attK, m.dec * (m.acid ? 1.0f : decK), m.sus, m.rel * relMul, v.rate);
         v.fenv.set (m.fAtt + attK * 0.5f, m.fDec * decK, m.fSus, m.fRel * relMul, v.rate);
         v.amp.on (retrigger || ! wasActive);
@@ -825,6 +842,7 @@ private:
             for (auto& v : voices)
             {
                 if (! v.active || v.releasing || v.note != note) continue;
+                if (v.through) continue;                                    // (SF-000) it plays to its END
                 const bool mono = models[(size_t) v.model].mono;
                 if (mono && ! held.empty())
                 {
@@ -843,7 +861,7 @@ private:
         }
         // Echo releases only end echo voices, never a voice a held note owns.
         for (auto& v : voices)
-            if (v.active && ! v.releasing && v.note == note && v.gen == gen && ! (models[(size_t) v.model].mono && ! held.empty()))
+            if (v.active && ! v.releasing && ! v.through && v.note == note && v.gen == gen && ! (models[(size_t) v.model].mono && ! held.empty()))
             { v.amp.off(); v.fenv.off(); v.releasing = true; }
     }
 
@@ -857,7 +875,7 @@ private:
         const float invOsr = (float) (1.0 / vr);
         // TUNE and KEY reach notes that are already sounding (gliding there if GLIDE is set).
         if (const float tuned = v.pitch + pitchOffset; std::abs (tuned - v.pitchTuned) > 1e-4f) { v.pitchTuned = tuned; v.target = noteHz (tuned); }
-        const float cutK = c.v (CUTOFF), envA = c.v (ENVAMT) * m.envMul * (1.0f + v.accent);
+        const float cutK = c.v (CUTOFF), envA = c.v (ENVAMT) * (v.shaped ? 1.0f : m.envMul) * (1.0f + v.accent);       // (SF-000) shaped
         k.res = clamp01 (c.v (RES) * m.resMul);
         const float drive = clamp01 (c.v (DRIVE) + m.drive);
         k.driveG = drive > 0.001f ? 1.0f + drive * 6.0f : 0.0f;
@@ -1255,7 +1273,7 @@ private:
             L[i] += yl * a * gainAll;
             R[i] += yr * a * gainAll;
             v.t += invOsr;
-            if (v.autoOff > 0 && --v.autoOff == 0 && ! v.releasing) { v.amp.off(); v.fenv.off(); v.releasing = true; }
+            if (v.autoOff > 0 && --v.autoOff == 0 && ! v.releasing && ! v.through) { v.amp.off(); v.fenv.off(); v.releasing = true; }
             if (v.amp.st == Adsr::Idle && v.t > 0.001f) { v.active = false; return; }
         }
     }
