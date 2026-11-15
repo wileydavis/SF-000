@@ -52,7 +52,7 @@ inline std::vector<ParamSpec> withSampleGain (std::vector<ParamSpec> v)
 inline float sampleLevel (const Ctx& c, int gainAt, const SampleData& s)
 {
     const float g = std::pow (10.0f, c.v (gainAt) * 0.05f);
-    return c.v (gainAt + 1) > 0.5f && s.peak > 1.0e-4f ? g / s.peak : g;
+    return c.v (gainAt + 1) > 0.5f && s.chanPeak > 1.0e-4f ? g / s.chanPeak : g;
 }
 inline SampleRegion regionFrom (const Ctx& c, int first, const SampleData& s, int gainAt)
 {

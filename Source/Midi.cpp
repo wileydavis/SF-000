@@ -904,9 +904,14 @@ void Midi::takeExtra (int extra, int val, bool fromE16)
     const int ctl = ccx::controlFor (extra, engine.spaceModel());
     const auto& c = engine.control (ctl);
     const bool key = c.used && (c.kind == Kind::Toggle || c.kind == Kind::Hold);
-    if (key) engine.set (ctl, val >= 64 ? 1.0f : 0.0f);
+    // (TRANSITION's ARM lit: a lane's MUTE or SOLO is not made here. It goes to the session as any knob does, which makes it
+    // wait for the transition's line.)
+    bool now = key;
+    if (key && engine.trans.armed.load())
+        for (int l = 0; l < kLanes; ++l) if (ctl == cx::lane (l, cx::kMute) || ctl == cx::lane (l, cx::kSolo)) now = false;
+    if (now) engine.set (ctl, val >= 64 ? 1.0f : 0.0f);
     const juce::SpinLock::ScopedLockType g (exLock);
-    if (exN < kExQ) exQ[(size_t) exN++] = { (juce::uint16) extra, (juce::uint8) val, (juce::uint8) (fromE16 ? 1 : 2), key };
+    if (exN < kExQ) exQ[(size_t) exN++] = { (juce::uint16) extra, (juce::uint8) val, (juce::uint8) (fromE16 ? 1 : 2), now };
     else { exBy[(size_t) extra] = fromE16 ? 1 : 2; exLatest[(size_t) extra] = val; }
 }
 

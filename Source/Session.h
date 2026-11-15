@@ -681,7 +681,7 @@ private:
     // the arrangement, playing
     bool arrOn = false, arrWait = false;
     int arrAt = -1, arrStarts = 0, arrTicks = 0;
-    struct TransPend { int kind = 0; juce::int64 id = 0; Scope scope; int ctl = -1; float v = 0.0f; bool sounding = true; };
+    struct TransPend { int kind = 0; juce::int64 id = 0; Scope scope; int ctl = -1; float v = 0.0f; bool sounding = true, onAudio = false; };
     std::vector<TransPend> transPend;                   // what waits for the line: recalls (kind 0) and controls set (1)
     bool transDoing = false;
     int transLevelAt = 3, transDubAt = 0, transSpaceAt = 2;

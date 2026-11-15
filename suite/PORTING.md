@@ -65,3 +65,5 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   part way. `Drums.cpp` (hats, clap) and `Voice.cpp` (MODEL SAMPLE): TONE tilts a sample.
   SF-000's `Engine` gives a model's place kept from before the lists grew as the same model.
   See DECISIONS, fifty-eighth build.
+- `core/Sample.h`, `core/Sample.cpp`: `chanPeak`, the loudest point of either channel, beside
+  `peak` (which is of the two added together); NORMALISE (`Kit.h`) goes by it. `(SF-000)`.

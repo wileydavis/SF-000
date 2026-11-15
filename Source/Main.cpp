@@ -2193,14 +2193,55 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             for (int k = 0; k < 40; ++k) { e.render (b); for (int i = 0; i < 256; ++i) pk = std::max (pk, std::abs (b.getSample (0, i))); }
             atOnce = ses.transAt < 0.0 && quiet < 1.0e-4f && pk > 0.02f;
         }
+        // A MUTE that arrives by MIDI while ARM is lit is not made at once from the MIDI thread: it waits; and it is made on
+        // the line by the audio thread, with this thread doing nothing at all from the press until after the line.
+        bool midiWaits = false; double midiAt = -1.0;
+        {
+            Engine e; e.prepare (SRT, 256);
+            Session ses (e, false);
+            Midi m (e, ses, false);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 50; ++i) e.render (b);
+            e.setRunning (true);
+            for (int i = 0; i < 300; ++i) e.render (b);
+            const int mute = cx::lane (1, cx::kMute);
+            const float was = e.target (mute);
+            ses.transBars = 4; ses.transArm();
+            m.incoming (juce::MidiMessage::controllerEvent (2, ccx::kMute, was > 0.5f ? 0 : 127), false);
+            const bool notYet = e.target (mute) == was;
+            m.service();
+            const bool pending = ses.transWaiting() == 1 && e.target (mute) == was;
+            const double line = ses.transAt;
+            while (e.songPos() < line + 0.5) { e.render (b); if (midiAt < 0.0 && e.target (mute) != was) midiAt = e.songPos(); }
+            ses.transTick();
+            midiWaits = notYet && pending && line == 16.0 && midiAt > line - 0.1 && midiAt <= line + 0.02 && ! ses.transArmed && ses.transWaiting() == 0 && ! e.trans.armed.load();
+            if (! midiWaits) std::printf ("    (a MIDI mute under ARM: not yet %d pending %d line %.1f made at %.3f)\n", (int) notYet, (int) pending, line, midiAt);
+        }
+        // a file read at 48 kHz, with the engine since at 96: it still ends on the line, at its own speed
+        double rateOff = 1.0e9;
+        {
+            const auto smp48 = sf::loadSampleFile (leadFile, 48000.0, 120.0);
+            Transition t; t.prepare (96000.0);
+            t.leadSmp = smp48.get(); t.leadKind = Transition::kFile; t.hitKind = Transition::kOff; t.level = 1.0f;
+            t.askFrom = 0.0; t.askAt = 4.0; t.askNow = false; t.askSeq.fetch_add (1);
+            const double spb96 = 96000.0 * 60.0 / 132.0, beats = 256.0 / spb96;
+            std::vector<float> out, l (256), r (256);
+            for (double ppq = 0.0; ppq < 4.5; ppq += beats)
+            {
+                std::fill (l.begin(), l.end(), 0.0f); std::fill (r.begin(), r.end(), 0.0f);
+                t.render (l.data(), r.data(), 256, true, ppq, beats);
+                out.insert (out.end(), l.begin(), l.end());
+            }
+            if (smp48 != nullptr) rateOff = peakAt (out) - (4.0 * spb96 - 4000.0);
+        }
         const bool lines = h1.line == 16.0 && h2.line == 32.0 && l1.line == 16.0 && b1.line == 16.0;
         const bool onTheLine = std::abs (off1 - off2) <= 1.0 && std::abs (off1) <= 400.0 && std::abs (offL - off1) <= 2.0;
         const bool rises = before < -80.0 && late > early + 6.0 && late > -60.0 && hitDb > -40.0 && after < hitDb - 6.0;
-        const bool armOk = ar.waited && ar.line == 16.0 && ar.recallAt > 15.4 && ar.recallAt <= 16.0 && ar.muteAt > 15.9 && ar.muteAt <= 16.02 && ! ar.armedAfter;
-        const bool transOk = lines && onTheLine && rises && armOk && atOnce;
+        const bool armOk = ar.waited && ar.line == 16.0 && ar.recallAt > 15.0 && ar.recallAt <= 16.0 && ar.muteAt > 15.9 && ar.muteAt <= 16.02 && ! ar.armedAfter;
+        const bool transOk = lines && onTheLine && rises && armOk && atOnce && midiWaits && std::abs (rateOff) <= 3.0;
         std::printf ("  %s: TRANSITION: the hit lands on its bar line whenever FIRE was pressed (%.0f and %.0f samples from it through the master, two lines) and a lead-in's file ends on it (%.0f); the built-in riser grows "
-                     "(%.1f to %.1f dB) and the impact follows (%.1f dB, then %.1f); armed, a recall and a mute wait and happen at beats %.2f and %.2f of 16, and ARM goes out; stopped, the hit is at once\n",
-                     transOk ? "ok  " : "FAIL", off1, off2, offL, early, late, hitDb, after, ar.recallAt, ar.muteAt);
+                     "(%.1f to %.1f dB) and the impact follows (%.1f dB, then %.1f); armed, a recall and a mute wait and happen at beats %.2f and %.2f of 16, and ARM goes out; a mute by MIDI under ARM waits too and is made at beat %.3f with the screen's thread idle; a file read at another rate still ends on the line (%.1f samples); stopped, the hit is at once\n",
+                     transOk ? "ok  " : "FAIL", off1, off2, offL, early, late, hitDb, after, ar.recallAt, ar.muteAt, midiAt, rateOff);
         if (! transOk) { ++bad; std::printf ("    (lines %d [%.1f %.1f %.1f] on the line %d rises %d [before %.1f] arm %d [waited %d line %.1f armed after %d] at once %d)\n", (int) lines, h1.line, h2.line, l1.line, (int) onTheLine, (int) rises, before, (int) armOk, (int) ar.waited, ar.line, (int) ar.armedAfter, (int) atOnce); }
         tmpT.deleteRecursively();
     }
@@ -5583,6 +5624,17 @@ static int uiTest()
             juce::WavAudioFormat wf;
             if (auto os = wavFile.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (src, 0, 48000);
         }
+        // (two files whose channels do not agree: one with nothing on the right, one with the right nearly the left turned over)
+        auto twoSided = [&] (const char* name, float right)
+        {
+            juce::AudioBuffer<float> src (2, 24000);
+            for (int i = 0; i < 24000; ++i) { const float x = 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 110.0 * (double) i / 48000.0); src.setSample (0, i, x); src.setSample (1, i, x * right); }
+            const auto f = tmp3.getChildFile (name);
+            juce::WavAudioFormat wf;
+            if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (src, 0, 24000);
+            return f;
+        };
+        const auto leftOnly = twoSided ("left.wav", 0.0f), turned = twoSided ("turned.wav", -0.98f);
         Engine e17; e17.prepare (48000.0, 128);
         Session s17 (e17, false);
         Screen sc17 (s17);
@@ -5613,7 +5665,12 @@ static int uiTest()
         const bool told = sc17.testCfgNote().contains ("PLAIN") && sc17.testCfgNote().contains ("C1 PLAYS IT AT ITS OWN PITCH") && sc17.testBarNote().contains ("PLAIN");
         // (a lane that shapes whatever it is given, and one with no sample model, have no PLAIN)
         const bool notRumble = ! s17.playsSample (6) && s17.samplePlain (6).isEmpty() && s17.samplePlain (4).isEmpty();
-        const bool ok = notYet && noFile && there && before && set && told && notRumble;
+        // PEAK, and so NORMALISE, is the loudest point of either channel: not of their sum, which a one-sided file halves and two opposed channels cancel
+        e17.loadFile (7, leftOnly); const float peakLeft = s17.sampleSays (7).peakDb;
+        e17.loadFile (8, turned);   const float peakTurned = s17.sampleSays (8).peakDb;
+        const bool truePeak = std::abs (peakLeft + 6.02f) < 0.3f && std::abs (peakTurned + 6.02f) < 0.3f;
+        if (! truePeak) std::printf ("    (PEAK of a left-only file %.1f dB, of two opposed channels %.1f dB: both should be -6.0)\n", peakLeft, peakTurned);
+        const bool ok = notYet && noFile && there && before && set && told && notRumble && truePeak;
         check (ok, "PLAIN, beside LOAD in the CONFIG of a lane that plays a sample (not without one): pressed, the filter is open, the layer and its crossover are out, the note is whole, the EQ flat, and TUNE is set so "
                    "that the lane's first step plays the sample at its own pitch; CONFIG and the bar say so; the file's loudest point and its root are known");
         if (! ok) std::printf ("    (not yet %d no file %d there %d [root %s peak %.1f] before %d set %d [tune %s split %.2f] told %d [%s] rumble %d)\n", (int) notYet, (int) noFile, (int) there, says.root.toRawUTF8(), says.peakDb, (int) before, (int) set,

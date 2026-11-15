@@ -25,6 +25,7 @@ struct Transition
     std::atomic<bool> askNow { false };
     // ---- said by the audio thread
     std::atomic<bool> busy { false };           // a line is waited for, or a hit is sounding
+    std::atomic<bool> armed { false };          // (the session's ARM, for the MIDI thread: a mute or a solo that arrives there waits too)
 
     void prepare (double rate) { sr = rate; waiting = leadOn = hitOn = false; seen = askSeq.load(); busy = false; }
 
@@ -87,16 +88,17 @@ struct Transition
                 else if (ls != nullptr)
                 {
                     // a file: it starts where it must to end on the line (part way in, faded up, if there is less time than it is long)
-                    const double len = (double) ls->length();
+                    // (step: the file's samples in one of the engine's, should the engine's rate have changed since it was read)
+                    const double len = (double) ls->length(), step = ls->sr / sr;
                     if (leadPos < 0.0)
                     {
-                        const double left = (at - (ppq0 + (double) i / spb)) * spb;
+                        const double left = (at - (ppq0 + (double) i / spb)) * spb * step;      // (the time left, in the file's samples)
                         if (left <= len) { leadPos = std::max (0.0, len - left); leadFade = leadPos > 64.0 ? 0.0f : 1.0f; }
                     }
                     if (leadPos >= 0.0 && leadPos + 2.0 < len)
                     {
-                        yl = ls->read (0, leadPos, 1.0) * leadFade; yr = ls->read (1, leadPos, 1.0) * leadFade;
-                        leadPos += 1.0;
+                        yl = ls->read (0, leadPos, step) * leadFade; yr = ls->read (1, leadPos, step) * leadFade;
+                        leadPos += step;
                         leadFade = std::min (1.0f, leadFade + 1.0f / (0.01f * (float) sr));
                     }
                 }
@@ -105,7 +107,8 @@ struct Transition
             {
                 if (hs != nullptr)
                 {
-                    if (hitPos + 2.0 < (double) hs->length()) { yl += hs->read (0, hitPos, 1.0); yr += hs->read (1, hitPos, 1.0); hitPos += 1.0; }
+                    const double step = hs->sr / sr;
+                    if (hitPos + 2.0 < (double) hs->length()) { yl += hs->read (0, hitPos, step); yr += hs->read (1, hitPos, step); hitPos += step; }
                     else hitOn = false;
                 }
                 else if (hitBuilt)

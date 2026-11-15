@@ -81,9 +81,11 @@ void Session::transFire()
 void Session::transArm()
 {
     transArmed = ! transArmed;
+    engine.trans.armed = transArmed;
     if (! transArmed && ! transPend.empty())
     {
         // put out with things waiting: they happen now
+        engine.clearSetsAt();
         transDoing = true;
         for (auto& p : transPend) { if (p.kind == 0) recall (p.id, p.scope); else userSet (p.ctl, p.v, p.sounding); }
         transDoing = false;
@@ -104,6 +106,8 @@ bool Session::transDefer (TransPend p)
     // the first thing asked for sets the transition off (unless one is already on its way: then it is that one's line)
     if (transPend.empty() && transBeatsLeft() <= 0.0) { transApply(); transAt = engine.transFire (transBars); }
     if (transAt < 0.0) return false;
+    // (a mute or a solo is given to the audio thread to make on the line, whatever this thread is doing then)
+    if (p.kind == 1) p.onAudio = engine.setAt (p.ctl, p.v, transAt);
     transPend.push_back (std::move (p));
     if (useDisk) startTimer (15);
     if (onChange) onChange();
@@ -122,17 +126,19 @@ void Session::transTick()
         // A recall sets off on the next beat, so it is made inside the beat before the line (as the arrangement makes its own);
         // a mute or a solo is at once, and is made a moment before the line, so that the line's own first hit is heard.
         const auto p = transPend[k];
-        if (stopped || pos >= transAt - (p.kind == 0 ? 0.5 : 0.06))
+        // (a recall: as soon as the line is the next beat. A mute or a solo the audio thread has: once the line is passed, it is
+        // only written down here; one it has not, a moment before the line.)
+        if (stopped || pos >= transAt - (p.kind == 0 ? 0.9 : p.onAudio ? 0.0 : 0.06))
         {
             transPend.erase (transPend.begin() + (std::ptrdiff_t) k);
             if (p.kind == 0) { glideOver = std::max (0.08, glideBeats()); recall (p.id, p.scope); glideOver = -1.0; }
-            else userSet (p.ctl, p.v, p.sounding);
+            else userSet (p.ctl, p.v, p.onAudio && ! stopped && engine.target (p.ctl) == p.v);
             did = true;
         }
         else ++k;
     }
     transDoing = false;
-    if (transPend.empty()) transArmed = false;
+    if (transPend.empty()) { transArmed = false; engine.trans.armed = false; }
     if (did && onChange) onChange();
 }
 
@@ -1590,7 +1596,7 @@ Session::SampleSays Session::sampleSays (int lane) const
         out.pitched = smp->rootHz > 0.0f;
         out.rootNote = out.pitched ? (int) std::lround (smp->rootNote) : 60;
         out.root = juce::MidiMessage::getMidiNoteName (out.rootNote, true, true, 3);
-        out.peakDb = juce::Decibels::gainToDecibels (smp->peak, -100.0f);
+        out.peakDb = juce::Decibels::gainToDecibels (smp->chanPeak, -100.0f);
     }
     return out;
 }

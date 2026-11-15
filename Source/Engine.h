@@ -324,7 +324,12 @@ public:
     juce::String transFile (int slot) const             { return transFiles[(size_t) juce::jlimit (0, 1, slot)]; }
     // FIRE: the lead-in from now to the next line that many bars apart (the one after, if this one is under a beat away), the
     // hit on it. That line, in beats of the song; or -1 with the clock stopped, when the hit plays at once.
-    double transFire (int bars);     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
+    double transFire (int bars);
+    // A control set on a line of the song, made by the audio thread a block or two before the one the line falls in (ARM's
+    // mutes and solos: on time whatever the screen's thread is doing). A few at a time: false, there was no room. With the
+    // clock stopped they are let go (the session then makes them itself).
+    bool setAt (int ctl, float v, double atPpq);
+    void clearSetsAt();     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
     SFProcessor* processorFor (Target) const;
     bool laneFollowsKey (int lane) const;       // its KEY FOLLOW, in CONFIG, is on (false: the lane has none, or it is off)
     std::vector<SetupParam> setupParams (Target) const;
@@ -517,6 +522,8 @@ private:
     bool prepared = false;
     juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost, busBuf, busDry, transBuf;
     std::array<juce::String, 2> transFiles;
+    struct SetAt { std::atomic<int> state { 0 }; int ctl = 0; float v = 0.0f; double at = 0.0; };       // (state: 0 free, 1 being written, 2 waiting)
+    std::array<SetAt, 32> setsAt;
     std::vector<std::shared_ptr<const sf::SampleData>> transKept;      // (every file a slot has had: the audio thread may still hold one)
     juce::AudioBuffer<float> laneBuf;                        // every lane's strip, side by side (two channels each): POCKETS sees them all before any reaches the mix
     Pockets pockets;

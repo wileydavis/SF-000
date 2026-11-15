@@ -398,7 +398,7 @@ PLAIN: it shapes whatever it is given. PERC plays no sample.
 
 - **GAIN**: the sample's own gain, 24 dB either way, before DRIVE and the filter (so up, DRIVE
   bites sooner). On every lane that plays a sample.
-- **NORMALISE**: on, the sample's loudest point is brought to full scale, so a quiet file plays
+- **NORMALISE**: on, the sample's loudest point (of either channel) is brought to full scale, so a quiet file plays
   as loud as a loud one; GAIN is from there. PEAK, beside the file's name, is that loudest
   point: one that reads -10 dB comes up 10 dB. On every lane that plays a sample.
 - **PLAY** (BASS, LEAD, CHORD, PAD): **HELD**, the sample sounds while its note is held and
@@ -449,7 +449,10 @@ keeps the time, so the lead-in ends and the hit lands on the sample the line fal
   at once. It sets the transition off and happens **on the line the transition lands on**, with
   whatever else you ask for meanwhile (the plate counts what waits). So: ARM, un-mute the hats;
   the riser runs, and the hats come in on the line with the hit. ARM then goes out. Put out by
-  hand while things wait, they happen at once.
+  hand while things wait, they happen at once. A mute or a solo that waits is made by the audio
+  thread, on time whatever the screen is doing, and one that arrives by MIDI (the E16's keys)
+  waits as one pressed here does. A recall that waits is made by the screen's thread, most of
+  a beat before its line.
 - **What it plays**, each plate stepped by a press: BARS (4, 8, 16); its level; **IN** (OFF, the
   built-in RISER, or a file); **HIT** (OFF, the built-in IMPACT, or a file); DUB and SPACE (how
   much of it also goes into the two returns: a stab with DUB up is thrown into the delay).

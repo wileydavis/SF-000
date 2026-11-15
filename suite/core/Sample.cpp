@@ -25,6 +25,12 @@ static void analyse (SampleData& s)
     int peakIdx = 0; float pk = 0.0f;
     for (int i = 0; i < n; ++i) if (std::fabs (mono[(size_t) i]) > pk) { pk = std::fabs (mono[(size_t) i]); peakIdx = i; }
     s.peak = std::max (pk, 1.0e-6f);
+    {
+        // (SF-000) the loudest point of either channel
+        float cp = 0.0f;
+        for (int ch = 0; ch < s.buf.getNumChannels(); ++ch) cp = std::max (cp, s.buf.getMagnitude (ch, 0, n));
+        s.chanPeak = std::max (cp, 1.0e-6f);
+    }
     int last = peakIdx;
     for (int i = peakIdx; i < n; ++i) if (std::fabs (mono[(size_t) i]) > pk * 0.01f) last = i;
     s.decaySec = (float) ((last - peakIdx) / s.sr);

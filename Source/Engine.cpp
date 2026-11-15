@@ -1310,6 +1310,25 @@ bool Engine::transLoad (int slot, const juce::File& f)
     return true;
 }
 
+bool Engine::setAt (int ctl, float v, double atPpq)
+{
+    if (ctl < 0 || ctl >= cx::kCount || ! running.load()) return false;
+    for (auto& q : setsAt)
+    {
+        int free = 0;
+        if (! q.state.compare_exchange_strong (free, 1)) continue;
+        q.ctl = ctl; q.v = v; q.at = atPpq;
+        q.state = 2;
+        return true;
+    }
+    return false;
+}
+
+void Engine::clearSetsAt()
+{
+    for (auto& q : setsAt) { int waiting = 2; q.state.compare_exchange_strong (waiting, 0); }
+}
+
 double Engine::transFire (int bars)
 {
     if (! running.load()) { trans.askNow = true; trans.askSeq.fetch_add (1); return -1.0; }
@@ -1692,6 +1711,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
     blockBpm = led ? fol.bpmSaid : tempoFor (cur[(size_t) cx::kTempo]);
     double beats = (double) n * blockBpm / 60.0 / sr;
     const bool starting = run && ! wasRunning, stopping = ! run && wasRunning;
+    // controls set on a line of the song (ARM's mutes and solos): made here when the line is in this block or the next
+    for (auto& q : setsAt)
+        if (q.state.load() == 2)
+        {
+            if (! run) { q.state = 0; continue; }
+            if (ppq + 2.0 * beats >= q.at) { set (q.ctl, q.v); q.state = 0; }
+        }
     bool again = false;                                 // the outside clock went back to the start while this was playing
 
     // MIDI clock out. A follower's note for a beat has to be back here a block before that beat

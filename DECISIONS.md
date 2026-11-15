@@ -3136,11 +3136,55 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      more than one lead-in and one hit; ARM for a stack knob or a macro knob turned; a lead-in
      stretched to the time there is (a file plays at its own speed).
 
+## Every model audited; an outside audit's findings (Nov 15, 14:53): sixtieth build
+
+545. **You**, 14:53, with a file (SF-000-audit-52d5284.zip, a report and its probes, written by
+     ChatGPT against build fifty-nine): "while that's running, heres a chatgpt audit."
+546. **The audit of every model (542).** Each lane's twelve knobs, down and up, for every model
+     the lane has: 85 lane-models (OPEN HAT and CLAP are CLOSED HAT's module and were not run
+     again). It listens to the two outputs added together, so **a knob that only moves the
+     sides reads as asleep**: RUMBLE's WIDTH on REVERB, DELAY, DISTORTED and DUB BOOM (-63 to
+     -73 dB, where a knob that does nothing at all reads -170 or under) is that, not a fault.
+     Nothing asleep: KICK (7 models), PERC (6). What is asleep, by its cause:
+     - **A model with no filter**: RES, ENV AMT and CUTOFF on ORGAN, FM BELL and FM 4-OP (LEAD
+       and CHORD), on PAD's FM 4-OP, and with DECAY too on BASS's SINE SUB.
+     - **A model with no ensemble**: SPACE on CHORD's ACID, MONO 101, MS20, FM BELL, SYNC and
+       FM 4-OP, and on PAD's GRANULAR, TAPE LOOP and NOISE BED.
+     - **A model that reads no DETUNE or COLOR**: DETUNE on CHORD's ACID, ORGAN, SYNC and FM
+       4-OP and on PAD's NOISE BED and FM 4-OP; COLOR on HOOVER and on PAD's STRING MACHINE and
+       TAPE LOOP.
+     - **A model that holds its level**: DECAY on PAD's GRANULAR, TAPE LOOP and NOISE BED.
+     - Singly: TONE on the hats' RIM (and faint on TOM 808), TUNE on SHAKER; SIZE, WIDTH,
+       PREDELAY and DENSITY on RUMBLE's SUB DRONE, SIZE and WIDTH on its SAMPLE; SIGNAL on
+       VOICE's SAMPLE and STUTTER, TONE on its RADIO; DENSITY on PAD, faint (-36 to -40).
+     - GLIDE on BASS, every model: its steps are one note.
+     *None of these is changed in this build.* Each is a model's own design, and waking it
+     changes how that model sounds in what is saved: yours to say which.
+547. **The outside audit, checked against the code.** Its findings are sound. Made right here:
+     - *F01, NORMALISE measured the two channels added together*: a one-sided file came up
+       twice too far and two opposed channels a hundred times. It and PEAK now go by the
+       loudest point of either channel.
+     - *F04, a MUTE or SOLO by MIDI went past ARM*: it was made at once from the MIDI thread.
+       With ARM lit it now goes to the session, and waits.
+     - *F05, ARM's mutes and solos depended on the screen's thread*: they are now made by the
+       audio thread, a block or two before the line, with that thread doing nothing. A recall
+       is still made by the screen's thread, now 0.9 of a beat before its line and not 0.5; a
+       stall longer than that still makes it late. **543's "never after" was wrong** of both.
+     - *F07, a transition's file played at the wrong speed after the device's rate changed.*
+     *Agreed, and not done:* F02 (the root is the strongest repeat, which can be a multiple of
+     the true period: 110 Hz read as 36.7; a better estimate would retune samples already
+     placed, so it wants a ROOT you can set and a rule for old ones); F03 (a stereo voice's
+     sides pass the filter and DRIVE by); F05 for recalls (a whole change put on the audio
+     clock); F06 (a macro knob's MOTION is taken once a block, so a fast one changes with the
+     buffer); F08 (TRANSITION is in no stem); F09 and F10 (its files are not copied into the
+     library, and every one loaded is held until the app closes); F11 (a stem file's lengths
+     are trusted); F12 (a sample held only in memory is lost to a new voice at 96 kHz).
+
 ## Not verified
 
 - **TRANSITION (543)**: timed and measured in the checks, not heard, and not on your Mac. The
   riser and the impact are first guesses at sounds. ARM's waiting is driven by a timer of 15
-  ms: a mute lands up to that much before its line, never after. Not tried with the clock led
+  ms (as first built; see 547: a mute or a solo is now the audio thread's, a recall is not). Not tried with the clock led
   from outside, with the tempo moved while a transition is on its way, or while the
   arrangement plays.
 - **WAVETABLE on BASS, LEAD and CHORD, and KNOBS (537, 538)**: measured, not heard. The audit
