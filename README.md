@@ -659,13 +659,15 @@ alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
 - **NEW**, at the head of the list, makes an empty one and **opens** it. **KEEP KNOB 5'S
   STACK**, beside it, keeps the chosen stack knob's snapshots as one, under the knob's name.
 - **An open stack is in the column**, where a stack knob's own stack stands, and is changed
-  the same way: a snapshot's **ADD** puts it in, its number takes it out, **UP** and **DN**
-  move it, its keys say which parts of the rig it takes, a tap is heard in the headphones.
-  While a stack is open no place is ringed and the strip says STACK; **RENAME** names it.
-  Choosing a place on the left puts the stack away.
+  the same way: a snapshot is carried in (or its **ADD** pressed), a card is carried to
+  another place or off it, its number takes it out, its keys say which parts of the rig it
+  takes, a tap is heard in the headphones. While a stack is open no place is ringed and the
+  strip says STACK; **RENAME** names it. Choosing a place on the left puts the stack away.
+- **ON A KNOB**, at the head of the column while a stack is open, puts it on the first stack
+  knob that holds nothing; that place is then the chosen one.
 - On a stack's card: **the card itself** lists its snapshots under SNAPSHOTS, to hear and to
-  add from (the plate at the head of that list says whose are listed). **OPEN** puts it in
-  the column to be changed. **ADD** puts all of it into what is open: the chosen stack knob,
+  add from (the plate at the head of that list says whose are listed); carried onto a stack
+  knob's place, all of it goes there. **OPEN** puts it in the column to be changed. **ADD** puts all of it into what is open: the chosen stack knob,
   after what the knob holds, or another stack. Its number takes it out of those kept.
 - An empty stack is the instrument's alone until it holds something.
 
@@ -682,7 +684,8 @@ asked.
   is now.
 - **PUT**, on a kept knob's card, puts it on the chosen place. It shows only where the kind
   fits (a macro knob on 1 to 4, a stack knob on 5 to 12, 14 or 15), and the place must hold
-  nothing: CLEAR it first. The knob starts at rest and nothing is heard to change.
+  nothing: CLEAR it first. The knob starts at rest and nothing is heard to change. The card
+  can be carried onto a place instead.
 - A kept knob is a copy, and so is the one put: what you change on the place changes the
   module's knob, not the kept one. Its number takes it out of those kept; modules that have it
   keep theirs.
@@ -756,12 +759,17 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
 - A stack holds up to 128 snapshots (the places of a controller's knob).
 - **MACROS** is where a stack knob is built, on the instrument alone. Pick a stack knob: its
   stack stands as a **column** of cards beside the library, in the knob's order.
-  - Press a snapshot in the library to hear it in the headphones (again to stop). Its **ADD**
-    key puts it on the stack, at the end.
+  - Press a snapshot in the list to hear it in the headphones (again to stop). It is then the
+    one **in hand**: its card is ringed and shows a key for every part of the rig. Put out
+    what should not go with it (heard at once).
+  - **Carry it** into the column (press, move, let go between two cards: a yellow bar shows
+    where), or onto any stack knob's place on the left (a yellow ring). Its **ADD** key puts
+    it at the end of the column with one press.
   - Each card has **a key for every part of the rig**: the eleven lanes, **R** the returns,
     **B** the drum bus, **K** the key. Black: this snapshot takes that part. An empty frame:
     the part is put out, and stays as it is when the knob comes to this snapshot.
-  - **UP** and **DN** move a snapshot earlier or later. Its number takes it off the stack.
+  - **Carry a card** to another place in the column to move it; onto another stack knob's
+    place to put a copy there; off the column to take it out. Its number takes it out too.
   - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A
     key pressed while it plays is heard at once.
   - The wheel over the column moves it when it holds more than eleven.
@@ -1040,6 +1048,7 @@ python3 tools/icon.py assets/icon.png             # the app's icon again: the SF
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work
 build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer with that knob chosen and the knobs kept beside it (--rack: the stacks; --rack --open: one of them open in the column; --modules: the modules)
+build/.../SF-000 --shot x.png --page macros --knob 5 --hand 4  # the designer with that snapshot of the list in hand (its bass and returns put out)
 build/.../SF-000 --shot x.png --page library --finder 1       # a page with a finder lit at the head of its snapshots (1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS)
 build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)

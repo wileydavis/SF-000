@@ -708,6 +708,33 @@ void Session::stackSwap (int k, int a, int b)
     stackSettle (k, on);
 }
 
+void Session::stackMove (int k, int from, int to)
+{
+    if (! isStack (k)) return;
+    auto& kn = knobs[(size_t) k];
+    const int n = (int) kn.snaps.size();
+    if (from < 0 || from >= n) return;
+    to = juce::jlimit (0, n - 1, to);
+    if (to == from) return;
+    const auto on = kn.picked;
+    for (int i = from; i < to; ++i) kn.swapAt ((size_t) i, (size_t) i + 1);
+    for (int i = from; i > to; --i) kn.swapAt ((size_t) i, (size_t) i - 1);
+    stackSettle (k, on);
+}
+
+bool Session::stackInsert (int k, int at, juce::int64 id, juce::uint32 lanes)
+{
+    if (! isStack (k) || findSnap (id) == nullptr) return false;
+    auto& kn = knobs[(size_t) k];
+    if ((int) kn.snaps.size() >= kStackMost) return false;
+    const auto on = kn.picked;
+    kn.add (id, lanes & kAllLanes);
+    const int last = (int) kn.snaps.size() - 1;
+    for (int i = last; i > juce::jlimit (0, last, at); --i) kn.swapAt ((size_t) i, (size_t) i - 1);
+    stackSettle (k, on);
+    return true;
+}
+
 void Session::stackLanes (int k, int index, juce::uint32 lanes)
 {
     if (! isStack (k)) return;
@@ -2630,6 +2657,51 @@ void Session::rackSwap (int index, int a, int b)
     touch();
     if (onLibrary) onLibrary();
     if (onChange) onChange();
+}
+
+void Session::rackMove (int index, int from, int to)
+{
+    if (! rackCanChange (index)) return;
+    auto& st = stacks[(size_t) index];
+    const int n = (int) st.snaps.size();
+    if (from < 0 || from >= n) return;
+    to = juce::jlimit (0, n - 1, to);
+    if (to == from) return;
+    if (! st.lanes.empty())
+    {
+        st.lanes.resize ((size_t) n, kAllLanes);
+        const auto l = st.lanes[(size_t) from];
+        st.lanes.erase (st.lanes.begin() + from); st.lanes.insert (st.lanes.begin() + to, l);
+    }
+    const auto id = st.snaps[(size_t) from];
+    st.snaps.erase (st.snaps.begin() + from); st.snaps.insert (st.snaps.begin() + to, id);
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+}
+
+bool Session::rackInsert (int index, int at, juce::int64 id, juce::uint32 lanes)
+{
+    if (! rackCanChange (index)) return false;
+    const int n = (int) stacks[(size_t) index].snaps.size();
+    if (! rackAdd (index, id, lanes)) return false;
+    if (at >= 0 && at < n) rackMove (index, n, at);
+    return true;
+}
+
+int Session::freeStackKnob() const
+{
+    for (int k = 0; k < 16; ++k) if (isStack (k) && ! knobHolds (k)) return k;
+    return -1;
+}
+
+int Session::rackOntoFree (int index)
+{
+    if (index < 0 || index >= (int) stacks.size() || stacks[(size_t) index].snaps.empty()) return -1;
+    const int k = freeStackKnob();
+    if (k < 0) return -1;
+    knobs[(size_t) k].name = {};                // (a place that holds nothing may still have a name from what it held: the stack's is the one it takes)
+    return stackOnto (index, k) ? k : -1;
 }
 
 void Session::rackLanes (int index, int at, juce::uint32 lanes)

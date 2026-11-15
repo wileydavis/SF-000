@@ -116,6 +116,12 @@ public:
     void testOpenThe (int index, bool showStacks) { openStack = index >= 0 && index < (int) ses.stacks.size() ? ses.stacks[(size_t) index].id : juce::String(); rackList = showStacks; knobList = false; }
     void testFinder (int f) { pressFind (f); }
     static bool testIsPlace (const TestHit& h, int k) { return h.kind == hKnobCard && h.a == k; }
+    static bool testIsPickKey (const TestHit& h, int index, int part) { return h.kind == hPickKey && h.a == index && h.b == part; }
+    static bool testIsColPut (const TestHit& h) { return h.kind == hColPut; }
+    void testHand (int index, juce::uint32 parts) { handId = index >= 0 && index < (int) ses.library.size() ? ses.library[(size_t) index].id : 0; handParts = parts & Session::kAllLanes; }
+    static bool testIsKeptCard (const TestHit& h, int index) { return h.kind == hKeptCard && h.a == index; }
+    static juce::Point<float> testPlaceAt (int k) { return placeRect (k).getCentre().translated (0.0f, 80.0f); }       // (on the card, clear of its knob)
+    juce::Point<float> testColumnGap (int at) const { return { 1287.0f, 110.0f + (float) (at - colScroll) * 74 - 4.0f }; }      // (between the column's cards: before the one at that place)
     static int testPickOf (const TestHit& h) { return h.kind == hPick ? h.a : -1; }
     void testFind (const juce::String& t) { findText = t; }
     void testPlain() { modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; }
@@ -217,7 +223,7 @@ private:
                    hColCard,        // the card itself: heard in the headphones, with the parts of the rig it takes
                    hColKey,         // one of its keys (b: the part: a lane, then the returns, the drum bus, the key): put out or lit
                    hColOut,         // its number: taken off the stack
-                   hColMove,        // moved earlier or later in the stack (b: -1 or +1)
+                   hColMove,        // (was UP and DN: no longer on the screen. A card is moved by carrying it)
                    hPickAdd,        // the designer's library: a card's ADD key (a: which snapshot of the library): onto the chosen stack knob
                    // the rack, beside the column: the stacks kept on the instrument and those LOAD brought
                    hRackTab,        // which of the two is beside the column (a: 0 the snapshots, 1 the stacks)
@@ -226,7 +232,10 @@ private:
                    hModCard,        // a module kept, in the designer's list: chosen
                    hKeptKeep, hKeptPut, hKeptOut, hRackKeep,       // the knobs kept: KEEP (the chosen knob into them), a kept one's PUT (onto the chosen knob), its number (out); the stacks' KEEP
                    hRackNew, hRackOpen, hRackCard,      // the stacks kept: NEW (an empty one, open); a stack's OPEN (into the column, to change); its card (its snapshots listed beside)
-                   hFind };         // the head of the snapshots (a: 0 whose they are, 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS, 5 FIND)
+                   hFind,
+                   hPickKey,        // a key on the snapshot in hand, beside the knob (a: which snapshot of the library; b: the part): what goes with it when it is added
+                   hColPut,         // the column, a stack of the shelf open: ON A KNOB (the first stack knob that holds nothing takes it)
+                   hKeptCard };     // a kept knob's card: carried onto a place         // the head of the snapshots (a: 0 whose they are, 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS, 5 FIND)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
@@ -436,6 +445,21 @@ private:
     R findRect;
     float drawFind (G&, float x, float w, float y);     // the row (two, where it is narrow) at the head of the snapshots; where their cards begin
     void pressFind (int what);
+    // The snapshot in hand, beside the knob: the one last pressed there, and the parts of the rig chosen on its card. They go
+    // with it when it is added (ADD, or carried into the column or onto a place).
+    juce::int64 handId = 0;
+    juce::uint32 handParts = Session::kAllLanes;
+    // Carrying: a card pressed and moved goes with the pointer (a snapshot of the list, a card of the column, a stack, a kept
+    // knob), and is put where it is let go: between two cards of the column, or on a place.
+    juce::Point<float> carryAt;
+    bool carrying() const               { return mouseIsDown && drag.moved && page == pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard); }
+    int columnPlaceAt (juce::Point<float>) const;       // between which cards of the column that is (0: before the first). -1: not over the column
+    static int placeAt (juce::Point<float>);            // which place's card (-1: none)
+    static R placeRect (int k)          { return R (23.0f + (float) (k % 4) * 282, 78.0f + (float) (k / 4) * 224, 272, 216); }
+    bool placeTakes (int k) const;                      // what is carried can go on that place
+    void drop (juce::Point<float>);
+    void putKept (int index, int k);
+    void drawCarry (G&);
     std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;
     bool mouseIsDown = false;

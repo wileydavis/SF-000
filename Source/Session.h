@@ -307,6 +307,8 @@ public:
     bool stackAdd (int k, juce::int64 id, juce::uint32 lanes = kAllLanes);
     void stackDrop (int k, int index);
     void stackSwap (int k, int a, int b);
+    void stackMove (int k, int from, int to);       // one of its snapshots to another place among them, its parts with it
+    bool stackInsert (int k, int at, juce::int64 id, juce::uint32 lanes = kAllLanes);       // as stackAdd, at that place
     void stackLanes (int k, int index, juce::uint32 lanes);
     void stackSettle (int k, juce::int64 on);
     void stacksLeft (int but);
@@ -468,6 +470,10 @@ public:
     bool rackAdd (int index, juce::int64 id, juce::uint32 lanes = kAllLanes);
     void rackDrop (int index, int at);
     void rackSwap (int index, int a, int b);
+    void rackMove (int index, int from, int to);
+    bool rackInsert (int index, int at, juce::int64 id, juce::uint32 lanes = kAllLanes);
+    int  freeStackKnob() const;                             // the first stack knob's place that holds nothing (-1: none is free)
+    int  rackOntoFree (int index);                          // the stack onto that place, whole (-1: none is free, or it holds nothing)
     void rackLanes (int index, int at, juce::uint32 lanes);
     void rackRename (int index, const juce::String& name);
     int  rackIndex (const juce::String& id) const;          // -1: no such stack

@@ -4219,9 +4219,9 @@ static int uiTest()
         const bool outToo = lanesOf (k, 1) == (Session::kAllLanes & ~(1u << 5) & ~(1u << kLanes));
         click (col (1, 1, 5)); draw();
         const bool litAgain = lanesOf (k, 1) == (Session::kAllLanes & ~(1u << kLanes));
-        // moved later: its keys go with it. The first has no earlier and the last no later
-        const bool ends = col (3, 0, -1).x < 0.0f && col (3, 2, 1).x < 0.0f && col (3, 0, 1).x > 0.0f && col (3, 2, -1).x > 0.0f;
-        click (col (3, 1, 1)); draw();
+        // carried later (pressed, taken to after the last, let go): its keys go with it. There is no UP or DN on a card
+        const bool ends = col (3, 0, 1).x < 0.0f && col (3, 1, -1).x < 0.0f && col (3, 1, 1).x < 0.0f;
+        { const auto from = col (0, 1), to = sc.testColumnGap (3); dragBy (from, to.x - from.x, to.y - from.y); draw(); }
         const bool moved = ses.knobs[(size_t) k].snaps == std::vector<juce::int64> { a, c, b } && lanesOf (k, 2) == (Session::kAllLanes & ~(1u << kLanes)) && lanesOf (k, 1) == Session::kAllLanes;
         // the card: in the headphones, with the parts it takes (the returns are not among them); a key pressed while it is there is heard at once
         click (col (0, 2)); draw();
@@ -4828,7 +4828,14 @@ static int uiTest()
         // ADD puts a snapshot into it (no knob is touched); in the column DN moves one, a key puts a part out for one, its number takes one out
         click13 (addAt (2)); draw13(); click13 (addAt (4)); draw13(); click13 (addAt (3)); draw13();
         const bool filled = s13.stacks[0].snaps == Ids { idAt (2), idAt (4), idAt (3) } && s13.knobs[4].snaps == tour && s13.knobs[0].snaps.empty() && colAt (0, 2).x > 0.0f;
-        click13 (colAt (3, 0, 1)); draw13();
+        {
+            // (the first carried to after the second)
+            const auto from = colAt (0, 0), to = sc13.testColumnGap (2);
+            sc13.mouseDown (ev13 (from));
+            for (int q = 1; q <= 3; ++q) sc13.mouseDrag (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), from + (to - from) * ((float) q / 3.0f), juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc13, &sc13, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, true));
+            sc13.mouseUp (ev13 (to));
+            draw13();
+        }
         click13 (colAt (1, 1, 0)); draw13();
         click13 (colAt (2, 2)); draw13();
         const bool changed = s13.stacks[0].snaps == Ids { idAt (4), idAt (2) } && (s13.stacks[0].lanesAt (1) & Session::kAllLanes) == noKick && (s13.stacks[0].lanesAt (0) & Session::kAllLanes) == Session::kAllLanes;
@@ -4890,6 +4897,93 @@ static int uiTest()
         if (! ok) std::printf ("    (none %d made %d filled %d changed %d away %d listed %d onto %d all %d recent %d kept %d no fit %d found %d unfound %d opened %d own %d merged %d out %d filed %d: %s)\n", (int) none, (int) made, (int) filled,
                                (int) changed, (int) away, (int) listed, (int) ontoKnob, (int) allAgain, (int) recent, (int) kept, (int) noFit, (int) found, (int) unfound, (int) opened, (int) noOwnAdd, (int) merged, (int) out, (int) filed,
                                sc13.testBarNote().toRawUTF8());
+    }
+    // 3i. In hand and carried: a snapshot pressed beside the knob shows a key for every part of the rig, and what is lit goes
+    // with it; cards are carried into the column, within it, off it, and onto places; ON A KNOB puts an open stack on a free
+    // stack knob. (Its own rig, made after the POCKETS check and never played.)
+    {
+        Engine e15; e15.prepare (48000.0, 128);
+        Session s15 (e15, false);
+        Screen sc15 (s15);
+        sc15.setSize ((int) Screen::kW, (int) Screen::kH);
+        using Pt = juce::Point<float>;
+        auto draw15 = [&] { sc15.createComponentSnapshot (sc15.getLocalBounds(), false, 0.25f); };
+        auto ev15 = [&] (Pt p, Pt down, bool dragged) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc15, &sc15, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, dragged); };
+        auto click15 = [&] (Pt p) { sc15.mouseDown (ev15 (p, p, false)); sc15.mouseUp (ev15 (p, p, false)); draw15(); };
+        auto carry15 = [&] (Pt from, Pt to)
+        {
+            sc15.mouseDown (ev15 (from, from, false));
+            for (int q = 1; q <= 3; ++q) sc15.mouseDrag (ev15 (from + (to - from) * ((float) q / 3.0f), from, true));
+            draw15();                                                   // (drawn while it is in the hand)
+            sc15.mouseUp (ev15 (to, from, true));
+            draw15();
+        };
+        auto at15 = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc15.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+        auto tabAt = [&] (int which) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsTab (h, which); }); };
+        auto rackKey = [&] (int what, int i) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, what, i); }); };
+        auto pickAt = [&] (int i) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsPick (h, i); }); };
+        auto addAt = [&] (int i) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsPickAdd (h, i); }); };
+        auto keyAt = [&] (int i, int part) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsPickKey (h, i, part); }); };
+        auto colAt = [&] (int what, int i, int b = 0) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsColumn (h, what, i, b); }); };
+        auto colPut = [&] { return at15 ([] (const Screen::TestHit& h) { return Screen::testIsColPut (h); }); };
+        auto keptCard = [&] (int i) { return at15 ([=] (const Screen::TestHit& h) { return Screen::testIsKeptCard (h, i); }); };
+        auto idAt = [&] (int i) { return s15.library[(size_t) i].id; };
+        auto lanes = [&] (int k, int i) { return s15.knobs[(size_t) k].lanesAt ((size_t) i) & Session::kAllLanes; };
+        using Ids = std::vector<juce::int64>;
+        const juce::uint32 noKick = Session::kAllLanes & ~1u;
+        const int k = 5;                                                // (stack knob 6: it holds nothing)
+        sc15.setPage (Screen::pMacros); sc15.testPickKnob (k); draw15();
+        // a snapshot pressed is the one in hand: its card has the keys. The kick put out; ADD: onto the chosen knob without the kick
+        const bool noHand = keyAt (2, 0).x < 0.0f;
+        click15 (pickAt (2));
+        const bool inHand = noHand && keyAt (2, 0).x > 0.0f && keyAt (2, kLanes + 2).x > 0.0f && keyAt (3, 0).x < 0.0f;
+        click15 (keyAt (2, 0));
+        click15 (addAt (2));
+        const bool withParts = s15.knobs[(size_t) k].snaps == Ids { idAt (2) } && lanes (k, 0) == noKick;
+        // another pressed: that one is in hand, whole. Carried into the column, before the one that is there: it is the first
+        click15 (pickAt (3));
+        const bool handMoves = keyAt (3, 0).x > 0.0f && keyAt (2, 0).x < 0.0f;
+        carry15 (pickAt (3), sc15.testColumnGap (0));
+        const bool carriedIn = s15.knobs[(size_t) k].snaps == Ids { idAt (3), idAt (2) } && lanes (k, 0) == Session::kAllLanes && lanes (k, 1) == noKick;
+        // a card of the column carried to after the other: moved, its parts with it. There is no UP or DN
+        carry15 (colAt (0, 0), sc15.testColumnGap (2));
+        const bool movedIn = s15.knobs[(size_t) k].snaps == Ids { idAt (2), idAt (3) } && lanes (k, 0) == noKick && colAt (3, 0, 1).x < 0.0f;
+        // carried onto another stack knob's place: a copy there, with its parts; the column keeps its own
+        carry15 (colAt (0, 0), Screen::testPlaceAt (7));
+        const bool copied = s15.knobs[7].snaps == Ids { idAt (2) } && lanes (7, 0) == noKick && s15.knobs[(size_t) k].snaps.size() == 2;
+        // a snapshot of the list carried onto a place: at the end of that knob's stack. Onto a macro knob's: not put, and said
+        carry15 (pickAt (4), Screen::testPlaceAt (7));
+        const auto energyWas = s15.knobs[0].links.size();
+        carry15 (pickAt (4), Screen::testPlaceAt (0));
+        const bool ontoPlace = s15.knobs[7].snaps == Ids { idAt (2), idAt (4) } && s15.knobs[0].snaps.empty() && s15.knobs[0].links.size() == energyWas && sc15.testBarNote().contains ("MACRO KNOBS");
+        // a card carried off the column: taken out. A card only pressed is not moved
+        carry15 (colAt (0, 1), Pt (1570.0f, 900.0f));
+        click15 (colAt (0, 0));
+        const bool takenOut = s15.knobs[(size_t) k].snaps == Ids { idAt (2) };
+        // a new stack, filled; ON A KNOB: onto the first stack knob that holds nothing (7), which is then the chosen place; the stack is put away, and kept
+        click15 (tabAt (1)); click15 (rackKey (0, 0));
+        const bool emptySays = colPut().x > 0.0f && (click15 (colPut()), sc15.testBarNote().contains ("NOTHING IN IT")) && sc15.testOpenStack() == 0;
+        click15 (addAt (5)); click15 (addAt (6));
+        click15 (colPut());
+        const bool onKnob = s15.knobs[6].snaps == Ids { idAt (5), idAt (6) } && s15.knobs[6].name == "STACK 1" && sc15.testOpenStack() < 0 && s15.stacks.size() == 1 && s15.stacks[0].snaps.size() == 2
+                            && sc15.testBarNote().contains ("IS ON KNOB 7") && colAt (0, 1).x > 0.0f && colPut().x < 0.0f;
+        // a stack's card carried onto a place: all of it goes there (and the list beside is not changed by that)
+        click15 (tabAt (1));
+        carry15 (rackKey (2, 0), Screen::testPlaceAt (8));
+        const bool stackOnPlace = s15.knobs[8].snaps == Ids { idAt (5), idAt (6) } && sc15.testLibStack() == -1;
+        // a kept knob's card carried onto a place of its kind that holds nothing: put there. Onto the other kind: not put, and said
+        s15.knobKeep (0);
+        s15.knobClear (1);
+        click15 (tabAt (2));
+        carry15 (keptCard (0), Screen::testPlaceAt (1));
+        const bool keptOnPlace = s15.knobs[1].name == "ENERGY" && s15.knobs[1].links.size() == energyWas;
+        carry15 (keptCard (0), Screen::testPlaceAt (9));
+        const bool keptRefused = ! s15.knobHolds (9) && sc15.testBarNote().contains ("A MACRO KNOB GOES ON 1 TO 4");
+        const bool ok = inHand && withParts && handMoves && carriedIn && movedIn && copied && ontoPlace && takenOut && emptySays && onKnob && stackOnPlace && keptOnPlace && keptRefused;
+        check (ok, "in hand and carried: a snapshot pressed beside the knob shows a key for every part, and what is lit goes with it; a snapshot is carried into the column where it is let go, a card of the column to "
+                   "another place in it, onto another knob (a copy) or off it (taken out); a snapshot, a stack and a kept knob are carried onto places; ON A KNOB puts the open stack on the first free stack knob");
+        if (! ok) std::printf ("    (hand %d parts %d moves %d in %d moved %d copied %d place %d out %d empty %d on knob %d stack %d kept %d refused %d: %s)\n", (int) inHand, (int) withParts, (int) handMoves, (int) carriedIn, (int) movedIn,
+                               (int) copied, (int) ontoPlace, (int) takenOut, (int) emptySays, (int) onKnob, (int) stackOnPlace, (int) keptOnPlace, (int) keptRefused, sc15.testBarNote().toRawUTF8());
     }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
@@ -5314,6 +5408,8 @@ static int shot (const juce::StringArray& args)
             // (--open: the second of them opened in the column, with the snapshots beside it; --open with --stacks: the stacks beside it)
             if (args.contains ("--open")) sc.testOpenThe (1, args.contains ("--stacks"));
         }
+        // (--hand N: that snapshot of the list in hand, its bass and its returns put out)
+        if (arg ("--hand", "").isNotEmpty()) sc.testHand (arg ("--hand", "1").getIntValue() - 1, Session::kAllLanes & ~(1u << 5) & ~(1u << kLanes));
         if (args.contains ("--kept"))
         {
             // (the knobs kept, beside it: the first macro knob, the first two stack knobs, and a macro knob of another set)

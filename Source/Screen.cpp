@@ -640,7 +640,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             break;
         case hRackTab:
             t.title = h.a == 0 ? "SNAPSHOTS" : h.a == 1 ? "STACKS" : "KNOBS";
-            body = h.a == 0 ? "THE SNAPSHOTS: A SNAPSHOT'S ADD PUTS IT INTO WHAT IS OPEN IN THE COLUMN (THE CHOSEN STACK KNOB, OR A STACK); A TAP IS HEARD IN THE HEADPHONES."
+            body = h.a == 0 ? "THE SNAPSHOTS. PRESSED: HEARD IN THE HEADPHONES, AND ITS CARD SHOWS A KEY FOR EVERY PART OF THE RIG (PUT OUT WHAT SHOULD NOT GO WITH IT). CARRIED: INTO THE COLUMN WHERE IT IS LET GO, OR ONTO A STACK KNOB'S PLACE. ADD: AT THE END OF WHAT IS OPEN IN THE COLUMN."
                  : h.a == 1 ? "THE STACKS KEPT: SNAPSHOTS UNDER A NAME, TO FIND THEM BY. A STACK'S CARD LISTS ITS SNAPSHOTS BESIDE; OPEN PUTS IT IN THE COLUMN TO BE CHANGED; ADD PUTS ALL OF IT INTO WHAT IS OPEN. WITH ONLINE LIT THEY ARE KEPT THE SAME AS THE ONES THE WEB LIBRARY HAS LIT FOR THE INSTRUMENT."
                  : "THE KNOBS KEPT: MACRO KNOBS AND STACK KNOBS, EACH AS IT WAS WHEN IT WAS KEPT, TO PUT ON A PLACE OF WHATEVER MODULE IS IN THE CHASSIS. THEY ARE THE INSTRUMENT'S OWN: NO NETWORK IS ASKED.";
             break;
@@ -652,17 +652,29 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             t.title = "ADD";
             body = "PUTS THIS STACK'S SNAPSHOTS INTO WHAT IS OPEN IN THE COLUMN (THE CHOSEN STACK KNOB, OR ANOTHER STACK), AFTER WHAT IT HOLDS, EACH WITH ITS PARTS. A KNOB THAT HELD NOTHING AND HAS NO NAME TAKES THE STACK'S.";
             break;
+        case hPickKey:
+            t.title = "A PART OF THE RIG";
+            body = "ON THE SNAPSHOT IN HAND (THE ONE LAST PRESSED): BLACK, THIS PART GOES WITH IT WHEN IT IS ADDED; AN EMPTY FRAME, IT DOES NOT. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. HEARD AT ONCE WHILE IT IS IN THE HEADPHONES.";
+            break;
+        case hColPut:
+            t.title = "ON A KNOB";
+            body = "PUTS THIS STACK ON THE FIRST STACK KNOB THAT HOLDS NOTHING, WHOLE, EACH SNAPSHOT WITH ITS PARTS. THAT PLACE IS THEN THE CHOSEN ONE. THE STACK STAYS KEPT.";
+            break;
+        case hKeptCard:
+            t.title = "A KEPT KNOB";
+            body = "CARRIED ONTO A PLACE OF ITS KIND THAT HOLDS NOTHING, IT IS PUT THERE (AS ITS PUT KEY DOES ON THE CHOSEN PLACE).";
+            break;
         case hRackNew:
             t.title = "NEW";
             body = "A NEW STACK WITH NOTHING IN IT, KEPT, AND OPENED IN THE COLUMN: ADD, ON A SNAPSHOT, PUTS IT IN. RENAME, BELOW, NAMES IT.";
             break;
         case hRackOpen:
             t.title = "OPEN";
-            body = "PUTS THIS STACK IN THE COLUMN TO BE CHANGED: ADD PUTS A SNAPSHOT IN, ITS NUMBER TAKES IT OUT, UP AND DN MOVE IT, ITS KEYS SAY WHICH PARTS OF THE RIG IT TAKES. CHOOSING A PLACE ON THE LEFT PUTS THE STACK AWAY.";
+            body = "PUTS THIS STACK IN THE COLUMN TO BE CHANGED: A SNAPSHOT IS CARRIED IN (OR ITS ADD PRESSED), CARRIED TO ANOTHER PLACE AMONG THE OTHERS, CARRIED OFF OR ITS NUMBER PRESSED TO TAKE IT OUT; ITS KEYS SAY WHICH PARTS OF THE RIG IT TAKES. ON A KNOB PUTS THE STACK ON A FREE STACK KNOB. CHOOSING A PLACE ON THE LEFT PUTS THE STACK AWAY.";
             break;
         case hRackCard:
             t.title = "A STACK";
-            body = "PRESSED: ITS SNAPSHOTS ARE THE ONES LISTED UNDER SNAPSHOTS, TO HEAR AND TO ADD FROM. THE PLATE AT THE HEAD OF THAT LIST SAYS WHOSE ARE LISTED; PRESSED, IT GOES ON TO THE NEXT STACK, THEN TO ALL OF THEM.";
+            body = "PRESSED: ITS SNAPSHOTS ARE THE ONES LISTED UNDER SNAPSHOTS, TO HEAR AND TO ADD FROM. THE PLATE AT THE HEAD OF THAT LIST SAYS WHOSE ARE LISTED; PRESSED, IT GOES ON TO THE NEXT STACK, THEN TO ALL OF THEM. CARRIED ONTO A STACK KNOB'S PLACE, OR INTO THE COLUMN: ALL OF IT GOES THERE.";
             break;
         case hFind:
             t.title = h.a == 0 ? "WHOSE ARE LISTED" : h.a == 1 ? "RECENT" : h.a == 2 ? "FITS NOW" : h.a == 3 ? "MORE" : h.a == 4 ? "LESS" : "FIND";
@@ -1724,9 +1736,12 @@ void Screen::drawSequencer (G& g, R r)
 void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selected, int hitKind)
 {
     hit (r, hitKind, index, 0);
-    if (! vis (g, r)) return;
-    card (g, r, selected);
     const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+    // (beside the knob, the one in hand has a key for every part of the rig where the others draw their sound: what goes with it when it is added)
+    const bool inHand = hitKind == hPick && page == pMacros && s.id == handId;
+    if (inHand) for (int p = 0; p < kLanes + 3; ++p) hit (R (x0 + (float) p * 18.6f, y0 + 30, 17.0f, 24), hPickKey, index, p);
+    if (! vis (g, r)) return;
+    card (g, r, selected || inHand);
     const String num (index + 1);
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
     tag (g, R (x0, y0, wTag, 24), num);
@@ -1740,6 +1755,17 @@ void Screen::drawSnapCard (G& g, const Snapshot& s, int index, R r, bool selecte
     if (adds) { const R ar (r.getRight() - 6 - 44, y0, 44, 24); window (g, ar, col::white); text (g, "ADD", ar, fNote, col::black); }
     else if (heard) plate (g, r.getRight() - 6 - (std::ceil (tw (fLegend, "IN THE PHONES")) + 16), y0, "IN THE PHONES", fLegend, 8, col::green, col::lit, 24);
     else text (g, s.time.formatted ("%b %d  %H:%M").toUpperCase(), R (r.getRight() - 110, y0, 104, 24), fLbl, col::black, juce::Justification::centredRight);
+    if (inHand)
+    {
+        static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
+        for (int p = 0; p < kLanes + 3; ++p)
+        {
+            const R kr (x0 + (float) p * 18.6f, y0 + 30, 17.0f, 24);
+            if (((handParts >> p) & 1u) != 0) { window (g, kr, col::black); text (g, partName[p], kr, fNote, col::lit); }
+            else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[p], kr, fNote, tone (col::black).withAlpha (0.45f)); }
+        }
+        return;
+    }
     const float gy = y0 + 28, gh = 30;
     auto box = [&] (float x, float w)
     {
@@ -2356,12 +2382,141 @@ void Screen::drawMacros (G& g)
     }
     // (the paragraph that stood here, saying what each kind of knob does, made way for the module's name and keys: each key
     // still says what it does when the pointer rests on it, and the README has the rest)
+    drawCarry (g);          // (what is in the hand, over everything)
+}
+
+// ---- carrying a card
+int Screen::placeAt (juce::Point<float> p)
+{
+    for (int k = 0; k < 16; ++k) if (placeRect (k).contains (p)) return k;
+    return -1;
+}
+
+int Screen::columnPlaceAt (juce::Point<float> p) const
+{
+    if (! columnShown() || p.x < 1146.0f || p.x > 1428.0f || p.y < 74.0f || p.y > 975.0f) return -1;
+    const int os = openAt();
+    const int n = os >= 0 ? (int) ses.stacks[(size_t) os].snaps.size() : (int) ses.knobs[(size_t) selKnob].snaps.size();
+    return juce::jlimit (0, n, colScroll + (int) std::floor ((p.y - 110.0f + 37.0f) / 74.0f));
+}
+
+bool Screen::placeTakes (int k) const
+{
+    if (k < 0 || k >= 16 || Session::isCorner (k)) return false;
+    if (drag.kind == hKeptCard) return drag.a < (int) ses.keptKnobs.size() && ses.keptKnobs[(size_t) drag.a].stack == Session::isStack (k);
+    return Session::isStack (k);        // (snapshots and stacks go on a stack knob)
+}
+
+void Screen::drawCarry (G& g)
+{
+    if (! carrying()) return;
+    const int os = openAt();
+    String name;
+    if (drag.kind == hPick && drag.a < (int) ses.library.size()) name = ses.library[(size_t) drag.a].name;
+    else if (drag.kind == hColCard)
+    {
+        const auto& snaps = os >= 0 ? ses.stacks[(size_t) os].snaps : ses.knobs[(size_t) selKnob].snaps;
+        if (drag.a < (int) snaps.size()) if (const auto* sn = ses.findSnap (snaps[(size_t) drag.a])) name = sn->name;
+    }
+    else if (drag.kind == hRackCard && drag.a < (int) ses.stacks.size()) name = ses.stacks[(size_t) drag.a].name;
+    else if (drag.kind == hKeptCard && drag.a < (int) ses.keptKnobs.size()) name = ses.keptKnobs[(size_t) drag.a].name();
+    // where it would land: a bar between two cards of the column (a stack goes in whole, after what is there), or a ring on a place
+    const int at = columnPlaceAt (carryAt), pl = placeAt (carryAt);
+    if (at >= 0 && drag.kind != hKeptCard && ! (drag.kind == hRackCard && drag.a == os))
+    {
+        const int n = os >= 0 ? (int) ses.stacks[(size_t) os].snaps.size() : (int) ses.knobs[(size_t) selKnob].snaps.size();
+        const float y = 110.0f + (float) ((drag.kind == hRackCard ? n : at) - colScroll) * 74 - 6;
+        g.setColour (tone (col::yellow)); g.fillRect (R (1151.0f, juce::jlimit (104.0f, 962.0f, y), 272.0f, 4.0f));
+    }
+    else if (pl >= 0 && placeTakes (pl))
+    {
+        g.setColour (tone (col::yellow)); g.drawRect (placeRect (pl).expanded (3.0f), 3.0f);
+    }
+    // the thing itself, by its name, at the pointer
+    const float w = std::ceil (tw (fLegend, name)) + 16;
+    plate (g, juce::jlimit (10.0f, kW - w - 10.0f, carryAt.x + 10), std::max (60.0f, carryAt.y - 32), name, fLegend, 8, col::yellow, col::black, 24);
+}
+
+void Screen::putKept (int index, int k)
+{
+    const String name = index >= 0 && index < (int) ses.keptKnobs.size() ? ses.keptKnobs[(size_t) index].name() : String();
+    switch (ses.knobPut (index, k))
+    {
+        case Session::putDone:    recNote = name + " IS ON KNOB " + String (k + 1); break;
+        case Session::putHolds:   recNote = "KNOB " + String (k + 1) + " HOLDS SOMETHING: CLEAR IT FIRST (KEEP IT, IF IT IS WORTH KEEPING)"; break;
+        case Session::putNothing: recNote = "NOTHING OF " + name + " IS LEFT HERE: ITS SNAPSHOTS ARE GONE FROM THE LIBRARY"; break;
+        default:                  recNote = "A MACRO KNOB GOES ON 1 TO 4, A STACK KNOB ON 5 TO 12, 14 OR 15"; break;
+    }
+    recNoteAt = juce::Time::getMillisecondCounter();
+}
+
+// What was carried is let go: between two cards of the column, on a place, or nowhere.
+void Screen::drop (juce::Point<float> p)
+{
+    const int at = columnPlaceAt (p), pl = placeAt (p), os = openAt();
+    auto say = [this] (const String& t) { recNote = t; recNoteAt = juce::Time::getMillisecondCounter(); };
+    const char* const noRoom = "NO ROOM ON THAT KNOB";
+    const char* const macroPlace = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON A STACK KNOB";
+    switch (drag.kind)
+    {
+        case hPick:
+        {
+            // a snapshot of the list, with the parts chosen on its card: into the column where it was let go, or onto a place's stack
+            if (drag.a >= (int) ses.library.size()) break;
+            const auto id = ses.library[(size_t) drag.a].id;
+            const auto parts = id == handId ? handParts : Session::kAllLanes;
+            if (at >= 0) { if (os >= 0) ses.rackInsert (os, at, id, parts); else if (! ses.stackInsert (selKnob, at, id, parts)) say (noRoom); }
+            else if (pl >= 0 && ! Session::isCorner (pl))
+            {
+                if (! Session::isStack (pl)) say (macroPlace);
+                else if (! ses.stackAdd (pl, id, parts)) say (noRoom);
+            }
+            break;
+        }
+        case hColCard:
+        {
+            // a card of the column: to another place in it; onto another knob (a copy: the column keeps its own); off it, taken out
+            const auto& snaps = os >= 0 ? ses.stacks[(size_t) os].snaps : ses.knobs[(size_t) selKnob].snaps;
+            if (drag.a >= (int) snaps.size()) break;
+            const auto id = snaps[(size_t) drag.a];
+            const auto parts = (os >= 0 ? ses.stacks[(size_t) os].lanesAt ((size_t) drag.a) : ses.knobs[(size_t) selKnob].lanesAt ((size_t) drag.a)) & Session::kAllLanes;
+            if (at >= 0) { const int to = at > drag.a ? at - 1 : at; if (os >= 0) ses.rackMove (os, drag.a, to); else ses.stackMove (selKnob, drag.a, to); }
+            else if (pl >= 0)
+            {
+                if (Session::isStack (pl) && (os >= 0 || pl != selKnob) && ! ses.stackAdd (pl, id, parts)) say (noRoom);
+            }
+            else if (os >= 0) ses.rackDrop (os, drag.a);
+            else ses.stackDrop (selKnob, drag.a);
+            break;
+        }
+        case hRackCard:
+        {
+            // a stack: onto a place's stack knob, or into what is open in the column, whole
+            if (drag.a >= (int) ses.stacks.size()) break;
+            if (pl >= 0 && ! Session::isCorner (pl))
+            {
+                if (! Session::isStack (pl)) say (macroPlace);
+                else if (! ses.stackOnto (drag.a, pl)) say ("NO ROOM ON THAT KNOB FOR ALL OF THEM");
+            }
+            else if (at >= 0)
+            {
+                const auto from = ses.stacks[(size_t) drag.a];
+                if (os >= 0) { if (drag.a != os) for (size_t i = 0; i < from.snaps.size(); ++i) ses.rackAdd (os, from.snaps[i], from.lanesAt (i)); }
+                else if (! ses.stackOnto (drag.a, selKnob)) say ("NO ROOM ON THAT KNOB FOR ALL OF THEM");
+            }
+            break;
+        }
+        case hKeptCard:
+            if (pl >= 0 && ! Session::isCorner (pl)) putKept (drag.a, pl);
+            break;
+        default: break;
+    }
 }
 
 // The column: the chosen stack knob's stack as it is, in its order, beside the library it is built from. Each snapshot
 // is a card with a key for every part of the rig: the eleven lanes, the returns (R), the drum bus (B), the key (K). Lit, this
 // snapshot takes that part; put out, the part stays as it is when the knob comes to this snapshot, is pressed onto it,
-// or plays it in the headphones. The card's number takes it off the stack; UP and DN move it earlier or later; the
+// or plays it in the headphones. The card's number takes it off the stack; it is moved by carrying it; the
 // card itself plays it in the headphones with the parts it takes. All of it is the session's own: no network is asked.
 void Screen::drawColumn (G& g)
 {
@@ -2378,22 +2533,27 @@ void Screen::drawColumn (G& g)
         const R hr (x, 78.0f, 272, 26);
         const String num = shelf ? String ("STACK") : String (k + 1);
         const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+        // (a stack of the shelf: ON A KNOB puts it on the first stack knob that holds nothing)
+        const R pr (x + 272 - 84, 79.0f, 84, 24);
         if (vis (g, hr))
         {
             tag (g, R (x, 78.0f, wTag, 26), num);
-            const float wn = plate (g, x + wTag, 78.0f, shelf ? ses.stacks[(size_t) os].name : kn.name.isEmpty() ? String ("UNNAMED") : kn.name, fLegend, 8, col::white, col::black);
+            String name = shelf ? ses.stacks[(size_t) os].name : kn.name.isEmpty() ? String ("UNNAMED") : kn.name;
+            if (shelf) while (name.length() > 3 && x + wTag + std::ceil (tw (fLegend, name)) + 16 > pr.getX() - 4) name = name.dropLastCharacters (1);
+            const float wn = plate (g, x + wTag, 78.0f, name, fLegend, 8, col::white, col::black);
             const String count = String (n) + (n == 1 ? " SNAPSHOT" : " SNAPSHOTS");
-            if (x + wTag + wn + 4 + std::ceil (tw (fNote, count)) + 12 <= x + 272) plate (g, x + 272 - (std::ceil (tw (fNote, count)) + 12), 80.0f, count, fNote, 6, col::white, col::black);
+            if (shelf) { window (g, pr, col::white); text (g, "ON A KNOB", pr, fNote, col::black); }
+            else if (x + wTag + wn + 4 + std::ceil (tw (fNote, count)) + 12 <= x + 272) plate (g, x + 272 - (std::ceil (tw (fNote, count)) + 12), 80.0f, count, fNote, 6, col::white, col::black);
         }
-        if (shelf) selNameRect = R (x + wTag, 78.0f, 272 - wTag, 26);      // (RENAME names it there)
+        if (shelf) { hit (pr, hColPut, 0, 0); selNameRect = R (x + wTag, 78.0f, pr.getX() - 4 - (x + wTag), 26); }      // (RENAME names it there)
     }
     const int rows = 11;
     colScroll = juce::jlimit (0, std::max (0, n - rows), colScroll);
     if (n == 0 && vis (g, R (x, 112, 272, 60)))
     {
         g.setColour (tone (col::black)); g.setFont (fLbl);
-        g.drawFittedText (shelf ? "NOTHING IN IT. PRESS ADD ON A SNAPSHOT ON THE RIGHT TO PUT IT IN. CHOOSE A PLACE ON THE LEFT TO PUT THE STACK AWAY."
-                                : "NO SNAPSHOTS ON IT. PRESS ADD ON ONE ON THE RIGHT TO BEGIN ITS STACK.", juce::Rectangle<int> ((int) x + 6, 116, 260, 56), juce::Justification::topLeft, 3, 1.0f);
+        g.drawFittedText (shelf ? "NOTHING IN IT. CARRY A SNAPSHOT HERE FROM THE RIGHT, OR PRESS ITS ADD. CHOOSE A PLACE ON THE LEFT TO PUT THE STACK AWAY."
+                                : "NO SNAPSHOTS ON IT. CARRY ONE HERE FROM THE RIGHT, OR PRESS ITS ADD, TO BEGIN ITS STACK.", juce::Rectangle<int> ((int) x + 6, 116, 260, 56), juce::Justification::topLeft, 3, 1.0f);
     }
     static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
     for (int row = 0; row < rows; ++row)
@@ -2406,21 +2566,18 @@ void Screen::drawColumn (G& g)
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
         const String num (i + 1);
         const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
-        const R up (r.getRight() - 6 - 62, y0, 30, 24), dn (r.getRight() - 6 - 30, y0, 30, 24);
         const juce::uint32 lanes = lanesAt ((size_t) i) & Session::kAllLanes;
         if (vis (g, r))
         {
             const bool heard = sn != nullptr && ses.cueing() == sn->id;
             card (g, r, heard);
             tag (g, R (x0, y0, wTag, 24), num);
-            plate (g, x0 + wTag, y0, sn != nullptr ? sn->name : String ("GONE"), fLegend, 8, heard ? col::green : col::white, heard ? col::lit : col::black, 24);
-            // earlier and later (the first has no earlier, the last no later)
-            if (i > 0) { window (g, up, col::white); text (g, "UP", up, fNote, col::black); }
-            if (i < n - 1) { window (g, dn, col::white); text (g, "DN", dn, fNote, col::black); }
+            // (it is moved by carrying it: pressed and taken to between two others; off the column, it is taken out)
+            String name = sn != nullptr ? sn->name : String ("GONE");
+            while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > r.getRight() - 6) name = name.dropLastCharacters (1);
+            plate (g, x0 + wTag, y0, name, fLegend, 8, heard ? col::green : col::white, heard ? col::lit : col::black, 24);
         }
         hit (R (x0, y0, wTag, 24), hColOut, i, 0);
-        if (i > 0) hit (up, hColMove, i, -1);
-        if (i < n - 1) hit (dn, hColMove, i, 1);
         // its keys: black with a lit figure while this snapshot takes the part; an empty frame when the part is put out
         for (int p = 0; p < kLanes + 3; ++p)
         {
@@ -2486,6 +2643,7 @@ void Screen::drawKept (G& g, float x)
             g.setColour (tone (col::black)); g.setFont (fLbl);
             g.drawFittedText (ses.keptSays (i), juce::Rectangle<int> ((int) x0, (int) y0 + 28, 260, 28), juce::Justification::topLeft, 2, 0.8f);
         }
+        hit (r, hKeptCard, i, 0);
         hit (R (x0, y0, wTag, 24), hKeptOut, i, 0);
         if (fits) hit (pr, hKeptPut, i, 0);
     }
@@ -2995,25 +3153,19 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             break;
         }
         case hColOut:   if (const int os = openAt(); os >= 0) ses.rackDrop (os, h->a); else ses.stackDrop (selKnob, h->a); break;
-        case hColMove:
-        {
-            const int to = h->a + h->b;
-            if (const int os = openAt(); os >= 0) ses.rackSwap (os, h->a, to);
-            else if (to >= 0 && to < (int) ses.knobs[(size_t) selKnob].snaps.size()) ses.stackSwap (selKnob, h->a, to);
+        case hColCard: break;       // (pressed and let go where it is: heard. Carried: moved. See mouseUp)
+        case hColPut:
+            // the open stack onto the first stack knob that holds nothing; that place is then the chosen one, and the stack is put away
+            if (const int os = openAt(); os >= 0)
+            {
+                const String name = ses.stacks[(size_t) os].name;
+                if (ses.stacks[(size_t) os].snaps.empty()) recNote = "NOTHING IN IT YET";
+                else if (ses.freeStackKnob() < 0) recNote = "NO STACK KNOB IS FREE: CLEAR ONE FIRST";
+                else if (const int k = ses.rackOntoFree (os); k >= 0) { recNote = name + " IS ON KNOB " + String (k + 1); selKnob = k; openStack = {}; colScroll = 0; }
+                else recNote = "A KNOB HOLDS " + String (Session::kStackMost) + " SNAPSHOTS AT MOST";
+                recNoteAt = juce::Time::getMillisecondCounter();
+            }
             break;
-        }
-        case hColCard:
-        {
-            const int os = openAt();
-            const auto& kn = ses.knobs[(size_t) selKnob];
-            const int n = os >= 0 ? (int) ses.stacks[(size_t) os].snaps.size() : (int) kn.snaps.size();
-            if (h->a >= n) break;
-            const auto id = os >= 0 ? ses.stacks[(size_t) os].snaps[(size_t) h->a] : kn.snaps[(size_t) h->a];
-            const juce::uint32 lanes = (os >= 0 ? ses.stacks[(size_t) os].lanesAt ((size_t) h->a) : kn.lanesAt ((size_t) h->a)) & Session::kAllLanes;
-            if (ses.cueing() == id) ses.cue (0);
-            else { ses.cueWith (id, Session::scopeOf (lanes)); ses.cue (id); }
-            break;
-        }
         case hArrPart:  selPart = h->a; break;
         case hArrBars:  selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].bars; break;
         case hArrMorph: selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].morph; break;
@@ -3026,12 +3178,20 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 if (ses.arrAdd (ses.library[(size_t) h->a].id, at)) selPart = at >= 0 ? at : n;
                 break;
             }
-            // (in the designer a card pressed is heard in the headphones, whole; pressed again, it stops. ADD is what puts it on a knob.)
-            const auto id = ses.library[(size_t) h->a].id;
-            if (ses.cueing() == id) ses.cue (0);
-            else { ses.cueWith (0, Session::Scope()); ses.cue (id); }
+            // (in the designer a card pressed and let go is heard in the headphones; carried, it is put where it is let go. See mouseUp)
             break;
         }
+        case hPickKey:
+        {
+            // a key on the snapshot in hand: that part goes with it, or does not (heard at once, if it is in the headphones)
+            if (h->a >= (int) ses.library.size()) break;
+            const auto id = ses.library[(size_t) h->a].id;
+            if (id != handId) break;
+            handParts = (handParts ^ (1u << h->b)) & Session::kAllLanes;
+            if (ses.cueing() == id) { if (handParts == Session::kAllLanes) ses.cueWith (0, Session::Scope()); else ses.cueWith (id, Session::scopeOf (handParts)); }
+            break;
+        }
+        case hKeptCard: break;      // (carried onto a place: see mouseUp)
         case hRackTab:  rackList = h->a == 1; knobList = h->a == 2; break;
         case hRackKeep:
             // (the chosen stack knob's snapshots, each with its parts, into the stacks kept under the knob's name)
@@ -3050,19 +3210,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             }
             break;
         case hKeptOut:  ses.knobForget (h->a); break;
-        case hKeptPut:
-        {
-            const String name = h->a < (int) ses.keptKnobs.size() ? ses.keptKnobs[(size_t) h->a].name() : String();
-            switch (ses.knobPut (h->a, selKnob))
-            {
-                case Session::putDone:    recNote = name + " IS ON KNOB " + String (selKnob + 1); break;
-                case Session::putHolds:   recNote = "KNOB " + String (selKnob + 1) + " HOLDS SOMETHING: CLEAR IT FIRST (KEEP IT, IF IT IS WORTH KEEPING)"; break;
-                case Session::putNothing: recNote = "NOTHING OF " + name + " IS LEFT HERE: ITS SNAPSHOTS ARE GONE FROM THE LIBRARY"; break;
-                default:                  recNote = "A MACRO KNOB GOES ON 1 TO 4, A STACK KNOB ON 5 TO 12, 14 OR 15"; break;
-            }
-            recNoteAt = juce::Time::getMillisecondCounter();
-            break;
-        }
+        case hKeptPut:  putKept (h->a, selKnob); break;
         case hRackOut:  ses.stackForget (h->a); break;
         case hModCard:  selMod = h->a; break;
         case hRackAdd:
@@ -3088,16 +3236,16 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hRackOpen:
             if (ses.rackCanChange (h->a)) { openStack = ses.stacks[(size_t) h->a].id; rackList = knobList = false; colScroll = 0; }
             break;
-        case hRackCard:
-            // (the card itself: its snapshots are the ones listed beside, to hear and to add from)
-            if (h->a < (int) ses.stacks.size()) { inStack = ses.stacks[(size_t) h->a].id; rackList = knobList = false; libScroll = 0; }
-            break;
+        case hRackCard: break;      // (pressed and let go: its snapshots are listed beside. Carried: onto a place. See mouseUp)
         case hFind: pressFind (h->a); break;
         case hPickAdd:
         {
             // (into what is open: a stack of the shelf; or a stack knob, at the end of its stack. A macro knob holds no snapshots: LEARN is how one is made.)
-            if (const int os = openAt(); os >= 0) ses.rackAdd (os, ses.library[(size_t) h->a].id);
-            else if (Session::isStack (selKnob)) ses.stackAdd (selKnob, ses.library[(size_t) h->a].id);
+            // (with the parts chosen on its card, if it is the one in hand)
+            const auto id = ses.library[(size_t) h->a].id;
+            const auto parts = id == handId ? handParts : Session::kAllLanes;
+            if (const int os = openAt(); os >= 0) ses.rackAdd (os, id, parts);
+            else if (Session::isStack (selKnob)) ses.stackAdd (selKnob, id, parts);
             else { recNote = "1 TO 4 ARE MACRO KNOBS (LEARN). SNAPSHOTS GO ON A STACK KNOB"; recNoteAt = juce::Time::getMillisecondCounter(); }
             break;
         }
@@ -3208,11 +3356,18 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             dirty (seqRect);
             break;
         }
+        case hPick: case hColCard: case hRackCard: case hKeptCard:
+            // a card beside the knob, pressed and moved: it goes with the pointer until it is let go
+            if (page != pMacros) break;
+            if (! drag.moved && std::max (std::abs (dx), std::abs (dy)) < 8.0f) break;
+            drag.moved = true; carryAt = p;
+            repaint();
+            break;
         default: break;
     }
 }
 
-void Screen::mouseUp (const juce::MouseEvent&)
+void Screen::mouseUp (const juce::MouseEvent& e)
 {
     if (eyeDrag != 0)
     {
@@ -3227,6 +3382,36 @@ void Screen::mouseUp (const juce::MouseEvent&)
     if (drag.kind == hDisplay) if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouseUp();
     cfgStale = true;
     if (drag.kind == hStep && ! drag.moved) stepTap (drag.a);
+    if (page == pMacros && drag.page == (int) pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard))
+    {
+        if (drag.moved) drop (where (e));
+        else if (drag.kind == hPick && drag.a < (int) ses.library.size())
+        {
+            // a snapshot of the list, pressed: it is the one in hand (its card shows the keys for its parts), and is heard
+            // in the headphones with the parts that are lit; pressed again, it stops
+            const auto id = ses.library[(size_t) drag.a].id;
+            if (id != handId) { handId = id; handParts = Session::kAllLanes; }
+            if (ses.cueing() == id) ses.cue (0);
+            else { if (handParts == Session::kAllLanes) ses.cueWith (0, Session::Scope()); else ses.cueWith (id, Session::scopeOf (handParts)); ses.cue (id); }
+        }
+        else if (drag.kind == hColCard)
+        {
+            const int os = openAt();
+            const auto& snaps = os >= 0 ? ses.stacks[(size_t) os].snaps : ses.knobs[(size_t) selKnob].snaps;
+            if (drag.a < (int) snaps.size())
+            {
+                const auto id = snaps[(size_t) drag.a];
+                const juce::uint32 lanes = (os >= 0 ? ses.stacks[(size_t) os].lanesAt ((size_t) drag.a) : ses.knobs[(size_t) selKnob].lanesAt ((size_t) drag.a)) & Session::kAllLanes;
+                if (ses.cueing() == id) ses.cue (0);
+                else { ses.cueWith (id, Session::scopeOf (lanes)); ses.cue (id); }
+            }
+        }
+        else if (drag.kind == hRackCard && drag.a < (int) ses.stacks.size())
+        {
+            // (a stack's card: its snapshots are the ones listed beside, to hear and to add from)
+            inStack = ses.stacks[(size_t) drag.a].id; rackList = knobList = false; libScroll = 0;
+        }
+    }
     drag.kind = 0;
     repaint();
 }

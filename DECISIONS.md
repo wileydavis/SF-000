@@ -2892,8 +2892,53 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      (STACKS, KNOBS, MODULES) on the wide library page, which is what is left of "one page";
      the E16 on any of it; dragging in the column.
 
+## In hand, and carried (Nov 15, 00:50): fifty-fourth build
+
+517. **You**, 00:48: "continnue"
+     **Your own workflow for building a stack (434), on the instrument.** You had said it for
+     the web library: "I preview chips, deselect stems I don't want, drag that onto stack knob
+     column ... In that column i car add, delete, or reorder the chips. I can select/deselct
+     the stems for each chip (ideally on the chips themselves so its visible which lanes are
+     active) and then, when I like the stack, i can press a button on the column that adds
+     that stack to an available module slot." Build 53 made the column hold a stack that is
+     on no knob; this is the rest of it. I put it ahead of the wide library page because it is
+     yours and that one is mine.
+518. **The snapshot in hand carries its keys.** Beside the knob, the snapshot last pressed is
+     the one in hand: its card is ringed, and where the others draw their sound it has a key
+     for every part of the rig (the eleven lanes, R, B, K). A part put out is not heard (at
+     once, while it plays in the headphones) and does not go with it when it is added. The
+     next snapshot pressed is in hand, whole.
+519. **Cards are carried.** Pressed and moved, a card goes with the pointer (its name on a
+     yellow plate), and is put where it is let go. Where it would land shows first: a yellow
+     bar between two cards of the column, or a yellow ring on a place.
+     - **A snapshot of the list**: into the column, between the cards where it is let go; or
+       onto a stack knob's place, at the end of that knob's stack. With the parts lit on it.
+     - **A card of the column**: to another place in the column, its parts with it. **UP and
+       DN are gone.** Onto another stack knob's place: a copy goes there, and the column keeps
+       its own. Off the column: taken out (its number still does that too).
+     - **A stack's card**: onto a stack knob's place, or into the column, whole.
+     - **A kept knob's card**: onto a place of its kind that holds nothing.
+     A press that does not move is what it was: a snapshot is heard, a stack's snapshots are
+     listed. ADD and PUT stay, for one press.
+520. **ON A KNOB**, at the head of the column while a stack of the shelf is open: the stack
+     goes onto the first stack knob that holds nothing ("an available module slot"), that
+     place becomes the chosen one, and the stack is put away, still kept. With none free it
+     says so.
+521. *Mine:* a card carried off the column is taken out wherever it is let go that is neither
+     the column nor a place. If that proves too easy to do by accident, it is one line to make
+     it only the number.
+     *Not built:* tags on the instrument; stacks that fill themselves by a rule; the plates on
+     the wide library page; the E16 on any of this page; carrying on the library page and the
+     arrangement (their cards are still only pressed).
+
 ## Not verified
 
+- **In hand and carried (518 to 520)** are done in the drawn screen with made-up presses and
+  moves, and read back from the session. **Nobody has carried a card with a hand**: how far
+  the pointer has to move before a press becomes a carry (8 points here), whether the bar and
+  the ring are easy to see, and whether carrying while the column is scrolled lands where you
+  mean, are yours to say. In 3D the page is drawn again at every move of a carry; I have not
+  seen how that feels.
 - **Stacks of their own and the finders (512 to 515)** are pressed in the drawn screen and
   read back from the session file; the rule for an empty stack is checked against a made-up
   library. **FITS NOW, MORE and LESS on the screen are checked only with nothing playing**
