@@ -249,6 +249,7 @@ private:
     std::atomic<juce::uint32> wheelHeardAt { 0 };
     std::array<std::atomic<juce::uint32>, 2> cornerDown;        // the E16's knob 13 and knob 16, on any page: down since (0: up)
     std::array<std::atomic<bool>, 2> cornerBoth;                // ... and pressed with the other meanwhile (then it is not its own press)
+    std::atomic<juce::uint32> knob16At { 0 };                   // knob 16 turned while the pointer was up, at (0: not, or seen to)
     std::atomic<int> snapKeys { 0 };                            // the two together: SNAPSHOT
     juce::uint32 snapTakenAt = 0;                               // (the E16's display says so for a moment)
     std::array<std::atomic<juce::uint32>, 5> heldSince;         // knobs 13 and 16 of the snapshot page, then of the map, then the snapshot page's 15: down since (0: up)

@@ -2588,6 +2588,30 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the song, as it did at LOAD: now within a quarter of a minute instead of at the next LOAD.
      Unlight the song there, or take the part out of it, to be rid of the snapshot here.
 
+## A push that turns the knob (Nov 14, 17:00)
+
+490. **You**, 17:00: "when attemptiong to open a lanes effect configurtion via the e16 ir
+     doesn't work. and navigates to a different lane instead."
+     **Mine, from this afternoon (479).** So that 13 and 16 together could be SNAPSHOT, each
+     was made to act as it is *let go*. A push on an encoder turns it a click as often as
+     not, and between going down and coming up that click was now counted:
+     - knob 13 pushed to choose the effect the pointer was on: the click moved the pointer on
+       to the next stop first, and with one effect on the lane the next stop is the next lane.
+       That is the lane you were sent to;
+     - knob 16 pushed for OPEN with the pointer up: on a lane's page knob 16 is HIGH, the click
+       was "the hand has gone to another knob", the pointer was put down, and OPEN then opened
+       the lane's CONFIG and not the effect's;
+     - and either click nudged SEND A or HIGH.
+     **Now a knob that is being pressed is not being turned.** What 13 or 16 says of its turn
+     while it is down is noted (the knob is told its own value again) and moves nothing. A
+     click of knob 16 a moment *before* its press (the push on its way down) no longer puts the
+     pointer down either: the pointer waits a quarter of a second for the press. Knob 16 turned
+     with no press after it puts the pointer down as before.
+     *I reproduced this with a made-up E16 whose pushes turn the knob, not with yours.* It is
+     the fault that fits what you said, and the check fails without the change and passes with
+     it. If it still happens on the E16, tell me which knob you pressed and what the E16's
+     display said just before (`> 6.1 DELAY`, say): then it is something else.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2802,6 +2826,9 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   page on the E16 is checked against the scene file and a made-up E16 only.
 - **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
   whether any snapshot of yours has KEY set.
+- **A push that turns the knob (490)** is checked with made-up clicks, one before, during or
+  after the press. How many clicks a push on your E16 really makes, and whether a click more
+  than a quarter of a second before the press ever comes, only the E16 can say.
 - **The rack both ways (485 to 489)** is checked on the session with a made-up library (every
   rule above), and against the web library's own code running here: kept here and sent, changed
   each way, made there with a snapshot this library lacked, unlit, put out by its number.

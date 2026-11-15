@@ -835,6 +835,11 @@ static bool isKnob13 (int slot)
 {
     return slot >= kLanes * e16::kPerLane ? slot - kLanes * e16::kPerLane == 12 : slot % e16::kPerLane == 12;
 }
+// Knob 16 of a lane's page (HIGH): its press is OPEN.
+static bool isKnob16 (int slot)
+{
+    return slot < kLanes * e16::kPerLane && slot % e16::kPerLane == 15;
+}
 
 // A turn of the wheel's knob. How far: from the number it last said, or from the number it was
 // told to stand at since, whichever it is nearer to (the E16 may or may not have taken that
@@ -957,7 +962,9 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         if (num == e16::kWheelCc)
         {
             // the wheel's own address (a page where knob 13 is nothing else): always the pointer's
-            wheelIn (ch * 128 + num, val, nowMs);
+            // (but not while it is held down: that is the press moving it. Its number is noted, for the next turn to be counted from.)
+            if (fromE16 && cornerDown[0].load() != 0) { wheelAddr = ch * 128 + num; wheelHeard = val; wheelTold = -1; wheelHeardAt = nowMs; }
+            else wheelIn (ch * 128 + num, val, nowMs);
             if (fromE16) bMark (12, val, nowMs);
             return;
         }
@@ -1075,13 +1082,26 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         if (fromE16 && sk == 12) { wheelIn (ch * 128 + num, val, nowMs); sent[(size_t) slot] = val; heardAt[(size_t) slot] = nowMs; }
         return;
     }
+    // A knob that is being pressed is not being turned. Knobs 13 and 16 act as they are let go (cornerKey), and a push on
+    // an encoder turns it a click as often as not: counted, that click moved the pointer off the stop being chosen (to
+    // the next lane), put the pointer down under OPEN (so OPEN opened the lane's CONFIG and not its effect's), or
+    // nudged SEND A or HIGH. What either says of its turn while it is down is noted (so the next real turn is counted
+    // from there, and the knob is told its own value again) and nothing more.
+    if (fromE16 && ((isKnob13 (slot) && cornerDown[0].load() != 0) || (isKnob16 (slot) && cornerDown[1].load() != 0)))
+    {
+        if (isKnob13 (slot) && wheel) { wheelAddr = ch * 128 + num; wheelHeard = val; wheelTold = -1; wheelHeardAt = nowMs; }
+        sent[(size_t) slot] = val; heardAt[(size_t) slot] = nowMs;
+        return;
+    }
     if (wheel && isKnob13 (slot))
     {
         wheelIn (ch * 128 + num, val, nowMs);
         sent[(size_t) slot] = val; heardAt[(size_t) slot] = nowMs;
         return;
     }
-    other();
+    // (knob 16 turned with the pointer up: it may be the click its press makes on the way down, a moment before the
+    // press itself. The pointer is given that moment before it is put down: serviceWheel.)
+    if (wheel && isKnob16 (slot)) knob16At = nowMs == 0 ? 1u : nowMs; else other();
     const int ctl = e16::controlFor (slot);
     if (fromE16) { sent[(size_t) slot] = val; heardAt[(size_t) slot] = nowMs; }
     ses.moved (ctl, fromE16 ? 1 : 2);           // (who moved it: the 3D stage's eye goes to a hand on the E16, not to a sequencer)
@@ -1527,8 +1547,15 @@ void Midi::serviceWheel (juce::uint32 now)
             if (cornerDown[(size_t) c].exchange (0) != 0) (c == 0 ? wheelKeys : openKeys).fetch_add (1);
     const bool keyed = (wheelKeys.exchange (0) & 1) != 0;
     const int turned = wheelTurn.exchange (0);
-    const bool other = otherTurned.exchange (false);
+    bool other = otherTurned.exchange (false);
     bool on = wheelMode.load();
+    // knob 16 turned with the pointer up. If its press follows within a quarter of a second, the turn was the press: OPEN
+    // is for what the pointer is on. If not, the hand has gone to that knob, as to any other.
+    if (const auto at = knob16At.load(); at != 0)
+    {
+        if (! on || cornerDown[1].load() != 0) knob16At = 0;
+        else if ((juce::int32) (now - at) >= 250) { knob16At = 0; other = true; }
+    }
     // A press takes the pointer up; a press with it up is the choice.
     if (keyed) { if (on) wheelChoose(); else wheelStart (now); on = ! on; }
     else if (! on && turned != 0) { wheelStart (now); on = true; }      // (the wheel's own address: a turn takes it up)

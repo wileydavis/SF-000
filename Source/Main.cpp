@@ -6604,6 +6604,59 @@ static int midiTest()
                 std::printf ("    (waits %d taken %d [%d of %d, %s] nothing else %d again %d alone %d held %d once %d)\n", (int) waits, (int) taken, (int) ses.library.size(), libWas, said (5).toRawUTF8(), (int) nothingElse, (int) again, (int) alone, (int) heldAlone, (int) once);
         }
         {
+            // A knob that is being pressed is not being turned. 13 and 16 act as they are let go, and a push on an encoder
+            // turns it a click as often as not: that click must not move the pointer off the effect being chosen (to the
+            // next lane), nor put the pointer down under OPEN, nor nudge the lane's own SEND A or HIGH.
+            using S = Session;
+            e.setInsertType (5, 0, 0, false);                           // BASS: an effect in its first insert, and no other
+            for (int sl = 1; sl < kSlots; ++sl) e.setInsertType (5, sl, -1, false);
+            ses.wantShowing = -1;
+            ses.bringLane (5, 2); ticks (6); juce::Thread::sleep (400); ticks (3); out.clear();
+            const int sendA = e16::controlFor (5 * e16::kPerLane + 12), high = e16::controlFor (5 * e16::kPerLane + 15);
+            const float sendWas = e.target (sendA), highWas = e.target (high);
+            const int high7 = e16::to7 (e.control (high), highWas), send7 = e16::to7 (e.control (sendA), sendWas);
+            // 13 down, a click from the push, up: SEND A is where it was and the pointer is up, on BASS
+            in (16, e16::kWheelKey, 127); in (6, e16::kKnobCc + 12, send7 + 1); ticks (2); in (16, e16::kWheelKey, 0); ticks (1);
+            const bool upClean = midi.wheelInUse() && ses.pointAt == S::Stop { S::fLane, 5, 0 } && e.target (sendA) == sendWas;
+            const int at = ccOut (6, e16::kKnobCc + 12);
+            // five clicks: on its effect, and two thirds of the way to the next stop, which is the next lane
+            for (int v = 1; v <= 5; ++v) { in (6, e16::kKnobCc + 12, at + v); ticks (1); }
+            const bool onEffect = ses.pointAt == S::Stop { S::fInsert, 5, 0 };
+            // 13 down to choose it, one more click from the push, up: the effect comes to the front (not RUMBLE)
+            in (16, e16::kWheelKey, 127); ticks (1); in (6, e16::kKnobCc + 12, at + 6); ticks (2); in (16, e16::kWheelKey, 0); ticks (2);
+            const bool choseIt = ! midi.wheelInUse() && ses.activeLane == 5 && ses.front == S::Front { S::fInsert, 0 };
+            // OPEN with the pointer up: a click of knob 16 (HIGH, on a lane's page) a moment before its press does not put the
+            // pointer down, and one while it is down moves nothing: the effect comes to the front and its CONFIG opens
+            ses.bringLane (5, 2); ticks (6); juce::Thread::sleep (400); ticks (3); out.clear();
+            press (16, e16::kWheelKey); ticks (1);
+            const int at2 = ccOut (6, e16::kKnobCc + 12);
+            for (int v = 1; v <= 3; ++v) { in (6, e16::kKnobCc + 12, at2 + v); ticks (1); }
+            const bool onEffect2 = ses.pointAt == S::Stop { S::fInsert, 5, 0 };
+            in (6, e16::kKnobCc + 15, high7 + 1); ticks (1);            // (the click, before the press)
+            const bool stillUp = midi.wheelInUse();
+            const float highNudged = e.target (high);
+            in (16, e16::kOpenKey, 127); ticks (1); in (6, e16::kKnobCc + 15, high7 + 2); ticks (2); in (16, e16::kOpenKey, 0); ticks (2);
+            const bool opened = ! midi.wheelInUse() && ses.activeLane == 5 && ses.front == S::Front { S::fInsert, 0 } && ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 5 && ses.cfg.slot == 0
+                                && e.target (high) == highNudged;
+            press (16, e16::kOpenKey); ticks (3);                       // (shut)
+            // knob 16 turned with the pointer up and no press after it: the hand has gone to that knob, and the pointer is put down
+            ses.bringLane (5, 2); ticks (6); juce::Thread::sleep (400); ticks (3); out.clear();
+            press (16, e16::kWheelKey); ticks (1);
+            in (6, e16::kKnobCc + 15, high7 + 3); ticks (1);
+            const bool notAtOnce = midi.wheelInUse();
+            juce::Thread::sleep (280); ticks (1);
+            const bool putDown = ! midi.wheelInUse() && ses.front.kind == S::fLane && ses.activeLane == 5 && ! ses.cfgOpen;
+            e.set (high, highWas, 0.0); e.set (sendA, sendWas, 0.0);
+            e.setInsertType (5, 0, -1, false);
+            ticks (3); out.clear();
+            check (upClean && onEffect && choseIt && onEffect2 && stillUp && opened && notAtOnce && putDown,
+                   "a knob being pressed is not being turned: a click of knob 13 as it is pushed leaves SEND A alone and the pointer on the effect it was on (chosen, the effect comes to the front, not the next lane); "
+                   "a click of knob 16 just before or during its press leaves the pointer up, and OPEN brings the effect to the front and opens its CONFIG; knob 16 turned with no press after it puts the pointer down");
+            if (! (upClean && onEffect && choseIt && onEffect2 && stillUp && opened && notAtOnce && putDown))
+                std::printf ("    (up clean %d on effect %d chose it %d [lane %d front %d.%d] on effect %d still up %d opened %d [lane %d front %d.%d cfg %d %d,%d,%d] not at once %d put down %d)\n", (int) upClean, (int) onEffect, (int) choseIt,
+                             ses.activeLane, (int) ses.front.kind, ses.front.slot, (int) onEffect2, (int) stillUp, (int) opened, ses.activeLane, (int) ses.front.kind, ses.front.slot, (int) ses.cfgOpen, ses.cfg.kind, ses.cfg.lane, ses.cfg.slot, (int) notAtOnce, (int) putDown);
+        }
+        {
             // MACROS pressed in the library, with the E16 in the other scene than it is taken to be in (the library opened on
             // the screen, the E16 left where it was): its twelfth page is the snapshot module's in either scene, so it is
             // where it should be, and the designer stays up. (Taken for a hand's turn, it sent the screen to MAIN.)

@@ -109,6 +109,11 @@ Each means the same on every page, behind its press:
   13 and 16 each act as they are let go, or after half a second held, not as they go down.
   (Knob 1 cannot be part of it: its press swaps the knob to GLIDE inside the E16, and nothing
   is sent to SF-000.)
+- **A knob that is being pressed is not being turned.** A push often turns an encoder a click.
+  While 13 or 16 is down its turn moves nothing: not the pointer (so the stop you chose is the
+  one you get), not SEND A or HIGH. A click of knob 16 just before its press does not put the
+  pointer down: OPEN with the pointer up still brings what it is on to the front and opens its
+  CONFIG.
 - **CONFIG shuts when you go somewhere else.** Another lane or module brought to the front (the
   wheel, a page turned by hand) shuts CONFIG and leaves the E16 on that page. OPEN there opens
   that one's.
