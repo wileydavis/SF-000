@@ -109,10 +109,19 @@ public:
     static bool testIsToggle (const TestHit& h, int ctl) { return h.kind == hToggle && h.a == ctl; }
     static bool testIsRec (const TestHit& h) { return h.kind == hAct && h.a == aRec; }
     static bool testIsOnline (const TestHit& h, bool setUp) { return h.kind == hAct && h.a == (setUp ? aOnlineSetup : aOnline); }
-    static bool testIsStackKey (const TestHit& h) { return h.kind == hAct && h.a == aStack; }
+    static bool testIsStackKey (const TestHit& h) { return h.kind == hFind && h.a == 0; }      // (whose snapshots are listed: every one, or a stack's. Pressed: the next stack)
+    static bool testIsFind (const TestHit& h, int what) { return h.kind == hFind && h.a == what; }     // 0 whose, 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS, 5 FIND
+    static bool testIsRackKey (const TestHit& h, int what, int index) { return h.kind == (what == 0 ? hRackNew : what == 1 ? hRackOpen : hRackCard) && (what == 0 || h.a == index); }
+    int testOpenStack() const { return openAt(); }
+    void testOpenThe (int index, bool showStacks) { openStack = index >= 0 && index < (int) ses.stacks.size() ? ses.stacks[(size_t) index].id : juce::String(); rackList = showStacks; knobList = false; }
+    void testFinder (int f) { pressFind (f); }
+    static bool testIsPlace (const TestHit& h, int k) { return h.kind == hKnobCard && h.a == k; }
+    static int testPickOf (const TestHit& h) { return h.kind == hPick ? h.a : -1; }
+    void testFind (const juce::String& t) { findText = t; }
+    void testPlain() { modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; }
     static bool testIsStackCue (const TestHit& h) { return h.kind == hAct && h.a == aStackCue; }
     static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
-    int testLibStack() const { return libStack; }
+    int testLibStack() const { return inAt(); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     void testPointAt (juce::Point<float> p) { point (p); }      // the mouse resting there (screen units)
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
@@ -182,7 +191,7 @@ public:
     void testShowKept (bool on) { knobList = on; if (on) rackList = false; }
     static bool testIsRackKeep (const TestHit& h) { return h.kind == hRackKeep; }
     void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
-    void testPickKnob (int k) { selKnob = juce::jlimit (0, 15, k); }
+    void testPickKnob (int k) { selKnob = juce::jlimit (0, 15, k); openStack = {}; }
     bool testEditing() const { return editor != nullptr; }
     bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
     void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
@@ -215,12 +224,14 @@ private:
                    hRackAdd,        // a stack's ADD key (a: which stack): its snapshots onto the chosen stack knob
                    hRackOut,        // its number: out of the rack
                    hModCard,        // a module kept, in the designer's list: chosen
-                   hKeptKeep, hKeptPut, hKeptOut, hRackKeep };      // the knobs kept: KEEP (the chosen knob into them), a kept one's PUT (onto the chosen knob), its number (out)
+                   hKeptKeep, hKeptPut, hKeptOut, hRackKeep,       // the knobs kept: KEEP (the chosen knob into them), a kept one's PUT (onto the chosen knob), its number (out); the stacks' KEEP
+                   hRackNew, hRackOpen, hRackCard,      // the stacks kept: NEW (an empty one, open); a stack's OPEN (into the column, to change); its card (its snapshots listed beside)
+                   hFind };         // the head of the snapshots (a: 0 whose they are, 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS, 5 FIND)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aCue, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
-               aFetch, aStack,
+               aFetch,
                aStackCue };            // the snapshot module: CUE (how its stack knobs are played)       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
 
     void timerCallback() override;
@@ -334,7 +345,7 @@ private:
     void drawLibrary (G&);
     void drawMacros (G&);
     void drawColumn (G&);               // the chosen stack knob's stack, as cards in its order, each with its keys
-    void drawRack (G&);                 // the stacks kept, beside the column, to put onto the chosen knob
+    void drawRack (G&, float x, int across);               // the stacks kept, beside the column, to put onto the chosen knob
     void drawArrange (G&);
     juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
     juce::String arrSig;
@@ -411,7 +422,20 @@ private:
     bool knobList = false;              // ... or the knobs kept are (either kind of knob chosen)
     int keptScroll = 0;
     void drawKept (G&, float x);
-    int libStack = -1;                  // the library screen shows this one of the stacks LOAD brought (-1: every snapshot)
+    juce::String inStack;               // the snapshots listed are this stack's (its id; empty: every snapshot)
+    int inAt() const                    { return ses.rackIndex (inStack); }
+    // The designer: a stack of the shelf is on the bench, in the column, in place of a knob's (its id; empty: the chosen knob is)
+    juce::String openStack;
+    int openAt() const                  { const int i = ses.rackIndex (openStack); return ses.rackCanChange (i) ? i : -1; }
+    bool columnShown() const            { return ! modList && (openAt() >= 0 || Session::isStack (selKnob)); }
+    // Which of them, and in what order: 0 as they are kept, 1 RECENT (newest first), 2 FITS NOW (nearest what is playing first),
+    // 3 MORE and 4 LESS (a step up or down in energy from it). What 2 to 4 found when pressed stays put. And only names holding findText.
+    int finder = 0;
+    std::vector<juce::int64> found;
+    juce::String findText;
+    R findRect;
+    float drawFind (G&, float x, float w, float y);     // the row (two, where it is narrow) at the head of the snapshots; where their cards begin
+    void pressFind (int what);
     std::vector<int> listed() const;    // the snapshots it lists, each by its place in the library
     R selNameRect;
     bool mouseIsDown = false;

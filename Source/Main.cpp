@@ -3149,7 +3149,7 @@ static int uiTest()
         }
     }
     ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
-    sc.testShowModules (false); sc.testShowRack (false);        // (and MODULES, STACKS and KNOBS were: the designer shows the knob and the library again)
+    sc.testPlain();        // (and MODULES, STACKS, KNOBS, the finders and a stack's OPEN were: the designer shows the knob and every snapshot again)
     for (int i = cx::kMot; i < cx::kSnap; ++i) ses.userSet (i, ses.engine.control (i).def);       // (and MOTION's knobs were among those dragged: off again)
     // every CONFIG panel: each lane, the lead's two inserts, both returns
     std::vector<Engine::Target> targets;
@@ -3362,16 +3362,16 @@ static int uiTest()
             ses.stacks = { two, one };
             draw();
             auto cardsAre = [&] { std::vector<int> v; for (auto& h : sc.testHits()) if (Screen::testIsCard (h)) v.push_back (h.a); return v; };
-            const bool everyOne = countOf (Screen::testIsStackKey) == 1 && (int) cardsAre().size() == std::min (all, 72) && sc.testLibStack() == -1;
+            const bool everyOne = countOf (Screen::testIsStackKey) == 1 && (int) cardsAre().size() == std::min (all, 66) && sc.testLibStack() == -1;
             click (firstOf (Screen::testIsStackKey)); draw();
             const bool first = sc.testLibStack() == 0 && cardsAre() == std::vector<int> { all - 1, 1 };
             click (firstOf (Screen::testIsStackKey)); draw();
             const bool second = sc.testLibStack() == 1 && cardsAre() == std::vector<int> { 0 };
             click (firstOf (Screen::testIsStackKey)); draw();
-            const bool back = sc.testLibStack() == -1 && (int) cardsAre().size() == std::min (all, 72);
+            const bool back = sc.testLibStack() == -1 && (int) cardsAre().size() == std::min (all, 66);
             click (firstOf (Screen::testIsStackKey)); draw();
             ses.stacks.clear(); draw();                                         // (the tray emptied while one was shown: every snapshot again, and no key)
-            const bool gone = sc.testLibStack() == -1 && countOf (Screen::testIsStackKey) == 0 && (int) cardsAre().size() == std::min (all, 72);
+            const bool gone = sc.testLibStack() == -1 && countOf (Screen::testIsStackKey) == 0 && (int) cardsAre().size() == std::min (all, 66);
             check (noKey && everyOne && first && second && back && gone,
                    "STACK steps the library screen through the stacks LOAD brought, each in its own order, and back to every snapshot; with no stacks there is no key");
         }
@@ -4402,6 +4402,20 @@ static int uiTest()
             s5.takeState (s4.stateVar());
             const bool filed = s5.stacks.size() == 1 && s5.stacks[0].mark == s4.stacks[0].mark && s5.stacksGone.size() == 1 && s5.stacksGone[0]["id"].toString() == "herezyxwvutsrqpo"
                                && s5.stacksGone[0]["mark"].toString() == "stack|KEPT|x," && (bool) s5.stacksGone[0]["here"];
+            // 10. a stack made here with nothing in it is the instrument's alone: the library is not asked anything for it.
+            // Once it holds a snapshot it goes, as any stack kept here does. Emptied again, it stays, and nothing is asked.
+            const auto libNow = listOf ({ song });
+            const auto stepsFor = [&] (const juce::String& id) { int c = 0; for (auto& st : planOf (libNow)) c += st.id == id ? 1 : 0; return c; };
+            const int em = s4.rackNew ("empty");
+            const auto emId = s4.stacks[(size_t) em].id;
+            const bool aloneEmpty = s4.stacks[(size_t) em].here && s4.stacks[(size_t) em].name == "EMPTY" && emId.startsWith ("here") && stepsFor (emId) == 0;
+            s4.rackAdd (em, p1);
+            bool goesFilled = false;
+            for (auto& st : planOf (libNow)) if (st.id == emId) goesFilled = st.net == RS::post && st.here == RS::setMark && st.body["items"].size() == 1;
+            s4.rackDrop (em, 0);
+            const bool empty10 = aloneEmpty && goesFilled && stepsFor (emId) == 0 && s4.stacks[(size_t) em].snaps.empty();
+            s4.stackForget (em);
+            check (empty10, "a stack made here with nothing in it is the instrument's alone (the web library is asked nothing for it); once it holds a snapshot it goes, as any kept here does");
             check (goes && settled && came && follows && sends && both && waits && without && leaves && back && outThere && olderOk && sung && noSend && filed,
                    "the rack and the web library, the same each way: a stack kept here goes there, lit for the instrument, with the parts each snapshot takes; one made there comes, in the library's order; a change "
                    "on either side is made on the other, and where both changed the instrument's stands; a stack naming a snapshot that is not here waits for it; unlit or removed there, it leaves here "
@@ -4710,18 +4724,18 @@ static int uiTest()
         const auto energy = s11.knobs[0];                               // (as the session comes: ENERGY on 1, the TOUR stack on 5)
         const auto tour = s11.knobs[4];
         const bool comes = energy.name == "ENERGY" && ! energy.links.empty() && tour.snaps.size() > 1 && s11.keptKnobs.empty();
-        // a macro knob chosen: SNAPSHOTS and KNOBS beside it (no STACKS: it holds none). KNOBS: nothing kept yet, and KEEP at their head
+        // a macro knob chosen: SNAPSHOTS, STACKS and KNOBS beside it. KNOBS: nothing kept yet, and KEEP at their head
         sc11.setPage (Screen::pMacros); sc11.testPickKnob (0); draw11();
-        const bool tabs = tabAt (0).x > 0.0f && tabAt (1).x < 0.0f && tabAt (2).x > 0.0f && keptAt (0, 0).x < 0.0f;
+        const bool tabs = tabAt (0).x > 0.0f && tabAt (1).x > 0.0f && tabAt (2).x > 0.0f && keptAt (0, 0).x < 0.0f;
         click11 (tabAt (2)); draw11();
         click11 (keptAt (0, 0)); draw11();
         const bool keptMacro = s11.keptKnobs.size() == 1 && ! s11.keptKnobs[0].stack && s11.keptKnobs[0].name() == "ENERGY" && s11.keptSays (0).startsWith ("MACRO KNOB, TIED TO " + juce::String ((int) energy.links.size()) + " KNOB")
                                && s11.knobs[0].links.size() == energy.links.size() && sc11.testBarNote().contains ("KEPT WITH THE KNOBS AS ENERGY") && keptAt (2, 0).x > 0.0f;
-        // a stack knob chosen: STACKS is there too; kept the same way, with its snapshots and the parts each takes
+        // a stack knob chosen: kept the same way, with its snapshots and the parts each takes
         const juce::uint32 noKick = Session::kAllLanes & ~1u;
         s11.knobs[4].lanes = { Session::kAllLanes, noKick };
         sc11.testPickKnob (4); draw11();
-        const bool tabs3 = tabAt (1).x > 0.0f && keptAt (1, 0).x < 0.0f;        // (and the macro knob kept has no PUT here: this place takes a stack knob)
+        const bool tabs3 = keptAt (1, 0).x < 0.0f;        // (the macro knob kept has no PUT here: this place takes a stack knob)
         click11 (keptAt (0, 0)); draw11();
         const bool keptStack = s11.keptKnobs.size() == 2 && s11.keptKnobs[1].stack && s11.keptKnobs[1].name() == tour.name && s11.keptSays (1).startsWith ("STACK KNOB, " + juce::String ((int) tour.snaps.size()) + " SNAPSHOTS: ")
                                && keptAt (1, 1).x > 0.0f && keptAt (1, 0).x < 0.0f;
@@ -4777,6 +4791,105 @@ static int uiTest()
                    "at rest, with nothing heard to change; a place that holds something and the wrong kind of place are refused; the kept one is not changed by the place; they are in the session file, and go into another module");
         if (! ok) std::printf ("    (comes %d tabs %d macro %d [%s] tabs3 %d stack %d refused %d put stack %d wrong %d put macro %d own %d again %d nothing %d unnamed %d filed %d before %d out %d: %s)\n", (int) comes, (int) tabs, (int) keptMacro,
                                s11.keptSays (0).toRawUTF8(), (int) tabs3, (int) keptStack, (int) refused, (int) putStack, (int) wrong, (int) putMacro, (int) own, (int) again, (int) nothing, (int) unnamed, (int) filed, (int) fromBefore, (int) out, sc11.testBarNote().toRawUTF8());
+    }
+    // 3h. Stacks of their own (made and changed with no knob), and the head of the snapshots: whose are listed, and in what order.
+    // (Its own rig, made after the POCKETS check and never played.)
+    {
+        Engine e13; e13.prepare (48000.0, 128);
+        Session s13 (e13, false);
+        Screen sc13 (s13);
+        sc13.setSize ((int) Screen::kW, (int) Screen::kH);
+        auto draw13 = [&] { sc13.createComponentSnapshot (sc13.getLocalBounds(), false, 0.25f); };
+        auto ev13 = [&] (juce::Point<float> p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc13, &sc13, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        auto click13 = [&] (juce::Point<float> p) { sc13.mouseDown (ev13 (p)); sc13.mouseUp (ev13 (p)); };
+        using Pt = juce::Point<float>;
+        auto at13 = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc13.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+        auto tabAt = [&] (int which) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsTab (h, which); }); };
+        auto rackKey = [&] (int what, int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, what, i); }); };      // 0 NEW, 1 OPEN, 2 its card
+        auto rackHit = [&] (int what, int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsRack (h, what, i); }); };         // 1 ADD, 2 its number
+        auto findAt = [&] (int what) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsFind (h, what); }); };
+        auto addAt = [&] (int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsPickAdd (h, i); }); };
+        auto colAt = [&] (int what, int i, int b = 0) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsColumn (h, what, i, b); }); };
+        auto placeAt = [&] (int k) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsPlace (h, k); }); };
+        auto picks = [&] { std::vector<int> v; for (auto& h : sc13.testHits()) if (Screen::testPickOf (h) >= 0) v.push_back (Screen::testPickOf (h)); return v; };
+        const int n = (int) s13.library.size();
+        auto idAt = [&] (int i) { return s13.library[(size_t) i].id; };
+        using Ids = std::vector<juce::int64>;
+        const juce::uint32 noKick = Session::kAllLanes & ~1u;
+        const auto tour = s13.knobs[4].snaps;
+        // a macro knob chosen: STACKS is beside it too. None kept; NEW makes an empty one and opens it: it is in the column, no
+        // place is chosen, and the snapshots come up beside it
+        sc13.setPage (Screen::pMacros); sc13.testPickKnob (0); draw13();
+        click13 (tabAt (1)); draw13();
+        const bool none = n >= 7 && s13.stacks.empty() && rackKey (0, 0).x > 0.0f && rackHit (1, 0).x < 0.0f && colAt (0, 0).x < 0.0f;
+        click13 (rackKey (0, 0)); draw13();
+        const bool made = s13.stacks.size() == 1 && s13.stacks[0].here && s13.stacks[0].snaps.empty() && s13.stacks[0].name == "STACK 1" && sc13.testOpenStack() == 0
+                          && addAt (1).x > 0.0f && sc13.testBarNote().contains ("IS OPEN");
+        // ADD puts a snapshot into it (no knob is touched); in the column DN moves one, a key puts a part out for one, its number takes one out
+        click13 (addAt (2)); draw13(); click13 (addAt (4)); draw13(); click13 (addAt (3)); draw13();
+        const bool filled = s13.stacks[0].snaps == Ids { idAt (2), idAt (4), idAt (3) } && s13.knobs[4].snaps == tour && s13.knobs[0].snaps.empty() && colAt (0, 2).x > 0.0f;
+        click13 (colAt (3, 0, 1)); draw13();
+        click13 (colAt (1, 1, 0)); draw13();
+        click13 (colAt (2, 2)); draw13();
+        const bool changed = s13.stacks[0].snaps == Ids { idAt (4), idAt (2) } && (s13.stacks[0].lanesAt (1) & Session::kAllLanes) == noKick && (s13.stacks[0].lanesAt (0) & Session::kAllLanes) == Session::kAllLanes;
+        s13.rackRename (0, "dub chords");
+        // a place chosen puts the stack away: the column is the knob's again. With a macro knob chosen a stack has no ADD (nothing open takes snapshots)
+        click13 (placeAt (0)); draw13();
+        click13 (tabAt (1)); draw13();
+        const bool away = sc13.testOpenStack() < 0 && s13.stacks.size() == 1 && s13.stacks[0].name == "DUB CHORDS" && rackHit (1, 0).x < 0.0f && rackKey (1, 0).x > 0.0f && colAt (0, 0).x < 0.0f;
+        // its card: its snapshots are the ones listed, in its order; ADD from there goes onto the chosen stack knob; the plate at
+        // the head of the list goes on to every snapshot again
+        click13 (placeAt (4)); draw13();
+        click13 (tabAt (1)); draw13();
+        click13 (rackKey (2, 0)); draw13();
+        const bool listed = sc13.testLibStack() == 0 && picks() == std::vector<int> { 4, 2 };
+        click13 (addAt (2)); draw13();
+        auto tourAnd = tour; tourAnd.push_back (idAt (2));
+        const bool ontoKnob = s13.knobs[4].snaps == tourAnd && s13.stacks[0].snaps.size() == 2;
+        click13 (findAt (0)); draw13();
+        const bool allAgain = sc13.testLibStack() == -1 && (int) picks().size() == std::min (n, 10) && picks().front() == 0;
+        // RECENT: the newest first; pressed again, as they are kept
+        for (int i = 0; i < n; ++i) s13.library[(size_t) i].time = juce::Time (2026, 0, 1, 0, i);
+        click13 (findAt (1)); draw13();
+        const bool recent = picks().size() > 1 && picks()[0] == n - 1 && picks()[1] == n - 2;
+        click13 (findAt (1)); draw13();
+        const bool kept = picks().front() == 0;
+        // FITS NOW with nothing playing: none are listed; out again, all of them
+        click13 (findAt (2)); draw13();
+        const bool noFit = picks().empty();
+        click13 (findAt (2)); draw13();
+        // FIND: only those whose names hold it; pressed while lit, all again
+        sc13.testFind ("ACID"); draw13();
+        const bool found = picks().size() == 1 && s13.library[(size_t) picks()[0]].name.contains ("ACID");
+        click13 (findAt (5)); draw13();
+        const bool unfound = (int) picks().size() == std::min (n, 10) && noFit;
+        // a second stack. The first OPEN: the second's ADD puts all of it in, with its parts; the open one has no ADD of its own
+        const int two = s13.rackNew ("b");
+        s13.rackAdd (two, idAt (5)); s13.rackAdd (two, idAt (6), noKick);
+        click13 (tabAt (1)); draw13();
+        click13 (rackKey (1, 0)); draw13();
+        const bool opened = sc13.testOpenStack() == 0 && addAt (1).x > 0.0f;
+        click13 (tabAt (1)); draw13();
+        const bool noOwnAdd = rackHit (1, 0).x < 0.0f && rackHit (1, 1).x > 0.0f;
+        click13 (rackHit (1, 1)); draw13();
+        const bool merged = s13.stacks[0].snaps == Ids { idAt (4), idAt (2), idAt (5), idAt (6) } && (s13.stacks[0].lanesAt (3) & Session::kAllLanes) == noKick && s13.stacks[1].snaps.size() == 2;
+        // the open one's number: out of those kept, and the column is the knob's again
+        click13 (rackHit (2, 0)); draw13();
+        const bool out = s13.stacks.size() == 1 && s13.stacks[0].name == "B" && sc13.testOpenStack() < 0;
+        // the session file: an empty stack and one that holds some, read back the same
+        s13.rackNew ("empty one");
+        Engine e14; e14.prepare (48000.0, 128);
+        Session s14 (e14, false);
+        s14.takeState (s13.stateVar());
+        const bool filed = s14.stacks.size() == 2 && s14.stacks[0].snaps == Ids { idAt (5), idAt (6) } && (s14.stacks[0].lanesAt (1) & Session::kAllLanes) == noKick
+                           && s14.stacks[1].name == "EMPTY ONE" && s14.stacks[1].snaps.empty() && s14.stacks[1].here && s14.stacks[1].id == s13.stacks[1].id;
+        const bool ok = none && made && filled && changed && away && listed && ontoKnob && allAgain && recent && kept && noFit && found && unfound && opened && noOwnAdd && merged && out && filed;
+        check (ok, "stacks of their own: NEW, at the head of STACKS, makes an empty one and opens it in the column; ADD puts snapshots in, and it is changed there as a knob's stack is; a place chosen puts it away; "
+                   "its card lists its snapshots beside, to add from; another stack's ADD goes into the open one; the head of the snapshots says whose are listed, RECENT has the newest first, FITS NOW with nothing playing "
+                   "lists none, FIND keeps the names that hold it; an empty stack is in the session file");
+        if (! ok) std::printf ("    (none %d made %d filled %d changed %d away %d listed %d onto %d all %d recent %d kept %d no fit %d found %d unfound %d opened %d own %d merged %d out %d filed %d: %s)\n", (int) none, (int) made, (int) filled,
+                               (int) changed, (int) away, (int) listed, (int) ontoKnob, (int) allAgain, (int) recent, (int) kept, (int) noFit, (int) found, (int) unfound, (int) opened, (int) noOwnAdd, (int) merged, (int) out, (int) filed,
+                               sc13.testBarNote().toRawUTF8());
     }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
@@ -5198,6 +5311,8 @@ static int shot (const juce::StringArray& args)
             for (int i = 1; i < 4 && i < (int) ses.library.size(); ++i) two.snaps.push_back (ses.library[(size_t) i].id);
             ses.stacks.push_back (two);
             sc.testShowRack (true);
+            // (--open: the second of them opened in the column, with the snapshots beside it; --open with --stacks: the stacks beside it)
+            if (args.contains ("--open")) sc.testOpenThe (1, args.contains ("--stacks"));
         }
         if (args.contains ("--kept"))
         {
@@ -5213,6 +5328,7 @@ static int shot (const juce::StringArray& args)
         }
         sc.testTick();
     }
+    if (arg ("--finder", "").isNotEmpty()) sc.testFinder (arg ("--finder", "1").getIntValue());      // (the head of the snapshots: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS lit)
     if (page == "arrange")
     {
         // an arrangement made of the snapshots it comes with, caught playing a little way into its third part
@@ -9108,6 +9224,31 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
                 if (! (wentUp && rests && sureAsks && followed && sentOn && came && left && outBoth && staysOut))
                     std::printf ("    (went up %d rests %d sure asks %d followed %d sent on %d came %d left %d out both %d stays out %d | %s)\n", (int) wentUp, (int) rests, (int) sureAsks, (int) followed, (int) sentOn,
                                  (int) came, (int) left, (int) outBoth, (int) staysOut, juce::JSON::toString (up.json, true).substring (0, 240).toRawUTF8());
+                // A stack made here with nothing in it is the instrument's alone: the library is not told of it. Once it holds a
+                // snapshot it goes; a snapshot put in afterwards is there too; emptied, it stays here and nothing is asked for it.
+                {
+                    const auto neId = ses.stacks[(size_t) ses.rackNew ("empty one")].id;
+                    on.rack (true);
+                    const bool notTold = thereBy (neId).status == 404 && hereBy (neId) != nullptr;
+                    ses.rackAdd (ses.rackIndex (neId), first);
+                    on.rack();
+                    const auto t1e = thereBy (neId);
+                    const bool told = t1e.status == 200 && t1e.json["items"].size() == 1 && t1e.json["name"].toString() == "EMPTY ONE" && hereBy (neId) != nullptr && hereBy (neId)->mark.isNotEmpty();
+                    ses.rackAdd (ses.rackIndex (neId), third, noBass);
+                    on.rack();
+                    const auto t2e = thereBy (neId);
+                    const bool grew = t2e.json["items"].size() == 2 && t2e.json["items"][1]["off"][0].toString() == "bass";
+                    on.rack (true);
+                    const bool stays = hereBy (neId) != nullptr && hereBy (neId)->snaps.size() == 2;
+                    ses.rackDrop (ses.rackIndex (neId), 0); ses.rackDrop (ses.rackIndex (neId), 0);
+                    on.rack (true);
+                    const bool emptied = hereBy (neId) != nullptr && hereBy (neId)->snaps.empty() && thereBy (neId).json["items"].size() == 2;
+                    check (notTold && told && grew && stays && emptied,
+                           "a stack of its own, against the library: made here with nothing in it, the library is not told; once it holds a snapshot it goes there, and one put in afterwards follows, with its parts; "
+                           "emptied here, it stays here and the library is asked nothing");
+                    if (! (notTold && told && grew && stays && emptied)) std::printf ("    (not told %d told %d grew %d stays %d emptied %d)\n", (int) notTold, (int) told, (int) grew, (int) stays, (int) emptied);
+                    ask ("DELETE", "/api/stacks/" + neId + "?forget=1");
+                }
                 ses.knobs[(size_t) kk] = knobWas;
                 ses.stacks = rackWas; ses.stacksGone.clear();
                 if (far2Id != 0) ses.remove (far2Id);

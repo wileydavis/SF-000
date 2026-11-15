@@ -2517,6 +2517,7 @@ bool Session::knobStaysHere (int k) const
     return false;
 }
 
+static juce::String hereId();
 int Session::stackKeep (int k)
 {
     if (! isStack (k) || ! knobHolds (k)) return -1;
@@ -2535,9 +2536,7 @@ int Session::stackKeep (int k)
     if (at >= 0) { st.id = stacks[(size_t) at].id; st.mark = stacks[(size_t) at].mark; st.kept = stacks[(size_t) at].kept; stacks[(size_t) at] = st; }     // (the same stack, as it is now: the web library's copy follows)
     else
     {
-        st.id = "here";
-        juce::Random r;
-        for (int i = 0; i < 12; ++i) st.id << juce::String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+        st.id = hereId();
         stacks.push_back (st);
         at = (int) stacks.size() - 1;
     }
@@ -2558,6 +2557,105 @@ bool Session::stackOnto (int index, int k)
     for (size_t i = 0; i < st.snaps.size(); ++i) any = stackAdd (k, st.snaps[i], st.lanesAt (i) & kAllLanes) || any;
     if (any && empty && kn.name.isEmpty()) { kn.name = st.name.substring (0, 24); touch(); if (onChange) onChange(); }
     return any;
+}
+
+// ---- stacks of their own
+static juce::String hereId()
+{
+    juce::String id ("here");
+    juce::Random r;
+    for (int i = 0; i < 12; ++i) id << juce::String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+    return id;
+}
+
+int Session::rackIndex (const juce::String& id) const
+{
+    if (id.isNotEmpty()) for (int i = 0; i < (int) stacks.size(); ++i) if (stacks[(size_t) i].id == id) return i;
+    return -1;
+}
+
+bool Session::rackCanChange (int index) const
+{
+    return index >= 0 && index < (int) stacks.size() && stacks[(size_t) index].kind != "song";
+}
+
+int Session::rackNew (const juce::String& wanted)
+{
+    auto taken = [this] (const juce::String& n) { for (auto& st : stacks) if (st.name == n) return true; return false; };
+    juce::String want = wanted.trim().toUpperCase().substring (0, 24);
+    if (want.isEmpty()) want = "STACK " + juce::String ((int) stacks.size() + 1);
+    juce::String name = want;
+    for (int n = 2; taken (name); ++n) name = want.substring (0, 21) + " " + juce::String (n);
+    Stack st;
+    st.id = hereId(); st.name = name; st.kind = "stack"; st.here = true;
+    stacks.push_back (st);
+    touch();
+    if (onChange) onChange();
+    return (int) stacks.size() - 1;
+}
+
+bool Session::rackAdd (int index, juce::int64 id, juce::uint32 lanes)
+{
+    if (! rackCanChange (index) || findSnap (id) == nullptr) return false;
+    auto& st = stacks[(size_t) index];
+    lanes &= kAllLanes;
+    if (lanes != kAllLanes || ! st.lanes.empty()) { st.lanes.resize (st.snaps.size(), kAllLanes); st.lanes.push_back (lanes); }
+    st.snaps.push_back (id);
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+    return true;
+}
+
+void Session::rackDrop (int index, int at)
+{
+    if (! rackCanChange (index)) return;
+    auto& st = stacks[(size_t) index];
+    if (at < 0 || at >= (int) st.snaps.size()) return;
+    st.snaps.erase (st.snaps.begin() + at);
+    if (at < (int) st.lanes.size()) st.lanes.erase (st.lanes.begin() + at);
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+}
+
+void Session::rackSwap (int index, int a, int b)
+{
+    if (! rackCanChange (index)) return;
+    auto& st = stacks[(size_t) index];
+    const int n = (int) st.snaps.size();
+    if (a < 0 || b < 0 || a >= n || b >= n || a == b) return;
+    if (! st.lanes.empty()) { st.lanes.resize ((size_t) n, kAllLanes); std::swap (st.lanes[(size_t) a], st.lanes[(size_t) b]); }
+    std::swap (st.snaps[(size_t) a], st.snaps[(size_t) b]);
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+}
+
+void Session::rackLanes (int index, int at, juce::uint32 lanes)
+{
+    if (! rackCanChange (index)) return;
+    auto& st = stacks[(size_t) index];
+    if (at < 0 || at >= (int) st.snaps.size()) return;
+    st.lanes.resize (st.snaps.size(), kAllLanes);
+    st.lanes[(size_t) at] = lanes & kAllLanes;
+    bool all = true;
+    for (auto l : st.lanes) all = all && l == kAllLanes;
+    if (all) st.lanes.clear();
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
+}
+
+void Session::rackRename (int index, const juce::String& wanted)
+{
+    if (! rackCanChange (index)) return;
+    const auto name = wanted.trim().toUpperCase().substring (0, 24);
+    if (name.isEmpty() || name == stacks[(size_t) index].name) return;
+    stacks[(size_t) index].name = name;
+    touch();
+    if (onLibrary) onLibrary();
+    if (onChange) onChange();
 }
 
 void Session::stackForget (int index)
@@ -2966,6 +3064,7 @@ std::vector<Session::RackStep> Session::rackPlan (const var& stacksThere, const 
     for (auto& st : stacks)
     {
         idsHere.insert (st.id);
+        if (st.snaps.empty() && st.kind != "song") continue;        // (one with nothing in it is the instrument's alone until it holds something: the library would put it out of the rack)
         const auto f = there.find (st.id);
         const auto line = stackPrint (st);
         // changed here since the two agreed. (One an earlier build's LOAD brought, before lines were kept, counts as
@@ -3876,7 +3975,8 @@ void Session::takeState (const var& root)
                         parts = parts || st.lanes.back() != kAllLanes;
                     }
             if (! parts) st.lanes.clear();
-            if (! st.snaps.empty()) stacks.push_back (st);              // (its snapshots have all gone: so has the stack)
+            // (the web library's, with its snapshots all gone: so has the stack. One made here stays, with nothing in it: it is filled by hand)
+            if (! st.snaps.empty() || (st.here && st.kind != "song")) stacks.push_back (st);
         }
     // The knobs, as the file has them
     std::array<MacroKnob, 16> read;

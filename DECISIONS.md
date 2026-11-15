@@ -2844,8 +2844,62 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      *Not built:* stacks made in the library without a knob; LIBRARY and MACROS as one page
      with find; anything for modules or kept knobs on the E16; dragging in the column.
 
+## Stacks of their own, and FIND (Nov 14, 23:20): fifty-third build
+
+511. **You**, 23:22: "continue"
+     **The next two in the order: stacks split from knobs, and find.** On the instrument
+     alone (498). 495's first job of the library, as far as it goes without tags: "it lets me
+     organize snapshot chips into library stacks to be able to find good sounds later".
+512. **A stack is made and changed with no knob.**
+     - **NEW**, at the head of STACKS (beside KEEP), makes an empty stack, keeps it and
+       **opens** it.
+     - **An open stack is in the column**, where a stack knob's own stack stands: the same
+       cards, the same keys for the parts, UP and DN, a number to take one out, a tap to hear
+       one. **ADD**, on a snapshot, puts it into what is open: the chosen stack knob, or the
+       open stack. No place is ringed while a stack is open, the strip says STACK, and RENAME
+       names it. **Choosing a place puts the stack away.**
+     - **A stack's card** now has: its number (out of those kept), **OPEN** (into the column,
+       to be changed), **ADD** (all of it into what is open: a stack knob, or another stack),
+       and **the card itself: its snapshots are the ones listed under SNAPSHOTS**, to hear and
+       to add from. That is the finding: a stack is a shelf you can look along.
+     - STACKS is beside a macro knob too now (its stacks have no ADD there: a macro knob takes
+       no snapshots).
+513. **The head of the snapshots**, wherever a page lists them (the library, the designer, the
+     arrangement): one row, two where it is narrow.
+     - **Whose are listed**: ALL, or a stack's name, and how many. Pressed: the next stack,
+       then all again. (It replaces the library's STACK key, which did the same from the
+       strip.)
+     - **RECENT, FITS NOW, MORE, LESS**: the E16's four finders (132), on the screen. RECENT
+       is the newest first. FITS NOW is nearest in sound to what is playing, first. MORE and
+       LESS are the twelve a step up or down in energy, as the E16's knobs hold. The set is
+       listened to when one is pressed and the list stays put; pressed again, they are as kept.
+     - **FIND**: part of a name, typed. Pressed while lit: all of them again.
+     The three work together: a stack's snapshots, nearest what is playing first, whose names
+     hold DUB.
+514. **One list for three pages.** *Mine.* Whose are listed, the finder and FIND are the
+     same on the library, the designer and the arrangement: a stack chosen on one is the one
+     listed on the others. The library page gave up a row of cards to its head (66 where there
+     were 72), and the arrangement's list one too.
+515. **An empty stack is the instrument's alone.** *Mine.* The web library is told nothing of
+     a stack until it holds something (it would put an empty one out of the rack, and the
+     instrument would then lose it). A stack made here is kept in the session file empty or
+     not. A stack that is in the column and changed there goes to the web library's rack as
+     any change to a kept stack already did, with ONLINE lit; nothing new is asked of the web.
+516. **Which gesture is which.** *Mine, and the one to tell me if it is wrong.* A stack's card
+     pressed lists its snapshots (finding is what a stack is for); changing it is a key
+     (OPEN). The other way round was the alternative.
+     *Not built:* tags on the instrument; stacks that fill themselves by a rule; the plates
+     (STACKS, KNOBS, MODULES) on the wide library page, which is what is left of "one page";
+     the E16 on any of it; dragging in the column.
+
 ## Not verified
 
+- **Stacks of their own and the finders (512 to 515)** are pressed in the drawn screen and
+  read back from the session file; the rule for an empty stack is checked against a made-up
+  library. **FITS NOW, MORE and LESS on the screen are checked only with nothing playing**
+  (they list none); with a set playing they use the E16 finders' own code, which has its
+  checks, but nobody has looked at what they list on a screen. FIND's typing is not pressed
+  in the checks (its filter is). Not on your Mac.
 - **The knobs kept (506 to 510)** are pressed in the drawn screen and read back from the
   session file: kept, put on a place of each kind, refused where the place holds something or
   is the wrong kind, kept again, put into another module. Not on your Mac, and not with your

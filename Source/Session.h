@@ -460,6 +460,17 @@ public:
     // holds (a knob that held nothing takes the stack's name too). False: not a stack knob, or no room for them all.
     bool stackOnto (int index, int k);
     void stackForget (int index);       // out of the rack (and, once ONLINE has said so there, out of the web library's rack for the instrument)
+    // A stack of its own, made and changed with no knob: a collection of snapshots under a name, to find them by.
+    // (A song is the web library's to arrange and is never changed here. An empty one is the instrument's alone
+    // until it holds something: the web library is not told of it.)
+    int  rackNew (const juce::String& name = {});           // an empty one, kept here; where it is
+    bool rackCanChange (int index) const;
+    bool rackAdd (int index, juce::int64 id, juce::uint32 lanes = kAllLanes);
+    void rackDrop (int index, int at);
+    void rackSwap (int index, int a, int b);
+    void rackLanes (int index, int at, juce::uint32 lanes);
+    void rackRename (int index, const juce::String& name);
+    int  rackIndex (const juce::String& id) const;          // -1: no such stack
     // ---- the knobs kept: a collection of macro knobs and stack knobs, each a copy, to put on a place of whatever module is
     // in the chassis. No network is asked.
     std::vector<KeptKnob> keptKnobs;

@@ -60,7 +60,7 @@ First run:
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
 | **HOLD: NEW** (top bar, beside the flag) | held: a new track. The rig as it starts: no steps, no effects in the racks, every knob where the rig starts it, every MUTE and SOLO out, the macro knobs at rest. TEMPO, the master, the snapshot module's knobs and the library stay. A tap does nothing |
 | **LOAD** (on the snapshot module) | the modules kept on the instrument: choose one, and LOAD puts it in the chassis, whole (see Modules, below). The web library's module is **WEB LOAD**, in the library |
-| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. **LOAD** is here too, and **STACK** steps through the stacks it brought (see ONLINE, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
+| LIBRARY | the snapshot library: tap to recall, rename, hold DELETE. The head of the list says whose are listed and in what order (see Finding a snapshot, below). With **CUE** lit, a tap plays that snapshot's bars in the headphones instead, and **RECALL** takes it to the set |
 | MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and ADD snapshots to its stack (see The snapshot module, and A macro knob, below) |
 | ARRANGE (**A**) | the arrangement: snapshots in a line that morph one into the next, played from the clock and printed to files (see The arrangement, below) |
 | Drag TEMPO or KEY | 60 to 200 bpm; the key every lane follows (parts are written in C: the pitched lanes move with it, and the kick, the percussion and the drum bus's boom tune to its nearest note). A lane's KEY FOLLOW, in its CONFIG, lets it be. The steps of the sequencer say the notes as the key has moved them, so a part reads as it sounds; on a lane that does not follow, a new step is written at the key's note |
@@ -383,6 +383,23 @@ and from the rig itself it is given a profile, and its card in the library draws
 | the two rows of sixteen | where the hits fall in the bar: the top end above, the low end below |
 | the eleven bars | how much of each lane there was |
 
+#### Finding a snapshot
+
+Wherever snapshots are listed (the library, beside the knob in MACROS, beside the arrangement)
+the list has the same head, and what is chosen there is chosen on all three:
+
+| AT THE HEAD | WHAT |
+|---|---|
+| **ALL 37** / a stack's name | whose are listed, and how many. Pressed: the next stack kept, then all again. (In MACROS a stack's card does the same for that stack) |
+| **RECENT** | the newest first |
+| **FITS NOW** | nearest in sound to what is playing, first (only snapshots with a sound kept) |
+| **MORE**, **LESS** | a step up or down in energy from what is playing, the nearest step first: the twelve nearest it in colour, as the E16's MORE and LESS knobs hold |
+| **FIND** | part of a name, typed, then Return: only names that hold it. Pressed while lit: all again |
+
+The lit one is black. FITS NOW, MORE and LESS listen to the set when they are pressed, and the
+list stays put until the plate is pressed again. They work together: a stack's snapshots,
+nearest what is playing first, whose names hold DUB.
+
 **CUE** (in the library's strip) turns taps into listening: a tapped snapshot's four bars play in
 the headphones, on outputs 3 + 4, looped. While the clock runs they play in time: on the rig's bars
 and at the rig's tempo (so the pitch moves with the tempo's ratio to the clip's own). The set
@@ -551,12 +568,12 @@ that travels), readable by you only. Neither the address nor the strings are in 
 - **So does the rack, and it comes back the other way too.** The stacks in the designer's
   rack (STACKS, beside the column) and the stacks the web library has lit for the instrument
   (TO SF-000 there) are kept the same, by themselves, while ONLINE is lit:
-  - A stack kept here (KEEP, at the head of STACKS) is in the library's rack within a moment: lit for the instrument,
+  - A stack kept here (KEEP or NEW, at the head of STACKS; once it holds a snapshot) is in the library's rack within a moment: lit for the instrument,
     off its module, each snapshot with the parts it takes.
   - A stack made or lit there is here within a quarter of a minute, in the library's order. A
     snapshot it names that this library has not got is brought first, whole, with its four
     bars; until it is here the stack is left alone on both sides.
-  - Changed there, it changes here. Changed here (KEEP again under its name), it changes
+  - Changed there, it changes here. Changed here (in the column, or KEEP again under its name), it changes
     there. Changed on both since they last agreed: the instrument's is the one that stands.
   - Unlit or removed there, it leaves the rack here (its snapshots stay). Changed here since,
     it stays and goes back.
@@ -603,8 +620,8 @@ browser.
 - **The snapshots this library lacks**, whole, with their four bars and the definitions they
   name, under the name each has there. One this library has, renamed there, is renamed here.
 - **The rack** (above): the stacks lit for the instrument there (TO SF-000) and those kept
-  here, made the same. **STACK**, on the library screen (it appears once there are any), steps
-  that screen through them, each in its own order, then back to every snapshot.
+  here, made the same. The plate at the head of the snapshots (ALL, or a stack's name) steps
+  through them, each in its own order, then back to every snapshot.
 - **A song**, as the arrangement, *if there is none*.
 
 LOAD deletes no snapshot. What it brought is not sent back. With no answer from the library it
@@ -631,6 +648,26 @@ one at a time. No network is asked.
   **HOLD: OUT** takes the chosen one out, never the one in the chassis.
 - The module in the chassis is always one of the kept ones: what you change while playing
   changes it. A session from before modules has one, MODULE 1.
+
+### Stacks: snapshots under a name, to find them by
+
+A stack is a collection of snapshots. It is made and changed with no knob, on the instrument
+alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
+
+- **STACKS**, a plate beside the chosen knob in MACROS, shows them: each a card with its
+  number, its name and what it holds.
+- **NEW**, at the head of the list, makes an empty one and **opens** it. **KEEP KNOB 5'S
+  STACK**, beside it, keeps the chosen stack knob's snapshots as one, under the knob's name.
+- **An open stack is in the column**, where a stack knob's own stack stands, and is changed
+  the same way: a snapshot's **ADD** puts it in, its number takes it out, **UP** and **DN**
+  move it, its keys say which parts of the rig it takes, a tap is heard in the headphones.
+  While a stack is open no place is ringed and the strip says STACK; **RENAME** names it.
+  Choosing a place on the left puts the stack away.
+- On a stack's card: **the card itself** lists its snapshots under SNAPSHOTS, to hear and to
+  add from (the plate at the head of that list says whose are listed). **OPEN** puts it in
+  the column to be changed. **ADD** puts all of it into what is open: the chosen stack knob,
+  after what the knob holds, or another stack. Its number takes it out of those kept.
+- An empty stack is the instrument's alone until it holds something.
 
 ### Knobs kept by themselves
 
@@ -728,11 +765,8 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
   - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A
     key pressed while it plays is heard at once.
   - The wheel over the column moves it when it holds more than eleven.
-  - **STACKS**, beside the column, shows the **rack**: the stacks kept here, and those the web
-    library has lit for the instrument. **KEEP KNOB 5'S STACK**, at its head, keeps the knob's
-    snapshots there under the knob's name: a copy, each snapshot with its parts. A stack's
-    **ADD** puts it onto the chosen knob, after what the knob holds, and its number takes it
-    out of the rack. SNAPSHOTS brings the library back.
+  - **STACKS** shows the stacks kept here, and those the web library has lit for the
+    instrument (next section). SNAPSHOTS brings the library back.
   - **KNOBS** shows the knobs kept by themselves (next section).
   The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
   here goes there by itself. So does the rack, and the library's comes here: see ONLINE.
@@ -1005,7 +1039,8 @@ build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page librar
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work
-build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer with that knob chosen and the knobs kept beside it (--rack: the stacks; --modules: the modules)
+build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer with that knob chosen and the knobs kept beside it (--rack: the stacks; --rack --open: one of them open in the column; --modules: the modules)
+build/.../SF-000 --shot x.png --page library --finder 1       # a page with a finder lit at the head of its snapshots (1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS)
 build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)
