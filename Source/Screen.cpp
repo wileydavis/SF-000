@@ -766,6 +766,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER BESIDE IT IS AMOUNT." },
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
+                { aSamplePlain, "PLAIN", "SETS THIS LANE TO PLAY ITS SAMPLE AS IT WAS RECORDED: THE FILTER OPEN, NO LAYER AND NO CROSSOVER (SPLIT TAKES THE SAMPLE'S OWN LOWS OUT), THE WHOLE NOTE, NO DRIVE, THE LANE'S EQ FLAT. WHERE THE NOTE IS THE PITCH (BASS, LEAD, CHORD, PAD), TUNE IS SET SO THAT THE FIRST LIT STEP PLAYS IT AT ITS OWN. LEVEL, THE SENDS AND THE LANE'S INSERTS ARE LEFT AS THEY ARE. A SAMPLE IS AS LOUD AS ITS FILE: PEAK, HERE, SAYS HOW LOUD THAT IS." },
                 { aPhones, "PHONES", "FOR HEADPHONES ON THE ONE PAIR OF OUTPUTS. WHILE A SNAPSHOT PLAYS IN THEM, THE SET IS IN THE LEFT EAR AND THE SNAPSHOT IN THE RIGHT; WITH NONE PLAYING, THE SET IS AS ALWAYS. H ON THE KEYBOARD TOO, AND THE SMALL PLATE UNDER SETUP ON EVERY PAGE (GREEN WHILE IT IS LIT). IT IS OFF EACH TIME SF-000 OPENS, SO IT IS NEVER LEFT ON FOR A PA." },
             };
             for (const auto& a : acts) if (a.a == h.a) { t.title = a.title; body = a.body; }
@@ -1161,10 +1162,17 @@ void Screen::drawConfig (G& g, R r)
     }
     // what the module says of itself, and where a dropped file goes: onto this panel, for this panel
     String status = m.statusLine();
+    const bool plain = cfg.kind == 0 && ses.playsSample (cfg.lane);        // (a lane playing a sample: PLAIN is there, beside LOAD)
     if (cfg.kind == 0 && m.acceptsFiles())
     {
         const String f = juce::File (eng.laneFile (cfg.lane)).getFileName();
         status << (status.isEmpty() ? "" : "   ") << (f.isNotEmpty() ? "FILE: " + f : m.fileHint() + " ON THIS LANE");
+        // (what the file is heard to be: its loudest point, which nothing here raises, and the note that plays it at its own pitch)
+        if (f.isNotEmpty())
+        {
+            if (saysPath != eng.laneFile (cfg.lane)) { saysPath = eng.laneFile (cfg.lane); saysOf = ses.sampleSays (cfg.lane); }
+            if (saysOf.has) status << "   PEAK " << String (saysOf.peakDb, 1) << " DB" << (saysOf.pitched ? "   ROOT " + saysOf.root : String());
+        }
     }
     else if (cfg.kind != 0 && eng.acceptsFiles (cfg) && status.isEmpty())
         status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");
@@ -1175,7 +1183,7 @@ void Screen::drawConfig (G& g, R r)
         status = status.toUpperCase();
         if (status.isNotEmpty())
         {
-            const R sr (x0, y, std::min (takesFile ? 468.0f : 544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
+            const R sr (x0, y, std::min (plain ? 392.0f : takesFile ? 468.0f : 544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
             window (g, sr, col::white);
             g.setColour (tone (col::black)); g.setFont (fNote);
             g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
@@ -1187,6 +1195,14 @@ void Screen::drawConfig (G& g, R r)
             key (g, lr, loadOpen ? col::green : col::yellow, pressed (aLoad) ? 6.0f : 2.0f, loadOpen);
             text (g, "LOAD", lr, fLbl, col::black);
             hit (lr.expanded (2), hAct, aLoad, 0);
+            if (plain)
+            {
+                // PLAIN: the lane set to play its sample as it was recorded
+                const R pr (x0 + 398, y - 1, 70, 24);
+                key (g, pr, col::white, pressed (aSamplePlain) ? 6.0f : 2.0f);
+                text (g, "PLAIN", pr, fLbl, col::black);
+                hit (pr.expanded (2), hAct, aSamplePlain, 0);
+            }
         }
         y += 28;
     }
@@ -2923,6 +2939,14 @@ void Screen::act (int a)
         case aAudio:    if (onAudioSetup) onAudioSetup(); break;
         case aFull:     if (onFullScreen) onFullScreen(); break;
         case aLoad:     if (loadOpen) loadOpen = false; else openLoad(); repaint(); break;
+        case aSamplePlain:
+            if (cfgOpen && cfg.kind == 0)
+            {
+                const auto told = ses.samplePlain (cfg.lane);
+                if (told.isNotEmpty()) { cfgNote = told; recNote = told; recNoteAt = juce::Time::getMillisecondCounter(); cfgStale = true; }
+            }
+            repaint();
+            break;
         case aLoadUp:   if (loadDir.getParentDirectory() != loadDir) { loadDir = loadDir.getParentDirectory(); loadScroll = 0; readLoad(); } repaint(); break;
         case aCfgClose: cfgOpen = false; break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;

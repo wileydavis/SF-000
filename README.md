@@ -227,6 +227,9 @@ back at the other. The sequencer stays where it is.
   as on its panel, then the rest of the instrument's) and AMOUNT (either way, up to the whole
   range). It adds to where the knob stands and to what a snapshot knob does. It is kept in
   snapshots; one taken before MOTION could be set means it off.
+- **PLAIN**, beside LOAD in the CONFIG of a lane that is playing a sample, sets the lane to
+  play it **as it was recorded** (see A sample as it was recorded, below). The line beside it
+  says the file's loudest point (PEAK) and the note that plays it at its own pitch (ROOT).
 - **LOAD**, on any CONFIG that takes a file (a sample, a phrase, an impulse response), lists
   folders and sound files in the panel itself: a click goes into a folder, UP comes out, a click
   on a file loads it as a drop would. No window of the system's is opened, so it works full
@@ -369,6 +372,43 @@ Four for each lane, beside its map:
   CC 59 to 62, and the rig's four on channel 16, CC 75 to 78.
 - Its cost on the machine this was written on (a slow one): 2 % of a core to look at all thirteen
   parts, 5 % with two hundred bells cutting at once, which is every lane giving way all over.
+
+### A sample as it was recorded
+
+A lane does not play a sample back: it plays it through everything the lane is. As SF-000 opens,
+the BASS lane with a sample plays a fraction of each note (GATE), through a low-pass (CUTOFF),
+with the sample's own lows crossed out and a sine put in their place (SPLIT, in CONFIG's LAYER
+box, even with the LAYER knob at nought), at the pitch of the step and not the sample's own,
+and well under the file's level. Each of those is a setting.
+
+**PLAIN** (in the lane's CONFIG, beside LOAD, while its MODEL is SAMPLE and a file is loaded)
+sets all of them at once:
+
+| LANES | WHAT PLAIN SETS |
+|---|---|
+| BASS, LEAD, CHORD, PAD | CUTOFF 100, RES 0, ENV AMT 0, DRIVE 0, FILTER centre, GATE 100, LAYER 0 and SPLIT OFF, GLIDE 0, ATTACK 0, POCKET DEPTH 0, ACID, WARP and DRIFT 0, DENSITY 0, CHORD NONE, the lane's LOW, MID and HIGH centre. **TUNE**, so that the lane's first lit step plays the sample at its own pitch (where that is within two octaves; else TUNE 0, and it says the root) |
+| KICK, CLOSED HAT, OPEN HAT, CLAP | TUNE 0, DECAY 100 (the whole sample), CLICK 0, DRIVE 0, FILTER centre, LAYER 0 and SPLIT OFF, DENSITY 0, KEY TRACK off, the EQ centre. They play a sample at its own pitch whatever the note |
+| VOICE | TUNE 0, GATE 100, ECHO 0, DRIVE 0, FILTER centre, POCKET DEPTH 0, DENSITY 0, SLICE MODE WHOLE (any note is the whole phrase, at its own pitch), the EQ centre |
+
+It says what it did in CONFIG and in the bar. **It leaves LEVEL, the sends and the lane's insert
+effects** (it names the inserts that still act: LEAD opens with DELAY and RADIO). RUMBLE has no
+PLAIN: it shapes whatever it is given. PERC plays no sample.
+
+What PLAIN cannot do for you:
+
+- **Level.** Nothing here makes a sample louder than its file, and the lanes open with LEVEL
+  low because their own models are loud. After PLAIN, at the LEVEL each lane opens with, a
+  sample is about 15 dB under its file on BASS, the hats, the clap and VOICE, and 3 dB under on
+  KICK, before the master (which adds about 7 dB as it opens). PEAK, in CONFIG, is the file's
+  loudest point: one that reads -10 dB is a quiet file.
+- **Length.** On BASS, LEAD, CHORD and PAD a sample sounds while its note is held and fades
+  when it is let go, and every step starts it again from START: a long sample needs a long
+  note. On KICK, the hats, CLAP and VOICE, after PLAIN, a step plays the sample through to its
+  end however short the step is. So a loop or a phrase that should simply play is at home on
+  VOICE (which is mono).
+
+Measured, not assumed: `--samplecheck` (see Checks) plays a file through a lane and writes what
+came out; after PLAIN it is level with the file across the spectrum to a tenth of a decibel.
 
 ### The library: what a snapshot sounded like
 
@@ -1056,6 +1096,7 @@ SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest block
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
+build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages

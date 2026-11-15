@@ -348,6 +348,14 @@ public:
     // alone that was the last track's: every MUTE and SOLO out, the macro knobs at rest, nothing cued, the notes heard
     // from outside forgotten. TEMPO, GLIDE, the master, the snapshot module's knobs and the library stay as they are.
     void newTrack();
+    // A lane whose model is SAMPLE, set to play its sample as it was recorded: everything of the lane that shapes the sound
+    // put where it does nothing (the filter open, no layer and no crossover, the whole note, no drive, the lane's EQ flat),
+    // and, where the lane plays a sample at the pitch of the note, TUNE set so that its first lit step plays it at its own.
+    // LEVEL, the sends and the lane's insert effects are left. What it did, in words (empty: the lane plays no sample).
+    bool playsSample (int lane) const;
+    struct SampleSays { bool has = false; juce::String root; float peakDb = 0.0f; bool pitched = false; int rootNote = 60; };
+    SampleSays sampleSays (int lane) const;         // what the lane's file is heard to be (its root, its loudest point)
+    juce::String samplePlain (int lane);
     // A snapshot's sound is the bars the rig held its state through. Taken while something had just
     // moved (or was still travelling), it waits for four such bars; this looks whether they have
     // come. If the rig moves on first it takes what was held, or failing that the bars it was taken

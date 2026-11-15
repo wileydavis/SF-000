@@ -2983,8 +2983,57 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      *Not built:* a song taken from the web library does not bring per-part stems; the E16 on
      any of this; stems on the snapshot module's knobs on MAIN (they show names, not chips).
 
+## A sample as it was recorded (Nov 15, 09:20): fifty-sixth build
+
+525. **You**, 09:19: "for samples, sometimes they seem really quiet even though they play fine
+     on other apps. They also sound quite different. What settings to get a sample to sound
+     exactly as it does in the waveform?" 09:20, with a file (a four-second bass, two notes,
+     nearly all under 120 Hz, its loudest point at -9.6 dB): "this one for instance". 09:21:
+     "in the bass module it lacks a lot of the low end and complexity when played back vs the
+     original sample"
+     **Measured, with your file in the BASS lane as the rig opens** (the file is not in the
+     repo). Five things stand between the file and the lane's sound:
+     - the sample's own lows are crossed out and a sine put in their place (SPLIT at LAYER
+       LOWS 100 %, SPLIT HZ 120, LAYER MODEL SINE SUB): 20 to 60 Hz is 54 dB down, and SPLIT
+       does this with the LAYER knob at nought too;
+     - the steps are C1 and the file's root reads as D#0, so it is nine semitones up;
+     - GATE at 40 and steps half a step long: about 0.2 s of a 4 s note is heard;
+     - CUTOFF 30, RES 35, ENV AMT 45: 23 to 48 dB down above 250 Hz;
+     - LEVEL 56 is 15 dB under the file (100 is 2 dB under), the steps' velocities take 2 to 4
+       more, and nothing normalises a sample.
+     With each put where it does nothing, the lane is level with the file in every band to a
+     tenth of a decibel.
+526. **PLAIN**, beside LOAD in the CONFIG of a lane that plays a sample: one press sets the lane
+     to play it as it was recorded, and says what it did. *The key and its name are mine.*
+     What it sets is in the README, lane by lane, and each set was found by measuring that lane
+     against the file, not from the code: BASS, LEAD, CHORD, PAD; KICK, the hats, CLAP; VOICE.
+     On the lanes where the note is the pitch it sets TUNE so that the lane's first lit step
+     plays the sample at its own pitch. It leaves LEVEL, the sends and the inserts, and names
+     the inserts that still colour the lane.
+527. **CONFIG says what the file is**: PEAK (its loudest point) and ROOT, beside its name.
+528. **`--samplecheck`**: the tool the measuring was done with, kept. It plays a file through
+     a lane and writes the lane and the outputs as WAVs with every setting of the lane printed.
+529. *Left as they are, and yours to say:*
+     - **SPLIT takes a model's lows out with LAYER at nought.** It is the suite's rule (the
+       crossover says who owns the lows, whatever the layer's level), and the BASS lane opens
+       with it on so that its synth models sit on a clean sine. For a sample it is the worst of
+       the five. I did not change the suite's code; PLAIN turns SPLIT off.
+     - **A sample cannot be made louder than its file**, and on the synth lanes cannot quite
+       reach it at the lane (2 dB short at LEVEL 100). A gain or a NORMALISE for a lane's
+       sample would be a new control in the suite's modules.
+     - **A sample on BASS, LEAD, CHORD or PAD sounds only while its note is held** (it fades
+       when the note is let go). KICK, the hats, CLAP and VOICE play it through to its end from
+       the shortest step, so today a loop that should simply play belongs on VOICE, in mono. A
+       switch to let a synth lane's sample play through would be another new control.
+     - RUMBLE has no PLAIN: it plays a sample for one beat's gate and shapes it.
+
 ## Not verified
 
+- **PLAIN (526)** is measured against one file of yours and against made-up tones, at the
+  lane (before the master), with one note held. Not by ear, not on your Mac, and not with a
+  drum one-shot, a vocal phrase or a stereo-wide sample: KICK, the hats, CLAP and VOICE come
+  out mono, as they did before. The root is the sampler's own guess; a sample with no clear
+  pitch reads as C3.
 - **A chip pressed plays (522, 523)**: checked with a real snapshot and its sound at the
   device's outputs for MACROS, a stack knob's card and the library, with PHONES on one pair of
   outputs. **Not checked with outputs 3 + 4 open** (the checks have two outputs), and not by

@@ -132,6 +132,8 @@ public:
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
     juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
     static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
+    static bool testIsPlain (const TestHit& h) { return h.kind == hAct && h.a == aSamplePlain; }       // (CONFIG, a lane playing a sample: PLAIN)
+    juce::String testCfgNote() const { return cfgNote; }
     static bool testIsArrStem (const TestHit& h, int part, int stem) { return h.kind == hArrKey && h.a == part && h.b == stem; }      // (a key on a part of the arrangement)
     static bool testIsSlot (const TestHit& h, int k, int at) { return h.kind == hSlot && h.a == k && h.b == at; }       // (one of the snapshots on a stack knob's card)
     static bool testIsNotesKey (const TestHit& h) { return h.kind == hAct && h.a == aNotes; }      // NOTES: whether a recall brings a snapshot's notes
@@ -239,7 +241,7 @@ private:
                    hKeptCard,       // a kept knob's card: carried onto a place
                    hArrKey };       // a key on a part of the arrangement (a: the part; b: the part of the rig)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain, aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
                aFetch,
@@ -511,6 +513,7 @@ private:
     juce::String pkNote;                // what AUTO last had to say, for a few seconds
     juce::uint32 pkNoteAt = 0;
     juce::String cfgName, cfgNote, cfgStatus;
+    juce::String saysPath; Session::SampleSays saysOf;      // (the lane's file in CONFIG: what it is heard to be, read when the file changes)
     R cfgDisplay, cfgRect;
     std::unique_ptr<juce::TextEditor> editor;
     std::function<void (juce::String)> editDone;

@@ -2,6 +2,7 @@
 #include <map>
 #include "Build.h"
 #include <juce_cryptography/juce_cryptography.h>
+#include "core/Sample.h"
 
 namespace sf0
 {
@@ -1397,6 +1398,103 @@ juce::int64 Session::take()
     touch();
     if (onLibrary) onLibrary();
     return id;
+}
+
+// ---- a sample as it was recorded
+static const Engine::SetupParam* setupOf (const std::vector<Engine::SetupParam>& ps, const char* id)
+{
+    for (auto& sp : ps) if (sp.id == id) return &sp;
+    return nullptr;
+}
+
+bool Session::playsSample (int lane) const
+{
+    if (lane < 0 || lane >= kLanes || engine.laneFile (lane).isEmpty()) return false;
+    const auto ps = engine.setupParams ({ 0, lane, 0 });
+    const auto* model = setupOf (ps, "model");
+    // (RUMBLE is driven by the kick and shapes whatever it is given: a sample there is its material, not a recording to play back)
+    return model != nullptr && model->text.equalsIgnoreCase ("SAMPLE") && setupOf (ps, "source") == nullptr;
+}
+
+Session::SampleSays Session::sampleSays (int lane) const
+{
+    SampleSays out;
+    if (lane < 0 || lane >= kLanes || engine.laneFile (lane).isEmpty()) return out;
+    // (the sample as the lane's module holds it: read once, and shared)
+    if (const auto smp = sf::loadSampleFile (juce::File (engine.laneFile (lane)), engine.sampleRate()))
+    {
+        out.has = true;
+        out.pitched = smp->rootHz > 0.0f;
+        out.rootNote = out.pitched ? (int) std::lround (smp->rootNote) : 60;
+        out.root = juce::MidiMessage::getMidiNoteName (out.rootNote, true, true, 3);
+        out.peakDb = juce::Decibels::gainToDecibels (smp->peak, -100.0f);
+    }
+    return out;
+}
+
+juce::String Session::samplePlain (int lane)
+{
+    if (! playsSample (lane)) return {};
+    const Engine::Target t { 0, lane, 0 };
+    const auto ps = engine.setupParams (t);
+    const juce::String slug (lanes()[(size_t) lane].slug);
+    // one of the module's own values, by the lane's knob that drives it if one does, else in CONFIG
+    auto put = [&] (const char* id, float v)
+    {
+        for (int k = 0; k < kLaneKnobs; ++k)
+            if (engine.control (cx::lane (lane, k)).id == slug + "." + id) { userSet (cx::lane (lane, k), v); return true; }
+        if (setupOf (ps, id) == nullptr) return false;
+        engine.setSetup (t, id, v);
+        return true;
+    };
+    auto has = [&] (const char* id)
+    {
+        if (setupOf (ps, id) != nullptr) return true;
+        for (int k = 0; k < kLaneKnobs; ++k) if (engine.control (cx::lane (lane, k)).id == slug + "." + id) return true;
+        return false;
+    };
+    auto choose = [&] (const char* id, const char* name)
+    {
+        if (const auto* sp = setupOf (ps, id)) if (const int at = sp->choices.indexOf (name); at >= 0) engine.setSetup (t, id, (float) at / (float) std::max (1, sp->choices.size() - 1));
+    };
+    // What shapes a sample, each where it does nothing (measured, lane by lane, against the file: --samplecheck).
+    const bool synth = has ("cutoff");              // BASS, LEAD, CHORD, PAD: a filter, an envelope, a layer; the note is the pitch
+    put ("tune", 0.5f);
+    put ("drive", 0.0f); put ("filter", 0.5f); put ("density", 0.0f);
+    put ("layer", 0.0f); put ("split", 0.5f);       // (the crossover takes the model's lows out even with LAYER at nought)
+    put ("gate", 1.0f); put ("pocket_depth", 0.0f);
+    if (synth)
+    {
+        put ("cutoff", 1.0f); put ("res", 0.0f); put ("env_amt", 0.0f); put ("glide", 0.0f); put ("attack", 0.0f);
+        put ("acid", 0.0f); put ("warp", 0.0f); put ("drift", 0.0f);
+        choose ("chord", "NONE");
+    }
+    else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); }      // (the drums: DECAY is how much of it plays)
+    choose ("slice_mode", "WHOLE");                 // (VOICE: any note is the whole phrase, at its own pitch)
+    for (int e = 0; e < 3; ++e) userSet (cx::lane (lane, cx::kEqLow + e), 0.5f);
+    // Its pitch. A drum and a phrase play at their own whatever the note; the others at the note's, and at their own on their root.
+    const auto says = sampleSays (lane);
+    juce::String told = "PLAIN: THE SAMPLE AS IT WAS RECORDED";
+    if (synth && says.has)
+    {
+        // TUNE, so that the lane's first lit step is that root (where TUNE reaches: two octaves either way)
+        const auto pat = engine.pattern (lane);
+        int stepNote = -1; juce::String stepName;
+        for (int i = 0; i < pat.length && stepNote < 0; ++i)
+            if (pat.steps[(size_t) i].on) { stepNote = (pat.steps[(size_t) i].octave + 2) * 12 + pat.steps[(size_t) i].note + keyMoves (lane); stepName = noteSays (lane, pat.steps[(size_t) i]); }
+        const int st = stepNote >= 0 ? says.rootNote - stepNote : 0;
+        if (stepNote >= 0 && std::abs (st) <= 24 && st != 0 && put ("tune", 0.5f + (float) st / 48.0f))
+            told << ". " << stepName << " PLAYS IT AT ITS OWN PITCH (TUNE " << (st > 0 ? "+" : "") << st << " ST; ITS ROOT IS " << says.root << ")";
+        else told << (stepNote >= 0 && st == 0 ? ". ITS STEPS ARE ON ITS ROOT, " : ". IT IS AT ITS OWN PITCH ON ") << says.root;
+        told << ". IT PLAYS FOR AS LONG AS A NOTE IS HELD";
+    }
+    // (what PLAIN leaves alone that still colours it)
+    juce::StringArray ins;
+    for (int sl = 0; sl < kSlots; ++sl) if (const int ty = engine.insertType (lane, sl); ty >= 0 && engine.target (cx::insMute (lane, sl)) < 0.5f) ins.add (juce::String (effects()[(size_t) ty].name));
+    if (! ins.isEmpty()) told << ". ITS INSERTS STILL ACT: " << ins.joinIntoString (", ");
+    touch();
+    if (onChange) onChange();
+    return told;
 }
 
 void Session::newTrack()

@@ -2102,6 +2102,92 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmp.deleteRecursively();
     }
 
+    // PLAIN: a lane set to play its sample as it was recorded. A sample with lows and highs on the BASS lane, whose steps are
+    // not on its root: as the lane opens it is cut short, filtered, its lows crossed out and played at another pitch; after
+    // PLAIN the lane's own step note plays it flat across the spectrum, and like the file.
+    {
+        auto tmp2 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-plain-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
+        tmp2.createDirectory();
+        const double SR2 = 48000.0;
+        const int N = (int) (1.5 * SR2);
+        juce::AudioBuffer<float> src (2, N);
+        for (int i = 0; i < N; ++i)
+        {
+            // 55 Hz (A0) and its harmonics up to 3.3 kHz, each quieter than the one below
+            double x = 0.0;
+            for (int h = 1; h <= 60; ++h) x += std::sin (2.0 * juce::MathConstants<double>::pi * 55.0 * h * (double) i / SR2) / (double) (h * (h < 4 ? 1.0 : 0.7));
+            src.setSample (0, i, (float) (0.12 * x)); src.setSample (1, i, (float) (0.12 * x));
+        }
+        const auto wavFile = tmp2.getChildFile ("plain.wav");
+        { juce::WavAudioFormat wf; if (auto os = wavFile.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), SR2, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (src, 0, N); }
+        struct Tap : Engine::RecSink
+        {
+            int index = 0; std::vector<float> l;
+            void begin (int) noexcept override {}
+            void track (int idx, const float* a, const float*, int n) noexcept override { if (idx == index && l.size() + (size_t) n <= l.capacity()) l.insert (l.end(), a, a + n); }
+            void end (int) noexcept override {}
+        };
+        // three bands of a signal (under 120 Hz, to 1 kHz, over it), by their energy
+        auto bandsOf = [&] (const float* x, int n)
+        {
+            std::array<double, 3> e2 {};
+            const double a1 = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 120.0 / SR2), a2 = 1.0 - std::exp (-2.0 * juce::MathConstants<double>::pi * 1000.0 / SR2);
+            double l1 = 0.0, l2 = 0.0;
+            for (int i = 0; i < n; ++i) { l1 += a1 * ((double) x[i] - l1); l2 += a2 * ((double) x[i] - l2); e2[0] += l1 * l1; e2[1] += (l2 - l1) * (l2 - l1); e2[2] += ((double) x[i] - l2) * ((double) x[i] - l2); }
+            return e2;
+        };
+        // how alike the lane's sound is to the file, at the best of the first 3000 places (1: the same but for its level)
+        auto alike = [&] (const std::vector<float>& out)
+        {
+            double best = 0.0;
+            const int n = N - 4000;
+            const float* ref = src.getReadPointer (0);
+            double rr = 0.0; for (int i = 0; i < n; ++i) rr += (double) ref[i] * ref[i];
+            for (int lag = 0; lag < 3000; lag += 1)
+            {
+                if ((int) out.size() < lag + n) break;
+                double c = 0.0, oo = 0.0;
+                for (int i = 0; i < n; i += 4) { c += (double) out[(size_t) (lag + i)] * ref[i]; oo += (double) out[(size_t) (lag + i)] * out[(size_t) (lag + i)]; }
+                best = std::max (best, c / std::sqrt (oo * (rr / 4.0) + 1e-18));
+            }
+            return best;
+        };
+        const int lane = 5;                                             // BASS: its steps are C1
+        auto play = [&] (bool plain, juce::String& told, std::array<double, 3>& ratio)
+        {
+            Engine e; e.prepare (SR2, 256);
+            Session ses (e, false);
+            const Engine::Target t { 0, lane, 0 };
+            for (auto& sp : e.setupParams (t)) if (sp.id == "model") e.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1));
+            e.loadFile (lane, wavFile);
+            for (int l = 0; l < kLanes; ++l) if (l != lane) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+            e.set (cx::lane (lane, cx::kSeqMute), 1.0f, 0.0);
+            if (plain) told = ses.samplePlain (lane);
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 300; ++i) e.render (b);
+            Tap tap; tap.index = 1 + lane; tap.l.reserve ((size_t) N + 48000);
+            e.setRecSink (&tap);
+            const auto pat = ses.pattern (lane);
+            int note = 36;
+            for (int i = 0; i < pat.length; ++i) if (pat.steps[(size_t) i].on) { note = (pat.steps[(size_t) i].octave + 2) * 12 + pat.steps[(size_t) i].note; break; }
+            e.noteInAt (juce::MidiMessage::noteOn (lane + 1, note, (juce::uint8) 127), 0);
+            for (int i = 0; i < (N + 12000) / 256; ++i) e.render (b);
+            e.setRecSink (nullptr);
+            const auto in = bandsOf (src.getReadPointer (0), N - 4000), out = bandsOf (tap.l.data(), std::min ((int) tap.l.size(), N - 4000));
+            for (int k = 0; k < 3; ++k) ratio[(size_t) k] = 10.0 * std::log10 ((out[(size_t) k] + 1e-18) / (in[(size_t) k] + 1e-18));
+            return alike (tap.l);
+        };
+        juce::String told, none;
+        std::array<double, 3> asOpens {}, plainIs {};
+        const double likeBefore = play (false, none, asOpens), likeAfter = play (true, told, plainIs);
+        const bool flat = std::abs (plainIs[0] - plainIs[1]) < 1.0 && std::abs (plainIs[2] - plainIs[1]) < 1.0;
+        const bool plainOk = likeAfter > 0.95 && flat && likeBefore < 0.5 && told.contains ("TUNE -3 ST") && told.contains ("ROOT IS A0");
+        std::printf ("  %s: PLAIN: a sample on the BASS lane is cut, filtered, crossed over and off its pitch as the lane opens (like the file: %.2f; its bands against the file's %.1f, %.1f, %.1f dB); after PLAIN the lane's own "
+                     "step note plays it like the file (%.3f), level across the spectrum (%.1f, %.1f, %.1f dB)\n", plainOk ? "ok  " : "FAIL", likeBefore, asOpens[0], asOpens[1], asOpens[2], likeAfter, plainIs[0], plainIs[1], plainIs[2]);
+        if (! plainOk) { ++bad; std::printf ("    (said: %s)\n", told.toRawUTF8()); }
+        tmp2.deleteRecursively();
+    }
+
     // A snapshot's sound is the state it holds, not the road to it. Taken as something moves, it
     // waits for bars the rig held still through; the bars before the press are no part of it.
     {
@@ -3031,6 +3117,122 @@ static int knobAudit (int only)
 
 // Clicks and drags every control on every screen with the engine running, then checks a few
 // results: the screens must survive anything a hand can do to them.
+// What a lane makes of a sample. Loads FILE on the lane with its MODEL at SAMPLE, in the rig as it opens, plays one note for
+// the sample's whole length with the lane's own sequencer silent, and writes what came out beside the file's own sound:
+// the lane as it goes into the mix (lane.wav) and the device's outputs 1 + 2 (master.wav), in --out DIR. It prints the root
+// the sample was heard to have, the note played, and every knob and CONFIG value of the lane, so that what differs can be
+// traced to a control. --note N plays that note (default: the sample's root); --set ID=VALUE sets a CONFIG value (0 to 1)
+// or, with a number for ID, a knob of the lane; --plain presses CONFIG's PLAIN; --bare passes the lane's insert effects by; --other also leaves the other lanes playing.
+static int sampleCheck (const juce::StringArray& args, const juce::String& path)
+{
+    using namespace sf0;
+    auto arg = [&] (const char* name, const juce::String& def) { const int i = args.indexOf (name); return i >= 0 && i + 1 < args.size() ? args[i + 1].unquoted() : def; };
+    const juce::File f (path);
+    if (! f.existsAsFile()) { std::printf ("no such file: %s\n", path.toRawUTF8()); return 2; }
+    const int lane = juce::jlimit (0, kLanes - 1, arg ("--lane", "6").getIntValue() - 1);
+    const juce::File out (arg ("--out", juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("samplecheck").getFullPathName()));
+    out.createDirectory();
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    const Engine::Target t { 0, lane, 0 };
+    auto* p = e.processorFor (t);
+    if (p == nullptr) return 2;
+    // MODEL: SAMPLE
+    bool isSample = false;
+    for (auto& sp : e.setupParams (t)) if (sp.id == "model") { const int at = sp.choices.indexOf ("SAMPLE"); if (at >= 0) { e.setSetup (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1)); isSample = true; } }
+    if (! isSample) std::printf ("lane %d has no SAMPLE model\n", lane + 1);
+    const bool loaded = e.loadFile (lane, f);
+    for (int i = 0; i < args.size() - 1; ++i)
+        if (args[i] == "--set")
+        {
+            const auto id = args[i + 1].upToFirstOccurrenceOf ("=", false, false); const float v = args[i + 1].fromFirstOccurrenceOf ("=", false, false).getFloatValue();
+            // (a number: that knob of the lane. A name: the module's own value, by the knob that drives it if one does, else in CONFIG)
+            if (id.containsOnly ("0123456789")) { ses.userSet (cx::lane (lane, id.getIntValue()), v); continue; }
+            int knob = -1;
+            for (int k = 0; k < kLaneKnobs; ++k) if (e.control (cx::lane (lane, k)).id.fromFirstOccurrenceOf (".", false, false) == id) knob = k;
+            if (knob >= 0) ses.userSet (cx::lane (lane, knob), v); else e.setSetup (t, id, v);
+        }
+    if (args.contains ("--plain")) std::printf ("PLAIN said: %s\n", ses.samplePlain (lane).toRawUTF8());            // (as the PLAIN key in CONFIG)
+    if (args.contains ("--bare")) for (int sl = 0; sl < kSlots; ++sl) ses.userSet (cx::insMute (lane, sl), 1.0f);       // (its insert effects passed by)
+    if (! args.contains ("--other")) for (int l = 0; l < kLanes; ++l) if (l != lane) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+    e.set (cx::lane (lane, cx::kSeqMute), 1.0f, 0.0);                   // (its own steps are silent: only the note below plays)
+    juce::AudioBuffer<float> b (2, 256);
+    for (int i = 0; i < 400; ++i) e.render (b);                         // (settled)
+    // the file itself, as the lane holds it
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+    const double seconds = r != nullptr ? (double) r->lengthInSamples / r->sampleRate : 4.0;
+    std::printf ("file: %s  %.3f s  %d Hz  %d ch  %d bit%s  loaded %d\n", f.getFileName().toRawUTF8(), seconds, r != nullptr ? (int) r->sampleRate : 0, r != nullptr ? (int) r->numChannels : 0,
+                 r != nullptr ? (int) r->bitsPerSample : 0, r != nullptr && r->usesFloatingPointData ? " float" : "", (int) loaded);
+    // (the sample as every sampler here reads it: the root it is heard to have is the note that plays it at its own pitch)
+    const auto smp = sf::loadSampleFile (f, 48000.0, 60.0 * 20.0);
+    const int root = smp != nullptr && smp->rootHz > 0.0f ? (int) std::lround (smp->rootNote) : 60;
+    if (smp != nullptr) std::printf ("as read: root %s (%.2f Hz, note %.2f)%s, peak %.3f, falls 40 dB in %.2f s, %d samples\n", juce::MidiMessage::getMidiNoteName (root, true, true, 3).toRawUTF8(), smp->rootHz, smp->rootNote,
+                                     smp->rootHz > 0.0f ? "" : " [no clear pitch: C3 plays it as it is]", smp->peak, smp->decaySec, smp->length());
+    std::printf ("lane %d %s: its knobs\n", lane + 1, lanes()[(size_t) lane].name);
+    for (int k = 0; k <= cx::kEqHigh; ++k) std::printf ("  %2d %-12s %-12s (%.3f)  %s\n", k, e.control (cx::lane (lane, k)).label.toRawUTF8(), e.valueText (cx::lane (lane, k)).toRawUTF8(), e.target (cx::lane (lane, k)),
+                                                        e.control (cx::lane (lane, k)).id.toRawUTF8());
+    for (int sl = 0; sl < kSlots; ++sl)
+        if (const int ty = e.insertType (lane, sl); ty >= 0)
+            std::printf ("  insert %d: %s%s\n", sl + 1, effects()[(size_t) ty].name, e.target (cx::insMute (lane, sl)) > 0.5f ? " (muted)" : "");
+    std::printf ("its CONFIG\n");
+    for (auto& sp : e.setupParams (t)) std::printf ("  %-14s %-14s %-16s (%.3f, default %.3f) [%s]\n", sp.id.toRawUTF8(), sp.name.toRawUTF8(), sp.text.toRawUTF8(), sp.value, sp.def, sp.group.toRawUTF8());
+    {
+        // (what the lane's own steps would play it at: the sample is at its own pitch only on its root)
+        const auto pat = ses.pattern (lane);
+        juce::String notes;
+        for (int i = 0; i < pat.length; ++i) if (pat.steps[(size_t) i].on) notes << Session::noteSays (pat.steps[(size_t) i], 0) << " (gate " << juce::String (pat.steps[(size_t) i].gate, 2) << ", vel " << juce::String (pat.steps[(size_t) i].vel, 2) << ")  ";
+        std::printf ("its steps: %s\n", notes.toRawUTF8());
+    }
+    std::printf ("master and returns: GLIDE %s, KEY %s, TEMPO %s\n", e.valueText (cx::kGlide).toRawUTF8(), e.valueText (cx::kKey).toRawUTF8(), e.valueText (cx::kTempo).toRawUTF8());
+    struct Tap : Engine::RecSink
+    {
+        int index = 0; std::vector<float> l, r;
+        void begin (int) noexcept override {}
+        void track (int idx, const float* a, const float* c, int n) noexcept override { if (idx == index && l.size() + (size_t) n <= l.capacity()) { l.insert (l.end(), a, a + n); r.insert (r.end(), c, c + n); } }
+        void end (int) noexcept override {}
+    } tap;
+    tap.index = 1 + lane;
+    const int total = (int) ((seconds + 1.0) * 48000.0);
+    tap.l.reserve ((size_t) total + 4096); tap.r.reserve ((size_t) total + 4096);
+    juce::AudioBuffer<float> master (2, total + 512);
+    master.clear();
+    const int note = arg ("--note", "-1").getIntValue();
+    const int vel = juce::jlimit (1, 127, arg ("--vel", "127").getIntValue());
+    const double held = arg ("--hold", "").isNotEmpty() ? arg ("--hold", "1").getDoubleValue() : seconds;       // (--hold S: the note is let go after that long)
+    std::printf ("note played: %s, velocity %d, held %.2f s; clock %s\n", note >= 0 ? juce::MidiMessage::getMidiNoteName (note, true, true, 3).toRawUTF8() : "the root (see status)", vel, held, args.contains ("--run") ? "running" : "stopped");
+    const int played = note >= 0 ? note : root;
+    std::printf ("  (note number %d: %s)\n", played, juce::MidiMessage::getMidiNoteName (played, true, true, 3).toRawUTF8());
+    if (args.contains ("--run")) e.setRunning (true);
+    e.setRecSink (&tap);
+    e.noteInAt (juce::MidiMessage::noteOn (lane + 1, played, (juce::uint8) vel), 0);
+    int done = 0; bool off = false;
+    float* outs[2] = { nullptr, nullptr };
+    juce::AudioBuffer<float> dev (2, 256);
+    while (done + 256 <= total)
+    {
+        if (! off && done >= (int) (held * 48000.0)) { e.noteInAt (juce::MidiMessage::noteOff (lane + 1, played), 0); off = true; }
+        outs[0] = dev.getWritePointer (0); outs[1] = dev.getWritePointer (1);
+        e.audioDeviceIOCallbackWithContext (nullptr, 0, outs, 2, 256, juce::AudioIODeviceCallbackContext());
+        for (int ch = 0; ch < 2; ++ch) master.copyFrom (ch, done, dev, ch, 0, 256);
+        done += 256;
+    }
+    e.setRecSink (nullptr);
+    auto write = [&] (const juce::String& name, const float* l, const float* rr, int n)
+    {
+        const auto file = out.getChildFile (name);
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        if (auto os = file.createOutputStream())
+            if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 32, {}, 0) })
+            { const float* chans[2] = { l, rr }; w->writeFromFloatArrays (chans, 2, n); }
+    };
+    write ("lane.wav", tap.l.data(), tap.r.data(), (int) tap.l.size());
+    write ("master.wav", master.getReadPointer (0), master.getReadPointer (1), done);
+    std::printf ("wrote %s (lane.wav: the lane as it goes into the mix, %d samples; master.wav: outputs 1 + 2, %d samples)\n", out.getFullPathName().toRawUTF8(), (int) tap.l.size(), done);
+    return 0;
+}
+
 static int uiTest()
 {
     using namespace sf0;
@@ -5097,6 +5299,55 @@ static int uiTest()
         if (! ok) std::printf ("    (hand %d parts %d moves %d in %d moved %d copied %d place %d out %d empty %d on knob %d stack %d kept %d refused %d: %s)\n", (int) inHand, (int) withParts, (int) handMoves, (int) carriedIn, (int) movedIn,
                                (int) copied, (int) ontoPlace, (int) takenOut, (int) emptySays, (int) onKnob, (int) stackOnPlace, (int) keptOnPlace, (int) keptRefused, sc15.testBarNote().toRawUTF8());
     }
+    // 3j. PLAIN, in a lane's CONFIG beside LOAD, while the lane plays a sample: it is not there for a lane that plays none;
+    // pressed, the lane is set to play the sample as it was recorded, and CONFIG says what was done. The file's loudest point
+    // and its root stand in the status line. (Its own rig, made after the POCKETS check and never played.)
+    {
+        auto tmp3 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-plainui-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
+        tmp3.createDirectory();
+        const auto wavFile = tmp3.getChildFile ("tone.wav");
+        {
+            juce::AudioBuffer<float> src (2, 48000);
+            for (int i = 0; i < 48000; ++i) { const float x = 0.25f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 55.0 * (double) i / 48000.0); src.setSample (0, i, x); src.setSample (1, i, x); }
+            juce::WavAudioFormat wf;
+            if (auto os = wavFile.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (src, 0, 48000);
+        }
+        Engine e17; e17.prepare (48000.0, 128);
+        Session s17 (e17, false);
+        Screen sc17 (s17);
+        sc17.setSize ((int) Screen::kW, (int) Screen::kH);
+        using Pt = juce::Point<float>;
+        auto draw17 = [&] { sc17.createComponentSnapshot (sc17.getLocalBounds(), false, 0.25f); };
+        auto click17 = [&] (Pt p) { const juce::MouseEvent ev (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc17, &sc17, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); sc17.mouseDown (ev); sc17.mouseUp (ev); draw17(); };
+        auto plainAt = [&] { for (auto& h : sc17.testHits()) if (Screen::testIsPlain (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+        const int lane = 5;
+        const Engine::Target t { 0, lane, 0 };
+        auto knobOf = [&] (const char* id) { for (int k = 0; k < kLaneKnobs; ++k) if (e17.control (cx::lane (lane, k)).id == juce::String ("bass.") + id) return e17.target (cx::lane (lane, k)); return -1.0f; };
+        auto setupOf = [&] (const char* id) { for (auto& sp : e17.setupParams (t)) if (sp.id == id) return sp; return Engine::SetupParam(); };
+        sc17.showConfig (t); draw17();
+        const bool notYet = plainAt().x < 0.0f && ! s17.playsSample (lane);            // (it plays a synth model, and holds no file)
+        for (auto& sp : e17.setupParams (t)) if (sp.id == "model") e17.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1));
+        sc17.showConfig (t); draw17();
+        const bool noFile = plainAt().x < 0.0f;                                         // (SAMPLE, with nothing loaded)
+        const bool loaded = e17.loadFile (lane, wavFile);
+        sc17.showConfig (t); draw17();
+        const auto says = s17.sampleSays (lane);
+        const bool there = loaded && plainAt().x > 0.0f && s17.playsSample (lane) && says.has && says.pitched && says.root == "A0" && std::abs (says.peakDb + 12.0f) < 0.5f;
+        const bool before = knobOf ("cutoff") < 0.9f && knobOf ("gate") < 0.9f && knobOf ("layer") > 0.1f && setupOf ("split").value > 0.9f;
+        click17 (plainAt());
+        const bool set = knobOf ("cutoff") == 1.0f && knobOf ("gate") == 1.0f && knobOf ("layer") == 0.0f && knobOf ("res") == 0.0f && knobOf ("env_amt") == 0.0f && knobOf ("pocket_depth") == 0.0f
+                         && std::abs (setupOf ("split").value - 0.5f) < 0.01f && setupOf ("tune").text.startsWith ("-3")
+                         && e17.target (cx::lane (lane, cx::kEqLow)) == 0.5f;
+        const bool told = sc17.testCfgNote().contains ("PLAIN") && sc17.testCfgNote().contains ("C1 PLAYS IT AT ITS OWN PITCH") && sc17.testBarNote().contains ("PLAIN");
+        // (a lane that shapes whatever it is given, and one with no sample model, have no PLAIN)
+        const bool notRumble = ! s17.playsSample (6) && s17.samplePlain (6).isEmpty() && s17.samplePlain (4).isEmpty();
+        const bool ok = notYet && noFile && there && before && set && told && notRumble;
+        check (ok, "PLAIN, beside LOAD in the CONFIG of a lane that plays a sample (not without one): pressed, the filter is open, the layer and its crossover are out, the note is whole, the EQ flat, and TUNE is set so "
+                   "that the lane's first step plays the sample at its own pitch; CONFIG and the bar say so; the file's loudest point and its root are known");
+        if (! ok) std::printf ("    (not yet %d no file %d there %d [root %s peak %.1f] before %d set %d [tune %s split %.2f] told %d [%s] rumble %d)\n", (int) notYet, (int) noFile, (int) there, says.root.toRawUTF8(), says.peakDb, (int) before, (int) set,
+                               setupOf ("tune").text.toRawUTF8(), setupOf ("split").value, (int) told, sc17.testCfgNote().toRawUTF8(), (int) notRumble);
+        tmp3.deleteRecursively();
+    }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
     {
         Engine e3; e3.prepare (48000.0, 512);
@@ -5569,6 +5820,14 @@ static int shot (const juce::StringArray& args)
         sc.testTick();
     }
     const auto cfg = arg ("--cfg", "");
+    if (arg ("--sample", "").isNotEmpty())
+    {
+        // (--sample FILE: the active lane plays that file, its MODEL at SAMPLE; --plain: and PLAIN was pressed)
+        const Engine::Target t { 0, ses.activeLane, 0 };
+        for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains ("SAMPLE")) e.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1));
+        e.loadFile (ses.activeLane, juce::File (arg ("--sample", "")));
+        if (args.contains ("--plain")) ses.samplePlain (ses.activeLane);
+    }
     if (cfg == "lane") sc.showConfig ({ 0, ses.activeLane, 0 });
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
@@ -9616,6 +9875,13 @@ public:
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--audit")) { const int i = args.indexOf ("--audit"); setApplicationReturnValue (knobAudit (i + 1 < args.size() ? args[i + 1].getIntValue() - 1 : -1)); quit(); return; }
+        if (args.contains ("--samplecheck"))
+        {
+            // --samplecheck FILE [--lane N] [--note N] [--out DIR] [--set id=value ...]: what a lane makes of a sample (see sampleCheck)
+            const int i = args.indexOf ("--samplecheck");
+            setApplicationReturnValue (sampleCheck (args, i + 1 < args.size() ? args[i + 1].unquoted() : juce::String()));
+            quit(); return;
+        }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
         if (args.contains ("--stagetest")) { setApplicationReturnValue (stageTest()); quit(); return; }
         if (args.contains ("--onlinetest"))
