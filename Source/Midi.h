@@ -172,6 +172,7 @@ public:
     void setSceneAlways (bool on)               { sceneAlways = on; }   // (midi.json's "e16_scene_always"; tests)
     void setPageFirst (int n)                   { pageFirst = juce::jlimit (0, 1, n); }     // (midi.json's "e16_page_first"; tests)
     juce::String pageNote() const               { return pcNote; }      // set when the E16 went somewhere other than where it was sent
+    const juce::StringArray& pageLog() const    { return noted; }       // the page traffic with the E16, the latest last (message thread)
 
     // A message as if it had come in (the inputs call this; so do tests). Any thread.
     void incoming (const juce::MidiMessage&, bool fromE16);
@@ -264,6 +265,13 @@ private:
     bool whereKnown = false, cfgWasOpen = false;
     juce::uint32 turnedAt = 0;
     juce::String pcNote;                                        // it was sent to one page and said it was on another, or said nothing
+    juce::uint32 openAt = 0;                                    // OPEN was pressed on the E16 and opened CONFIG, at (0: not lately)
+    int sceneFixes = 0;                                         // times the E16 was sent again with the scene said, since what is in front last changed
+    // The pages asked of the E16 and the pages it said, as they happened: e16.log beside the settings (the app), and the
+    // last of them for the checks. When it goes somewhere it should not, this says what was sent and what it answered.
+    void note (const juce::String&);
+    juce::StringArray noted;
+    juce::uint32 notedAt = 0;
     int pcCh = e16::kPcChannel;
     bool sceneAlways = false;
     int pageFirst = 0;                                          // the Program Change number that is the first page (midi.json's "e16_page_first": 0, or 1 if every turn lands a page short)

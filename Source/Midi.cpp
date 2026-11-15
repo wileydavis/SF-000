@@ -1268,6 +1268,7 @@ void Midi::service()
     if (pcCh > 0 && (turn || (syncWanted && e16At.scene < 0)))
     {
         const bool first = ! turn;
+        sceneFixes = 0;
         turnTo (want, now);
         if (first) { pageWait = 0; bWait = 0; }                 // (it is being told every value as it is)
     }
@@ -1337,9 +1338,25 @@ void Midi::arrived (Where w, bool heard)
     namesSaid = {};
 }
 
+void Midi::note (const juce::String& what)
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    const auto line = juce::Time::getCurrentTime().formatted ("%H:%M:%S") + " +" + String (notedAt == 0 ? 0 : (int) juce::jmin<juce::uint32> (99999u, now - notedAt)).paddedLeft (' ', 5) + " ms  " + what;
+    notedAt = now;
+    noted.add (line);
+    while (noted.size() > 60) noted.remove (0);
+    if (! useDevices) return;
+    // (the app: kept in a file, small. A session's worth of turns is a few hundred lines; past that the older half goes)
+    const auto f = Session::homeFile ("e16.log");
+    if (f.getSize() > 200 * 1024) { juce::StringArray all; all.addLines (f.loadFileAsString()); all.removeRange (0, all.size() / 2); f.replaceWithText (all.joinIntoString ("\n") + "\n"); }
+    f.appendText (line + "\n");
+}
+
 // The E16 says which page is up. What is in front follows it, and nothing is sent back for that.
 void Midi::pageCame (int said, juce::uint32 now)
 {
+    note ("E16 SAYS " + String (said) + " (" + pageName (said > e16::kFocusB ? Where { 1, said - e16::kFocusB } : Where { 0, said }) + ")"
+          + (settling ? ", " + String ((int) (now - turnedAt)) + " ms AFTER IT WAS SENT TO " + pageName (asked) : String()));
     using S = Session;
     const Where at = said > e16::kFocusB ? Where { 1, said - e16::kFocusB } : Where { 0, said };
     e16Speaks = true;
@@ -1350,6 +1367,24 @@ void Midi::pageCame (int said, juce::uint32 now)
         settling = false; againLeft = 0; pcNote = {};
         arrived (at);
         return;
+    }
+    // The page it was asked for, but of the other scene, soon after it was sent there by a Program Change alone: it was
+    // not in the scene it was taken to be in, and went to that page of the scene it is in. That is no hand's turn, and
+    // nothing follows it there. (OPEN on an effect asked for CONFIG's first page, the ninth of the second scene; the E16
+    // went to the ninth of the first, which is CHORD's lane; that was taken for a hand's turn, so CONFIG shut and CHORD
+    // came to the front.) It is in that scene, then: it is sent where it should be again, this time with the scene said.
+    if (! sceneTurn && asked.scene >= 0 && at.scene != asked.scene && at.page == asked.page && now - turnedAt < 2500u)
+    {
+        arrived (at);
+        settling = false; againLeft = 0; pcNote = {};
+        const Where want = whereNow();
+        if (want.scene != at.scene && sceneFixes < 1)
+        {
+            ++sceneFixes;
+            note ("IT IS IN THE OTHER SCENE THAN IT WAS TAKEN TO BE IN: SENT AGAIN, WITH THE SCENE");
+            turnTo (want, now);
+        }
+        return;         // (the snapshot knobs' page is the twelfth of both scenes: there, it is where it should be)
     }
     if (settling && (juce::int32) (now - settleUntil) < 0)
     {
@@ -1380,6 +1415,17 @@ void Midi::pageCame (int said, juce::uint32 now)
     const bool there = at == want || (at.page == e16::kSnapPage && want.page == e16::kSnapPage);
     arrived (at);
     if (there) return;
+    // OPEN was pressed a moment ago and CONFIG is opening: the E16 is on its way to CONFIG's page, and a page it says on
+    // that way is not a hand turning it somewhere else (nobody presses OPEN and turns the page away in the same two
+    // seconds). Followed, it shut the CONFIG that had just been asked for and brought another lane to the front.
+    // It is sent to where it should be, once more.
+    if (openAt != 0 && now - openAt < 2500u && cfgUp())
+    {
+        note ("NOT FOLLOWED: OPEN WAS PRESSED " + String ((int) (now - openAt)) + " ms AGO AND CONFIG IS OPENING");
+        if (sceneFixes < 1) { ++sceneFixes; turnTo (want, now); }
+        return;
+    }
+    note ("TAKEN AS A HAND'S TURN OF ITS PAGE: " + pageName (at) + " COMES TO THE FRONT");
     if (at.scene == 0)
     {
         if (at.page <= kLanes) ses.bringLane (at.page - 1, 2); else ses.bring ({ S::fSnap, 0 }, 2);
@@ -1439,6 +1485,8 @@ void Midi::turnTo (Where w, juce::uint32 now)
         sendE16 (juce::MidiMessage::controllerEvent (pcCh, 32, sceneSlots[(size_t) juce::jlimit (0, 1, w.scene)] - 1));
     }
     sendE16 (juce::MidiMessage::programChange (pcCh, w.page - 1 + pageFirst));
+    note ("SENT TO " + pageName (w) + (scene ? " (SCENE SLOT " + String (sceneSlots[(size_t) juce::jlimit (0, 1, w.scene)]) + ", THEN PROGRAM " : " (PROGRAM ") + String (w.page - 1 + pageFirst) + (scene ? ")" : " ALONE)")
+          + ", TAKEN TO BE ON " + (e16At.scene >= 0 ? pageName (e16At) : String ("NO PAGE YET")));
     turnedAt = now; asked = w;
     settling = true; sceneTurn = scene; pageTries = 0; strayed = {};
     settleUntil = now + (scene ? 2500u : 300u);     // (until then a page it says is its answer to this, not a hand's turn)
@@ -1466,20 +1514,24 @@ void Midi::settle (juce::uint32 now)
     {
         pcNote = "ASKED FOR " + pageName (asked) + ", IT WENT TO " + pageName (strayed);
         if (! sceneTurn && strayed.scene != asked.scene) pcNote += " (THE E16'S PC MODE MUST BE PAGE)";       // (a Program Change by itself changed its scene)
+        else if (sceneFixes > 0 && strayed.scene != asked.scene) pcNote += " (IS " + String (asked.scene == 1 ? "SF-FX" : "SF-000") + " IN SCENE SLOT " + String (sceneSlots[(size_t) juce::jlimit (0, 1, asked.scene)]) + " ON THE E16?)";
         arrived (strayed);
+        note (pcNote);
     }
-    else if (e16Speaks) pcNote = "ASKED FOR " + pageName (asked) + ": NO ANSWER (E16 PC RECEIVE CHANNEL " + String (pcCh) + ", PC MODE PAGE?)";
+    else if (e16Speaks) { pcNote = "ASKED FOR " + pageName (asked) + ": NO ANSWER (E16 PC RECEIVE CHANNEL " + String (pcCh) + ", PC MODE PAGE?)"; note (pcNote); }
 }
 
 // OPEN (knob 14 pressed): CONFIG for what is in front, and shut again; behind the snapshot knobs
 // is the library, and in the library it is the way back.
 void Midi::openPressed()
 {
+    note ("OPEN PRESSED, WITH " + ses.stopName (ses.stopNow()) + " IN FRONT" + (ses.cfgOpen ? " AND CONFIG OPEN" : ""));
     if (ses.showing != 0 || ses.pocketsUp()) { ses.wantShowing = 0; return; }
     // behind the master's CONFIG (its drum bus's) is POCKETS, its page: OPEN once more
     if (ses.cfgOpen && ses.cfg.kind == 3 && ses.front.kind == Session::fMaster) { ses.configOfFront (2); ses.wantShowing = 3; return; }
     if (! ses.cfgOpen && ses.front.kind == Session::fSnap) { ses.wantShowing = 1; return; }
     ses.configOfFront (2);
+    openAt = ses.cfgOpen ? juce::jmax<juce::uint32> (1u, juce::Time::getMillisecondCounter()) : 0u;     // (opened: the E16 is on its way to CONFIG's page)
 }
 
 // MOTION (knob 15 held, on the snapshot knobs): the macro designer comes up, where MOTION is, and
@@ -1529,7 +1581,7 @@ void Midi::wheelChoose()
     const bool was = ses.pointing;
     const Session::Stop at = ses.pointAt;
     wheelEnd();
-    if (was) ses.bringStop (at, 2);
+    if (was) { note ("THE POINTER'S CHOICE: " + ses.stopName (at)); ses.bringStop (at, 2); }
 }
 
 void Midi::serviceWheel (juce::uint32 now)

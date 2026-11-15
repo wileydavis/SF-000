@@ -634,7 +634,11 @@ playing. Knob 4 pressed is CUE too, on the screen and on the E16.
 - It moves the sound knobs **and the effects in the racks** (below). A snapshot's notes, its
   lane's model and its samples come when the knob is **pressed on that snapshot's place**
   (double-click; its press on the E16), as a recall does.
-- The macro knobs stay on top of whatever a stack knob does.
+- **A snapshot put back is what sounded when it was taken**, whatever the macro knobs are
+  adding: recalled, come to on a stack knob, or pressed to between two, each knob is where the
+  snapshot's clip heard it. The macro knobs stay where they are; let down from there, one takes
+  away what it was adding. (What a snapshot does not hold: MUTE and SOLO, TEMPO, the master's
+  TAPE, COMP and LIMIT.)
 - Standing on one of its snapshots, a stack knob shows that snapshot's name. Lit teal.
 
 **CUE lit: a turn chooses, a press goes.**

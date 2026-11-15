@@ -3967,12 +3967,15 @@ static int uiTest()
                 const bool turnedBack = std::abs (at (cut) - 0.70f) < 1e-4f;
                 s2.userSet (cx::kSnap + k, 1.0f);
                 const bool onThird = std::abs (at (cut) - 0.50f) < 1e-5f && kn.picked == tc;
-                // a macro knob on top of it is still on top: the stack knob moves the scene under the macro knobs
+                // a macro knob turned up meanwhile: on a snapshot's place the set is still that snapshot as it sounded (its
+                // clip), and what the macro knob adds is its to take away again (let down, the knob goes under the snapshot)
                 s2.turnSnapKnob (0, 1.0f);
                 const float withEnergy = at (cut);
                 s2.userSet (cx::kSnap + k, 0.5f);
-                const bool under = std::abs ((at (cut) - 0.75f) - (withEnergy - 0.50f)) < 1e-4f || at (cut) >= 0.9999f;
+                const bool onIt = std::abs (at (cut) - 0.75f) < 1e-4f;
                 s2.turnSnapKnob (0, 0.0f);
+                const bool under = onIt && withEnergy > 0.50f + 1e-3f && std::abs (at (cut) - juce::jmax (0.0f, 0.75f - (withEnergy - 0.50f))) < 1e-4f;
+                s2.userSet (cut, 0.75f);                               // (as the snapshot has it again, for what follows)
                 // a snapshot of the stack that does not take the bass: the bass stays as it is through it
                 s2.recall (ta);
                 s2.userSet (cx::kSnap + k, 0.0f);
@@ -4036,7 +4039,7 @@ static int uiTest()
                     std::printf ("    (not taught %d held %d no jump %d [%.4f] on the second %d between %d back %d on the third %d under %d lanes %d %d chooses %d motion %d [push %.3f knob %.3f] pressed %d put back %d landed %d one %d [%.4f] filed %d)\n",
                                  (int) notTaught, (int) held, (int) noJump, at (cut), (int) onSecond, (int) between, (int) turnedBack, (int) onThird, (int) under, (int) lanesKept, (int) lanesThen, (int) chooses, (int) motion, push, knobOff, (int) pressed, (int) putBack, (int) landed, (int) one, at (cut), (int) filed);
                 check (notTaught && held && noJump && onSecond && between && turnedBack && onThird && under,
-                       "a stack knob, CUE out: a turn morphs the set from wherever it is toward the next snapshot the way the knob is going (it does not jump), is that snapshot at its place, goes on to the next, and turned back heads for the one it left; the macro knobs stay on top of it");
+                       "a stack knob, CUE out: a turn morphs the set from wherever it is toward the next snapshot the way the knob is going (it does not jump), is that snapshot at its place, goes on to the next, and turned back heads for the one it left; with a macro knob up it is still that snapshot as it sounded, and the macro knob let down goes under it");
                 check (lanesKept && lanesThen, "a snapshot of a stack that does not take a lane leaves that lane as it is, and the next one takes it again");
                 check (chooses && motion && pressed && putBack && landed,
                        "CUE lit: a turn chooses in the headphones and the set is not touched, MOTION still swings what the knob holds, and a press takes the set to what the knob's place says (a snapshot on its place; between two, that far between them) and leaves the knob there; CUE out again leaves the knob where it was left; knob 4 pressed is CUE; a press with CUE out does the same");
@@ -4384,6 +4387,62 @@ static int uiTest()
             if (! (goes && settled && came && follows && sends && both && waits && without && leaves && back && outThere && olderOk && sung && noSend && filed))
                 std::printf ("    (goes %d settled %d came %d follows %d sends %d both %d waits %d without %d leaves %d back %d out there %d older %d sung %d no send %d filed %d)\n",
                              (int) goes, (int) settled, (int) came, (int) follows, (int) sends, (int) both, (int) waits, (int) without, (int) leaves, (int) back, (int) outThere, (int) olderOk, (int) sung, (int) noSend, (int) filed);
+        }
+        // A snapshot put back is what SOUNDS, whatever the macro knobs are adding: recalled, or come to on a stack knob,
+        // each knob is where the snapshot's clip heard it.
+        {
+            Engine e6; e6.prepare (48000.0, 128);
+            Session s6 (e6, false);
+            for (auto& kn : s6.knobs) kn = MacroKnob();
+            const int cut = cx::lane (5, 2), other = cx::lane (7, 2);
+            auto sounds = [&] (int ctl) { return s6.value (ctl); };
+            auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-4f; };
+            s6.userSet (cx::kGlide, 0.0f);
+            s6.userSet (cut, 0.40f); s6.userSet (other, 0.30f);
+            s6.knobs[0].name = "ENERGY"; s6.knobs[0].links = { { cut, 0.3f } };
+            s6.turnSnapKnob (0, 1.0f);                                  // ENERGY full up: the bass's knob sounds at 0.70
+            const bool pushed = near (sounds (cut), 0.70f);
+            const auto id = s6.take();                                  // taken there: it holds 0.70, and its clip is that
+            const bool holds = near (s6.findSnap (id)->values[(size_t) cut], 0.70f);
+            s6.recall (id);
+            const bool sameAtOnce = near (sounds (cut), 0.70f);         // (it was 1.00: pushed twice)
+            s6.userSet (cut, 0.10f);
+            s6.turnSnapKnob (0, 0.5f);
+            s6.recall (id);
+            const bool sameHalfUp = near (sounds (cut), 0.70f);         // (it was 0.85)
+            s6.turnSnapKnob (0, 0.0f);
+            const bool underIt = near (sounds (cut), 0.55f);            // (ENERGY let down from there takes away what it was adding)
+            s6.recall (id);
+            const bool sameAtRest = near (sounds (cut), 0.70f);
+            // a part not chosen is left exactly as it is, with what ENERGY adds to it
+            s6.knobs[0].links = { { cut, 0.3f }, { other, 0.2f } };
+            s6.turnSnapKnob (0, 1.0f);
+            const float otherWas = sounds (other);
+            Session::Scope bassOnly; bassOnly.lane.fill (false); bassOnly.lane[5] = true;
+            s6.userSet (cut, 0.05f);
+            s6.recall (id, bassOnly);
+            const bool partOnly = near (sounds (cut), 0.70f) && near (sounds (other), otherWas) && near (otherWas, 0.50f);
+            // a stack knob: on a snapshot's place the set is that snapshot as it sounded; between two, between them
+            s6.turnSnapKnob (0, 0.0f);
+            s6.userSet (cut, 0.20f);
+            const auto low = s6.take();
+            s6.finishTakes (true);
+            s6.knobs[4].name = "STACK"; s6.knobs[4].add (low); s6.knobs[4].add (id);
+            s6.turnSnapKnob (0, 1.0f);                                  // ENERGY up again: 0.3 on the bass's knob
+            s6.turnSnapKnob (4, 0.0f); s6.turnSnapKnob (4, 0.02f); s6.turnSnapKnob (4, 0.0f);
+            const bool onLow = near (sounds (cut), 0.20f);
+            s6.turnSnapKnob (4, 0.5f);
+            const bool between = near (sounds (cut), 0.45f);
+            s6.turnSnapKnob (4, 1.0f);
+            const bool onHigh = near (sounds (cut), 0.70f);
+            s6.turnSnapKnob (4, 0.5f); s6.pressSnapKnob (4);
+            const bool pressed = near (sounds (cut), 0.45f);
+            check (pushed && holds && sameAtOnce && sameHalfUp && underIt && sameAtRest && partOnly && onLow && between && onHigh && pressed,
+                   "a snapshot put back is what sounded when it was taken, whatever the macro knobs add now: taken with ENERGY up and recalled at once nothing moves (it was pushed twice); recalled with ENERGY half up or at rest "
+                   "the knob is where the clip heard it; a part not chosen keeps what ENERGY adds to it; a stack knob on a snapshot's place is that snapshot, and between two it is between them");
+            if (! (pushed && holds && sameAtOnce && sameHalfUp && underIt && sameAtRest && partOnly && onLow && between && onHigh && pressed))
+                std::printf ("    (pushed %d holds %d at once %d half up %d under %d at rest %d part %d [%.3f %.3f] low %d between %d high %d pressed %d: cut %.3f)\n", (int) pushed, (int) holds, (int) sameAtOnce, (int) sameHalfUp, (int) underIt,
+                             (int) sameAtRest, (int) partOnly, sounds (other), otherWas, (int) onLow, (int) between, (int) onHigh, (int) pressed, sounds (cut));
         }
         ses.knobs[(size_t) k] = knobWas;
         check (racked, "the rack: KEEP keeps the chosen knob's stack on the instrument under the knob's name, each snapshot with its parts (again under that name: the same one, as it is now); STACKS shows the rack beside the column, "
@@ -6555,6 +6614,7 @@ static int midiTest()
             const bool cfgUp = ses.cfgOpen && ses.cfg.kind == 0 && ses.cfg.lane == 5;
             ses.bringLane (5, 1); ticks (1);
             const bool sameStays = ses.cfgOpen;                         // (the same lane brought again: as it was)
+            juce::Thread::sleep (2600); ticks (1);                      // (some seconds after OPEN: sooner, a page it says is its way to CONFIG's, and is not followed)
             out.clear();
             answers (3); ticks (3);                                     // the E16 turned by hand to OPEN HAT's page
             const juce::String sentBack = turns();
@@ -6655,6 +6715,65 @@ static int midiTest()
             if (! (upClean && onEffect && choseIt && onEffect2 && stillUp && opened && notAtOnce && putDown))
                 std::printf ("    (up clean %d on effect %d chose it %d [lane %d front %d.%d] on effect %d still up %d opened %d [lane %d front %d.%d cfg %d %d,%d,%d] not at once %d put down %d)\n", (int) upClean, (int) onEffect, (int) choseIt,
                              ses.activeLane, (int) ses.front.kind, ses.front.slot, (int) onEffect2, (int) stillUp, (int) opened, ses.activeLane, (int) ses.front.kind, ses.front.slot, (int) ses.cfgOpen, ses.cfg.kind, ses.cfg.lane, ses.cfg.slot, (int) notAtOnce, (int) putDown);
+        }
+        {
+            // OPEN on an effect, with the E16 in the first scene while it is taken to be in the second. CONFIG's first page
+            // is asked for by a Program Change alone (the ninth page), and the E16 goes to the ninth page of the scene it
+            // is in: CHORD's lane. That is not a hand's turn: PAD's effect stays in front with its CONFIG open, and the
+            // E16 is sent again with the scene said. (It was taken for one: CONFIG shut and CHORD came to the front.)
+            using S = Session;
+            e.setInsertType (9, 0, 0, false);
+            ses.wantShowing = -1;
+            ses.bringLane (9, 2); ticks (6); juce::Thread::sleep (400); ticks (3);
+            ses.bringStop ({ S::fInsert, 9, 0 }, 2); ticks (6); juce::Thread::sleep (400); ticks (3); out.clear();     // (PAD's first effect: the E16 on INS 1, as far as SF-000 knows)
+            const bool onIns = ses.front == S::Front { S::fInsert, 0 } && ses.activeLane == 9 && mockScene == 1;
+            mockAnswers = false;                                        // (the real one, from here: it is in the first scene, and answers in its own time)
+            press (16, e16::kOpenKey); ticks (2);
+            const juce::String alone = turns();
+            const bool opens = ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 9 && ses.cfg.slot == 0;
+            out.clear();
+            juce::Thread::sleep (380); ticks (1);                       // (it has gone to the ninth page of the scene it is in, and says so: 9, CHORD's)
+            in (16, e16::kFocusCc, 9); ticks (2);
+            const juce::String again = turns();
+            const bool stays = ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 9 && ses.activeLane == 9 && ses.front == S::Front { S::fInsert, 0 };
+            // sent with the scene, it loads the second scene (its first page comes up), is sent the page again, and is there
+            in (16, e16::kFocusCc, e16::kFocusB + 1); ticks (2);
+            in (16, e16::kFocusCc, e16::kFocusB + e16::pgCfg); ticks (2);
+            const bool settled = ses.cfgOpen && ses.activeLane == 9 && midi.pageNote().isEmpty();
+            // Any other page it says in the two seconds after OPEN is not a hand's turn either (it is on its way): CONFIG
+            // stays, nothing else comes to the front, and it is sent to CONFIG's page once more
+            press (16, e16::kOpenKey); ticks (3);                       // (shut)
+            in (16, e16::kFocusCc, e16::kFocusB + e16::pgIns); ticks (2);
+            juce::Thread::sleep (2600); ticks (2); out.clear();
+            press (16, e16::kOpenKey); ticks (2);                       // OPEN again
+            juce::Thread::sleep (380); ticks (1);
+            in (16, e16::kFocusCc, 4); ticks (2);                       // ... and it says CLAP's page
+            const bool onItsWay = ses.cfgOpen && ses.cfg.kind == 1 && ses.cfg.lane == 9 && ses.activeLane == 9 && ses.front == S::Front { S::fInsert, 0 } && turns().endsWith ("B0=0 B32=1 P8");
+            in (16, e16::kFocusCc, e16::kFocusB + 1); ticks (2);
+            in (16, e16::kFocusCc, e16::kFocusB + e16::pgCfg); ticks (2);
+                        // and one that can never get there (the second scene is not in that slot): asked once more with the scene, then
+            // left where it is, nothing brought to the front for it, and SET UP asks about the slot
+            out.clear();
+            press (16, e16::kOpenKey); ticks (3);                       // (shut: back to INS 1 by a Program Change alone)
+            in (16, e16::kFocusCc, e16::pgIns); ticks (2);              // ... and it says the third page of the first scene, each time
+            in (16, e16::kFocusCc, e16::pgIns); ticks (2);
+            juce::Thread::sleep (2600); ticks (2);
+            const bool givesUp = ses.activeLane == 9 && ses.front == S::Front { S::fInsert, 0 } && ! ses.cfgOpen && midi.pageNote().contains ("IT WENT TO SF-000 PAGE 3") && midi.pageNote().contains ("IN SCENE SLOT");
+            bool logged = false;
+            for (auto& l : midi.pageLog()) logged = logged || l.contains ("THE OTHER SCENE");
+            mockAnswers = true; mockScene = 0;
+            e.setInsertType (9, 0, -1, false);
+            ses.bringLane (9, 2); ticks (6); juce::Thread::sleep (400); ticks (3); out.clear();
+            check (onIns && opens && alone == "P8" && stays && again.endsWith ("B0=0 B32=1 P8") && settled && onItsWay && givesUp && logged,
+                   "OPEN on an effect with the E16 in the other scene than it is taken to be in: CONFIG's page is asked for by a Program Change alone (" + alone + "), the E16 says the ninth page of the first scene "
+                   "(CHORD's lane), and that is no hand's turn: PAD's effect stays in front with its CONFIG open and the E16 is sent again with the scene (" + again + "); the log says what was sent and said");
+            if (! (onIns && opens && alone == "P8" && stays && again.endsWith ("B0=0 B32=1 P8") && settled && onItsWay && givesUp && logged))
+            {
+                std::printf ("    (on ins %d opens %d alone [%s] stays %d [lane %d front %d.%d cfg %d] again [%s] settled %d [%s] gives up %d logged %d)\n", (int) onIns, (int) opens, alone.toRawUTF8(), (int) stays,
+                             ses.activeLane, (int) ses.front.kind, ses.front.slot, (int) ses.cfgOpen, again.toRawUTF8(), (int) settled, midi.pageNote().toRawUTF8(), (int) givesUp, (int) logged);
+                std::printf ("    (on its way %d)\n", (int) onItsWay);
+                for (auto& l : midi.pageLog()) std::printf ("      %s\n", l.toRawUTF8());
+            }
         }
         {
             // MACROS pressed in the library, with the E16 in the other scene than it is taken to be in (the library opened on

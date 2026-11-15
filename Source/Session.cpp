@@ -473,7 +473,8 @@ void Session::sweepKnob (int k, float from, float to)
         for (int i = 0; i < kMorphEnd && i < (int) snap.values.size(); ++i)
         {
             if (! engine.control (i).morph || snap.values[(size_t) i] < 0.0f) continue;
-            if (scopeTakes (sc, i)) base[(size_t) i] += (snap.values[(size_t) i] - base[(size_t) i]) * f;
+            // (toward where the snapshot has it as it sounds: on its place the knob is there, whatever the macro knobs add)
+            if (scopeTakes (sc, i)) base[(size_t) i] += (snap.values[(size_t) i] - offset[(size_t) i] - base[(size_t) i]) * f;
         }
         {
             // the effects in the racks go with it (sweepSlots). How far the knob is between the place behind it and the one ahead:
@@ -652,8 +653,9 @@ void Session::pressSnapKnob (int k)
             const bool ta = i < (int) A.s->values.size() && A.s->values[(size_t) i] >= 0.0f && scopeTakes (sa, i);
             const bool tb = i < (int) B.s->values.size() && B.s->values[(size_t) i] >= 0.0f && scopeTakes (sb, i);
             if (! ta && ! tb) continue;
-            const float now = base[(size_t) i], va = ta ? A.s->values[(size_t) i] : now, vb = tb ? B.s->values[(size_t) i] : now;
-            base[(size_t) i] = juce::jlimit (0.0f, 1.0f, va + (vb - va) * f);
+            // (as it sounds: what the macro knobs add now is in "now", and is taken off the scene beneath again)
+            const float off = offset[(size_t) i], now = base[(size_t) i] + off, va = ta ? A.s->values[(size_t) i] : now, vb = tb ? B.s->values[(size_t) i] : now;
+            base[(size_t) i] = juce::jlimit (0.0f, 1.0f, va + (vb - va) * f) - off;
         }
         // the effects in the racks, that far between the two (slotBetween): a lane neither takes is left as it is
         for (int l = 0; l < kLanes; ++l)
@@ -1656,7 +1658,12 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
         const float v = s.values[(size_t) i];
         if (v < 0.0f) continue;
         const bool morph = engine.control (i).morph && i < kMorphEnd;
-        base[(size_t) i] = v;
+        // A snapshot holds each knob as it SOUNDED (capture), with whatever the macro knobs were adding in it. So what
+        // it is put back to is what sounds, as a hand's turn is (userSet): the scene under the macro knobs is set so
+        // that, with what they add now, the knob is where the snapshot has it. (It was set to the snapshot's value
+        // itself, and the macro knobs then added to that again: a snapshot recalled with ENERGY still up was not the
+        // sound its clip has, and one taken and recalled at once was pushed twice.)
+        base[(size_t) i] = morph ? v - offset[(size_t) i] : v;
         if (morph) continue;
         const int k = i < cx::kRet ? i % cx::kPerLane : -1;
         const bool cell = k >= cx::kIns && k < cx::kGen;
@@ -1716,15 +1723,14 @@ void Session::recall (juce::int64 id, const Scope& scope)
     if (s == nullptr) return;
     stacksLeft (-1);
     // The snapshot, with every part that is not chosen put back as it stands now: applied whole,
-    // those parts find nothing to change. (A sound knob's place here is the scene under the
-    // snapshot knobs, not what they have made of it: that is what a recall sets.)
+    // those parts find nothing to change.
     Snapshot m = *s;
     const Snapshot now = capture();
     if (m.values.size() < (size_t) cx::kCount) m.values.resize ((size_t) cx::kCount, -1.0f);
     auto keep = [&] (int from, int to)
     {
         for (int i = from; i < to; ++i)
-            m.values[(size_t) i] = now.values[(size_t) i] < 0.0f ? -1.0f : (engine.control (i).morph && i < kMorphEnd ? base[(size_t) i] : now.values[(size_t) i]);
+            m.values[(size_t) i] = now.values[(size_t) i] < 0.0f || (engine.control (i).morph && i < kMorphEnd) ? -1.0f : now.values[(size_t) i];      // (a sound knob of a part not chosen: nothing is said of it, and the scene under the macro knobs stays as it is)
     };
     std::array<bool, kLanes> notes;
     for (int l = 0; l < kLanes; ++l)

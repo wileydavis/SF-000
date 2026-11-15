@@ -114,6 +114,13 @@ Each means the same on every page, behind its press:
   one you get), not SEND A or HIGH. A click of knob 16 just before its press does not put the
   pointer down: OPEN with the pointer up still brings what it is on to the front and opens its
   CONFIG.
+- **A page the E16 says just after OPEN is not your hand.** For two and a half seconds after
+  OPEN opens CONFIG, whatever page the E16 says is its way to CONFIG's page: nothing comes to
+  the front for it. And the page it was asked for, said back in the other scene's numbers, is
+  the E16 having been in the other scene: it is sent again with the scene said.
+- **`e16.log`**, in `~/Library/Application Support/SF-000/`: every page SF-000 asked the E16 for
+  and every page the E16 said, with the milliseconds between and what was made of it. When the
+  E16 goes somewhere it should not, its last lines say why.
 - **CONFIG shuts when you go somewhere else.** Another lane or module brought to the front (the
   wheel, a page turned by hand) shuts CONFIG and leaves the E16 on that page. OPEN there opens
   that one's.

@@ -2612,6 +2612,62 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      it. If it still happens on the E16, tell me which knob you pressed and what the E16's
      display said just before (`> 6.1 DELAY`, say): then it is something else.
 
+## OPEN on an effect, and a snapshot that sounds as its clip (Nov 14, 18:20)
+
+491. **You**, 18:19: "still the same selection problem. when I scroll to an insert effect and
+     selct it it works. but if I hit the configure button on the e16, it starts to open and
+     then closes and then jumps to a different lane selected (in this case from pad to chord)."
+     **So 490 was not it** (it was a real fault, and stays fixed). What "pad to chord" says:
+     CONFIG's first page is the ninth page of the E16's second scene, and CHORD's lane is the
+     ninth page of its first. OPEN on an effect asks for that page by a Program Change alone.
+     If the E16 answers "page 9" in the *first* scene's numbers, SF-000 took it for your hand
+     turning the E16 to CHORD: CHORD came to the front, and since this afternoon (478) another
+     lane coming to the front shuts CONFIG. That is the open, the shut and the jump, in that
+     order.
+     **Two rules now.** (1) The page asked for, said back in the other scene's numbers within
+     two and a half seconds, is the E16 having been in the other scene than SF-000 took it to
+     be in. Nothing follows it; it is sent again with the scene said. (2) Any page the E16
+     says in the two and a half seconds after OPEN opened CONFIG is its way there, not a
+     hand's turn: CONFIG stays, nothing comes to the front, it is sent to CONFIG's page once
+     more.
+     *What I do not know: why your E16 answers in the first scene's numbers there.* With a
+     made-up E16 that does, the old build does exactly what you describe and this one does
+     not. So that the next one is not a guess:
+492. **`e16.log`.** *Mine.* Every page SF-000 asks of the E16 and every page the E16 says, with
+     the milliseconds between, and what SF-000 made of it (`OPEN PRESSED, WITH 10.1 DELAY IN
+     FRONT`, `SENT TO SF-FX CFG 1 (PROGRAM 8 ALONE)`, `E16 SAYS 9 (SF-000 PAGE 9), 381 ms
+     AFTER...`, `TAKEN AS A HAND'S TURN...`). In `~/Library/Application Support/SF-000/`, kept
+     small. If the E16 goes somewhere it should not, the last twenty lines of it say why.
+493. **You**, 18:21: "also, something is a bit off with the snapshots. If I select a snapshot and
+     all the lanes, i want it to sound exactly like it does in the ausio preview. But sometimes
+     the snapshots are a bit different. Is there something we're not capturing?"
+     **One thing was wrong, and it was the macro knobs.** A snapshot holds each knob as it
+     *sounded* (so does its clip), with whatever the macro knobs were adding in it. Put back,
+     it was written to the scene *under* the macro knobs, and they added to it again. So a
+     snapshot recalled with ENERGY still up was brighter than its clip, one recalled with it
+     down was right, and one taken and recalled at once was pushed twice. That is "sometimes".
+     **Now a snapshot put back is what sounds**, as a knob under your hand is: recalled, come to
+     on a stack knob, or pressed to between two, each knob is where the clip heard it, whatever
+     the macro knobs add at that moment. The macro knobs stay where they are and are still
+     yours to turn: let down from there, ENERGY takes away what it was adding (the knob goes
+     under the snapshot).
+     *This changes 439's "macro knobs stay on top of whatever a stack knob does":* on a stack knob's snapshot the set
+     used to be that snapshot plus what the macro knobs added. *Mine. The other way to have had
+     it exact:* send the macro knobs home on a recall, so rest always means "the snapshot".
+     Say if you would rather that.
+494. **What a snapshot does not hold, on purpose, and so can differ from its clip:**
+     - **MUTE and SOLO** (lanes, effects, returns): 39. The clip has them as they were; a
+       recall leaves them as they are now. (A lane's *sequencer* mute is the one exception,
+       with NOTES lit: 289.)
+     - **TEMPO.** **The master's TAPE, COMP and LIMIT** (281). **GLIDE** itself.
+     - With **NOTES** unlit, no steps. With only the lanes' keys lit and not R, B and K: not
+       the returns, the drum bus or the key.
+     - With **GLIDE** on, the first bars are the road there.
+     - What cannot be held: a delay's or reverb's tail in the air, where a pattern of an odd
+       length is in its round, chance (DENSITY, ECHO PROB), the ONE still playing a lane.
+     *Not changed.* MUTE is the one I would put in if you want the clip exactly: say, and a
+     recall sets the mutes of the parts it takes.
+
 ## Not verified
 
 - **The module (438 to 448) is checked on the session, the drawn screens and a made-up E16**:
@@ -2826,6 +2882,11 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   page on the E16 is checked against the scene file and a made-up E16 only.
 - **KEY (283)**: checked that the bass moves and the boom tunes. Not heard; and I cannot see
   whether any snapshot of yours has KEY set.
+- **OPEN on an effect (491)** is checked with a made-up E16 that answers in the first scene's
+  numbers, late. Yours has not been seen doing it: `e16.log` (492) is how it will be.
+- **A snapshot as its clip (493)** is checked on the knobs' values (taken with a macro knob up,
+  recalled with it up, half up, at rest; a part not chosen; a stack knob on a place and between
+  two). Not by ear, and not against a clip.
 - **A push that turns the knob (490)** is checked with made-up clicks, one before, during or
   after the press. How many clicks a push on your E16 really makes, and whether a click more
   than a quarter of a second before the press ever comes, only the E16 can say.
