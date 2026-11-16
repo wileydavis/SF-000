@@ -685,6 +685,7 @@ private:
     std::vector<TransPend> transPend;                   // what waits for the line: recalls (kind 0) and controls set (1)
     bool transDoing = false;
     int transLevelAt = 3, transDubAt = 0, transSpaceAt = 2;
+    std::array<juce::String, 2> transRef;               // (a slot's file as the set's file said it, when it could not be found: kept, and written back)
     bool transDefer (TransPend);
     void transApply();
     juce::var transToVar() const;

@@ -69,6 +69,7 @@ static void analyse (SampleData& s)
     {
         const int minLag = (int) (s.sr / 1200.0), maxLag = std::min (win / 2, (int) (s.sr / 30.0));
         float best = 0.0f; int bestLag = 0;
+        std::vector<float> rr ((size_t) std::max (1, maxLag - minLag), 0.0f);      // (SF-000) every lag's likeness, kept
         for (int lag = minLag; lag < maxLag; ++lag)
         {
             double num = 0, d1 = 0, d2 = 0;
@@ -78,11 +79,27 @@ static void analyse (SampleData& s)
                 num += a * b; d1 += a * a; d2 += b * b;
             }
             const float r = (float) (num / std::sqrt (d1 * d2 + 1e-12));
+            rr[(size_t) (lag - minLag)] = r;
             if (r > best) { best = r; bestLag = lag; }
         }
         if (best > 0.8f && bestLag > 0)
         {
-            s.rootHz = (float) (s.sr / bestLag);
+            // (SF-000) The strongest lag can be any multiple of the true period (two, three or eleven periods fit the sample
+            // grid better than one, and 440 Hz was read as 40). The period is the first lag that is a peak and nearly as
+            // strong as the strongest; and it lies between two samples, where a parabola through its neighbours puts it.
+            int pick = bestLag;
+            for (int lag = minLag + 1; lag < maxLag - 1; ++lag)
+            {
+                const float r = rr[(size_t) (lag - minLag)];
+                if (r >= best * 0.97f && r >= rr[(size_t) (lag - 1 - minLag)] && r >= rr[(size_t) (lag + 1 - minLag)]) { pick = lag; break; }
+            }
+            double frac = 0.0;
+            if (pick > minLag && pick < maxLag - 1)
+            {
+                const double a = rr[(size_t) (pick - 1 - minLag)], b = rr[(size_t) (pick - minLag)], c2 = rr[(size_t) (pick + 1 - minLag)], den = a - 2.0 * b + c2;
+                if (std::abs (den) > 1.0e-9) frac = juce::jlimit (-0.5, 0.5, 0.5 * (a - c2) / den);
+            }
+            s.rootHz = (float) (s.sr / ((double) pick + frac));
             s.rootNote = 69.0f + 12.0f * std::log2 (s.rootHz / 440.0f);
         }
     }

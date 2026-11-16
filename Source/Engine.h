@@ -178,7 +178,7 @@ public:
         // what the master chain was given; the output above is that after the master.
         std::vector<juce::AudioBuffer<float>> stems;
     };
-    static constexpr int kStems = kLanes + 2 + 1;
+    static constexpr int kStems = kLanes + 2 + 1 + 1;       // (the last: TRANSITION's lead-in and hit, as they go into the mix)
     bool lastHeard (Heard&, int bars = 4, bool stems = false) const;      // message thread. false: there was nothing but silence
     // The sound's state: a number that moves whenever anything a snapshot holds is changed (a knob,
     // a step, an effect, a model, a file), or a lane is muted or soloed. Two moments with the same
@@ -214,7 +214,7 @@ public:
     // the mix, then what the drum bus does to the lanes that play through it (their sum as the bus
     // makes it, less their sum as it came: silence while the bus is at rest). Together, what the
     // master chain is given. begin and end bracket each buffer. Nothing in a sink may wait or allocate.
-    static constexpr int kRecTracks = 1 + kLanes + 2 + 1;
+    static constexpr int kRecTracks = 1 + kStems;
     struct RecSink
     {
         virtual ~RecSink() = default;

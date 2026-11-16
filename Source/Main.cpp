@@ -1914,7 +1914,9 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         }
         const bool hatGone = ! dir.getChildFile (Recorder::trackName (3) + ".wav").existsAsFile();
         const auto notes = dir.getChildFile ("take.txt").loadFileAsString();
-        stemsOk = stemsOk && kept == Engine::kRecTracks - 2 && hatGone && notes.contains ("NOT KEPT, SILENT THROUGHOUT: 03 OPEN HAT") && notes.contains ("LOST     nothing")
+        // (TRANSITION's track is one of them now: nothing was fired in this take, so it is silent and not kept, as the hat is not)
+        stemsOk = stemsOk && kept == Engine::kRecTracks - 3 && hatGone && ! dir.getChildFile (Recorder::trackName (Engine::kRecTracks - 1) + ".wav").existsAsFile()
+                  && notes.contains ("NOT KEPT, SILENT THROUGHOUT: 03 OPEN HAT") && notes.contains ("TRANSITION") && notes.contains ("LOST     nothing")
                   && dir.getChildFile ("session-at-start.json").existsAsFile() && rec.lostSeconds() == 0.0;
         std::printf ("  %s: ten lanes, the two returns and what the drum bus does kept in 32-bit float, each %d samples of silence longer; the lane that played nothing is not kept, and take.txt says so\n",
                      stemsOk ? "ok  " : "FAIL", lead);
@@ -2188,10 +2190,25 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             juce::AudioBuffer<float> b (2, 256);
             for (int i = 0; i < 200; ++i) e.render (b);
             float quiet = 0.0f; for (int i = 0; i < 256; ++i) quiet = std::max (quiet, std::abs (b.getSample (0, i)));
+            // (and it is in its own stem, the last of them: the stems together are what the master is given)
+            struct Stem : Engine::RecSink
+            {
+                float pk = 0.0f, others = 0.0f;
+                void begin (int) noexcept override {}
+                void track (int idx, const float* a, const float*, int n) noexcept override
+                {
+                    // (others: the lanes and the drum bus. The two returns have what was sent to them of it.)
+                    for (int i = 0; i < n; ++i) { if (idx == Engine::kStems) pk = std::max (pk, std::abs (a[i])); else if (idx > 0 && idx != kLanes + 1 && idx != kLanes + 2) others = std::max (others, std::abs (a[i])); }
+                }
+                void end (int) noexcept override {}
+            } stem;
+            e.setRecSink (&stem);
             ses.transFire();
             float pk = 0.0f;
             for (int k = 0; k < 40; ++k) { e.render (b); for (int i = 0; i < 256; ++i) pk = std::max (pk, std::abs (b.getSample (0, i))); }
-            atOnce = ses.transAt < 0.0 && quiet < 1.0e-4f && pk > 0.02f;
+            e.setRecSink (nullptr);
+            atOnce = ses.transAt < 0.0 && quiet < 1.0e-4f && pk > 0.02f && stem.pk > 0.02f && stem.others < 1.0e-4f;
+            if (! atOnce) std::printf ("    (stopped: quiet %.5f, the hit %.3f, in its stem %.3f, in the others %.5f)\n", quiet, pk, stem.pk, stem.others);
         }
         // A MUTE that arrives by MIDI while ARM is lit is not made at once from the MIDI thread: it waits; and it is made on
         // the line by the audio thread, with this thread doing nothing at all from the press until after the line.
@@ -5668,7 +5685,18 @@ static int uiTest()
         // PEAK, and so NORMALISE, is the loudest point of either channel: not of their sum, which a one-sided file halves and two opposed channels cancel
         e17.loadFile (7, leftOnly); const float peakLeft = s17.sampleSays (7).peakDb;
         e17.loadFile (8, turned);   const float peakTurned = s17.sampleSays (8).peakDb;
-        const bool truePeak = std::abs (peakLeft + 6.02f) < 0.3f && std::abs (peakTurned + 6.02f) < 0.3f;
+        bool truePeak = std::abs (peakLeft + 6.02f) < 0.3f && std::abs (peakTurned + 6.02f) < 0.3f;
+        // the root of a plain tone is the tone: not a half, a third or an eleventh of it (the strongest repeat can be any number of periods)
+        for (const double hz : { 55.0, 110.0, 220.0, 261.626, 440.0, 880.0, 1000.0 })
+        {
+            juce::AudioBuffer<float> src (2, 24000);
+            for (int i = 0; i < 24000; ++i) { const float x = 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * hz * (double) i / 48000.0); src.setSample (0, i, x); src.setSample (1, i, x); }
+            const auto f = tmp3.getChildFile ("root-" + juce::String ((int) hz) + ".wav");
+            { juce::WavAudioFormat wf; if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), 48000.0, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (src, 0, 24000); }
+            const auto smp = sf::loadSampleFile (f, 48000.0, 60.0);
+            const double got = smp != nullptr ? (double) smp->rootHz : 0.0;
+            if (std::abs (got / hz - 1.0) > 0.005) { truePeak = false; std::printf ("    (a tone of %.1f Hz is heard to have a root of %.2f Hz)\n", hz, got); }
+        }
         if (! truePeak) std::printf ("    (PEAK of a left-only file %.1f dB, of two opposed channels %.1f dB: both should be -6.0)\n", peakLeft, peakTurned);
         const bool ok = notYet && noFile && there && before && set && told && notRumble && truePeak;
         check (ok, "PLAIN, beside LOAD in the CONFIG of a lane that plays a sample (not without one): pressed, the filter is open, the layer and its crossover are out, the note is whole, the EQ flat, and TUNE is set so "
@@ -5696,8 +5724,14 @@ static int uiTest()
             bool keptT = false;
             {
                 Session::stateFileForTests = tmp3.getChildFile ("trans-state.json");
-                { Engine e2; e2.prepare (48000.0, 128); Session s2 (e2, true); s2.transStep (Session::tBars); s2.transStep (Session::tDub); s2.transStep (Session::tHit); s2.transStep (Session::tLevel); s2.touch(); s2.save(); }
-                { Engine e3; e3.prepare (48000.0, 128); Session s3 (e3, true); keptT = s3.transBars == 16 && s3.transSays (Session::tDub) == "DUB 15" && s3.transSays (Session::tHit) == "HIT OFF" && s3.transSays (Session::tLevel) == "-3 DB" && s3.transSays (Session::tLead) == "IN RISER"; }
+                // (and a file given to the lead-in is the library's own copy: it is still played when the file it came from has gone)
+                const auto given = tmp3.getChildFile ("given.wav"); leftOnly.copyFileTo (given);
+                bool owned = false;
+                { Engine e2; e2.prepare (48000.0, 128); Session s2 (e2, true); s2.transStep (Session::tBars); s2.transStep (Session::tDub); s2.transStep (Session::tHit); s2.transStep (Session::tLevel);
+                  owned = s2.transLoad (0, given) && juce::File (e2.transFile (0)) != given && juce::File (e2.transFile (0)).existsAsFile();
+                  s2.touch(); s2.save(); }
+                given.deleteFile();
+                { Engine e3; e3.prepare (48000.0, 128); Session s3 (e3, true); keptT = owned && s3.transBars == 16 && s3.transSays (Session::tDub) == "DUB 15" && s3.transSays (Session::tHit) == "HIT OFF" && s3.transSays (Session::tLevel) == "-3 DB" && s3.transSays (Session::tLead) == "IN GIVEN" && e3.trans.leadKind.load() == Transition::kFile; }
                 Session::stateFileForTests = juce::File();
             }
             const bool okT = there && lit && out && hitNow && sixteen && s17.transBars == 8 && tKey && gKey && ! s17.transArmed && hitOff && s17.transSays (Session::tHit) == "HIT IMPACT" && keptT;

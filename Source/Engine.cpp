@@ -869,6 +869,9 @@ void Engine::forkVoice (int l, double fadeBeats)
             if (auto* to = v->proc->param (i))
                 if (std::abs (to->getValue() - from->getValue()) > 1.0e-7f) to->setValueNotifyingHost (from->getValue());
     for (int k = 0; k < kLaneKnobs; ++k) v->bind[k] = makeBind (*v->proc, d.knobs[k], nullptr);
+    // (made ready at the engine's rate before it asks for its file: a sample that is only held in memory is held at that rate,
+    // and a voice still at the rate it was born with would ask for another and, the file gone, be given none)
+    if (prepared && files[(size_t) l].isNotEmpty()) { v->proc->setRateAndBufferSizeDetails (sr, maxBlock); v->proc->prepareToPlay (sr, maxBlock); }
     if (files[(size_t) l].isNotEmpty()) v->proc->mod().loadFiles (juce::StringArray (files[(size_t) l]));
     if (prepared) { v->proc->setRateAndBufferSizeDetails (sr, maxBlock); v->proc->prepareToPlay (sr, maxBlock); }
     stateMoved();
@@ -1304,6 +1307,8 @@ bool Engine::transLoad (int slot, const juce::File& f)
     auto smp = sf::loadSampleFile (f, sr, 120.0);
     if (smp == nullptr || smp->length() < 8) return false;
     transKept.push_back (smp);
+    // (the audio thread takes a slot's file afresh each block: one replaced several loads ago is held by nothing but this list)
+    while (transKept.size() > 6) transKept.erase (transKept.begin());
     (slot == 0 ? trans.leadSmp : trans.hitSmp) = smp.get();
     (slot == 0 ? trans.leadKind : trans.hitKind) = Transition::kFile;
     transFiles[(size_t) slot] = f.getFullPathName();
@@ -2052,7 +2057,9 @@ void Engine::render (juce::AudioBuffer<float>& out)
     {
         float* const tl = transBuf.getWritePointer (0); float* const tr = transBuf.getWritePointer (1);
         juce::FloatVectorOperations::clear (tl, n); juce::FloatVectorOperations::clear (tr, n);
-        if (trans.render (tl, tr, n, run, ppq, beats))
+        const bool transSounds = trans.render (tl, tr, n, run, ppq, beats);
+        stemOut (rec, 1 + kLanes + 3, tl, tr, n);          // (its own stem, silent or not: the stems together are what the master is given)
+        if (transSounds)
         {
             const float ga = trans.toA.load(), gb = trans.toB.load();
             for (int ch = 0; ch < 2; ++ch)

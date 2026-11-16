@@ -188,7 +188,9 @@ juce::String Session::transSays (int what) const
 
 bool Session::transLoad (int slot, const juce::File& f)
 {
-    if (! engine.transLoad (slot, f)) return false;
+    // (the library's own copy of it, as a lane's sample is: the set still has it when the file it came from has gone)
+    if (! engine.transLoad (slot, juce::File (keepSample (f.getFullPathName())))) return false;
+    transRef[(size_t) juce::jlimit (0, 1, slot)] = {};
     touch();
     if (onChange) onChange();
     return true;
@@ -199,7 +201,9 @@ var Session::transToVar() const
     auto* o = new juce::DynamicObject();
     o->setProperty ("bars", transBars); o->setProperty ("level", transLevelAt); o->setProperty ("dub", transDubAt); o->setProperty ("space", transSpaceAt);
     o->setProperty ("lead", engine.trans.leadKind.load()); o->setProperty ("hit", engine.trans.hitKind.load());
-    o->setProperty ("leadFile", engine.transFile (0)); o->setProperty ("hitFile", engine.transFile (1));
+    // (a file by its place in the library; one that could not be found when the set opened is written back as it was read)
+    for (int slot = 0; slot < 2; ++slot)
+        o->setProperty (slot == 0 ? "leadFile" : "hitFile", engine.transFile (slot).isNotEmpty() ? refOf (engine.transFile (slot)) : transRef[(size_t) slot]);
     return var (o);
 }
 
@@ -215,7 +219,8 @@ void Session::transFromVar (const var& v)
         {
             const juce::String path = v.getProperty (slot == 0 ? "leadFile" : "hitFile", "").toString();
             const int kind = juce::jlimit (0, 2, (int) v.getProperty (slot == 0 ? "lead" : "hit", 1));
-            const bool has = path.isNotEmpty() && engine.transLoad (slot, juce::File (path));
+            const bool has = path.isNotEmpty() && engine.transLoad (slot, juce::File (pathOf (path)));
+            transRef[(size_t) slot] = has ? juce::String() : path;
             (slot == 0 ? engine.trans.leadKind : engine.trans.hitKind) = kind == Transition::kFile && ! has ? (int) Transition::kBuilt : kind;
         }
     }
@@ -1279,7 +1284,7 @@ juce::File Session::stemsFile (juce::int64 id) const { return stateFile().getSib
 juce::String Session::stemKey (int index)
 {
     if (index >= 0 && index < kLanes) return lanes()[(size_t) index].slug;
-    return index == kLanes ? "dub" : index == kLanes + 1 ? "space" : "bus";
+    return index == kLanes ? "dub" : index == kLanes + 1 ? "space" : index == kLanes + 2 ? "bus" : "transition";
 }
 
 // A stems file: a line that says what it is, a line of JSON (the rate, the bars, and for each stem
@@ -1313,8 +1318,10 @@ bool Session::readStems (juce::int64 id, Stems& out, const Scope* only) const
     for (const auto& e : *list)
     {
         const auto key = e["key"].toString();
-        const auto bytes = (size_t) (juce::int64) e["bytes"];
-        if (bytes == 0 || at + bytes > size) return false;
+        // (the length as the file says it, checked against what is left before it is used: not added to a place first)
+        const juce::int64 said = (juce::int64) e["bytes"];
+        if (said <= 0 || at > size || (juce::uint64) said > (juce::uint64) (size - at)) return false;
+        const auto bytes = (size_t) said;
         if (wanted (key))
             if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (new juce::MemoryInputStream (d + at, bytes, false), true) })
                 if (r->lengthInSamples > 1 && r->lengthInSamples < 48000 * 120)
@@ -2564,6 +2571,7 @@ int Session::sweepSamples()
         for (int k = 0; k < kSlots; ++k) useRefs (engine.heldFiles ({ 1, l, k }));
     }
     useRefs (engine.heldFiles ({ 2, 0, 1 }));
+    use (engine.transFile (0)); use (engine.transFile (1));        // (TRANSITION's two)
     for (auto& s : library)
         for (int l = 0; l < kLanes; ++l)
         {

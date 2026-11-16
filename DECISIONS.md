@@ -3223,6 +3223,29 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      (its difference from the old one is 30 dB under it, the filter's own delay). Saved sounds
      that use any model above are changed, as you said they could be.
 
+## The outside audit's findings, second part: sixty-second build
+
+551. **Made right** (548: "let's do that first then audit fixes"), each named as in 547:
+     - *F02, the root*: it was the strongest repeat, which can be any number of periods (110 Hz
+       read as 36.7, 440 as 40). It is now the first repeat that is a peak and nearly as strong
+       as the strongest, read between the samples. Tones of 55, 110, 220, 261.6, 440, 880 and
+       1000 Hz each read as themselves to half a per cent. Your bass file reads D#0, as it did.
+       *No ROOT set by hand was added: TUNE moves a sample's pitch, and PLAIN sets it.*
+     - *F08, TRANSITION in no stem*: it has a stem of its own, the last of them, kept with a
+       snapshot's sound under the name "transition", and a track of its own in a take (not
+       kept when silent, as any track).
+     - *F09, its files not the library's*: a file given to it is copied into the library as a
+       lane's sample is, written by its place there, and kept from the sweep of unused copies.
+       One that cannot be found when the set opens plays the built-in, and its name is kept
+       and written back.
+     - *F10*: the files a slot has had are held six deep, not for ever.
+     - *F11*: a stem's length is checked against what is left of the file before it is used.
+     - *F12*: a new voice is made ready at the engine's rate before it asks for its sample.
+       *Not checked by a test here: it shows only at 96 kHz with the sample's file gone.*
+552. *Still not done:* **F03** (a stereo voice's sides pass the filter and DRIVE by), **F05 for
+     recalls** (a whole recall put on the audio clock: it is still made by the screen's thread,
+     0.9 of a beat before its line), **F06** (a macro knob's MOTION is taken once a block).
+
 ## Not verified
 
 - **Every knob heard (549)**: measured as a difference in the lane's sound, **not judged by

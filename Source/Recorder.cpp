@@ -13,6 +13,7 @@ String Recorder::trackName (int track)
     if (track == 0) return "00 SET";
     if (track <= kLanes) return String (track).paddedLeft ('0', 2) + " " + lanes()[(size_t) (track - 1)].name;
     if (track == kLanes + 3) return String (kLanes + 3) + " DRUM BUS";
+    if (track == kLanes + 4) return String (kLanes + 4) + " TRANSITION";
     return track == kLanes + 1 ? String (kLanes + 1) + " DUB" : String (kLanes + 2) + " SPACE";
 }
 

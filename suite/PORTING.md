@@ -76,3 +76,5 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   PREDELAY and DENSITY. `Voice.cpp`: SIGNAL's band on SAMPLE and STUTTER, TONE on RADIO.
   **The suite's own sound is changed by these**, the rig's opening sound included (SINE SUB is
   the bass's layer). See DECISIONS, sixty-first build.
+- `core/Sample.cpp`, the root: the first lag that is a peak within 3 % of the strongest, with a
+  parabola through its neighbours, in place of the strongest lag. `(SF-000)`.

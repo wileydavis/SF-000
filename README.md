@@ -462,8 +462,9 @@ keeps the time, so the lead-in ends and the hit lands on the sample the line fal
   to end on the line (with less time than it is long, part way in, faded up); a hit's plays
   from its start on the line.
 
-It goes into the mix before the master, so the master's limiter holds it. What it plays is kept
-with the session, not in a snapshot. Not on the E16 or a pad yet: the keys T and G, or the mouse.
+It goes into the mix before the master, so the master's limiter holds it, and has a stem and a
+recorded track of its own. What it plays is kept with the session, not in a snapshot; a file
+given to it is copied into the library, as a lane's sample is. Not on the E16 or a pad yet: the keys T and G, or the mouse.
 
 ### The library: what a snapshot sounded like
 
