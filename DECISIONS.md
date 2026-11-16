@@ -3787,6 +3787,44 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      out of a stack is out of that stack only; deleted, it is out of all of them, and it
      says how many first.
 
+## The library as a rack of pockets: drawn before it is built (Nov 16, 13:15)
+
+603. **You**, 13:15, to 602's reading (a list of places down the left, as Ableton's browser
+     has): "but in 3d where a stack is a pocket where a stack of chips is rendered. Draw it
+     out in wireframe (or some equivalent that is simple for you). basically mock up the
+     interface before coding." **Nothing is coded.** Drawn as six boards on a design canvas
+     ("SF-000 chip rack: wireframe"), flat line drawings of what the player's view would
+     show; the 3D itself, and anything moving, is not drawn. *All of it proposed, mine, for
+     you to mark up:*
+     - **The objects.** A chip is a tile whose near edge is its colour. A stack is a pocket
+       in the case with a pile standing in it: the top chip's face, and under it the edge of
+       every chip below, so how tall is how many and the edges say which. The bin is the
+       first pocket, always: every chip, once. A stack knob is a pocket with a knob on its
+       rim. A macro knob is a cap on its base, a pip for each knob it is tied to. A module
+       is a cartridge, four caps over ten pockets. An arrangement is a rail, its parts as
+       long as their bars.
+     - **One rack, the same on LIBRARY, MACROS and ARRANGE**: pockets along its top (not a
+       list down the left), and under them the bench, where the open pocket's pile lies out
+       as chip cards. The open pocket is empty and green. On LIBRARY it is the whole page;
+       on the other two it is the right-hand third.
+     - **A stack open in the library**: its chips in a row, in order, and the bin under
+       them. A chip carried up into the row is a reference put in at that place; along the
+       row, moved; off it, taken out of that stack only. ADD, TAKE OUT, EARLIER and LATER on
+       the strip do the same with no carrying.
+     - **A chip in hand lights every pocket that holds it**, and its card names them.
+     - **A pile carried** onto a stack knob puts a copy of it on the knob (as a stack's card
+       does now); onto the arrangement's rail, its chips become parts in order (new).
+     - **Four shelves**, one in the rack at a time: STACKS, KNOBS, MODULES, ARRANGEMENTS.
+       Each thing opens onto the bench as a stack does: a kept stack knob to its pile, a
+       module to its fourteen knobs (a pocket there opens to that knob's pile), an
+       arrangement to its parts.
+     - **What it would replace**: the library's six plates (590), the designer's own STACKS,
+       KNOBS and MODULES lists with OPEN, ADD, PUT and OUT, the arrangement page's two
+       plates.
+     Asked with it: whether the rack belongs along the top; and whether a stack put on a
+     knob should stay the same stack (changed in one place, changed in both) or be a copy,
+     as it is now.
+
 ## Not verified
 
 - **The cue's rig (596 to 600) has not run on a Mac.** Not known there: whether the second
