@@ -722,6 +722,7 @@ Session::StackWay Session::stackWay (int k, float v) const
     if (n == 0) return w;
     v = juce::jlimit (0.0f, 1.0f, v);
     const float click = 0.6f / 127.0f;                      // (as a press takes "on its place": within a click of the E16's knob)
+    w.at = juce::roundToInt (v * 127.0f); w.count = n;
     if (n == 1) { w.to = 0; w.part = v; if (v >= 1.0f - click) w.on = 0; }          // (one snapshot stands at the top of the turn)
     else
     {
@@ -3081,6 +3082,34 @@ void Session::rackLanes (int index, int at, juce::uint32 lanes)
     touch();
     if (onLibrary) onLibrary();
     if (onChange) onChange();
+}
+
+int Session::rackCopy (int index)
+{
+    if (index < 0 || index >= (int) stacks.size()) return -1;
+    const Stack from = stacks[(size_t) index];
+    const int at = rackNew (from.name);                 // (an empty one of the instrument's own, under the next free name)
+    for (size_t i = 0; i < from.snaps.size(); ++i) rackAdd (at, from.snaps[i], from.keysAt (i));
+    return at;
+}
+
+void Session::keptRename (int index, const juce::String& wanted)
+{
+    if (index < 0 || index >= (int) keptKnobs.size()) return;
+    const auto name = wanted.trim().toUpperCase().substring (0, 24);
+    if (name.isEmpty()) return;
+    if (auto* o = keptKnobs[(size_t) index].knob.getDynamicObject()) o->setProperty ("name", name);
+    touch();
+    if (onChange) onChange();
+}
+
+int Session::keptOntoFree (int index)
+{
+    if (index < 0 || index >= (int) keptKnobs.size()) return -1;
+    for (int k = 0; k < 16; ++k)
+        if (! isCorner (k) && isStack (k) == keptKnobs[(size_t) index].stack && ! knobHolds (k))
+            return knobPut (index, k) == putDone ? k : -1;
+    return -1;
 }
 
 void Session::rackRename (int index, const juce::String& wanted)

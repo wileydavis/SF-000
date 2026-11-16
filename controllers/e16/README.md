@@ -132,6 +132,13 @@ Each means the same on every page, behind its press:
   or 16 there: 13 is the wheel (SEL) and 16 is OPEN, as on every page. (They were stack knobs
   with the corners behind a half-second hold. A scene from that build still works: its 13 and
   16 on that page are taken as the same corners.)
+- **The ten stack knobs turn without acceleration** (seventieth build): a detent is a click of
+  the knob's 127 however fast the hand, so a place between two snapshots can be found and
+  found again (the screen's tag says the place: AT 51 /127). In the scene file that is turn
+  mode 3 on knobs 5 to 12, 14 and 15 of page 12, in both scenes; every other knob is mode 14,
+  which goes by the scene's acceleration. **Both scenes need loading onto the E16 again** to
+  have it. Not tried on an E16. If a whole stack is then too many turns, mode 14 on those ten
+  is the way back (the OXI App: the knob's Mode, "Scene").
 - **On the library's map 13 and 16 are held.** Every press there recalls, so the wheel and the
   way back are those knobs **held for half a second**, and a press let go sooner is the knob's
   own (it then acts as the knob is let go, not as it goes down).

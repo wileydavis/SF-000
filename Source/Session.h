@@ -310,7 +310,9 @@ public:
     // Where a stack knob stands among its snapshots, for the screen to say while it is turned: the one it is going toward
     // (the way it was last turned), the one behind it, how far it is from that one to this (0 to 1), and whether it
     // stands on one (within a click of a controller's knob). to < 0: it holds none.
-    struct StackWay { int from = -1, to = -1, on = -1; float part = 0.0f; juce::String fromName, toName; bool notes = false; };
+    // (at: the knob's own place, 0 to 127, a figure for each click of the E16's knob and the same whichever way the knob came:
+    // the figure to come back to. count: how many snapshots the knob holds, each at placeOf (i, count) of the turn.)
+    struct StackWay { int from = -1, to = -1, on = -1; float part = 0.0f; juce::String fromName, toName; bool notes = false; int at = 0, count = 0; };
     StackWay stackWay (int k, float v) const;
     // A press. Knob 4 (the top right of the module, here and on the E16): CUE, on or off.
     // A stack knob: the set goes to the snapshot the knob is nearest (the parts of the rig that
@@ -583,6 +585,7 @@ public:
     int  rackOntoFree (int index);                          // the stack onto that place, whole (-1: none is free, or it holds nothing)
     void rackLanes (int index, int at, juce::uint32 lanes);
     void rackRename (int index, const juce::String& name);
+    int  rackCopy (int index);                              // that stack kept again under another name (its own, the instrument's); where it is, or -1
     int  rackIndex (const juce::String& id) const;          // -1: no such stack
     // ---- the knobs kept: a collection of macro knobs and stack knobs, each a copy, to put on a place of whatever module is
     // in the chassis. No network is asked.
@@ -591,6 +594,8 @@ public:
     enum PutSays { putDone, putWrongKind, putHolds, putNothing };
     PutSays knobPut (int index, int k);                     // a kept knob onto that place: only one of the place's kind, and only where the knob holds nothing
     void knobForget (int index);
+    void keptRename (int index, const juce::String& name);  // a kept knob's name
+    int  keptOntoFree (int index);                          // a kept knob onto the first place of its kind that holds nothing; that place, or -1 (none is free, or it has nothing to put)
     juce::String keptSays (int index) const;                // what it is, in a line
     // ---- modules. The sixteen knobs here ARE the module in the chassis (moduleAt), and it is always one of the kept
     // ones: what is changed while playing changes that module. LOAD puts another in its place, whole, and the one that

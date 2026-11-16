@@ -117,15 +117,21 @@ public:
     static bool testIsPlace (const TestHit& h, int k) { return h.kind == hKnobCard && h.a == k; }
     static bool testIsPickKey (const TestHit& h, int index, int part) { return h.kind == hPickKey && h.a == index && h.b == part; }
     static bool testIsColPut (const TestHit& h) { return h.kind == hColPut; }
-    static bool testIsArrShelf (const TestHit& h, int what, int index) { return what == 0 ? h.kind == hArrTab && h.a == index : what == 1 ? h.kind == hArrsCard && h.a == index : h.kind == hArrsKey && h.a == index; }     // 0 a tab, 1 a card, 2 a key
-    int testArrChosen() const { return selArr; }
+    static bool testIsArrShelf (const TestHit& h, int what, int index) { return what == 0 ? h.kind == hArrTab && h.a == index : what == 1 ? h.kind == hShelfCard && h.a == skArrs && h.b == index : h.kind == hShelfKey && h.a == skArrs && h.b == index; }     // 0 a tab, 1 a card, 2 a key
+    int testArrChosen() const { return shelfSel[skArrs]; }
+    // the library's plates and what is under them: 0 a plate (index: 0 the snapshots, then a kind + 1), 1 a card of that kind, 2 a key of that kind
+    static bool testIsShelf (const TestHit& h, int what, int kind, int index) { return what == 0 ? h.kind == hLibTab && h.a == index : what == 1 ? h.kind == hShelfCard && h.a == kind && h.b == index : h.kind == hShelfKey && h.a == kind && h.b == index; }
+    int testShelfChosen (int kind) const { return shelfSel[(size_t) kind]; }
+    void testLibTab (int tab) { libTab = tab; }
+    static bool testIsOfShelf (const TestHit& h) { return h.kind == hLibTab || h.kind == hShelfCard || h.kind == hShelfKey; }      // (a plate, a kept thing's card, a shelf's key)
+    int testLibTabNow() const { return libTab; }
     void testHand (int index, juce::uint32 parts) { handId = index >= 0 && index < (int) ses.library.size() ? ses.library[(size_t) index].id : 0; handParts = parts & Session::kAllLanes; }
     static bool testIsKeptCard (const TestHit& h, int index) { return h.kind == hKeptCard && h.a == index; }
     static juce::Point<float> testPlaceAt (int k) { return placeRect (k).getCentre().translated (0.0f, 80.0f); }       // (on the card, clear of its knob)
     juce::Point<float> testColumnGap (int at) const { return { 1287.0f, 110.0f + (float) (at - colScroll) * 74 - 4.0f }; }      // (between the column's cards: before the one at that place)
     static int testPickOf (const TestHit& h) { return h.kind == hPick ? h.a : -1; }
     void testFind (const juce::String& t) { findText = t; }
-    void testPlain() { modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; handId = 0; handParts = Session::kAllLanes; ses.cue (0); }
+    void testPlain() { libTab = 0; arrShelf = false; modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; handId = 0; handParts = Session::kAllLanes; ses.cue (0); }
     static bool testIsStackCue (const TestHit& h) { return h.kind == hAct && h.a == aStackCue; }
     static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
     int testLibStack() const { return inAt(); }
@@ -203,7 +209,7 @@ public:
     double testSendMs() const { return sendMs; }
     void testRenameKnob() { act (aRenameKnob); }
     void testShowRack (bool on) { rackList = on; knobList = false; }
-    void testShowArrs (bool on) { arrShelf = on; if (on) selArr = ses.arrsIndex(); }       // (the arrangement page's shelf: the arrangements kept)
+    void testShowArrs (bool on) { arrShelf = on; if (on) shelfSel[skArrs] = ses.arrsIndex(); }       // (the arrangement page's shelf: the arrangements kept)
     void testShowKept (bool on) { knobList = on; if (on) rackList = false; }
     static bool testIsRackKeep (const TestHit& h) { return h.kind == hRackKeep; }
     void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
@@ -211,6 +217,7 @@ public:
     bool testEditing() const { return editor != nullptr; }
     bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
     void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
+    void testEditDrop() { if (editor != nullptr) endEdit (false); }
     static bool testIsNewTrack (const TestHit& h) { return h.kind == hAct && h.a == aNewTrack; }
     static bool testIsModKey (const TestHit& h, int which) { return h.kind == hAct && h.a == (which == 0 ? aModules : which == 1 ? aModLoad : which == 2 ? aModNew : which == 3 ? aModCopy : which == 4 ? aModRename : aModOut); }
     static bool testIsModCard (const TestHit& h, int index) { return h.kind == hModCard && h.a == index; }
@@ -249,8 +256,10 @@ private:
                    hKeptCard,       // a kept knob's card: carried onto a place
                    hArrKey,         // a key on a part of the arrangement (a: the part; b: the part of the rig)
                    hArrTab,         // the arrangement's shelf: which is beside the parts (a: 0 the snapshots, to take from; 1 the arrangements kept)
-                   hArrsCard,       // an arrangement kept (a: which): chosen; pressed twice quickly, put on the page
-                   hArrsKey,        // the keys over them, for the chosen one (a: 0 NEW, 1 COPY, 2 LOAD, 3 RENAME, 4 DELETE, held)
+                   // the shelf: the things kept, by kind (ShelfKind), drawn the same wherever they are shown
+                   hShelfCard,      // one of them (a: the kind, b: which): chosen; pressed twice quickly, loaded
+                   hShelfKey,       // the keys over them, for the chosen one (a: the kind, b: 0 NEW, 1 COPY, 2 LOAD, 3 RENAME, 4 DELETE, held)
+                   hLibTab,         // the library's plates (a: 0 the snapshots, then a kind + 1)
                    hArrTrans };     // a part's TRANSITION plate (a: the part)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain,
@@ -380,8 +389,24 @@ private:
     juce::String arrSig;
     int selPart = -1, arrScroll = 0;
     bool arrShelf = false;                      // the arrangement page's shelf shows the arrangements kept (false: the snapshots, to take from)
-    int selArr = -1, arrsScroll = 0;            // the one chosen among them
-    R selArrName;                               // where its name is drawn (RENAME types over it)
+    // ---- the shelf: the things kept, by kind, drawn and worked the same way wherever they are shown (the library's plates,
+    // the arrangement page): the keys for the chosen one (those the kind has: NEW, COPY, LOAD, RENAME, DELETE held), then each
+    // as a card with its number, its name (green: the one on the bench, where the kind has one) and what it holds.
+    enum ShelfKind { skStacks, skMacroKnobs, skStackKnobs, skModules, skArrs, skKinds };
+    std::array<int, skKinds> shelfSel { { -1, -1, -1, -1, -1 } }, shelfScroll {};
+    R shelfNameRect;                            // where the chosen one's name is drawn (RENAME types over it)
+    int libTab = 0;                             // the library: 0 the snapshots, else the kind + 1
+    static const char* shelfTitle (int kind);
+    int shelfCount (int kind) const;
+    int shelfItem (int kind, int i) const;      // its place in the session's own list (the kept knobs of both kinds are one list); -1: none
+    juce::String shelfName (int kind, int i) const;
+    juce::String shelfSays (int kind, int i) const;
+    int shelfHere (int kind) const;             // the one on the bench: the module in the chassis, the arrangement on the page (-1: the kind has no bench)
+    bool shelfHas (int kind, int key) const;    // the kind has that key at all
+    bool shelfCan (int kind, int key) const;    // and it can be pressed for the chosen one now
+    void shelfDo (int kind, int key);           // NEW, COPY, LOAD, RENAME (DELETE is held: shelfDelete)
+    void shelfDelete (int kind);
+    void drawShelf (G&, int kind, R area, int across);
     bool oneLine = false;               // legends drawn now stay on one line (there is no room on the plate under them for two)
     std::vector<R> legendRects;         // where every legend was printed, at the last record of the parts (the checks)
     bool arrLit = false;

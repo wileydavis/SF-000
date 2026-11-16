@@ -172,6 +172,7 @@ struct Enc
     int press = 0;                                              // 0 off, 1 hold (a CC), 2 swap to the second destination
     int pressChannel = 0, pressNumber = 0;
     int channel2 = 0, number2 = 0, def2 = 0, colour2 = 0;
+    int mode = 14;                                              // its turn: 14 goes by the scene's acceleration, 3 has none (a click a detent)
 };
 
 std::string turnJson (int type, int mode, int channel, int def, int nr1)
@@ -194,7 +195,7 @@ std::string encJson (const Enc& e, int place)
     const std::string push = e.press == 1 ? pushJson (2, 1, e.pressChannel, 0, 127, e.pressNumber, place, 0)
                            : e.press == 2 ? pushJson (9, 0, 0, 0, 0, 17, 11, 15)
                                           : pushJson (0, 0, 0, 0, 0, place, place, 0);
-    const std::string t1 = blank ? turnJson (0, 14, 0, 0, place) : turnJson (3, 14, e.channel, e.def, e.number);
+    const std::string t1 = blank ? turnJson (0, 14, 0, 0, place) : turnJson (3, e.mode, e.channel, e.def, e.number);
     const std::string t2 = e.press == 2 ? turnJson (3, 14, e.channel2, e.def2, e.number2) : turnJson (0, 3, 0, 0, 0);
     return Json::obj ({ { "name", Json::str (e.name) }, { "abbr", Json::str (e.abbr) }, { "color", Json::num (e.colour) }, { "push_action", push },
                         { "turn_actions", Json::arr ({ t1, t2 }) }, { "color2", Json::num (e.press == 2 ? e.colour2 : 0) } });
@@ -297,6 +298,10 @@ static std::vector<Enc> snapEncs (const Engine& eng, const juce::StringArray& sn
         e.channel = kSnapChannel; e.number = kKnobCc + p - 1; e.def = 0;
         e.press = 1; e.pressChannel = kSnapChannel; e.pressNumber = kPressCc + p - 1;
         e.colour = p <= Session::kMacroKnobs ? kWhite : kViolet;      // (the four macro knobs, then the ten stack knobs)
+        // (a stack knob turns without acceleration: a detent is a click of its 127 however fast the hand, so a place between
+        // two snapshots can be found and found again. Mode 3 is the App's own "no acceleration", as its files have it for a
+        // knob's second destination; the macro knobs go by the scene's, as every other knob does.)
+        if (p > Session::kMacroKnobs) e.mode = 3;
         if (p == 1)
         {
             e.press = 2; e.channel2 = kSnapChannel; e.number2 = kGlideCc; e.colour2 = kGreen;

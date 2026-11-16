@@ -1378,7 +1378,8 @@ static void stackNotesTest (int& bad)
         // going down again, the way is said the other way round: toward the first, a quarter of the way there
         ses.turnSnapKnob (k, 0.75f);
         const auto down = ses.stackWay (k, 0.75f);
-        const bool downWay = down.to == 0 && down.from == 1 && near (down.part, 0.25f) && down.notes;
+        const bool downWay = down.to == 0 && down.from == 1 && near (down.part, 0.25f) && down.notes
+                             && down.at == 95 && up.at == 95 && mid.at == 51 && home.at == 0 && down.count == 2;       // (its own place, of 127: the same going up as coming down)
         // the second lit too, but without the bass: its notes do not reach the bass. With the bass: they do. A press on its place also brings them
         ses.stackLanes (k, 1, (Session::kAllLanes & ~(1u << bass)) | Session::kNotesKey);
         ses.turnSnapKnob (k, 1.0f);
@@ -4542,20 +4543,41 @@ static int uiTest()
 
     // 2. everything, on every page: a click, then a drag on what turns
     int clicks = 0;
-    for (auto page : { Screen::pMain, Screen::pLibrary, Screen::pMacros, Screen::pPockets })
+    // (the library has six plates, and each is walked as its own page: a plate pressed is among the clicks, and the walk goes
+    // back to the plate it was on. What the five shelves' keys make, copy and load is put back afterwards: the checks below
+    // start from the session as the first plate's walk left it, as they did before the library had plates.)
+    struct Walk { Screen::Page page; int tab; };
+    const std::vector<Walk> walks { { Screen::pMain, 0 }, { Screen::pLibrary, 0 }, { Screen::pLibrary, 1 }, { Screen::pLibrary, 2 }, { Screen::pLibrary, 3 }, { Screen::pLibrary, 4 },
+                                    { Screen::pLibrary, 5 }, { Screen::pMacros, 0 }, { Screen::pPockets, 0 } };
+    int shelfClicks = 0;
+    for (auto& w : walks)
     {
-        sc.setPage (page); draw();
+        const auto page = w.page;
+        const bool shelf = page == Screen::pLibrary && w.tab > 0;
+        const auto stacksWere = ses.stacks; const auto keptWere = ses.keptKnobs; const auto knobsWere = ses.knobs;
+        const auto modulesWere = ses.modules; const auto moduleWas = ses.moduleAt;
+        const auto arrsWere = ses.arrs; const auto arrWas = ses.arrAtId; const auto partsWere = ses.arrangement;
+        sc.setPage (page); sc.testLibTab (w.tab); draw();
         const auto all = sc.testHits();
         for (size_t i = 0; i < all.size(); ++i)
         {
             if (Screen::testSkips (all[i])) continue;
+            if (shelf && ! Screen::testIsOfShelf (all[i])) continue;       // (the bar and the strip are the first plate's too, and were walked there)
             sc.setPage (page);
+            if (page == Screen::pLibrary && sc.testLibTabNow() != w.tab) { sc.testLibTab (w.tab); draw(); }
             const auto p = all[i].r.getCentre();
             click (p);
             if (Screen::testIsKnob (all[i]) || Screen::testIsStep (all[i])) { dragBy (p, 0.0f, -60.0f); dragBy (p, 90.0f, 0.0f); dragBy (p, 0.0f, 200.0f); }
             sc.mouseDoubleClick (ev (p, p, false));
             ++clicks;
+            if (shelf) ++shelfClicks;
             if (i % 7 == 0) { draw(); audio (2); }
+        }
+        if (shelf)
+        {
+            sc.testEditDrop();
+            ses.stacks = stacksWere; ses.keptKnobs = keptWere; ses.knobs = knobsWere; ses.modules = modulesWere; ses.moduleAt = moduleWas;
+            ses.arrs = arrsWere; ses.arrAtId = arrWas; ses.arrangement = partsWere;
         }
     }
     ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
@@ -4807,7 +4829,7 @@ static int uiTest()
     draw();
     bool finite = true;
     for (int i = 0; i < 512; ++i) finite = finite && std::isfinite (b.getSample (0, i)) && std::isfinite (b.getSample (1, i));
-    check (true, (juce::String (clicks) + " controls clicked, dragged and double-clicked across four screens").toRawUTF8());
+    check (shelfClicks > 30, (juce::String (clicks) + " controls clicked, dragged and double-clicked across four screens, the library's six plates each walked (" + juce::String (shelfClicks) + " of the clicks on its five shelves)").toRawUTF8());
     check (finite && ! e.fault.load(), "the audio is still clean afterwards");
 
     // POCKETS: the master's page. A key on the master and P on the keyboard; every lane's pocket on
@@ -6179,6 +6201,117 @@ static int uiTest()
         check (stacked, "TO STACK keeps the arrangement as a stack in the rack: its parts' snapshots in order, each with the keys its part has, and says which parts lean on what came before");
         if (! stacked) std::printf ("        (stacks %d of %d, note: %s)\n", (int) ses.stacks.size(), (int) stacksWas, ses.printNote.toRawUTF8());
         {
+            // The library's plates: everything kept, by kind, each with the shelf's own keys. STACKS: NEW makes one, COPY keeps the
+            // chosen one again, LOAD puts it on the first stack knob that holds nothing, DELETE (held) takes it out. STACK KNOBS
+            // and MACRO KNOBS: a kept knob onto the first free place of its kind. MODULES: a card chosen and loaded into the
+            // chassis. ARRANGEMENTS: one loaded from here is on the arrangement's page.
+            enum { stacks = 0, macroKnobs = 1, stackKnobs = 2, modules = 3, arrs = 4 };
+            auto lib = [&] (int what, int kind, int i) { for (auto& h : sc.testHits()) if (Screen::testIsShelf (h, what, kind, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            auto hold = [&] (juce::Point<float> at) { sc.mouseDown (ev (at, at, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (at, at, false)); };
+            const auto stacksWere = ses.stacks; const auto keptWere = ses.keptKnobs; const auto knobsWere = ses.knobs;
+            const auto partsWere = ses.arrangement.size();
+            sc.setPage (Screen::pLibrary); sc.testLibTab (0); draw();
+            bool plates = true;
+            for (int t = 0; t <= 5; ++t) plates = plates && lib (0, 0, t).x > 0.0f;
+            // STACKS
+            click (lib (0, 0, 1)); draw();
+            const auto nStacks = ses.stacks.size();
+            click (lib (2, stacks, 0)); draw();                                             // NEW
+            const bool made = ses.stacks.size() == nStacks + 1 && sc.testShelfChosen (stacks) == (int) nStacks && ses.stacks.back().here;
+            ses.rackAdd ((int) nStacks, a); ses.rackAdd ((int) nStacks, bb, Session::kAllLanes | Session::kNotesKey);
+            draw(); click (lib (2, stacks, 1)); draw();                                     // COPY
+            const bool copied = ses.stacks.size() == nStacks + 2 && ses.stacks.back().snaps == ses.stacks[nStacks].snaps && (ses.stacks.back().keysAt (1) & Session::kNotesKey) != 0
+                                && ses.stacks.back().name != ses.stacks[nStacks].name;
+            const int freeWas = ses.freeStackKnob();
+            click (lib (2, stacks, 2)); draw();                                             // LOAD: onto the first stack knob that holds nothing
+            const bool onKnob = freeWas >= 0 && ses.knobs[(size_t) freeWas].snaps == ses.stacks.back().snaps && ses.knobs[(size_t) freeWas].notesAt (1) && sc.testBarNote().contains ("IS ON KNOB " + juce::String (freeWas + 1));
+            click (lib (2, stacks, 4)); draw();                                             // DELETE, pressed: it stays
+            const bool stays = ses.stacks.size() == nStacks + 2 && sc.testBarNote().contains ("HOLD DELETE");
+            hold (lib (2, stacks, 4)); draw();
+            const bool deleted = ses.stacks.size() == nStacks + 1 && sc.testBarNote().contains ("IS DELETED");
+            // STACK KNOBS: the knob just made, kept, cleared, and put back from the library
+            const int kAt = ses.knobKeep (freeWas);
+            ses.knobClear (freeWas);
+            click (lib (0, 0, 3)); draw();
+            int mine = -1;
+            for (int i = 0, n = 0; i < (int) ses.keptKnobs.size(); ++i) if (ses.keptKnobs[(size_t) i].stack) { if (i == kAt) mine = n; ++n; }
+            click (lib (1, stackKnobs, mine)); draw();
+            const bool noNew = lib (2, stackKnobs, 0).x < 0.0f && lib (2, stackKnobs, 1).x < 0.0f && lib (2, stackKnobs, 2).x > 0.0f;      // (a knob is made in the designer: LOAD, RENAME, DELETE only)
+            click (lib (2, stackKnobs, 2)); draw();
+            const bool put = ses.knobHolds (freeWas) && ses.knobs[(size_t) freeWas].notesAt (1) && sc.testBarNote().contains ("IS ON KNOB");
+            // MODULES: a copy made (the chassis holds it), then the first chosen and loaded
+            click (lib (0, 0, 4)); draw();
+            const auto nMods = ses.modules.size(); const int modWas = ses.moduleIndex();
+            click (lib (2, modules, 1)); draw();
+            const bool modCopied = ses.modules.size() == nMods + 1 && ses.moduleIndex() == (int) nMods && lib (2, modules, 4).x < 0.0f;        // (the one in the chassis: no DELETE)
+            click (lib (1, modules, modWas)); draw();
+            click (lib (2, modules, 2)); draw();
+            const bool modLoaded = ses.moduleIndex() == modWas && sc.testBarNote().contains ("IS IN THE CHASSIS");
+            click (lib (1, modules, (int) nMods)); draw();
+            hold (lib (2, modules, 4)); draw();
+            const bool modGone = ses.modules.size() == nMods;
+            // ARRANGEMENTS: a copy made here, the first loaded from here
+            click (lib (0, 0, 5)); draw();
+            click (lib (2, arrs, 1)); draw();
+            const bool arrCopied = ses.arrs.size() == 2 && ses.arrsIndex() == 1;
+            if (! arrCopied) std::printf ("        (arrangements kept %d, on the page %d, COPY at %.0f)\n", (int) ses.arrs.size(), ses.arrsIndex(), lib (2, arrs, 1).x);
+            click (lib (1, arrs, 0)); draw(); click (lib (2, arrs, 2)); draw();
+            const bool arrLoaded = ses.arrsIndex() == 0 && ses.arrangement.size() == partsWere && sc.testBarNote().contains ("ARRANGE SHOWS IT");
+            // (as it was)
+            while (ses.arrs.size() > 1) ses.arrsRemove ((int) ses.arrs.size() - 1);
+            ses.knobs = knobsWere; ses.stacks = stacksWere; ses.keptKnobs = keptWere;
+            sc.testLibTab (0); sc.setPage (Screen::pArrange); draw();
+            const bool ok = plates && made && copied && onKnob && stays && deleted && noNew && put && modCopied && modLoaded && modGone && arrCopied && arrLoaded;
+            check (ok, "the library's plates: CHIPS, STACKS, MACRO KNOBS, STACK KNOBS, MODULES, ARRANGEMENTS, each kind with the same card and keys: a stack is made, copied (its N with it), put on the first free stack knob and, "
+                       "DELETE held, taken out; a kept knob is put on the first free place of its kind; a module is copied, chosen, loaded and deleted; an arrangement is copied and loaded from here");
+            if (! ok) std::printf ("        (plates %d made %d copied %d on knob %d stays %d deleted %d no new %d put %d mod copied %d loaded %d gone %d arr copied %d loaded %d: %s)\n", (int) plates, (int) made, (int) copied, (int) onKnob,
+                                   (int) stays, (int) deleted, (int) noNew, (int) put, (int) modCopied, (int) modLoaded, (int) modGone, (int) arrCopied, (int) arrLoaded, sc.testBarNote().toRawUTF8());
+        }
+        {
+            // A stack knob under the mouse turns finely: 800 pixels the whole turn, a click of its 127 at a time, and SHIFT is
+            // the fast way (160 pixels). The wheel is a click a notch. Its tag says where it is AT.
+            const auto knobsWere = ses.knobs;
+            const bool cueWas = ses.stackCue;
+            ses.setStackCue (false);
+            const int k = ses.freeStackKnob();
+            bool fine = false, fast = false, notch = false, said = false;
+            auto close = [] (float x, float y) { return std::abs (x - y) < 0.02f; };
+            if (k >= 0)
+            {
+                ses.stackAdd (k, a); ses.stackAdd (k, bb); ses.stackAdd (k, id3);
+                ses.turnSnapKnob (k, 0.0f);
+                sc.setPage (Screen::pMain); draw();
+                juce::Point<float> at (-1.0f, -1.0f);
+                for (auto& h : sc.testHits()) if (Screen::testIsSnapKnob (h, k)) at = h.r.getCentre();
+                auto clicks = [&] { return ses.value (cx::kSnap + k) * 127.0f; };
+                dragBy (at, 0.0f, -80.0f);
+                fine = at.x > 0.0f && close (clicks(), 13.0f);                          // (80 of 800 pixels: a tenth of the turn, on a whole click)
+                audio (4);
+                sc.testTagPicture (cx::kSnap + k);
+                said = sc.testTagText (cx::kSnap + k).contains ("|AT 13|");
+                const juce::String tagWas = sc.testTagText (cx::kSnap + k);
+                auto shifted = [&] (juce::Point<float> p, juce::Point<float> down, bool dragged)
+                {
+                    return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys (juce::ModifierKeys::shiftModifier), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                             &sc, &sc, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, dragged);
+                };
+                sc.mouseDown (shifted (at, at, false));
+                sc.mouseDrag (shifted (at + juce::Point<float> (0.0f, -80.0f), at, true));
+                sc.mouseUp (shifted (at + juce::Point<float> (0.0f, -80.0f), at, true));
+                const float wasAt = clicks();
+                fast = std::abs (wasAt - 76.5f) < 0.6f && close (wasAt, std::round (wasAt));      // (80 of 160: half the turn)
+                juce::MouseWheelDetails wheel; wheel.deltaX = 0.0f; wheel.deltaY = 0.1f; wheel.isReversed = false; wheel.isSmooth = false; wheel.isInertial = false;
+                draw();
+                sc.mouseWheelMove (ev (at, at, false), wheel);
+                notch = close (clicks(), wasAt + 1.0f);
+                if (! (fine && fast && notch && said)) std::printf ("        (knob %d at %.0f, fine %d, fast %d (%.2f), a notch %d (%.2f), its tag: %s)\n", k + 1, at.x, (int) fine, (int) fast, wasAt, (int) notch, clicks(), tagWas.toRawUTF8());
+            }
+            ses.knobs = knobsWere; ses.turnSnapKnob (std::max (k, Session::kMacroKnobs), 0.0f);
+            ses.setStackCue (cueWas);
+            sc.setPage (Screen::pArrange); draw();
+            check (fine && fast && notch && said, "a stack knob under the mouse turns finely, a click of its 127 at a time (80 pixels: 13 clicks), and with SHIFT fast (80 pixels: half the turn); the wheel is a click a notch; its tag says AT 13");
+        }
+        {
             // The arrangement page's shelf: the plate ARRANGEMENTS shows those kept, with their keys. COPY keeps the one on the
             // page again (the page holds the copy); NEW is an empty one; a card pressed is the chosen one and LOAD puts it on
             // the page; DELETE, pressed, leaves it and says to hold; held, it goes, and the page is its neighbour's.
@@ -7179,6 +7312,20 @@ static int shot (const juce::StringArray& args)
     }
     const auto page = arg ("--page", "main");
     sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : page == "arrange" ? Screen::pArrange : Screen::pMain);
+    if (page == "library" && arg ("--libtab", "").isNotEmpty())
+    {
+        // --libtab N: the library on that plate (0 CHIPS, 1 STACKS, 2 MACRO KNOBS, 3 STACK KNOBS, 4 MODULES, 5 ARRANGEMENTS),
+        // with some of each kind kept
+        ses.stackKeep (4);
+        const int br = ses.rackNew ("breaks");
+        for (int i = 1; i < 4 && i < (int) ses.library.size(); ++i) ses.rackAdd (br, ses.library[(size_t) i].id);
+        ses.knobKeep (0); ses.knobKeep (1); ses.knobKeep (4);
+        ses.moduleCopy ("warehouse set"); ses.moduleNew ("dub set"); ses.moduleLoad (0);
+        static const int bars[] = { 8, 16, 8, 32 };
+        for (int i = 0; i < 4 && i + 1 < (int) ses.library.size(); ++i) { ses.arrAdd (ses.library[(size_t) (i + 1)].id); ses.arrSet (i, bars[i], 0); }
+        ses.arrsRename (0, "warehouse a"); ses.arrsCopy ("warehouse a live"); ses.arrsNew ("intro"); ses.arrsLoad (0);
+        sc.testLibTab (juce::jlimit (0, 5, arg ("--libtab", "0").getIntValue()));
+    }
     if (page == "macros" && args.contains ("--modules"))
     {
         // (the modules kept: three of them, the first in the chassis)

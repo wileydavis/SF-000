@@ -3632,8 +3632,86 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      build 66.* Asked for: SET UP's two ENGINE figures while SNAP 094 to 096 plays, to know
      how much room there now is.
 
+## The library's six plates; AT on a stack knob; a stack knob turns finely (Nov 16, 11:27): seventieth build
+
+590. **The library's six plates** (585's second point, 587's next part). Along the top of the
+     library: CHIPS, STACKS, MACRO KNOBS, STACK KNOBS, MODULES, ARRANGEMENTS, each with how
+     many it holds. CHIPS is the library as it was (find row, cards, RENAME, HOLD: DELETE,
+     RECALL, NOTES, PHONES). The other five are one shelf, drawn and worked by the same code:
+     a card for each kept thing (number, name, what it holds; green if it is in use now), and
+     over the cards NEW, COPY, LOAD, RENAME and DELETE (held) for the chosen one. A key that
+     cannot be pressed now is an empty frame. Two quick presses on a card are LOAD. The
+     arrangement page's ARRANGEMENTS plate (588) is this same shelf now, and its other plate
+     and the designer's say CHIPS. The library's strip has ARRANGE beside MAIN and MACROS.
+     *Mine, what LOAD does for each kind:* a stack goes onto the first stack knob that holds
+     nothing; a kept knob onto the first free place of its kind; a module into the chassis;
+     an arrangement onto the arrangement's page. With no knob free it says so and changes
+     nothing. *Mine: a knob has no NEW or COPY here; it is made in the designer and kept from
+     there.*
+591. **Not the same yet, and said so in the README.** (a) The five kept kinds have no find
+     row; they scroll. (b) COPY copies the chosen card for a stack, but the one in use for a
+     module or an arrangement (the chassis or the page then holds the copy), as their own
+     pages have had it since 502 and 588. One rule for all of them is for the next part,
+     when the designer's own lists give way to this shelf. (c) The designer still has its
+     own STACKS, KNOBS and MODULES lists with their own keys (OPEN, ADD, PUT, OUT), and the
+     page keys are not yet the same four on every page.
+592. **The check that presses everything** walks each of the library's plates as a page of
+     its own (the plates themselves among the clicks), and puts back what the shelves' keys
+     made, copied and loaded, so that the checks after it start where they did before. The
+     first try pressed the bar's keys once for each plate and left the clock stopped for
+     POCKETS' check: a shelf's walk now presses only the shelf's own controls.
+593. **You**, 11:24: "on ther stack knob HUD also give me an absolute position so i can return
+     to spots I like." The tag has a row under its bar: **AT 51 /127**, and the whole turn as
+     a line with a post where each snapshot stands and a pointer where the knob is. *Mine:
+     the figure is the knob's own place in clicks of the E16's knob, 0 to 127, because that is
+     every place the E16 can put it and each has one figure; a figure of 100 would give two
+     neighbouring clicks the same number. It is the same from above and from below (the
+     figure of 100 over it counts from the snapshot left, so it is not). It is where the hand
+     left the knob, not where MOTION has swung the sound to; the bar is the sound.*
+594. **You**, 11:27: "Also default the stacks knobs to fine adjustment." *How I read it:* SHIFT
+     has been the fine way to drag a knob, and a stack knob should be fine without it.
+     - **The mouse**: a stack knob drags at the fine rate (800 pixels the whole turn), a click
+       of its 127 at a time, and SHIFT is the fast rate (160). The wheel is a click a notch
+       (it was two and a half). *Mine: on whole clicks, so that the figure AT is a place either
+       hand can come back to.* Every other knob is as it was.
+     - **The E16**: the ten stack knobs are written with turn mode 3, no acceleration: a
+       detent is a click however fast the hand. They were mode 14, which goes by the scene's
+       acceleration (3). The macro knobs and every other knob are unchanged. Only those ten
+       values differ in the two scene files; **the scenes must be loaded onto the E16 again**.
+       Mode 3 is from the App's own files (SF Live Suite's notes: its default for a knob's
+       second destination). The E16's manual (v 0.5.0a) lists the modes as Div8, Div4, Div2,
+       Acc0 to Acc3, LSp2 to LSp6, and Acc0 as "no acceleration", which is the fourth: it
+       agrees.
+     - *Not done, and why:* Div2 to Div8 would be finer still (two to eight detents a click)
+       but I have their numbers only by counting down that list, not from a file of the
+       App's. CC14 (16,384 places instead of 128) is a different message and a different ring
+       on the E16; neither can be tried here.
+595. **You**, 11:27: "And if there's a way to make the cue actually match what the pa will
+     hear, that would be good. Might actually have to render the rig to do that and not use
+     the audio previews." **Not built in this build.** You are right about why it does not
+     match: the cue is the four bars recorded when the snapshot was taken (493), so it has
+     that day's notes and tempo, all of the rig and not the parts lit on the card, none of
+     what the macro knobs are adding now, the master as it stood, and nothing at all for a
+     place between two snapshots. *Mine, what it takes:* (a) the suite's bus (kicks reported
+     for the duck, POCKETS' energies) is one for the whole program, which is why PRINT stops
+     the audio while it renders: it has to become one for each rig; (b) a second rig that is
+     the first as it stands now, with the recall made on it as RECALL would make it (the
+     parts lit, NOTES as it is set, the notes now playing), run in time with the clock and
+     sent to the headphones; (c) on a core of its own, so the set never waits for it, and
+     dropped first if the computer runs short. It is its own build, after this one.
+
 ## Not verified
 
+- **The library's plates (590)** are checked on the session and the drawn page: each plate, a
+  stack made, copied, put on a knob and deleted, a kept knob put on a place, a module and an
+  arrangement copied and loaded. Not on the Mac, and not with your own session's worth of
+  kept things.
+- **A stack knob without acceleration on the E16 (594) has not been on an E16.** The scene
+  files differ from the last ones in ten numbers and pass the scene check. Whether a detent a
+  click feels right, or too slow across a whole stack, is for your hands; say so and the
+  macro knobs' way (the scene's acceleration) is one number back.
+- **AT (593)** is checked on the session (the same figure going up as coming down) and in the
+  tag's picture. Not on the 3D stage on the Mac.
 - **Arrangements kept (588)** are checked on the session and the drawn page. Not on the Mac,
   and not with an arrangement of yours: the first time this build opens your session, the
   arrangement you have is ARRANGEMENT 1 and nothing else should differ.

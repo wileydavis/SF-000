@@ -34,7 +34,7 @@ First run:
 
 | Do this | To |
 | --- | --- |
-| Drag a knob up or down | turn it (hold Shift for fine; double-click for its starting value; the wheel works too) |
+| Drag a knob up or down | turn it (hold Shift for fine; double-click for its starting value; the wheel works too). A stack knob is the other way round: fine as it is, a click of its 127 at a time, and Shift is the fast way |
 | Set GLIDE, then turn a knob | the sound travels there over the GLIDE time: the knob turns green and walks, with a white mark where it is going. It sets off on the next beat while the clock runs. Turn it again on the way and it carries on from where the sound is. OFF: at once |
 | Click a lane's name, or its plate anywhere off the controls | make it the active lane: the inserts and the sequencer strip show it. Its display is the one lit up |
 | Click an insert's plate, the returns', the master's, the snapshot knobs', the sequencer strip's, off the controls | bring that module to the front: its name lights up, and the E16 turns to its page (see MIDI and the E16) |
@@ -512,6 +512,32 @@ and from the rig itself it is given a profile, and its card in the library draws
 | the two rows of sixteen | where the hits fall in the bar: the top end above, the low end below |
 | the eleven bars | how much of each lane there was |
 
+#### Six plates: everything that is kept
+
+Along the top of the library are six plates, each with how many it holds: **CHIPS** (the
+snapshots, as above and below), **STACKS**, **MACRO KNOBS**, **STACK KNOBS**, **MODULES** and
+**ARRANGEMENTS**. Press one and the page shows that kind. The five kept kinds look and work the
+same way: each kept thing is a card with its number, its name and what it holds (green: the one
+in use now, the module in the chassis or the arrangement on the page). Press a card to choose
+it; the keys over the cards are for the chosen one, and a key that cannot be pressed now is an
+empty frame.
+
+| KEY | STACKS | MACRO KNOBS, STACK KNOBS | MODULES | ARRANGEMENTS |
+|---|---|---|---|---|
+| **NEW** | an empty stack (fill it in MACROS) | (a knob is made in MACROS and kept from there) | a module with nothing on its knobs, in the chassis | an empty one, on the page |
+| **COPY** | the chosen stack kept again, its keys and N with it | | the one in the chassis kept again; the chassis holds the copy | the one on the page kept again; the page holds the copy |
+| **LOAD** (or two quick presses on the card) | onto the first stack knob that holds nothing | onto the first free place of its kind | into the chassis | onto the arrangement's page (ARRANGE shows it) |
+| **RENAME** | type, then Return (not a stack that is the web library's) | the same | the same | the same |
+| **DELETE**, held | out of those kept (with ONLINE lit, out of the web library's rack for the instrument too) | out of those kept; modules that have it keep theirs | never the one in the chassis | never the last one |
+
+DELETE pressed and let go leaves the thing and says to hold it. The bar says what each key
+did (TOUR IS ON KNOB 7). When no knob is free, LOAD says so and changes nothing: CLEAR one in
+MACROS first. The wheel goes down a long list. **ARRANGE**, on the strip beside MAIN and
+MACROS, goes to the arrangement's page.
+
+Not yet the same: these five have no find row (CHIPS has); and COPY is the chosen card for a
+stack but the one in use for a module or an arrangement, as their own pages have had it.
+
 #### Finding a snapshot
 
 Wherever snapshots are listed (the library, beside the knob in MACROS, beside the arrangement)
@@ -695,7 +721,8 @@ whole of it is one travel from the snapshot before.
 - **Arrangements are kept, and nothing has to be saved.** The page always holds one of the
   arrangements kept (its name is beside ARRANGEMENT on the strip; a session starts with
   ARRANGEMENT 1): what you change on the page changes that one. Over the list at the right are
-  two plates, **SNAPSHOTS** (to take parts from) and **ARRANGEMENTS**, which shows those kept:
+  two plates, **CHIPS** (the snapshots, to take parts from) and **ARRANGEMENTS**, which shows those kept
+  (the same shelf as the library's ARRANGEMENTS plate):
   each a card with its number, its name (green: the one on the page) and what it holds. Press
   one to choose it; the keys over the list are for the chosen one:
   - **NEW**: an empty one, kept, and put on the page.
@@ -870,7 +897,7 @@ alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
   strip says STACK; **RENAME** names it. Choosing a place on the left puts the stack away.
 - **ON A KNOB**, at the head of the column while a stack is open, puts it on the first stack
   knob that holds nothing; that place is then the chosen one.
-- On a stack's card: **the card itself** lists its snapshots under SNAPSHOTS, to hear and to
+- On a stack's card: **the card itself** lists its snapshots under CHIPS, to hear and to
   add from (the plate at the head of that list says whose are listed); carried onto a stack
   knob's place, all of it goes there. **OPEN** puts it in the column to be changed. **ADD** puts all of it into what is open: the chosen stack knob,
   after what the knob holds, or another stack. **OUT, held**, takes it out of those kept (with
@@ -883,7 +910,7 @@ alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
 A knob of the module can be kept by itself, to put on a place of any module. No network is
 asked.
 
-- **KNOBS**, a plate beside the chosen knob in the designer (with SNAPSHOTS, and STACKS for a
+- **KNOBS**, a plate beside the chosen knob in the designer (with CHIPS, and STACKS for a
   stack knob), shows the knobs kept: each a card with its number, its name and what it is.
 - **KEEP KNOB n**, at the head of the list, keeps the chosen knob under its name, as it is: a
   macro knob with every knob it is tied to and how far it takes each, a stack knob with its
@@ -941,6 +968,19 @@ playing. Knob 4 pressed is CUE too, on the screen and on the E16.
   of 100, and a bar between two posts that fills as it nears. **Standing on one** (to within a
   click of the E16's knob) it says ON and the bar is full and green: the rig is that snapshot.
   On the flat screen the line under the knob says the same in short: ACID OPEN 60.
+- **AT: the place to come back to.** Under the bar the tag has the knob's own place, **AT 51
+  /127**: one figure for each click of the E16's knob, the same whether the knob came up to it
+  or down (the figure of 100 above it is not: it counts from the snapshot left). Beside it is
+  the whole turn as a line, a post where each snapshot stands and a pointer where the knob
+  is. Write the figure down, or remember it; turned back to 51, the rig is where it was. The
+  figure is where the hand has left the knob; the bar is the sound.
+- **A stack knob turns finely.** Its snapshots are close together on the turn (five of them:
+  32 clicks from one to the next), so a place between two is something to find. With the
+  mouse it moves a click at a time, 800 pixels for the whole turn, and **Shift is the fast
+  way**; the wheel is a click a notch. On the E16 the ten stack knobs turn **without
+  acceleration**: a detent is a click however fast the hand (the macro knobs, and every other
+  knob, go by the scene's acceleration as before). That is in the scene files: load
+  `SF-000.oxie16` and `SF-000-FX.oxie16` onto the E16 again to have it.
 
 **CUE lit: a turn chooses, a press goes.**
 
@@ -998,7 +1038,7 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
     key pressed while it plays is heard at once.
   - The wheel over the column moves it when it holds more than eleven.
   - **STACKS** shows the stacks kept here, and those the web library has lit for the
-    instrument (next section). SNAPSHOTS brings the library back.
+    instrument (next section). CHIPS brings the snapshots back.
   - **KNOBS** shows the knobs kept by themselves (next section).
   The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
   here goes there by itself. So does the rack, and the library's comes here: see ONLINE.
@@ -1430,8 +1470,16 @@ Delete `session.json` to start again from the factory rig.
 - The E16's SEQ page edits one step at a time, the one STEP is on: there is no page of sixteen
   knobs that are sixteen steps' velocities, and the steps are not on the E16's own keys.
 - The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP
-  and DROP are on the screen and the keyboard only.
-- The arrangement: one of them; no tempo of its own and no change of tempo along it (it is printed at
+  and DROP are on the screen and the keyboard only. A stack knob has those 128 places for all of
+  its snapshots (the E16 could send 16,384, as CC14: not built, and not tried).
+- **The cue is not the rig.** What plays in the headphones is the four bars recorded when the
+  snapshot was taken: that day's notes and tempo, all of the rig whatever keys are out on the
+  card, the master as it stood, and nothing for a place between two snapshots. A cue that is
+  what the PA would get needs a second rig run beside the first (DECISIONS 595): the next
+  build's work.
+- The library's five kept kinds have no find row yet, and the macro designer still has its own
+  lists of stacks, knobs and modules beside the library's (DECISIONS 591).
+- The arrangement: one on the page at a time, of those kept; no tempo of its own and no change of tempo along it (it is printed at
   the tempo that stands); no loop of a stretch of it; a part cannot be a part of a snapshot (some
   lanes and not others); what is turned by hand while it plays is not kept, so a print is the scenes,
   the snapshot knobs as they stand and MOTION, and no performance. It is made with the mouse: nothing

@@ -103,6 +103,8 @@ for p, e in enumerate(snap["encoders"], 1):
         continue
     # (the four macro knobs white, the ten stack knobs violet)
     ok = ok and t["type"] == 3 and t["channel"] == 16 and t["nr1"] == 11 + p and e["color"] == (WHITE if p <= 4 else VIOLET)
+    # (a stack knob turns without acceleration, mode 3: a detent is a click; a macro knob goes by the scene's, mode 14)
+    ok = ok and t["mode"] == (14 if p <= 4 else 3)
     seen[(16, t["nr1"])] = seen.get((16, t["nr1"]), 0) + 1
     if p == 1:
         # GLIDE behind its press, as on a lane's page: the one GLIDE address
@@ -112,7 +114,8 @@ for p, e in enumerate(snap["encoders"], 1):
         ok = ok and t2 == TURN_OFF and push["type"] == 2 and push["mode"] == 1 and push["channel"] == 16 and push["nr1"] == 43 + p and (push["upper"], push["lower"]) == (127, 0) and push["output"] == 0
         seen[(16, push["nr1"])] = seen.get((16, push["nr1"]), 0) + 1
 check(ok, "page 12, the snapshot module on channel 16: knob p sends CC 11 + p, its press CC 43 + p (127 down, 0 up). The four corners, as on every page: 1 pressed swaps to GLIDE (green), "
-          "4's press is CUE's, 13 is the pointer's wheel and nothing else (CC 31, its key CC 33), 16 is OPEN (CC 34) and turns nothing. No knob of the module is on 13 or 16")
+          "4's press is CUE's, 13 is the pointer's wheel and nothing else (CC 31, its key CC 33), 16 is OPEN (CC 34) and turns nothing. No knob of the module is on 13 or 16. "
+          "The ten stack knobs turn without acceleration (mode 3), the four macro knobs by the scene's (mode 14)")
 check(all(v == 1 for v in seen.values()) and not any(num in RESERVED for _, num in seen) and not ({(16, 119), (16, 31), (16, 33), (16, 34), (16, 35), (16, 36)} & set(seen)),
       f"{len(seen)} addresses, each used once, none on a number MIDI keeps for itself; CC 119 on channel 16 is left for the page, 31 and 33 to 36 for the wheel and the keys (no knob's own)")
 for n, row in enumerate(names, 1):
