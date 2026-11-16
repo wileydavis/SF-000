@@ -3407,6 +3407,61 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 // moves (the difference signal against the sound itself, in dB). A knob that moves nothing is listed.
 // With --model NAME every lane that has that model plays it (the others are passed over), with --sample FILE that file is
 // loaded on the lane, with --table a WAVETABLE's TABLE is SAMPLE, and with --plain CONFIG's PLAIN was pressed first.
+// --printbus: is the drum bus in a print? A four-bar arrangement of one snapshot is printed twice, the snapshot taken with the
+// bus at work and with it at rest (the rig itself left with the bus at rest both times, so what is printed can only come from
+// the snapshot). Says what the bus's own file holds in each and how far apart the two sets are.
+static int printBusProbe()
+{
+    using namespace sf0;
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-printbus-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
+    tmp.createDirectory();
+    auto read = [] (const juce::File& f, juce::AudioBuffer<float>& into)
+    {
+        if (! f.existsAsFile()) return false;           // (a part that was silent throughout is not kept)
+        auto in = f.createInputStream();
+        if (in == nullptr) return false;
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (in.release(), true));
+        if (r == nullptr) return false;
+        into.setSize (2, (int) r->lengthInSamples);
+        return r->read (&into, 0, (int) r->lengthInSamples, 0, true, true);
+    };
+    auto once = [&] (float busKnob, const char* name)
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        ses.userSet (cx::kBus, busKnob);
+        const auto id = ses.take();
+        ses.userSet (cx::kBus, 0.0f);
+        ses.arrAdd (id); ses.arrSet (0, 4, -1);
+        const juce::String err = ses.printBegin (tmp.getChildFile (name));
+        if (err.isNotEmpty()) { std::printf ("  the print did not begin: %s\n", err.toRawUTF8()); return juce::File(); }
+        while (ses.printStep (50.0)) {}
+        std::printf ("  %-8s %s\n", name, ses.printNote.toRawUTF8());
+        return ses.printFolder;
+    };
+    const auto with = once (0.5f, "with"), without = once (0.0f, "without");
+    int bad = 0;
+    if (with == juce::File() || without == juce::File()) bad = 1;
+    else
+    {
+        const juce::String busName = Recorder::trackName (kLanes + 3) + ".wav", setName = Recorder::trackName (0) + ".wav";
+        juce::AudioBuffer<float> busA, busB, setA, setB;
+        const bool hasA = read (with.getChildFile (busName), busA), hasB = read (without.getChildFile (busName), busB);
+        const bool sets = read (with.getChildFile (setName), setA) && read (without.getChildFile (setName), setB);
+        const double pkA = hasA ? busA.getMagnitude (0, busA.getNumSamples()) : 0.0, pkB = hasB ? busB.getMagnitude (0, busB.getNumSamples()) : 0.0;
+        double d = 0.0, sum = 0.0;
+        if (sets) for (int i = 0; i < std::min (setA.getNumSamples(), setB.getNumSamples()); ++i) { const double x = setA.getSample (0, i), y = setB.getSample (0, i); d += (x - y) * (x - y); sum += x * x; }
+        std::printf ("  the snapshot taken with the drum bus at work: its own file %s (peak %.4f)\n", hasA ? "is there" : "is not kept (silent)", pkA);
+        std::printf ("  the snapshot taken with it at rest:           its own file %s (peak %.4f)\n", hasB ? "is there" : "is not kept (silent)", pkB);
+        if (sets) std::printf ("  the two printed sets differ by %.1f dB of the set\n", 10.0 * std::log10 ((d + 1e-20) / (sum + 1e-20)));
+        bad = (hasA && pkA > 1.0e-3 && ! (hasB && pkB > 1.0e-4) && sets && d > 0.0) ? 0 : 1;
+        std::printf ("%s\n", bad == 0 ? "THE DRUM BUS IS IN A PRINT" : "THE DRUM BUS IS NOT IN A PRINT AS EXPECTED");
+    }
+    tmp.deleteRecursively();
+    return bad;
+}
+
 // --model ALL: every model the lane has, one line each.
 static int knobAudit (int only, const juce::String& modelArg = {}, const juce::File& file = {}, bool table = false, bool plain = false, bool levelOnly = false)
 {
@@ -10310,6 +10365,7 @@ public:
         }
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
+        if (args.contains ("--printbus")) { setApplicationReturnValue (printBusProbe()); quit(); return; }
         if (args.contains ("--audit"))
         {
             const int i = args.indexOf ("--audit");

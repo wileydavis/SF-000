@@ -3273,6 +3273,15 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      (As 543 was built, a part reached with ARM lit would have waited for the transition's
      line instead of its own.)
 
+557. **You**, 21:17: "does print from arrangement bypass the drum bus?" **No; measured**
+     (`--printbus`, kept as a check): a part whose snapshot was taken with the bus at work,
+     printed from a rig whose own bus is at rest, prints a set 1.9 LU louder than the same
+     with the bus at rest (-9.0 against -10.9 LUFS), and the bus's own file is there (peak
+     0.29) where otherwise it is silent and not kept. What a print does do: **the numbered
+     drum files are the lanes as they go into the bus**, and what the bus did to them
+     together is its own file, DRUM BUS. The set has it; the drum files alone do not. And a
+     part whose **B** key is empty leaves the bus as the part before left it.
+
 ## Not verified
 
 - **TRANSITION in the arrangement (554)** and **N (555)**: checked in the engine (a part's own

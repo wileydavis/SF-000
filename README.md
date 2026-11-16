@@ -1161,6 +1161,7 @@ build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
 build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each
+build/.../SF-000 --printbus                       # is the drum bus in a print? prints a small arrangement with it at work and at rest, and says
 build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
