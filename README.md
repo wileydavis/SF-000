@@ -526,7 +526,16 @@ themselves), **MODULES** and **ARRANGEMENTS**, each with how many it holds. The 
 of every shelf is the bin, **ALL CHIPS**. The wheel over the rack goes along a long shelf.
 
 **Press a pocket and it is open**: what it holds is laid out on the bench under the rack, and
-its rim is green. Press the bin's pocket to put it away.
+its rim is green. Press the bin's pocket to put it away. **What is open has its own keys,
+as plates after its name** at the head of the bench; one that cannot be pressed now is an
+empty frame. The strip at the foot of the page is for the chip in hand (RECALL, ADD TO,
+RENAME, HOLD: DELETE) and PHONES and NOTES.
+
+**The same rack is the right-hand third of MACROS and of the arrangement's page**: the same
+shelves (in a row there), the same pockets (four across; the wheel over them goes along),
+the same keys after an open thing's name. What is chosen on one page is chosen on all three.
+On those two pages the bench under the pockets holds the chips to take from: the bin's, or
+the open stack's in its order. A stack's row is put in order here, in the library.
 
 | WHAT YOU WANT | HOW |
 |---|---|
@@ -562,20 +571,18 @@ knob's pile, on a module's knob, in an arrangement's parts. Where it is shown wi
 it takes there, those are the parts you hear, with its notes if it would bring them. Pressed
 again, it stops. Two quick presses take it to the set, as RECALL does.
 
-Not in this build: the pile of a kept knob, and the knobs of a module that is not in the
-chassis, are shown here and not changed here (a knob is changed in MACROS, on the module in the
-chassis). The kept shelves have no find row. MACROS and the arrangement's page still have
-their own lists of stacks, knobs and modules, with their own keys; they move onto this rack
-next.
+Not built: the pile of a kept knob, and the knobs of a module that is not in the chassis, are
+shown and not changed where they are opened (a knob is changed in MACROS, on the module in
+the chassis). The kept shelves have no find row.
 
 #### Finding a snapshot
 
-Wherever snapshots are listed (the library, beside the knob in MACROS, beside the arrangement)
-the list has the same head, and what is chosen there is chosen on all three:
+Wherever chips are listed (the library's bin, and the rack's bench in MACROS and beside the
+arrangement) the list has the same head, and what is chosen there is chosen on all three:
 
 | AT THE HEAD | WHAT |
 |---|---|
-| **ALL 37** / a stack's name | whose are listed, and how many. Pressed: the next stack kept, then all again. (In MACROS a stack's card does the same for that stack. In the library it reads **THE BIN 37** and is not pressed: the rack's pockets say which stack is out) |
+| **THE BIN 37** / a stack's name | whose are listed, and how many. It is not a key: the rack's pockets say which stack is out (the bin's pocket: every chip again) |
 | **RECENT** | the newest first |
 | **FITS NOW** | nearest in sound to what is playing, first (only snapshots with a sound kept) |
 | **MORE**, **LESS** | a step up or down in energy from what is playing, the nearest step first: the twelve nearest it in colour, as the E16's MORE and LESS knobs hold |
@@ -598,7 +605,7 @@ One rule for every page that shows snapshots (the library, MACROS, the arrangeme
   key). Put a part out and it is not heard, and does not go with the snapshot in what is done
   next.
 - **What is done next is the page's own key**: **RECALL** in the library (two quick presses on
-  the card do the same), **ADD** or carrying in MACROS, **ADD** beside the arrangement.
+  the card do the same), **ADD** or carrying in MACROS and beside the arrangement.
 - **If nothing will be heard, the bar at the top says why**: the snapshot has no sound kept
   (taken with the clock stopped, or one of the rig's own), or the headphones have nowhere to
   play. **PHONES** is on the strip of the library and of MACROS, and **H** anywhere.
@@ -753,15 +760,20 @@ line. Each part is a snapshot, how many **BARS** it lasts, and its **MORPH**: ho
 into it takes, from its first bar. CUT: it is simply there. A morph as long as the part: the
 whole of it is one travel from the snapshot before.
 
-- **Making it.** Press a snapshot in the list at the right to hear it; its **ADD** makes it a
-  part, after the one that is chosen, taking the parts of the rig lit on its card (a part comes
-  in as the one before it is: the same bars, the same morph). **A part has the same keys on its
+- **Making it.** The right-hand third of the page is the rack (see The library). Press a chip
+  on its bench to hear it; its **ADD** makes it a part, after the one that is chosen, taking
+  the parts of the rig lit on its card (a part comes in as the one before it is: the same
+  bars, the same morph). **Carried onto the arrangement**, a chip is a part at its end; and
+  **a stack's pile carried from its pocket onto the arrangement is a part for each of its
+  chips**, in the stack's order, each taking the parts it takes in the stack. (The stack
+  stays in its pocket. A chip's N in the stack is not carried: a part's own N says whether
+  it brings its notes.) **A part has the same keys on its
   own card**: what it takes of its snapshot when the arrangement comes to it (the others stay as
   they are then; PRINT takes it the same way). A part pressed is the chosen one, and plays in
   the headphones with those parts. Drag
   a part's BARS (1 to 256) and its MORPH (the GLIDE list's own lengths; never longer than the
   part). A double-click puts either back (eight bars; cut). EARLIER and LATER move the chosen
-  part, REMOVE takes it out, CLEAR (held) empties the line. Up to 64 parts.
+  part, TAKE OUT takes it out, CLEAR (held) empties the line. Up to 64 parts.
 - **The line** along the top is the whole of it to scale: each part as long as its bars, with
   the bar it begins on above it, and its morph as a slope. The part playing is green.
 - **PLAY.** From stopped: the first part is recalled at once and the clock starts from the top.
@@ -795,22 +807,21 @@ whole of it is one travel from the snapshot before.
     or moving its parts, drops an edit too.
 - **Arrangements are kept, and nothing has to be saved.** The page always holds one of the
   arrangements kept (its name is beside ARRANGEMENT on the strip; a session starts with
-  ARRANGEMENT 1): what you change on the page changes that one. Over the list at the right are
-  two plates, **CHIPS** (the snapshots, to take parts from) and **ARRANGEMENTS**, which shows those kept
-  (the same shelf as the library's ARRANGEMENTS plate):
-  each a card with its number, its name (green: the one on the page) and what it holds. Press
-  one to choose it; the keys over the list are for the chosen one:
+  ARRANGEMENT 1): what you change on the page changes that one. **ARRANGEMENTS** is a shelf
+  of the rack: each one kept is a pocket (a rail, its parts as long as their bars; green: the
+  one on the page). Press one and its parts are on the bench, in order; its keys are after
+  its name:
   - **NEW**: an empty one, kept, and put on the page.
   - **COPY**: the one on the page kept again under another name. The page holds the copy from
     then on: change it and the first is as it was. (A track and its live version.)
-  - **LOAD** (or two quick presses on the card): the chosen one onto the page, whole. The one
-    that was there is kept as it stood. If the arrangement is playing, it stops.
+  - **ONTO THE PAGE**: the open one onto the page, whole. The one that was there is kept as
+    it stood. If the arrangement is playing, it stops.
   - **RENAME**: type, then Return.
-  - **DELETE, held**: the chosen one goes; its snapshots stay in the library. If it is the one
-    on the page, the one before it takes the page. The last one cannot go: HOLD: CLEAR
-    empties it.
+  - **HOLD: DELETE**: the open one goes; its chips stay in the library. If it is the one on
+    the page, the one before it takes the page. The last one cannot go: HOLD: CLEAR empties
+    it.
   They are in the session file. A snapshot deleted from the library leaves their parts.
-- **TO STACK** keeps the arrangement as a stack in the macro designer's rack (TRACK, TRACK 2):
+- **TO STACK** keeps the arrangement as a stack in the rack (TRACK, TRACK 2):
   its parts' snapshots in order, each with the keys its part has. On a stack knob the knob's
   turn is the track from first part to last. A part with a key out leans on what came before
   it, on a knob as here; the page says how many do.
@@ -872,15 +883,15 @@ that travels), readable by you only. Neither the address nor the strings are in 
   a moment, into its own place on the library's module if that place is free, else into the
   library off the module. A knob emptied here (CLEAR) comes off the library's module and stays
   in the library. A knob is only sent once the library has every snapshot it holds.
-- **So does the rack, and it comes back the other way too.** The stacks in the designer's
-  rack (STACKS, beside the column) and the stacks the web library has lit for the instrument
+- **So does the rack, and it comes back the other way too.** The stacks in the rack (its
+  STACKS shelf, on any page that has it) and the stacks the web library has lit for the instrument
   (TO SF-000 there) are kept the same, by themselves, while ONLINE is lit:
-  - A stack kept here (KEEP or NEW, at the head of STACKS; once it holds a snapshot) is in the library's rack within a moment: lit for the instrument,
+  - A stack kept here (the rack's empty pocket, or KEEP ITS PILE AS A STACK on a knob's card; once it holds a chip) is in the library's rack within a moment: lit for the instrument,
     off its module, each snapshot with the parts it takes.
   - A stack made or lit there is here within a quarter of a minute, in the library's order. A
     snapshot it names that this library has not got is brought first, whole, with its four
     bars; until it is here the stack is left alone on both sides.
-  - Changed there, it changes here. Changed here (in the column, or KEEP again under its name), it changes
+  - Changed there, it changes here. Changed here (in its row in the library, or KEEP again under its name), it changes
     there. Changed on both since they last agreed: the instrument's is the one that stands.
   - Unlit or removed there, it leaves the rack here (its snapshots stay). Changed here since,
     it stays and goes back.
@@ -943,45 +954,41 @@ The snapshot module's knobs are a **module**: its four macro knobs, its ten stac
 MOTION as it is set on them, under a name. The instrument keeps as many as you make and carries
 one at a time. No network is asked.
 
-- **MODULES**, on the designer's strip beside the module's name (or **LOAD** on the snapshot
-  module's own panel), shows the modules kept where the column and the library stand: each a
-  card with its number, its name and what it holds. The one in the chassis says so. Press a
-  card to choose it.
-- **LOAD** puts the chosen one in the chassis, whole. The one that was there is kept as it
-  stood. Nothing is heard to change: what the macro knobs were adding stays in the sound, and
-  the new module's knobs start at rest.
+- **MODULES** is a shelf of the rack, on any page that has it. **LOAD** on the snapshot
+  module's own panel goes straight there: the designer, the rack on MODULES, the one in the
+  chassis open. Each module kept is a pocket (a cartridge: four caps over ten pockets); the
+  one in the chassis is green. Press one and its fourteen knobs are on the bench; press a knob
+  there to see its pile, or what it is tied to.
+- **INTO THE CHASSIS**, after the open one's name, puts it in the chassis, whole. The one
+  that was there is kept as it stood. Nothing is heard to change: what the macro knobs were
+  adding stays in the sound, and the new module's knobs start at rest.
 - **COPY** keeps the one in the chassis again under another name; the chassis holds the copy
-  from then on. **NEW** is a module with nothing on its knobs. **RENAME** names the chosen one.
-  **HOLD: OUT** takes the chosen one out, never the one in the chassis.
+  from then on. **NEW** is a module with nothing on its knobs. **RENAME** names the open one.
+  **HOLD: DELETE** takes the open one out, never the one in the chassis.
 - The module in the chassis is always one of the kept ones: what you change while playing
   changes it. A session from before modules has one, MODULE 1.
 
-### Stacks: snapshots under a name, to find them by
+### Stacks: chips under a name
 
-A stack is a collection of snapshots. It is made and changed with no knob, on the instrument
-alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
+A stack is a pocket in the rack with a pile in it: references to chips, in an order. It is
+made and changed with no knob, on the instrument alone; with ONLINE lit the web library's
+rack is kept the same (see ONLINE). The rack, under The library, has all of it: making one,
+putting chips in, their order, taking them out. From the designer and the arrangement's
+page, where the rack is a third of the page:
 
-The library's rack is where a stack is made, filled, put in order and deleted (see The rack,
-under The library). MACROS still has its own list of them, as below, until it moves onto the
-same rack.
-
-- **STACKS**, a plate beside the chosen knob in MACROS, shows them: each a card with its
-  number, its name and what it holds.
-- **NEW**, at the head of the list, makes an empty one and **opens** it. **KEEP KNOB 5'S
-  STACK**, beside it, keeps the chosen stack knob's snapshots as one, under the knob's name.
-- **An open stack is in the column**, where a stack knob's own stack stands, and is changed
-  the same way: a snapshot is carried in (or its **ADD** pressed), a card is carried to
-  another place or off it, its number takes it out, its keys say which parts of the rig it
-  takes (and N, whether it brings its notes), a tap is heard in the headphones. While a stack is open no place is ringed and the
-  strip says STACK; **RENAME** names it. Choosing a place on the left puts the stack away.
-- **ON A KNOB**, at the head of the column while a stack is open, puts it on the first stack
-  knob that holds nothing; that place is then the chosen one.
-- On a stack's card: **the card itself** lists its snapshots under CHIPS, to hear and to
-  add from (the plate at the head of that list says whose are listed); carried onto a stack
-  knob's place, all of it goes there. **OPEN** puts it in the column to be changed. **ADD** puts all of it into what is open: the chosen stack knob,
-  after what the knob holds, or another stack. **OUT, held**, takes it out of those kept (with
-  ONLINE lit, out of the web library's rack for the instrument too); pressed and let go, it
-  stays and the bar says to hold it. (It was a press on the card's number, and nothing said so.)
+- **A chip carried onto a stack's pocket** goes into that stack (the empty pocket: a new
+  stack with it in). So does a chip of a knob's own pile, with its keys.
+- **A stack's pocket pressed** has its chips on the bench, in its order, to hear and to take
+  from. **ON A KNOB** puts a copy of the stack on the first stack knob that holds nothing; in
+  the designer that knob is then the chosen one.
+- **A stack's pile carried** onto a stack knob's place (or onto the chosen knob's column)
+  puts all of it there, after what the knob holds, each chip with its parts. Carried onto
+  the arrangement, it is a part for each of its chips. Either way it is a copy: the stack
+  stays in its pocket, and what is changed on the knob or in the arrangement does not
+  change it.
+- **KEEP ITS PILE AS A STACK**, on the chosen stack knob's card in the designer, keeps the
+  knob's pile as a stack under the knob's name (kept again under that name: the same one,
+  as it is now).
 - An empty stack is the instrument's alone until it holds something.
 
 ### Knobs kept by themselves
@@ -989,19 +996,21 @@ same rack.
 A knob of the module can be kept by itself, to put on a place of any module. No network is
 asked.
 
-- **KNOBS**, a plate beside the chosen knob in the designer (with CHIPS, and STACKS for a
-  stack knob), shows the knobs kept: each a card with its number, its name and what it is.
-- **KEEP KNOB n**, at the head of the list, keeps the chosen knob under its name, as it is: a
-  macro knob with every knob it is tied to and how far it takes each, a stack knob with its
-  snapshots and the parts each takes. Kept again under the same name, it is the same one as it
-  is now.
-- **PUT**, on a kept knob's card, puts it on the chosen place. It shows only where the kind
-  fits (a macro knob on 1 to 4, a stack knob on 5 to 12, 14 or 15), and the place must hold
-  nothing: CLEAR it first. The knob starts at rest and nothing is heard to change. The card
-  can be carried onto a place instead.
+- **KNOBS** is a shelf of the rack. A stack knob kept is a pocket with its pile and a knob
+  in its corner; a macro knob kept is a cap on its base, with a pip for each knob it is tied
+  to. Press one and what it holds is on the bench: its chips with the parts each takes, or
+  what it is tied to and how far it takes each.
+- **KEEP KNOB n**, on the chosen knob's card in the designer, keeps the knob under its name,
+  as it is: a macro knob with every knob it is tied to and how far it takes each, a stack
+  knob with its chips and the parts each takes. Kept again under the same name, it is the
+  same one as it is now. The rack turns to KNOBS so that its pocket is seen.
+- **Carried from its pocket onto a place** in the designer, it is put there. The place must
+  be of its kind (a macro knob on 1 to 4, a stack knob on 5 to 12, 14 or 15) and hold
+  nothing: CLEAR it first. **ON A KNOB**, after the open one's name, puts it on the first
+  such place. The knob starts at rest and nothing is heard to change.
 - A kept knob is a copy, and so is the one put: what you change on the place changes the
-  module's knob, not the kept one. **OUT, held**, takes it out of those kept; modules that have
-  it keep theirs.
+  module's knob, not the kept one. **HOLD: DELETE** takes the open one out of those kept;
+  modules that have it keep theirs.
 
 ### The snapshot module: four macro knobs, ten stack knobs
 
@@ -1101,26 +1110,34 @@ to that snapshot, is pressed onto it, or plays it in the headphones. They are ch
 library, on the chips; in the designer such a snapshot's number is drawn on amber.
 
 - A stack holds up to 128 snapshots (the places of a controller's knob).
-- **MACROS** is where a stack knob is built, on the instrument alone. Pick a stack knob: its
-  stack stands as a **column** of cards beside the library, in the knob's order.
-  - Press a snapshot in the list to hear it in the headphones (again to stop; **PHONES** is at
+- **MACROS** is where a stack knob is built, on the instrument alone. Along the top is **the
+  module in the chassis**: its four macro knobs and its ten stack knobs in a row (13 and 16
+  hold none), each stack knob a pocket with its pile in it and its knob in the corner, which
+  turns where it stands. Press a place to choose it. Under the module is the chosen knob's
+  own bench: a stack knob's pile as a **column** of cards, in the knob's order, and beside
+  it the knob itself, large, with what it moves. The right-hand third is **the rack**.
+  - Press a chip in the rack to hear it in the headphones (again to stop; **PHONES** is at
     the right end of the strip). It is then the one **in hand**: its card is ringed and shows a key for every part of the rig. Put out
     what should not go with it (heard at once).
   - **Carry it** into the column (press, move, let go between two cards: a yellow bar shows
-    where), or onto any stack knob's place on the left (a yellow ring). Its **ADD** key puts
-    it at the end of the column with one press.
-  - Each card has **a key for every part of the rig**: the eleven lanes, **R** the returns,
-    **B** the drum bus, **K** the key. Black: this snapshot takes that part. An empty frame:
-    the part is put out, and stays as it is when the knob comes to this snapshot. The last
-    key is **N**, its notes: black, the knob coming to this snapshot brings them (above).
+    where), or onto any stack knob's place in the module (a yellow ring). The **ADD** key on
+    its card, or **ADD** at the head of the column, puts it at the end with one press.
+  - Each card of the column has **a key for every part of the rig**: the eleven lanes, **R**
+    the returns, **B** the drum bus, **K** the key. Black: this chip takes that part. An
+    empty frame: the part is put out, and stays as it is when the knob comes to this chip.
+    The last key is **N**, its notes: black, the knob coming to this chip brings them (above).
   - **Carry a card** to another place in the column to move it; onto another stack knob's
-    place to put a copy there; off the column to take it out. Its number takes it out too.
+    place to put a copy there; onto a stack's pocket to put it in that stack too; off the
+    column to take it out. Its number takes it out too.
+  - **ADD, TAKE OUT, EARLIER, LATER**, at the head of the column, do the same with no
+    carrying, as in a stack's row in the library: ADD is for the chip in hand, the other
+    three for the card of the column last pressed.
   - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A
     key pressed while it plays is heard at once.
-  - The wheel over the column moves it when it holds more than eleven.
-  - **STACKS** shows the stacks kept here, and those the web library has lit for the
-    instrument (next section). CHIPS brings the snapshots back.
-  - **KNOBS** shows the knobs kept by themselves (next section).
+  - The wheel over the column moves it when it holds more than eight.
+  - **A stack's pile carried from its pocket** onto a place puts that stack on the knob, a
+    copy (see Stacks). **A kept knob carried from its pocket** onto a place puts it there
+    (see Knobs kept by themselves).
   The web library builds them too (LOAD brings those), and with ONLINE lit a stack knob made
   here goes there by itself. So does the rack, and the library's comes here: see ONLINE.
 - A stack knob has no DEPTH and is tied to nothing. MOTION swings it along its own stack
@@ -1405,11 +1422,11 @@ build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page librar
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work
-build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer with that knob chosen and the knobs kept beside it (--rack: the stacks; --rack --open: one of them open in the column; --modules: the modules)
+build/.../SF-000 --shot x.png --page macros --knob 7 --libtab 1 --open 1   # the designer with that knob chosen and its rack on that shelf with that pocket open (as the library's --libtab and --open)
 build/.../SF-000 --shot x.png --page macros --knob 5 --hand 4  # the designer with that snapshot of the list in hand (its bass and returns put out)
 build/.../SF-000 --shot x.png --page library --finder 1       # a page with a finder lit at the head of its snapshots (1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS)
 build/.../SF-000 --shot x.png --page library --libtab 0 --open 1   # the library's rack: --libtab the shelf (0 stacks, 1 knobs kept, 2 modules, 3 arrangements), --open the pocket that is open (from 1; none: the bin), --rowsel a chip of an open stack's row in hand, --hand a chip of the bin in hand, --modknob a knob of an open module pressed
-build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
+build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing (--arrs: three kept, the rack on ARRANGEMENTS with the second open)
 build/.../SF-000 --shot x.png --edit 3                # the main view with part 3 of an arrangement being edited (--page arrange --edit 3: the arrangement's page meanwhile)
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)

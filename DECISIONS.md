@@ -3911,14 +3911,90 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      order; one word for each action on every page. Then what 607 leaves: a kept knob and a
      module changed where they are opened.
 
+## The rack on every page (Nov 16, 15:40): seventy-third build
+
+613. **MACROS and the arrangement's page have the rack** (612; 603's fourth and fifth boards).
+     It is the right-hand third of each: the four shelves as a row of keys, four pockets
+     (the wheel over them goes along), and under them a bench two cards across. It is the
+     same rack as the library's, not a copy of it: the shelf chosen and the pocket open on
+     one page are the ones on the other two. On these two pages the bench holds the chips to
+     take from (the bin's, or the open stack's in its order, under the same find row); a
+     kept knob, a module and an arrangement open as they do in the library, narrower.
+614. **What is open has its own keys, as plates after its name, on all three pages.** *Mine,
+     and a change to the build before it:* in the seventy-second they were keys on the
+     library's strip. On MACROS and the arrangement's page the strip is full of the page's
+     own keys, and the same key in a different place on each page is what 587 and 602 were
+     about. So they are with the thing they act on, everywhere: NEW, COPY, RENAME, HOLD:
+     DELETE, and the one that puts it to work (ON A KNOB, INTO THE CHASSIS, ONTO THE PAGE);
+     for a stack's row in the library, ADD, TAKE OUT, EARLIER and LATER too. The library's
+     strip keeps what is for the chip in hand.
+615. **The designer, redrawn as the board had it.**
+     - **Along the top, the module in the chassis**: its fourteen knobs in a row. A macro
+       knob is a cap on a card; a stack knob is a pocket with its pile in it and its knob in
+       the corner. Each turns where it stands. A place pressed is the chosen one. (The
+       sixteen cards in a four by four went: 13 and 16, which hold no knob, are not drawn.)
+     - **Under it, the chosen knob's own bench.** A stack knob's pile is a column of cards
+       at the left, eight in view, as it was beside the library; at its head ADD (the chip
+       in hand), TAKE OUT, EARLIER and LATER (the card last pressed), the words a stack's
+       row has. Beside it the knob itself, large: what the old card said, with room for all
+       of what it moves; and **KEEP KNOB n** and **KEEP ITS PILE AS A STACK**, which were at
+       the heads of the lists that went.
+     - **LOAD on the snapshot module's own panel** goes to the designer with the rack on
+       MODULES and the one in the chassis open.
+616. **What went, and what does it now** (603's list):
+
+     | WENT | NOW |
+     |---|---|
+     | the designer's CHIPS / STACKS / KNOBS plates | the rack's shelves |
+     | a stack's card, OPEN, and a stack changed in the designer's column | the stack's pocket; its row is put in order in the library |
+     | a stack's ADD (all of it onto the chosen knob) | its pile carried onto the knob's place or column |
+     | a kept knob's PUT | its pocket carried onto a place; ON A KNOB for the first free one |
+     | OUT, held, on a stack's or a kept knob's card | HOLD: DELETE, after the open one's name |
+     | MODULES on the designer's strip, its list and its five keys | the MODULES shelf, and the open module's keys |
+     | the arrangement page's CHIPS / ARRANGEMENTS plates and the shelf's keys | the rack, and the open arrangement's keys |
+     | REMOVE, on the arrangement's strip | TAKE OUT (the word the other two have) |
+
+617. **Carried, on these pages.** A chip from the bench: into a knob's column where it is let
+     go, onto a stack knob's place, onto the arrangement (a part at its end), or onto a
+     stack's pocket (into that stack: the same on all three pages). A card of a knob's pile:
+     also onto a pocket, with its keys. **A stack's pile, from its pocket**: onto a stack
+     knob's place or the chosen knob's column, all of it after what is there; onto the
+     arrangement, a part for each of its chips in its order, each with the parts it takes in
+     the stack. A copy either way: the stack stays in its pocket. A kept knob, from its
+     pocket: onto a place of its kind that holds nothing. *Mine:* a pocket pressed is open,
+     also when it is then carried (its chips are out while its pile is in the hand); a
+     chip's N in the stack is not carried into the arrangement, where a part has its own N.
+618. **One word for each action** (612): ADD, TAKE OUT, EARLIER, LATER for a stack's row, a
+     knob's pile and the arrangement's parts; NEW, COPY, RENAME, HOLD: DELETE for anything
+     kept. **Not yet one:** a card's number in a knob's column still takes it out at a press
+     (TAKE OUT is beside it now); the arrangement has HOLD: CLEAR, a knob CLEAR at a press.
+619. **Every chip shown plays when pressed** (604, 608's promise), checked on these two pages
+     as it was on the library: on the rack's bench, in a knob's pile, by its number on the
+     knob's card, in what the rack has open, on a part's own card; each with the parts it
+     takes where it is shown.
+620. **Checks.** The screen checks that pressed the lists that went are written again for
+     the rack: a knob's pile kept as a stack and carried back; the pile's own keys; knobs
+     kept and carried; stacks made and filled from the designer; modules from LOAD on the
+     main screen; the arrangement's shelf, and a chip and a pile carried onto it. The walk
+     of every control goes along the rack shelf by shelf in the designer as in the library.
+621. **Left in the source, owed:** what pressed the old lists' cards and keys is still
+     there, and nothing can reach it, since nothing draws them (their drawing is gone). It
+     comes out in a build of its own, so that this one changes only what you see.
+622. **Not in it.** A stack's row with the bin under it is the library's alone. A kept knob
+     and a module that is not in the chassis are still shown and not changed where they are
+     opened (607). None of the rack is on the E16 or the keyboard. The room under the
+     chosen knob's card in the designer is empty. The walk of every control does not walk
+     the arrangement's page (it never did): its rack is checked by its own check.
+
 ## Not verified
 
-- **The rack (606 to 609) has been on no Mac and under no hand.** It is checked with made-up
-  presses and carries on the drawn screens, and its pile and well on the 3D stage with a
-  software driver. Yours to say: whether carrying a chip to a place in a row is easy on the
-  trackpad; whether a pile reads as a pile from the player's view, and how tall ten chips
-  should stand; whether a chip slipping off the row should take it out; whether the rack
-  along the top leaves the bin enough room on your screen with a stack open.
+- **The rack (606 to 609, 613 to 617) has been on no Mac and under no hand.** It is checked
+  with made-up presses and carries on the drawn screens, and its pile and pocket on the 3D
+  stage with a software driver. Yours to say: whether carrying a chip to a place in a row,
+  and a pile onto a knob, is easy on the trackpad; whether a pile reads as a pile from the
+  player's view, and how tall ten chips should stand; whether a chip slipping off a row
+  should take it out; whether four pockets are enough beside the designer; and whether the
+  designer's knobs in one row, small, are right against the sixteen large cards it had.
 - **The cue's rig (596 to 600) has not run on a Mac.** Not known there: whether the second
   process starts from inside the app; whether its icon shows in the Dock or the window loses
   the keys for a moment as it starts (it is told to have no Dock icon before anything else,

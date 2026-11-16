@@ -166,8 +166,8 @@ public:
     int testLibTabNow() const { return libTab; }
     void testHand (int index, juce::uint32 parts) { handId = index >= 0 && index < (int) ses.library.size() ? ses.library[(size_t) index].id : 0; handParts = parts & Session::kAllLanes; }
     static bool testIsKeptCard (const TestHit& h, int index) { return h.kind == hKeptCard && h.a == index; }
-    static juce::Point<float> testPlaceAt (int k) { return placeRect (k).getCentre().translated (0.0f, 80.0f); }       // (on the card, clear of its knob)
-    juce::Point<float> testColumnGap (int at) const { return { 1287.0f, 110.0f + (float) (at - colScroll) * 74 - 4.0f }; }      // (between the column's cards: before the one at that place)
+    static juce::Point<float> testPlaceAt (int k) { return placeRect (k).getCentre().translated (0.0f, 38.0f); }       // (on the place, clear of its knob)
+    juce::Point<float> testColumnGap (int at) const { return { kColX + 136.0f, kColY + (float) (at - colScroll) * 74 - 4.0f }; }      // (between the column's cards: before the one at that place)
     static int testPickOf (const TestHit& h) { return h.kind == hPick ? h.a : -1; }
     void testFind (const juce::String& t) { findText = t; }
     void testPlain() { testRack (0); libTab = 0; arrShelf = false; modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; handId = 0; handParts = Session::kAllLanes; ses.cue (0); }
@@ -253,6 +253,8 @@ public:
     static bool testIsRackKeep (const TestHit& h) { return h.kind == hRackKeep; }
     void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
     void testPickKnob (int k) { selKnob = juce::jlimit (0, 15, k); openStack = {}; }
+    int testKnobChosen() const { return selKnob; }
+    int testColSel() const { return colSel; }
     bool testEditing() const { return editor != nullptr; }
     bool testEditorFloats() const { return editor != nullptr && editor->isOnDesktop(); }
     void testEndEdit (const juce::String& text) { if (editor != nullptr) { editor->setText (text, false); endEdit (true); } }
@@ -430,7 +432,6 @@ private:
     void drawLibrary (G&);
     void drawMacros (G&);
     void drawColumn (G&);               // the chosen stack knob's stack, as cards in its order, each with its keys
-    void drawRack (G&, float x, int across);               // the stacks kept, beside the column, to put onto the chosen knob
     void drawArrange (G&);
     juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
     juce::String arrSig;
@@ -460,7 +461,22 @@ private:
     int rackCount() const;                      // how many things the shelf holds
     juce::Colour chipColour (juce::int64 id) const;   // a chip's edge: as hot as it is bright
     void well (G&, R);
-    void drawPile (G&, R well, const std::vector<juce::int64>& ids, const juce::String& top);
+    void drawPile (G&, R well, const std::vector<juce::int64>& ids, const juce::String& top, int most = 10);
+    // Where the rack stands on the page being drawn. The library has the whole page: the shelf keys down its left, eight
+    // pockets across, six cards across on the bench. The designer and the arrangement's page have it as their right-hand
+    // third: the shelf keys in a row, three pockets, two cards.
+    struct RackPlace { float x = 23.0f, w = 1682.0f, y = 80.0f; int wells = 8, across = 6; bool wide = true; };
+    RackPlace rp;
+    float benchY() const { return rp.wide ? 246.0f : rp.y + 200.0f; }
+    R rackArea;                                 // (as last drawn: the pockets, for the wheel)
+    R openNameRect;                             // where the open thing's name is drawn (its RENAME types over it)
+    void rackTidy();                            // what was open and is no longer kept is shut
+    // The open thing's name (green) and, after it, its own keys as plates: the same keys in the same place on every page
+    // that has the rack. Where what it holds begins.
+    float openHead (G&, float top, const juce::String& name, const juce::String& says);
+    void headKey (G&, float& x, float& y, int act, const juce::String& legend, juce::Colour, bool can = true);
+    void drawRackBench (G&);                    // the rack as a third of a page: what the open pocket holds, under it
+    void drawPickList (G&, float top);          // the chips listed there (the bin's, or the open stack's): pressed, heard; ADD, or carried, into what the page is making
     void drawWell (G&, R, int kind, int index);
     void drawChipRack (G&);
     float drawStackRow (G&, float top);         // the open stack's chips, in order; where the bin under them begins
@@ -486,7 +502,6 @@ private:
     bool shelfCan (int kind, int key) const;    // and it can be pressed for the chosen one now
     void shelfDo (int kind, int key);           // NEW, COPY, LOAD, RENAME (DELETE is held: shelfDelete)
     void shelfDelete (int kind);
-    void drawShelf (G&, int kind, R area, int across);
     bool oneLine = false;               // legends drawn now stay on one line (there is no room on the plate under them for two)
     std::vector<R> legendRects;         // where every legend was printed, at the last record of the parts (the checks)
     bool arrLit = false;
@@ -538,7 +553,6 @@ private:
     bool modList = false;                       // the designer shows the modules kept, in place of the column and the library
     int selMod = -1, modScroll = 0;             // the module chosen in that list
     R selModName;                               // where its name is drawn (RENAME types over it)
-    void drawModules (G&);
     int cfgE16Was = -1;                         // the E16's page of CONFIG as the panel last followed it
     int takesWas = 0;                           // the session's count of snapshots taken, as last said on the bar
     juce::uint32 recNoteMs() const              { return recNote.startsWith ("SNAPSHOT TAKEN") ? 3500u : 8000u; }      // how long the bar's note stays
@@ -555,13 +569,16 @@ private:
     bool rackList = false;              // the designer, a stack knob chosen: the stacks are beside the column (out: the snapshots)
     bool knobList = false;              // ... or the knobs kept are (either kind of knob chosen)
     int keptScroll = 0;
-    void drawKept (G&, float x);
     juce::String inStack;               // the snapshots listed are this stack's (its id; empty: every snapshot)
     int inAt() const                    { return ses.rackIndex (inStack); }
     // The designer: a stack of the shelf is on the bench, in the column, in place of a knob's (its id; empty: the chosen knob is)
     juce::String openStack;
     int openAt() const                  { const int i = ses.rackIndex (openStack); return ses.rackCanChange (i) ? i : -1; }
-    bool columnShown() const            { return ! modList && (openAt() >= 0 || Session::isStack (selKnob)); }
+    bool columnShown() const            { return Session::isStack (selKnob); }      // (the chosen stack knob's own pile, out on the designer's bench)
+    int colSel = -1;                    // the chip of that pile last pressed (TAKE OUT, EARLIER and LATER are for it)
+    static constexpr float kColX = 23.0f, kColHead = 246.0f, kColY = 312.0f;       // the column: its left edge, its head, its first card
+    static constexpr int kColRows = 8;
+    void drawKnobDetail (G&, R);        // the chosen knob, large: what it is, what it moves, its turn, KEEP
     // Which of them, and in what order: 0 as they are kept, 1 RECENT (newest first), 2 FITS NOW (nearest what is playing first),
     // 3 MORE and 4 LESS (a step up or down in energy from it). What 2 to 4 found when pressed stays put. And only names holding findText.
     int finder = 0;
@@ -584,10 +601,13 @@ private:
     // Carrying: a card pressed and moved goes with the pointer (a snapshot of the list, a card of the column, a stack, a kept
     // knob), and is put where it is let go: between two cards of the column, or on a place.
     juce::Point<float> carryAt;
-    bool carrying() const               { return mouseIsDown && drag.moved && ((page == pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard)) || (page == pLibrary && (drag.kind == hCard || drag.kind == hRowCard))); }
+    bool carrying() const               { return mouseIsDown && drag.moved && ((page == pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard || drag.kind == hWell)) || (page == pArrange && (drag.kind == hPick || drag.kind == hWell)) || (page == pLibrary && (drag.kind == hCard || drag.kind == hRowCard))); }
+    static R arrArea()                  { return R (23.0f, 74.0f, 1118.0f, 900.0f); }      // (the arrangement, on its page: where what is carried from the rack is let go)
     int columnPlaceAt (juce::Point<float>) const;       // between which cards of the column that is (0: before the first). -1: not over the column
     static int placeAt (juce::Point<float>);            // which place's card (-1: none)
-    static R placeRect (int k)          { return R (23.0f + (float) (k % 4) * 282, 78.0f + (float) (k / 4) * 224, 272, 216); }
+    // (the module in the chassis, along the top of the designer: its fourteen knobs in a row; 13 and 16 hold none)
+    static int placeOrder (int k)       { return k < 0 || k > 15 || Session::isCorner (k) ? -1 : k < 12 ? k : k - 1; }
+    static R placeRect (int k)          { const int q = placeOrder (k); return q < 0 ? R() : R (23.0f + (float) q * 80.0f, 112.0f, 76.0f, 96.0f); }
     bool placeTakes (int k) const;                      // what is carried can go on that place
     void drop (juce::Point<float>);
     void putKept (int index, int k);
