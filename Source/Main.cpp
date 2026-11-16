@@ -4850,32 +4850,43 @@ static int uiTest()
 
     // 2. everything, on every page: a click, then a drag on what turns
     int clicks = 0;
-    // (the library has six plates, and each is walked as its own page: a plate pressed is among the clicks, and the walk goes
-    // back to the plate it was on. What the five shelves' keys make, copy and load is put back afterwards: the checks below
-    // start from the session as the first plate's walk left it, as they did before the library had plates.)
-    struct Walk { Screen::Page page; int tab; };
-    const std::vector<Walk> walks { { Screen::pMain, 0 }, { Screen::pLibrary, 0 }, { Screen::pLibrary, 1 }, { Screen::pLibrary, 2 }, { Screen::pLibrary, 3 }, { Screen::pLibrary, 4 },
-                                    { Screen::pLibrary, 5 }, { Screen::pMacros, 0 }, { Screen::pPockets, 0 } };
+    // (the library is a rack: its pockets, what lies out of an open one and the strip's keys for it are walked on their own,
+    // shelf by shelf with the first thing of each open, and what those keys make, copy, load and take out is put back
+    // afterwards.)
+    struct Walk { Screen::Page page; int shelf, open; };
+    // (the shelves before the bin: the bin's walk is the one that leaves the hand, and the rig, as the checks after it find them)
+    const std::vector<Walk> walks { { Screen::pMain, -1, -1 }, { Screen::pLibrary, 0, 0 }, { Screen::pLibrary, 1, 0 }, { Screen::pLibrary, 2, 0 }, { Screen::pLibrary, 3, 0 },
+                                    { Screen::pLibrary, -1, -1 }, { Screen::pMacros, -1, -1 }, { Screen::pPockets, -1, -1 } };
     int shelfClicks = 0;
     for (auto& w : walks)
     {
         const auto page = w.page;
-        const bool shelf = page == Screen::pLibrary && w.tab > 0;
+        const bool shelf = page == Screen::pLibrary && w.shelf >= 0;
         const auto stacksWere = ses.stacks; const auto keptWere = ses.keptKnobs; const auto knobsWere = ses.knobs;
         const auto modulesWere = ses.modules; const auto moduleWas = ses.moduleAt;
         const auto arrsWere = ses.arrs; const auto arrWas = ses.arrAtId; const auto partsWere = ses.arrangement;
-        sc.setPage (page); sc.testLibTab (w.tab); draw();
+        if (shelf)
+        {
+            // something of every kind, so that each shelf has a pocket to open
+            if (ses.stacks.empty()) { const int made = ses.rackNew ("WALKED"); for (int q = 0; q < 3 && q < (int) ses.library.size(); ++q) ses.rackAdd (made, ses.library[(size_t) q].id); }
+            if (ses.keptKnobs.empty()) { if (const int k = ses.freeStackKnob(); k >= 0 && ! ses.library.empty()) { ses.stackAdd (k, ses.library[0].id); ses.knobKeep (k); ses.knobClear (k, false); } }
+        }
+        auto place = [&] { sc.setPage (page); if (page == Screen::pLibrary) sc.testRack (std::max (0, w.shelf), w.open); };
+        place(); draw();
         const auto all = sc.testHits();
         for (size_t i = 0; i < all.size(); ++i)
         {
             if (Screen::testSkips (all[i])) continue;
-            if (shelf && ! Screen::testIsOfShelf (all[i])) continue;       // (the bar and the strip are the first plate's too, and were walked there)
-            sc.setPage (page);
-            if (page == Screen::pLibrary && sc.testLibTabNow() != w.tab) { sc.testLibTab (w.tab); draw(); }
+            // (the bin's walk leaves the rack's own controls to the shelves' walks; those leave the bar and the bin to the bin's)
+            if (page == Screen::pLibrary && Screen::testIsOfRack (all[i]) != shelf) continue;
+            if (page == Screen::pLibrary && (sc.testPage() != page || sc.testRackShelf() != std::max (0, w.shelf) || sc.testRackOpen() != (w.open < 0 ? 0 : w.shelf + 1))) { place(); draw(); }
+            else sc.setPage (page);
             const auto p = all[i].r.getCentre();
             click (p);
             if (Screen::testIsKnob (all[i]) || Screen::testIsStep (all[i])) { dragBy (p, 0.0f, -60.0f); dragBy (p, 90.0f, 0.0f); dragBy (p, 0.0f, 200.0f); }
-            sc.mouseDoubleClick (ev (p, p, false));
+            // (two quick presses on a chip of a row, or of what is open, take it to the set as they do in the bin: the bin's walk does
+            // that, and the checks after the walk start from the rig as it left it)
+            if (! (shelf && (Screen::testIsRowCard (all[i], -1) || Screen::testIsBenchChip (all[i])))) sc.mouseDoubleClick (ev (p, p, false));
             ++clicks;
             if (shelf) ++shelfClicks;
             if (i % 7 == 0) { draw(); audio (2); }
@@ -4883,10 +4894,12 @@ static int uiTest()
         if (shelf)
         {
             sc.testEditDrop();
+            ses.cue (0);
             ses.stacks = stacksWere; ses.keptKnobs = keptWere; ses.knobs = knobsWere; ses.modules = modulesWere; ses.moduleAt = moduleWas;
             ses.arrs = arrsWere; ses.arrAtId = arrWas; ses.arrangement = partsWere;
         }
     }
+    sc.testRack (0);
     ses.learnDrop();        // (LEARN was among the keys clicked: whatever it was left teaching is dropped)
     sc.testPlain();        // (and MODULES, STACKS, KNOBS, the finders and a stack's OPEN were: the designer shows the knob and every snapshot again)
     e.setPhones (false);   // (and PHONES, which is on every page's bar)
@@ -5092,27 +5105,33 @@ static int uiTest()
         if (! (noneYet && row && out && took)) std::printf ("    (none yet %d row %d out %d took %d: %d cards, %d keys, cut %.2f punch %.2f)\n", (int) noneYet, (int) row, (int) out, (int) took, cards, countOf (Screen::testIsScope), e.target (cut), e.target (punch));
         check (noneYet && row && out && took, "the library, a snapshot pressed: it is in hand and the set is not touched; fourteen keys on its card say what RECALL takes (the lanes, the returns, the drum bus, the key); with the kick put out the recall leaves the kick as it is and takes the rest, and all are lit again after");
         sc.testPlain();
-        // STACK: the stacks LOAD brought, one at a time
+        // the rack: a stack's pocket pressed lays its chips out in a row, in its own order, over the bin
         {
             const int all = (int) ses.library.size();
-            const bool noKey = countOf (Screen::testIsStackKey) == 0;
+            auto wells = [&] (int kind) { int n = 0; for (auto& h : sc.testHits()) if (Screen::testIsWell (h, kind, -1)) ++n; return n; };
+            auto wellAt = [&] (int kind, int index) { for (auto& h : sc.testHits()) if (Screen::testIsWell (h, kind, index)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            auto rowAre = [&] { std::vector<int> v; for (auto& h : sc.testHits()) if (Screen::testIsRowCard (h, -1)) v.push_back (h.a); return v; };
+            auto cardsAre = [&] { std::vector<int> v; for (auto& h : sc.testHits()) if (Screen::testIsCard (h)) v.push_back (h.a); return v; };
+            ses.stacks.clear(); draw();
+            const bool none = wells (0) == 1 && wells (1) == 0 && wells (5) == 1 && countOf (Screen::testIsStackKey) == 0;       // (the bin, and an empty pocket for a new stack)
             Stack two; two.id = "check1"; two.name = "NIGHT ROLLERS"; two.kind = "stack"; two.snaps = { ses.library[(size_t) (all - 1)].id, ses.library[1].id };
             Stack one; one.id = "check2"; one.name = "ONE"; one.kind = "stack"; one.snaps = { ses.library[0].id };
             ses.stacks = { two, one };
             draw();
-            auto cardsAre = [&] { std::vector<int> v; for (auto& h : sc.testHits()) if (Screen::testIsCard (h)) v.push_back (h.a); return v; };
-            const bool everyOne = countOf (Screen::testIsStackKey) == 1 && (int) cardsAre().size() == std::min (all, 66) && sc.testLibStack() == -1;
-            click (firstOf (Screen::testIsStackKey)); draw();
-            const bool first = sc.testLibStack() == 0 && cardsAre() == std::vector<int> { all - 1, 1 };
-            click (firstOf (Screen::testIsStackKey)); draw();
-            const bool second = sc.testLibStack() == 1 && cardsAre() == std::vector<int> { 0 };
-            click (firstOf (Screen::testIsStackKey)); draw();
-            const bool back = sc.testLibStack() == -1 && (int) cardsAre().size() == std::min (all, 66);
-            click (firstOf (Screen::testIsStackKey)); draw();
-            ses.stacks.clear(); draw();                                         // (the tray emptied while one was shown: every snapshot again, and no key)
-            const bool gone = sc.testLibStack() == -1 && countOf (Screen::testIsStackKey) == 0 && (int) cardsAre().size() == std::min (all, 66);
-            check (noKey && everyOne && first && second && back && gone,
-                   "STACK steps the library screen through the stacks LOAD brought, each in its own order, and back to every snapshot; with no stacks there is no key");
+            const bool everyOne = wells (1) == 2 && (int) cardsAre().size() == std::min (all, 54) && sc.testLibStack() == -1 && rowAre().empty();
+            click (wellAt (1, 0)); draw();
+            // (its own order in the row; the bin under it is still every chip)
+            const bool first = sc.testLibStack() == 0 && rowAre() == std::vector<int> { 0, 1 } && (int) cardsAre().size() == std::min (all, 42) && sc.testRackOpen() == 1;
+            click (wellAt (1, 1)); draw();
+            const bool second = sc.testLibStack() == 1 && rowAre() == std::vector<int> { 0 };
+            click (wellAt (0, 0)); draw();
+            const bool back = sc.testLibStack() == -1 && rowAre().empty() && (int) cardsAre().size() == std::min (all, 54);
+            click (wellAt (1, 0)); draw();
+            ses.stacks.clear(); draw();                                         // (the rack emptied while one was open: the bin again, and no pocket but the empty one)
+            const bool gone = sc.testLibStack() == -1 && wells (1) == 0 && rowAre().empty() && (int) cardsAre().size() == std::min (all, 54);
+            check (none && everyOne && first && second && back && gone,
+                   "the library's rack: the bin, then a pocket for every stack and an empty one; a stack's pocket pressed lays its chips out in a row, in its own order, over the bin (still every chip); the bin's pocket puts it away; with no stacks there is the bin and the empty pocket");
+            if (! (none && everyOne && first && second && back && gone)) std::printf ("    (none %d every %d first %d second %d back %d gone %d: %d cards of %d)\n", (int) none, (int) everyOne, (int) first, (int) second, (int) back, (int) gone, (int) cardsAre().size(), all);
         }
         // NOTES: a key in the library and one on the snapshot module, and N on the keyboard
         {
@@ -5136,7 +5155,7 @@ static int uiTest()
     draw();
     bool finite = true;
     for (int i = 0; i < 512; ++i) finite = finite && std::isfinite (b.getSample (0, i)) && std::isfinite (b.getSample (1, i));
-    check (shelfClicks > 30, (juce::String (clicks) + " controls clicked, dragged and double-clicked across four screens, the library's six plates each walked (" + juce::String (shelfClicks) + " of the clicks on its five shelves)").toRawUTF8());
+    check (shelfClicks > 30, (juce::String (clicks) + " controls clicked, dragged and double-clicked across four screens, the library's rack walked shelf by shelf with a pocket open (" + juce::String (shelfClicks) + " of the clicks on its pockets, its rows and their keys)").toRawUTF8());
     check (finite && ! e.fault.load(), "the audio is still clean afterwards");
 
     // POCKETS: the master's page. A key on the master and P on the keyboard; every lane's pocket on
@@ -6508,71 +6527,200 @@ static int uiTest()
         check (stacked, "TO STACK keeps the arrangement as a stack in the rack: its parts' snapshots in order, each with the keys its part has, and says which parts lean on what came before");
         if (! stacked) std::printf ("        (stacks %d of %d, note: %s)\n", (int) ses.stacks.size(), (int) stacksWas, ses.printNote.toRawUTF8());
         {
-            // The library's plates: everything kept, by kind, each with the shelf's own keys. STACKS: NEW makes one, COPY keeps the
-            // chosen one again, LOAD puts it on the first stack knob that holds nothing, DELETE (held) takes it out. STACK KNOBS
-            // and MACRO KNOBS: a kept knob onto the first free place of its kind. MODULES: a card chosen and loaded into the
-            // chassis. ARRANGEMENTS: one loaded from here is on the arrangement's page.
-            enum { stacks = 0, macroKnobs = 1, stackKnobs = 2, modules = 3, arrs = 4 };
-            auto lib = [&] (int what, int kind, int i) { for (auto& h : sc.testHits()) if (Screen::testIsShelf (h, what, kind, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
-            auto hold = [&] (juce::Point<float> at) { sc.mouseDown (ev (at, at, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (at, at, false)); };
+            // The library's rack. Chips are the library, and the bin holds every one. A stack is a pocket with a pile: references to
+            // chips, in an order, and a chip may be in many. NEW (the empty pocket) makes one and opens it; a chip goes in by ADD, by
+            // ADD TO and then a pocket, or carried onto the row or onto a pocket; in the row it is moved by EARLIER / LATER or carried,
+            // and taken out by TAKE OUT or carried off. None of that takes a chip out of the bin. COPY, ON A KNOB (a copy on the
+            // first stack knob that holds nothing), DELETE (held). The other shelves: a kept knob, a module, an arrangement, each
+            // opened by its pocket, shown, and put to work from here. And wherever a chip's card is shown, pressed it is heard.
+            using Pt = juce::Point<float>;
+            auto at = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+            auto well = [&] (int kind, int index) { return at ([&] (const Screen::TestHit& h) { return Screen::testIsWell (h, kind, index); }); };
+            auto rkey = [&] (int which) { return at ([&] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, which); }); };
+            auto shelf = [&] (int which) { return at ([&] (const Screen::TestHit& h) { return Screen::testIsRackShelf (h, which); }); };
+            auto rowCard = [&] (int index) { return at ([&] (const Screen::TestHit& h) { return Screen::testIsRowCard (h, index); }); };
+            auto chip = [&] (juce::int64 id)
+            {
+                // (the bin shows what fits: it is rolled until that chip's card is out)
+                for (int rows = 0; rows < 60; ++rows)
+                {
+                    sc.testLibScroll (rows); draw();
+                    for (auto& h : sc.testHits()) if (Screen::testIsCard (h) && h.a < (int) ses.library.size() && ses.library[(size_t) h.a].id == id) return h.r.getCentre();
+                }
+                return Pt (-1.0f, -1.0f);
+            };
+            auto benchChip = [&] (juce::int64 id) { return at ([&] (const Screen::TestHit& h) { return Screen::testIsBenchChip (h) && h.a < (int) ses.library.size() && ses.library[(size_t) h.a].id == id; }); };
+            auto hold = [&] (Pt p) { sc.mouseDown (ev (p, p, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (p, p, false)); };
+            auto carry = [&] (Pt from, Pt to)
+            {
+                sc.mouseDown (ev (from, from, false));
+                for (int q = 1; q <= 3; ++q) sc.mouseDrag (ev (from + (to - from) * ((float) q / 3.0f), from, true));
+                draw();                                                         // (drawn while it is in the hand)
+                sc.mouseUp (ev (to, from, true));
+                draw();
+            };
+            auto slotAt = [&] (int slot) { const auto r = sc.testRowArea(); return Pt (23.0f + 282.0f * (float) slot, r.getY() + 30.0f); };       // (between two cards of the row's first line)
+            auto snapsAre = [&] (int index, std::vector<juce::int64> want) { return index < (int) ses.stacks.size() && ses.stacks[(size_t) index].snaps == want; };
+            auto says = [&] (const char* what) { return sc.testBarNote().contains (what); };
             const auto stacksWere = ses.stacks; const auto keptWere = ses.keptKnobs; const auto knobsWere = ses.knobs;
-            const auto partsWere = ses.arrangement.size();
-            sc.setPage (Screen::pLibrary); sc.testLibTab (0); draw();
-            bool plates = true;
-            for (int t = 0; t <= 5; ++t) plates = plates && lib (0, 0, t).x > 0.0f;
-            // STACKS
-            click (lib (0, 0, 1)); draw();
-            const auto nStacks = ses.stacks.size();
-            click (lib (2, stacks, 0)); draw();                                             // NEW
-            const bool made = ses.stacks.size() == nStacks + 1 && sc.testShelfChosen (stacks) == (int) nStacks && ses.stacks.back().here;
-            ses.rackAdd ((int) nStacks, a); ses.rackAdd ((int) nStacks, bb, Session::kAllLanes | Session::kNotesKey);
-            draw(); click (lib (2, stacks, 1)); draw();                                     // COPY
-            const bool copied = ses.stacks.size() == nStacks + 2 && ses.stacks.back().snaps == ses.stacks[nStacks].snaps && (ses.stacks.back().keysAt (1) & Session::kNotesKey) != 0
-                                && ses.stacks.back().name != ses.stacks[nStacks].name;
+            const auto modulesWere = ses.modules; const auto moduleWas = ses.moduleAt;
+            const auto arrsWere = ses.arrs; const auto arrWas = ses.arrAtId; const auto partsWere = ses.arrangement;
+            const auto live = ses.take();
+            // (what the headphones are asked for: a stand-in for the second rig, which says which chip, which of its parts, and its notes or not.
+            // These checks keep no sound on the disk, so a clip has nothing to play.)
+            struct Asked { juce::int64 id = 0; juce::uint32 lanes = 0; bool notes = false; int times = 0; } asked;
+            const auto playWas = ses.cueRigPlay; const auto stopWas = ses.cueRigStop;
+            ses.cueRigPlay = [&asked] (juce::int64 id, juce::uint32 lanes, bool notes) { asked.id = id; asked.lanes = lanes; asked.notes = notes; ++asked.times; return true; };
+            ses.cueRigStop = [] {};
+            auto heard = [&] (juce::int64 id, juce::uint32 lanes, int notes = -1)
+            { return ses.cueing() == id && asked.id == id && asked.lanes == lanes && (notes < 0 || asked.notes == (notes > 0)); };
+            const auto libWas = ses.library.size();
+            ses.stacks.clear();
+            sc.testPlain(); sc.setPage (Screen::pLibrary); draw();
+
+            // ---- a stack made, filled and put in order
+            const bool shelves = shelf (0).x > 0.0f && shelf (1).x > 0.0f && shelf (2).x > 0.0f && shelf (3).x > 0.0f && well (0, -1).x > 0.0f && well (5, -1).x > 0.0f && well (1, -1).x < 0.0f;
+            click (well (5, -1)); draw();                                       // the empty pocket: a new stack, out on the bench
+            const bool made = ses.stacks.size() == 1 && ses.stacks[0].here && sc.testLibStack() == 0 && sc.testRackOpen() == 1 && says ("A NEW STACK") && rowCard (-1).x < 0.0f;
+            click (chip (live)); draw();                                        // a chip of the bin pressed: in hand, and heard
+            const bool heardBin = sc.testHandId() == live && heard (live, Session::kAllLanes);
+            click (rkey (0)); draw();                                           // ADD
+            const bool added = snapsAre (0, { live }) && says (", LAST") && ses.library.size() == libWas;
+            carry (chip (bb), slotAt (0));                                      // carried up from the bin to the front of the row
+            const bool carriedIn = snapsAre (0, { bb, live });
+            carry (chip (id3), slotAt (1));                                     // and one between the two
+            const bool between = snapsAre (0, { bb, id3, live }) && ses.library.size() == libWas;
+            click (rowCard (2)); draw();                                        // a chip of the row pressed: the one in hand there, and heard
+            const bool heardRow = sc.testRowSel() == 2 && heard (live, Session::kAllLanes);
+            click (rkey (2)); draw();                                           // EARLIER
+            const bool earlier = snapsAre (0, { bb, live, id3 }) && sc.testRowSel() == 1;
+            click (rkey (3)); draw();                                           // LATER
+            const bool later = snapsAre (0, { bb, id3, live }) && sc.testRowSel() == 2;
+            carry (rowCard (0), slotAt (3));                                    // carried along the row, to its end
+            const bool along = snapsAre (0, { id3, live, bb }) && sc.testRowSel() == 2;
+            int nBit = 0; while ((1u << nBit) != Session::kNotesKey) ++nBit;
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsRowKey (h, 1, nBit); })); draw();      // N on the second: a knob coming to it brings its notes
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsRowKey (h, 1, 0); })); draw();         // and its first part put out
+            ses.cue (0);
+            click (rowCard (1)); draw();                                        // (and it is heard so: without that part, with its notes)
+            const bool keys = ses.stacks[0].snaps.size() == 3 && (ses.stacks[0].keysAt (1) & Session::kNotesKey) != 0 && (ses.stacks[0].keysAt (1) & 1u) == 0 && (ses.stacks[0].keysAt (0) & 1u) != 0
+                              && heard (live, Session::kAllLanes & ~1u, 1);
+            click (rowCard (1)); draw();                                        // pressed again: it stops
+            const bool stops = ses.cueing() == 0;
+
+            // ---- a second stack: the same chip in both (a reference: it is in the bin once)
+            click (well (0, -1)); draw();                                       // the bin: the stack is put away
+            const bool away = sc.testRackOpen() == 0 && sc.testLibStack() == -1 && well (1, 0).x > 0.0f;
+            click (chip (bb)); draw();
+            click (at (Screen::testIsAddToKey)); draw();                        // ADD TO, then a pocket
+            const bool lit = sc.testAddTo();
+            click (well (5, -1)); draw();                                       // (the empty one: a new stack, with it in)
+            const bool second = ses.stacks.size() == 2 && snapsAre (1, { bb }) && sc.testRackOpen() == 0 && says ("IS IN ");
+            click (at (Screen::testIsAddToKey)); draw();
+            carry (chip (id3), well (1, 1));                                    // carried from the bin onto a pocket
+            const bool onPocket = ! sc.testAddTo() && snapsAre (1, { bb, id3 }) && snapsAre (0, { id3, live, bb }) && ses.stacksHolding (bb) == 2 && ses.stacksHolding (live) == 1 && ses.library.size() == libWas;
+
+            // ---- out of a stack: TAKE OUT, and carried off the row. The chip stays in the bin and in the other stack
+            click (well (1, 0)); draw();
+            click (rowCard (0)); draw();
+            click (rkey (1)); draw();                                           // TAKE OUT
+            const bool out = snapsAre (0, { live, bb }) && says ("IS OUT OF") && snapsAre (1, { bb, id3 }) && ses.findSnap (id3) != nullptr && (ses.stacks[0].keysAt (0) & Session::kNotesKey) != 0;
+            carry (rowCard (1), Pt (900.0f, 760.0f));                           // carried off the row, let go over the bin
+            const bool off = snapsAre (0, { live }) && snapsAre (1, { bb, id3 }) && ses.library.size() == libWas;
+            carry (rowCard (0), well (1, 1));                                   // a chip of the row carried onto another stack's pocket: in that one too, its keys with it
+            const bool both = snapsAre (0, { live }) && snapsAre (1, { bb, id3, live }) && (ses.stacks[1].keysAt (2) & Session::kNotesKey) != 0 && (ses.stacks[1].keysAt (2) & 1u) == 0;
+
+            // ---- COPY, ON A KNOB, DELETE (held)
+            click (well (1, 1)); draw();
+            click (rkey (8)); draw();                                           // COPY: kept again, and that one is open
+            const bool copied = ses.stacks.size() == 3 && ses.stacks[2].snaps == ses.stacks[1].snaps && ses.stacks[2].name != ses.stacks[1].name && sc.testLibStack() == 2
+                                && (ses.stacks[2].keysAt (2) & Session::kNotesKey) != 0 && says ("IS KEPT AGAIN AS");
             const int freeWas = ses.freeStackKnob();
-            click (lib (2, stacks, 2)); draw();                                             // LOAD: onto the first stack knob that holds nothing
-            const bool onKnob = freeWas >= 0 && ses.knobs[(size_t) freeWas].snaps == ses.stacks.back().snaps && ses.knobs[(size_t) freeWas].notesAt (1) && sc.testBarNote().contains ("IS ON KNOB " + juce::String (freeWas + 1));
-            click (lib (2, stacks, 4)); draw();                                             // DELETE, pressed: it stays
-            const bool stays = ses.stacks.size() == nStacks + 2 && sc.testBarNote().contains ("HOLD DELETE");
-            hold (lib (2, stacks, 4)); draw();
-            const bool deleted = ses.stacks.size() == nStacks + 1 && sc.testBarNote().contains ("IS DELETED");
-            // STACK KNOBS: the knob just made, kept, cleared, and put back from the library
-            const int kAt = ses.knobKeep (freeWas);
-            ses.knobClear (freeWas);
-            click (lib (0, 0, 3)); draw();
-            int mine = -1;
-            for (int i = 0, n = 0; i < (int) ses.keptKnobs.size(); ++i) if (ses.keptKnobs[(size_t) i].stack) { if (i == kAt) mine = n; ++n; }
-            click (lib (1, stackKnobs, mine)); draw();
-            const bool noNew = lib (2, stackKnobs, 0).x < 0.0f && lib (2, stackKnobs, 1).x < 0.0f && lib (2, stackKnobs, 2).x > 0.0f;      // (a knob is made in the designer: LOAD, RENAME, DELETE only)
-            click (lib (2, stackKnobs, 2)); draw();
-            const bool put = ses.knobHolds (freeWas) && ses.knobs[(size_t) freeWas].notesAt (1) && sc.testBarNote().contains ("IS ON KNOB");
-            // MODULES: a copy made (the chassis holds it), then the first chosen and loaded
-            click (lib (0, 0, 4)); draw();
+            click (rkey (6)); draw();                                           // ON A KNOB: a copy on the first stack knob that holds nothing
+            const bool onKnob = freeWas >= 0 && ses.knobs[(size_t) freeWas].snaps == ses.stacks[2].snaps && ses.knobs[(size_t) freeWas].notesAt (2) && says ("IS ON KNOB") && ses.stacks.size() == 3;
+            click (rkey (9)); draw();                                           // DELETE, pressed: it stays
+            const bool stays = ses.stacks.size() == 3 && says ("HOLD DELETE");
+            hold (rkey (9)); draw();
+            const bool deleted = ses.stacks.size() == 2 && sc.testRackOpen() == 0 && says ("IS DELETED") && ses.library.size() == libWas && freeWas >= 0 && ses.knobHolds (freeWas);
+
+            // ---- a chip deleted from the bin is out of every stack that held it, and says so
+            const auto doomed = ses.take();
+            ses.rackAdd (0, doomed); ses.rackAdd (1, doomed);
+            draw(); click (chip (doomed)); draw();
+            hold (at (Screen::testIsDeleteKey)); draw();
+            const bool chipGone = ses.findSnap (doomed) == nullptr && ses.library.size() == libWas && snapsAre (0, { live }) && snapsAre (1, { bb, id3, live }) && says ("OUT OF THE 2 STACKS THAT HELD IT");
+            if (ses.findSnap (doomed) != nullptr) ses.remove (doomed);
+
+            // ---- KNOBS: the knob just made, kept and cleared; its pocket opened, its pile seen and heard, and put back on a place
+            const int kAt = freeWas >= 0 ? ses.knobKeep (freeWas) : -1;
+            if (freeWas >= 0) ses.knobClear (freeWas);
+            sc.testLibScroll (0);
+            click (shelf (1)); draw();
+            click (well (2, kAt)); draw();
+            const bool keptOpen = kAt >= 0 && sc.testRackShelf() == 1 && sc.testRackOpen() == 2 && rkey (7).x < 0.0f && rkey (8).x < 0.0f && rkey (6).x > 0.0f && rkey (5).x > 0.0f;      // (a knob is made in MACROS: no NEW, no COPY)
+            ses.cue (0);
+            click (benchChip (live)); draw();                                   // a chip of its pile, pressed: heard
+            const bool heardKept = sc.testHandId() == live && heard (live, Session::kAllLanes & ~1u, 1);     // (with the parts it takes on that knob, and its notes)
+            click (rkey (6)); draw();                                           // ON A KNOB
+            const bool put = freeWas >= 0 && ses.knobHolds (freeWas) && ses.knobs[(size_t) freeWas].notesAt (2) && says ("IS ON KNOB");
+            const auto nKept = ses.keptKnobs.size();
+            hold (rkey (9)); draw();
+            const bool keptGone = ses.keptKnobs.size() + 1 == nKept && sc.testRackOpen() == 0;
+
+            // ---- MODULES: the one in the chassis opened (a knob of it pressed shows its pile, and a chip of that is heard), copied, loaded, deleted
+            click (shelf (2)); draw();
             const auto nMods = ses.modules.size(); const int modWas = ses.moduleIndex();
-            click (lib (2, modules, 1)); draw();
-            const bool modCopied = ses.modules.size() == nMods + 1 && ses.moduleIndex() == (int) nMods && lib (2, modules, 4).x < 0.0f;        // (the one in the chassis: no DELETE)
-            click (lib (1, modules, modWas)); draw();
-            click (lib (2, modules, 2)); draw();
-            const bool modLoaded = ses.moduleIndex() == modWas && sc.testBarNote().contains ("IS IN THE CHASSIS");
-            click (lib (1, modules, (int) nMods)); draw();
-            hold (lib (2, modules, 4)); draw();
-            const bool modGone = ses.modules.size() == nMods;
-            // ARRANGEMENTS: a copy made here, the first loaded from here
-            click (lib (0, 0, 5)); draw();
-            click (lib (2, arrs, 1)); draw();
+            click (well (3, modWas)); draw();
+            const bool modOpen = sc.testRackOpen() == 3 && rkey (9).x < 0.0f;   // (the one in the chassis: no DELETE)
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsModKnob (h, freeWas); })); draw();
+            ses.cue (0);
+            click (benchChip (live)); draw();
+            const bool heardMod = sc.testHandId() == live && heard (live, Session::kAllLanes & ~1u, 1);
+            click (rkey (8)); draw();                                           // COPY: the chassis holds the copy from then on
+            const bool modCopied = ses.modules.size() == nMods + 1 && ses.moduleIndex() == (int) nMods;
+            click (well (3, modWas)); draw();
+            click (rkey (6)); draw();                                           // INTO THE CHASSIS
+            const bool modLoaded = ses.moduleIndex() == modWas && says ("IS IN THE CHASSIS");
+            click (well (3, (int) nMods)); draw();
+            hold (rkey (9)); draw();
+            const bool modGone = ses.modules.size() == nMods && sc.testRackOpen() == 0;
+
+            // ---- ARRANGEMENTS: the one on the page opened (its parts' chips in order, heard), copied, and the first put back on the page
+            ses.arrAdd (live);
+            click (shelf (3)); draw();
+            click (well (4, ses.arrsIndex())); draw();
+            ses.cue (0);
+            click (benchChip (live)); draw();
+            const bool heardArr = sc.testRackOpen() == 4 && sc.testHandId() == live && heard (live, Session::kAllLanes);
+            click (rkey (8)); draw();                                           // COPY
             const bool arrCopied = ses.arrs.size() == 2 && ses.arrsIndex() == 1;
-            if (! arrCopied) std::printf ("        (arrangements kept %d, on the page %d, COPY at %.0f)\n", (int) ses.arrs.size(), ses.arrsIndex(), lib (2, arrs, 1).x);
-            click (lib (1, arrs, 0)); draw(); click (lib (2, arrs, 2)); draw();
-            const bool arrLoaded = ses.arrsIndex() == 0 && ses.arrangement.size() == partsWere && sc.testBarNote().contains ("ARRANGE SHOWS IT");
+            click (well (4, 0)); draw();
+            click (rkey (6)); draw();                                           // ONTO THE PAGE
+            const bool arrLoaded = ses.arrsIndex() == 0 && ses.arrangement.size() == partsWere.size() + 1 && says ("ARRANGE SHOWS IT");
+
             // (as it was)
-            while (ses.arrs.size() > 1) ses.arrsRemove ((int) ses.arrs.size() - 1);
-            ses.knobs = knobsWere; ses.stacks = stacksWere; ses.keptKnobs = keptWere;
-            sc.testLibTab (0); sc.setPage (Screen::pArrange); draw();
-            const bool ok = plates && made && copied && onKnob && stays && deleted && noNew && put && modCopied && modLoaded && modGone && arrCopied && arrLoaded;
-            check (ok, "the library's plates: CHIPS, STACKS, MACRO KNOBS, STACK KNOBS, MODULES, ARRANGEMENTS, each kind with the same card and keys: a stack is made, copied (its N with it), put on the first free stack knob and, "
-                       "DELETE held, taken out; a kept knob is put on the first free place of its kind; a module is copied, chosen, loaded and deleted; an arrangement is copied and loaded from here");
-            if (! ok) std::printf ("        (plates %d made %d copied %d on knob %d stays %d deleted %d no new %d put %d mod copied %d loaded %d gone %d arr copied %d loaded %d: %s)\n", (int) plates, (int) made, (int) copied, (int) onKnob,
-                                   (int) stays, (int) deleted, (int) noNew, (int) put, (int) modCopied, (int) modLoaded, (int) modGone, (int) arrCopied, (int) arrLoaded, sc.testBarNote().toRawUTF8());
+            ses.cue (0);
+            ses.cueRigPlay = playWas; ses.cueRigStop = stopWas;
+            ses.arrs = arrsWere; ses.arrAtId = arrWas; ses.arrangement = partsWere;
+            ses.knobs = knobsWere; ses.stacks = stacksWere; ses.keptKnobs = keptWere; ses.modules = modulesWere; ses.moduleAt = moduleWas;
+            ses.remove (live);
+            sc.testPlain(); sc.setPage (Screen::pArrange); draw();
+            const bool stackOk = shelves && made && heardBin && added && carriedIn && between && heardRow && earlier && later && along && keys && stops;
+            check (stackOk, "the library's rack: the bin and an empty pocket; the empty pocket pressed is a new stack out on the bench; a chip of the bin pressed is heard and ADD puts it in; chips are carried up from the bin "
+                            "to a place in the row; a chip of the row pressed is heard (pressed again, it stops), EARLIER, LATER and carrying move it, and its keys (N among them) are the parts it takes there and is heard with");
+            if (! stackOk) std::printf ("        (shelves %d made %d heard %d added %d carried in %d between %d heard in row %d earlier %d later %d along %d keys %d: %s)\n", (int) shelves, (int) made, (int) heardBin, (int) added,
+                                        (int) carriedIn, (int) between, (int) heardRow, (int) earlier, (int) later, (int) along, (int) keys, sc.testBarNote().toRawUTF8());
+            if (! stackOk) std::printf ("        (stops %d; the headphones were last asked for %lld, parts %x, notes %d, %d times)\n", (int) stops, (long long) asked.id, (unsigned) asked.lanes, (int) asked.notes, asked.times);
+            const bool refOk = away && lit && second && onPocket && out && off && both && copied && onKnob && stays && deleted && chipGone;
+            check (refOk, "a chip may be in many stacks, and is in the bin once: ADD TO and a pocket, or carried onto a pocket, puts it in that stack too; TAKE OUT, or carried off the row, takes it out of the one stack only; "
+                          "COPY keeps the stack again, ON A KNOB puts a copy on the first free stack knob, DELETE (held) takes the stack and leaves its chips; a chip deleted is out of every stack that held it, and says so");
+            if (! refOk) std::printf ("        (away %d lit %d second %d on pocket %d out %d off %d both %d copied %d on knob %d stays %d deleted %d chip gone %d)\n", (int) away, (int) lit, (int) second, (int) onPocket, (int) out, (int) off,
+                                      (int) both, (int) copied, (int) onKnob, (int) stays, (int) deleted, (int) chipGone);
+            const bool restOk = keptOpen && heardKept && put && keptGone && modOpen && heardMod && modCopied && modLoaded && modGone && heardArr && arrCopied && arrLoaded;
+            check (restOk, "the rack's other shelves: a kept knob's pocket opens its pile (a chip of it pressed is heard), ON A KNOB puts it on a free place, DELETE takes it; a module's pocket opens its knobs (one pressed shows "
+                           "its pile, heard the same), COPY, INTO THE CHASSIS, DELETE; an arrangement's pocket opens its parts in order (heard the same), COPY, ONTO THE PAGE");
+            if (! restOk) std::printf ("        (kept open %d heard %d put %d gone %d; module open %d heard %d copied %d loaded %d gone %d; arrangement heard %d copied %d loaded %d: %s)\n", (int) keptOpen, (int) heardKept, (int) put,
+                                       (int) keptGone, (int) modOpen, (int) heardMod, (int) modCopied, (int) modLoaded, (int) modGone, (int) heardArr, (int) arrCopied, (int) arrLoaded, sc.testBarNote().toRawUTF8());
         }
         {
             // A stack knob under the mouse turns finely: 800 pixels the whole turn, a click of its 127 at a time, and SHIFT is
@@ -7631,7 +7779,12 @@ static int shot (const juce::StringArray& args)
         static const int bars[] = { 8, 16, 8, 32 };
         for (int i = 0; i < 4 && i + 1 < (int) ses.library.size(); ++i) { ses.arrAdd (ses.library[(size_t) (i + 1)].id); ses.arrSet (i, bars[i], 0); }
         ses.arrsRename (0, "warehouse a"); ses.arrsCopy ("warehouse a live"); ses.arrsNew ("intro"); ses.arrsLoad (0);
-        sc.testLibTab (juce::jlimit (0, 5, arg ("--libtab", "0").getIntValue()));
+        // (--libtab N: the rack's shelf, 0 the stacks, 1 the knobs kept, 2 the modules, 3 the arrangements; --open I: the I-th
+        // thing of it open, from 1; --modknob K: that knob of the open module; --hand I: that chip of the library in hand)
+        const int shelf = juce::jlimit (0, 3, arg ("--libtab", "0").getIntValue());
+        sc.testRack (shelf, arg ("--open", "0").getIntValue() - 1, arg ("--modknob", "0").getIntValue() - 1);
+        if (arg ("--hand", "").isNotEmpty()) sc.testHand (arg ("--hand", "1").getIntValue() - 1, Session::kAllLanes);
+        if (arg ("--rowsel", "").isNotEmpty()) sc.testRowSel (arg ("--rowsel", "1").getIntValue() - 1);
     }
     if (page == "macros" && args.contains ("--modules"))
     {
@@ -10379,6 +10532,37 @@ static int stageTest()
         sc.setPage (Screen::pMain); fresh();
         check (offAt.isEmpty() && looked > 300, "every legend is on the plate it is printed on, on the main screen, CONFIG, the library, the macro designer, POCKETS and the arrangement (" + juce::String (looked) + " legends)"
                                                     + (offAt.isEmpty() ? juce::String() : ": OFF ITS PLATE: " + offAt));
+    }
+
+    // 3f. the rack on the stage: a pocket is a well cut into the panel, and a stack's pile is a chip for every chip it holds, one standing on another
+    if (ses.library.size() >= 4)
+    {
+        const auto stacksWere = ses.stacks;
+        { Stack st; st.id = "pile"; st.name = "PILE"; st.kind = "stack"; st.here = true; st.snaps = { ses.library[1].id, ses.library[2].id, ses.library[3].id }; ses.stacks = { st }; }
+        sc.setPage (Screen::pLibrary); sc.testRack (0); fresh();
+        const auto& parts = sc.testParts();
+        juce::Rectangle<float> pocket;
+        for (auto& h : sc.testHits()) if (Screen::testIsWell (h, 1, 0)) pocket = h.r;
+        int wells = 0; float wellBase = -1.0f;
+        for (auto& h : parts.hollows) if (h.w > 0.0f && h.h > 0.0f) { ++wells; if (pocket.contains (h.cx, h.cy)) wellBase = h.base; }
+        // (the plates lying wholly in that pocket with the same foot: the pile)
+        std::vector<float> bases; juce::Rectangle<float> foot;
+        for (auto& pl : parts.plates)
+            if (pocket.contains (pl.r) && pl.r.getHeight() < 60.0f)
+            {
+                if (foot.isEmpty()) foot = pl.r;
+                if (pl.r == foot) bases.push_back (pl.base);
+            }
+        bool rising = bases.size() == 3;
+        for (size_t i = 1; i < bases.size(); ++i) rising = rising && std::abs (bases[i] - bases[i - 1] - Parts::kPlate) < 1.0e-4f;
+        const bool inWell = wellBase >= 0.0f && ! bases.empty() && std::abs (bases[0] - wellBase) < 1.0e-4f;        // (the pile stands on what the pocket is cut into: it does not lift its pocket)
+        ses.stacks[0].snaps.push_back (ses.library[0].id); fresh();
+        int four = 0;
+        for (auto& pl : sc.testParts().plates) if (pl.r == foot) ++four;
+        ses.stacks = stacksWere;
+        sc.setPage (Screen::pMain); fresh();
+        check (wells >= 3 && rising && inWell && four == 4, "the rack on the stage: the bin, a stack and the empty pocket are wells cut into the panel (" + juce::String (wells) + "); a stack of three is three chips, each standing on the one under it, in its well; "
+                                                            "a fourth chip in the stack is a fourth on the pile (" + juce::String ((int) bases.size()) + ", then " + juce::String (four) + ")");
     }
 
     // 4. the eye

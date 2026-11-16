@@ -43,7 +43,8 @@ struct Parts
     struct Knob   { float cx = 0, cy = 0; bool big = true; int ctl = -1, kind = 0, steps = 0; juce::uint32 light = 0; float a = 0, b = 0, mark = -1.0f; Clip clip; float base = 0.0f; };
     struct Key    { R r; juce::uint32 colour = 0; int press = kUp; bool glows = false; Clip clip; float base = 0.0f; };
     struct Lamp   { float cx = 0, cy = 0, d = 12.0f; juce::uint32 colour = 0; bool on = false; Clip clip; float base = 0.0f; };
-    struct Hollow { float cx = 0, cy = 0, d = 40.0f; bool round = true; Clip clip; float base = 0.0f; };
+    // (w, h: a pocket, w by h about the same middle, where d is not its size: the well a pile of chips stands in)
+    struct Hollow { float cx = 0, cy = 0, d = 40.0f; bool round = true; Clip clip; float base = 0.0f; float w = 0.0f, h = 0.0f; };
     struct Pane   { R r; juce::uint32 glass = 0; Clip clip; float base = 0.0f; };
     struct Badge  { R r; float base = 0.0f; };
 
@@ -78,14 +79,24 @@ struct Parts
         for (auto& k : knobs) k.base = on (k.cx, k.cy);
         for (auto& k : keys) k.base = on (k.r.getCentreX(), k.r.getCentreY());
         for (auto& l : lamps) l.base = on (l.cx, l.cy);
-        for (auto& h : hollows) h.base = on (h.cx, h.cy);
+        for (auto& h : hollows)
+        {
+            // (a pocket is cut into what it lies wholly on: a pile standing in it does not lift it)
+            if (h.w > 0.0f && h.h > 0.0f)
+            {
+                const R wr (h.cx - h.w * 0.5f, h.cy - h.h * 0.5f, h.w, h.h);
+                h.base = 0.0f;
+                for (const auto& p : plates) if (p.r.contains (wr) && p.clip.has (h.cx, h.cy)) h.base = std::max (h.base, p.base + kPlate);
+            }
+            else h.base = on (h.cx, h.cy);
+        }
         for (auto& p : panes) p.base = on (p.r.getCentreX(), p.r.getCentreY());
         for (auto& b : badges) b.base = on (b.r.getCentreX(), b.r.getCentreY());
     }
 
     // The same instrument, to the last light? Every field of every thing is compared, so a field
     // added to one of them is added here too. (shape(), below, is only for the shadows: it leaves
-    // out colours, lamps, hollows and more.) The stage builds nothing again when this says yes.
+    // out colours, lamps, round hollows and more.) The stage builds nothing again when this says yes.
     bool same (const Parts& o) const
     {
         auto clip = [] (const Clip& a, const Clip& b) { return a.x0 == b.x0 && a.y0 == b.y0 && a.x1 == b.x1 && a.y1 == b.y1; };
@@ -101,7 +112,7 @@ struct Parts
                                                                              && a.light == b.light && a.a == b.a && a.b == b.b && a.mark == b.mark && clip (a.clip, b.clip) && a.base == b.base; })
             && all (keys, o.keys, [&] (const Key& a, const Key& b) { return a.r == b.r && a.colour == b.colour && a.press == b.press && a.glows == b.glows && clip (a.clip, b.clip) && a.base == b.base; })
             && all (lamps, o.lamps, [&] (const Lamp& a, const Lamp& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.colour == b.colour && a.on == b.on && clip (a.clip, b.clip) && a.base == b.base; })
-            && all (hollows, o.hollows, [&] (const Hollow& a, const Hollow& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.round == b.round && clip (a.clip, b.clip) && a.base == b.base; })
+            && all (hollows, o.hollows, [&] (const Hollow& a, const Hollow& b) { return a.cx == b.cx && a.cy == b.cy && a.d == b.d && a.round == b.round && clip (a.clip, b.clip) && a.base == b.base && a.w == b.w && a.h == b.h; })
             && all (panes, o.panes, [&] (const Pane& a, const Pane& b) { return a.r == b.r && a.glass == b.glass && clip (a.clip, b.clip) && a.base == b.base; })
             && all (badges, o.badges, [] (const Badge& a, const Badge& b) { return a.r == b.r && a.base == b.base; });
     }
@@ -118,6 +129,7 @@ struct Parts
         for (const auto& k : keys) { rect (k.r); mix ((float) k.press); clip (k.clip); }
         for (const auto& p : panes) { rect (p.r); clip (p.clip); }
         for (const auto& b : badges) rect (b.r);
+        for (const auto& w : hollows) if (w.w > 0.0f && w.h > 0.0f) { mix (w.cx); mix (w.cy); mix (w.w); mix (w.h); clip (w.clip); }       // (a pocket's lip stands up)
         mix (body ? 1.0f : 2.0f);
         return h;
     }

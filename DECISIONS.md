@@ -3825,8 +3825,100 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      knob should stay the same stack (changed in one place, changed in both) or be a copy,
      as it is now.
 
+## The rack, built: the library (Nov 16, 13:31): seventy-second build
+
+604. **You**, 13:31, to the six boards (603): "This looks good." And: "I'd add that chips
+     should be previewable from any interface where they exist." *How I read it:* build what
+     was drawn; and 523 again ("anywhere the interface shows sound chips, those should be
+     playable and stel selectable"), as a rule the rack is held to: a chip's card, wherever
+     it is shown, plays when it is pressed. The two things asked with 603 were not answered,
+     so they stay as they were drawn and as they are today. *Mine:* the rack is along the
+     top; a stack put on a knob is a copy (changing the knob does not change the stack).
+605. **Built in two parts, said at 13:32.** This build is the LIBRARY page, whole, with
+     stacks made and changed there. MACROS and the arrangement's page keep their own lists
+     for one more build and move onto the same rack in the next (the seventy-third).
+606. **The library is the rack** (602, 603). The six plates (590) are gone from it.
+     - **The bin** is the first pocket of every shelf: ALL CHIPS, every chip once. The find
+       row heads the bin (it reads THE BIN n there, and is not pressed: the pockets say
+       which stack is out).
+     - **A stack is a pocket with a pile.** Pressed, it is open: its chips in a row on the
+       bench, in its order, the bin under them (still every chip; those in the open stack
+       have a green line along their near edge). The bin's pocket puts it away.
+     - **The empty pocket, NEW STACK**, makes one (STACK n) and opens it.
+     - **In:** a chip carried up from the bin to a place in the row; or pressed, then ADD
+       (last). Into a stack that is not open: carried onto its pocket; or pressed, ADD TO
+       (which stays lit), then each pocket. The empty pocket then makes a stack with it in.
+     - **Order:** carried along the row; or pressed, then EARLIER / LATER.
+     - **Out:** pressed in the row, then TAKE OUT; or carried off the row. Out of that
+       stack only, and the bar says so (IT IS STILL IN THE BIN).
+     - **Into another stack too:** a chip of the row carried onto another pocket, its keys
+       with it.
+     - **Its keys** in the row: the parts of the rig it takes there, and N.
+     - **ON A KNOB** (a copy on the first stack knob that holds nothing), **COPY** (the copy
+       is the one open), **RENAME**, **HOLD: DELETE** (its chips stay in the bin).
+     - **A chip in hand rings every pocket that holds it**, and the strip names the stacks.
+     - **A chip deleted** is out of every stack that held it, and the bar says how many.
+       (602 said it would say how many *first*. *Mine:* DELETE is held, which is the asking;
+       it says so as it goes.)
+     Nothing in how a stack is kept has changed: it was already a list of chips' numbers
+     with the parts each takes, and a chip could already be in several (`Stack::snaps`).
+     What was missing was anywhere to see that and change it.
+607. **The other three shelves open the same way, and are shown, not yet changed.**
+     KNOBS: a kept stack knob's pocket opens its pile, each chip with the parts it takes; a
+     kept macro knob's, what it is tied to and how far. ON A KNOB, RENAME, HOLD: DELETE.
+     MODULES: a module's pocket opens its fourteen knobs; one pressed shows its pile or its
+     ties. NEW, COPY, INTO THE CHASSIS, RENAME, HOLD: DELETE (never the one in the chassis).
+     ARRANGEMENTS: its parts in order, each with its chip, bars and parts. NEW, COPY, ONTO
+     THE PAGE, RENAME, HOLD: DELETE (never the last). **Not changed here:** a kept knob's
+     pile, and the knobs of a module that is not in the chassis. A knob is still changed in
+     MACROS, on the module in the chassis. That is the answer 602 asked for and it is only
+     half given: a stack is edited in the library now; a knob, a macro and a module are
+     edited where they were.
+608. **Every chip shown on the page plays when pressed** (604): in the bin, in a stack's row,
+     in a kept knob's pile, on a module's knob, in an arrangement's parts. Where it is shown
+     with the parts it takes, those parts are what is heard, with its notes if it would
+     bring them; pressed again it stops; two quick presses take it to the set. With the cue
+     as the rig (596) the ones with no clip are heard too. MACROS and the arrangement's page
+     have had this for the chips in their lists since the fifty-fifth build; the next build
+     holds every card on them to the same check.
+609. **On the 3D stage** a pocket is a tray on the panel: a dark floor with a lip standing
+     round it (a plate of the stage cannot be cut into, so it is not a hole; in the lit
+     picture it is drawn as one). A pile is a plate for every chip, one standing on
+     another, ten at most; the top one carries the name and the top chip's colour along its
+     near edge. In the flat and lit pictures the pile is the top chip's face over an edge
+     for every chip under it. *Found on the way:* a well settled on top of the pile
+     standing in it (a blank slab floating over a module's knob); a well now takes its
+     height only from a plate that holds all of it (`Parts::settle`).
+610. **Mine, without asking** (601's standing rule): ADD TO stays lit until pressed again, so
+     one chip goes into several stacks in a row of presses. A chip carried off the row is
+     taken out (not put back): the chip is never lost by it, and the bar says what happened.
+     An open stack's row is two lines of six at most, and the wheel goes down a longer one.
+     With a stack open, RENAME is the stack's; with the bin open, the chosen chip's.
+     The library's strip has the same four page keys as before (MAIN, LIBRARY, MACROS,
+     ARRANGE). The rack is the mouse's: none of it is on the E16 or the keyboard.
+611. **Checks.** Three in the screen checks take the place of the six plates' one: a stack
+     made, filled, ordered and heard; a chip in two stacks, taken out of one, the stack
+     copied, put on a knob and deleted, and a chip deleted from under both; the three other
+     shelves opened, heard and put to work. What the headphones are asked for (which chip,
+     which parts, its notes) is read from a stand-in for the second rig, because these
+     checks keep no sound on the disk. One on the stage: a stack of three is three plates,
+     each on the one under it, in its well; a fourth chip is a fourth plate. The check that
+     presses everything walks each shelf with a pocket open.
+612. **Next (the seventy-third build): MACROS and ARRANGE on the same rack.** The designer's
+     own STACKS, KNOBS and MODULES lists (OPEN, ADD, PUT, OUT) and the arrangement page's
+     two plates go; the rack is the right-hand third of both pages; a pile carried onto a
+     stack knob puts a copy on it, onto the arrangement's rail its chips become parts in
+     order; one word for each action on every page. Then what 607 leaves: a kept knob and a
+     module changed where they are opened.
+
 ## Not verified
 
+- **The rack (606 to 609) has been on no Mac and under no hand.** It is checked with made-up
+  presses and carries on the drawn screens, and its pile and well on the 3D stage with a
+  software driver. Yours to say: whether carrying a chip to a place in a row is easy on the
+  trackpad; whether a pile reads as a pile from the player's view, and how tall ten chips
+  should stand; whether a chip slipping off the row should take it out; whether the rack
+  along the top leaves the bin enough room on your screen with a stack open.
 - **The cue's rig (596 to 600) has not run on a Mac.** Not known there: whether the second
   process starts from inside the app; whether its icon shows in the Dock or the window loses
   the keys for a moment as it starts (it is told to have no Dock icon before anything else,

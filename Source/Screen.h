@@ -123,7 +123,46 @@ public:
     static bool testIsShelf (const TestHit& h, int what, int kind, int index) { return what == 0 ? h.kind == hLibTab && h.a == index : what == 1 ? h.kind == hShelfCard && h.a == kind && h.b == index : h.kind == hShelfKey && h.a == kind && h.b == index; }
     int testShelfChosen (int kind) const { return shelfSel[(size_t) kind]; }
     void testLibTab (int tab) { libTab = tab; }
+    // the rack: its shelf (0 the stacks, 1 the knobs kept, 2 the modules, 3 the arrangements) and what is open of it (-1: the bin; else which)
+    void testRack (int shelf, int open = -1, int modKnob = -1)
+    {
+        rackShelf = juce::jlimit (0, 3, shelf); rackFirst = 0; rowSel = -1; rowScroll = 0; addTo = false;
+        inStack = {}; openKept = {}; openMod = {}; openArr = {}; openModKnob = modKnob;
+        if (open < 0) return;
+        if (shelf == 0 && open < (int) ses.stacks.size()) inStack = ses.stacks[(size_t) open].id;
+        else if (shelf == 1 && open < (int) ses.keptKnobs.size()) openKept = ses.keptKnobs[(size_t) open].id;
+        else if (shelf == 2 && open < (int) ses.modules.size()) openMod = ses.modules[(size_t) open].id;
+        else if (shelf == 3 && open < (int) ses.arrs.size()) openArr = ses.arrs[(size_t) open].id;
+    }
+    int testRackShelf() const { return rackShelf; }
+    void testLibScroll (int rows) { libScroll = std::max (0, rows); }
+    static bool testIsDeleteKey (const TestHit& h) { return h.kind == hAct && h.a == aDelete; }
+    static bool testIsAddToKey (const TestHit& h) { return h.kind == hAct && h.a == aAddTo; }
+    int testRackOpen() const { return rackOpen(); }          // 0 the bin, 1 a stack, 2 a kept knob, 3 a module, 4 an arrangement
+    int testRowSel() const { return rowSel; }
+    void testRowSel (int i) { rowSel = i; handId = 0; }
+    bool testAddTo() const { return addTo; }
+    juce::Rectangle<float> testRowArea() const { return rowArea; }
+    static bool testIsWell (const TestHit& h, int kind, int index) { return h.kind == hWell && h.a == kind && (index < 0 || h.b == index); }
+    static bool testIsRowCard (const TestHit& h, int index) { return h.kind == hRowCard && (index < 0 || h.a == index); }
+    static bool testIsRowKey (const TestHit& h, int index, int part) { return h.kind == hRowKey && h.a == index && h.b == part; }
+    static bool testIsBenchChip (const TestHit& h) { return h.kind == hBenchChip; }
+    static bool testIsModKnob (const TestHit& h, int k) { return h.kind == hModKnob && h.a == k; }
+    static bool testIsRackShelf (const TestHit& h, int shelf) { return h.kind == hLibTab && h.a == shelf; }
+    // the strip's keys for the rack. which: 0 ADD, 1 TAKE OUT, 2 EARLIER, 3 LATER, 4 ADD TO, 5 RENAME, 6 put to work, 7 NEW, 8 COPY, 9 DELETE (held)
+    static bool testIsRackKey (const TestHit& h, int which)
+    {
+        static const int acts[] = { aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenRename, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete };
+        return h.kind == hAct && which >= 0 && which < 10 && h.a == acts[which];
+    }
     static bool testIsOfShelf (const TestHit& h) { return h.kind == hLibTab || h.kind == hShelfCard || h.kind == hShelfKey; }      // (a plate, a kept thing's card, a shelf's key)
+    // (the rack's own: its shelf keys, a pocket, a chip of the open row or one of its keys, a chip seen in what is open, a knob of the open module, the strip's keys for them)
+    static bool testIsOfRack (const TestHit& h)
+    {
+        if (h.kind == hLibTab || h.kind == hWell || h.kind == hRowCard || h.kind == hRowKey || h.kind == hBenchChip || h.kind == hModKnob) return true;
+        for (int k = 0; k < 10; ++k) if (k != 4 && testIsRackKey (h, k)) return true;     // (ADD TO is the bin's own key)
+        return false;
+    }
     int testLibTabNow() const { return libTab; }
     void testHand (int index, juce::uint32 parts) { handId = index >= 0 && index < (int) ses.library.size() ? ses.library[(size_t) index].id : 0; handParts = parts & Session::kAllLanes; }
     static bool testIsKeptCard (const TestHit& h, int index) { return h.kind == hKeptCard && h.a == index; }
@@ -131,7 +170,7 @@ public:
     juce::Point<float> testColumnGap (int at) const { return { 1287.0f, 110.0f + (float) (at - colScroll) * 74 - 4.0f }; }      // (between the column's cards: before the one at that place)
     static int testPickOf (const TestHit& h) { return h.kind == hPick ? h.a : -1; }
     void testFind (const juce::String& t) { findText = t; }
-    void testPlain() { libTab = 0; arrShelf = false; modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; handId = 0; handParts = Session::kAllLanes; ses.cue (0); }
+    void testPlain() { testRack (0); libTab = 0; arrShelf = false; modList = false; rackList = knobList = false; openStack = {}; inStack = {}; finder = 0; found.clear(); findText = {}; libScroll = 0; handId = 0; handParts = Session::kAllLanes; ses.cue (0); }
     static bool testIsStackCue (const TestHit& h) { return h.kind == hAct && h.a == aStackCue; }
     static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
     int testLibStack() const { return inAt(); }
@@ -259,7 +298,13 @@ private:
                    // the shelf: the things kept, by kind (ShelfKind), drawn the same wherever they are shown
                    hShelfCard,      // one of them (a: the kind, b: which): chosen; pressed twice quickly, loaded
                    hShelfKey,       // the keys over them, for the chosen one (a: the kind, b: 0 NEW, 1 COPY, 2 LOAD, 3 RENAME, 4 DELETE, held)
-                   hLibTab,         // the library's plates (a: 0 the snapshots, then a kind + 1)
+                   hLibTab,         // the rack's shelf keys (a: 0 the stacks, 1 the knobs kept, 2 the modules, 3 the arrangements)
+                   // the rack (the library): pockets along the top, and what is open lying out on the bench under them
+                   hWell,           // a pocket (a: 0 the bin, 1 a stack, 2 a kept knob, 3 a module, 4 an arrangement, 5 a new stack; b: which): pressed, open
+                   hRowCard,        // a chip in the open stack's row (a: which): in hand, and heard with the parts it takes; carried, moved or taken out
+                   hRowKey,         // one of its keys (b: the part, N last)
+                   hBenchChip,      // a chip seen in what is open (a kept knob's, a module's knob's, an arrangement's part; a: its place in the library, b: the parts it takes there): heard
+                   hModKnob,        // a knob of the open module (a: which of the sixteen): its pile, or what it is tied to, under the row
                    hArrTrans };     // a part's TRANSITION plate (a: the part)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain,
@@ -270,7 +315,9 @@ private:
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint, aArrEdit, aArrStack,
                aEditKeep, aEditDrop,
                aFetch,
-               aStackCue };            // the snapshot module: CUE (how its stack knobs are played)       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
+               aStackCue,
+               // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself
+               aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenRename, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete };            // the snapshot module: CUE (how its stack knobs are played)       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -396,6 +443,39 @@ private:
     std::array<int, skKinds> shelfSel { { -1, -1, -1, -1, -1 } }, shelfScroll {};
     R shelfNameRect;                            // where the chosen one's name is drawn (RENAME types over it)
     int libTab = 0;                             // the library: 0 the snapshots, else the kind + 1
+    // ---- the rack (DECISIONS 602, 603): the library as pockets along the top and a bench under them. The first pocket is
+    // the bin, which holds every chip; then the things of the shelf chosen. A pocket pressed is open: what it holds lies out
+    // on the bench as chip cards. The open stack is inStack (the same one every page's list of chips goes by).
+    int rackShelf = 0;                          // beside the bin: 0 the stacks, 1 the knobs kept, 2 the modules, 3 the arrangements
+    int rackFirst = 0;                          // the first of them shown (the wheel, over the rack)
+    juce::String openKept, openMod, openArr;    // the kept knob, the module, the arrangement that is open (its id)
+    int openModKnob = -1;                       // a module open: the knob of it whose pile is out
+    int rowSel = -1, rowScroll = 0;             // the open stack's row: the chip in hand there, and the first row of it shown
+    bool addTo = false;                         // ADD TO is lit: the next pocket pressed takes the chip in hand
+    struct WellAt { R r; int kind, index; };
+    std::vector<WellAt> wellsAt;                // (as last drawn: where a pocket is, for what is carried)
+    R rowArea;                                  // (as last drawn: the open stack's row)
+    int rackOpen() const;                       // what is open: 0 the bin, 1 a stack, 2 a kept knob, 3 a module, 4 an arrangement
+    int openKeptAt() const; int openModAt() const; int openArrAt() const;
+    int rackCount() const;                      // how many things the shelf holds
+    juce::Colour chipColour (juce::int64 id) const;   // a chip's edge: as hot as it is bright
+    void well (G&, R);
+    void drawPile (G&, R well, const std::vector<juce::int64>& ids, const juce::String& top);
+    void drawWell (G&, R, int kind, int index);
+    void drawChipRack (G&);
+    float drawStackRow (G&, float top);         // the open stack's chips, in order; where the bin under them begins
+    void drawRowCard (G&, R, int stack, int i);
+    void drawSeenCard (G&, R, juce::int64 id, int num, juce::uint32 keys, const juce::String& note);
+    void drawKeptOpen (G&, float top);
+    void drawModOpen (G&, float top);
+    void drawArrOpen (G&, float top);
+    void drawKnobHolds (G&, float top, const MacroKnob&, bool stack);
+    int rowSlotAt (juce::Point<float>) const;   // between which chips of the open stack's row (-1: not over it)
+    const WellAt* wellAt (juce::Point<float>) const;
+    void rackDrop (juce::Point<float>);         // what was carried in the library is let go
+    void openWell (int kind, int index);
+    void rackSay (const juce::String&);
+    void rackOpenDo (int what);                 // the strip's keys for what is open: 0 NEW, 1 COPY, 2 put to work, 3 RENAME, 4 DELETE
     static const char* shelfTitle (int kind);
     int shelfCount (int kind) const;
     int shelfItem (int kind, int i) const;      // its place in the session's own list (the kept knobs of both kinds are one list); -1: none
@@ -504,7 +584,7 @@ private:
     // Carrying: a card pressed and moved goes with the pointer (a snapshot of the list, a card of the column, a stack, a kept
     // knob), and is put where it is let go: between two cards of the column, or on a place.
     juce::Point<float> carryAt;
-    bool carrying() const               { return mouseIsDown && drag.moved && page == pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard); }
+    bool carrying() const               { return mouseIsDown && drag.moved && ((page == pMacros && (drag.kind == hPick || drag.kind == hColCard || drag.kind == hRackCard || drag.kind == hKeptCard)) || (page == pLibrary && (drag.kind == hCard || drag.kind == hRowCard))); }
     int columnPlaceAt (juce::Point<float>) const;       // between which cards of the column that is (0: before the first). -1: not over the column
     static int placeAt (juce::Point<float>);            // which place's card (-1: none)
     static R placeRect (int k)          { return R (23.0f + (float) (k % 4) * 282, 78.0f + (float) (k / 4) * 224, 272, 216); }

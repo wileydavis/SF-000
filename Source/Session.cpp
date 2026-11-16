@@ -3471,6 +3471,21 @@ bool Session::moduleRemove (int index)
     return true;
 }
 
+juce::var Session::moduleKnob (int module, int k) const
+{
+    if (module < 0 || module >= (int) modules.size() || k < 0 || k >= 16) return {};
+    const var kn = module == moduleIndex() ? moduleKnobsNow() : modules[(size_t) module].knobs;
+    return kn.isArray() && k < kn.size() ? kn[k] : var();
+}
+
+int Session::stacksHolding (juce::int64 id, juce::StringArray* names) const
+{
+    int n = 0;
+    for (const auto& st : stacks)
+        if (std::find (st.snaps.begin(), st.snaps.end(), id) != st.snaps.end()) { ++n; if (names != nullptr) names->add (st.name); }
+    return n;
+}
+
 juce::String Session::moduleSays (int index) const
 {
     if (index < 0 || index >= (int) modules.size()) return {};

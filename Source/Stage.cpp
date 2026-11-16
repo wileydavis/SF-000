@@ -1197,7 +1197,20 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             Rgb ground = l.body;
             for (const auto& p : parts.plates) if (p.r.contains (h.cx, h.cy) && p.clip.has (h.cx, h.cy)) ground = lin (p.ground);
             const Rgb dim = ground * (dark ? 0.55f : 0.62f);
-            if (h.round) turnedAt (baseBig, h.cx, h.cy, h.base + 0.02f, (h.d * 0.5f - 1.0f) / 19.5f, dim, 0.8f, 0.0f, h.clip);
+            if (h.w > 0.0f && h.h > 0.0f)
+            {
+                // a pocket: its floor, darker still, w by h; and a lip standing round it, just inside its edge, so that a pile in it
+                // stands in something (a plate cannot be cut into: the pocket is a tray on it)
+                const juce::Rectangle<float> wr (h.cx - h.w * 0.5f, h.cy - h.h * 0.5f, h.w, h.h);
+                slab (wr.reduced (1.0f), h.base + 0.04f, 0.02f, 5.0f, 0.0f, ground * (dark ? 0.42f : 0.50f), 0.85f, 0.0f, 0.0f, 0.0f, h.clip);
+                const float lip = Parts::kPlate * 0.5f, t = 3.5f;
+                const Rgb rim = ground * (dark ? 0.78f : 0.84f);
+                slab ({ wr.getX(), wr.getY(), wr.getWidth(), t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);                              // far
+                slab ({ wr.getX(), wr.getBottom() - t, wr.getWidth(), t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);                     // near
+                slab ({ wr.getX(), wr.getY() + t, t, wr.getHeight() - 2.0f * t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);              // left
+                slab ({ wr.getRight() - t, wr.getY() + t, t, wr.getHeight() - 2.0f * t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);      // right
+            }
+            else if (h.round) turnedAt (baseBig, h.cx, h.cy, h.base + 0.02f, (h.d * 0.5f - 1.0f) / 19.5f, dim, 0.8f, 0.0f, h.clip);
             else slab (juce::Rectangle<float> (h.cx - h.d * 0.5f, h.cy - h.d * 0.5f, h.d, h.d).reduced (1.0f), h.base + 0.04f, 0.02f, 2.6f, 0.0f, dim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);
         }
         for (const auto& k : parts.knobs)

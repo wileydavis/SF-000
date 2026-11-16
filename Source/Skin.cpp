@@ -301,7 +301,7 @@ juce::Image Relief::picture (As as) const
 // ----------------------------------------------------------------------------------------- skin
 namespace
 {
-enum What { wPanel = 1, wKnob, wRing, wKey, wLamp, wHollow, wBadge };
+enum What { wPanel = 1, wKnob, wRing, wKey, wLamp, wHollow, wBadge, wWell };
 const Colour kCase (0xffA4B1B7), kBlack (0xff2B2B28), kUnlit (0xff4D514E), kGreen (0xff428F47), kAmber (0xffC5843F);
 // the dark instrument's own colours: the case, a knob's base, its unlit lights, its cap, an unlit lamp, the name plate
 const Colour kNightCase (0xff24272A), kNightBase (0xff111211), kNightUnlit (0xff474B48), kNightCap (0xff232321), kNightLens (0xff3C403D), kNightBadge (0xff151615);
@@ -563,6 +563,35 @@ void Skin::hollow (G& g, float cx, float cy, float d, bool round)
         if (round) g.drawEllipse (cx - d * 0.5f + 1.5f, cy - d * 0.5f + 1.5f, d - 3.0f, d - 3.0f, 1.0f);
         else g.drawRoundedRectangle (R (cx - d * 0.5f + 1.5f, cy - d * 0.5f + 1.5f, d - 3.0f, d - 3.0f), 2.2f, 1.0f);
     }
+}
+
+// A pocket: the surface cut down over a rectangle, deeper than a hollow, its floor in the shade of its upper and left
+// walls. A pile of chips stands in it (the 3D stage is given the pocket as a hollow with a width and a height).
+void Skin::well (G& g, R r)
+{
+    if (mode != Mode::pictures)
+    {
+        if (rec != nullptr && mode == Mode::record)
+        {
+            Parts::Hollow h { r.getCentreX() + shift, r.getCentreY(), std::min (r.getWidth(), r.getHeight()), false, clip, 0.0f };
+            h.w = r.getWidth(); h.h = r.getHeight();
+            rec->hollows.push_back (h);
+        }
+        return;
+    }
+    const int w = juce::roundToInt (r.getWidth()), h = juce::roundToInt (r.getHeight());
+    const auto& p = pic (Key { wWell, w, h, 0, 0 }, [&]
+    {
+        Relief rf ((float) w, (float) h, scale, 4.0f, 2);
+        rf.slab (R (1.0f, 1.0f, (float) w - 2.0f, (float) h - 2.0f), 5.0f, -4.0f, 0.0f, {}, true);
+        return from (rf);
+    });
+    g.setOpacity (1.0f);
+    put (g, p, r.getX(), r.getY());
+    // (its floor is darker than the surface it is cut into, on either instrument)
+    g.setColour (juce::Colours::black.withAlpha (dark ? 0.30f : 0.16f));
+    g.fillRoundedRectangle (r.reduced (2.0f), 4.0f);
+    if (dark) { g.setColour (juce::Colours::white.withAlpha (0.07f)); g.drawRoundedRectangle (r.reduced (1.5f), 4.5f, 1.0f); }
 }
 
 // A display: the surface is cut down to a pane. The cut's upper and left walls are in shade and

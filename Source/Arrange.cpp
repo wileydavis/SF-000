@@ -555,6 +555,16 @@ juce::String Session::arrsSays (int index) const
 }
 
 // --------------------------------------------------------------------------------- the file
+std::vector<Session::PartSeen> Session::arrsParts (int index) const
+{
+    std::vector<PartSeen> out;
+    if (index < 0 || index >= (int) arrs.size()) return out;
+    if (index == arrsIndex()) { for (const auto& p : arrangement) out.push_back ({ p.snap, p.bars }); return out; }
+    if (auto* parts = arrs[(size_t) index].parts.getProperty ("parts", var()).getArray())
+        for (const auto& p : *parts) out.push_back ({ (juce::int64) p.getProperty ("snap", 0), (int) p.getProperty ("bars", 8) });
+    return out;
+}
+
 var Session::arrToVar() const
 {
     auto* o = new juce::DynamicObject();

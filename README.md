@@ -512,31 +512,61 @@ and from the rig itself it is given a profile, and its card in the library draws
 | the two rows of sixteen | where the hits fall in the bar: the top end above, the low end below |
 | the eleven bars | how much of each lane there was |
 
-#### Six plates: everything that is kept
+#### The rack: a stack is a pocket with a pile of chips in it
 
-Along the top of the library are six plates, each with how many it holds: **CHIPS** (the
-snapshots, as above and below), **STACKS**, **MACRO KNOBS**, **STACK KNOBS**, **MODULES** and
-**ARRANGEMENTS**. Press one and the page shows that kind. The five kept kinds look and work the
-same way: each kept thing is a card with its number, its name and what it holds (green: the one
-in use now, the module in the chassis or the arrangement on the page). Press a card to choose
-it; the keys over the cards are for the chosen one, and a key that cannot be pressed now is an
-empty frame.
+The library is the chips, and they are kept once: **the bin** holds every one. A **stack** is a
+pocket in the rack along the top of the page, with a pile in it: the chips it refers to, in
+an order. A chip can be in as many stacks as you like, and it is still one chip, in the bin.
+Taking it out of a stack never takes it out of the bin; deleting the stack leaves its chips.
+On the 3D stage a pocket is a tray with a lip round it, and the pile in it is a chip for
+every chip the stack holds, one standing on another (ten at most are drawn).
 
-| KEY | STACKS | MACRO KNOBS, STACK KNOBS | MODULES | ARRANGEMENTS |
-|---|---|---|---|---|
-| **NEW** | an empty stack (fill it in MACROS) | (a knob is made in MACROS and kept from there) | a module with nothing on its knobs, in the chassis | an empty one, on the page |
-| **COPY** | the chosen stack kept again, its keys and N with it | | the one in the chassis kept again; the chassis holds the copy | the one on the page kept again; the page holds the copy |
-| **LOAD** (or two quick presses on the card) | onto the first stack knob that holds nothing | onto the first free place of its kind | into the chassis | onto the arrangement's page (ARRANGE shows it) |
-| **RENAME** | type, then Return (not a stack that is the web library's) | the same | the same | the same |
-| **DELETE**, held | out of those kept (with ONLINE lit, out of the web library's rack for the instrument too) | out of those kept; modules that have it keep theirs | never the one in the chassis | never the last one |
+Down the left of the rack are its four shelves: **STACKS**, **KNOBS** (knobs kept by
+themselves), **MODULES** and **ARRANGEMENTS**, each with how many it holds. The first pocket
+of every shelf is the bin, **ALL CHIPS**. The wheel over the rack goes along a long shelf.
 
-DELETE pressed and let go leaves the thing and says to hold it. The bar says what each key
-did (TOUR IS ON KNOB 7). When no knob is free, LOAD says so and changes nothing: CLEAR one in
-MACROS first. The wheel goes down a long list. **ARRANGE**, on the strip beside MAIN and
-MACROS, goes to the arrangement's page.
+**Press a pocket and it is open**: what it holds is laid out on the bench under the rack, and
+its rim is green. Press the bin's pocket to put it away.
 
-Not yet the same: these five have no find row (CHIPS has); and COPY is the chosen card for a
-stack but the one in use for a module or an arrangement, as their own pages have had it.
+| WHAT YOU WANT | HOW |
+|---|---|
+| a new stack | press the empty pocket, **NEW STACK**. It is open at once, with nothing in it |
+| a chip into the open stack | carry it up from the bin to the place in the row where it should go; or press it and then **ADD** (it goes last) |
+| a chip into a stack that is not open | carry it from the bin onto that stack's pocket; or press it, press **ADD TO** (it stays lit), then each pocket it should go into. The empty pocket makes a new stack with it in |
+| another order | carry a chip of the row to another place; or press it and then **EARLIER** / **LATER** |
+| a chip out of the stack | press it in the row and then **TAKE OUT**; or carry it off the row. It stays in the bin and in every other stack |
+| a chip of this stack into another too | carry it from the row onto the other stack's pocket: its keys go with it |
+| which parts of the rig it takes there | the keys on its card in the row (1 to 11, R, B, K), and **N**: whether a knob coming to it brings its notes |
+| the stack on a knob | **ON A KNOB**: a copy of it on the first stack knob that holds nothing. The stack stays in its pocket, and what is changed on the knob afterwards does not change it |
+| the stack again under another name | **COPY**: the copy is the one open |
+| its name | **RENAME**, then type and Return |
+| the stack gone | **HOLD: DELETE**. Its chips stay in the bin. (With ONLINE lit it goes from the web library's rack for the instrument too) |
+
+While a stack is open the bin is still under its row, every chip of it, and the chips that are
+in the open stack have a green line along their near edge. With a chip in hand, the pockets of
+the stacks that hold it are ringed, and the strip says which stacks those are. A chip deleted
+from the bin (HOLD: DELETE, with the bin open) is out of every stack that held it, and the bar
+says how many. A stack that is the web library's is changed there: the keys on its row do not
+press, and the bar says so if you try to add to it or take from it.
+
+The other shelves open the same way:
+
+| POCKET | ON THE BENCH | KEYS |
+|---|---|---|
+| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | its pile, each chip with the parts it takes; or what a macro knob is tied to and how far it takes each | **ON A KNOB** (the first free place of its kind), **RENAME**, **HOLD: DELETE** |
+| a **module** (green: the one in the chassis) | its knobs. Press one to see its pile, or what it is tied to | **NEW**, **COPY**, **INTO THE CHASSIS**, **RENAME**, **HOLD: DELETE** (never the one in the chassis) |
+| an **arrangement** (green: the one on the page) | its parts in order, each with its chip, its bars and the parts it takes | **NEW**, **COPY**, **ONTO THE PAGE**, **RENAME**, **HOLD: DELETE** (never the last one) |
+
+**Every chip you can see plays when you press it**: in the bin, in a stack's row, in a kept
+knob's pile, on a module's knob, in an arrangement's parts. Where it is shown with the parts
+it takes there, those are the parts you hear, with its notes if it would bring them. Pressed
+again, it stops. Two quick presses take it to the set, as RECALL does.
+
+Not in this build: the pile of a kept knob, and the knobs of a module that is not in the
+chassis, are shown here and not changed here (a knob is changed in MACROS, on the module in the
+chassis). The kept shelves have no find row. MACROS and the arrangement's page still have
+their own lists of stacks, knobs and modules, with their own keys; they move onto this rack
+next.
 
 #### Finding a snapshot
 
@@ -545,7 +575,7 @@ the list has the same head, and what is chosen there is chosen on all three:
 
 | AT THE HEAD | WHAT |
 |---|---|
-| **ALL 37** / a stack's name | whose are listed, and how many. Pressed: the next stack kept, then all again. (In MACROS a stack's card does the same for that stack) |
+| **ALL 37** / a stack's name | whose are listed, and how many. Pressed: the next stack kept, then all again. (In MACROS a stack's card does the same for that stack. In the library it reads **THE BIN 37** and is not pressed: the rack's pockets say which stack is out) |
 | **RECENT** | the newest first |
 | **FITS NOW** | nearest in sound to what is playing, first (only snapshots with a sound kept) |
 | **MORE**, **LESS** | a step up or down in energy from what is playing, the nearest step first: the twelve nearest it in colour, as the E16's MORE and LESS knobs hold |
@@ -930,6 +960,10 @@ one at a time. No network is asked.
 
 A stack is a collection of snapshots. It is made and changed with no knob, on the instrument
 alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
+
+The library's rack is where a stack is made, filled, put in order and deleted (see The rack,
+under The library). MACROS still has its own list of them, as below, until it moves onto the
+same rack.
 
 - **STACKS**, a plate beside the chosen knob in MACROS, shows them: each a card with its
   number, its name and what it holds.
@@ -1374,6 +1408,7 @@ build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with 
 build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer with that knob chosen and the knobs kept beside it (--rack: the stacks; --rack --open: one of them open in the column; --modules: the modules)
 build/.../SF-000 --shot x.png --page macros --knob 5 --hand 4  # the designer with that snapshot of the list in hand (its bass and returns put out)
 build/.../SF-000 --shot x.png --page library --finder 1       # a page with a finder lit at the head of its snapshots (1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS)
+build/.../SF-000 --shot x.png --page library --libtab 0 --open 1   # the library's rack: --libtab the shelf (0 stacks, 1 knobs kept, 2 modules, 3 arrangements), --open the pocket that is open (from 1; none: the bin), --rowsel a chip of an open stack's row in hand, --hand a chip of the bin in hand, --modknob a knob of an open module pressed
 build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
 build/.../SF-000 --shot x.png --edit 3                # the main view with part 3 of an arrangement being edited (--page arrange --edit 3: the arrangement's page meanwhile)
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)

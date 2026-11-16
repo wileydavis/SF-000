@@ -654,6 +654,11 @@ public:
     juce::var knobVar (const MacroKnob&) const;             // a knob as the session file keeps one
     MacroKnob knobFrom (const juce::var&) const;            // ... and read back (a snapshot that is gone is left out, a tie to a knob this rig lacks is carried)
     juce::var moduleKnobsNow() const;                       // the sixteen as they stand
+    // ---- what a kept thing holds, for the rack to show it
+    juce::var moduleKnob (int module, int k) const;         // that knob of a kept module as the file keeps one (the one in the chassis: as it stands)
+    struct PartSeen { juce::int64 snap = 0; int bars = 0; };
+    std::vector<PartSeen> arrsParts (int index) const;      // a kept arrangement's parts, in order (the one on the page: as it stands)
+    int stacksHolding (juce::int64 id, juce::StringArray* names = nullptr) const;   // the stacks that hold that snapshot (a snapshot may be in many)
     juce::var moduleMotionNow() const;
     bool rackDone (const RackStep&);                        // the step's part here. False: the stack changed meanwhile (next time)
     void rackOrder (const juce::var& stacksThere);          // the library's order; those it has not got after

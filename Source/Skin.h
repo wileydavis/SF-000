@@ -81,6 +81,7 @@ public:
     void key (G&, R, juce::Colour, int press);      // (Parts::kUp, kOn: latched and sitting low, kHeld: all the way in)
     void lamp (G&, float cx, float cy, juce::Colour, float d, bool on);
     void hollow (G&, float cx, float cy, float d, bool round);      // where a control could be and is not
+    void well (G&, R);                                              // a pocket cut into the surface: what a pile of chips stands in
     void window (G&, R, juce::Colour glass);                        // a display: a pane set into the surface
     void badge (G&, R, const juce::String&, const juce::Font&);     // the name plate: raised, with raised letters
 
