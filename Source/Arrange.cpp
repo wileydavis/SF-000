@@ -334,7 +334,8 @@ int Session::arrToStack()
 {
     if (arrangement.empty()) return -1;
     const int at = rackNew ("TRACK");
-    for (auto& p : arrangement) rackAdd (at, p.snap, p.lanes & kAllLanes);
+    // (each with its part's keys, N among them: put on a knob, a part that brought its notes brings them there)
+    for (auto& p : arrangement) rackAdd (at, p.snap, (p.lanes & kAllLanes) | (p.notes ? kNotesKey : 0u));
     return at;
 }
 

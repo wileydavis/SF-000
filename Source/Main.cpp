@@ -1278,12 +1278,99 @@ static bool grainCheck (juce::String& said)
     return ok;
 }
 
+static void stackNotesTest (int& bad)
+{
+    using namespace sf0;
+    {
+        // A stack knob and its snapshots' N keys. Come to a snapshot whose N is lit (or through it), the knob brings that
+        // snapshot's notes into the lanes it takes; one whose N is out leaves the notes as they are, and the sound alone
+        // follows the knob. A press on a place brings them too. N is kept with the knob, goes with its stack into the rack
+        // and onto another knob, and comes from a part's own N when the arrangement is made a stack. Where the knob stands
+        // among its snapshots is said as the screen needs it: the one ahead, how far, and whether it stands on one.
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        const int bass = 5, cut = cx::lane (bass, 6), k = 4, k2 = 5;
+        auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-3f; };
+        ses.userSet (cx::kGlide, 0.0f);
+        const bool was = e.pattern (bass).steps[3].on;
+        ses.userSet (cut, 0.2f); const auto a = ses.take();
+        { auto p = e.pattern (bass); p.steps[3].on = ! was; e.setPattern (bass, p, false); }
+        ses.userSet (cut, 0.9f); const auto b = ses.take();
+        ses.knobClear (k); ses.knobClear (k2);
+        ses.stackAdd (k, a); ses.stackAdd (k, b);
+        const bool noneLit = ! ses.knobs[(size_t) k].notesAt (0) && ! ses.knobs[(size_t) k].notesAt (1) && ses.knobs[(size_t) k].keysAt (1) == Session::kAllLanes;
+        // N out on both: turned down to the first, the sound goes there and the notes stay the second's
+        ses.turnSnapKnob (k, 1.0f); ses.turnSnapKnob (k, 0.0f);
+        const bool soundOnly = near (ses.value (cut), 0.2f) && e.pattern (bass).steps[3].on != was;
+        // N lit on the first: come to it again, its notes come
+        ses.stackLanes (k, 0, Session::kAllLanes | Session::kNotesKey);
+        ses.turnSnapKnob (k, 0.4f);
+        const auto mid = ses.stackWay (k, 0.4f);
+        const bool between = e.pattern (bass).steps[3].on != was && mid.on < 0 && mid.to == 1 && mid.from == 0 && near (mid.part, 0.4f) && ! mid.notes;
+        ses.turnSnapKnob (k, 0.0f);
+        const auto home = ses.stackWay (k, 0.0f);
+        const bool came = e.pattern (bass).steps[3].on == was && near (ses.value (cut), 0.2f) && home.on == 0 && home.notes && home.toName == ses.findSnap (a)->name;
+        // up to the second, whose N is out: the notes stay the first's. On the way the screen is told it is going up to it
+        ses.turnSnapKnob (k, 0.75f);
+        const auto up = ses.stackWay (k, 0.75f);
+        ses.turnSnapKnob (k, 1.0f);
+        const bool stays = e.pattern (bass).steps[3].on == was && near (ses.value (cut), 0.9f) && up.to == 1 && near (up.part, 0.75f) && ses.stackWay (k, 1.0f).on == 1;
+        // going down again, the way is said the other way round: toward the first, a quarter of the way there
+        ses.turnSnapKnob (k, 0.75f);
+        const auto down = ses.stackWay (k, 0.75f);
+        const bool downWay = down.to == 0 && down.from == 1 && near (down.part, 0.25f) && down.notes;
+        // the second lit too, but without the bass: its notes do not reach the bass. With the bass: they do. A press on its place also brings them
+        ses.stackLanes (k, 1, (Session::kAllLanes & ~(1u << bass)) | Session::kNotesKey);
+        ses.turnSnapKnob (k, 1.0f);
+        const bool scoped = e.pattern (bass).steps[3].on == was;
+        ses.stackLanes (k, 1, Session::kAllLanes | Session::kNotesKey);
+        ses.turnSnapKnob (k, 0.9f); ses.turnSnapKnob (k, 1.0f);
+        const bool second = e.pattern (bass).steps[3].on != was;
+        { auto p = e.pattern (bass); p.steps[3].on = was; e.setPattern (bass, p, false); }
+        ses.recallNotes = false;
+        ses.pressSnapKnob (k);
+        const bool pressed = e.pattern (bass).steps[3].on != was;
+        // through one on the way to the next: three on the knob, turned from the first past the second in one move
+        ses.stackAdd (k, a);                                            // (a, b, a: the last with N out)
+        ses.turnSnapKnob (k, 0.0f);
+        const bool atFirst = e.pattern (bass).steps[3].on == was;
+        ses.turnSnapKnob (k, 0.6f);
+        const bool through = atFirst && e.pattern (bass).steps[3].on != was && ses.knobs[(size_t) k].picked == 0;
+        // the file; the rack and another knob; an older file's keys (no N among them)
+        Engine e2; e2.prepare (48000.0, 256);
+        Session s2 (e2, false);
+        s2.takeState (ses.stateVar());
+        const bool filed = s2.knobs[(size_t) k].notesAt (0) && s2.knobs[(size_t) k].notesAt (1) && ! s2.knobs[(size_t) k].notesAt (2) && (s2.knobs[(size_t) k].keysAt (1) & Session::kAllLanes) == Session::kAllLanes;
+        const int st = ses.stackKeep (k);
+        const bool racked = st >= 0 && (ses.stacks[(size_t) st].keysAt (0) & Session::kNotesKey) != 0 && (ses.stacks[(size_t) st].keysAt (2) & Session::kNotesKey) == 0;
+        const bool onto = ses.stackOnto (st, k2) && ses.knobs[(size_t) k2].notesAt (1) && ! ses.knobs[(size_t) k2].notesAt (2);
+        auto old = ses.stateVar();
+        if (auto* kn = old.getProperty ("knobs", juce::var()).getArray())
+            if (auto* ln = (*kn)[k].getProperty ("lanes", juce::var()).getArray()) for (auto& v : *ln) v = (int) ((juce::uint32) (int) v & Session::kAllLanes);
+        Engine e3; e3.prepare (48000.0, 256);
+        Session s3 (e3, false);
+        s3.takeState (old);
+        const bool before = s3.knobs[(size_t) k].snaps.size() == 3 && ! s3.knobs[(size_t) k].notesAt (0) && ! s3.knobs[(size_t) k].notesAt (1);
+        // TO STACK: a part's N is its snapshot's in the stack
+        ses.arrAdd (a); ses.arrAdd (b); ses.arrNotes (1, false);
+        const int tr = ses.arrToStack();
+        const bool track = tr >= 0 && (ses.stacks[(size_t) tr].keysAt (0) & Session::kNotesKey) != 0 && (ses.stacks[(size_t) tr].keysAt (1) & Session::kNotesKey) == 0;
+        const bool ok = noneLit && soundOnly && between && came && stays && downWay && scoped && second && pressed && through && filed && racked && onto && before && track;
+        if (! ok) ++bad;
+        std::printf ("  %s: a stack knob's snapshots have an N key each: come to one whose N is lit, or through it, the knob brings its notes into the lanes it takes (a press on its place too); N out, the notes stay and the sound "
+                     "alone follows; it is kept with the knob, goes with the stack into the rack and onto another knob, comes from a part's N in TO STACK, and a file from before has none lit; and the knob says which "
+                     "snapshot it is going toward, how far it has come, and when it stands on one\n", ok ? "ok  " : "FAIL");
+        if (! ok) std::printf ("    (none lit %d sound only %d between %d came %d stays %d down %d scoped %d second %d pressed %d through %d filed %d racked %d onto %d before %d track %d)\n", (int) noneLit, (int) soundOnly, (int) between,
+                               (int) came, (int) stays, (int) downWay, (int) scoped, (int) second, (int) pressed, (int) through, (int) filed, (int) racked, (int) onto, (int) before, (int) track);
+    }
+}
+
 static int selfTest (const juce::String& wavPath, double bars = 16.0)
 {
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -3590,6 +3677,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         if (hi - lo > 480) { std::printf ("  FAIL: lanes leave more than 10 ms apart\n"); ++bad; }
     }
 
+    stackNotesTest (bad);
+
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
         juce::String said;
@@ -5537,9 +5626,12 @@ static int uiTest()
             Session s3 (e3, false);
             s3.takeState (ses.stateVar());
             const bool filedToo = s3.stacks.size() == 1 && s3.stacks[0].here && s3.stacks[0].snaps == ses.stacks[0].snaps && (s3.stacks[0].lanesAt (1) & Session::kAllLanes) == bParts && s3.stacks[0].id == ses.stacks[0].id && s3.stacks[0].id.startsWith ("here");
-            // its number: out of the rack
+            // its OUT: pressed and let go, it stays (and the bar says to hold it); held, it is out of the rack
             draw(); click (rackHit (2, 0)); draw();
-            const bool forgot = ses.stacks.empty();
+            const bool stayed = ses.stacks.size() == 1 && sc.testBarNote().contains ("HOLD OUT");
+            { const auto at = rackHit (2, 0); sc.mouseDown (ev (at, at, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (at, at, false)); }
+            draw();
+            const bool forgot = stayed && ses.stacks.empty();
             click (rackHit (0, 0)); draw();
             ses.knobs[(size_t) k2] = knob2Was;
             ses.stacks = stacksWere;
@@ -6235,8 +6327,13 @@ static int uiTest()
         s12.takeState (old);
         const bool fromBefore = s12.keptKnobs.empty() && s12.knobs[6].snaps == tour.snaps;
         sc11.testPickKnob (6); draw11();
+        // (its OUT: a press leaves it; held, it goes)
+        const auto keptWere = s11.keptKnobs.size();
         click11 (keptAt (2, 1)); draw11();
-        const bool out = s11.keptKnobs.size() == 2 && ! s11.keptKnobs[1].stack && s11.knobs[6].snaps == tour.snaps;
+        const bool keptStays = s11.keptKnobs.size() == keptWere && sc11.testBarNote().contains ("HOLD OUT");
+        { const auto at = keptAt (2, 1); sc11.mouseDown (ev11 (at)); juce::Thread::sleep (760); sc11.testTick(); sc11.mouseUp (ev11 (at)); }
+        draw11();
+        const bool out = keptStays && s11.keptKnobs.size() == 2 && ! s11.keptKnobs[1].stack && s11.knobs[6].snaps == tour.snaps;
         const bool ok = comes && tabs && keptMacro && tabs3 && keptStack && refused && putStack && wrong && putMacro && own && again && nothing && unnamed && filed && fromBefore && out;
         check (ok, "the knobs kept: KEEP, at the head of KNOBS, keeps the chosen knob under its name (a macro knob with what it is tied to, a stack knob with its snapshots and their parts); PUT puts one on a place of its kind that holds nothing, "
                    "at rest, with nothing heard to change; a place that holds something and the wrong kind of place are refused; the kept one is not changed by the place; they are in the session file, and go into another module");
@@ -6257,7 +6354,7 @@ static int uiTest()
         auto at13 = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc13.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
         auto tabAt = [&] (int which) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsTab (h, which); }); };
         auto rackKey = [&] (int what, int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, what, i); }); };      // 0 NEW, 1 OPEN, 2 its card
-        auto rackHit = [&] (int what, int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsRack (h, what, i); }); };         // 1 ADD, 2 its number
+        auto rackHit = [&] (int what, int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsRack (h, what, i); }); };         // 1 ADD, 2 its OUT (held)
         auto findAt = [&] (int what) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsFind (h, what); }); };
         auto addAt = [&] (int i) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsPickAdd (h, i); }); };
         auto colAt = [&] (int what, int i, int b = 0) { return at13 ([=] (const Screen::TestHit& h) { return Screen::testIsColumn (h, what, i, b); }); };
@@ -6331,9 +6428,16 @@ static int uiTest()
         const bool noOwnAdd = rackHit (1, 0).x < 0.0f && rackHit (1, 1).x > 0.0f;
         click13 (rackHit (1, 1)); draw13();
         const bool merged = s13.stacks[0].snaps == Ids { idAt (4), idAt (2), idAt (5), idAt (6) } && (s13.stacks[0].lanesAt (3) & Session::kAllLanes) == noKick && s13.stacks[1].snaps.size() == 2;
-        // the open one's number: out of those kept, and the column is the knob's again
-        click13 (rackHit (2, 0)); draw13();
-        const bool out = s13.stacks.size() == 1 && s13.stacks[0].name == "B" && sc13.testOpenStack() < 0;
+        // the open one's OUT, held: out of those kept, and the column is the knob's again. And a snapshot's N in the column: lit by
+        // its key (the one after K), kept with the stack, and not counted among its parts
+        click13 (colAt (1, 0, kLanes + 3)); draw13();
+        const bool nKey = (s13.stacks[0].keysAt (0) & Session::kNotesKey) != 0 && (s13.stacks[0].keysAt (0) & Session::kAllLanes) == Session::kAllLanes
+                          && (s13.stacks[0].keysAt (3) & Session::kNotesKey) == 0 && (s13.stacks[0].keysAt (3) & Session::kAllLanes) == noKick;
+        click13 (colAt (1, 0, kLanes + 3)); draw13();
+        const bool nOut = (s13.stacks[0].keysAt (0) & Session::kNotesKey) == 0;
+        { const auto at = rackHit (2, 0); sc13.mouseDown (ev13 (at)); juce::Thread::sleep (760); sc13.testTick(); sc13.mouseUp (ev13 (at)); }
+        draw13();
+        const bool out = nKey && nOut && s13.stacks.size() == 1 && s13.stacks[0].name == "B" && sc13.testOpenStack() < 0;
         // the session file: an empty stack and one that holds some, read back the same
         s13.rackNew ("empty one");
         Engine e14; e14.prepare (48000.0, 128);
@@ -6963,6 +7067,23 @@ static int shot (const juce::StringArray& args)
     if (arg ("--space", "") == "conv") e.setSpaceModel (1);
     if (args.contains ("--seqmute")) { ses.userSet (cx::lane (ses.activeLane, cx::kSeqMute), 1.0f); for (int i = 0; i < 8; ++i) e.render (b); }
     Screen sc (ses);
+    if (arg ("--tag", "").isNotEmpty())
+    {
+        // --tag V [--tagdown]: the tag of the first stack knob (TOUR) turned to V (0 to 1; --tagdown: reached from above), its
+        // third snapshot's N lit, written beside the picture as NAME.tag.png; and the knob left there, for the flat view's line under it
+        ses.userSet (cx::kGlide, 0.0f);
+        ses.stackLanes (4, 2, Session::kAllLanes | Session::kNotesKey);
+        const float to = juce::jlimit (0.0f, 1.0f, arg ("--tag", "0.4").getFloatValue());
+        ses.turnSnapKnob (4, args.contains ("--tagdown") ? 1.0f : 0.0f);
+        ses.turnSnapKnob (4, to);
+        ses.moved (cx::kSnap + 4, 1);
+        for (int i = 0; i < 8; ++i) e.render (b);
+        const auto img = sc.testTagPicture (cx::kSnap + 4);
+        const juce::File tf = juce::File (arg ("--shot", "shot.png")).getSiblingFile (juce::File (arg ("--shot", "shot.png")).getFileNameWithoutExtension() + ".tag.png");
+        tf.deleteFile();
+        if (auto os = tf.createOutputStream()) { juce::PNGImageFormat png; png.writeImageToStream (img, *os); }
+        std::printf ("wrote %s: %s\n", tf.getFullPathName().toRawUTF8(), sc.testTagText (cx::kSnap + 4).toRawUTF8());
+    }
     const auto page = arg ("--page", "main");
     sc.setPage (page == "library" ? Screen::pLibrary : page == "macros" ? Screen::pMacros : page == "pockets" ? Screen::pPockets : page == "arrange" ? Screen::pArrange : Screen::pMain);
     if (page == "macros" && args.contains ("--modules"))

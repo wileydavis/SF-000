@@ -717,8 +717,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                  : "TYPE PART OF A NAME, THEN RETURN: ONLY SNAPSHOTS WHOSE NAMES HOLD IT ARE LISTED. PRESSED WHILE IT IS LIT: ALL OF THEM AGAIN.";
             break;
         case hRackOut:
-            t.title = "OUT OF THE STACKS";
-            body = "TAKES THIS STACK OUT OF THOSE KEPT. ITS SNAPSHOTS STAY IN THE LIBRARY, AND ON ANY KNOB THAT HOLDS THEM.";
+            t.title = "HOLD: OUT OF THE STACKS";
+            body = "HELD: TAKES THIS STACK OUT OF THOSE KEPT (WITH ONLINE LIT, OUT OF THE WEB LIBRARY'S RACK FOR THE INSTRUMENT TOO). ITS SNAPSHOTS STAY IN THE LIBRARY, AND ON ANY KNOB THAT HOLDS THEM.";
             break;
         case hKeptKeep:
             t.title = "KEEP: THE KNOB";
@@ -729,8 +729,13 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             body = "PUTS THIS KNOB ON THE CHOSEN PLACE: A MACRO KNOB ON 1 TO 4, A STACK KNOB ON 5 TO 12, 14 OR 15. THE PLACE MUST HOLD NOTHING (CLEAR IT FIRST). IT STARTS AT REST, AND NOTHING IS HEARD TO CHANGE. THE KEPT ONE STAYS AS IT IS: WHAT IS CHANGED ON THE PLACE CHANGES THE MODULE'S, NOT IT.";
             break;
         case hKeptOut:
-            t.title = "OUT OF THE KNOBS";
-            body = "TAKES THIS KNOB OUT OF THOSE KEPT. A MODULE THAT HAS IT ON A PLACE KEEPS ITS OWN.";
+            t.title = "HOLD: OUT OF THE KNOBS";
+            body = "HELD: TAKES THIS KNOB OUT OF THOSE KEPT. A MODULE THAT HAS IT ON A PLACE KEEPS ITS OWN.";
+            break;
+        case hColKey:
+            t.title = h.b == kLanes + 3 ? "N: ITS NOTES" : "A PART OF THE RIG";
+            body = h.b == kLanes + 3 ? "BLACK: WHEN THE KNOB COMES TO THIS SNAPSHOT (OR IS PRESSED ON IT), EACH LANE IT TAKES IS GIVEN WHAT THAT LANE WAS PLAYING IN THE SNAPSHOT, ON THE NEXT BAR LINE: AS A PART OF THE ARRANGEMENT WITH N LIT. AN EMPTY FRAME: THE NOTES STAY AS THEY ARE, AND ONLY THE SOUND FOLLOWS THE KNOB."
+                                     : "BLACK: THIS SNAPSHOT TAKES THIS PART OF THE RIG WHEN THE KNOB COMES TO IT, IS PRESSED ON IT, OR PLAYS IT IN THE HEADPHONES. AN EMPTY FRAME: THE PART STAYS AS IT IS. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY.";
             break;
         case hPageSel:
             t.title = "STEPS " + String (h.a * 16 + 1) + " TO " + String (h.a * 16 + 16);
@@ -1543,7 +1548,23 @@ void Screen::drawSnapPanel (G& g, R r)
                 knobCtl = -1;
                 if (info) number (g, cx::kSnap + k, R (cxm - 14, y + 10 - (lit ? 3.0f : 0.0f), 28, 20), col::lit);
                 const Snapshot* on = stack && kn.picked != 0 && (! ses.stackCue || ses.cueing() == kn.picked) ? ses.findSnap (kn.picked) : nullptr;
-                text (g, on != nullptr ? on->name : kn.name, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
+                String says = on != nullptr ? on->name : kn.name;
+                // (a stack knob in the hand, or under one on a controller: the snapshot it is going toward and how far it has come
+                // to it, of 100; on one, that one's name. As its tag says on the 3D stage.)
+                if (stack && ! ses.stackCue)
+                {
+                    const auto now = juce::Time::getMillisecondCounter();
+                    const bool inHand = mouseIsDown && drag.kind == hSnapKnob && drag.a == k;
+                    if (inHand || now - ses.movedAt[(size_t) (cx::kSnap + k)].load() < 1300u)
+                        if (const auto w = ses.stackWay (k, eng.target (cx::kSnap + k)); w.to >= 0)
+                        {
+                            const String pct = w.on >= 0 ? String() : " " + String (juce::jlimit (0, 99, juce::roundToInt (w.part * 100.0f)));
+                            String to = w.toName;
+                            while (to.length() > 1 && tw (fLbl, to) > 80.0f - tw (fLbl, pct)) to = to.dropLastCharacters (1);
+                            says = to + pct;
+                        }
+                }
+                text (g, says, R (cxm - 40, y + 42, 80, 14), fLbl, col::black);
             }
             hit (kr.expanded (4, 2), hSnapKnob, k, 0);
         }
@@ -2572,7 +2593,7 @@ void Screen::drop (juce::Point<float> p)
             const auto& snaps = os >= 0 ? ses.stacks[(size_t) os].snaps : ses.knobs[(size_t) selKnob].snaps;
             if (drag.a >= (int) snaps.size()) break;
             const auto id = snaps[(size_t) drag.a];
-            const auto parts = (os >= 0 ? ses.stacks[(size_t) os].lanesAt ((size_t) drag.a) : ses.knobs[(size_t) selKnob].lanesAt ((size_t) drag.a)) & Session::kAllLanes;
+            const auto parts = os >= 0 ? ses.stacks[(size_t) os].keysAt ((size_t) drag.a) : ses.knobs[(size_t) selKnob].keysAt ((size_t) drag.a);      // (its keys go with it, N among them)
             if (at >= 0) { const int to = at > drag.a ? at - 1 : at; if (os >= 0) ses.rackMove (os, drag.a, to); else ses.stackMove (selKnob, drag.a, to); }
             else if (pl >= 0)
             {
@@ -2594,7 +2615,7 @@ void Screen::drop (juce::Point<float> p)
             else if (at >= 0)
             {
                 const auto from = ses.stacks[(size_t) drag.a];
-                if (os >= 0) { if (drag.a != os) for (size_t i = 0; i < from.snaps.size(); ++i) ses.rackAdd (os, from.snaps[i], from.lanesAt (i)); }
+                if (os >= 0) { if (drag.a != os) for (size_t i = 0; i < from.snaps.size(); ++i) ses.rackAdd (os, from.snaps[i], from.keysAt (i)); }
                 else if (! ses.stackOnto (drag.a, selKnob)) say ("NO ROOM ON THAT KNOB FOR ALL OF THEM");
             }
             break;
@@ -2618,7 +2639,7 @@ void Screen::drawColumn (G& g)
     const bool shelf = os >= 0;
     const auto& kn = ses.knobs[(size_t) k];
     const std::vector<juce::int64>& snaps = shelf ? ses.stacks[(size_t) os].snaps : kn.snaps;
-    auto lanesAt = [&] (size_t i) { return shelf ? ses.stacks[(size_t) os].lanesAt (i) : kn.lanesAt (i); };
+    auto keysAt = [&] (size_t i) { return shelf ? ses.stacks[(size_t) os].keysAt (i) : kn.keysAt (i); };       // (its parts, and N)
     const int n = (int) snaps.size();
     const float x = 1151.0f;
     // its head: whose stack this is, and how many it holds
@@ -2648,7 +2669,7 @@ void Screen::drawColumn (G& g)
         g.drawFittedText (shelf ? "NOTHING IN IT. CARRY A SNAPSHOT HERE FROM THE RIGHT, OR PRESS ITS ADD. CHOOSE A PLACE ON THE LEFT TO PUT THE STACK AWAY."
                                 : "NO SNAPSHOTS ON IT. CARRY ONE HERE FROM THE RIGHT, OR PRESS ITS ADD, TO BEGIN ITS STACK.", juce::Rectangle<int> ((int) x + 6, 116, 260, 56), juce::Justification::topLeft, 3, 1.0f);
     }
-    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
+    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N" };
     for (int row = 0; row < rows; ++row)
     {
         const int i = colScroll + row;
@@ -2659,7 +2680,7 @@ void Screen::drawColumn (G& g)
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
         const String num (i + 1);
         const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
-        const juce::uint32 lanes = lanesAt ((size_t) i) & Session::kAllLanes;
+        const juce::uint32 lanes = keysAt ((size_t) i);
         if (vis (g, r))
         {
             const bool heard = sn != nullptr && ses.cueing() == sn->id;
@@ -2671,10 +2692,11 @@ void Screen::drawColumn (G& g)
             plate (g, x0 + wTag, y0, name, fLegend, 8, heard ? col::green : col::white, heard ? col::lit : col::black, 24);
         }
         hit (R (x0, y0, wTag, 24), hColOut, i, 0);
-        // its keys: black with a lit figure while this snapshot takes the part; an empty frame when the part is put out
-        for (int p = 0; p < kLanes + 3; ++p)
+        // its keys: black with a lit figure while this snapshot takes the part; an empty frame when the part is put out.
+        // The last is N, its notes (as on a part of the arrangement): lit, the knob coming to this snapshot brings them.
+        for (int p = 0; p < kLanes + 4; ++p)
         {
-            const R kr (x0 + (float) p * 18.6f, y0 + 30, 17.0f, 24);
+            const R kr (x0 + (float) p * 17.4f, y0 + 30, 16.0f, 24);
             const bool takes = ((lanes >> p) & 1u) != 0;
             if (vis (g, kr))
             {
@@ -2725,19 +2747,23 @@ void Screen::drawKept (G& g, float x)
         const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
         const R pr (r.getRight() - 6 - 44, y0, 44, 24);
         const bool fits = bench && kk.stack == Session::isStack (selKnob);
+        // OUT, held: out of the knobs kept. (It was the card's number, pressed once, and nothing said so.)
+        const R outr ((fits ? pr.getX() - 2 : r.getRight() - 6) - 38, y0, 38, 24);
+        const bool going = mouseIsDown && drag.kind == hKeptOut && drag.a == i && ! drag.fired;
         if (vis (g, r))
         {
             card (g, r, false);
             tag (g, R (x0, y0, wTag, 24), num);
             String name = kk.name();
-            while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > pr.getX() - 4) name = name.dropLastCharacters (1);
+            while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > outr.getX() - 4) name = name.dropLastCharacters (1);
             plate (g, x0 + wTag, y0, name, fLegend, 8, col::white, col::black, 24);
             if (fits) { window (g, pr, col::white); text (g, "PUT", pr, fNote, col::black); }
+            window (g, outr, going ? col::red : col::white); text (g, "OUT", outr, fNote, going ? col::lit : col::black);
             g.setColour (tone (col::black)); g.setFont (fLbl);
             g.drawFittedText (ses.keptSays (i), juce::Rectangle<int> ((int) x0, (int) y0 + 28, 260, 28), juce::Justification::topLeft, 2, 0.8f);
         }
         hit (r, hKeptCard, i, 0);
-        hit (R (x0, y0, wTag, 24), hKeptOut, i, 0);
+        hit (outr, hKeptOut, i, 0);
         if (fits) hit (pr, hKeptPut, i, 0);
     }
 }
@@ -2817,25 +2843,29 @@ void Screen::drawRack (G& g, float x, int across)
         // ADD: into what is open (the chosen stack knob, or the open stack; not into itself). OPEN: into the column, to be changed.
         const bool adds = os >= 0 ? i != os : Session::isStack (selKnob), opens = ses.rackCanChange (i);
         const R ar (r.getRight() - 6 - 44, y0, 44, 24), orr (r.getRight() - 6 - (adds ? 92.0f : 46.0f), y0, 46, 24);
+        // OUT, held: out of the stacks kept. (It was the card's number, pressed once, and nothing said so.)
+        const R outr ((opens ? orr.getX() - 2 : adds ? ar.getX() - 2 : r.getRight() - 6) - 38, y0, 38, 24);
+        const bool going = mouseIsDown && drag.kind == hRackOut && drag.a == i && ! drag.fired;
         hit (r, hRackCard, i, 0);
         if (vis (g, r))
         {
             card (g, r, i == os);
             tag (g, R (x0, y0, wTag, 24), num);
             String name = st.name;
-            const float room = (opens ? orr.getX() : adds ? ar.getX() : r.getRight() - 6) - 4;
+            const float room = outr.getX() - 4;
             while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > room) name = name.dropLastCharacters (1);
             const bool listed = st.id == inStack;
             plate (g, x0 + wTag, y0, name, fLegend, 8, listed ? col::black : col::white, listed ? col::lit : col::black, 24);
             if (opens) { window (g, orr, col::white); text (g, "OPEN", orr, fNote, col::black); }
             if (adds) { window (g, ar, col::white); text (g, "ADD", ar, fNote, col::black); }
+            window (g, outr, going ? col::red : col::white); text (g, "OUT", outr, fNote, going ? col::lit : col::black);
             // what it holds, and whose it is
             String holds = String ((int) st.snaps.size()) + (st.snaps.size() == 1 ? " SNAPSHOT" : " SNAPSHOTS") + (! st.here ? ", FROM THE WEB: " : st.mark.isNotEmpty() ? ", HERE AND ON THE WEB: " : ", KEPT HERE: ");
             for (size_t q2 = 0; q2 < st.snaps.size() && q2 < 12; ++q2) if (auto* sn = ses.findSnap (st.snaps[q2])) holds << (q2 > 0 ? " > " : "") << sn->name;
             g.setColour (tone (col::black)); g.setFont (fLbl);
             g.drawFittedText (holds, juce::Rectangle<int> ((int) x0, (int) y0 + 28, 260, 28), juce::Justification::topLeft, 2, 0.8f);
         }
-        hit (R (x0, y0, wTag, 24), hRackOut, i, 0);
+        hit (outr, hRackOut, i, 0);
         if (opens) hit (orr, hRackOpen, i, 0);
         if (adds) hit (ar, hRackAdd, i, 0);
     }
@@ -3312,7 +3342,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             const auto& kn = ses.knobs[(size_t) selKnob];
             const int n = os >= 0 ? (int) ses.stacks[(size_t) os].snaps.size() : (int) kn.snaps.size();
             if (h->a >= n) break;
-            const juce::uint32 lanes = ((os >= 0 ? ses.stacks[(size_t) os].lanesAt ((size_t) h->a) : kn.lanesAt ((size_t) h->a)) & Session::kAllLanes) ^ (1u << h->b);
+            const juce::uint32 lanes = (os >= 0 ? ses.stacks[(size_t) os].keysAt ((size_t) h->a) : kn.keysAt ((size_t) h->a)) ^ (1u << h->b);       // (b past the parts: N)
             const auto id = os >= 0 ? ses.stacks[(size_t) os].snaps[(size_t) h->a] : kn.snaps[(size_t) h->a];
             if (os >= 0) ses.rackLanes (os, h->a, lanes); else ses.stackLanes (selKnob, h->a, lanes);
             // (heard at once, if it is the one in the headphones)
@@ -3395,9 +3425,9 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 recNote = "KEPT WITH THE KNOBS AS " + ses.keptKnobs[(size_t) at].name(); recNoteAt = juce::Time::getMillisecondCounter();
             }
             break;
-        case hKeptOut:  ses.knobForget (h->a); break;
+        case hKeptOut:  break;          // (held: see the timer)
         case hKeptPut:  putKept (h->a, selKnob); break;
-        case hRackOut:  ses.stackForget (h->a); break;
+        case hRackOut:  break;          // (held)
         case hModCard:  selMod = h->a; break;
         case hRackAdd:
         {
@@ -3406,7 +3436,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             {
                 // (a stack is open: this one's snapshots go into it, after what it holds, each with its parts)
                 const auto from = ses.stacks[(size_t) h->a];
-                if (h->a != os) for (size_t i = 0; i < from.snaps.size(); ++i) ses.rackAdd (os, from.snaps[i], from.lanesAt (i));
+                if (h->a != os) for (size_t i = 0; i < from.snaps.size(); ++i) ses.rackAdd (os, from.snaps[i], from.keysAt (i));
             }
             else if (! ses.stackOnto (h->a, selKnob)) { recNote = "NO ROOM ON THAT KNOB FOR ALL OF THEM"; recNoteAt = juce::Time::getMillisecondCounter(); }
             break;
@@ -3570,6 +3600,7 @@ void Screen::mouseUp (const juce::MouseEvent& e)
         return;
     }
     mouseIsDown = false;
+    if ((drag.kind == hRackOut || drag.kind == hKeptOut) && ! drag.fired) { recNote = "HOLD OUT TO TAKE IT OUT OF THOSE KEPT"; recNoteAt = juce::Time::getMillisecondCounter(); }
     if (drag.kind == hHold) ses.userSet (drag.a, 0.0f);
     if (drag.kind == hSetup && drag.a < (int) cfgParams.size() && cfgParams[(size_t) drag.a].kind == Kind::Hold) eng.setSetup (cfg, cfgParams[(size_t) drag.a].id, 0.0f);
     if (drag.kind == hDisplay) if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouseUp();
@@ -4077,6 +4108,9 @@ void Screen::followMoves()
 void Screen::say (const String& words) { sayText = words; sayAt = juce::Time::getMillisecondCounter(); }
 
 // A moved knob's tag: its name and where it is, its value as the engine reads it, and a bar for how far round it stands.
+// A stack knob's says where it is among its snapshots instead: the one it has left and the one it is going toward (the
+// way it was last turned), how far it is from the first to the second as a figure and as the bar, and ON with the bar
+// full and green when it stands on one: the rig is then that snapshot, whole.
 juce::Image Screen::tagPicture (int ctl)
 {
     const auto& c = eng.control (ctl);
@@ -4085,18 +4119,31 @@ juce::Image Screen::tagPicture (int ctl)
     if (ctl >= cx::kSnap) { label = ses.knobs[(size_t) (ctl - cx::kSnap)].name; where = "SNAPSHOTS"; }
     int ch = 0, num = 0;
     if (ccx::addressOf (ctl, ch, num)) where << (where.isEmpty() ? "" : "  ") << "CH " << ch << " CC " << num;
-    const String value = ctl >= cx::kSnap ? String (juce::roundToInt (eng.shown (ctl) * 100.0f)) : eng.valueText (ctl);
-    const float v = juce::jlimit (0.0f, 1.0f, eng.shown (ctl));
+    String value = ctl >= cx::kSnap ? String (juce::roundToInt (eng.shown (ctl) * 100.0f)) : eng.valueText (ctl);
+    float v = juce::jlimit (0.0f, 1.0f, eng.shown (ctl));
+    bool standing = false, way = false;
+    if (const int k = ctl - cx::kSnap; k >= 0 && Session::isStack (k) && ! ses.stackCue)
+        if (const auto w = ses.stackWay (k, v); w.to >= 0)
+        {
+            standing = w.on >= 0; way = true;
+            if (label.isEmpty()) label = "KNOB " + String (k + 1);
+            // (N after a name: its notes come as the knob comes to it)
+            const String to = w.toName + (w.notes ? " +N" : "");
+            where = standing ? "ON " + to : (w.fromName.isNotEmpty() ? w.fromName + " > " : String ("TO ")) + to;
+            value = standing ? String ("ON") : String (juce::jlimit (0, 99, juce::roundToInt (w.part * 100.0f)));
+            v = standing ? 1.0f : w.part;
+        }
     const String key = label + "|" + value + "|" + where + "|" + String (juce::roundToInt (v * 200.0f)) + (eng.isGliding (ctl) ? "g" : "");
     auto& pic = tagPics[ctl];
     if (pic.key == key && pic.image.isValid()) return pic.image;
     // (light on dark whatever the instrument: it floats over it)
     Colour accent = col::lit;
     for (const auto& k : recorded.knobs) if (k.ctl == ctl) accent = Colour (k.light);
-    if (eng.isGliding (ctl)) accent = col::green;
+    if (eng.isGliding (ctl) || standing) accent = col::green;
     if (accent != col::lit) accent = accent.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.5f);
     const float s = stage != nullptr ? stage->tagScale() : 2.0f;
-    const float wide = std::max (150.0f, std::max (tw (fLbl, label) + tw (fRead, value) + 44.0f, tw (fNote, where) + 24.0f)), tall = 58.0f;
+    // (a stack knob's: its second line names two snapshots and runs under the figure, so it is as wide as both; its bar is the point of it, and thicker)
+    const float wide = std::max (150.0f, std::max (tw (fLbl, label) + tw (fRead, value) + 44.0f, tw (fNote, where) + 24.0f + (way ? tw (fRead, value) + 14.0f : 0.0f))), tall = way ? 62.0f : 58.0f;
     juce::Image img (juce::Image::ARGB, juce::roundToInt (wide * s), juce::roundToInt (tall * s), true, juce::SoftwareImageType());
     {
         G g (img);
@@ -4108,10 +4155,17 @@ juce::Image Screen::tagPicture (int ctl)
         g.setColour (night::ink); g.setFont (fLbl); g.drawText (label, R (11, 9, wide - 22, 16), juce::Justification::centredLeft, false);
         g.setColour (night::dim); g.setFont (fNote.withHeight (11.5f)); g.drawText (where, R (11, 26, wide - 22, 13), juce::Justification::centredLeft, false);
         g.setColour (accent); g.setFont (fRead.withHeight (24.0f)); g.drawText (value, R (11, 7, wide - 22, 30), juce::Justification::centredRight, false);
-        const R track (11, tall - 12.0f, wide - 22, 3.0f);
-        g.setColour (Colour (0x30D8D3C8)); g.fillRoundedRectangle (track, 1.5f);
+        const float th = way ? 6.0f : 3.0f;
+        const R track (11, tall - (way ? 16.0f : 12.0f), wide - 22, th);
+        g.setColour (Colour (0x30D8D3C8)); g.fillRoundedRectangle (track, th * 0.5f);
         const float lo = c.kind == Kind::Bipolar ? std::min (v, 0.5f) : 0.0f, hi = c.kind == Kind::Bipolar ? std::max (v, 0.5f) : v;
-        g.setColour (accent); g.fillRoundedRectangle (R (track.getX() + track.getWidth() * lo, track.getY(), std::max (2.0f, track.getWidth() * (hi - lo)), 3.0f), 1.5f);
+        g.setColour (accent); g.fillRoundedRectangle (R (track.getX() + track.getWidth() * lo, track.getY(), std::max (2.0f, track.getWidth() * (hi - lo)), th), th * 0.5f);
+        // (a stack knob's: a post at each end, the snapshot left and the one ahead; the one ahead is lit once the knob stands on it)
+        if (way)
+        {
+            g.setColour (night::dim); g.fillRect (R (track.getX() - 1.0f, track.getY() - 3.0f, 2.0f, th + 6.0f));
+            g.setColour (standing ? accent : night::ink); g.fillRect (R (track.getRight() - 1.0f, track.getY() - 3.0f, 2.0f, th + 6.0f));
+        }
     }
     pic.key = key; pic.image = img; pic.stamp = ++tagStamp;
     return img;
@@ -4427,6 +4481,26 @@ void Screen::timerCallback()
         drag.fired = true;
         const String gone = selMod >= 0 && selMod < (int) ses.modules.size() ? ses.modules[(size_t) selMod].name : String();
         if (ses.moduleRemove (selMod)) { selMod = ses.moduleIndex(); recNote = gone + " IS OUT OF THE MODULES KEPT"; recNoteAt = juce::Time::getMillisecondCounter(); }
+        repaint();
+    }
+    if (mouseIsDown && (drag.kind == hRackOut || drag.kind == hKeptOut) && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)
+    {
+        // a stack's or a kept knob's OUT, held: it goes
+        drag.fired = true;
+        if (drag.kind == hRackOut && drag.a < (int) ses.stacks.size())
+        {
+            const String gone = ses.stacks[(size_t) drag.a].name;
+            if (openStack == ses.stacks[(size_t) drag.a].id) openStack = {};
+            ses.stackForget (drag.a);
+            recNote = gone + " IS OUT OF THE STACKS KEPT";
+        }
+        else if (drag.kind == hKeptOut && drag.a < (int) ses.keptKnobs.size())
+        {
+            const String gone = ses.keptKnobs[(size_t) drag.a].name();
+            ses.knobForget (drag.a);
+            recNote = gone + " IS OUT OF THE KNOBS KEPT";
+        }
+        recNoteAt = juce::Time::getMillisecondCounter();
         repaint();
     }
     if (mouseIsDown && drag.kind == hAct && drag.a == aNewTrack && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)

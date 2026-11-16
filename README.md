@@ -850,14 +850,16 @@ alone; with ONLINE lit the web library's rack is kept the same (see ONLINE).
 - **An open stack is in the column**, where a stack knob's own stack stands, and is changed
   the same way: a snapshot is carried in (or its **ADD** pressed), a card is carried to
   another place or off it, its number takes it out, its keys say which parts of the rig it
-  takes, a tap is heard in the headphones. While a stack is open no place is ringed and the
+  takes (and N, whether it brings its notes), a tap is heard in the headphones. While a stack is open no place is ringed and the
   strip says STACK; **RENAME** names it. Choosing a place on the left puts the stack away.
 - **ON A KNOB**, at the head of the column while a stack is open, puts it on the first stack
   knob that holds nothing; that place is then the chosen one.
 - On a stack's card: **the card itself** lists its snapshots under SNAPSHOTS, to hear and to
   add from (the plate at the head of that list says whose are listed); carried onto a stack
   knob's place, all of it goes there. **OPEN** puts it in the column to be changed. **ADD** puts all of it into what is open: the chosen stack knob,
-  after what the knob holds, or another stack. Its number takes it out of those kept.
+  after what the knob holds, or another stack. **OUT, held**, takes it out of those kept (with
+  ONLINE lit, out of the web library's rack for the instrument too); pressed and let go, it
+  stays and the bar says to hold it. (It was a press on the card's number, and nothing said so.)
 - An empty stack is the instrument's alone until it holds something.
 
 ### Knobs kept by themselves
@@ -876,8 +878,8 @@ asked.
   nothing: CLEAR it first. The knob starts at rest and nothing is heard to change. The card
   can be carried onto a place instead.
 - A kept knob is a copy, and so is the one put: what you change on the place changes the
-  module's knob, not the kept one. Its number takes it out of those kept; modules that have it
-  keep theirs.
+  module's knob, not the kept one. **OUT, held**, takes it out of those kept; modules that have
+  it keep theirs.
 
 ### The snapshot module: four macro knobs, ten stack knobs
 
@@ -898,15 +900,31 @@ playing. Knob 4 pressed is CUE too, on the screen and on the E16.
 - At a snapshot's place the set is that snapshot. Turn on and it heads for the next one;
   turn back and it heads for the one behind. Stop anywhere between two for a place between
   them.
-- It moves the sound knobs **and the effects in the racks** (below). A snapshot's notes, its
+- It moves the sound knobs **and the effects in the racks** (below). A snapshot's
   lane's model and its samples come when the knob is **pressed on that snapshot's place**
   (double-click; its press on the E16), as a recall does.
+- **Its notes come with N.** Each snapshot of a stack has an **N** key in the designer, after
+  K, as a part of the arrangement has. Lit: when the knob **comes to that snapshot** (or goes
+  through it on the way to the next), every lane the snapshot takes is given what that lane
+  was playing in it, on the next bar line. Out, as it is on every stack made before this: the
+  notes stay as they are and the sound alone follows the knob. So the notes are those of the
+  last snapshot with N lit that the knob came to: leave it and they stay until you arrive at
+  another. A press on its place brings them too (as it always has with the library's NOTES
+  lit). **TO STACK** gives each snapshot its part's N, so an arrangement put on a knob brings
+  its notes as it did when it played. N is the instrument's own: the web library is not told
+  of it, and keeps none.
 - **A snapshot put back is what sounded when it was taken**, whatever the macro knobs are
   adding: recalled, come to on a stack knob, or pressed to between two, each knob is where the
   snapshot's clip heard it. The macro knobs stay where they are; let down from there, one takes
   away what it was adding. (What a snapshot does not hold: MUTE and SOLO, TEMPO, the master's
   TAPE, COMP and LIMIT.)
 - Standing on one of its snapshots, a stack knob shows that snapshot's name. Lit teal.
+- **While it is turned it says where it is between two.** On the 3D stage the knob's tag has
+  the snapshot it has left and the one it is going toward (the way it was last turned, with
+  +N if that one brings its notes), how far it has come from the one to the other as a figure
+  of 100, and a bar between two posts that fills as it nears. **Standing on one** (to within a
+  click of the E16's knob) it says ON and the bar is full and green: the rig is that snapshot.
+  On the flat screen the line under the knob says the same in short: ACID OPEN 60.
 
 **CUE lit: a turn chooses, a press goes.**
 
@@ -956,7 +974,8 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
     it at the end of the column with one press.
   - Each card has **a key for every part of the rig**: the eleven lanes, **R** the returns,
     **B** the drum bus, **K** the key. Black: this snapshot takes that part. An empty frame:
-    the part is put out, and stays as it is when the knob comes to this snapshot.
+    the part is put out, and stays as it is when the knob comes to this snapshot. The last
+    key is **N**, its notes: black, the knob coming to this snapshot brings them (above).
   - **Carry a card** to another place in the column to move it; onto another stack knob's
     place to put a copy there; off the column to take it out. Its number takes it out too.
   - Tap the card to hear it in the headphones with the parts it takes; tap again to stop. A

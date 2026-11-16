@@ -3538,7 +3538,70 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      what i'm aiming at when i trun the knob. Also need a way to delete knobs and stacks and in
      the macro interface."
 
+## A stack's snapshots bring their notes; where a stack knob stands; OUT, held (Nov 16, 09:03): sixty-eighth build
+
+581. **You** (580, 09:03) asked three things; then, while they were being made: 10:01 "and need
+     a way to save and browse arrangements in the library." 10:02 "save and browse from the
+     arrangement view as well. The whole library, macro, arrangement menuing is weird and a
+     little confusing right now. Would be good to standardize the workflow around that."
+     10:08 "Here are the objects I think I'll need to be able to organize amnd manage: Chips,
+     Stacks, Macro Knobs, Stack Knobs, Arrangements." Those are 585; this build is the first
+     three.
+582. **N on a stack's snapshots** ("The stack knob should also change notes if the chips have n
+     selected. we can handle it similar to the way arrangement handles it."). Each snapshot of
+     a stack, on a knob or kept in the rack, has an N key after K, in the designer's column,
+     as a part of the arrangement has. Out on every stack that exists: nothing changes for
+     them. Lit: **when the knob comes to that snapshot, or goes through it, each lane the
+     snapshot takes is given what it was playing in it** (its steps on the next bar line, its
+     generator and that generator's knobs, its sequencer's mute), as a part's notes come with
+     its bar line. A press on its place brings them too.
+     - *Mine, and the one thing here you may want otherwise:* **the notes come on arrival, not
+       on setting off.** In the arrangement a part's notes come as its morph begins. A knob has
+       no such moment: it is "going toward" the next snapshot from its first click, and on the
+       E16 it never stands exactly on a place, so "going toward" would change the notes when
+       the knob was a click past the snapshot you meant. Arrival is a moment you make and the
+       popup shows (583). It also lets you hold a snapshot's notes under a sound that is part
+       way to the next, which setting off would not. Turned quickly from one to the next, the
+       two are the same. Say if you want them on setting off instead.
+     - MOTION swinging a stack knob moves the sound and brings no notes; nor does CUE.
+     - **TO STACK** gives each snapshot its part's N: an arrangement made a stack and put on a
+       knob brings its notes where it did.
+     - Kept with the knob in the session file (the key after the parts, in "lanes": FORMAT.md),
+       with a kept knob, a module, and a stack in the rack. **The web library is not told of
+       it** (498): a stack that comes back from there changed keeps N on the snapshots it
+       still holds; one made there has none lit.
+583. **Where a stack knob stands, while it is turned** ("the popup hud showed a progress bar to
+     the next snapshot so i could know when i hit a complete snapshot state and how far i have
+     to go"). The knob's tag on the 3D stage: its name; the snapshot left and the one it is
+     going toward, the way it was last turned (+N if that one brings its notes); how far from
+     the one to the other, of 100; a bar between two posts. Within a click of a place it says
+     ON, full and green. *Mine: the flat screen has no tags, so the line under the knob there
+     says the snapshot ahead and the figure while the knob is in the hand; and the tag no
+     longer has the knob's MIDI address, which INFO still gives.*
+584. **OUT, held** ("Also need a way to delete knobs and stacks and in the macro interface").
+     There was a way and nothing showed it: a press on the number of a stack's card, or a kept
+     knob's, took it out at once (a stack out of the web library's rack too). Each card now
+     has an **OUT** plate; held for most of a second it takes the stack or the kept knob out,
+     and pressed and let go it says to hold it. The number does nothing. A knob on the module
+     is emptied by CLEAR, as before; a snapshot comes off a stack by its number or by being
+     carried off, as before. *The words are 585's to settle.*
+585. **The standard, proposed, not built** (10:02). *Mine, sent at 10:03 and 10:09 for a yes or
+     a change by number:* (1) the same four page keys in the same place on every page: MAIN,
+     LIBRARY, MACROS, ARRANGE; (2) everything kept is in the library under tabs, the same card
+     and find row for each: your five, CHIPS, STACKS, MACRO KNOBS, STACK KNOBS, ARRANGEMENTS
+     (10:08), and I asked whether modules are a sixth and whether the tab should say CHIPS;
+     (3) the right side of MACROS and ARRANGE is that same library with the same tabs; (4) an
+     arrangement is kept as a module is now: the one on the page is always one of those kept,
+     with NEW, COPY, LOAD, RENAME and HOLD: DELETE; (5) one word for one act: LOAD, KEEP,
+     REMOVE (one thing out of what is on the bench), HOLD: DELETE (a kept thing, for good).
+
 ## Not verified
+
+- **N on a stack (582) and the knob's tag (583)** are checked on the session and on the drawn
+  tag. **Not on the E16, not on the 3D stage, and not by ear**: whether notes on arrival is
+  what your hands want, whether the tag reads at a glance while you turn, and what a click
+  past a place feels like, are yours to say. Not tried: N with the ONE playing into the rig;
+  a stack knob with MOTION on it; a stack changed in the web library with ONLINE lit.
 
 - **The crackle (574 to 577) has not been heard here, and your Mac has not been measured.** That
   the rig ran out of time in those morphs is my reading of what the parts cost; the cost is

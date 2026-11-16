@@ -72,6 +72,11 @@ struct MacroKnob
     std::vector<juce::uint32> lanes;
     static constexpr juce::uint32 kAll = 0xffffffffu;
     juce::uint32 lanesAt (size_t i) const       { return i < lanes.size() ? lanes[i] : kAll; }
+    // One more key, the one after those: N, its notes. Lit, the knob coming to that snapshot brings what its lanes were
+    // playing, as a part of the arrangement with N lit does. It is lit by hand only: where nothing is said, it is out.
+    static constexpr juce::uint32 kNotes = 1u << (kLanes + 3), kParts = kNotes - 1u;
+    juce::uint32 keysAt (size_t i) const        { const auto m = lanesAt (i); return m == kAll ? kParts : (m & (kParts | kNotes)); }      // (its parts and its N, as they are kept)
+    bool notesAt (size_t i) const               { return (keysAt (i) & kNotes) != 0; }
     void setLanes (size_t i, juce::uint32 m)    { if (i >= snaps.size()) return; if (lanes.size() <= i) lanes.resize (i + 1, kAll); lanes[i] = m; }
     void add (juce::int64 id, juce::uint32 m = kAll) { if (m != kAll || ! lanes.empty()) { lanes.resize (snaps.size(), kAll); lanes.push_back (m); } snaps.push_back (id); }
     void dropAt (size_t i)                      { if (i >= snaps.size()) return; snaps.erase (snaps.begin() + (long) i); if (i < lanes.size()) lanes.erase (lanes.begin() + (long) i); }
@@ -79,6 +84,7 @@ struct MacroKnob
     void drop (juce::int64 id)                  { for (size_t i = snaps.size(); i-- > 0;) if (snaps[i] == id) dropAt (i); }
     void clearSnaps()                           { snaps.clear(); lanes.clear(); }
     juce::int64 picked = 0;             // a stack knob: the one it was last on (0: none come to yet)
+    int going = 0;                      // a stack knob: the way it was last turned (1 up its stack, -1 down, 0 not yet). Not kept in the file
     float sweptAt = 0.0f;               // a stack knob while CUE is lit: where it stood before it was used to choose
     juce::NamedValueSet more;           // what the file says of it that this build does not know: carried
     juce::Array<juce::var> linksKept;   // links to knobs this build does not have, as the file had them: carried
@@ -95,6 +101,7 @@ struct Stack
     juce::String mark;                  // its line (Session::stackPrint) as the web library and this one last agreed it was. Empty: they never have
     juce::var kept;                     // as the file had it: what this build does not know of it is carried
     juce::uint32 lanesAt (size_t i) const { return i < lanes.size() ? lanes[i] : 0xffffffffu; }
+    juce::uint32 keysAt (size_t i) const  { const auto m = lanesAt (i); return m == 0xffffffffu ? MacroKnob::kParts : (m & (MacroKnob::kParts | MacroKnob::kNotes)); }     // (with its N: MacroKnob::kNotes)
 };
 
 // A knob kept by itself, off the module: a macro knob (what it is tied to) or a stack knob (its snapshots in order, each
@@ -285,15 +292,26 @@ public:
     bool stackCue = false;
     void setStackCue (bool on);
     static constexpr juce::uint32 kAllLanes = (1u << (kLanes + 3)) - 1u;
+    // (a stack's snapshot has one key more than the parts of the rig: N, whether it brings its notes. kAllKeys: all of them as kept)
+    static constexpr juce::uint32 kNotesKey = MacroKnob::kNotes, kAllKeys = kAllLanes | kNotesKey;
     static Scope scopeOf (juce::uint32 lanes);
     static int mixCellOf (int type);                        // an effect's MIX among its eight knobs, or -1 (effects(): Rig.h)
     static juce::uint32 lanesOf (const Scope&);
-    struct Held { const Snapshot* s = nullptr; juce::int64 id = 0; juce::uint32 lanes = kAllLanes; };
+    struct Held { const Snapshot* s = nullptr; juce::int64 id = 0; juce::uint32 lanes = kAllLanes; bool notes = false; };       // (notes: its N is lit)
     std::vector<Held> held (int k) const;                   // a knob's snapshots that are here, in order, each with its lanes
     static float placeOf (int i, int n)  { return n <= 1 ? 1.0f : (float) i / (float) (n - 1); }
     int nearest (int k, float v) const;                     // the index (in held) of the snapshot nearest that place of the knob; -1: none
     juce::int64 pickAt (int k) const;                       // the snapshot a stack knob stands on (0: it holds none)
     void sweepKnob (int k, float from, float to);           // CUE out: the set, morphed as that turn of the knob has it
+    // A snapshot's notes into the lanes it takes, as a recall with its notes brings them: what each lane was playing into its
+    // sequencer (on the next bar line while the clock runs), its generator and that generator's knobs, its sequencer's mute.
+    // A stack knob that comes to a snapshot whose N is lit does this; its sound has come with the turn.
+    void bringNotes (const Snapshot&, const Scope&);
+    // Where a stack knob stands among its snapshots, for the screen to say while it is turned: the one it is going toward
+    // (the way it was last turned), the one behind it, how far it is from that one to this (0 to 1), and whether it
+    // stands on one (within a click of a controller's knob). to < 0: it holds none.
+    struct StackWay { int from = -1, to = -1, on = -1; float part = 0.0f; juce::String fromName, toName; bool notes = false; };
+    StackWay stackWay (int k, float v) const;
     // A press. Knob 4 (the top right of the module, here and on the E16): CUE, on or off.
     // A stack knob: the set goes to the snapshot the knob is nearest (the parts of the rig that
     // snapshot takes), over the GLIDE time; the knob stands on its place. A macro knob (1 to 3):

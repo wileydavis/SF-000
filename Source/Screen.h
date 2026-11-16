@@ -217,6 +217,7 @@ public:
     void testShowModules (bool on) { modList = on; selMod = ses.moduleIndex(); }
     juce::String testBarNote() const { return recNote.isNotEmpty() && juce::Time::getMillisecondCounter() - recNoteAt < recNoteMs() ? recNote : juce::String(); }     // what the top bar is saying now
     juce::String testTagText (int ctl) const { const auto it = tagPics.find (ctl); return it != tagPics.end() ? it->second.key : juce::String(); }
+    juce::Image testTagPicture (int ctl) { return tagPicture (ctl); }      // (a moved knob's tag, drawn: for a picture of it)
 
 private:
     using G = juce::Graphics;
@@ -235,9 +236,9 @@ private:
                    // the rack, beside the column: the stacks kept on the instrument and those LOAD brought
                    hRackTab,        // which of the two is beside the column (a: 0 the snapshots, 1 the stacks)
                    hRackAdd,        // a stack's ADD key (a: which stack): its snapshots onto the chosen stack knob
-                   hRackOut,        // its number: out of the rack
+                   hRackOut,        // its OUT plate, held: out of the rack
                    hModCard,        // a module kept, in the designer's list: chosen
-                   hKeptKeep, hKeptPut, hKeptOut, hRackKeep,       // the knobs kept: KEEP (the chosen knob into them), a kept one's PUT (onto the chosen knob), its number (out); the stacks' KEEP
+                   hKeptKeep, hKeptPut, hKeptOut, hRackKeep,       // the knobs kept: KEEP (the chosen knob into them), a kept one's PUT (onto the chosen knob), its OUT plate (held: out); the stacks' KEEP
                    hRackNew, hRackOpen, hRackCard,      // the stacks kept: NEW (an empty one, open); a stack's OPEN (into the column, to change); its card (its snapshots listed beside)
                    hFind,
                    hPickKey,        // a key on the snapshot in hand, beside the knob (a: which snapshot of the library; b: the part): what goes with it when it is added
