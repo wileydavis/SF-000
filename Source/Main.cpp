@@ -2307,6 +2307,81 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         tmpT.deleteRecursively();
     }
 
+    // FINISH, the master's stage before its limiter (suite/modules/Finish.cpp), by itself. At nought the samples pass untouched.
+    // At all of it, over the 1.75 dB it makes up: a quiet tone in the middle band comes out 1 dB up and a quiet high one 1.6 dB down (its tone); a loud tone
+    // in the middle band is held (it was fitted to a finisher that holds one at -10 dBFS 3.7 dB, slowly: a quarter of that
+    // within 20 ms) and given a third harmonic about 40 dB under it and no second; a quiet bright signal on one side comes out
+    // with its sides 3 dB up against its middle; and with AUTO a tone 8 dB under where its levels are measured from is brought
+    // up to there, and so held more than the same tone is without it.
+    {
+        const double fsr = 48000.0;
+        struct Out { std::vector<float> l, r; float autoDb = 0.0f, loud = -100.0f; };
+        auto run = [&] (float amount, bool aut, double hz, float amp, bool leftOnly, double seconds)
+        {
+            SFProcessor p (sf::makeModule ("FINISH"));
+            auto set = [&] (const char* id, float v) { if (const int i = p.paramIndex (id); i >= 0) p.param (i)->setValueNotifyingHost (p.param (i)->convertTo0to1 (v)); };
+            set ("amount", amount); set ("input", 0.0f); set ("auto", aut ? 1.0f : 0.0f);
+            p.setRateAndBufferSizeDetails (fsr, 256); p.prepareToPlay (fsr, 256);
+            Out o;
+            const int n = (int) (seconds * fsr) / 256 * 256;
+            o.l.resize ((size_t) n); o.r.resize ((size_t) n);
+            juce::AudioBuffer<float> b (2, 256); juce::MidiBuffer midi;
+            juce::Random rnd (4411);
+            for (int i = 0; i < n; i += 256)
+            {
+                for (int k = 0; k < 256; ++k)
+                {
+                    const float x = hz > 0.0 ? amp * (float) std::sin (juce::MathConstants<double>::twoPi * hz * (double) (i + k) / fsr) : amp * (rnd.nextFloat() * 2.0f - 1.0f);
+                    b.setSample (0, k, x); b.setSample (1, k, leftOnly ? 0.0f : x);
+                }
+                p.processBlock (b, midi);
+                for (int k = 0; k < 256; ++k) { o.l[(size_t) (i + k)] = b.getSample (0, k); o.r[(size_t) (i + k)] = b.getSample (1, k); }
+            }
+            if (auto* says = dynamic_cast<sf::FinishSays*> (&p.mod())) { o.autoDb = says->finishAuto(); o.loud = says->finishLoud(); }
+            return o;
+        };
+        // (how loud a tone of that pitch is in a stretch of what came out: its top, dB)
+        auto toneDb = [&] (const std::vector<float>& x, double hz, double from, double to)
+        {
+            double re = 0.0, im = 0.0; const int a = (int) (from * fsr), b2 = std::min ((int) x.size(), (int) (to * fsr));
+            for (int i = a; i < b2; ++i) { const double ph = juce::MathConstants<double>::twoPi * hz * (double) i / fsr; re += x[(size_t) i] * std::cos (ph); im += x[(size_t) i] * std::sin (ph); }
+            return 20.0 * std::log10 (2.0 * std::sqrt (re * re + im * im) / (double) std::max (1, b2 - a) + 1.0e-12);
+        };
+        const float quiet = 0.01f, loudAmp = juce::Decibels::decibelsToGain (-10.0f);
+        // at nought: noise comes out as it went in, to the bit
+        bool untouched = true;
+        {
+            const Out o = run (0.0f, true, 0.0, 0.3f, false, 0.5);
+            juce::Random rnd (4411);
+            for (size_t i = 0; i < o.l.size() && untouched; ++i) { const float x = 0.3f * (rnd.nextFloat() * 2.0f - 1.0f); untouched = o.l[i] == x && o.r[i] == x; }
+        }
+        const double midUp = toneDb (run (1.0f, false, 1000.0, quiet, false, 1.0).l, 1000.0, 0.5, 1.0) + 40.0;
+        const double highDown = toneDb (run (1.0f, false, 8000.0, quiet, false, 1.0).l, 8000.0, 0.5, 1.0) + 40.0;
+        const Out held = run (1.0f, false, 1000.0, loudAmp, false, 2.0);
+        const double heldDb = toneDb (held.l, 1000.0, 1.5, 2.0) + 10.0 - midUp, soonDb = toneDb (held.l, 1000.0, 0.010, 0.020) + 10.0 - midUp;
+        const double third = toneDb (held.l, 3000.0, 1.5, 2.0) - toneDb (held.l, 1000.0, 1.5, 2.0), second = toneDb (held.l, 2000.0, 1.5, 2.0) - toneDb (held.l, 1000.0, 1.5, 2.0);
+        double sidesUp = 0.0;
+        {
+            const Out o = run (1.0f, false, 8000.0, quiet, true, 1.0);
+            std::vector<float> m (o.l.size()), s (o.l.size());
+            for (size_t i = 0; i < o.l.size(); ++i) { m[i] = 0.5f * (o.l[i] + o.r[i]); s[i] = 0.5f * (o.l[i] - o.r[i]); }
+            sidesUp = toneDb (s, 8000.0, 0.5, 1.0) - toneDb (m, 8000.0, 0.5, 1.0);
+        }
+        const float under = juce::Decibels::decibelsToGain (-20.0f);
+        const Out byHand = run (1.0f, false, 1000.0, under, false, 22.0), byItself = run (1.0f, true, 1000.0, under, false, 22.0);
+        const double handDb = toneDb (byHand.l, 1000.0, 21.0, 22.0) + 20.0, itselfDb = toneDb (byItself.l, 1000.0, 21.0, 22.0) + 20.0;
+        const double made = 1.75;
+        const bool tone = std::abs (midUp - made - 1.0) < 0.15 && std::abs (highDown - made + 1.6) < 0.15;
+        const bool holds = heldDb < -3.2 && heldDb > -4.6 && soonDb > heldDb + 1.5 && soonDb < -0.3 && third > -43.0 && third < -37.0 && second < -90.0;
+        const bool opens = std::abs (sidesUp - 3.0) < 0.2;
+        const bool finds = std::abs ((byItself.loud + byItself.autoDb) - (-12.0f)) < 0.3f && byItself.autoDb > 6.0f && itselfDb < handDb - 1.2 && byHand.autoDb == 0.0f;
+        const bool finOk = untouched && tone && holds && opens && finds;
+        std::printf ("  %s: FINISH: at nought the samples pass untouched; at all of it a quiet tone at 1 kHz comes out %+.2f dB and one at 8 kHz %+.2f (1.75 of each made up); a tone at -10 dBFS is held %.1f dB (%.1f of it within 20 ms), "
+                     "its third harmonic %.0f dB under it and its second %.0f; the sides of a bright signal come out %+.1f dB against its middle; a tone at -20 dBFS (%.1f LUFS) is given %+.1f dB by AUTO and held %.1f dB more for it\n",
+                     finOk ? "ok  " : "FAIL", midUp, highDown, -heldDb, -soonDb, third, second, sidesUp, byItself.loud, byItself.autoDb, handDb - itselfDb);
+        if (! finOk) { ++bad; std::printf ("    (untouched %d tone %d holds %d opens %d finds %d [loud %.1f auto %.1f by hand %.2f by itself %.2f])\n", (int) untouched, (int) tone, (int) holds, (int) opens, (int) finds, byItself.loud, byItself.autoDb, handDb, itselfDb); }
+    }
+
     // PLAIN: a lane set to play its sample as it was recorded. A sample with lows and highs on the BASS lane, whose steps are
     // not on its root: as the lane opens it is cut short, filtered, its lows crossed out and played at another pitch; after
     // PLAIN the lane's own step note plays it flat across the spectrum, and like the file.
@@ -3407,6 +3482,95 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 // moves (the difference signal against the sound itself, in dB). A knob that moves nothing is listed.
 // With --model NAME every lane that has that model plays it (the others are passed over), with --sample FILE that file is
 // loaded on the lane, with --table a WAVETABLE's TABLE is SAMPLE, and with --plain CONFIG's PLAIN was pressed first.
+// --finishcheck IN OUT [--amount A] [--input DB]: a sound file through FINISH alone (the master's stage before its limiter),
+// written as 32-bit float. For measuring it with a test signal (tools/master_probe.py) beside what it was fitted to.
+static int finishCheck (const juce::StringArray& args)
+{
+    const int at = args.indexOf ("--finishcheck");
+    if (at + 2 >= args.size()) { std::printf ("--finishcheck IN OUT [--amount A] [--input DB]\n"); return 1; }
+    const juce::File in (args[at + 1].unquoted()), out (args[at + 2].unquoted());
+    auto opt = [&] (const char* n, double d) { const int i = args.indexOf (n); return i >= 0 && i + 1 < args.size() ? args[i + 1].getDoubleValue() : d; };
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (in));
+    if (r == nullptr) { std::printf ("cannot read %s\n", in.getFullPathName().toRawUTF8()); return 1; }
+    const int n = (int) r->lengthInSamples;
+    juce::AudioBuffer<float> x (2, n);
+    r->read (&x, 0, n, 0, true, true);
+    SFProcessor p (sf::makeModule ("FINISH"));
+    auto set = [] (SFProcessor& q, const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+    set (p, "amount", (float) opt ("--amount", 1.0)); set (p, "input", (float) opt ("--input", 0.0)); set (p, "auto", (float) opt ("--auto", 0.0));
+    p.setRateAndBufferSizeDetails (r->sampleRate, 512); p.prepareToPlay (r->sampleRate, 512);
+    // --limit CEILING [--gain DB] [--clip C]: the master's limiter after it, at that ceiling and with that much put in first (its own trim off)
+    const bool lim = args.contains ("--limit");
+    SFProcessor q (sf::makeModule ("LIMIT"));
+    set (q, "auto", 0.0f); set (q, "ceiling", (float) opt ("--limit", -1.0)); set (q, "input", (float) opt ("--gain", 0.0)); set (q, "clip", (float) opt ("--clip", 0.3)); set (q, "target", -9.0f);
+    q.setRateAndBufferSizeDetails (r->sampleRate, 512); q.prepareToPlay (r->sampleRate, 512);
+    auto* says = dynamic_cast<sf::FinishSays*> (&p.mod());
+    juce::MidiBuffer midi; juce::AudioBuffer<float> b (2, 512);
+    for (int i = 0; i + 512 <= n; i += 512)
+    {
+        for (int ch = 0; ch < 2; ++ch) b.copyFrom (ch, 0, x, ch, i, 512);
+        p.processBlock (b, midi);
+        if (lim) q.processBlock (b, midi);
+        for (int ch = 0; ch < 2; ++ch) x.copyFrom (ch, i, b, ch, 0, 512);
+        if (says != nullptr && args.contains ("--says") && (i / 512) % 940 == 0)
+            std::printf ("  %6.1f s: loudest %.1f LUFS, its own input %+.1f dB\n", (double) i / r->sampleRate, (double) says->finishLoud(), (double) says->finishAuto());
+    }
+    if (says != nullptr) std::printf ("at the end: the loudest three seconds of the last minute %.1f LUFS; its own input %+.1f dB\n", (double) says->finishLoud(), (double) says->finishAuto());
+    out.deleteFile();
+    juce::WavAudioFormat wav;
+    if (auto os = out.createOutputStream())
+        if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (os.release(), r->sampleRate, 2, 32, {}, 0) }) { w->writeFromAudioSampleBuffer (x, 0, n); return 0; }
+    std::printf ("cannot write %s\n", out.getFullPathName().toRawUTF8());
+    return 1;
+}
+
+// --finishrig DIR [--seconds N] [--amount A]: the rig as it opens, playing, rendered twice: with FINISH off and with that much
+// of it (all, if not said). Writes finish-off.wav and finish-on.wav there (to be set side by side), and says where the stage
+// put its own input and how far it held.
+static int finishRig (const juce::StringArray& args)
+{
+    using namespace sf0;
+    const int at = args.indexOf ("--finishrig");
+    if (at + 1 >= args.size()) { std::printf ("--finishrig DIR [--seconds N] [--amount A]\n"); return 1; }
+    const juce::File dir (args[at + 1].unquoted());
+    dir.createDirectory();
+    auto opt = [&] (const char* n, double d) { const int i = args.indexOf (n); return i >= 0 && i + 1 < args.size() ? args[i + 1].getDoubleValue() : d; };
+    const double seconds = opt ("--seconds", 40.0);
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        Engine e;
+        e.prepare (48000.0, 128);
+        e.setFinish (pass == 0 ? 0.0f : (float) opt ("--amount", 1.0));
+        // (--bare: the limiter after it made to do nothing, so that what is written is what leaves FINISH)
+        if (args.contains ("--bare"))
+            if (auto* lim = e.masterStage ("LIMIT"))
+                for (auto kv : { std::pair<const char*, float> { "auto", 0.0f }, { "input", 0.0f }, { "clip", 0.0f }, { "ceiling", -0.1f } })
+                    if (const int i = lim->paramIndex (kv.first); i >= 0) lim->param (i)->setValueNotifyingHost (lim->param (i)->convertTo0to1 (kv.second));
+        // (--target T: the LIMIT knob at that many LUFS for both; --lift L: that much more with FINISH in)
+        if (args.contains ("--target") || args.contains ("--lift")) e.set (cx::kMaster + 2, juce::jlimit (0.0f, 1.0f, ((float) opt ("--target", -9.0) + (pass == 1 ? (float) opt ("--lift", 0.0) : 0.0f) + 16.0f) / 11.0f));
+        e.setRunning (true);
+        const int n = (int) (seconds * 48000.0) / 128 * 128;
+        juce::AudioBuffer<float> all (2, n), b (2, 128);
+        float held = 0.0f;
+        for (int i = 0; i < n; i += 128)
+        {
+            e.render (b);
+            for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, i, b, ch, 0, 128);
+            if (const auto* says = e.finishSays()) if (i > n / 2) held = std::max (held, says->finishHeld());
+        }
+        const auto f = dir.getChildFile (pass == 0 ? "finish-off.wav" : "finish-on.wav");
+        f.deleteFile();
+        juce::WavAudioFormat wav;
+        if (auto os = f.createOutputStream())
+            if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (os.release(), 48000.0, 2, 32, {}, 0) }) w->writeFromAudioSampleBuffer (all, 0, n);
+        if (const auto* says = e.finishSays())
+            std::printf ("FINISH %3.0f: the loudest three seconds reaching it %.1f LUFS; its own input %+.1f dB on the rig's %+.1f; the most a band was held in the second half %.1f dB; wrote %s\n",
+                         100.0 * e.finish(), (double) says->finishLoud(), (double) says->finishAuto(), 2.0, (double) held, f.getFullPathName().toRawUTF8());
+    }
+    return 0;
+}
+
 // --printbus: is the drum bus in a print? A four-bar arrangement of one snapshot is printed twice, the snapshot taken with the
 // bus at work and with it at rest (the rig itself left with the bus at rest both times, so what is printed can only come from
 // the snapshot). Says what the bus's own file holds in each and how far apart the two sets are.
@@ -5837,6 +6001,27 @@ static int uiTest()
             check (okT, "TRANSITION, in the bar: FIRE, ARM and what it plays are there; ARM is lit by a press and put out by another; stopped, FIRE is the hit at once; BARS steps 16, 4, 8; HIT steps to OFF and back; T and G are FIRE and ARM; what it plays is kept with the session");
             if (! okT) std::printf ("    (there %d lit %d out %d hit now %d sixteen %d bars %d T %d G %d hit off %d: %s)\n", (int) there, (int) lit, (int) out, (int) hitNow, (int) sixteen, s17.transBars, (int) tKey, (int) gKey, (int) hitOff, s17.transSays (Session::tHit).toRawUTF8()); if (! keptT) std::printf ("    (not kept with the session)\n");
         }
+        // FINISH, on the master: its plate is there and says OFF; a press is 25 and the stage has that much; three more are 50, 75
+        // and 100, and one more is OFF again; what it is at is kept with the session, and is there (and in the engine) when it
+        // opens again.
+        {
+            sc17.testPlain(); sc17.hideConfig(); draw17();
+            auto finAt = [&] { for (auto& h : sc17.testHits()) if (Screen::testIsFinish (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+            const bool there = finAt().x > 0.0f && s17.finishSays() == "FINISH OFF" && e17.finish() == 0.0f;
+            click17 (finAt()); const bool one = s17.finishAt == 1 && std::abs (e17.finish() - 0.25f) < 1.0e-4f && s17.finishSays() == "FINISH 25";
+            click17 (finAt()); click17 (finAt()); click17 (finAt()); const bool all = s17.finishAt == 4 && std::abs (e17.finish() - 1.0f) < 1.0e-4f && s17.finishSays() == "FINISH 100";
+            click17 (finAt()); const bool round = s17.finishAt == 0 && e17.finish() == 0.0f;
+            bool keptF = false;
+            {
+                Session::stateFileForTests = tmp3.getChildFile ("finish-state.json");
+                { Engine e2; e2.prepare (48000.0, 128); Session s2 (e2, true); s2.finishSet (3); s2.save(); }
+                { Engine e3; e3.prepare (48000.0, 128); Session s3 (e3, true); keptF = s3.finishAt == 3 && std::abs (e3.finish() - 0.75f) < 1.0e-4f && (int) s3.stateVar()["finish"] == 75; }
+                Session::stateFileForTests = juce::File();
+            }
+            const bool okF = there && one && all && round && keptF;
+            check (okF, "FINISH, on the master: its plate says OFF; a press is 25 and the stage has that much, three more 50, 75 and 100, one more OFF; what it is at is kept with the session and is in the engine when it opens again");
+            if (! okF) std::printf ("    (there %d one %d all %d round %d kept %d: at %d, engine %.2f, %s)\n", (int) there, (int) one, (int) all, (int) round, (int) keptF, s17.finishAt, (double) e17.finish(), s17.finishSays().toRawUTF8());
+        }
         tmp3.deleteRecursively();
     }
     // 4. mute and solo, CLEAN SLATE, setup in snapshots, a phrase dropped on VOICE
@@ -6359,6 +6544,7 @@ static int shot (const juce::StringArray& args)
     if (args.contains ("--flat")) sc.setLit (false);            // the flat drawing the lit skin replaced
     if (args.contains ("--dark")) sc.setDark (true);            // the lit skin's dark instrument
     if (args.contains ("--info")) sc.setInfo (true);            // INFO: the MIDI numbers
+    if (arg ("--finish", "").isNotEmpty()) ses.finishSet (arg ("--finish", "0").getIntValue());        // (the master's FINISH: 0 OFF to 4 all of it)
     {
         // that module in front, and the wheel's pointer on that one (each a place among the stops: a lane, its inserts, the next lane ...)
         const auto all = ses.stops();
@@ -10366,6 +10552,8 @@ public:
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--printbus")) { setApplicationReturnValue (printBusProbe()); quit(); return; }
+        if (args.contains ("--finishcheck")) { setApplicationReturnValue (finishCheck (args)); quit(); return; }
+        if (args.contains ("--finishrig")) { setApplicationReturnValue (finishRig (args)); quit(); return; }
         if (args.contains ("--audit"))
         {
             const int i = args.indexOf ("--audit");

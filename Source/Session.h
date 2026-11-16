@@ -424,6 +424,13 @@ public:
     void transTick();                                   // (the timer's while something waits; the checks')
     enum { tBars, tLevel, tLead, tHit, tDub, tSpace };
     void transStep (int what);                          // a setting, stepped to its next value
+    // FINISH: the master's stage before its limiter (suite/modules/Finish.cpp). Five places, from OFF to all of it; kept with
+    // the set. finishHeld: the most any of its bands is being held, dB (for the screen).
+    int finishAt = 0;
+    void finishStep();
+    void finishSet (int place);
+    int finishPct() const;
+    juce::String finishSays() const;
     juce::String transSays (int what) const;
     bool transLoad (int slot, const juce::File&);       // a file for the lead-in (0) or the hit (1)
     // Printing it: to a folder of its own under `root`, the set (24-bit) and every lane, return
@@ -698,6 +705,7 @@ private:
     std::array<juce::String, 2> transRef;               // (a slot's file as the set's file said it, when it could not be found: kept, and written back)
     bool transDefer (TransPend);
     void transApply();
+    void finishApply();
     juce::var transToVar() const;
     void transFromVar (const juce::var&);
     double arrZero = 0.0;               // the song position at which the arrangement's first bar begins

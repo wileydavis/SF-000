@@ -14,6 +14,7 @@
 #include "Transition.h"
 
 class SFProcessor;
+namespace sf { struct FinishSays; }
 
 namespace sf0
 {
@@ -325,6 +326,11 @@ public:
     juce::String transFile (int slot) const             { return transFiles[(size_t) juce::jlimit (0, 1, slot)]; }
     // FIRE: the lead-in from now to the next line that many bars apart (the one after, if this one is under a beat away), the
     // hit on it. That line, in beats of the song; or -1 with the clock stopped, when the hit plays at once.
+    // FINISH, the master's stage before its limiter (Finish.cpp): how much of it, 0 to 1 (0: not there)
+    void setFinish (float amount);
+    float finish() const;
+    const sf::FinishSays* finishSays() const;           // what it says of itself (Registry.h), or null
+    SFProcessor* masterStage (const juce::String& module);      // one of the master's stages by its module ("LIMIT"), or null (tools)
     double transFire (int bars);
     // The same, for a line that is given (the arrangement's: a part's own bar line), and with what it plays if that is not what
     // the two slots say (a kind of -1: the slot's; Transition::kOff; or kFile with a file from transAsset).

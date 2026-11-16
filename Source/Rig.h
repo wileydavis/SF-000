@@ -222,6 +222,9 @@ inline const std::vector<MasterStage>& masterChain()
         { "LOWEND", { { "mono_freq", 150 }, { "rumble_cut", 25 } }, { nullptr, nullptr, 'u' } },
         { "DRIVE",  { { "character", 0.0f }, { "low_keep", 120 }, { "auto_gain", 1 }, { "drive", 0.12f } }, { "TAPE", "drive", 'u', 0.0f, 0.6f } },
         { "GLUE",   { { "attack", 4 }, { "release", 4 }, { "ratio", 0 }, { "sc_hpf", 110 }, { "push", 0.25f } }, { "COMP", "push", 'u', 0.0f, 0.8f } },
+        // FINISH (SF-000's own, Finish.cpp): three bands held, a little harmonic, the sides opened. At nought, as it opens, it is
+        // not there. It finds its own input (AUTO); INPUT is where that starts from: where the limiter's own does, less 3 dB.
+        { "FINISH", { { "amount", 0.0f }, { "input", 2.0f }, { "auto", 1 } }, { nullptr, nullptr, 'u' } },
         { "LIMIT",  { { "auto", 1 }, { "auto_mode", 1 }, { "ceiling", -1.0f }, { "target", -9.0f }, { "clip", 0.3f }, { "input", 5.0f } }, { "LIMIT", "target", 'u' } },
     };
     return M;

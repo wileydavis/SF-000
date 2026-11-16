@@ -473,6 +473,32 @@ It goes into the mix before the master, so the master's limiter holds it, and ha
 recorded track of its own. What it plays is kept with the session, not in a snapshot; a file
 given to it is copied into the library, as a lane's sample is. Not on the E16 or a pad yet: the keys T and G, or the mouse.
 
+### FINISH: the master's last stage before its limiter
+
+A plate on the MASTER panel, beside the title. A press steps it: **OFF, 25, 50, 75, 100**; lit
+while it is in. It does to the whole mix what a mix-bus finisher does, in three bands (under
+150 Hz, between, over 2.5 kHz):
+
+- **the middle band is held most**, gently and from far down (1.28 to 1), slow to take hold so
+  that a hit gets through, a quarter of a second to let go;
+- **the lows are all but left alone** (a twelfth of what is over), let go over seconds, so the
+  kick is ridden and not pumped to; **the highs are held only when they are loud**, and fast;
+- **each band is given a little of its own third harmonic** (twice as much in the lows), in
+  each band apart, so the bass leaves no mark on the highs;
+- **the middle of the spectrum comes up 1 dB and the top is eased 1.6**; **the sides come up
+  3 dB where they are bright** and are otherwise held as the middle is.
+
+What each part does at 100 was fitted to measurements of a finisher plugin Wiley uses on his
+prints (`DECISIONS.md`, 560 and 561, has the two side by side). It **finds its own level**: the
+loudest three seconds of the last minute are put where the bands were measured, whatever level
+the set reaches it at, so it does the same to a quiet set as to a loud one. And it **gives back
+what it takes** (1.75 dB at 100), so a press of the plate changes the sound and not the level:
+through the whole master, -9.5 LUFS with it off and -9.4 at 100. **It does not make the set
+louder: LIMIT does that.** It adds no delay. At OFF the samples pass untouched.
+
+Kept with the set, not in a snapshot; a print has it (in the set's file: the lanes' files are
+from before the master). Not on the E16.
+
 ### The library: what a snapshot sounded like
 
 A snapshot taken while the clock runs keeps its sound: the last four whole bars of the output, cut
@@ -1162,6 +1188,9 @@ build/.../SF-000 --audit                          # does every lane knob change 
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
 build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each
 build/.../SF-000 --printbus                       # is the drum bus in a print? prints a small arrangement with it at work and at rest, and says
+python3 tools/master_probe.py probe.wav           # a test signal for measuring what a mix-bus processor does: sweeps and noise at stepped levels, tone steps, sides alone (bounce it through the processor)
+build/.../SF-000 --finishcheck in.wav out.wav     # a file through FINISH alone, as 32-bit float (--amount 0 to 1, --input dB, --auto 1: finding its own level, --says: where it puts it; --limit -1 [--gain dB]: the master's limiter after it)
+build/.../SF-000 --finishrig dir                  # the rig as it opens rendered with FINISH off and at 100, as two files to set side by side (--seconds N, --amount A, --target LUFS: the LIMIT knob, --bare: the limiter out of the way)
 build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
@@ -1227,7 +1256,8 @@ meters when a bar has moved, the playing step.
 | `Source/Recorder.*` | takes: the set, the lanes and the returns to disk, off the audio thread |
 | `Source/Online.*` | ONLINE: snapshots sent to the library on the web in the background, and what has gone |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
-| `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`). `suite/modules/FxDrums.cpp`, the drum bus, is SF-000's own |
+| `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`). `suite/modules/FxDrums.cpp`, the drum bus, and `suite/modules/Finish.cpp`, FINISH, are SF-000's own |
+| `tools/master_probe.py` | the test signal FINISH was fitted with |
 
 ## Where everything is kept
 

@@ -631,7 +631,7 @@ public:
         preMeter.prepare (rate);
         autoGainDb = 0.0f; tpMax = 0.0f;
         for (auto& h : hist) h = -100.0f;
-        histPos = 0; secMax = -100.0f; secLeft = (int) rate; liftWait = (int) (3.0 * rate);
+        histPos = 0; secMax = -100.0f; secLeft = (int) rate; liftWait = (int) (3.0 * rate); fed = 0;
         reset();
     }
     void reset() override
@@ -673,9 +673,16 @@ public:
         // only the new level when a drop comes back), and only while there is programme (> -40 LUFS). DOWN ONLY (default) never lifts above unity: AUTO only
         // stops the set running above TARGET. UP AND DOWN also lifts a quieter set.
         const float rawSt = preMeter.shortTerm;
-        secMax = std::max (secMax, rawSt);
+        // (SF-000) Only a reading of a whole three seconds is remembered. Until the meter has had that long since it was
+        // prepared, what it says is of less than that (of a set's first hit alone, to begin with), and that, remembered for
+        // a minute as the loudest, held the trim under where the set's loudest three seconds put it: a set, or a print of
+        // one, came up by the difference a minute in (0.9 LU with the rig as it opens). Until then the reading is still
+        // followed, while it is all there is, so that a set that starts too loud is still brought down at once.
+        const int whole = (int) (3.0 * sr);
+        fed = std::min (fed + c.n, whole);
+        if (fed >= whole) secMax = std::max (secMax, rawSt);
         if ((secLeft -= c.n) <= 0) { hist[histPos] = secMax; histPos = (histPos + 1) % kHist; secMax = -100.0f; secLeft += (int) sr; }
-        float loud = secMax;
+        float loud = fed >= whole ? secMax : rawSt;
         for (const float h : hist) loud = std::max (loud, h);
         const float inLufs = rawSt + c.v (INPUT), loudLufs = loud + c.v (INPUT);
         if (c.b (AUTO) && inLufs > -40.0f)
@@ -768,7 +775,7 @@ private:
     float gFast = 1.0f, gSlow = 1.0f, gIn = 1.0f, autoGainDb = 0, tpMax = 0;
     static constexpr int kHist = 60;                 // AUTO's memory: loudest raw short-term per second
     float hist[kHist] {}, secMax = -100.0f;
-    int histPos = 0, secLeft = 48000, liftWait = 144000;
+    int histPos = 0, secLeft = 48000, liftWait = 144000, fed = 0;       // (fed: SF-000)
     bool resetWas = false;
     std::atomic<float> dShort { -70 }, dInt { -70 }, dMom { -70 }, dTp { -70 }, dGr { 0 }, dIn { 0 };
 };

@@ -133,6 +133,7 @@ public:
     juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
     static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
     static bool testIsTrans (const TestHit& h, int which) { return h.kind == hAct && h.a == aTransFire + which; }     // (0 FIRE, 1 ARM, 2 BARS, 3 LEVEL, 4 IN, 5 HIT, 6 DUB, 7 SPACE)
+    static bool testIsFinish (const TestHit& h) { return h.kind == hAct && h.a == aFinish; }           // (the master's FINISH plate)
     static bool testIsPlain (const TestHit& h) { return h.kind == hAct && h.a == aSamplePlain; }       // (CONFIG, a lane playing a sample: PLAIN)
     juce::String testCfgNote() const { return cfgNote; }
     static bool testIsArrTrans (const TestHit& h, int part, int slot) { return h.kind == hArrTrans && h.a == part && h.b == slot; }     // (a part's IN, slot 0, or its HIT, 1)
@@ -246,6 +247,7 @@ private:
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain,
                aTransFire, aTransArm, aTransBars, aTransLevel, aTransLead, aTransHit, aTransDub, aTransSpace,
+               aFinish,
                aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,

@@ -17,6 +17,10 @@ ModulePtr makeREVERB();  ModulePtr makeREPEAT();  ModulePtr makeDRIVE();   Modul
 ModulePtr makeDUCK();    ModulePtr makeENERGY();  ModulePtr makeISOLATOR(); ModulePtr makeBUILD();
 ModulePtr makeDRUMBUS();     // (SF-000: its own drum bus, modules/FxDrums.cpp)
 ModulePtr makeGLUE();    ModulePtr makeLOWEND();  ModulePtr makeLIMIT();   ModulePtr makeROOMEQ();
+ModulePtr makeFINISH();     // (SF-000)
+// (SF-000) What FINISH says of itself to whoever holds it: the loudest three seconds of the last minute at its input (LUFS),
+// the input it has found for itself (dB), and the most any of its bands was held in the last block (dB).
+struct FinishSays { virtual ~FinishSays() = default; virtual float finishLoud() const = 0; virtual float finishAuto() const = 0; virtual float finishHeld() const = 0; };
 ModulePtr makeCONTROL(); ModulePtr makeALLOC();   ModulePtr makeTAP();     ModulePtr makeSTRIP();
 ModulePtr makeKICK();    ModulePtr makePERC();    ModulePtr makeRUMBLE();  ModulePtr makeBASS();
 ModulePtr makeLEAD();    ModulePtr makePAD();     ModulePtr makeVOICE();   ModulePtr makeDECK();

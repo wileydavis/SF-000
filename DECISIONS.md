@@ -3282,7 +3282,100 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      together is its own file, DRUM BUS. The set has it; the drum files alone do not. And a
      part whose **B** key is empty leaves the bus as the part before left it.
 
+## FINISH: a finisher's work, native, on the master (Nov 15, 22:11): sixty-fourth build
+
+558. **You**, 22:11: "would it be possible to make a slot for a vst plugin in the master? I've
+     been taking the stems and using The God Particle plugin from Cradle and I like it, so
+     unless we can achieve similar results, I was thinking it might work to use the plugin
+     itesl omn the instrument. Thoughts?" 22:14: "native would be better. Would a pre and post
+     mix of a track i made in SF-000 do the trick?" 22:44: a test signal of mine
+     (`tools/master_probe.py`) bounced through the plugin, the set as SF-000 printed it, and
+     the same set through the plugin.
+559. **FINISH is a stage of the master, before its limiter** (`suite/modules/Finish.cpp`,
+     SF-000's own). The mix in three bands, under 150 Hz, between, and over 2.5 kHz, of its
+     middle and of its sides. Each band is held by a compressor of its own and given a little
+     of its own third harmonic; the middle band is lifted 1 dB and the top eased 1.6; the
+     sides are brought up 3 dB where they are bright. No delay is added. **Its control is a
+     plate on the MASTER panel, FINISH, stepped by a press: OFF, 25, 50, 75, 100.** At OFF the
+     samples pass untouched (the reference render is the same to the bit). It is kept with the
+     set, and a print has it. *The plate and its five places are mine: the master's three
+     knobs and its page on the E16 are full, and a fourth knob wants both laid out again.
+     Yours to say.*
+560. **What it does at 100 was set by measuring the plugin** with the test signal and fitting
+     this stage until, measured the same way, it gave the same figures. Each is against its
+     own gain on a quiet low tone (the plugin's is 8.2 dB, which goes into its own limiter;
+     this stage's is its 1.75 dB of make-up, 562). Plugin, then FINISH:
+     - a tone swept, by its level (dBFS), at 63 Hz, 250 Hz, 1 kHz, 4 kHz, 16 kHz:
+       at -30: 0.0 0.8 0.7 -1.2 -1.6, and 0.0 0.8 0.7 -1.2 -1.6;
+       at -18: -0.3 -0.7 -1.3 -1.3 -1.6, and -0.3 -0.8 -1.3 -1.4 -1.6;
+       at -12: -1.0 -2.0 -2.8 -1.6 -2.2, and -1.0 -2.0 -2.7 -1.8 -2.4;
+       at -6: -2.4 -3.9 -4.7 -4.4 -5.5, and -2.3 -3.6 -4.4 -4.4 -5.6.
+     - pink noise at -18 dBFS RMS, in five bands from the lows up: -0.6 -0.8 -0.8 -1.4 -1.7,
+       and -0.5 -0.8 -1.0 -1.4 -1.6.
+     - a 1 kHz tone stepped from -30 to -10 dBFS, 2, 20, 100 and 300 ms after: -0.5 -1.4 -2.5
+       -3.2, and -0.4 -1.2 -2.4 -3.2; stepped back, 50, 200 and 700 ms after: -2.5 -1.0 0.6,
+       and -2.4 -1.0 0.5. At 100 Hz it is held 1 dB and lets go over seconds; at 6 kHz 1.7 dB
+       (here 1.5) within 20 ms.
+     - harmonics of a tone at -10 dBFS: odd only, the third 38 to 40 dB under it at 100 Hz,
+       1 kHz and 6 kHz, and here 38, 40 and 41. A low tone leaves no mark on a high one
+       played with it, in either.
+     - the sides against the middle, of wide noise: unchanged under 200 Hz in both; up 0.6 dB
+       to 4 kHz, here 0.7; up 3.4 dB above, here 2.9 (562).
+     The middle band works by the band's mean level, 1.28 to 1 over -28 dBFS with a knee 16 dB
+     wide, a quarter of it in 3 ms and the rest in 80, 250 ms to let go. The low band takes a
+     twelfth of what its peaks are over -21 dBFS and lets go in 100 ms and 3.5 s. The high band
+     is 1.9 to 1 over -13 dBFS, 3 ms and 40.
+561. **Your set through both.** The plugin's bounce peaks at +5.4 dBFS with a flat top there,
+     11 % of its samples over full scale: something after the plugin adds 5.5 dB, and I do not
+     know what. With that taken off, and its quiet passages set beside the test signal, the
+     plugin was working on your set 3 dB lower than the file's own level. FINISH is set to
+     work there. By octave, what the plugin did to the set's middle, against the mean of it:
+     +0.1 -0.4 -1.0 -0.7 +0.5 +0.2 0.0 +0.4 +0.4 +0.2 (31 Hz to 16 kHz); this stage with a flat
+     cut after it, as the plugin's own last stage makes: +0.3 -0.1 -0.8 -0.3 +0.4 +0.3 -0.1
+     +0.2 +0.1 +0.1. The sides of your set came up 2.1 to 2.5 dB above 3 kHz through the
+     plugin, less than the test signal's 3.4: *I set 3, between the two.*
+562. **It finds its own level, and gives back what it takes.** The figures in 560 are levels as
+     the plugin was given them; the mix reaches this stage at whatever level the set is.
+     So it listens (also while OFF): the loudest three seconds of the last minute are put
+     12 dB under full scale in loudness (-12 LUFS) for the bands to work on, and taken back
+     out after. Slowly, only while there is music, and a breakdown is held through. With the
+     rig as it opens the mix reaches it at -14.9 LUFS and it gives itself 2.9 dB. **And it
+     makes up 1.75 dB at 100**: it took 1.6 LU from the rig as it opens and 1.9 from your set,
+     all but the same from one passage to the next. So a press of the plate changes the sound
+     and not the level. Measured through the whole master: -9.5 LUFS with it off, -9.4 at 100;
+     the peaks stand 0.3 dB nearer the loudness (a crest of 9.4 dB against 9.7). *Both are
+     mine.* **It does not make the set louder. The plugin did, by 2.4 dB, in its own last
+     stage, which cuts peaks flat. Here that is LIMIT's knob: 3 dB up with FINISH at 100 came
+     out 2.5 LU louder on the rig as it opens (-6.9 LUFS against -9.4), which is the plugin's
+     bounce as near as I can measure it.**
+563. **The limiter's own trim no longer remembers a reading of less than three seconds**
+     (`suite/modules/Master.cpp`, marked). Its loudness meter, just prepared, says what it has
+     heard so far: the set's first hit alone, to begin with. That reading was kept for a minute
+     as the loudest, and held the trim under where the set's loudest three seconds put it.
+     **A set, and every print of one, came up 0.9 LU a minute in** (-10.3 LUFS, then -9.4,
+     with the rig as it opens); with FINISH in, by 1.9. Now it is at its loudness six seconds
+     in and stays. The first three seconds are trimmed as before, so a set that starts too
+     loud is still brought down at once. The test's reference render is the same to the bit.
+     *I found this measuring FINISH and mended it unasked, in SF-000's copy only. The suite's
+     own LIMIT in SF-Live-Suite has the same, untouched; in Live it is the first minute after
+     the device loads.*
+564. Tools kept: `--finishcheck IN OUT` (a file through the stage alone, with `--auto`,
+     `--input`, `--amount`, and `--limit` for the limiter after it) and `--finishrig DIR` (the
+     rig rendered with it off and on; `--bare` takes the limiter out of the way).
+     *Not done: FINISH on the E16 or as a knob; its level shown on the screen (the plate is
+     lit, no more); the plugin's last stage as its own thing. The lane files of a print do not
+     have it: it is in the master, so in the set's file.*
+
 ## Not verified
+
+- **FINISH (559 to 562) is a match of figures, not of sound.** Measured with a test signal and
+  with one set of yours, on Linux; **not heard by anyone, and not on your Mac.** The plugin's
+  settings were whatever they were in your two bounces, and I could not tell what added
+  5.5 dB after it in the set's. Set the two side by side on a set you know: FINISH 100 with
+  LIMIT up 3 dB, against the plugin on the same print. Where they part, tell me in what.
+  25, 50 and 75 are that much of every part of it at once, which no measurement was made of.
+- **The limiter's trim at a start (563)** is measured on the rig as it opens. Not on a set of
+  yours, and not in a print of an arrangement.
 
 - **TRANSITION in the arrangement (554)** and **N (555)**: checked in the engine (a part's own
   hit file lands on its line; its notes come with NOTES out), **the plates and the fifteenth

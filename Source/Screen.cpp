@@ -798,6 +798,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aTransFire, "FIRE", "TRANSITION (T). SETS OFF A LEAD-IN THAT ENDS ON THE NEXT BAR LINE AND A HIT THAT LANDS ON IT, WHENEVER IT IS PRESSED: THE MACHINE KEEPS THE TIME. LINES ARE EVERY 4, 8 OR 16 BARS; UNDER A BEAT FROM ONE, IT IS THE ONE AFTER. WHILE IT IS ON ITS WAY THE KEY IS LIT AND SAYS THE BARS LEFT. WITH THE CLOCK STOPPED THE HIT PLAYS AT ONCE." },
                 { aTransArm, "ARM", "TRANSITION (G). LIT: THE NEXT RECALL, MUTE OR SOLO DOES NOT HAPPEN AT ONCE. IT SETS THE TRANSITION OFF AND HAPPENS ON THE LINE THE TRANSITION LANDS ON, WITH WHATEVER ELSE IS ASKED FOR MEANWHILE (THE NUMBER WAITING IS SHOWN). ARM THEN GOES OUT. PUT OUT BY HAND, WHAT WAITS HAPPENS AT ONCE." },
                 { aTransBars, "BARS", "TRANSITION: HOW FAR APART ITS LINES ARE. 4, 8 OR 16 BARS." },
+                { aFinish, "FINISH", "THE MASTER'S LAST STAGE BEFORE ITS LIMITER, STEPPED BY A PRESS: OFF, 25, 50, 75, 100. IT HOLDS THE MIX IN THREE BANDS (THE MIDDLE ONE MOST, GENTLY AND FROM FAR DOWN; THE LOWS HARDLY; THE HIGHS ONLY WHEN THEY ARE LOUD), ADDS A LITTLE HARMONIC TO EACH, LIFTS THE MIDDLE OF THE SPECTRUM A DECIBEL AND EASES THE TOP, AND OPENS THE SIDES WHERE THEY ARE BRIGHT. IT FINDS ITS OWN LEVEL FROM THE LOUDEST OF THE LAST MINUTE, SO IT DOES THE SAME TO A QUIET SET AS TO A LOUD ONE. IT DOES NOT MAKE THE SET LOUDER: LIMIT DOES THAT. KEPT WITH THE SET, AND IN A PRINT." },
                 { aTransLevel, "LEVEL", "TRANSITION: HOW LOUD ITS LEAD-IN AND ITS HIT ARE, INTO THE MIX BEFORE THE MASTER." },
                 { aTransLead, "LEAD-IN", "TRANSITION: WHAT ENDS ON THE LINE. OFF, THE BUILT-IN RISER, OR A FILE DROPPED ON THIS PLATE (IT STARTS WHEN IT MUST TO END ON THE LINE; WITH LESS TIME THAN IT IS LONG, PART WAY IN)." },
                 { aTransHit, "HIT", "TRANSITION: WHAT STARTS ON THE LINE. OFF, THE BUILT-IN IMPACT, OR A FILE DROPPED ON THIS PLATE (A STAB, A CRASH)." },
@@ -1588,8 +1589,16 @@ void Screen::drawMaster (G& g, R r)
     hit (r, hFront, Session::fMaster, 0);
     panel (g, r, col::grey);
     const float wTitle = title (g, x0, y0, "MASTER", ses.front.kind == Session::fMaster);
-    chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
+    const float wChan = chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
+    // FINISH, the stage before the limiter: a plate, stepped by a press (OFF, 25, 50, 75, 100); lit while it is in. It ends
+    // where the drum bus begins (and gives way to the channel's plate while INFO shows that: only its number is left).
+    {
+        const String says = wChan > 0.0f ? (ses.finishAt > 0 ? "FIN " + String (ses.finishPct()) : String ("FIN OFF")) : ses.finishSays();
+        const float fw = std::ceil (tw (fLbl, says)) + 8.0f, fx = x0 + 198 - fw;
+        plate (g, fx, y0 + 4, says, fLbl, 4, ses.finishAt > 0 ? col::amber : col::putty, col::black, 18);
+        hit (R (fx - 2, y0 + 3, fw + 4, 20), hAct, aFinish, 0);
+    }
     // the drum bus: its four knobs, and C for the rest of it
     {
         const float bx = x0 + 204;
@@ -3013,6 +3022,7 @@ void Screen::act (int a)
         case aTransArm:   ses.transArm(); repaint(); break;
         case aTransBars:  ses.transStep (Session::tBars); repaint(); break;
         case aTransLevel: ses.transStep (Session::tLevel); repaint(); break;
+        case aFinish:     ses.finishStep(); repaint(); break;
         case aTransLead:  ses.transStep (Session::tLead); repaint(); break;
         case aTransHit:   ses.transStep (Session::tHit); repaint(); break;
         case aTransDub:   ses.transStep (Session::tDub); repaint(); break;

@@ -78,3 +78,13 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   the bass's layer). See DECISIONS, sixty-first build.
 - `core/Sample.cpp`, the root: the first lag that is a peak within 3 % of the strongest, with a
   parabola through its neighbours, in place of the strongest lag. `(SF-000)`.
+- `modules/Finish.cpp` is SF-000's own (the FINISH module: the master's stage before its
+  limiter), with a line for it in `core/Registry.h` (and `FinishSays`, what it says of itself
+  to whoever holds it) and `core/Registry.cpp`, marked `(SF-000)`. It is not in the suite. See
+  DECISIONS, sixty-fourth build.
+- `modules/Master.cpp`, LIMIT's AUTO: only a short-term reading of a whole three seconds is
+  remembered as a second's loudest (`fed`), marked `(SF-000)`. The meter, just prepared, says
+  what it has heard so far, and the set's first hit, kept a minute as the loudest, held the
+  trim low until it left the memory: the set came up 0.9 LU a minute in. The first three
+  seconds are still trimmed by what the meter says. **The suite's own LIMIT has this still.**
+  See DECISIONS 563.

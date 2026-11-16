@@ -49,6 +49,8 @@ The uid comes back the same (see below); `made` does not.
   "controls":  { "g.tempo": 0.51, ... },      what a snapshot leaves alone: tempo, glide, master, mutes
   "activeLane", "files", "space", "insertFiles":   the rig's own state (samples, impulse responses)
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
+  "transition": { "bars": 8, "level": 3, "dub": 0, "space": 2, "lead": 1, "hit": 1, "leadFile", "hitFile" },   TRANSITION (fifty-ninth build on; absent: as it opens). "bars": 4, 8 or 16; "level", "dub", "space": a place of six, 0 to 5; "lead", "hit": 0 off, 1 the built-in, 2 the file; the files as "files" are written
+  "finish":    0,                             FINISH on the master: how much of it, in hundredths (0, 25, 50, 75, 100; another number is read as the nearest; absent: 0, off) (sixty-fourth build on)
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "lanes"?: [masks], "links": [ { "c": id, "d": amount } ], "at"? } x 16 ],

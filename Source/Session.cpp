@@ -60,6 +60,21 @@ void Session::timerCallback()
     else if (waiting.empty()) { if (useDisk) startTimer (3000); else stopTimer(); }
 }
 
+// ------------------------------------------------------------------------------------ FINISH
+static const int kFinishPct[5] = { 0, 25, 50, 75, 100 };
+
+int Session::finishPct() const { return kFinishPct[juce::jlimit (0, 4, finishAt)]; }
+void Session::finishApply() { engine.setFinish ((float) finishPct() * 0.01f); }
+void Session::finishSet (int place)
+{
+    finishAt = juce::jlimit (0, 4, place);
+    finishApply();
+    touch();
+    if (onChange) onChange();
+}
+void Session::finishStep() { finishSet ((finishAt + 1) % 5); }
+juce::String Session::finishSays() const { return finishAt == 0 ? juce::String ("FINISH OFF") : "FINISH " + juce::String (finishPct()); }
+
 // ------------------------------------------------------------------------------------ TRANSITION
 static const float kTransDb[6] = { -18.0f, -12.0f, -9.0f, -6.0f, -3.0f, 0.0f };
 static const int kTransSend[6] = { 0, 15, 30, 50, 75, 100 };
@@ -4018,6 +4033,7 @@ var Session::stateVar()
     root->setProperty ("activeLane", activeLane);
     root->setProperty ("recallNotes", recallNotes);
     root->setProperty ("transition", transToVar());
+    root->setProperty ("finish", finishPct());
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
     root->setProperty ("files", fl);
@@ -4296,7 +4312,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -4417,6 +4433,9 @@ void Session::takeState (const var& root)
     activeLane = juce::jlimit (0, kLanes - 1, (int) root.getProperty ("activeLane", 7));
     recallNotes = (bool) root.getProperty ("recallNotes", true);
     transFromVar (root.getProperty ("transition", var()));
+    // (FINISH: how much of it, in hundredths; the place nearest that. A set from before it had one: off)
+    finishAt = juce::jlimit (0, 4, (int) std::lround ((double) root.getProperty ("finish", 0) / 25.0));
+    finishApply();
     // The samples. What is written is turned into a path to read: a copy in the library by where
     // the library is now; a file written whole (by a build from before copies were kept) is
     // copied in now if it is still where it was, and read from its copy from here on.

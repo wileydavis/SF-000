@@ -1315,6 +1315,34 @@ bool Engine::transLoad (int slot, const juce::File& f)
     return true;
 }
 
+void Engine::setFinish (float amount)
+{
+    for (auto& m : master)
+        if (m->getName() == "SF FINISH")
+            if (const int i = m->paramIndex ("amount"); i >= 0) m->param (i)->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, amount));
+}
+
+SFProcessor* Engine::masterStage (const juce::String& module)
+{
+    for (auto& m : master) if (m->getName() == "SF " + module) return m.get();
+    return nullptr;
+}
+
+const sf::FinishSays* Engine::finishSays() const
+{
+    for (auto& m : master)
+        if (m->getName() == "SF FINISH") return dynamic_cast<const sf::FinishSays*> (&m->mod());
+    return nullptr;
+}
+
+float Engine::finish() const
+{
+    for (auto& m : master)
+        if (m->getName() == "SF FINISH")
+            if (const int i = m->paramIndex ("amount"); i >= 0) return m->param (i)->getValue();
+    return 0.0f;
+}
+
 const sf::SampleData* Engine::transAsset (const juce::String& path)
 {
     if (path.isEmpty()) return nullptr;
