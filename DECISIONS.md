@@ -3627,6 +3627,11 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - A snapshot that only a kept arrangement holds is in use (EDIT's KEEP does not take it);
        the lead-ins and hits of its parts are kept from the sweep of unused samples.
 
+589. **You**, 10:57: "build 67 fixed the crackle." So the rig was running out of time in those
+     morphs, and the pad was why (575, 576). *Still not explained: why it first showed after
+     build 66.* Asked for: SET UP's two ENGINE figures while SNAP 094 to 096 plays, to know
+     how much room there now is.
+
 ## Not verified
 
 - **Arrangements kept (588)** are checked on the session and the drawn page. Not on the Mac,
@@ -3639,12 +3644,9 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   past a place feels like, are yours to say. Not tried: N with the ONE playing into the rig;
   a stack knob with MOTION on it; a stack changed in the web library with ONLINE lit.
 
-- **The crackle (574 to 577) has not been heard here, and your Mac has not been measured.** That
-  the rig ran out of time in those morphs is my reading of what the parts cost; the cost is
-  measured, on another machine. With this build: play the arrangement through SNAP 094 to 096
-  and watch the FAULT lamp; afterwards SET UP's ENGINE line says the most a buffer took and
-  how many ran late. **If it still crackles and none ran late, it is not this**, and the line
-  says so. GRANULAR's new read is measured on tones and against your pad as it was; no one has
+- **The crackle (574 to 577)**: you say build 67 fixed it (589). Your Mac's own figures have
+  not been read: how near a buffer's whole time the rig still comes in those morphs is not
+  known. GRANULAR's new read is measured on tones and against your pad as it was; no one has
   listened to a bright granular sound through it.
 
 - **EDIT (572) and TO STACK (573)** are checked on the session and the drawn screens, with the
