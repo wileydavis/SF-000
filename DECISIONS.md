@@ -3366,7 +3366,56 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      lit, no more); the plugin's last stage as its own thing. The lane files of a print do not
      have it: it is in the master, so in the set's file.*
 
+## A print for a mastering engineer; a chip put down; a part's card (Nov 16, 01:12): sixty-fifth build
+
+565. **You**, 01:12: "For arrangement, I like how it's working so far. there's a small bug where
+     a chip thats playing its preview doesn't stop automatically when you play the arrangement
+     and the sounds overlap. And I'd like to be able to create an arrangement, and then be able
+     to select a chip to edit its sounds (in the main view) but not actually alter the original
+     chip. So my thought was that clicking an edit button on a chip in an arrangement opens the
+     main view, plays the chip as it would be rendered in the arrangement (meaning it has to
+     know what came before it) and then save that edit into a new chip that gets swapped for
+     the one in the arrangement. That way the edited chip is updated and the original chip is
+     unaltered, and the new chip becomes part of the library for future use outside of the
+     arrangement. Thoughts? And my plan is to create tracks in arrange, then take those chips
+     and make a stack on a knob for performing live versions of my tracks." 01:20: "and the
+     output prints of the arranger should produce stems that a profrsional mastering engineer
+     could use."
+566. **A chip being listened to is put down when the arrangement is played** (PLAY and FROM
+     HERE). One pressed while it plays is still heard, as one pressed while the set plays is.
+567. **A print is laid out for a mastering engineer.** What was there before: the set after
+     the limiter, and beside it every lane, the two returns and a file of what the drum bus
+     *did* (its output less its input). The files were already 32-bit float, one length and in
+     step. What was wrong for someone downstream:
+     - **there was no mix without the limiter**, which is what mastering starts from. Now
+       `MIX BEFORE THE LIMITER.wav` (the master's low end, tape, compressor and FINISH on it)
+       and `MIX BEFORE THE MASTER.wav` (none of it), beside `00 SET.wav`;
+     - **the bus's file could only be added back to the drums untouched**: change the kick and
+       it no longer fits. Now the lanes that play through the bus are **one stem as the bus
+       leaves them**, `STEMS/14 DRUM BUS.wav`, and are kept one by one, as they go in, in
+       `INTO THE DRUM BUS/`. If the bus did nothing throughout, each lane is a stem of its own
+       and there is neither;
+     - **nothing said what the files were.** `PRINT.txt` now lists each with what it is, its
+       highest sample, the three mixes' loudness, and says if a mix goes over full scale.
+     **The stems add up to the mix before the master to the sample**: measured in three
+     prints (the bus at work, at rest, and a lane leaving the bus part way), what is left is
+     141 to 144 dB under the mix. `--printbus` is that check. A lane on the bus for part of
+     an arrangement is in both places, each for its part. *The layout, the names and leaving
+     the bus's difference out of a print are mine. A take is as it was.* **A print's lanes are
+     no longer beside the set: they are in `STEMS/`.**
+568. **A part's card: its two plates sat on its length** (IN and HIT, the sixty-third build's,
+     drawn over "FOR 0:15": I had not seen the page then). When it starts and how long it
+     lasts are now one line, the plates under it.
+569. **EDIT on a part: not built, thought about** (your 01:12). What I would build, and where
+     I would do other than you said, is in the message of this build; nothing of it is in the
+     code.
+
 ## Not verified
+
+- **A print's files (567)** are checked by measurement on Linux: lengths, the first hit, the
+  stems against the mix. **No mastering engineer has had them**, and no print of an
+  arrangement of yours has been made with this build. The first one you make: look in
+  `PRINT.txt` at the highest sample of `MIX BEFORE THE LIMITER.wav`.
 
 - **FINISH (559 to 562) is a match of figures, not of sound.** Measured with a test signal and
   with one set of yours, on Linux; **not heard by anyone, and not on your Mac.** The plugin's

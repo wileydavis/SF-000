@@ -153,6 +153,9 @@ void Session::arrPlay (int from)
 {
     if (arrangement.empty()) return;
     from = juce::jlimit (0, (int) arrangement.size() - 1, from);
+    // (a chip that was being listened to is put down: its sound and the arrangement's were heard together. One pressed while
+    // the arrangement plays is still heard, as one pressed while the set plays is.)
+    if (cueId != 0) cue (0);
     arrOn = true; arrTicks = 0; arrTransFor = -1;
     for (auto& p : arrangement) { if (p.transIn == 2) engine.transAsset (p.inFile); if (p.transHit == 2) engine.transAsset (p.hitFile); }       // (the parts' own files, read before it plays)
     if (! engine.isRunning())
@@ -296,40 +299,125 @@ void Session::arrFromVar (const var& v)
 // not touched (it only waits: one rig sounds at a time).
 // The first samples each file is given are left out: the time the rig holds its sound back by, so
 // that bar 1 begins on the file's first sample.
+//
+// What it leaves is for a mastering engineer as much as for the player (DECISIONS 566):
+//   00 SET.wav                    the track as the master finishes it (24-bit)
+//   MIX BEFORE THE LIMITER.wav    the same with the master's last stage left off
+//   MIX BEFORE THE MASTER.wav     the mix as the master is given it: the stems added together
+//   STEMS/                        what adds up to that, to the sample: each lane as it goes into the mix,
+//                                 the two returns, the transition, and the lanes that play through the drum
+//                                 bus as one file, as the bus leaves them
+//   INTO THE DRUM BUS/            those lanes one by one, as they go into it
+// A lane that goes through a bus that did nothing, from first sample to last, is a stem of its own.
 struct Session::Print : Engine::RecSink
 {
-    static constexpr int kTracks = Engine::kRecTracks, kBlock = 128;
+    static constexpr int kBlock = 128;
+    // One file: what it is given, less what is left out at its start. One that is `lazy` is made when it is first
+    // given a sound (most lanes go into the mix one way only), with silence for what it was not given before.
+    struct File
+    {
+        juce::File file;
+        std::unique_ptr<juce::AudioFormatWriter> w;
+        int bits = 32;
+        bool lazy = true;
+        juce::int64 drop = 0, given = 0;
+        float peak = 0.0f;
+    };
+    enum { fSet, fPre, fMix, fDirect, fBus = fDirect + kLanes, fBusOut = fBus + kLanes, fRet, fTrans = fRet + 2, kFiles };
+    std::array<File, kFiles> f;
     std::unique_ptr<Engine> eng;
     std::unique_ptr<Session> ses;
     juce::File dir;
-    std::array<std::unique_ptr<juce::AudioFormatWriter>, kTracks> writers;
-    std::array<juce::File, kTracks> files;
-    std::array<juce::int64, kTracks> drop {};          // samples still to leave out of each
-    std::array<float, kTracks> peak {};
-    juce::int64 written = 0;                            // samples of the set written
+    float deltaPeak = 0.0f;                             // what the drum bus did, at its most (under a hundred-thousandth: nothing)
     bool failed = false;
-    sf::LoudnessMeter loud;
+    sf::LoudnessMeter loud, loudPre, loudMix;
     float blockPeak = 0.0f;                             // the set's, this block
     juce::AudioBuffer<float> buf { 2, kBlock };
+    std::array<float, 1024> tl {}, tr {}, zero {};
 
     enum Phase { play, tail } phase = play;
     juce::int64 total = 0, played = 0, tailed = 0, quiet = 0;
     double rate = 48000.0, tempo = 132.0;
     juce::Time began;
 
+    juce::int64 written() const { return f[fSet].given; }       // samples of the set written
+
+    bool open (File& o)
+    {
+        o.file.getParentDirectory().createDirectory();
+        juce::WavAudioFormat wav;
+        if (auto stream = o.file.createOutputStream())
+        {
+            o.w.reset (wav.createWriterFor (stream.get(), rate, 2, o.bits, {}, 0));
+            if (o.w != nullptr) stream.release();
+        }
+        if (o.w == nullptr) { failed = true; return false; }
+        juce::AudioBuffer<float> z (2, 4096);
+        z.clear();
+        for (juce::int64 left = o.given; left > 0 && ! failed; left -= 4096)
+            if (! o.w->writeFromAudioSampleBuffer (z, 0, (int) std::min ((juce::int64) 4096, left))) failed = true;
+        return ! failed;
+    }
+    // (gives back the first of the n that was kept: n, if none was)
+    int put (int which, const float* l, const float* r, int n) noexcept
+    {
+        auto& o = f[(size_t) which];
+        int from = 0;
+        if (o.drop > 0) { from = (int) std::min ((juce::int64) n, o.drop); o.drop -= from; }
+        if (from >= n) return n;
+        float pk = 0.0f;
+        for (int i = from; i < n; ++i) pk = std::max (pk, std::max (std::abs (l[i]), std::abs (r[i])));
+        if (o.w == nullptr && (! o.lazy || pk > 1.0e-7f)) open (o);
+        if (o.w != nullptr)
+        {
+            const float* ch[2] = { l + from, r + from };
+            if (! o.w->writeFromFloatArrays (ch, 2, n - from)) failed = true;
+        }
+        o.given += n - from;
+        o.peak = std::max (o.peak, pk);
+        return from;
+    }
+    // a lane's buffer by a gain ramped across it, as the engine adds it to the mix or to the bus
+    void ramped (int which, const float* l, const float* r, int n, float was, float now) noexcept
+    {
+        for (int at = 0; at < n; at += (int) tl.size())
+        {
+            const int m = std::min ((int) tl.size(), n - at);
+            if (was == 1.0f && now == 1.0f) { put (which, l + at, r + at, m); continue; }
+            if (was == 0.0f && now == 0.0f) { put (which, zero.data(), zero.data(), m); continue; }
+            const float inc = (now - was) / (float) n;
+            float g = was + inc * (float) at;
+            for (int i = 0; i < m; ++i) { tl[(size_t) i] = g * l[at + i]; tr[(size_t) i] = g * r[at + i]; g += inc; }
+            put (which, tl.data(), tr.data(), m);
+        }
+    }
+
     void begin (int) noexcept override { blockPeak = 0.0f; }
     void end (int) noexcept override {}
+    bool wantsMore() const noexcept override { return true; }
     void track (int t, const float* l, const float* r, int n) noexcept override
     {
-        if (t == 0) for (int i = 0; i < n; ++i) blockPeak = std::max (blockPeak, std::max (std::abs (l[i]), std::abs (r[i])));
-        if (t < 0 || t >= kTracks || writers[(size_t) t] == nullptr) return;
-        int from = 0;
-        if (drop[(size_t) t] > 0) { from = (int) std::min ((juce::int64) n, drop[(size_t) t]); drop[(size_t) t] -= from; }
-        if (from >= n) return;
-        const float* ch[2] = { l + from, r + from };
-        if (! writers[(size_t) t]->writeFromFloatArrays (ch, 2, n - from)) failed = true;
-        for (int i = from; i < n; ++i) peak[(size_t) t] = std::max (peak[(size_t) t], std::max (std::abs (l[i]), std::abs (r[i])));
-        if (t == 0) { for (int i = from; i < n; ++i) loud.push (l[i], r[i]); written += n - from; }
+        if (t == 0)
+        {
+            for (int i = 0; i < n; ++i) blockPeak = std::max (blockPeak, std::max (std::abs (l[i]), std::abs (r[i])));
+            for (int i = put (fSet, l, r, n); i < n; ++i) loud.push (l[i], r[i]);
+        }
+        else if (t == kLanes + 1 || t == kLanes + 2) put (fRet + (t - kLanes - 1), l, r, n);
+        else if (t == kLanes + 3) { for (int i = 0; i < n; ++i) deltaPeak = std::max (deltaPeak, std::max (std::abs (l[i]), std::abs (r[i]))); }
+        else if (t == kLanes + 4) put (fTrans, l, r, n);
+        // (1 to kLanes, a lane whole: kept as its two ways into the mix, below)
+    }
+    void lanePaths (int lane, const float* l, const float* r, int n, float directWas, float directNow, float busWas, float busNow) noexcept override
+    {
+        if (lane < 0 || lane >= kLanes) return;
+        ramped (fDirect + lane, l, r, n, directWas, directNow);
+        ramped (fBus + lane, l, r, n, busWas, busNow);
+    }
+    void also (int which, const float* l, const float* r, int n) noexcept override
+    {
+        if (which == kBusOut) put (fBusOut, l, r, n);
+        else if (which == kMasterIn) { for (int i = put (fMix, l, r, n); i < n; ++i) loudMix.push (l[i], r[i]); }
+        else if (which == kLimiterIn) { for (int i = put (fPre, l, r, n); i < n; ++i) loudPre.push (l[i], r[i]); }
     }
 };
 
@@ -375,21 +463,25 @@ String Session::printBegin (const juce::File& root)
     p->eng->setRunning (false);
     p->ses->arrRecall (0, 0.0);                         // its first part, there at once
     print = p;
-    // The files. The set is held back by the lanes' wait and the master chain's; the lanes and the
-    // returns by the lanes' alone: each file leaves out its own, and all begin on bar 1.
-    juce::WavAudioFormat wav;
-    for (int t = 0; t < Print::kTracks; ++t)
+    // The files. The set is held back by the lanes' wait and the master chain's; the mix before the limiter by the lanes'
+    // and the master's stages before it; the rest by the lanes' alone: each file leaves out its own, and all begin on bar 1.
+    const juce::File stems = dir.getChildFile ("STEMS"), intoBus = dir.getChildFile ("INTO THE DRUM BUS");
+    const juce::int64 lanesWait = p->eng->laneLatency();
+    for (auto& o : p->f) o.drop = lanesWait;
+    p->f[Print::fSet].file = dir.getChildFile (Recorder::trackName (0) + ".wav"); p->f[Print::fSet].bits = 24; p->f[Print::fSet].lazy = false; p->f[Print::fSet].drop += p->eng->masterLatency();
+    p->f[Print::fPre].file = dir.getChildFile ("MIX BEFORE THE LIMITER.wav"); p->f[Print::fPre].lazy = false; p->f[Print::fPre].drop += p->eng->masterLatencyBeforeLast();
+    p->f[Print::fMix].file = dir.getChildFile ("MIX BEFORE THE MASTER.wav"); p->f[Print::fMix].lazy = false;
+    for (int l = 0; l < kLanes; ++l)
     {
-        p->files[(size_t) t] = dir.getChildFile (Recorder::trackName (t) + ".wav");
-        auto stream = p->files[(size_t) t].createOutputStream();
-        if (stream != nullptr)
-        {
-            p->writers[(size_t) t].reset (wav.createWriterFor (stream.get(), p->rate, 2, t == 0 ? 24 : 32, {}, 0));
-            if (p->writers[(size_t) t] != nullptr) stream.release();
-        }
-        if (p->writers[(size_t) t] == nullptr) { printEnd (false, "CANNOT WRITE IN " + dir.getFullPathName().toUpperCase()); return printNote; }
-        p->drop[(size_t) t] = p->eng->laneLatency() + (t == 0 ? p->eng->masterLatency() : 0);
+        p->f[(size_t) (Print::fDirect + l)].file = stems.getChildFile (Recorder::trackName (1 + l) + ".wav");
+        p->f[(size_t) (Print::fBus + l)].file = intoBus.getChildFile (Recorder::trackName (1 + l) + ".wav");
     }
+    p->f[Print::fBusOut].file = stems.getChildFile (Recorder::trackName (kLanes + 3) + ".wav");
+    for (int k = 0; k < 2; ++k) p->f[(size_t) (Print::fRet + k)].file = stems.getChildFile (Recorder::trackName (kLanes + 1 + k) + ".wav");
+    p->f[Print::fTrans].file = stems.getChildFile (Recorder::trackName (kLanes + 4) + ".wav");
+    for (int which : { (int) Print::fSet, (int) Print::fPre, (int) Print::fMix })
+        if (! p->open (p->f[(size_t) which])) { printEnd (false, "CANNOT WRITE IN " + dir.getFullPathName().toUpperCase()); return printNote; }
+    p->loudPre.prepare (p->rate); p->loudMix.prepare (p->rate);
     p->loud.prepare (p->rate);
     p->total = (juce::int64) std::llround ((double) arrBars() * 4.0 * 60.0 / p->tempo * p->rate);
     p->eng->setRecSink (p.get());
@@ -442,6 +534,35 @@ bool Session::printStep (double msToSpend)
 
 void Session::printCancel() { if (print != nullptr) printEnd (false, "PRINT STOPPED"); }
 
+// One sound file added into another of the same length and kind (a lane that went into the mix both ways, through a bus
+// that did nothing: its two files are one stem). False if it could not be done; the first is then as it was.
+static bool addInto (const juce::File& into, const juce::File& from)
+{
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> a (wav.createReaderFor (into.createInputStream().release(), true)), b (wav.createReaderFor (from.createInputStream().release(), true));
+    if (a == nullptr || b == nullptr || a->lengthInSamples != b->lengthInSamples) return false;
+    const juce::File tmp = into.getSiblingFile (into.getFileNameWithoutExtension() + ".adding.wav");
+    tmp.deleteFile();
+    bool ok = false;
+    if (auto stream = tmp.createOutputStream())
+        if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (stream.get(), a->sampleRate, 2, (int) a->bitsPerSample, {}, 0) })
+        {
+            stream.release();
+            ok = true;
+            juce::AudioBuffer<float> x (2, 65536), y (2, 65536);
+            for (juce::int64 at = 0; at < a->lengthInSamples && ok; at += 65536)
+            {
+                const int n = (int) std::min ((juce::int64) 65536, a->lengthInSamples - at);
+                a->read (&x, 0, n, at, true, true); b->read (&y, 0, n, at, true, true);
+                for (int ch = 0; ch < 2; ++ch) x.addFrom (ch, 0, y, ch, 0, n);
+                ok = w->writeFromAudioSampleBuffer (x, 0, n);
+            }
+        }
+    a = nullptr; b = nullptr;
+    if (! ok) { tmp.deleteFile(); return false; }
+    return tmp.moveFileTo (into);
+}
+
 void Session::printEnd (bool keep, const String& why)
 {
     if (print == nullptr) return;
@@ -449,26 +570,69 @@ void Session::printEnd (bool keep, const String& why)
     p->eng->setRecSink (nullptr);
     p->eng->setRunning (false);
     sf::Bus::renderClockEnd();
-    if (keep && p->writers[0] != nullptr && p->eng->masterLatency() > 0)
+    if (keep)
     {
-        // (the set began the master chain's wait later than its parts: that much silence at its end, and all the files are one length)
-        juce::AudioBuffer<float> z (2, p->eng->masterLatency());
-        z.clear();
-        p->writers[0]->writeFromAudioSampleBuffer (z, 0, z.getNumSamples());
+        // (the set began the master chain's wait later than its parts, and the mix before the limiter part of that wait
+        // later: that much silence at the end of each, and all the files are one length)
+        auto pad = [&p] (int which, int n)
+        {
+            auto& o = p->f[(size_t) which];
+            if (o.w == nullptr || n <= 0) return;
+            juce::AudioBuffer<float> z (2, n);
+            z.clear();
+            o.w->writeFromAudioSampleBuffer (z, 0, n);
+        };
+        pad (Print::fSet, p->eng->masterLatency()); pad (Print::fPre, p->eng->masterLatencyBeforeLast());
     }
-    for (auto& w : p->writers) w = nullptr;             // lengths written, files closed
+    for (auto& o : p->f) o.w = nullptr;                 // lengths written, files closed
     if (! keep) { p->dir.deleteRecursively(); printNote = why; }
     else
     {
+        auto& f = p->f;
+        auto heard = [&f] (int which) { return f[(size_t) which].peak >= 1.0e-5f; };
+        const juce::File intoBus = p->dir.getChildFile ("INTO THE DRUM BUS");
+        // The drum bus did nothing, first sample to last (at rest, or nothing played through it): the lanes its CONFIG
+        // names are stems of their own, and there is no file of the bus's.
+        const bool busWorked = p->deltaPeak >= 1.0e-5f && heard (Print::fBusOut);
+        printJoined = 0;
+        if (! busWorked)
+        {
+            for (int l = 0; l < kLanes; ++l)
+            {
+                auto& d = f[(size_t) (Print::fDirect + l)]; auto& b = f[(size_t) (Print::fBus + l)];
+                if (! b.file.existsAsFile()) continue;
+                if (heard (Print::fBus + l))
+                {
+                    if (d.file.existsAsFile() && heard (Print::fDirect + l)) { if (! addInto (d.file, b.file)) continue; ++printJoined; }      // (it could not be added: left where it is, and said)
+                    else { d.file.deleteFile(); d.file.getParentDirectory().createDirectory(); if (! b.file.moveFileTo (d.file)) continue; }
+                    d.peak = std::max (d.peak, b.peak);
+                }
+                b.file.deleteFile(); b.peak = 0.0f;
+            }
+            f[Print::fBusOut].file.deleteFile(); f[Print::fBusOut].peak = 0.0f;
+        }
+        // what was silent throughout is not kept
         juce::StringArray silent;
-        for (int t = 1; t < Print::kTracks; ++t)
-            if (p->peak[(size_t) t] < 1.0e-5f) { p->files[(size_t) t].deleteFile(); silent.add (Recorder::trackName (t)); }
-        const double len = (double) p->written / p->rate, music = (double) p->total / p->rate;
-        const float pk = 20.0f * std::log10 (std::max (1.0e-9f, p->peak[0]));
+        for (int which = Print::fDirect; which < Print::kFiles; ++which)
+            if (! heard (which)) f[(size_t) which].file.deleteFile();
+        for (int l = 0; l < kLanes; ++l) if (! heard (Print::fDirect + l) && ! heard (Print::fBus + l)) silent.add (Recorder::trackName (1 + l));
+        for (int k = 0; k < 2; ++k) if (! heard (Print::fRet + k)) silent.add (Recorder::trackName (kLanes + 1 + k));
+        if (! heard (Print::fTrans)) silent.add (Recorder::trackName (kLanes + 4));
+        if (intoBus.isDirectory() && intoBus.getNumberOfChildFiles (juce::File::findFiles) == 0) intoBus.deleteRecursively();
+
+        const double len = (double) p->written() / p->rate, music = (double) p->total / p->rate;
+        auto dbOf = [] (float peak) { return 20.0f * std::log10 (std::max (1.0e-9f, peak)); };
+        const float pk = dbOf (f[Print::fSet].peak);
+        auto line = [&] (const String& name, const String& what, int which, const sf::LoudnessMeter* m)
+        {
+            String s = (name + "  ").paddedRight (' ', 30) + what;
+            s = (s + "  ").paddedRight (' ', 98) + (m != nullptr ? String (m->integrated, 1).paddedLeft (' ', 6) + " LUFS  " : String ("             ")) + "peak " + String (dbOf (f[(size_t) which].peak), 1).paddedLeft (' ', 6) + " dBFS\n";
+            return s;
+        };
         String n;
         n << "SF-000 PRINT\n"
           << "MADE     " << p->began.formatted ("%Y-%m-%d %H:%M:%S") << "\n"
-          << "LENGTH   " << hmsOf (len) << "  (" << String (p->written) << " samples at " << String (p->rate, 0) << " Hz: " << String (arrBars()) << " bars at " << String (p->tempo, 1)
+          << "LENGTH   " << hmsOf (len) << "  (" << String (p->written()) << " samples at " << String (p->rate, 0) << " Hz: " << String (arrBars()) << " bars at " << String (p->tempo, 1)
           << ", " << hmsOf (music) << ", and " << String (len - music, 1) << " s ringing on after the last)\n"
           << "LOUDNESS " << String (p->loud.integrated, 1) << " LUFS integrated, the highest sample at " << String (pk, 1) << " dBFS\n\n"
           << "THE ARRANGEMENT\n";
@@ -479,16 +643,45 @@ void Session::printEnd (bool keep, const String& why)
             const int bar = arrBarsBefore (i);
             n << String (i + 1).paddedLeft (' ', 3) << "  BAR " << String (bar + 1).paddedLeft (' ', 4) << "  " << hmsOf ((double) bar * 4.0 * 60.0 / p->tempo).paddedLeft (' ', 6)
               << "  " << String (part.bars).paddedLeft (' ', 3) << (part.bars == 1 ? " BAR   " : " BARS  ") << (sn != nullptr ? sn->name : String ("(GONE)"))
-              << (i == 0 ? String() : arrMorphBars (i) <= 0.0 ? String ("   CUT") : "   MORPH " + (part.morph > 0 && arrMorphBars (i) >= (double) part.bars && glideBarsFor ((float) part.morph / 11.0f) > (double) part.bars ? String ("ALL OF IT") : morphName (part.morph))) << "\n";
+              << (i == 0 ? String() : arrMorphBars (i) <= 0.0 ? String ("   CUT") : "   MORPH " + (part.morph > 0 && arrMorphBars (i) >= (double) part.bars && glideBarsFor ((float) part.morph / 11.0f) > (double) part.bars ? String ("ALL OF IT") : morphName (part.morph)))
+              << "\n";
         }
-        n << "\n00 SET.wav is the track: the output, after the limiter, 24-bit. Bar 1 begins on its first sample.\n"
-          << "The numbered lanes, the two returns and the drum bus are the parts it was made of, as in a take\n"
-          << "(32-bit float, each as it left its strip, before the master chain), in step with it.\n"
+        // The files, said so that someone who was not there can use them: a mastering engineer.
+        juce::StringArray onBus;
+        for (int l = 0; l < kLanes; ++l) if (heard (Print::fBus + l)) onBus.add (lanes()[(size_t) l].name);
+        n << "\nTHE FILES\n"
+          << "Stereo WAV at " << String (p->rate, 0) << " Hz, all one length, bar 1 on the first sample of each. Nothing is normalised,\n"
+          << "dithered or cut flat. The 32-bit files are floating point: one may go over full scale, and is whole where it does.\n\n"
+          << line ("00 SET.wav", "the track as SF-000's master finishes it, limiter and all. 24-bit", Print::fSet, &p->loud)
+          << line ("MIX BEFORE THE LIMITER.wav", "the same without the limiter, at the level it reached it. 32-bit", Print::fPre, &p->loudPre)
+          << line ("MIX BEFORE THE MASTER.wav", "none of the master on it: the stems added together. 32-bit", Print::fMix, &p->loudMix);
+        // (one of the two over full scale: whole, as a floating point file is, and said, for whoever opens it in something that is not)
+        for (int which : { (int) Print::fPre, (int) Print::fMix })
+            if (f[(size_t) which].peak > 1.0f)
+                n << f[(size_t) which].file.getFileName() << " goes over full scale, by " << String (dbOf (f[(size_t) which].peak), 1) << " dB at its highest. The file is whole; turn it down by that or more\n"
+                  << "before it meets anything that is not floating point.\n";
+        n << "\nSTEMS/  add up to MIX BEFORE THE MASTER, to the sample. 32-bit.\n";
+        for (int l = 0; l < kLanes; ++l) if (heard (Print::fDirect + l)) n << line ("  " + Recorder::trackName (1 + l) + ".wav", "the lane as it goes into the mix", Print::fDirect + l, nullptr);
+        if (heard (Print::fRet)) n << line ("  " + Recorder::trackName (kLanes + 1) + ".wav", "return A (the delay), as it goes into the mix", Print::fRet, nullptr);
+        if (heard (Print::fRet + 1)) n << line ("  " + Recorder::trackName (kLanes + 2) + ".wav", "return B (the reverb), as it goes into the mix", Print::fRet + 1, nullptr);
+        if (heard (Print::fBusOut)) n << line ("  " + Recorder::trackName (kLanes + 3) + ".wav", "the lanes on the drum bus, together, as the bus leaves them", Print::fBusOut, nullptr);
+        if (heard (Print::fTrans)) n << line ("  " + Recorder::trackName (kLanes + 4) + ".wav", "the transitions: lead-ins and hits", Print::fTrans, nullptr);
+        if (onBus.size() > 0)
+        {
+            n << "\nINTO THE DRUM BUS/  the lanes inside " << Recorder::trackName (kLanes + 3) << ".wav (" << onBus.joinIntoString (", ") << "), one by one, as they go into the bus.\n"
+              << "Not to be added to the stems: they are in them already. For when the drums are wanted apart, without what the bus did.\n";
+            for (int l = 0; l < kLanes; ++l) if (heard (Print::fBus + l)) n << line ("  " + Recorder::trackName (1 + l) + ".wav", "", Print::fBus + l, nullptr);
+        }
+        if (silent.size() > 0) n << "\nSilent throughout, and not kept: " << silent.joinIntoString (", ") << ".\n";
+        n << "\nA lane's file is the lane as it leaves its strip: after its effects, its EQ and its level, and after POCKETS has\n"
+          << "cut it where another lane had the better claim to that part of the spectrum. What it sends to the two returns is in\n"
+          << "the returns' files. None of the master is on a stem: not its low end (the lows made mono, a rumble cut), its tape,\n"
+          << "its compressor, FINISH or its limiter.\n"
+          << "For mastering: MIX BEFORE THE LIMITER, or the STEMS, with 00 SET to hear what was meant.\n\n"
           << "It was rendered, not recorded: on a rig made for the purpose from the session as it stood, every\n"
-          << "module from its beginning, so the same arrangement prints the same file. Nothing was played\n"
+          << "module from its beginning, so the same arrangement prints the same files. Nothing was played\n"
           << "into it from outside, and each part brought its own notes. The snapshot knobs stood where they\n"
           << "were, and MOTION ran.\n";
-        if (silent.size() > 0) n << "Silent throughout, and not kept: " << silent.joinIntoString (", ") << ".\n";
         p->dir.getChildFile ("PRINT.txt").replaceWithText (n);
         printNote = "PRINTED: " + hmsOf (len) + ", " + String (p->loud.integrated, 1) + " LUFS, PEAK " + String (pk, 1) + " DB.  " + p->dir.getFullPathName().toUpperCase();
     }

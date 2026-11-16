@@ -1018,9 +1018,9 @@ void Engine::updateLatency()
     mx = std::min (std::max (mx, holdLat), 8000);
     for (int l = 0; l < kLanes; ++l) lane[(size_t) l].delay = juce::jlimit (0, 8000, mx - lat[l]);
     maxLat = mx;
-    int ml = 0;
-    for (auto& m : master) ml += m->getLatencySamples();
-    masterLat = ml;
+    int ml = 0, before = 0;
+    for (size_t k = 0; k < master.size(); ++k) { if (k + 1 < master.size()) before += master[k]->getLatencySamples(); ml += master[k]->getLatencySamples(); }
+    masterLat = ml; masterLatBefore = before;
 }
 
 // --------------------------------------------------------------------------------------- files
@@ -1737,6 +1737,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
     // A recording under way: held for the whole buffer, so stopping it waits for the buffer's end.
     const juce::SpinLock::ScopedTryLockType recHold (recLock);
     RecSink* const rec = recHold.isLocked() ? recSink : nullptr;
+    const bool recMore = rec != nullptr && rec->wantsMore();
     if (rec != nullptr) rec->begin (n);
     {
         // the stems' tapes: silence for this buffer, until each stem that sounds is written over it
@@ -2091,6 +2092,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // names. (A switch thrown crosses the lane over in one buffer.) The sends leave before it.
         const float onNow = laneOnBus (l) ? 1.0f : 0.0f, onWas = busWas[(size_t) l];
         busWas[(size_t) l] = onNow;
+        if (recMore) rec->lanePaths (l, b2.getReadPointer (0), b2.getReadPointer (1), n, dryMixWas * (1.0f - onWas), dryNow * (1.0f - onNow), dryMixWas * onWas, dryNow * onNow);
         for (int ch = 0; ch < 2; ++ch)
         {
             if (onWas < 1.0f || onNow < 1.0f) mix.addFromWithRamp (ch, 0, b2.getReadPointer (ch), n, dryMixWas * (1.0f - onWas), dryNow * (1.0f - onNow));
@@ -2128,6 +2130,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         for (int ch = 0; ch < 2; ++ch) busDry.copyFrom (ch, 0, d2, ch, 0, n);
         if (pan) busProc->panic();
         busProc->processBlock (d2, noMidi);
+        if (recMore) rec->also (RecSink::kBusOut, d2.getReadPointer (0), d2.getReadPointer (1), n);
         for (int ch = 0; ch < 2; ++ch) m2.addFrom (ch, 0, d2, ch, 0, n);
         {
             for (int ch = 0; ch < 2; ++ch)
@@ -2184,9 +2187,10 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     float inPk = 0.0f;
     tr = clock();
+    if (recMore) rec->also (RecSink::kMasterIn, m2.getReadPointer (0), m2.getReadPointer (1), n);
     for (size_t k = 0; k < master.size(); ++k)
     {
-        if (k + 1 == master.size()) inPk = m2.getMagnitude (0, n);
+        if (k + 1 == master.size()) { inPk = m2.getMagnitude (0, n); if (recMore) rec->also (RecSink::kLimiterIn, m2.getReadPointer (0), m2.getReadPointer (1), n); }
         master[k]->processBlock (m2, noMidi);
     }
     profMaster += since (tr);

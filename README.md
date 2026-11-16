@@ -673,12 +673,28 @@ whole of it is one travel from the snapshot before.
 - **What plays over it.** The snapshot knobs, where they stand, and MOTION: an arrangement is
   the scenes, and those are what you play on top. So is anything you turn while it plays.
 - **PRINT** renders it to files, for a release: faster than it plays, and the same every time.
-  A folder `PRINT <date>` where takes go (SETUP's folder for them), holding `00 SET.wav`, the
-  track (24-bit, after the limiter, bar 1 on its first sample, and what rings on after the last
-  bar kept until it has died away), every lane, the two returns and the drum bus beside it as a
-  take has them (32-bit float, in step with it, silent ones left out), and `PRINT.txt`: its
-  length, its loudness (integrated LUFS and the highest sample), and the parts with the bar
-  and the time each begins.
+  A folder `PRINT <date>` where takes go (SETUP's folder for them). **What it holds is for a
+  mastering engineer as much as for you**: every file is a stereo WAV at the device's rate, one
+  length, bar 1 on its first sample, with what rings on after the last bar kept until it has
+  died away; nothing is normalised, dithered or cut flat.
+  - `00 SET.wav`: the track as the master finishes it, limiter and all (24-bit). What was meant.
+  - `MIX BEFORE THE LIMITER.wav`: the same with the master's last stage left off (32-bit float,
+    at the level it reached the limiter). What a mastering engineer starts from.
+  - `MIX BEFORE THE MASTER.wav`: the mix as the master is given it, none of the master on it.
+  - `STEMS/`: **add up to `MIX BEFORE THE MASTER.wav`, to the sample** (measured: what is left
+    is 141 dB under it, which is the rounding of the adding). Each lane as it goes into the
+    mix, the two returns, the transitions; and **the lanes that play through the drum bus as
+    one file, `14 DRUM BUS.wav`, as the bus leaves them**, because what the bus does it does to
+    them together. 32-bit float: a stem may go over full scale and is whole where it does.
+  - `INTO THE DRUM BUS/`: those lanes one by one, as they go into the bus, for when the drums
+    are wanted apart. Not to be added to the stems. (A take keeps a file of what the bus *did*
+    instead; nobody downstream can use that.) **If the bus did nothing from first sample to
+    last, there is neither**: each of its lanes is a stem of its own.
+  - `PRINT.txt`: its length, its loudness, the parts with the bar and time each begins, and
+    every file with what it is, its highest sample, and for the three mixes its loudness. It
+    says so if a mix goes over full scale. Hand it over with the files.
+  What is silent throughout is not kept. None of the master is on a stem: not its low end, its
+  tape, its compressor, FINISH or its limiter.
   - It is made on **a rig of its own**, built there and then from the session as it stands, with
     every module starting from its beginning. So the rig you are playing is not touched, and
     printing the same arrangement twice gives the same file to the byte, however busy the
@@ -1187,7 +1203,7 @@ build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
 build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each
-build/.../SF-000 --printbus                       # is the drum bus in a print? prints a small arrangement with it at work and at rest, and says
+build/.../SF-000 --printbus                       # what a print leaves: prints a small arrangement three ways (the drum bus at work, at rest, a lane leaving it part way) and says whether the files are one length, the stems add up to the mix, and where the bus's lanes are (--printbus DIR keeps the prints there)
 python3 tools/master_probe.py probe.wav           # a test signal for measuring what a mix-bus processor does: sweeps and noise at stepped levels, tone steps, sides alone (bounce it through the processor)
 build/.../SF-000 --finishcheck in.wav out.wav     # a file through FINISH alone, as 32-bit float (--amount 0 to 1, --input dB, --auto 1: finding its own level, --says: where it puts it; --limit -1 [--gain dB]: the master's limiter after it)
 build/.../SF-000 --finishrig dir                  # the rig as it opens rendered with FINISH off and at 100, as two files to set side by side (--seconds N, --amount A, --target LUFS: the LIMIT knob, --bare: the limiter out of the way)

@@ -874,7 +874,9 @@ static void arrangementTest (int& bad)
         };
         juce::AudioBuffer<float> set, kickStem;
         int setBits = 0, kickBits = 0;
-        const bool files = read ("00 SET.wav", set, setBits) && read ("01 KICK.wav", kickStem, kickBits) && setBits == 24 && kickBits == 32 && dir.getChildFile ("PRINT.txt").existsAsFile();
+        // (the kick's own file: a stem, or, where it plays through a drum bus that is at work, among the lanes as they go into it)
+        auto kickIn = [] (const juce::File& d) { return juce::String (d.getChildFile ("STEMS").getChildFile ("01 KICK.wav").existsAsFile() ? "STEMS/01 KICK.wav" : "INTO THE DRUM BUS/01 KICK.wav"); };
+        const bool files = read ("00 SET.wav", set, setBits) && read (kickIn (dir), kickStem, kickBits) && setBits == 24 && kickBits == 32 && dir.getChildFile ("PRINT.txt").existsAsFile();
         const auto total = (juce::int64) std::llround (20.0 * spb);
         auto peakIn = [] (const juce::AudioBuffer<float>& a, juce::int64 from, juce::int64 to) { from = juce::jlimit ((juce::int64) 0, (juce::int64) a.getNumSamples(), from); to = juce::jlimit (from, (juce::int64) a.getNumSamples(), to); return to > from ? a.getMagnitude ((int) from, (int) (to - from)) : 0.0f; };
         const float kickTop = files ? peakIn (kickStem, 0, kickStem.getNumSamples()) : 0.0f;
@@ -903,6 +905,38 @@ static void arrangementTest (int& bad)
                  + juce::String (late) + " in the fifth, what rings on after the last bar kept (" + juce::String (len - 20.0 * beat, 1) + " s), and a page saying what is in it. It is rendered on a rig of its own: the one being played is not touched");
         if (! (began && done && putBack && files)) std::printf ("        (began %d [%s], done %d [%s], rose %d, steps %d, put back %d, files %d [%d %d bit])\n", began, err.toRawUTF8(), done, ses.printNote.toRawUTF8(), rose, steps, putBack, files, setBits, kickBits);
         if (files) dir.getChildFile ("00 SET.wav").loadFileAsData (firstSet);
+        // For a mastering engineer: the mix before the limiter and the mix before the master, as long as the set and in step
+        // with it; stems that add up to the second of those; no file that is only what the drum bus did; and the page says
+        // what each is.
+        {
+            juce::AudioBuffer<float> mixed, pre, sum, x;
+            int mixBits = 0, preBits = 0, stems = 0;
+            const bool mixes = files && read ("MIX BEFORE THE MASTER.wav", mixed, mixBits) && read ("MIX BEFORE THE LIMITER.wav", pre, preBits) && mixBits == 32 && preBits == 32
+                               && mixed.getNumSamples() == set.getNumSamples() && pre.getNumSamples() == set.getNumSamples();
+            bool sameLen = mixes;
+            sum.setSize (2, std::max (1, set.getNumSamples())); sum.clear();
+            for (auto& f : dir.getChildFile ("STEMS").findChildFiles (juce::File::findFiles, false, "*.wav"))
+            {
+                int bx = 0;
+                if (! read ("STEMS/" + f.getFileName(), x, bx)) { sameLen = false; continue; }
+                ++stems;
+                sameLen = sameLen && bx == 32 && x.getNumSamples() == set.getNumSamples();
+                if (x.getNumSamples() == sum.getNumSamples()) for (int ch = 0; ch < 2; ++ch) sum.addFrom (ch, 0, x, ch, 0, x.getNumSamples());
+            }
+            double d = 0.0, m = 0.0;
+            if (mixes) for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < mixed.getNumSamples(); ++i) { const double q = (double) sum.getSample (ch, i) - mixed.getSample (ch, i); d += q * q; m += (double) mixed.getSample (ch, i) * mixed.getSample (ch, i); }
+            const int nullDb = d <= 0.0 ? -200 : (int) std::lround (10.0 * std::log10 (d / (m + 1.0e-30)));
+            int preAt = -1;
+            if (mixes) for (int i = 0; i < pre.getNumSamples() && preAt < 0; ++i) if (std::abs (pre.getSample (0, i)) > 0.02f * peakIn (pre, 0, (juce::int64) spb)) preAt = i;
+            const bool into = dir.getChildFile ("INTO THE DRUM BUS").isDirectory();
+            const bool tidy = ! dir.getChildFile ("01 KICK.wav").existsAsFile() && into == dir.getChildFile ("STEMS").getChildFile (Recorder::trackName (kLanes + 3) + ".wav").existsAsFile();
+            const bool page = notes.contains ("THE FILES") && notes.contains ("STEMS/  add up to MIX BEFORE THE MASTER") && notes.contains ("MIX BEFORE THE LIMITER.wav") && notes.contains ("For mastering");
+            say (mixes && stems >= 3 && sameLen && nullDb < -100 && preAt >= 0 && preAt < 96 && m > 0.0 && tidy && page,
+                 "a print is for a mastering engineer too: the mix before the limiter and the mix before the master beside the set (32-bit float, as long as it, the first hit " + juce::String (preAt) + " samples in), "
+                     + juce::String (stems) + " stems that add up to the mix before the master (" + juce::String (nullDb) + " dB of it left), the lanes on the drum bus one stem as the bus leaves them"
+                     + (into ? " and kept one by one as they go into it" : " (the bus did nothing: each is a stem of its own)") + ", and a page that says what each file is");
+            if (! (mixes && sameLen && tidy && page)) std::printf ("        (mixes %d [%d %d bit], stems %d, one length %d, null %d dB, first hit %d, tidy %d, page %d)\n", (int) mixes, mixBits, preBits, stems, (int) sameLen, nullDb, preAt, (int) tidy, (int) page);
+        }
         // twice is the same, to the byte
         // (and the second is held up as a busy computer holds one up: six times, for longer than a
         // kick's report stays current by the wall. A print goes by its own time, so it is no different.)
@@ -911,8 +945,8 @@ static void arrangementTest (int& bad)
         juce::MemoryBlock again;
         ses.printFolder.getChildFile ("00 SET.wav").loadFileAsData (again);
         juce::MemoryBlock kick1, kick2;
-        dir.getChildFile ("01 KICK.wav").loadFileAsData (kick1); ses.printFolder.getChildFile ("01 KICK.wav").loadFileAsData (kick2);
-        say (err2.isEmpty() && ses.printFolder != dir && firstSet.getSize() > 1000 && firstSet == again && kick1 == kick2, "printed again, and held up six times for 450 ms on the way, the files are the same to the byte");
+        dir.getChildFile (kickIn (dir)).loadFileAsData (kick1); ses.printFolder.getChildFile (kickIn (ses.printFolder)).loadFileAsData (kick2);
+        say (err2.isEmpty() && ses.printFolder != dir && firstSet.getSize() > 1000 && firstSet == again && kick1.getSize() > 1000 && kick1 == kick2, "printed again, and held up six times for 450 ms on the way, the files are the same to the byte");
         if (! (firstSet == again))
             for (int t = 0; t < Engine::kRecTracks; ++t)
             {
@@ -3571,13 +3605,14 @@ static int finishRig (const juce::StringArray& args)
     return 0;
 }
 
-// --printbus: is the drum bus in a print? A four-bar arrangement of one snapshot is printed twice, the snapshot taken with the
-// bus at work and with it at rest (the rig itself left with the bus at rest both times, so what is printed can only come from
-// the snapshot). Says what the bus's own file holds in each and how far apart the two sets are.
-static int printBusProbe()
+// --printbus [DIR]: what a print leaves, and is the drum bus in it? A four-bar arrangement of one snapshot is printed twice,
+// the snapshot taken with the bus at work and with it at rest (the rig itself left with the bus at rest both times, so what is
+// printed can only come from the snapshot). Says, of each: whether its files are all one length; how nearly its stems add up
+// to the mix as the master was given it; where the lanes that play through the bus are. With DIR the two prints are kept there.
+static int printBusProbe (const juce::String& keepIn = {})
 {
     using namespace sf0;
-    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-printbus-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
+    const auto tmp = keepIn.isNotEmpty() ? juce::File (keepIn) : juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-printbus-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt()));
     tmp.createDirectory();
     auto read = [] (const juce::File& f, juce::AudioBuffer<float>& into)
     {
@@ -3604,25 +3639,69 @@ static int printBusProbe()
         std::printf ("  %-8s %s\n", name, ses.printNote.toRawUTF8());
         return ses.printFolder;
     };
+    // of one print: its files one length, and its stems against the mix before the master (dB under the mix; -200: to the bit)
+    struct Told { bool oneLength = false, hasMixes = false; double nullDb = 0.0; int stems = 0, into = 0; bool busStem = false; double busPeak = 0.0; };
+    auto tell = [&] (const juce::File& dir)
+    {
+        Told t;
+        juce::AudioBuffer<float> set, mix, pre, sum, x;
+        t.hasMixes = read (dir.getChildFile ("00 SET.wav"), set) && read (dir.getChildFile ("MIX BEFORE THE MASTER.wav"), mix) && read (dir.getChildFile ("MIX BEFORE THE LIMITER.wav"), pre);
+        if (! t.hasMixes) return t;
+        t.oneLength = set.getNumSamples() == mix.getNumSamples() && set.getNumSamples() == pre.getNumSamples();
+        sum.setSize (2, mix.getNumSamples()); sum.clear();
+        for (auto& f : dir.getChildFile ("STEMS").findChildFiles (juce::File::findFiles, false, "*.wav"))
+        {
+            if (! read (f, x)) continue;
+            ++t.stems;
+            t.oneLength = t.oneLength && x.getNumSamples() == mix.getNumSamples();
+            if (x.getNumSamples() == mix.getNumSamples()) for (int ch = 0; ch < 2; ++ch) sum.addFrom (ch, 0, x, ch, 0, x.getNumSamples());
+            if (f.getFileName() == Recorder::trackName (kLanes + 3) + ".wav") { t.busStem = true; t.busPeak = x.getMagnitude (0, x.getNumSamples()); }
+        }
+        for (auto& f : dir.getChildFile ("INTO THE DRUM BUS").findChildFiles (juce::File::findFiles, false, "*.wav"))
+            if (read (f, x)) { ++t.into; t.oneLength = t.oneLength && x.getNumSamples() == mix.getNumSamples(); }
+        double d = 0.0, m = 0.0;
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < mix.getNumSamples(); ++i) { const double q = (double) sum.getSample (ch, i) - mix.getSample (ch, i); d += q * q; m += (double) mix.getSample (ch, i) * mix.getSample (ch, i); }
+        t.nullDb = d <= 0.0 ? -200.0 : 10.0 * std::log10 (d / (m + 1.0e-30));
+        return t;
+    };
     const auto with = once (0.5f, "with"), without = once (0.0f, "without");
+    // and a lane that goes into the mix both ways in one print, through a bus that does nothing: two parts, the kick on the
+    // bus in the first and off it in the second. Its two files are made one stem.
+    int joined = 0;
+    juce::File moved;
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        const auto first = ses.take();
+        e.setSetup ({ 3, 0, 0 }, "in_1", 0.0f);
+        const auto second = ses.take();
+        const bool differs = ! e.laneOnBus (0);
+        e.setSetup ({ 3, 0, 0 }, "in_1", 1.0f);
+        ses.arrAdd (first); ses.arrAdd (second); ses.arrSet (0, 2, -1); ses.arrSet (1, 2, 0);
+        if (ses.printBegin (tmp.getChildFile ("moved")).isEmpty()) { while (ses.printStep (50.0)) {} moved = ses.printFolder; joined = ses.printJoined; }
+        std::printf ("  %-8s %s%s\n", "moved", ses.printNote.toRawUTF8(), differs ? "" : "  (THE KICK DID NOT LEAVE THE BUS)");
+    }
     int bad = 0;
-    if (with == juce::File() || without == juce::File()) bad = 1;
+    if (with == juce::File() || without == juce::File() || moved == juce::File()) bad = 1;
     else
     {
-        const juce::String busName = Recorder::trackName (kLanes + 3) + ".wav", setName = Recorder::trackName (0) + ".wav";
-        juce::AudioBuffer<float> busA, busB, setA, setB;
-        const bool hasA = read (with.getChildFile (busName), busA), hasB = read (without.getChildFile (busName), busB);
-        const bool sets = read (with.getChildFile (setName), setA) && read (without.getChildFile (setName), setB);
-        const double pkA = hasA ? busA.getMagnitude (0, busA.getNumSamples()) : 0.0, pkB = hasB ? busB.getMagnitude (0, busB.getNumSamples()) : 0.0;
+        const Told a = tell (with), b = tell (without), c = tell (moved);
+        juce::AudioBuffer<float> setA, setB;
+        const bool sets = read (with.getChildFile ("00 SET.wav"), setA) && read (without.getChildFile ("00 SET.wav"), setB);
         double d = 0.0, sum = 0.0;
         if (sets) for (int i = 0; i < std::min (setA.getNumSamples(), setB.getNumSamples()); ++i) { const double x = setA.getSample (0, i), y = setB.getSample (0, i); d += (x - y) * (x - y); sum += x * x; }
-        std::printf ("  the snapshot taken with the drum bus at work: its own file %s (peak %.4f)\n", hasA ? "is there" : "is not kept (silent)", pkA);
-        std::printf ("  the snapshot taken with it at rest:           its own file %s (peak %.4f)\n", hasB ? "is there" : "is not kept (silent)", pkB);
+        std::printf ("  the snapshot taken with the drum bus at work: %d stems, the bus's among them %s (peak %.4f), %d lanes kept as they go into it; all one length %s; the stems against the mix before the master %.0f dB\n",
+                     a.stems, a.busStem ? "yes" : "NO", a.busPeak, a.into, a.oneLength ? "yes" : "NO", a.nullDb);
+        std::printf ("  the snapshot taken with it at rest:           %d stems, the bus's among them %s, %d lanes kept as they go into it (each is a stem of its own); all one length %s; the stems against the mix before the master %.0f dB\n",
+                     b.stems, b.busStem ? "YES" : "no", b.into, b.oneLength ? "yes" : "NO", b.nullDb);
         if (sets) std::printf ("  the two printed sets differ by %.1f dB of the set\n", 10.0 * std::log10 ((d + 1e-20) / (sum + 1e-20)));
-        bad = (hasA && pkA > 1.0e-3 && ! (hasB && pkB > 1.0e-4) && sets && d > 0.0) ? 0 : 1;
-        std::printf ("%s\n", bad == 0 ? "THE DRUM BUS IS IN A PRINT" : "THE DRUM BUS IS NOT IN A PRINT AS EXPECTED");
+        std::printf ("  the kick on the bus in one part and off it in the next, the bus at rest: %d stems, %d of them a lane's two ways made one, the kick's own stem %s, %d lanes kept as they go into the bus; all one length %s; the stems against the mix before the master %.0f dB\n",
+                     c.stems, joined, moved.getChildFile ("STEMS").getChildFile ("01 KICK.wav").existsAsFile() ? "there" : "MISSING", c.into, c.oneLength ? "yes" : "NO", c.nullDb);
+        if (! (c.hasMixes && joined == 1 && c.into == 0 && ! c.busStem && c.oneLength && c.nullDb < -100.0 && moved.getChildFile ("STEMS").getChildFile ("01 KICK.wav").existsAsFile())) bad = 2;
+        if (bad == 0) bad = (a.hasMixes && b.hasMixes && a.busStem && a.busPeak > 1.0e-3 && a.into > 0 && ! b.busStem && b.into == 0 && b.stems > a.stems && a.oneLength && b.oneLength && a.nullDb < -100.0 && b.nullDb < -100.0 && sets && d > 0.0) ? 0 : 1;
+        std::printf ("%s\n", bad == 0 ? "THE DRUM BUS IS IN A PRINT, AND ITS STEMS ADD UP TO THE MIX" : "A PRINT IS NOT AS EXPECTED");
     }
-    tmp.deleteRecursively();
+    if (keepIn.isEmpty()) tmp.deleteRecursively();
     return bad;
 }
 
@@ -5437,10 +5516,37 @@ static int uiTest()
             click (part (2, 0)); draw();
             const bool pressed = sc.testSelPart() == 2 && (ses.cueing() == fourth || ! ses.clipFile (fourth).existsAsFile());
             ses.cue (0);
+            // The arrangement played with a chip being listened to: the chip is put down (the two were heard together). (The
+            // snapshot has no sound kept here, so it is given a second of noise as its clip, in a folder of the test's.)
+            bool putDown = false, cued = false;
+            {
+                const auto wasFile = Session::stateFileForTests;
+                const auto cueDir = tmp.getSiblingFile ("sf000_arrange_ui_cue");
+                cueDir.deleteRecursively();
+                Session::stateFileForTests = cueDir.getChildFile ("session.json");
+                const auto cf = ses.clipFile (fourth);
+                cf.getParentDirectory().createDirectory();
+                {
+                    juce::AudioBuffer<float> noise (2, 48000);
+                    juce::Random rnd (7);
+                    for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 48000; ++i) noise.setSample (ch, i, 0.2f * (rnd.nextFloat() * 2.0f - 1.0f));
+                    juce::OggVorbisAudioFormat ogg;
+                    if (auto os = cf.createOutputStream())
+                        if (std::unique_ptr<juce::AudioFormatWriter> w { ogg.createWriterFor (os.release(), 48000.0, 2, 16, {}, 4) }) w->writeFromAudioSampleBuffer (noise, 0, 48000);
+                }
+                cued = ses.cue (fourth) && ses.cueing() == fourth;
+                click (key (1)); draw();
+                putDown = cued && ses.arrPlaying() && ses.cueing() == 0;
+                ses.arrStop(); ses.engine.setRunning (false); audio (4);
+                ses.cue (0);
+                Session::stateFileForTests = wasFile;
+                cueDir.deleteRecursively();
+            }
             ses.arrRemove (2); sc.testPickPart (1); sc.testPlain(); draw();
-            partStems = notAdded && withStems && keyed && inFile && comesIn && pressed && ses.arrangement.size() == 3;
+            partStems = notAdded && withStems && keyed && inFile && comesIn && pressed && putDown && ses.arrangement.size() == 3;
             if (! partStems) std::printf ("        (stems: not added %d with %d keyed %d file %d comes in %d [kick %.2f bass %.2f pad %.2f] pressed %d)\n", (int) notAdded, (int) withStems, (int) keyed, (int) inFile, (int) comesIn,
                                           ses.engine.target (kc), ses.engine.target (bc), ses.engine.target (pc), (int) pressed);
+            if (! putDown) std::printf ("        (a chip listened to when the arrangement is played: in the headphones %d, put down %d)\n", (int) cued, (int) putDown);
         }
         dragBy (part (1, 1), 0.0f, -40.0f); draw();
         const int bars = ses.arrangement[1].bars;
@@ -5477,7 +5583,7 @@ static int uiTest()
         const bool cleared = ses.arrangement.empty() && sc.testSelPart() == -1;
         sc.keyPressed (juce::KeyPress ('a', juce::ModifierKeys(), 'a')); draw();
         const bool shut = sc.testPage() == Screen::pMain;
-        check (partStems, "the arrangement, a chip beside it pressed: in hand, not added; its ADD puts it in with the parts lit on its card; a part's own keys change what it takes, the file keeps it, and when the arrangement comes to the part the parts put out stay as they are");
+        check (partStems, "the arrangement, a chip beside it pressed: in hand, not added; its ADD puts it in with the parts lit on its card; a part's own keys change what it takes, the file keeps it, and when the arrangement comes to the part the parts put out stay as they are; played with a chip being listened to, the chip is put down");
         check (onMain && opened && added && between && dragged && later && earlier && removed && plays && stops && printing && locked && escaped && printed && cleared && shut,
                ("the ARRANGE key opens the arrangement's page; a snapshot's ADD there makes it a part after the one chosen; a part's BARS and MORPH are dragged (" + juce::String (bars) + " bars, " + Session::morphName (morph)
                     + "; a double-click: eight again); EARLIER, LATER and REMOVE; PLAY and STOP; PRINT is rendered by the page a slice at a time (" + juce::String (ticks) + " of them), takes nothing else meanwhile and stops for Esc; CLEAR, held, empties it; A shuts it").toRawUTF8());
@@ -10551,7 +10657,7 @@ public:
         }
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
-        if (args.contains ("--printbus")) { setApplicationReturnValue (printBusProbe()); quit(); return; }
+        if (args.contains ("--printbus")) { const int i = args.indexOf ("--printbus"); setApplicationReturnValue (printBusProbe (i + 1 < args.size() && ! args[i + 1].startsWith ("--") ? args[i + 1].unquoted() : juce::String())); quit(); return; }
         if (args.contains ("--finishcheck")) { setApplicationReturnValue (finishCheck (args)); quit(); return; }
         if (args.contains ("--finishrig")) { setApplicationReturnValue (finishRig (args)); quit(); return; }
         if (args.contains ("--audit"))

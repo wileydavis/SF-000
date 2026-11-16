@@ -445,6 +445,7 @@ public:
     float printDone() const;                            // 0 to 1
     juce::String printNote;                             // the last thing worth telling: where it went, how loud it is, why it stopped
     juce::File printFolder;                             // the last print's folder
+    int printJoined = 0;                                // in the last print: lanes that went into the mix both ways and are one stem (the drum bus did nothing)
     // A recall of part of it: the lanes that are chosen, the returns, the drum bus, the key come
     // from the snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo,
     // GLIDE and the master's three knobs are the rig's and no snapshot's.)

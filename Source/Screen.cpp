@@ -2884,7 +2884,7 @@ void Screen::drawArrange (G& g)
         const R r (23.0f + (float) (q % 4) * 282, 184.0f + (float) (q / 4) * 113, 272, 107);
         hit (r, hArrPart, i, 0);
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
-        const R br (x0, y0 + 54, 66, 40), mr (x0 + 70, y0 + 54, 108, 40);
+        const R br (x0, y0 + 54, 66, 40), mr (x0 + 70, y0 + 54, 96, 40);
         if (i > 0 || true) { hit (br, hArrBars, i, 0); if (i > 0) hit (mr, hArrMorph, i, 0); }
         for (int k = 0; k < kLanes + 4; ++k) hit (R (x0 + (float) k * 17.4f, y0 + 27, 16.0f, 24), hArrKey, i, k);      // (the last: N, its notes)
         hit (R (x0 + 184, y0 + 75, 37, 20), hArrTrans, i, 0); hit (R (x0 + 223, y0 + 75, 37, 20), hArrTrans, i, 1);      // (its IN and its HIT)
@@ -2911,12 +2911,12 @@ void Screen::drawArrange (G& g)
         // (a morph longer than the part is the whole of the part)
         const bool whole = glideBarsFor ((float) p.morph / 11.0f) > (double) p.bars;
         readout (g, mr, i == 0 ? "COMES IN" : "MORPH", i == 0 ? String ("AT ONCE") : whole ? String ("ALL OF IT") : Session::morphName (p.morph));
-        text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 54, 76, 20), fLbl, col::black, juce::Justification::centredRight);
+        // (when it starts and how long it lasts, on one line: the line under it is the two plates')
+        text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo) + " FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 168, y0 + 54, 92, 20), fLbl, col::black, juce::Justification::centredRight);
         // TRANSITION into this part: IN, a lead-in that ends on its bar line; HIT, a hit that lands with it. Amber: with what the
         // bar's plates say; green: with a file of the part's own (dropped on the plate).
         plate (g, x0 + 186, y0 + 76, "IN", fLbl, 9, p.transIn == 2 ? col::green : p.transIn == 1 ? col::amber : col::putty, col::black, 18);
         plate (g, x0 + 225, y0 + 76, "HIT", fLbl, 6, p.transHit == 2 ? col::green : p.transHit == 1 ? col::amber : col::putty, col::black, 18);
-        text (g, "FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 74, 76, 20), fLbl, col::black, juce::Justification::centredRight);
     }
     // the library, to take from
     const float top = drawFind (g, 1151.0f, 554.0f, 78.0f);

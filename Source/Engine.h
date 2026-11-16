@@ -223,12 +223,21 @@ public:
         virtual void begin (int n) noexcept = 0;
         virtual void track (int index, const float* l, const float* r, int n) noexcept = 0;
         virtual void end (int n) noexcept = 0;
+        // More of the same buffer, for a sink that asks for it (a print does, for stems a mastering engineer can use):
+        // each lane's two ways into the mix, which are the lane's own buffer by a gain ramped across it (what goes there
+        // direct, and what goes through the drum bus); the drum bus as it leaves it; the mix as the master chain is given
+        // it (the stems together); and the mix as the master's last stage, the limiter, is given it.
+        enum { kBusOut, kMasterIn, kLimiterIn };
+        virtual bool wantsMore() const noexcept { return false; }
+        virtual void lanePaths (int lane, const float* l, const float* r, int n, float directWas, float directNow, float busWas, float busNow) noexcept { juce::ignoreUnused (lane, l, r, n, directWas, directNow, busWas, busNow); }
+        virtual void also (int which, const float* l, const float* r, int n) noexcept { juce::ignoreUnused (which, l, r, n); }
     };
     // Message thread. Returns once the audio thread has let go of the sink there was (nullptr: none).
     // (A sink is fed at the rate the engine had when it was given. If the audio starts again at another, the engine lets go of it there and then.)
     void setRecSink (RecSink* s)                { const juce::SpinLock::ScopedLockType g (recLock); recSink = s; recSinkRate = sr; }
     bool hasRecSink() const                     { const juce::SpinLock::ScopedLockType g (recLock); return recSink != nullptr; }
     int masterLatency() const                   { return masterLat.load(); }      // samples the master chain holds the set back
+    int masterLatencyBeforeLast() const         { return masterLatBefore.load(); } // and by how many of them before its last stage (the limiter)
     int laneLatency() const                     { return maxLat.load(); }         // samples every lane is held back, to keep them in step
     // How many times the clock has set off, as the audio thread has seen it: after RUN is pressed,
     // the song position is the new run's once this has moved.
@@ -570,7 +579,7 @@ private:
     juce::SpinLock clockInWrite;
     std::atomic<bool> followOn { false }, followBeat { false }, locked { false };
     std::atomic<float> followTrim { 0.0f }, followBpm { 0.0f }, waitMs { 0.0f }, outMs { 0.0f }, insideMs { 0.0f };
-    std::atomic<int> masterLat { 0 };
+    std::atomic<int> masterLat { 0 }, masterLatBefore { 0 };
     // The sender's clock as a line through its ticks: each tick's time filtered by a delay-locked
     // loop, so a millisecond of jitter on a tick moves the line by a small part of it.
     struct Follow
