@@ -88,7 +88,7 @@ Bus::Bus()
     static_assert (std::atomic<double>::is_always_lock_free, "lock-free double atomics required");
     static_assert (std::atomic<int64_t>::is_always_lock_free, "lock-free 64-bit atomics required");
 #if SF_POSIX_SHM
-    const int fd = shm_open (kShmName, O_RDWR | O_CREAT, 0666);
+    const int fd = processLocal ? -1 : shm_open (kShmName, O_RDWR | O_CREAT, 0666);       // (SF-000: the cue's rig keeps to itself)
     if (fd >= 0)
     {
         struct stat st {};

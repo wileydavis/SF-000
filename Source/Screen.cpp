@@ -3656,7 +3656,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             {
                 const auto& pt = ses.arrangement[(size_t) h->a];
                 if (ses.cueing() == pt.snap) ses.cue (0);
-                else if (ses.findSnap (pt.snap) != nullptr) { ses.cueWith (pt.snap, Session::scopeOf (pt.lanes & Session::kAllLanes)); heardSays (pt.snap, ses.cue (pt.snap)); }
+                else if (ses.findSnap (pt.snap) != nullptr) { ses.cueWith (pt.snap, Session::scopeOf (pt.lanes & Session::kAllLanes), pt.notes ? 1 : 0); heardSays (pt.snap, ses.cue (pt.snap)); }
             }
             break;
         }

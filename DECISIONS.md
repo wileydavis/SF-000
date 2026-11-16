@@ -3700,8 +3700,106 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      sent to the headphones; (c) on a core of its own, so the set never waits for it, and
      dropped first if the computer runs short. It is its own build, after this one.
 
+## A cue that is the rig; the library, said again (Nov 16, 12:34): seventy-first build
+
+596. **A cue is the rig** (595, built). A second rig plays each cue: it is made what the first
+     rig is at that moment, given the recall the cue stands for, and its sound is what is in
+     the headphones. *Mine, and not what 595 said: it is a second process, not a second rig
+     inside this one.* Three reasons. The suite's bus is one block of memory found by its
+     name, so two rigs in one program would have shared it whatever I did short of rewriting
+     how every module reaches it. The session's code (the state taken, a recall made) was
+     written for the one thread that draws the screen, and a second rig inside the program
+     would have run it on another. And a process of its own cannot reach the set's memory at
+     all: the worst it can do is fall silent in the headphones.
+     - It is this program started again by the instrument with a flag, no window, no audio
+       device, nothing written to the disk (`CueRig.h`: CueRig in the instrument, CueWorker
+       in the second process). JUCE's own coordinator and worker carry what the two say to
+       each other; a block of shared memory (`CueShared.h`) carries the clock one way and the
+       sound the other.
+     - The set's audio thread, at the end of every buffer, writes the sample its next buffer
+       starts at, the song position there, the tempo and whether it runs; and at each buffer
+       reads the second rig's frames for those very samples, if they are there. It never
+       waits. Frames not there: silence in the headphones for that buffer, counted.
+     - The second rig renders ahead of the first by two of its buffers and 256 samples, each
+       of its own buffers being the stretch of the first rig's song those samples will be
+       heard at (`Engine::ledBy`: made up inside the buffer when a little out, so no step is
+       skipped). So the two are on the same sample of the same bar. With the first rig's
+       clock stopped the second runs on its own.
+597. **What a cue is made from** (`Session::cueState`, `cueRigTake`). All the session file
+     would hold as the rig stands, with two snapshots for a library: the rig now with what
+     every lane is playing as a snapshot taken now would keep it (so the notes coming in from
+     outside are in it, as steps), and the one to be heard. The second rig takes that state,
+     recalls the first with its notes (nothing plays into it from outside), then makes the
+     recall: the parts lit on the card, and the snapshot's notes if that recall would bring
+     them. *Mine:* whether it would is NOTES for a press in the library, the snapshot's N (or
+     NOTES) for a stack knob with CUE lit, the part's N on the arrangement's page. *Mine: the
+     recall arrives at once, with no GLIDE: the cue is where it ends up, not the road there.*
+     *Mine: nothing plays until the second rig has it; the clip is not played first, since
+     what would then be heard changing is the very difference this is for.* *Mine: with every
+     key of the card out the cue is the rig as it stands, because that recall changes nothing;
+     with a clip it was silence.* A snapshot with no clip can be heard now.
+598. **Found by its own check, before it reached you.** The first second rig was quieter on
+     the sixteenth after every kick than the set was once the snapshot was recalled, though
+     the snapshot has no kick. It was ducking under the SET's kick: started as a process, its
+     modules had opened the same shared bus by name. Worse was waiting: it would have written
+     its own KEY and its lanes' energies into the bus the set reads. Its bus is now its own
+     memory (`sf::Bus::processLocal`, SF-000's addition to the suite's copy; PORTING.md), it
+     says so when it comes up, and the instrument uses no second rig that does not. *Seen and
+     not changed: every other SF-000 process shares that bus by name too, which is one more
+     reason the command-line tools are not run while the instrument plays.*
+599. **When it is not there.** Starting, late (four seconds without its cue), stopped
+     answering, or ended: the cue is the snapshot's clip, as before, SET UP says why, and
+     another is started three seconds later, three times. It is told to go when the
+     instrument quits and made to if it does not; if the instrument vanishes it ends itself.
+     **SET UP has CUE: THE RIG, THE CLIPS** (kept in `cue.json`, this computer's own), and
+     under it whether the second rig is up, how long its last cue took, what it takes of its
+     core, and its gaps. *Mine: THE RIG is what it starts as.*
+600. **Measured here** (a slow machine with two cores, the rig the instrument comes with):
+     heard 31 to 38 ms after it was asked for; what was in the headphones 0.9 dB from what the
+     set then played with the snapshot recalled, sixteenth by sixteenth and at both ends, and
+     3.6 dB from what it had been playing; with NOTES out, the kick the set was playing still
+     in it; with no part taken, 0.3 to 0.8 dB from the set and their low ends lining up best
+     0 samples apart; killed, the set played on and another came up. **On your session**
+     (`--cueprobe`, the same machine, which renders your rig at about real time): 13 to 24 ms
+     of the screen's thread to gather the state and write it (239 KB), then 180 to 615 ms for
+     the second rig to take it and 250 to 500 ms for the recall, where lanes change their
+     samples and effects. The Mac is several times quicker; SET UP will say what it is.
+601. **Not in it.** What is turned on the set after the cue is asked for (press again: it is
+     made again). A place between two snapshots of a stack knob. Notes from outside as they
+     are played, in place of the steps kept of them. Faster hand-over (a lane whose file
+     has not changed is loaded again each time).
+602. **You**, 12:30: "The library doesn't make much sense.  How do i edit a stack or a module
+     or a macrio or a stack knob? And the tabs at the top don't make sense to filter. So a
+     stack is like a folder that holds references to chips. So i create a stack, then i need
+     to be able to add and remove chips from it. Then, in any screen (macro, arrange, etc.)
+     i need to be able to show stacks (or all, etc.) Same for modules, and macros." 12:34:
+     "clarification: a stack is like a folder, but a chip can be referenced in multiple
+     stacks." **Not built yet: the next build.** Answered: in the seventieth build nothing
+     can be edited from the library; a stack only in MACROS, a module only by loading it, a
+     kept knob only by putting it on a place and keeping it again. *How I read it, sent at
+     12:31 for a correction:* (1) chips are the library, and everything else holds or points
+     at chips; (2) a stack is a folder: pressed, you are inside it, its chips as chip cards
+     in order, to add to, take from, reorder, rename, delete; made new, you are inside it,
+     empty; (3) one browser, the same on LIBRARY, MACROS and ARRANGE, with a line at its top
+     saying what is shown (ALL CHIPS, STACK: TOUR) that one press changes; (4) modules and
+     knobs open the same way: a module to its fourteen knobs, a stack knob to its chips, a
+     macro knob to what it is tied to. The six plates as six pages (590) go. A chip taken
+     out of a stack is out of that stack only; deleted, it is out of all of them, and it
+     says how many first.
+
 ## Not verified
 
+- **The cue's rig (596 to 600) has not run on a Mac.** Not known there: whether the second
+  process starts from inside the app; whether its icon shows in the Dock or the window loses
+  the keys for a moment as it starts (it is told to have no Dock icon before anything else,
+  and it is started once, as the instrument opens, not at each cue); whether macOS slows a
+  process with no window (its rendering is on a realtime thread, which should keep it from
+  that); how long a cue takes to be ready on your session; whether a gap is ever heard. SET
+  UP's CUE row gives the last three as figures. **If anything about it is wrong on the night,
+  THE CLIPS in SET UP puts it away** and a cue is what it was.
+- The cue against the set (600) is checked by measurement on the rig the instrument comes
+  with: levels by the sixteenth, both ends, and where the two line up. Nobody has listened to
+  it, and it has not been checked with notes coming in from the ONE.
 - **The library's plates (590)** are checked on the session and the drawn page: each plate, a
   stack made, copied, put on a knob and deleted, a kept knob put on a place, a module and an
   arrangement copied and loaded. Not on the Mac, and not with your own session's worth of

@@ -184,6 +184,10 @@ public:
     // second no longer loses the duck under a kick, and two renders are the same. The clock never
     // steps back: when the render ends it runs on with the wall from where the render left it.
     // Begin and End also forget the kicks reported so far, which were another rig's.
+    // (SF-000) A process that must not share the bus by name: the cue's rig, which is a second rig running beside
+    // the first. Set before the bus is first asked for, it makes this process's bus its own memory: nothing the
+    // second rig reports (its kicks, its sources, its key) reaches the first, and nothing of the first's reaches it.
+    static inline bool processLocal = false;
     static void renderClockBegin();
     static void renderClockAdvance (double seconds);
     static void renderClockEnd();

@@ -576,6 +576,51 @@ One rule for every page that shows snapshots (the library, MACROS, the arrangeme
 In the library a press used to recall the snapshot at once unless CUE was lit. There is no CUE
 key there now: a press never changes the set, and RECALL is what does.
 
+#### A cue is the rig itself
+
+What plays in the headphones for a snapshot is **the rig as a recall of it would leave it now**,
+played by a second rig that runs beside the first. (It used to be the four bars recorded when
+the snapshot was taken: that day's notes and tempo, all of the rig whatever keys were out, the
+master as it stood. That is still there, as THE CLIPS: see below.)
+
+- **What it is made from.** When a cue is asked for, the second rig is made what the first is
+  at that moment: every knob, every lane's instrument, effects and files, the macro knobs' and
+  MOTION's pushes, the master, FINISH, the tempo; and each lane's sequencer is given what that
+  lane is playing, the notes coming in from outside as steps. Then the recall is made on it
+  as it would be made on the set: the parts lit on the card (a part put out stays as the rig
+  has it), and the snapshot's notes if that recall would bring them (NOTES in the library; a
+  stack knob's N for its snapshot; a part's N in the arrangement). It arrives at once, with no
+  GLIDE: the cue is where the recall ends up.
+- **In time.** While the clock runs the second rig is on the same sample of the same bar as
+  the first. With the clock stopped it runs on its own, so a cue is still heard.
+- **It takes a moment to be ready**, and nothing plays until it is (no clip is played first).
+  SET UP says how long the last one took. One asked for while another is being made ready
+  takes its place.
+- **Every snapshot can be heard**, also one taken with the clock stopped and the rig's own,
+  which have no clip.
+- **With every key of the card out the cue is the rig as it stands** (that recall would change
+  nothing). With a clip it was silence.
+- **It is the rig as it stood when the cue was asked for.** A knob turned on the set after that
+  is not in the cue: press the snapshot again and it is made again from the rig as it is then.
+- **Not in it yet:** a place between two snapshots of a stack knob. With CUE lit a turn still
+  goes from snapshot to snapshot.
+
+The second rig is this program started a second time by the instrument, as a process of its own
+with no window (`SF-000 --sf000cue:…`). It has its own memory, its own bus between its modules
+(its kick does not duck the set, its lanes are not among POCKETS' sources, its KEY is not the
+set's) and its own core. The set's audio thread writes where its clock is into a block of
+shared memory and reads the second rig's sound out of it, and never waits: if the second rig is
+late, the headphones are silent for that buffer and SET UP counts it; if it is gone, the
+instrument says so, plays the clip instead, and starts another (three tries). It writes
+nothing to the disk and goes when the instrument does.
+
+**SET UP has the choice: CUE, THE RIG or THE CLIPS**, kept for this computer (`cue.json`), and
+under it what the second rig is doing: whether it is up, how long the last cue took to be
+ready, what it takes of its core while it plays, and any gaps. THE CLIPS puts the second rig
+away, and a cue is the snapshot's kept bars as before. (`SF000_CUE_CLIPS=1` in the environment
+starts it that way.) The bars are still kept with every snapshot either way: the cards and the
+finders are drawn from them.
+
 **PHONES** (beside CUE, or **H** on any screen) is for playing on headphones with only one pair of
 outputs. While a cue plays, outputs 1 + 2 carry the set in the left ear (both its sides, summed)
 and the cue in the right; when the cue stops, the set is back in both, over 10 ms. With no cue
@@ -985,7 +1030,9 @@ playing. Knob 4 pressed is CUE too, on the screen and on the E16.
 **CUE lit: a turn chooses, a press goes.**
 
 - A turn goes through the stack in the headphones, each snapshot in time with the set, and
-  the set is not touched. The knob's name plate says which. Lit amber.
+  the set is not touched. The knob's name plate says which. Lit amber. Each is heard as its
+  press would leave the rig now: the parts its keys take, its notes if its N is lit (see A cue
+  is the rig itself).
 - (Where the headphones are plugged in is PHONES, in the library screen.)
 
 **A press takes the set to where the knob is**, over the GLIDE time, with CUE lit or out, and
@@ -1311,6 +1358,8 @@ build/.../SF-000 --printsession session.json dir   # a session file opened as th
 build/.../SF-000 --printsession session.json dir --load   # no print: what each part asks of the processor on this machine, by lane (instrument + effects), the returns and the master (--time: bar by bar, through the morphs)
 build/.../SF-000 --livesession session.json dir --from 7 --to 10   # the arrangement played as it is played live (the device's callback on its own thread, the timer bringing the parts; --single: both from one thread), written to dir/live.wav with how long each buffer took (live.csv); --buffer N
 build/.../SF-000 --graincheck                     # GRANULAR above its sample's pitch: the sample's tones and nothing else (one of the engine test's checks, alone)
+build/.../SF-000 --cuetest                        # a cue that is the rig: a second rig started as the instrument starts it, its cue against what the set then plays, in step, killed and started again (real time: it needs two cores to itself)
+build/.../SF-000 --cueprobe session.json dir      # how long a cue's hand-over takes on this machine, on that session: the state written and read, and the second rig made it
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
@@ -1388,6 +1437,7 @@ plays both for its length.
 | `Source/Profile.*` | what a snapshot sounded like, worked out from the bars kept with it |
 | `Source/Recorder.*` | takes: the set, the lanes and the returns to disk, off the audio thread |
 | `Source/Online.*` | ONLINE: snapshots sent to the library on the web in the background, and what has gone |
+| `Source/CueRig.*`, `Source/CueShared.h` | a cue that is the rig: the second process, what the two say to each other, the memory they share |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`). `suite/modules/FxDrums.cpp`, the drum bus, and `suite/modules/Finish.cpp`, FINISH, are SF-000's own |
 | `tools/master_probe.py` | the test signal FINISH was fitted with |
@@ -1434,8 +1484,8 @@ that is still where it was.
 **This computer's own settings** stay in `~/Library/Application Support/SF-000/` wherever the
 library is: `audio.xml` (the interface), `midi.json` (the clock sent or followed, CLOCK LEAD, ON
 THE BEAT, TRIM, the E16), `look.json` (3D, lit or flat, light or dark, the eye), `online.json`
-(ONLINE's address and strings), `places.json` (the folders chosen in SETUP), `3d.log` and
-`3d-starting` (the 3D stage's start).
+(ONLINE's address and strings), `places.json` (the folders chosen in SETUP), `cue.json` (a cue is
+the rig or the clips), `3d.log` and `3d-starting` (the 3D stage's start).
 
 **Takes** go to `Music/SF-000/`, or to the folder set for TAKES in SETUP. It takes effect from the
 next take; nothing is moved.
@@ -1472,11 +1522,11 @@ Delete `session.json` to start again from the factory rig.
 - The E16: 7-bit knobs (128 places); TEMPO, KEY and the M and S keys are not on it. LEARN's KEEP
   and DROP are on the screen and the keyboard only. A stack knob has those 128 places for all of
   its snapshots (the E16 could send 16,384, as CC14: not built, and not tried).
-- **The cue is not the rig.** What plays in the headphones is the four bars recorded when the
-  snapshot was taken: that day's notes and tempo, all of the rig whatever keys are out on the
-  card, the master as it stood, and nothing for a place between two snapshots. A cue that is
-  what the PA would get needs a second rig run beside the first (DECISIONS 595): the next
-  build's work.
+- The cue's rig: it is the first rig as it stood when the cue was asked for, and does not follow
+  what is turned on the set afterwards; a place between two snapshots of a stack knob is not
+  in it; notes from outside are in it as the steps a snapshot would keep of them (the last bars
+  played), not as they are being played. On a session with heavy lanes it takes a moment to be
+  ready (SET UP says how long).
 - The library's five kept kinds have no find row yet, and the macro designer still has its own
   lists of stacks, knobs and modules beside the library's (DECISIONS 591).
 - The arrangement: one on the page at a time, of those kept; no tempo of its own and no change of tempo along it (it is printed at

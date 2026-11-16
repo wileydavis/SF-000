@@ -54,6 +54,7 @@ struct Snapshot
 };
 
 constexpr juce::int64 kCleanSlateId = 999;
+constexpr juce::int64 kCueNowId = 998;       // (in a cue's rig only: the first rig as it stood when the cue was asked for)
 constexpr juce::int64 kInitId = 1000;         // INIT, the rig as it first came up; 1001 to 1005 are the five pushes made from it
 
 // A snapshot knob: 2 to 10 snapshots in sweep order. Turning it moves every knob that differs
@@ -263,8 +264,26 @@ public:
     // The cue of that snapshot is to be only what this scope takes of it: its lanes, the returns,
     // the drum bus (from its stems; a scope that takes all of them is the clip itself, as it was
     // heard through the master). If it is playing, it changes now. id 0: every cue is whole again.
-    void cueWith (juce::int64 id, const Scope&);
+    // notes: whether the recall this cue stands for would bring the snapshot's notes (a stack knob's N, a part's N).
+    // -1: as NOTES is set. It matters only to a cue that is the rig (below); a clip has the notes it was taken with.
+    void cueWith (juce::int64 id, const Scope&, int notes = -1);
     juce::int64 cueing() const          { return cueId; }
+    // ---- a cue that is the rig (CueRig.h): a second rig, in a process of its own, is made what this one is now and
+    // then given the recall the cue stands for, and its sound is what plays in the headphones.
+    // Set by whoever runs one. play: that snapshot, with the parts of the rig (as a stack's keys: lanes, R, B, K) and
+    // the notes its recall would take; false: there is no second rig now, and the cue is the snapshot's clip as it
+    // always was. stop: none is wanted.
+    std::function<bool (juce::int64 id, juce::uint32 lanes, bool notes)> cueRigPlay;
+    std::function<void()> cueRigStop;
+    bool cueIsRig() const               { return cueByRig; }        // the cue playing is the second rig's
+    // What a second rig needs to be this one: all the file holds as it stands, but of the library only two
+    // snapshots, the rig as it is now with what every lane is playing (kCueNowId), and the one to be heard.
+    juce::var cueState (juce::int64 target);
+    // The second rig's own side: made what `state` says, given what every lane was playing, and then the recall.
+    void cueRigTake (const juce::var& state, juce::int64 target, juce::uint32 lanes, bool notes);
+    // A second rig has no folders of its own to settle: it reads the samples where the first one's library is.
+    static void placeForRig (const juce::File& libraryDir);
+    juce::uint32 changes = 0;           // counts up with everything that changes what the file would hold
     // The snapshot a stack knob last came to with CUE lit that has no sound kept with it (taken with the clock stopped,
     // or one of the rig's own): there is nothing of it to play in the headphones. 0: none, or the last one had its sound.
     juce::int64 cueLacked = 0;
@@ -677,7 +696,7 @@ public:
     // format this build cannot read, and is left exactly as it is. Empty: all is kept as usual.
     juce::String notSavingWhy;
     juce::String libraryId;             // this library's own id: every snapshot's uid begins with it
-    void touch()                        { dirty = true; }
+    void touch()                        { dirty = true; ++changes; }
     void save();
     bool load();
     juce::var stateVar();               // all the file holds, as it stands
@@ -802,6 +821,8 @@ private:
     juce::ThreadPool clipWriter { 1 };
     juce::int64 cueId = 0;
     juce::int64 cueScopeFor = 0; Scope cueScope;                // (the scope a cue of that snapshot is narrowed to)
+    int cueNotesWish = -1;                                      // (and whether its recall would bring its notes: -1 as NOTES is set)
+    bool cueByRig = false;
     Profile nowProfile;
     juce::uint32 nowAt = 0;
     // the clips handed to the engine: each kept until a second after it was replaced

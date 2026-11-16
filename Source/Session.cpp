@@ -542,6 +542,7 @@ void Session::turnSnapKnob (int k, float v)
             {
                 kn.picked = it.id;
                 cueScopeFor = it.id; cueScope = scopeOf (it.lanes);
+                cueNotesWish = recallNotes || it.notes ? 1 : 0;        // (as its press would take them: pressSnapKnob)
                 cueLacked = cue (it.id) ? 0 : it.id;       // (no sound kept with it: the screen says so)
                 if (onChange) onChange();
             }
@@ -1545,6 +1546,23 @@ bool Session::cue (juce::int64 id)
     auto retire = [this, now] { for (auto& k : cueKept) if (k.second == 0) k.second = now == 0 ? 1u : now; };
     pruneCues();
     const Snapshot* s = id != 0 ? findSnap (id) : nullptr;
+    // A second rig, if there is one: it is made what this rig is now and given the recall this cue stands for (the
+    // parts lit, the notes that recall would bring), and that is what plays. No clip is played beside it.
+    if (s != nullptr && cueRigPlay)
+    {
+        const juce::uint32 lanes = id == cueScopeFor ? lanesOf (cueScope) : kAllLanes;
+        const bool notes = id == cueScopeFor && cueNotesWish >= 0 ? cueNotesWish > 0 : recallNotes;
+        if (cueRigPlay (id, lanes, notes))
+        {
+            retire();
+            engine.setCue (nullptr);
+            const auto was = cueId; const bool wasRig = cueByRig;
+            cueId = id; cueByRig = true;
+            if ((cueId != was || ! wasRig) && onChange) onChange();
+            return true;
+        }
+    }
+    if (cueByRig) { cueByRig = false; if (cueRigStop) cueRigStop(); }
     std::unique_ptr<Engine::CueClip> clip;
     // narrowed to some of its lanes: those lanes' stems, together (with none of them kept, the whole clip, as before)
     bool narrowed = false;
@@ -1600,10 +1618,43 @@ bool Session::cue (juce::int64 id)
 
 const Session::Scope* Session::cueNarrowed (juce::int64 id) const { return id != 0 && cueScopeFor == id ? &cueScope : nullptr; }
 
-void Session::cueWith (juce::int64 id, const Scope& scope)
+void Session::cueWith (juce::int64 id, const Scope& scope, int notes)
 {
-    cueScopeFor = id; cueScope = scope;
+    cueScopeFor = id; cueScope = scope; cueNotesWish = notes;
     if (id != 0 && cueId == id) cue (id);                           // (it is playing: it is made again from what the scope takes now)
+}
+
+// ---- a cue that is the rig
+juce::var Session::cueState (juce::int64 target)
+{
+    const var whole = stateVar();
+    auto* o = new juce::DynamicObject();
+    if (auto* w = whole.getDynamicObject())
+        for (auto& p : w->getProperties()) if (p.name != juce::Identifier ("library")) o->setProperty (p.name, p.value);
+    // the rig as it stands, with what every lane is playing that its steps do not say (as a snapshot taken now would hold it)
+    Snapshot nowIs = capture();
+    pullHeard();
+    for (int l = 0; l < kLanes; ++l)
+    {
+        nowIs.heardOn[(size_t) l] = heardPattern (l, nowIs.heard[(size_t) l], &nowIs.heardNotes[(size_t) l]);
+        nowIs.seqMuted[(size_t) l] = engine.target (cx::lane (l, cx::kSeqMute)) > 0.5f;
+    }
+    nowIs.hasPlayed = true;
+    nowIs.id = kCueNowId; nowIs.name = "NOW"; nowIs.kept = var(); nowIs.uid.clear();
+    juce::Array<var> lib;
+    lib.add (written (nowIs));
+    if (const auto* t = findSnap (target)) lib.add (written (*t));
+    o->setProperty ("library", lib);
+    return var (o);
+}
+
+void Session::cueRigTake (const juce::var& state, juce::int64 target, juce::uint32 lanes, bool notes)
+{
+    if (! state.isObject()) return;
+    takeState (state);
+    // (nothing plays into this rig from outside: each lane's sequencer is given what the first rig's lane was playing)
+    if (findSnap (kCueNowId) != nullptr) recallOver (kCueNowId, 0.0, true, kAllLanes);
+    if (target != 0 && findSnap (target) != nullptr) recallOver (target, 0.0, notes, lanes);
 }
 
 juce::int64 Session::take()
@@ -2527,6 +2578,12 @@ void Session::settlePlaces (bool again)
         }
     }
     gLibraryDir = cur;
+}
+
+void Session::placeForRig (const juce::File& libraryDir)
+{
+    gPlaces = {}; gPlacesRead = true; gSettled = true;
+    gLibraryDir = libraryDir;
 }
 
 juce::File Session::libraryDir()

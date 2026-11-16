@@ -96,3 +96,9 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   its window, and sixteen notes of it took a core and a half. A grain at or below the source's
   pitch is read as before. **The suite's own GRANULAR has the old read still**: the sound is
   the same to 74 dB under a pad measured both ways. See DECISIONS 576.
+- `core/Bus.h`, `core/Bus.cpp`, marked `(SF-000)`: `Bus::processLocal`. Set before the bus is
+  first asked for, it makes this process's bus its own memory and not the block shared by
+  name. It is for the cue's rig, a second SF-000 process that runs a second rig beside the
+  first (`Source/CueRig.h`): on the shared block it ducked under the first rig's kick, and
+  would have written its key and its lanes' energies where the first reads them. The suite
+  has no such process and nothing there changes. See DECISIONS 598.

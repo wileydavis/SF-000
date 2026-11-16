@@ -12,6 +12,7 @@
 #include "Sequencer.h"
 #include "Pockets.h"
 #include "Transition.h"
+#include "CueShared.h"
 
 class SFProcessor;
 namespace sf { struct FinishSays; }
@@ -186,6 +187,7 @@ public:
     // a step, an effect, a model, a file), or a lane is muted or soloed. Two moments with the same
     // number are the same rig.
     juce::uint32 stateStamp() const             { return stateStampV.load(); }
+    juce::uint64 blocksDone() const             { return blockCount.load(); }       // buffers rendered so far
     // The latest whole bars over which the rig held that state: nothing changed in them, nothing was
     // still travelling, and a bar had passed since it last did (for the tails of what went before).
     // Up to `bars` of them, the newest; h.bars says how many. False: none (or they are off the tape).
@@ -210,6 +212,22 @@ public:
     bool cueIsHeard() const                     { return cueOuts.load() || phonesOn.load(); }
     void phonesSplit (float* left, float* right, int n);        // this buffer's outputs 1 and 2, in place (the device callback; tests)
     const juce::AudioBuffer<float>& cueBlock() const { return cueBuf; }          // the last buffer's cue (the device callback; tests)
+
+    // ---- the cue's rig (CueRig.h): a second process renders the rig as a recall would leave it, and its sound comes
+    // back through shared memory to the headphones in place of a clip. The block is this rig's to write its clock into
+    // and read the sound from; nullptr: there is no second rig, and a cue is a clip as it always was. The audio thread
+    // never waits on it: frames that are not there in time are silence, and counted.
+    void setCueFeed (CueShared* s)              { cueFeed = s; }
+    // Message thread: the cue wanted from the second rig (the serial its sound will carry), 0 for none. The one
+    // playing fades over 10 ms, and the wanted one comes in when the second rig has it.
+    void cueRigWant (int serial)                { cueRigSerial = serial; }
+    int cueRigWanted() const                    { return cueRigSerial.load(); }
+    bool cueRigHeard() const                    { return cueRigOn.load(); }      // the wanted cue's sound is in the headphones now
+    int cueRigGaps() const                      { return cueRigMissed.load(); }  // buffers it was wanted for and not there, since the audio started
+    // ---- a rig led by another's clock (the second rig itself): the song position its next buffer starts at and
+    // ends at, and the tempo. Called by whoever renders it, before each render, on that thread. Off: its own clock.
+    void ledBy (double from, double end, double bpm) { ledFrom = from; ledEnd = end; ledBpm = bpm; ledOn = true; }
+    void ledOff()                               { ledOn = false; }
 
     // ---- recording: what the audio thread hands on, a buffer at a time. Track 0 is the set (the
     // output), 1 to 11 the lanes, each as it leaves its strip, then the two returns as they go into
@@ -649,6 +667,15 @@ private:
     float splitGain = 0.0f;                     // audio thread: how far the split is in
     juce::SpinLock cueLock;
     void renderCue (int n, bool run, double ppq0, double beats);
+    std::atomic<CueShared*> cueFeed { nullptr };
+    std::atomic<int> cueRigSerial { 0 }, cueRigMissed { 0 };
+    std::atomic<bool> cueRigOn { false };
+    float cueRigGain = 0.0f;                    // audio thread: how far the second rig's sound is in
+    int cueRigPlaying = 0;                      // audio thread: the serial that gain is of
+    int devBlock = 0;                           // the device's buffer in samples (0: none, a test: the block rendered)
+    void renderCueRig (CueShared&, int n);
+    bool ledOn = false;                         // (the rendering thread's own)
+    double ledFrom = 0.0, ledEnd = 0.0, ledBpm = 132.0;
     mutable juce::SpinLock recLock;
     RecSink* recSink = nullptr;
     double recSinkRate = 0.0;

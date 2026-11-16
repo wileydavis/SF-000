@@ -521,9 +521,43 @@ bool Engine::followClock (double aheadMs)
 // The headphones' clip for this buffer. In time with the clock: where the clip is read follows the
 // rig's place in the bar, set back by what the lanes and the master hold the set back, so it sits
 // on the set as the set is heard.
+// The second rig's sound, for this buffer's own samples: the frames it wrote for them, if they are the wanted cue's
+// and are all there. A cue changed or let go fades over 10 ms on the frames still coming; one whose frames are late
+// is silence at once (the headphones only), and counted.
+void Engine::renderCueRig (CueShared& f, int n)
+{
+    const int want = cueRigSerial.load();
+    const juce::int64 at = samplesDone;
+    const int serial = f.serial.load (std::memory_order_acquire);
+    const juce::int64 from = f.validFrom.load (std::memory_order_acquire), written = f.written.load (std::memory_order_acquire);
+    const bool there = written >= at + n && written - at <= (juce::int64) CueShared::kFrames;      // (frames for all of this buffer, and not written over since)
+    if (cueRigGain <= 0.0f) cueRigPlaying = serial;
+    // (what is fading is the cue its frames were: it goes on only while the second rig still writes that one)
+    const bool frames = at >= from && there, same = serial == cueRigPlaying && frames;
+    const float target = same && want != 0 && serial == want ? 1.0f : 0.0f;
+    if (want != 0 && serial == want && ! frames && cueRigOn.load()) cueRigMissed.fetch_add (1);    // (the wanted one was playing and its frames are not here)
+    cueRigOn = target > 0.0f;
+    // the second rig renders while a cue is wanted or one is still going out
+    f.want.store (want != 0 || cueRigGain > 0.0f ? 1 : 0, std::memory_order_release);
+    if (! same) { cueRigGain = 0.0f; return; }
+    if (target <= 0.0f && cueRigGain <= 0.0f) return;
+    const float step = 1.0f / (float) (0.01 * sr);
+    float* L = cueBuf.getWritePointer (0); float* R = cueBuf.getWritePointer (1);
+    for (int i = 0; i < n; ++i)
+    {
+        cueRigGain = target > cueRigGain ? std::min (target, cueRigGain + step) : std::max (target, cueRigGain - step);
+        const size_t k = (size_t) ((at + i) & (juce::int64) (CueShared::kFrames - 1)) * 2;
+        const float l = f.ring[k], r = f.ring[k + 1];
+        L[i] = (std::isfinite (l) ? juce::jlimit (-1.0f, 1.0f, l) : 0.0f) * cueRigGain;
+        R[i] = (std::isfinite (r) ? juce::jlimit (-1.0f, 1.0f, r) : 0.0f) * cueRigGain;
+    }
+}
+
 void Engine::renderCue (int n, bool run, double ppq0, double beats)
 {
     cueBuf.clear (0, n);
+    if (auto* f = cueFeed.load()) renderCueRig (*f, n);
+    else { cueRigGain = 0.0f; cueRigOn = false; }
     const juce::SpinLock::ScopedTryLockType hold (cueLock);
     if (! hold.isLocked()) return;
     const CueClip* want = cueWant.load();
@@ -558,8 +592,8 @@ void Engine::renderCue (int n, bool run, double ppq0, double beats)
         const int i0 = juce::jlimit (0, len - 1, (int) pos), i1 = i0 + 1 < len ? i0 + 1 : 0;
         const float f = (float) (pos - (double) i0);
         const float* l = a.getReadPointer (0); const float* r = a.getReadPointer (a.getNumChannels() > 1 ? 1 : 0);
-        L[i] = (l[i0] + (l[i1] - l[i0]) * f) * cueGain;
-        R[i] = (r[i0] + (r[i1] - r[i0]) * f) * cueGain;
+        L[i] += (l[i0] + (l[i1] - l[i0]) * f) * cueGain;       // (onto the second rig's, if a clip is going out as that comes in)
+        R[i] += (r[i0] + (r[i1] - r[i0]) * f) * cueGain;
     }
 }
 
@@ -567,7 +601,7 @@ void Engine::renderCue (int n, bool run, double ppq0, double beats)
 // coming in and going out over 10 ms.
 void Engine::phonesSplit (float* left, float* right, int n)
 {
-    const float target = phonesOn.load() && (cueWant.load() != nullptr || cueNow != nullptr) ? 1.0f : 0.0f;
+    const float target = phonesOn.load() && (cueWant.load() != nullptr || cueNow != nullptr || cueRigSerial.load() != 0 || cueRigGain > 0.0f) ? 1.0f : 0.0f;
     if (target <= 0.0f && splitGain <= 0.0f) return;
     const float step = 1.0f / (float) (0.01 * sr);
     const float* cl = cueBuf.getReadPointer (0); const float* cr = cueBuf.getReadPointer (1);
@@ -1566,6 +1600,7 @@ void Engine::prepare (double rate, int block)
     laneBuf.setSize (2 * kLanes, maxBlock, false, true, false);
     pockets.prepare (sr, maxBlock);
     cueBuf.clear(); cueNow = nullptr; cueGain = 0.0f; cuePos = 0.0; splitGain = 0.0f;
+    cueRigGain = 0.0f; cueRigPlaying = 0; cueRigOn = false; cueRigMissed = 0;
     kTape = std::max (1 << 20, juce::nextPowerOfTwo ((int) std::ceil (sr * 16.0) + 65536 + maxBlock));
     for (auto& t : tape) t.assign ((size_t) kTape, 0.0f);
     stemTape.resize ((size_t) kStems);
@@ -1762,9 +1797,9 @@ void Engine::render (juce::AudioBuffer<float>& out)
     // An outside clock, if one is followed: its START and STOP are the transport's, its tempo the
     // rig's. The rig's own steps are played ahead of it by that time (or not), and by TRIM.
     const double ahead = (followBeat.load() ? waitNow + (double) outMs.load() + insideNow : 0.0) + (double) followTrim.load();
-    const bool led = ! offline && followClock (ahead);      // (a print goes by its own clock, whatever is plugged in)
+    const bool led = ! offline && ! ledOn && followClock (ahead);      // (a print goes by its own clock, whatever is plugged in; so does a rig led by another rig)
     const bool run = running.load();
-    blockBpm = led ? fol.bpmSaid : tempoFor (cur[(size_t) cx::kTempo]);
+    blockBpm = ledOn ? ledBpm : led ? fol.bpmSaid : tempoFor (cur[(size_t) cx::kTempo]);
     double beats = (double) n * blockBpm / 60.0 / sr;
     const bool starting = run && ! wasRunning, stopping = ! run && wasRunning;
     // controls set on a line of the song (ARM's mutes and solos): made here when the line is in this block or the next
@@ -1806,6 +1841,15 @@ void Engine::render (juce::AudioBuffer<float>& out)
             again = jump;
         }
         beats = juce::jlimit (0.0, 0.5, end - ppq);
+    }
+    if (ledOn && run)
+    {
+        // Another rig's clock (this is the cue's rig): this buffer is the stretch of its song that it was told, so the
+        // two are on the same sample of the same bar. A little out, it is made up inside this buffer (no step is
+        // skipped or played twice); far out (the other went somewhere else), it goes there.
+        const bool jump = ! starting && std::abs (ledFrom - ppq) > 0.25;
+        if (starting || jump) { ppq = ledFrom; again = jump; }
+        beats = juce::jlimit (0.0, 0.5, ledEnd - ppq);
     }
     const double spb = beats > 1.0e-9 ? (double) n / beats : sr * 60.0 / blockBpm;
     if (clk)
@@ -2245,6 +2289,18 @@ void Engine::render (juce::AudioBuffer<float>& out)
     ppqShown = ppq;
     samplesDone += n;
     blockCount.fetch_add (1);
+    if (auto* f = cueFeed.load())
+    {
+        // where the next buffer starts, for the cue's rig to render the same stretch of the song ahead of it
+        const uint32_t q = f->seq.load (std::memory_order_relaxed);
+        f->seq.store (q + 1u, std::memory_order_release);
+        f->devPos.store (samplesDone, std::memory_order_relaxed);
+        f->ppq.store (ppq, std::memory_order_relaxed);
+        f->bpm.store (blockBpm, std::memory_order_relaxed);
+        f->running.store (run ? 1 : 0, std::memory_order_relaxed);
+        f->block.store (devBlock > 0 ? devBlock : n, std::memory_order_relaxed);
+        f->seq.store (q + 2u, std::memory_order_release);
+    }
 }
 
 void Engine::audioDeviceAboutToStart (juce::AudioIODevice* d)
@@ -2253,6 +2309,7 @@ void Engine::audioDeviceAboutToStart (juce::AudioIODevice* d)
     overCount = 0; cpuMost = 0.0;
     // (on the Mac the device's own figure already holds one buffer)
     devBufMs = (double) d->getCurrentBufferSizeSamples() * 1000.0 / d->getCurrentSampleRate();
+    devBlock = d->getCurrentBufferSizeSamples();
     outMs = (float) ((double) d->getOutputLatencyInSamples() * 1000.0 / d->getCurrentSampleRate());
 }
 

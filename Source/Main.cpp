@@ -15,6 +15,7 @@
 #include "Midi.h"
 #include "Recorder.h"
 #include "Online.h"
+#include "CueRig.h"
 #include "Help.h"
 #include <set>
 #include <thread>
@@ -3973,6 +3974,312 @@ static int liveSession (const juce::StringArray& args)
 // (a copy of it, in DIR/session: the file given is not written), and its arrangement printed into DIR. For finding out what
 // a set does that it should not. --finish: FINISH put at that place (0 OFF to 4, all of it) whatever the file says.
 // --parts A B: only those parts are played (the ones before A are brought, as FROM HERE brings them, not played).
+// --cueprobe SESSION.json DIR: how long it takes to hand the rig as it stands to a second rig (what a cue that is the
+// rig has to do before it can sound): the state written out, read back, and made on a rig of its own, twice (the
+// second time its samples are already in memory); then a recall on it.
+static int cueProbe (const juce::StringArray& args)
+{
+    using namespace sf0;
+    const int at = args.indexOf ("--cueprobe");
+    if (at + 2 >= args.size()) { std::printf ("--cueprobe SESSION.json DIR\n"); return 1; }
+    const juce::File src (args[at + 1].unquoted()), out (args[at + 2].unquoted());
+    const juce::File home = out.getChildFile ("session");
+    home.createDirectory();
+    if (! src.copyFileTo (home.getChildFile ("session.json"))) { std::printf ("could not copy %s\n", src.getFullPathName().toRawUTF8()); return 1; }
+    Session::stateFileForTests = home.getChildFile ("session.json");
+    auto ms = [] (double t0) { return juce::Time::getMillisecondCounterHiRes() - t0; };
+    Engine e;
+    e.prepare (48000.0, 256);
+    double t = juce::Time::getMillisecondCounterHiRes();
+    Session ses (e, true);
+    std::printf ("opened in %.0f ms: %d snapshots\n", ms (t), (int) ses.library.size());
+    t = juce::Time::getMillisecondCounterHiRes();
+    const juce::var state = ses.stateVar();
+    const double tVar = ms (t);
+    t = juce::Time::getMillisecondCounterHiRes();
+    const juce::String text = juce::JSON::toString (state, true);
+    const double tText = ms (t);
+    t = juce::Time::getMillisecondCounterHiRes();
+    const juce::var back = juce::JSON::parse (text);
+    const double tParse = ms (t);
+    std::printf ("the state: %.1f ms to gather, %.1f ms to write out (%d KB), %.1f ms to read back\n", tVar, tText, (int) (text.getNumBytesAsUTF8() / 1024), tParse);
+    Engine e2;
+    e2.prepare (48000.0, 128);
+    Session s2 (e2, false);
+    s2.printRig = true;
+    for (int pass = 0; pass < 3; ++pass)
+    {
+        t = juce::Time::getMillisecondCounterHiRes();
+        s2.takeState (back);
+        std::printf ("made on a second rig, time %d: %.1f ms\n", pass + 1, ms (t));
+    }
+    // as a cue does it: the state with two snapshots of the library only (the rig now, and the one to hear), and the recalls
+    for (int pass = 0; pass < 3 && ses.library.size() > 3; ++pass)
+    {
+        const auto target = ses.library[ses.library.size() - 1 - (size_t) pass].id;
+        t = juce::Time::getMillisecondCounterHiRes();
+        const juce::var cs = ses.cueState (target);
+        const juce::String ct = juce::JSON::toString (cs, true);
+        const double tOut = ms (t);
+        t = juce::Time::getMillisecondCounterHiRes();
+        const juce::var cb = juce::JSON::parse (ct);
+        const double tIn = ms (t);
+        t = juce::Time::getMillisecondCounterHiRes();
+        s2.takeState (cb);
+        const double tState = ms (t);
+        t = juce::Time::getMillisecondCounterHiRes();
+        s2.recallOver (kCueNowId, 0.0, true, Session::kAllLanes);
+        const double tNow = ms (t);
+        t = juce::Time::getMillisecondCounterHiRes();
+        s2.recallOver (target, 0.0, true, Session::kAllLanes);
+        std::printf ("a cue of %s: %.1f ms to gather and write out (%d KB), %.1f ms to read; the second rig: %.1f ms to take the state, %.1f ms for what is playing now, %.1f ms for the recall\n",
+                     ses.findSnap (target)->name.toRawUTF8(), tOut, (int) (ct.getNumBytesAsUTF8() / 1024), tIn, tState, tNow, ms (t));
+    }
+    if (! s2.library.empty())
+    {
+        t = juce::Time::getMillisecondCounterHiRes();
+        s2.recall (s2.library.back().id);
+        std::printf ("a recall on it: %.1f ms\n", ms (t));
+        juce::AudioBuffer<float> b (2, 128);
+        e2.setRunning (true);
+        t = juce::Time::getMillisecondCounterHiRes();
+        for (int i = 0; i < 375; ++i) e2.render (b);
+        std::printf ("its first second of sound: %.0f ms to render\n", ms (t));
+    }
+    return 0;
+}
+
+// --cuetest: a cue that is the rig. A second rig is started as the instrument starts it (this program again, in a
+// process of its own), with a device made up here: a buffer rendered whenever the wall clock says one is due, and
+// the message loop run between. What is checked: it comes up; a cue of a snapshot is heard from it and is what the
+// first rig then plays when that snapshot is really recalled (and not what it was playing before); with no part of
+// the snapshot taken the cue is the rig as it stands, on the same sample of the same bar; the second process killed,
+// the first plays on, says so, and starts another.
+static int cueTest()
+{
+    using namespace sf0;
+    const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_cue_test");
+    tmp.deleteRecursively(); tmp.createDirectory();
+    Session::stateFileForTests = tmp.getChildFile ("session.json");
+    int bad = 0;
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    std::printf ("SF-000 cue checks: a second rig, started as the instrument starts it\n");
+    {
+        constexpr int kBuf = 256;
+        constexpr double kRate = 48000.0;
+        Engine e;
+        e.prepare (kRate, kBuf);
+        Session ses (e, true);
+        CueRig rig (e, ses);
+        ses.cueRigPlay = [&rig] (juce::int64 id, juce::uint32 lanes, bool notes) { return rig.play (id, lanes, notes); };
+        ses.cueRigStop = [&rig] { rig.quiet(); };
+        juce::AudioBuffer<float> b (2, kBuf);
+        // what a stretch of sound is like: how loud each sixteenth of the bar is, and its low and high ends
+        struct Prof
+        {
+            std::array<double, 16> step {};
+            double lo = 0.0, hi = 0.0, all = 0.0, sLo = 0.0, sHi = 0.0;
+            juce::int64 n = 0;
+            void add (float x, double ppq)
+            {
+                const double q = std::fmod (ppq, 4.0);
+                step[(size_t) juce::jlimit (0, 15, (int) ((q < 0.0 ? q + 4.0 : q) * 4.0))] += (double) x * x;
+                sLo += 0.02 * ((double) x - sLo);                    // (under about 150 Hz)
+                sHi += 0.4 * ((double) x - sHi);                     // (what is left over it: over about 4 kHz)
+                lo += sLo * sLo; hi += ((double) x - sHi) * ((double) x - sHi); all += (double) x * x; ++n;
+            }
+            static double dB (double p, double n) { return 10.0 * std::log10 (p / std::max (1.0, n) + 1.0e-9); }
+            double level() const { return dB (all, (double) n); }
+            // how far apart two are, in dB: each sixteenth's level, the low end and the high, averaged
+            double from (const Prof& o) const
+            {
+                double d = 0.0;
+                for (int i = 0; i < 16; ++i) d += std::abs (dB (step[(size_t) i], (double) n / 16.0) - dB (o.step[(size_t) i], (double) o.n / 16.0));
+                d += 2.0 * std::abs (dB (lo, (double) n) - dB (o.lo, (double) o.n)) + 2.0 * std::abs (dB (hi, (double) n) - dB (o.hi, (double) o.n));
+                return d / 20.0;
+            }
+        };
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        juce::int64 done = 0;
+        bool finite = true;
+        Prof* intoMain = nullptr; Prof* intoCue = nullptr;
+        std::vector<float>* tapeMain = nullptr; std::vector<float>* tapeCue = nullptr;
+        // the made-up device: every buffer the wall clock says is due, and the message loop between
+        auto run = [&] (double ms, std::function<bool()> until = nullptr)
+        {
+            const double end = juce::Time::getMillisecondCounterHiRes() + ms;
+            while (juce::Time::getMillisecondCounterHiRes() < end)
+            {
+                const auto due = (juce::int64) ((juce::Time::getMillisecondCounterHiRes() - t0) * kRate / 1000.0 / kBuf);
+                for (int k = 0; done < due && k < 6; ++k, ++done)
+                {
+                    const double at = e.songPos(), per = e.tempo() / 60.0 / kRate;
+                    e.render (b);
+                    const auto& c = e.cueBlock();
+                    for (int i = 0; i < kBuf; ++i)
+                    {
+                        const float m = 0.5f * (b.getSample (0, i) + b.getSample (1, i)), q = 0.5f * (c.getSample (0, i) + c.getSample (1, i));
+                        finite = finite && std::isfinite (m) && std::isfinite (q);
+                        if (intoMain != nullptr) intoMain->add (m, at + (double) i * per);
+                        if (intoCue != nullptr) intoCue->add (q, at + (double) i * per);
+                        if (tapeMain != nullptr) tapeMain->push_back (m);
+                        if (tapeCue != nullptr) tapeCue->push_back (q);
+                    }
+                }
+                if (done < due - 40) done = due;                    // (this machine could not keep up for a while: no making it up all at once)
+                if (until && until()) return true;
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
+            }
+            return until ? until() : true;
+        };
+        const double bar = 240000.0 / e.tempo();                    // ms
+        auto heardFor = [&] (Prof* main, Prof* cue, double bars) { intoMain = main; intoCue = cue; run (bars * bar); intoMain = nullptr; intoCue = nullptr; };
+
+        // 1. it comes up
+        rig.start();
+        const bool up = run (15000.0, [&] { return rig.up(); });
+        check (up, "the second rig is started and answers, with a bus of its own (the instrument takes no other): " + rig.says());
+        if (up)
+        {
+            // a snapshot that is plainly not the rig as it stands: no kick, no hats, no clap, the bass shut down
+            e.setRunning (true);
+            run (2.0 * bar);
+            const auto was = ses.take();
+            std::array<Pattern, 4> stepsWere;
+            for (int l = 0; l < 4; ++l)                             // (the kick, both hats and the clap: no steps)
+            {
+                stepsWere[(size_t) l] = e.pattern (l);
+                auto p = stepsWere[(size_t) l];
+                for (auto& st : p.steps) st.on = false;
+                e.setPattern (l, p, false);
+            }
+            if (const int c = e.find ("bass.cutoff"); c >= 0) ses.userSet (c, 0.08f);
+            run (1.0 * bar);
+            const auto quiet = ses.take();
+            for (int l = 0; l < 4; ++l) e.setPattern (l, stepsWere[(size_t) l], false);
+            ses.recallOver (was, 0.0, true, Session::kAllLanes);
+            run (2.0 * bar);
+
+            // 2. its cue is heard, from the second rig, and the set is not touched
+            Prof pre;
+            heardFor (&pre, nullptr, 2.0);
+            const double asked = juce::Time::getMillisecondCounterHiRes();
+            const bool took = ses.cue (quiet);
+            const bool heard = run (8000.0, [&] { return e.cueRigHeard(); });
+            const double after = juce::Time::getMillisecondCounterHiRes() - asked;
+            check (took && ses.cueIsRig() && ses.cueing() == quiet && heard,
+                   "a cue of a snapshot is the second rig's: asked for, in the headphones " + juce::String (juce::roundToInt (after)) + " ms later (the rig made ready in " + juce::String (rig.lastReadyMs()) + " ms)");
+            Prof cue, during;
+            run (0.5 * bar);
+            heardFor (&during, &cue, 2.0);
+            // 3. and it is what the first rig plays once that snapshot is recalled
+            ses.cue (0);
+            run (0.25 * bar);
+            const bool letGo = ! e.cueRigHeard() && ses.cueing() == 0;
+            ses.recallOver (quiet, 0.0, true, Session::kAllLanes);
+            run (1.5 * bar);
+            Prof post;
+            heardFor (&post, nullptr, 2.0);
+            const double toPost = cue.from (post), toPre = cue.from (pre), setMoved = during.from (pre);
+            // (where the snapshot differs most: the kick's four sixteenths, and the top end the hats were)
+            auto onKick = [] (const Prof& pr) { double d = 0.0; for (int i : { 0, 4, 8, 12 }) d += Prof::dB (pr.step[(size_t) i], (double) pr.n / 16.0); return d / 4.0; };
+            auto top = [] (const Prof& pr) { return Prof::dB (pr.hi, (double) pr.n); };
+            const double kickCue = onKick (cue), kickPre = onKick (pre), kickPost = onKick (post);
+            if (juce::SystemStats::getEnvironmentVariable ("SF000_CUE_SAYS", {}).isNotEmpty())
+                for (auto* pr : { &pre, &cue, &post })
+                {
+                    std::printf ("        (%s %.1f dB, low %.1f, high %.1f, by the sixteenth:", pr == &pre ? "before" : pr == &cue ? "cue   " : "after ", pr->level(), Prof::dB (pr->lo, (double) pr->n), Prof::dB (pr->hi, (double) pr->n));
+                    for (int i = 0; i < 16; ++i) std::printf (" %.0f", Prof::dB (pr->step[(size_t) i], (double) pr->n / 16.0));
+                    std::printf (")\n");
+                }
+            check (toPost < 2.5 && toPre > toPost + 1.0 && cue.level() > -70.0 && std::abs (kickCue - kickPost) < 3.5 && kickPre - kickCue > 5.0 && std::abs (top (cue) - top (post)) < 3.0 && top (pre) - top (cue) > 4.0,
+                   "what was in the headphones is what the rig then played with the snapshot recalled (" + juce::String (toPost, 1) + " dB apart, sixteenth by sixteenth and at both ends; on the kick's sixteenths "
+                       + juce::String (kickCue, 1) + " dB against " + juce::String (kickPost, 1) + ") and not what it was playing before (" + juce::String (toPre, 1) + " dB apart; there " + juce::String (kickPre, 1) + ")");
+            check (setMoved < 1.5 && letGo, "the set itself was not touched while the cue played (" + juce::String (setMoved, 1) + " dB from what it was), and the cue let go is silence");
+
+            // 3b. NOTES out: the recall leaves every sequencer as it is, so the kick the rig is playing is still in the cue (the snapshot's own notes have none)
+            {
+                ses.recallOver (was, 0.0, true, Session::kAllLanes);
+                run (2.0 * bar);
+                ses.setRecallNotes (false);
+                const bool tookN = ses.cue (quiet);
+                const bool heardN = run (8000.0, [&] { return e.cueRigHeard(); });
+                run (0.5 * bar);
+                Prof cueN, preN;
+                heardFor (&preN, &cueN, 2.0);
+                ses.cue (0);
+                ses.setRecallNotes (true);
+                const double kN = onKick (cueN), kWas = onKick (preN);
+                check (tookN && heardN && std::abs (kN - kWas) < 3.0 && kN - kickCue > 5.0 && top (preN) - top (cueN) < 3.0,
+                       "with NOTES out the cue keeps what every lane is playing, as that recall would: the kick is in it (" + juce::String (kN, 1) + " dB on its sixteenths, " + juce::String (kWas, 1)
+                           + " in the set; " + juce::String (kickCue, 1) + " with NOTES lit, the snapshot having no kick)");
+            }
+            // 4. with none of its parts taken, the recall would change nothing: the cue is the rig as it stands, in step
+            ses.recallOver (was, 0.0, true, Session::kAllLanes);
+            run (2.0 * bar);
+            ses.cueWith (quiet, Session::scopeOf (0u));
+            const bool took2 = ses.cue (quiet);
+            const bool heard2 = run (8000.0, [&] { return e.cueRigHeard(); });
+            run (1.0 * bar);
+            Prof same, now;
+            std::vector<float> tm, tc;
+            tapeMain = &tm; tapeCue = &tc;
+            heardFor (&now, &same, 2.0);
+            tapeMain = nullptr; tapeCue = nullptr;
+            // where the two rigs' low ends line up best: at no shift, if they are on the same sample of the same bar
+            int best = 0; double bestV = -1.0e9, energy = 0.0;
+            {
+                auto low = [] (std::vector<float>& v) { double s = 0.0; for (auto& x : v) { s += 0.02 * ((double) x - s); x = (float) s; } };
+                low (tm); low (tc);
+                const int n = (int) std::min (tm.size(), tc.size()), span = 480;
+                for (int i = span; i < n - span; ++i) energy += (double) tm[(size_t) i] * tm[(size_t) i];
+                for (int lag = -span; lag <= span; lag += 4)
+                {
+                    double v = 0.0;
+                    for (int i = span; i < n - span; i += 2) v += (double) tm[(size_t) i] * tc[(size_t) (i + lag)];
+                    if (v > bestV) { bestV = v; best = lag; }
+                }
+            }
+            const double sameBy = same.from (now);
+            check (took2 && heard2 && sameBy < 3.0 && std::abs (best) <= 48 && energy > 0.0,
+                   "with none of its parts taken the cue is the rig as it stands (" + juce::String (sameBy, 1) + " dB apart), and the two rigs are in step: their low ends line up best "
+                       + juce::String (best) + " samples apart");
+            const int gaps = e.cueRigGaps();
+            check (gaps <= 12, "the second rig kept up with the first (" + juce::String (gaps) + " gaps in its sound over the cues above): " + rig.says());
+
+            // 5. the second process dies: the first plays on, says so, and another is started
+            ses.cueWith (0, {});
+            ses.cue (quiet);
+            run (8000.0, [&] { return e.cueRigHeard(); });
+            rig.killForTests();
+            const bool noticed = run (15000.0, [&] { return ! rig.up(); });
+            run (300.0);
+            const bool silent = ! e.cueRigHeard() && ! ses.cueIsRig();
+            const bool byClip = ses.cueing() == quiet;              // (taken with the clock running: it has a clip, and that is what plays now)
+            const juce::String said = rig.says();
+            const bool again = run (20000.0, [&] { return rig.up(); });
+            const bool took3 = again && ses.cue (quiet) && run (8000.0, [&] { return e.cueRigHeard(); });
+            check (noticed && silent && finite && again && took3,
+                   "the second process killed while its cue played: the first rig plays on, the cue falls back to the snapshot's clip (" + juce::String (byClip ? "it is playing" : "it has none: silence")
+                       + "), SET UP says so (" + said + "), another is started and its cue is heard");
+            // 6. THE CLIPS chosen in SET UP: no second rig, and a cue is the clip again
+            rig.stop();
+            ses.cueWith (0, {});
+            ses.cue (0);
+            run (100.0);
+            const bool had = ses.cue (quiet);
+            const bool clip = ! ses.cueIsRig() && ! rig.up() && (had ? ses.cueing() == quiet : ses.cueing() == 0);
+            run (200.0);
+            check (clip && ! e.cueRigHeard() && e.cueRigWanted() == 0 && finite, "with the second rig put away a cue is the snapshot's clip, as it always was");
+        }
+        ses.cueRigPlay = nullptr; ses.cueRigStop = nullptr;
+    }
+    Session::stateFileForTests = juce::File();
+    tmp.deleteRecursively();
+    std::printf (bad == 0 ? "ALL CUE CHECKS PASSED\n" : "%d CUE CHECK(S) FAILED\n", bad);
+    return bad;
+}
+
 static int printSession (const juce::StringArray& args)
 {
     using namespace sf0;
@@ -10420,7 +10727,7 @@ public:
         : audio (dm, 0, 0, 2, 4, false, false, true, false), devices (dm), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
-        for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel, &pagesLabel, &slotsLabel })
+        for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel, &pagesLabel, &slotsLabel, &cueLabel, &cueNote })
         {
             addAndMakeVisible (*l);
             l->setColour (juce::Label::textColourId, juce::Colour (0xffE8E5E1));
@@ -10461,6 +10768,12 @@ public:
             b.setColour (juce::TextButton::textColourOnId, juce::Colour (0xffE8E5E1));
             b.onClick = [&b, chosen] { if (b.getToggleState()) chosen(); };
         };
+        // the cue: the rig itself, on a second rig run beside this one, or the clip kept with each snapshot
+        cueLabel.setText ("CUE", juce::dontSendNotification);
+        cueNote.setFont (juce::FontOptions (12.0f));
+        cueNote.setJustificationType (juce::Justification::topLeft);
+        radio (cueRigKey, "THE RIG", 3,    [this] { if (onCue) onCue (true); timerCallback(); });
+        radio (cueClipKey, "THE CLIPS", 3, [this] { if (onCue) onCue (false); timerCallback(); });
         // the clock is sent, followed, or neither
         radio (off, "OFF", 1,       [this] { midi.setFollowsClock (false); midi.setSendsClock (false); show(); });
         radio (send, "SEND", 1,     [this] { midi.setFollowsClock (false); midi.setSendsClock (true); show(); });
@@ -10537,7 +10850,7 @@ public:
         libChoose.onClick = [this] { choose (true); };
         recChoose.onClick = [this] { choose (false); };
         showFiles();
-        setSize (520, 882 + 98 + 22);
+        setSize (520, 882 + 98 + 22 + 62);
         show();
         startTimerHz (4);
     }
@@ -10547,6 +10860,15 @@ public:
         audio.setBounds (r.removeFromTop (380));
         r = r.reduced (16, 4);
         load.setBounds (r.removeFromTop (46));      // (two lines: its share of a buffer's time, and whether it kept up)
+        {
+            // CUE: its two keys, and under them what the second rig is doing
+            r.removeFromTop (2);
+            auto cr = r.removeFromTop (26);
+            cueLabel.setBounds (cr.removeFromLeft (110));
+            for (auto* b : { &cueRigKey, &cueClipKey }) { b->setBounds (cr.removeFromLeft (147)); cr.removeFromLeft (6); }
+            cueNote.setBounds (r.removeFromTop (32));
+            r.removeFromTop (2);
+        }
         ins.setBounds (r.removeFromTop (24));
         e16.setBounds (r.removeFromTop (24));
         {
@@ -10604,6 +10926,10 @@ public:
         glowPulse.setBounds (knobs.removeFromLeft (52));
         pulseLabel.setBounds (knobs);
     }
+    // the cue's row: which way is chosen, what choosing does, and what the second rig says of itself
+    std::function<void (bool rig)> onCue;
+    std::function<juce::String()> cueSays;
+    void setCue (bool rig) { (rig ? cueRigKey : cueClipKey).setToggleState (true, juce::dontSendNotification); timerCallback(); }
     // the look row: where its knobs stand, and what turning them or pressing FULL SCREEN does
     std::function<void (float hue, float bright, float pulse)> onGlow;
     std::function<void()> onFull;
@@ -10647,6 +10973,9 @@ private:
                           + (lateN == 0 ? juce::String ("NO BUFFER HAS RUN LATE") : "RUN LATE (EACH A GAP IN THE SOUND): " + juce::String (lateN))
                           + (dropped > 0 ? ", DROPPED: " + juce::String (dropped) : juce::String()),
                       juce::dontSendNotification);
+        cueNote.setText (cueClipKey.getToggleState() ? juce::String ("A CUE IS THE FOUR BARS KEPT WHEN THE SNAPSHOT WAS TAKEN: THAT DAY'S NOTES AND TEMPO, ALL OF THE RIG.")
+                                                     : cueSays ? cueSays() : juce::String(),
+                         juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
         e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")) + (midi.pageNote().isNotEmpty() ? "   (" + midi.pageNote() + ")" : juce::String()), juce::dontSendNotification);
         const bool fol = midi.followsClock(), snd = ! fol && midi.sendsClock();
@@ -10679,9 +11008,9 @@ private:
     juce::AudioDeviceManager& devices;
     sf0::Engine& engine;
     sf0::Midi& midi;
-    juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel, pagesLabel, slotsLabel;
+    juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel, pagesLabel, slotsLabel, cueLabel, cueNote;
     juce::ComboBox pcBox, slotA, slotB;
-    juce::TextButton off, send, follow, onBeat, withNotes;
+    juce::TextButton off, send, follow, onBeat, withNotes, cueRigKey, cueClipKey;
     juce::Slider lead, trim;
     juce::Label lookLabel, glowLabel, hueLabel, brightLabel, pulseLabel;
     juce::Slider glowHue, glowBright, glowPulse;
@@ -10802,6 +11131,9 @@ static int shotSetup (const juce::StringArray& args)
     int other = 0;
     if (mode == "follow") m.clockFrom (&other, "OXI ONE", 0xFE, juce::Time::getMillisecondCounterHiRes());     // (so the panel finds a source still sending)
     SetupPanel panel (dm, e, m);
+    // (the cue's row, as it reads with a second rig up; --cueclips: with THE CLIPS chosen)
+    panel.cueSays = [] { return juce::String ("A SECOND RIG IS UP: A CUE IS THE RIG AS ITS RECALL WOULD LEAVE IT. THE LAST ONE WAS READY IN 140 MS, AND TAKES 21 % OF A CORE OF ITS OWN"); };
+    panel.setCue (! args.contains ("--cueclips"));
     const float scale = (float) juce::jlimit (0.25, 4.0, arg ("--scale", "2").getDoubleValue());
     juce::Image img (juce::Image::ARGB, juce::roundToInt ((float) panel.getWidth() * scale), juce::roundToInt ((float) panel.getHeight() * scale), true);
     {
@@ -11471,11 +11803,24 @@ class SF000App : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override    { return "SF-000"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override          { return false; }
+    // (one instrument at a time. The cue's rig is this program started again by the instrument itself: that one may be)
+    bool moreThanOneInstanceAllowed() override          { return sf0::CueWorker::wanted (getCommandLineParameters()); }
 
     void initialise (const juce::String& cmd) override
     {
         const auto args = juce::StringArray::fromTokens (cmd, true);
+        if (sf0::CueWorker::wanted (cmd))
+        {
+            // The cue's rig (CueRig.h): started by the instrument, with no window, no audio device and nothing written
+            // to the disk. It is given a cue at a time and renders it; it goes when the instrument does.
+           #if JUCE_MAC
+            juce::Process::setDockIconVisible (false);
+           #endif
+            sf::Bus::processLocal = true;       // (its modules' bus is its own: what the second rig reports never reaches the first)
+            cueWorker = std::make_unique<sf0::CueWorker>();
+            if (! cueWorker->begin (cmd)) { cueWorker = nullptr; quit(); }
+            return;
+        }
        #if JUCE_LINUX
         nameTheWindowManagersProperties();
        #endif
@@ -11490,6 +11835,8 @@ public:
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--printsession")) { setApplicationReturnValue (printSession (args)); quit(); return; }
+        if (args.contains ("--cueprobe")) { setApplicationReturnValue (cueProbe (args)); quit(); return; }
+        if (args.contains ("--cuetest")) { setApplicationReturnValue (cueTest()); quit(); return; }
         if (args.contains ("--livesession")) { setApplicationReturnValue (liveSession (args)); quit(); return; }
         if (args.contains ("--graincheck")) { juce::String said; const bool ok = grainCheck (said); std::printf ("%s: %s\n", ok ? "ok" : "FAIL", said.toRawUTF8()); setApplicationReturnValue (ok ? 0 : 1); quit(); return; }
         if (args.contains ("--printbus")) { const int i = args.indexOf ("--printbus"); setApplicationReturnValue (printBusProbe (i + 1 < args.size() && ! args[i + 1].startsWith ("--") ? args[i + 1].unquoted() : juce::String())); quit(); return; }
@@ -11537,6 +11884,17 @@ public:
         // a print renders on a rig of its own: this one's audio waits meanwhile (one rig sounds at a time)
         session->audioPause = [this] { devices.removeAudioCallback (engine.get()); };
         session->audioResume = [this] { devices.addAudioCallback (engine.get()); };
+        // The cue: a second rig, in a process of its own, plays each cue as its recall would leave this rig (CueRig.h).
+        // Chosen in SET UP, and kept for this machine; with it off, or while it is not there, a cue is the clip.
+        cueRig = std::make_unique<sf0::CueRig> (*engine, *session);
+        session->cueRigPlay = [this] (juce::int64 id, juce::uint32 lanes, bool notes) { return cueRigWanted && cueRig != nullptr && cueRig->play (id, lanes, notes); };
+        session->cueRigStop = [this] { if (cueRig != nullptr) cueRig->quiet(); };
+        {
+            const juce::var c = juce::JSON::parse (cueFile());
+            cueRigWanted = c.isObject() ? (bool) c.getProperty ("rig", true) : true;
+            if (juce::SystemStats::getEnvironmentVariable ("SF000_CUE_CLIPS", {}).isNotEmpty()) cueRigWanted = false;
+        }
+        if (cueRigWanted) cueRig->start();
         // ONLINE: snapshots go to the library on the web as they are taken (if it is lit and set up)
         online = std::make_unique<sf0::Online> (*session);
         session->onLibrary = [this] { if (online != nullptr) online->poke(); };
@@ -11631,6 +11989,7 @@ public:
 
     void shutdown() override
     {
+        if (cueWorker != nullptr) { cueWorker = nullptr; return; }      // (the cue's rig, if that is what this process is: it has nothing else to put away)
         stageGuard.settled();               // (leaving in good order, even with the stage still coming up, is not a start that died)
         recorder = nullptr;                 // a take under way is finished and kept
         if (engine != nullptr)
@@ -11639,6 +11998,8 @@ public:
             devices.removeAudioCallback (engine.get());
             devices.closeAudioDevice();
         }
+        if (session != nullptr) { session->cueRigPlay = nullptr; session->cueRigStop = nullptr; }
+        cueRig = nullptr;                   // the second rig goes with the instrument (the audio has stopped: nothing reads its memory now)
         juce::Desktop::getInstance().setKioskModeComponent (nullptr, false);
         setup.deleteAndZero();              // the setup dialog, if it is still up: it reads the MIDI object
         onlineDialog.deleteAndZero();
@@ -11656,12 +12017,29 @@ private:
     // (this machine's own: with its settings, not in the library folder)
     static juce::File audioFile() { return sf0::Session::homeFile ("audio.xml"); }
     static juce::File lookFile() { return sf0::Session::homeFile ("look.json"); }
+    static juce::File cueFile() { return sf0::Session::homeFile ("cue.json"); }
+    // SET UP's choice: a cue is the rig (a second rig is run for it) or the snapshot's clip
+    void setCueRig (bool rig)
+    {
+        if (cueRig == nullptr || rig == cueRigWanted) return;
+        cueRigWanted = rig;
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("rig", rig);
+        cueFile().getParentDirectory().createDirectory();
+        cueFile().replaceWithText (juce::JSON::toString (juce::var (o)));
+        // (a cue playing is let go: the next one is heard the chosen way)
+        if (session != nullptr) { session->cueWith (0, {}); session->cue (0); }
+        if (rig) cueRig->start(); else cueRig->stop();
+    }
 
     void audioSetup()
     {
         if (setup != nullptr) { setup->toFront (true); return; }
         // Set once, before the set: which interface, which outputs, the buffer size.
         auto* sel = new SetupPanel (devices, *engine, *midi);
+        sel->cueSays = [this] { return cueRig != nullptr ? cueRig->says() : juce::String(); };
+        sel->onCue = [this] (bool rig) { setCueRig (rig); };
+        sel->setCue (cueRigWanted);
         if (auto* screen = window != nullptr ? dynamic_cast<sf0::Screen*> (window->getContentComponent()) : nullptr)
         {
             sel->setGlow (screen->glowHueNow(), screen->glowBrightNow(), screen->glowPulseNow());
@@ -11699,6 +12077,9 @@ private:
     juce::Component::SafePointer<juce::DialogWindow> onlineDialog;
     std::unique_ptr<sf0::Midi> midi;
     std::unique_ptr<sf0::Recorder> recorder;
+    std::unique_ptr<sf0::CueRig> cueRig;
+    std::unique_ptr<sf0::CueWorker> cueWorker;
+    bool cueRigWanted = true;
     std::unique_ptr<MainWindow> window;
     StageGuard stageGuard;
     juce::Component::SafePointer<juce::DialogWindow> setup;
