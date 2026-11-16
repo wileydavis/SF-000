@@ -427,11 +427,13 @@ COLOR moves across them, at any pitch, for as long as a note is held; with TABLE
 plays four waves of its own. Every knob of the lane acts on it as on any synth model. PAD also
 has **GRANULAR**, which plays grains of the file from between START and END, COLOR their length.
 
-**Every main knob, with a sample or a WAVETABLE.** `--audit` (see Checks) turns each of a lane's
-twelve knobs down and up and measures what the lane's sound does. With a sample, and with
-WAVETABLE, every knob on every lane now moves it, but for: GLIDE on BASS while its steps are all
-one note (it slides between two); SIZE and WIDTH on RUMBLE with a sample; SIGNAL on VOICE with
-its MODEL at SAMPLE (SIGNAL is how clean the other models are).
+**Every knob is heard, on every model.** `--audit` (see Checks) turns each of a lane's twelve
+knobs down and up and measures what the lane's sound does, for every model the lane has (85
+lane-and-model pairs). Every knob moves the sound on every one, with one exception that is the
+music's and not the knob's: GLIDE on BASS while its steps are all one note (it slides between
+two). Where a model had nothing for a knob to do, the knob was given something that suits it:
+a filter for the models that had none, the ensemble for SPACE, a second voice a few cents off
+for DETUNE, a darker-or-brighter tilt for COLOR.
 
 Measured, not assumed: `--samplecheck` (see Checks) plays a file through a lane and writes what
 came out; after PLAIN it is level with the file across the spectrum to a tenth of a decibel.

@@ -3367,12 +3367,12 @@ static int knobAudit (int only, const juce::String& modelArg = {}, const juce::F
         if (ctl >= 0) ses.userSet (ctl, v);
         e.setRunning (true);
         const int total = (int) (4 * 4.0 * 48000.0 * 60.0 / e.tempo());
-        std::vector<float> out; out.reserve ((size_t) total);
+        std::vector<float> out; out.reserve ((size_t) total * 2 + 1024);
         juce::AudioBuffer<float> b (2, 512);
         for (int done = 0; done < total; done += 512)
         {
             e.render (b);
-            for (int i = 0; i < 512; ++i) out.push_back (0.5f * (b.getSample (0, i) + b.getSample (1, i)));
+            for (int i = 0; i < 512; ++i) { out.push_back (b.getSample (0, i)); out.push_back (b.getSample (1, i)); }     // (both sides: a knob that only moves them apart is heard too)
         }
         return out;
     };

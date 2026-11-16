@@ -571,10 +571,10 @@ public:
                 v.hp.set (m.hpHz * (0.6f + v.tone * 0.8f) * dark, 0.7071f, osr);
                 break;
             case P_CLAP: v.bp.set (m.bpHz * v.tune * (0.7f + v.tone * 0.6f) * dark, 1.5f, osr); v.hp.set (m.hpHz, 0.7071f, osr); break;
-            case P_RIM: v.freqs[0] = 1700.0f * v.tune; v.freqs[1] = 500.0f * v.tune; v.hp.set (400.0f, 0.7071f, osr); break;
+            case P_RIM: v.freqs[0] = 1700.0f * v.tune * (0.7f + v.tone * 0.6f); v.freqs[1] = 500.0f * v.tune; v.hp.set (400.0f * (0.5f + v.tone), 0.7071f, osr); break;      // (SF-000) TONE: its click's pitch and how thin it is (as it was, at the centre)
             case P_BELL: v.freqs[0] = 540.0f * v.tune; v.freqs[1] = 800.0f * v.tune; v.bp.set (1000.0f * v.tune * (0.6f + v.tone * 0.8f), 1.0f, osr); break;
             case P_CLAVE: v.freqs[0] = 2500.0f * v.tune * (0.7f + v.tone * 0.6f); break;
-            case P_SHAKER: v.bp.set (6000.0f * (0.5f + v.tone) * dark, 0.8f, osr); v.hp.set (2000.0f, 0.7071f, osr); break;
+            case P_SHAKER: v.bp.set (std::min (6000.0f * (0.5f + v.tone) * dark * v.tune, 0.45f * (float) osr), 0.8f, osr); v.hp.set (std::min (2000.0f * v.tune, 0.4f * (float) osr), 0.7071f, osr); break;      // (SF-000) TUNE moves its band
             case P_FM: v.freqs[0] = 400.0f * v.tune; v.freqs[1] = v.freqs[0] * (1.2f + v.tone * 1.2f); break;
             case P_MODAL:
                 for (int k = 0; k < 6; ++k)
@@ -753,7 +753,7 @@ public:
                 if ((v.romCount++ & 3) == 0) v.res[0].set (hz, std::min (kPi * hz * v.decay, 400.0f), osr);
                 const float ring = v.res[0].tickBP (pulse) * (1.0f / (0.0005f * kTwoPi * v.body));
                 const float nz = v.bp.tickBP (rng.next()) * std::exp (-t / 0.02f) * v.snappy * 0.4f;
-                y = ring * 0.13f + nz * 0.2f;
+                y = ring * 0.13f + nz * 0.5f;       // (SF-000) TONE's burst was 0.2 of this: too faint to hear the knob
                 break;
             }
             case P_TOM909:
@@ -1001,9 +1001,16 @@ public:
                 }
                 case 2:
                 {
+                    // (SF-000) every knob on the drone. SIZE: an octave under it. WIDTH: the right a little off the left, so they
+                    // beat apart. PREDELAY: its swell that much later in the bar. DENSITY: its swell 1, 2, 4 or 8 times a bar.
                     dronePh += thF1 / (float) sr; if (dronePh > 1.0f) dronePh -= 1.0f;
-                    const float d = std::sin (kTwoPi * dronePh) * 0.5f * (0.6f + 0.4f * std::sin (kTwoPi * (float) std::fmod (c.ppqAt (i) * 0.25, 1.0)));
-                    wl = wr = d * droneLevel;
+                    dronePh2 += thF1 * (1.0f + width * 0.012f) / (float) sr; if (dronePh2 > 1.0f) dronePh2 -= 1.0f;
+                    droneSub += thF1 * 0.5f / (float) sr; if (droneSub > 1.0f) droneSub -= 1.0f;
+                    const double swellAt = (c.ppqAt (i) - preB[juce::jlimit (0, 3, c.ci (PREDELAY))]) * 0.25 * (double) (1 << juce::jlimit (0, 3, (int) (c.v (DENS) * 3.99f)));
+                    const float swell = 0.5f * (0.6f + 0.4f * std::sin (kTwoPi * (float) (swellAt - std::floor (swellAt))));
+                    const float under = std::sin (kTwoPi * droneSub) * c.v (SIZE) * 0.6f;
+                    wl = (std::sin (kTwoPi * dronePh) + under) * swell * droneLevel;
+                    wr = (std::sin (kTwoPi * dronePh2) + under) * swell * droneLevel;
                     droneLevel = std::min (1.0f, droneLevel + 1.0f / (float) sr);
                     break;
                 }
@@ -1015,7 +1022,14 @@ public:
                     wl = rl + yl; wr = rr + yr;
                     break;
                 }
-                default: wl = wr = xp; break;
+                default:
+                {
+                    // (SF-000) a sample: SIZE is the room behind it (and WIDTH that room's width); with SIZE at nought, the sample alone
+                    float rl, rr; fdn.tick (xp, xp, rl, rr, false);
+                    const float room = c.v (SIZE) * 1.5f;
+                    wl = xp + rl * room; wr = xp + rr * room;
+                    break;
+                }
             }
             L[i] = wl; R[i] = wr;
             const float gt = sinceTrig < gateLen ? 1.0f : 0.0f;
@@ -1079,6 +1093,7 @@ private:
     SampleSlot sample;
     std::vector<std::pair<double, float>> midiDelay, extras;
     double lastTrigPpq = -1e9, sPos = 0;
+    float dronePh2 = 0, droneSub = 0;       // (SF-000) the drone's right side, and the octave under it
     float thumpT = 1e9f, thumpVel = 1, thF0 = 200, thF1 = 50, thTau = 0.01f, thPh = 0, dronePh = 0, droneLevel = 0, gateZ = 1, lastF0 = 200, lastF1 = 50, lastTau = 0.01f;
     float sinceTrig = 1e9f;
 };

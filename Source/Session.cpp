@@ -1641,7 +1641,7 @@ juce::String Session::samplePlain (int lane)
         // (KNOBS on: every knob of the lane acts on the sample, and each is put where it does nothing)
         put ("smp_env", 1.0f); put ("decay", 1.0f); put ("detune", 0.0f); put ("space", 0.0f); put ("color", 0.5f);
     }
-    else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); put ("tone", 0.5f); }      // (the drums: DECAY is how much of it plays; TONE tilts a sample about its centre)
+    else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); put ("tone", 0.5f); put ("signal", 1.0f); }      // (the drums: DECAY is how much of it plays; TONE tilts a sample about its centre)
     choose ("slice_mode", "WHOLE");                 // (VOICE: any note is the whole phrase, at its own pitch)
     for (int e = 0; e < 3; ++e) userSet (cx::lane (lane, cx::kEqLow + e), 0.5f);
     // Its pitch. A drum and a phrase play at their own whatever the note; the others at the note's, and at their own on their root.

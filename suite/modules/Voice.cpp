@@ -88,6 +88,9 @@ public:
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
         const float tone = c.v (TONE), sig = c.v (SIGNAL), drive = c.v (DRIVE);
         // (SF-000) TONE on the phrase as it is (MODEL SAMPLE): a tilt about 1.5 kHz, darker under the centre, brighter over it
+        // SIGNAL on the phrase as it is and on STUTTER: how much of its band is left (all of it at full; a thin middle at nought)
+        const bool sigOn = sig < 0.995f;
+        const float sigLoA = 1.0f - std::exp (-kTwoPi * 300.0f * (1.0f - sig) * (1.0f - sig) / (float) sr), sigHiA = 1.0f - std::exp (-kTwoPi * std::min (2200.0f * std::pow (9.09f, sig), 0.45f * (float) sr) / (float) sr);
         const float vTilt = (tone - 0.5f) * 2.0f, tiltA = 1.0f - std::exp (-kTwoPi * 1500.0f / (float) sr), tiltLo = std::pow (10.0f, -vTilt * 0.6f), tiltHi = std::pow (10.0f, vTilt * 0.6f);
         const float rate = semis (c.v (TUNE));
         keyShift = c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f;
@@ -151,8 +154,14 @@ public:
                 }
                 switch (model)
                 {
-                    case 0: if (std::abs (vTilt) > 0.002f) { tiltLp += tiltA * (x - tiltLp); x = tiltLp * tiltLo + (x - tiltLp) * tiltHi; } break;      // (SF-000)
-                    case 1: x = radioChain (x, sig); break;
+                    case 0: case 5:     // (SF-000) TONE's tilt (not STUTTER's: its TONE is the loop's length), then SIGNAL's band
+                        if (model == 0 && std::abs (vTilt) > 0.002f) { tiltLp += tiltA * (x - tiltLp); x = tiltLp * tiltLo + (x - tiltLp) * tiltHi; }
+                        if (sigOn) { sigLo += sigLoA * (x - sigLo); x -= sigLo; sigHi += sigHiA * (x - sigHi); x = sigHi; }
+                        break;
+                    case 1:             // (SF-000) RADIO takes TONE's tilt after its own chain
+                        x = radioChain (x, sig);
+                        if (std::abs (vTilt) > 0.002f) { tiltLp += tiltA * (x - tiltLp); x = tiltLp * tiltLo + (x - tiltLp) * tiltHi; }
+                        break;
                     case 2: case 3: case 4: x = vocode (x, model, carrierHz, sig); break;
                     default: break;
                 }
@@ -214,6 +223,7 @@ public:
 private:
     static constexpr int kVb = 16;
     float tiltLp = 0.0f;        // (SF-000) TONE's tilt on the phrase: its low part
+    float sigLo = 0.0f, sigHi = 0.0f;       // (SF-000) SIGNAL's band on the phrase: what is under it, and what is left
     struct Play { bool active = false, releasing = false; double pos = 0, start = 0; int end = 0, slice = -1, autoOff = -1; float vel = 1, rel = 1, relCoef = 0.999f; SampleRegion reg; };
     struct ChoirVoice { bool active = false; int note = 0, gen = 0; float f = 220, a = 0, target = 0; Osc osc; Svf fm[3]; };
 

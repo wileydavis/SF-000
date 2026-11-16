@@ -94,7 +94,7 @@ inline const std::vector<LaneDef>& lanes()
 
         { "LEAD", "lead", "LEAD", true, 3,
           // the 303 circuit: a gate that reaches the next step slides, a hard step is the accent
-          { { "model", 0 }, { "cutoff", 0.35f }, { "res", 0.75f }, { "env_amt", 0.6f }, { "accent", 0.7f }, { "gate", 0.5f }, { "level", -12 }, { "alloc", 0 } },
+          { { "model", 0 }, { "cutoff", 0.35f }, { "res", 0.75f }, { "env_amt", 0.6f }, { "accent", 0.7f }, { "gate", 0.5f }, { "level", -12 }, { "alloc", 0 }, { "detune", 0.0f }, { "space", 0.0f } },
           { { "TUNE", "tune", 'b' }, { "ACCENT", "accent", 'u' }, { "RES", "res", 'u' }, { "COLOR", "color", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },

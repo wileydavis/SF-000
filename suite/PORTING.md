@@ -67,3 +67,12 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   See DECISIONS, fifty-eighth build.
 - `core/Sample.h`, `core/Sample.cpp`: `chanPeak`, the loudest point of either channel, beside
   `peak` (which is of the two added together); NORMALISE (`Kit.h`) goes by it. `(SF-000)`.
+- **Every lane knob heard on every model**, marked `(SF-000)`. `Synth.cpp`: the model tables
+  (a state-variable filter where a model had none; an ensemble amount where it had none; a
+  sustain under full on SINE SUB and four of PAD's; `tilt` on three models: COLOR as a tilt);
+  DETUNE in the 303, the organ (each drawbar its own phase), FM 4-OP, sync (`sync2`) and noise
+  (`nbp2`) engines, never on BASS; a slow model's echoes at a third of its attack. `Drums.cpp`:
+  RIM's TONE, SHAKER's TUNE, TOM 808's burst; RUMBLE's SUB DRONE and SAMPLE take SIZE, WIDTH,
+  PREDELAY and DENSITY. `Voice.cpp`: SIGNAL's band on SAMPLE and STUTTER, TONE on RADIO.
+  **The suite's own sound is changed by these**, the rig's opening sound included (SINE SUB is
+  the bass's layer). See DECISIONS, sixty-first build.

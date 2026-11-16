@@ -44,6 +44,7 @@ struct SynthModel
     float att = 0.002f, dec = 0.3f, sus = 0.6f, rel = 0.1f;       // amp
     float fAtt = 0.001f, fDec = 0.3f, fSus = 0.0f, fRel = 0.2f;   // filter
     bool mono = false, acid = false;
+    bool tilt = false;      // (SF-000) a model that reads no COLOR of its own: COLOR tilts it darker or brighter about the centre
     int chord = 0;                  // 0 none, else index into chord table
     float ensemble = 0.0f, drive = 0.0f, wow = 0.0f, ratio = 1.0f, pitchDive = 0.0f;
     float gain = 1.0f;
@@ -65,7 +66,7 @@ static std::vector<SynthModel> bassModels()
     { SynthModel x { "SUB OSC", E_SUB }; x.wave = 1; x.sub = 0.9f; x.filt = F_SVF; x.mono = true; x.dec = 0.6f; x.sus = 0.9f; x.envMul = 0.4f; m.push_back (x); }
     { SynthModel x { "ACID 303-TYPE", E_SUB }; x.wave = 0; x.mono = true; x.acid = true; x.filt = F_DIODE; x.att = 0.003f; x.dec = 3.0f; x.sus = 0.0f; x.rel = 0.008f; m.push_back (x); }
     { SynthModel x { "FM", E_FM }; x.ratio = 1.0f; x.mono = true; x.filt = F_SVF; x.dec = 0.5f; x.sus = 0.7f; x.fDec = 0.2f; m.push_back (x); }
-    { SynthModel x { "SINE SUB", E_SUB }; x.wave = 3; x.filt = F_NONE; x.mono = true; x.dec = 1.0f; x.sus = 1.0f; x.drive = 0.15f; m.push_back (x); }
+    { SynthModel x { "SINE SUB", E_SUB }; x.wave = 3; x.filt = F_SVF /* (SF-000) was none: CUTOFF, RES, ENV AMT */; x.mono = true; x.dec = 0.5f; x.sus = 0.7f /* (SF-000) was 1 s to all of it: DECAY */; x.envMul = 0.3f; x.drive = 0.15f; m.push_back (x); }
     { SynthModel x { "OFFBEAT", E_SUB }; x.wave = 1; x.wave2 = 0; x.osc2 = 0.6f; x.detune = 0.05f; x.mono = true; x.dec = 0.18f; x.sus = 0.0f; x.fDec = 0.12f; x.resMul = 1.3f; x.envMul = 1.3f; m.push_back (x); }
     { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.mono = true; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; m.push_back (x); }
     // (SF-000) WAVETABLE, as PAD has it (TABLE: the built-in waves, or eight from the loaded sample; COLOR across them).
@@ -77,33 +78,33 @@ static std::vector<SynthModel> bassModels()
 static std::vector<SynthModel> leadModels()
 {
     std::vector<SynthModel> m;
-    { SynthModel x { "ACID 303-TYPE", E_SUB }; x.wave = 0; x.mono = true; x.acid = true; x.filt = F_DIODE; x.att = 0.003f; x.dec = 3.0f; x.sus = 0.0f; x.rel = 0.008f; m.push_back (x); }
-    { SynthModel x { "MONO 101-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.sub = 0.3f; x.mono = true; x.dec = 0.4f; x.sus = 0.6f; x.fDec = 0.25f; m.push_back (x); }
-    { SynthModel x { "MS20-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.6f; x.detune = 0.1f; x.filt = F_MS20; x.mono = true; x.drive = 0.4f; x.dec = 0.5f; x.sus = 0.7f; x.resMul = 1.2f; m.push_back (x); }
+    { SynthModel x { "ACID 303-TYPE", E_SUB }; x.wave = 0; x.mono = true; x.acid = true; x.filt = F_DIODE; x.att = 0.003f; x.dec = 3.0f; x.sus = 0.0f; x.rel = 0.008f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
+    { SynthModel x { "MONO 101-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.sub = 0.3f; x.mono = true; x.dec = 0.4f; x.sus = 0.6f; x.fDec = 0.25f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
+    { SynthModel x { "MS20-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.6f; x.detune = 0.1f; x.filt = F_MS20; x.mono = true; x.drive = 0.4f; x.dec = 0.5f; x.sus = 0.7f; x.resMul = 1.2f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
     { SynthModel x { "STAB DUB", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.detune = 0.06f; x.filt = F_SVF; x.chord = 1; x.dec = 0.25f; x.sus = 0.0f; x.rel = 0.15f; x.fDec = 0.12f; x.envMul = 0.8f; x.ensemble = 0.3f; m.push_back (x); }
     { SynthModel x { "STAB DETROIT", E_SUB }; x.gain = 2.0f; x.wave = 0; x.unison = 3; x.detune = 0.15f; x.wave2 = 1; x.osc2 = 0.3f; x.filt = F_SVF; x.chord = 2; x.dec = 0.35f; x.sus = 0.2f; x.rel = 0.25f; x.fDec = 0.2f; x.ensemble = 0.6f; m.push_back (x); }
-    { SynthModel x { "ORGAN M1-TYPE", E_ORGAN }; x.filt = F_NONE; x.chord = 5; x.dec = 0.3f; x.sus = 0.3f; x.rel = 0.08f; x.ensemble = 0.2f; m.push_back (x); }
-    { SynthModel x { "HOOVER", E_HOOVER }; x.unison = 3; x.detune = 0.25f; x.filt = F_SVF; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.8f; x.pitchDive = 7.0f; x.mono = true; m.push_back (x); }
-    { SynthModel x { "FM BELL", E_FM }; x.ratio = 3.5f; x.filt = F_NONE; x.dec = 1.5f; x.sus = 0.0f; x.rel = 1.2f; x.fDec = 0.6f; m.push_back (x); }
-    { SynthModel x { "SYNC", E_SYNC }; x.mono = true; x.dec = 0.5f; x.sus = 0.7f; x.fDec = 0.4f; x.filt = F_SVF; m.push_back (x); }
+    { SynthModel x { "ORGAN M1-TYPE", E_ORGAN }; x.filt = F_SVF /* (SF-000) was none */; x.chord = 5; x.dec = 0.3f; x.sus = 0.3f; x.rel = 0.08f; x.ensemble = 0.2f; m.push_back (x); }
+    { SynthModel x { "HOOVER", E_HOOVER }; x.unison = 3; x.detune = 0.25f; x.filt = F_SVF; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.8f; x.pitchDive = 7.0f; x.mono = true; x.tilt = true /* (SF-000) COLOR */; m.push_back (x); }
+    { SynthModel x { "FM BELL", E_FM }; x.ratio = 3.5f; x.filt = F_SVF /* (SF-000) was none */; x.dec = 1.5f; x.sus = 0.0f; x.rel = 1.2f; x.fDec = 0.6f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
+    { SynthModel x { "SYNC", E_SYNC }; x.mono = true; x.dec = 0.5f; x.sus = 0.7f; x.fDec = 0.4f; x.filt = F_SVF; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
     { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; m.push_back (x); }
     // (SF-000) WAVETABLE (see BASS), second to last.
     { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; m.push_back (x); }
-    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_NONE; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; m.push_back (x); }
+    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF /* (SF-000) was none */; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
     return m;
 }
 static std::vector<SynthModel> padModels()
 {
     std::vector<SynthModel> m;
-    { SynthModel x { "STRING MACHINE", E_SUB }; x.gain = 2.0f; x.wave = 0; x.unison = 4; x.detune = 0.2f; x.wave2 = 0; x.osc2 = 0.5f; x.ratio = 2.0f; x.filt = F_SVF; x.att = 0.3f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 0.8f; x.envMul = 0.1f; x.ensemble = 1.0f; m.push_back (x); }
+    { SynthModel x { "STRING MACHINE", E_SUB }; x.gain = 2.0f; x.wave = 0; x.unison = 4; x.detune = 0.2f; x.wave2 = 0; x.osc2 = 0.5f; x.ratio = 2.0f; x.filt = F_SVF; x.att = 0.3f; x.dec = 1.0f; x.sus = 0.75f /* (SF-000) was 1: DECAY */; x.rel = 0.8f; x.envMul = 0.1f; x.ensemble = 1.0f; x.tilt = true /* (SF-000) COLOR */; m.push_back (x); }
     { SynthModel x { "POLY PAD", E_SUB }; x.gain = 1.6f; x.wave = 0; x.wave2 = 1; x.osc2 = 0.6f; x.detune = 0.1f; x.sub = 0.3f; x.filt = F_SVF; x.att = 0.5f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.2f; x.fAtt = 0.8f; x.fDec = 2.0f; x.fSus = 0.4f; x.envMul = 0.4f; x.ensemble = 0.7f; m.push_back (x); }
     { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY is heard */; x.rel = 1.0f; x.envMul = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f /* (SF-000) DETUNE acts on it */; m.push_back (x); }
-    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.att = 0.6f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.5f; x.envMul = 0.0f; m.push_back (x); }
+    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.att = 0.6f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 1.5f; x.envMul = 0.0f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
     { SynthModel x { "DUB WASH", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.4f; x.detune = 0.05f; x.filt = F_SVF; x.chord = 1; x.att = 0.05f; x.dec = 1.5f; x.sus = 0.6f; x.rel = 1.5f; x.fDec = 1.5f; x.envMul = 0.5f; x.ensemble = 0.5f; m.push_back (x); }
-    { SynthModel x { "TAPE LOOP", E_SUB }; x.wave = 2; x.wave2 = 0; x.osc2 = 0.3f; x.detune = 0.03f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.5f; x.envMul = 0.0f; x.wow = 1.0f; x.drive = 0.3f; x.noise = 0.02f; m.push_back (x); }
-    { SynthModel x { "NOISE BED", E_NOISE }; x.filt = F_SVF; x.att = 0.8f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 2.0f; x.envMul = 0.0f; m.push_back (x); }
+    { SynthModel x { "TAPE LOOP", E_SUB }; x.wave = 2; x.wave2 = 0; x.osc2 = 0.3f; x.detune = 0.03f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 1.5f; x.envMul = 0.0f; x.wow = 1.0f; x.drive = 0.3f; x.noise = 0.02f; x.ensemble = 0.3f; x.tilt = true /* (SF-000) SPACE, COLOR */; m.push_back (x); }
+    { SynthModel x { "NOISE BED", E_NOISE }; x.filt = F_SVF; x.att = 0.8f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 2.0f; x.envMul = 0.0f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
     { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.att = 0.05f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 0.8f; x.envMul = 0.0f; m.push_back (x); }
-    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_NONE; x.att = 0.25f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.2f; x.ensemble = 0.3f; m.push_back (x); }
+    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF /* (SF-000) was none */; x.att = 0.25f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.2f; x.ensemble = 0.3f; m.push_back (x); }
     return m;
 }
 
@@ -481,7 +482,7 @@ public:
         double ph[8] {}, ph2[8] {}, subPh = 0.0, modPh = 0.0, spos = 0.0;
         float pan[8] {};
         Adsr amp, fenv;
-        SyncSaw sync;
+        SyncSaw sync, sync2;              // (SF-000) sync2: DETUNE's second
         AdaaTanh driveSat, ms20Sat;
         bool driveOn = false;
         VoiceCtl ctl;
@@ -492,7 +493,7 @@ public:
         float warpT = 0.0f, warpPh = 0.0f, warpRate = 1.0f;     // WARP's wow and flutter: this voice's time, phase, pace
         double fmPh[4] {};                // FM 4-OP: the operators' phases (from 0 at the note), envelopes,
         float fmEnv[4] { 1, 1, 1, 1 }, fmPrev[2] {};   // and D's last two outputs (its feedback)
-        Svf svf, svf2, nbp;
+        Svf svf, svf2, nbp, nbp2;         // (SF-000) nbp2: NOISE's second band, DETUNE's
         float t = 0.0f, fb = 0.0f, drift = 0.0f;
         struct Grain { bool on = false; double pos = 0, rate = 1; int len = 0, age = 0; float pan = 0.5f; SampleRegion reg; } grains[8];   // reg: where it started (end 0: the whole source)
         int grainClock = 0;
@@ -788,6 +789,9 @@ private:
         // ENV AMT sweeps its filter (updateControls). PLAY THROUGH: the note's end does not end it.
         v.shaped = m.engine == E_SAMPLE && c.v (SENV) > 0.5f;
         v.through = m.engine == E_SAMPLE && c.ci (SPLAY) == 1;
+        // (SF-000) an echo of a slow model comes up in a third of the time: a pad's own attack is as long as the gap between
+        // echoes, and DENSITY was all but unheard on it
+        const float echoAtt = ev.gen > 0 && m.att >= 0.2f ? 0.3f : 1.0f;
         if (v.shaped)
         {
             const float up = clamp01 ((c.v (DECAY) - 0.8f) * 5.0f);          // (the top fifth of DECAY: the sustain comes up to all of it)
@@ -795,7 +799,7 @@ private:
             v.cutPos = v.through && c.v (GATE) < 0.995f ? v.reg.start + (double) c.v (GATE) * (v.reg.end - v.reg.start) : 0.0;
         }
         else
-        v.amp.set (m.att + attK, m.dec * (m.acid ? 1.0f : decK), m.sus, m.rel * relMul, v.rate);
+        v.amp.set ((m.att + attK) * echoAtt, m.dec * (m.acid ? 1.0f : decK), m.sus, m.rel * relMul, v.rate);
         v.fenv.set (m.fAtt + attK * 0.5f, m.fDec * decK, m.fSus, m.fRel * relMul, v.rate);
         v.amp.on (retrigger || ! wasActive);
         v.fenv.on (retrigger || ! wasActive);
@@ -974,6 +978,8 @@ private:
             for (int op = 0; op < 4; ++op)
             {
                 k.fmRatio[op] = kFmRatios[juce::jlimit (0, (int) std::size (kFmRatios) - 1, c.ci (FMRATIO + op))];
+                // (SF-000) DETUNE: the operators a few cents apart, so they beat (not on one voice in the middle: BASS)
+                if (m.engine == E_FM4 && ! m.mono && k.det > 0.001f) { static const float cents[4] = { 6.0f, -6.0f, 3.0f, -3.0f }; k.fmRatio[op] *= semis (k.det * cents[op] / 100.0f); }
                 k.fmLevel[op] = clamp01 (c.v (FMLEVEL + op));
                 const float d = c.v (FMDECAY + op);
                 k.fmMul[op] = d >= 0.98f ? 1.0f : std::exp (-1.0f / (0.03f * std::pow (250.0f, d) * decK * (float) vr));
@@ -983,7 +989,7 @@ private:
             k.fmFb = c.v (FMFB) * 0.75f * kPi;
             k.fmOut = 1.0f / std::sqrt ((float) std::max (1, carriers));
         }
-        if (m.engine == E_NOISE) v.nbp.set (v.freq, 4.0f + k.color * 40.0f, vr);
+        if (m.engine == E_NOISE) { v.nbp.set (v.freq, 4.0f + k.color * 40.0f, vr); if (k.det > 0.001f) v.nbp2.set (std::min ((float) (v.freq * semis (k.det * 7.0f)), (float) (0.45 * vr)), 4.0f + k.color * 40.0f, vr); }      // (SF-000) DETUNE: a second band, up to a fifth over it
         k.uni = std::max (1, std::min (8, m.unison));
         k.detCents = m.detune * 40.0f * (0.2f + k.det * 1.6f);
         k.gainAll = v.gain * v.vel * (1.0f + v.accent * 0.5f) * 0.32f * m.gain;
@@ -1035,9 +1041,16 @@ private:
         const float res = k.res; juce::ignoreUnused (res);
         const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, gainAll = k.gainAll, subMul = k.subMul;
         const double wtDet = m.detune > 0.0f ? (double) semis (k.detCents / 100.0f) : 1.0;      // (SF-000) WAVETABLE's second reading
+        // (SF-000) DETUNE where an engine had none: a second 303 or a second sync up to a quarter of a semitone off, the organ's
+        // drawbars each a few cents from true. Not on BASS, whose voice stays one and in the middle.
+        const bool detOn = det > 0.001f && roleId != ROLE_BASS;
+        const double det2 = (double) semis (det * 0.25f);
+        const float detW = std::min (1.0f, det * 2.0f), detN = 1.0f / std::sqrt (1.0f + detW * detW);
+        double orgR[6] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
+        if (m.engine == E_ORGAN && detOn) { static const float cents[6] = { 0.0f, 7.0f, -5.0f, 9.0f, -8.0f, 11.0f }; for (int q = 0; q < 6; ++q) orgR[q] = (double) semis (det * cents[q] / 100.0f); }
         // (SF-000) a sample with KNOBS on: DETUNE's mix and COLOR's tilt, worked out once for the block
         const bool smpKnobs = m.engine == E_SAMPLE && v.shaped;
-        const float smpW = std::min (1.0f, det * 4.0f), smpN = 1.0f / std::sqrt (1.0f + smpW * smpW), smpTilt = smpKnobs ? (color - 0.5f) * 2.0f : 0.0f;
+        const float smpW = std::min (1.0f, det * 4.0f), smpN = 1.0f / std::sqrt (1.0f + smpW * smpW), smpTilt = smpKnobs || m.tilt ? (color - 0.5f) * 2.0f : 0.0f;
         const float tiltA = 1.0f - std::exp (-kTwoPi * 1000.0f / (float) v.rate), tiltLo = std::pow (10.0f, -smpTilt * 0.45f), tiltHi = std::pow (10.0f, smpTilt * 0.45f);
         const int uni = k.uni, shape1 = k.shape1, octSub = k.octSub;
         const float* uniR = k.uniR; const float* pw = k.pw; const float* r2 = k.r2;
@@ -1083,9 +1096,15 @@ private:
                         // TB-303. The saw, or the square the 303's waveshaper makes of it (a transistor's
                         // soft knee on the saw, band-limited: WaveSet::square303), then a coupling
                         // capacitor's droop (40 Hz). The switch fades over 5 ms.
-                        const float sw = W.saw.read (oct1[0], v.ph[0]);
-                        const float sqRaw = W.square303.read (oct1[0], v.ph[0]);
+                        float sw = W.saw.read (oct1[0], v.ph[0]);
+                        float sqRaw = W.square303.read (oct1[0], v.ph[0]);
                         v.ph[0] += inc; wrap01 (v.ph[0]);
+                        if (detOn)
+                        {
+                            // (SF-000) DETUNE: a second one beside it
+                            sw = (sw + detW * W.saw.read (oct1[0], v.ph2[0])) * detN; sqRaw = (sqRaw + detW * W.square303.read (oct1[0], v.ph2[0])) * detN;
+                            v.ph2[0] += inc * det2; wrap01 (v.ph2[0]);
+                        }
                         v.sqHp = k.sqHpK * (v.sqHp + sqRaw - v.sqPrev); v.sqPrev = sqRaw;
                         v.sqMix += (k.sqTarget - v.sqMix) * k.sqFade;
                         x = 0.6f * ((1.0f - v.sqMix) * sw + v.sqMix * 0.68f * v.sqHp);
@@ -1132,7 +1151,11 @@ private:
                     const float w[6] = { 1.0f, 0.8f * color + 0.2f, 0.9f, 0.5f * color, 0.3f, 0.25f * color };
                     v.ph[0] += inc; wrap01 (v.ph[0]);
                     for (int k = 0; k < 6; ++k)
-                        if ((double) f * h[k] < 0.45 * vr) { const double p = v.ph[0] * h[k]; x += sinT (p - std::floor (p)) * w[k]; }   // drawbars above Nyquist stay silent
+                    {
+                        // (SF-000) each drawbar keeps its own place, so that DETUNE can set them a few cents from true
+                        v.ph2[k] += inc * h[k] * orgR[k]; v.ph2[k] -= std::floor (v.ph2[k]);
+                        if ((double) f * h[k] < 0.45 * vr) x += sinT (v.ph2[k]) * w[k];
+                    }
                     x *= 0.35f;
                     if (v.t < 0.004f) x += rng.next() * 0.3f * (1.0f - v.t / 0.004f);       // key click
                     { const double p = v.ph[0] * 3.0; x += sinT (p - std::floor (p)) * 0.4f * std::exp (-v.t / 0.2f); }   // percussion
@@ -1177,10 +1200,16 @@ private:
                     // Hard sync: slave saw restarts with the master; every edge BLEP-corrected.
                     const float ratio = 1.0f + (color * 4.0f + v.fenv.v * c.v (ENVAMT) * 6.0f);
                     x = v.sync.tick (std::min (0.45, inc), std::min (0.45, inc * ratio)) * 0.8f;
+                    if (detOn) x = (x + detW * 0.8f * v.sync2.tick (std::min (0.45, inc * det2), std::min (0.45, inc * det2 * ratio))) * detN;       // (SF-000) DETUNE: a second beside it
                     break;
                 }
                 case E_NOISE:
-                    x = v.nbp.tickBP (rng.next()) * (2.0f + color * 6.0f) + rng.next() * 0.05f * (1.0f - color);
+                {
+                    const float nz = rng.next();
+                    float band = v.nbp.tickBP (nz);
+                    if (det > 0.001f) band = (band + detW * v.nbp2.tickBP (nz)) * detN;      // (SF-000) DETUNE: the second band
+                    x = band * (2.0f + color * 6.0f) + rng.next() * 0.05f * (1.0f - color);
+                }
                     break;
                 case E_WAVETABLE:
                 {
@@ -1282,13 +1311,6 @@ private:
                             v.spos2 += rate * (1.0 + (double) det * 0.0175);
                         }
                         else v.spos2 = v.spos;
-                        // COLOR: a tilt about 1 kHz, 9 dB each way at its ends, none at the centre
-                        if (std::abs (smpTilt) > 0.002f)
-                        {
-                            v.tilt[0] += tiltA * (xl - v.tilt[0]); v.tilt[1] += tiltA * (xr - v.tilt[1]);
-                            xl = v.tilt[0] * tiltLo + (xl - v.tilt[0]) * tiltHi;
-                            xr = v.tilt[1] * tiltLo + (xr - v.tilt[1]) * tiltHi;
-                        }
                         // THROUGH: GATE is how much of it plays
                         if (v.cutPos > 0.0 && v.spos >= v.cutPos && ! v.releasing) { v.amp.off(); v.fenv.off(); v.releasing = true; }
                     }
@@ -1296,6 +1318,14 @@ private:
                 }
             }
             if (! stereo) { xl = x; xr = x; }
+            // (SF-000) COLOR as a tilt about 1 kHz, 9 dB each way at its ends and none at the centre: a sample with KNOBS on, and
+            // the models that read no COLOR of their own
+            if (std::abs (smpTilt) > 0.002f)
+            {
+                v.tilt[0] += tiltA * (xl - v.tilt[0]); v.tilt[1] += tiltA * (xr - v.tilt[1]);
+                xl = v.tilt[0] * tiltLo + (xl - v.tilt[0]) * tiltHi;
+                xr = v.tilt[1] * tiltLo + (xr - v.tilt[1]) * tiltHi;
+            }
             // Filter (mono filters run on the mid; stereo engines get mid/side filtered as one).
             auto filt = [&] (float in) -> float
             {

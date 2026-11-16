@@ -3180,8 +3180,55 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      library, and every one loaded is held until the app closes); F11 (a stem file's lengths
      are trusted); F12 (a sample held only in memory is lost to a new voice at 96 kHz).
 
+## Every knob heard, on every model (Nov 15, 16:18): sixty-first build
+
+548. **You**, 16:18: "Ideally wake every knob. Even if  it changes some saves sounds, nothing
+     important has been made yet, so now is the time to do it. And I think having dead knobs
+     makes the instrument harder to play and less appealing. Being able to hear every knob
+     makes the instrument feel more tangible and less like a computer (I love computers btw,
+     but they’re not always intuitive ).  So I’d say let’s do that first then audit fixes.
+     Color can stay in config because I’ll use it to find a sweet spot in the wave table to
+     modular back and forth to get motion. So once a sweet spot idle found, I wouldn’t move it
+     during a performance in a. On automated way." 16:38: "When i use the Plain button, that
+     doesn't disable the knobs ability to change the sound, correct?" (Answered: correct;
+     PLAIN puts each knob where it does nothing and leaves every one of them live.)
+     COLOR stays in CONFIG on BASS and CHORD.
+549. **What 546 found asleep, woken.** Each by what its model lacked, in SF-000's copy of the
+     suite:
+     - *No filter*: ORGAN, FM BELL and FM 4-OP (LEAD, CHORD, PAD) and BASS's SINE SUB now have
+       the state-variable filter the other models have, so CUTOFF, RES and ENV AMT act. SINE
+       SUB also settles to 0.7 of its level so DECAY is heard.
+     - *No ensemble*: SPACE now acts on ACID, MONO 101, MS20, FM BELL, SYNC and FM 4-OP of the
+       LEAD list and on PAD's GRANULAR, TAPE LOOP and NOISE BED.
+     - *No DETUNE*: a second 303 beside the first; a second sync; the organ's drawbars each a
+       few cents from true; FM 4-OP's operators a few cents apart; NOISE BED a second band up
+       to a fifth over the first. None of it on BASS, which stays one voice in the middle.
+     - *No COLOR*: on HOOVER, STRING MACHINE and TAPE LOOP it is a tilt, darker under the
+       centre and brighter over it (nothing at the centre, where it opens).
+     - *Held level*: PAD's STRING MACHINE, GRANULAR, TAPE LOOP and NOISE BED settle to 0.7 or
+       0.75 so DECAY is heard; a slow model's echoes come up in a third of its attack, so
+       DENSITY is heard on PAD.
+     - *The hats*: TONE on RIM, TUNE on SHAKER, TONE louder on TOM 808.
+     - *RUMBLE*: on SUB DRONE, SIZE is an octave under it, WIDTH sets its two sides beating
+       apart, PREDELAY moves its swell in the bar and DENSITY makes it swell 1, 2, 4 or 8 times
+       a bar; with a sample, SIZE is a room behind it and WIDTH that room's width.
+     - *VOICE*: SIGNAL on the phrase as it is and on STUTTER is how much of its band is left
+       (all of it at full); TONE tilts RADIO. PLAIN now also puts SIGNAL at full.
+     **Audited again**, all twenty-five lane-and-model pairs that were changed, and the pad's
+     others: every knob is heard on every model, but GLIDE on BASS while its steps are one
+     note. The audit now listens to both sides, so WIDTH is heard where it was only missed.
+550. **What this changes.** The LEAD lane opens as it did (its DETUNE and SPACE, in CONFIG, now
+     open at nought: one dry 303). The rig as it opens is not quite the sound it was: the
+     bass's sine layer now passes a filter, and the reference render moved by 0.01 dB in level
+     (its difference from the old one is 30 dB under it, the filter's own delay). Saved sounds
+     that use any model above are changed, as you said they could be.
+
 ## Not verified
 
+- **Every knob heard (549)**: measured as a difference in the lane's sound, **not judged by
+  ear**: that a knob moves the sound does not say it moves it well. The amounts (a filter on an
+  FM bell, the organ's cents, the drone's octave, SIGNAL's band) are first settings to be
+  tuned by listening.
 - **TRANSITION (543)**: timed and measured in the checks, not heard, and not on your Mac. The
   riser and the impact are first guesses at sounds. ARM's waiting is driven by a timer of 15
   ms (as first built; see 547: a mute or a solo is now the audio thread's, a recall is not). Not tried with the clock led
