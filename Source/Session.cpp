@@ -24,6 +24,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
     ensureCleanSlate();
     modulesReady();
+    arrsReady();
     findLibraryId (idInFile);
     sign();
     if (useDisk) startTimer (3000);
@@ -2648,6 +2649,10 @@ int Session::sweepSamples()
     useRefs (engine.heldFiles ({ 2, 0, 1 }));
     use (engine.transFile (0)); use (engine.transFile (1));        // (TRANSITION's two)
     for (auto& p : arrangement) { use (p.inFile); use (p.hitFile); }  // (and each part's own)
+    for (auto& a : arrs)                                              // (and those of the arrangements kept that are not on the page)
+        if (a.id != arrAtId)
+            if (auto* parts = a.parts.getProperty ("parts", var()).getArray())
+                for (auto& pv : *parts) { use (pathOf (pv.getProperty ("inFile", "").toString())); use (pathOf (pv.getProperty ("hitFile", "").toString())); }
     for (auto& s : library)
         for (int l = 0; l < kLanes; ++l)
         {
@@ -4169,6 +4174,20 @@ var Session::stateVar()
     if (knobsAside.size() > 0) root->setProperty ("knobsAside", knobsAside);
     if (knobsUnseated.size() > 0) root->setProperty ("knobsUnseated", knobsUnseated);
     if (! arrangement.empty() || arrMore.size() > 0) root->setProperty ("arrangement", arrToVar());
+    if (arrs.size() > 1 || (arrs.size() == 1 && arrs[0].name != "ARRANGEMENT 1"))
+    {
+        // the arrangements kept: the one on the page as it stands now (it is "arrangement" too, for a build from before
+        // these), the others as they were left. (One alone that was never named is not written: it is "arrangement".)
+        juce::Array<var> av;
+        for (auto& a : arrs)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("id", a.id); o->setProperty ("name", a.name);
+            o->setProperty ("arrangement", a.id == arrAtId ? arrToVar() : a.parts);
+            av.add (var (o));
+        }
+        root->setProperty ("arrangements", av); root->setProperty ("arrangementAt", arrAtId);
+    }
     if (! stacks.empty())
     {
         juce::Array<var> sv;
@@ -4383,7 +4402,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 void Session::takeState (const var& root)
 {
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -4400,6 +4419,15 @@ void Session::takeState (const var& root)
     if (auto* lib = root.getProperty ("library", var()).getArray())
         for (auto& v : *lib) library.push_back (snapFromVar (v, engine));
     arrFromVar (root.getProperty ("arrangement", var()));
+    // (the arrangements kept; the one on the page is the file's "arrangement", whatever its own entry here says)
+    arrs.clear(); arrAtId = root.getProperty ("arrangementAt", "").toString();
+    if (auto* av = root.getProperty ("arrangements", var()).getArray())
+        for (auto& v : *av)
+        {
+            KeptArr a;
+            a.id = v.getProperty ("id", "").toString(); a.name = v.getProperty ("name", "").toString(); a.parts = v.getProperty ("arrangement", var());
+            if (a.id.isNotEmpty()) arrs.push_back (a);
+        }
     stacks.clear();
     if (auto* sv = root.getProperty ("stacks", var()).getArray())
         for (auto& v : *sv)
@@ -4578,6 +4606,7 @@ void Session::warmInserts()
                     if (const auto& refs = s.insFiles[(size_t) l][(size_t) k]; ! refs.empty())
                         engine.warmInsert (l, k, s.inserts[(size_t) l][(size_t) k], refs);
     modulesReady();
+    arrsReady();
 }
 
 // ------------------------------------------------------------------------- what it starts with

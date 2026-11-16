@@ -692,6 +692,22 @@ whole of it is one travel from the snapshot before.
     (another part, a knob, a stack): then it stays and the new one is numbered on.
   - **DROP** keeps nothing; the rig stays as you left it. Playing or printing the arrangement,
     or moving its parts, drops an edit too.
+- **Arrangements are kept, and nothing has to be saved.** The page always holds one of the
+  arrangements kept (its name is beside ARRANGEMENT on the strip; a session starts with
+  ARRANGEMENT 1): what you change on the page changes that one. Over the list at the right are
+  two plates, **SNAPSHOTS** (to take parts from) and **ARRANGEMENTS**, which shows those kept:
+  each a card with its number, its name (green: the one on the page) and what it holds. Press
+  one to choose it; the keys over the list are for the chosen one:
+  - **NEW**: an empty one, kept, and put on the page.
+  - **COPY**: the one on the page kept again under another name. The page holds the copy from
+    then on: change it and the first is as it was. (A track and its live version.)
+  - **LOAD** (or two quick presses on the card): the chosen one onto the page, whole. The one
+    that was there is kept as it stood. If the arrangement is playing, it stops.
+  - **RENAME**: type, then Return.
+  - **DELETE, held**: the chosen one goes; its snapshots stay in the library. If it is the one
+    on the page, the one before it takes the page. The last one cannot go: HOLD: CLEAR
+    empties it.
+  They are in the session file. A snapshot deleted from the library leaves their parts.
 - **TO STACK** keeps the arrangement as a stack in the macro designer's rack (TRACK, TRACK 2):
   its parts' snapshots in order, each with the keys its part has. On a stack knob the knob's
   turn is the track from first part to last. A part with a key out leans on what came before

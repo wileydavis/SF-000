@@ -230,6 +230,7 @@ bool Session::usedBesides (juce::int64 snap, int part) const
     const juce::String number (snap);
     for (auto& k : keptKnobs) if (juce::JSON::toString (k.knob, true).contains (number)) return true;
     for (auto& m : modules) if (m.id != moduleAt && juce::JSON::toString (m.knobs, true).contains (number)) return true;
+    for (auto& a : arrs) if (a.id != arrAtId && juce::JSON::toString (a.parts, true).contains (number)) return true;        // (an arrangement kept, not the one on the page)
     return false;
 }
 
@@ -430,6 +431,127 @@ void Session::arrTick()
         engine.setRunning (false);
         if (onChange) onChange();
     }
+}
+
+// ---------------------------------------------------------------------- the arrangements kept
+static juce::String arrsNamed (juce::String want, const std::vector<Session::KeptArr>& all, int but = -1)
+{
+    want = want.trim().toUpperCase().substring (0, 24);
+    if (want.isEmpty()) want = "ARRANGEMENT " + juce::String ((int) all.size() + 1);
+    auto taken = [&] (const juce::String& n) { for (int i = 0; i < (int) all.size(); ++i) if (i != but && all[(size_t) i].name == n) return true; return false; };
+    juce::String name = want;
+    for (int n = 2; taken (name); ++n) name = want.substring (0, 21) + " " + juce::String (n);
+    return name;
+}
+
+static juce::String arrsId()
+{
+    juce::String id ("arr");
+    juce::Random r;
+    for (int i = 0; i < 13; ++i) id << juce::String::charToString ((juce::juce_wchar) "abcdefghijklmnopqrstuvwxyz0123456789"[r.nextInt (36)]);
+    return id;
+}
+
+int Session::arrsIndex() const
+{
+    for (int i = 0; i < (int) arrs.size(); ++i) if (arrs[(size_t) i].id == arrAtId) return i;
+    return -1;
+}
+
+juce::String Session::arrsName() const { const int i = arrsIndex(); return i >= 0 ? arrs[(size_t) i].name : juce::String(); }
+
+void Session::arrsReady()
+{
+    if (arrsIndex() >= 0) return;
+    // (a session from before them, or a new one: the arrangement it has is its first)
+    KeptArr a;
+    a.id = arrsId(); a.name = arrsNamed ("ARRANGEMENT 1", arrs);
+    a.parts = arrToVar();
+    arrs.push_back (a);
+    arrAtId = a.id;
+}
+
+int Session::arrsCopy (const juce::String& name)
+{
+    arrsReady();
+    const int was = arrsIndex();
+    arrs[(size_t) was].parts = arrToVar();              // (the one it is a copy of, kept as it stands)
+    KeptArr a;
+    a.id = arrsId();
+    a.name = arrsNamed (name.isNotEmpty() ? name : arrs[(size_t) was].name, arrs);
+    a.parts = arrToVar();                               // (its own: not the same object as the first's)
+    arrs.push_back (a);
+    arrAtId = a.id;
+    touch();
+    if (onChange) onChange();
+    return (int) arrs.size() - 1;
+}
+
+int Session::arrsNew (const juce::String& name)
+{
+    arrsReady();
+    KeptArr a;
+    a.id = arrsId(); a.name = arrsNamed (name, arrs);
+    arrs.push_back (a);                                 // (its parts: none)
+    if (! arrsLoad ((int) arrs.size() - 1)) { arrs.pop_back(); return -1; }
+    return (int) arrs.size() - 1;
+}
+
+bool Session::arrsLoad (int index)
+{
+    arrsReady();
+    const int was = arrsIndex();
+    if (index < 0 || index >= (int) arrs.size() || index == was || print != nullptr) return false;
+    arrs[(size_t) was].parts = arrToVar();              // (the one on the page, kept as it stands)
+    if (arrOn) arrStop();                               // (what plays is the page's: it stops, as HOLD: CLEAR's would)
+    if (arrEdit >= 0) arrEditDrop();
+    const KeptArr a = arrs[(size_t) index];
+    arrFromVar (a.parts);
+    arrAtId = a.id;
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
+void Session::arrsRename (int index, const juce::String& name)
+{
+    if (index < 0 || index >= (int) arrs.size() || name.trim().isEmpty()) return;
+    arrs[(size_t) index].name = arrsNamed (name, arrs, index);
+    touch();
+    if (onChange) onChange();
+}
+
+bool Session::arrsRemove (int index)
+{
+    arrsReady();
+    if (index < 0 || index >= (int) arrs.size() || arrs.size() < 2) return false;
+    // (the one on the page: its neighbour takes the page first, so the page is never nobody's)
+    if (index == arrsIndex() && ! arrsLoad (index > 0 ? index - 1 : 1)) return false;
+    arrs.erase (arrs.begin() + index);
+    sweepSamples();                                     // (the lead-ins and hits only its parts held go with it)
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
+juce::String Session::arrsSays (int index) const
+{
+    if (index < 0 || index >= (int) arrs.size()) return {};
+    const var v = index == arrsIndex() ? arrToVar() : arrs[(size_t) index].parts;
+    int n = 0, bars = 0;
+    juce::StringArray names;
+    if (auto* parts = v.getProperty ("parts", var()).getArray())
+        for (auto& pv : *parts)
+            if (const auto* sn = findSnap ((juce::int64) pv.getProperty ("snap", 0)))
+            {
+                ++n; bars += juce::jlimit (1, kArrMaxBars, (int) pv.getProperty ("bars", 8));
+                if (names.size() < 12) names.add (sn->name);
+            }
+    if (n == 0) return "NO PARTS YET";
+    const int secs = juce::roundToInt ((double) bars * 4.0 * 60.0 / engine.tempo());
+    juce::String t;
+    t << n << (n == 1 ? " PART, " : " PARTS, ") << bars << (bars == 1 ? " BAR, " : " BARS, ") << secs / 60 << ":" << juce::String (secs % 60).paddedLeft ('0', 2) << ": " << names.joinIntoString (" > ");
+    return t;
 }
 
 // --------------------------------------------------------------------------------- the file

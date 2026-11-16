@@ -117,6 +117,8 @@ public:
     static bool testIsPlace (const TestHit& h, int k) { return h.kind == hKnobCard && h.a == k; }
     static bool testIsPickKey (const TestHit& h, int index, int part) { return h.kind == hPickKey && h.a == index && h.b == part; }
     static bool testIsColPut (const TestHit& h) { return h.kind == hColPut; }
+    static bool testIsArrShelf (const TestHit& h, int what, int index) { return what == 0 ? h.kind == hArrTab && h.a == index : what == 1 ? h.kind == hArrsCard && h.a == index : h.kind == hArrsKey && h.a == index; }     // 0 a tab, 1 a card, 2 a key
+    int testArrChosen() const { return selArr; }
     void testHand (int index, juce::uint32 parts) { handId = index >= 0 && index < (int) ses.library.size() ? ses.library[(size_t) index].id : 0; handParts = parts & Session::kAllLanes; }
     static bool testIsKeptCard (const TestHit& h, int index) { return h.kind == hKeptCard && h.a == index; }
     static juce::Point<float> testPlaceAt (int k) { return placeRect (k).getCentre().translated (0.0f, 80.0f); }       // (on the card, clear of its knob)
@@ -201,6 +203,7 @@ public:
     double testSendMs() const { return sendMs; }
     void testRenameKnob() { act (aRenameKnob); }
     void testShowRack (bool on) { rackList = on; knobList = false; }
+    void testShowArrs (bool on) { arrShelf = on; if (on) selArr = ses.arrsIndex(); }       // (the arrangement page's shelf: the arrangements kept)
     void testShowKept (bool on) { knobList = on; if (on) rackList = false; }
     static bool testIsRackKeep (const TestHit& h) { return h.kind == hRackKeep; }
     void testLearn (int what) { act (what == 0 ? aLearn : what == 1 ? aLearnKeep : aLearnDrop); }      // LEARN, KEEP, DROP
@@ -245,6 +248,9 @@ private:
                    hColPut,         // the column, a stack of the shelf open: ON A KNOB (the first stack knob that holds nothing takes it)
                    hKeptCard,       // a kept knob's card: carried onto a place
                    hArrKey,         // a key on a part of the arrangement (a: the part; b: the part of the rig)
+                   hArrTab,         // the arrangement's shelf: which is beside the parts (a: 0 the snapshots, to take from; 1 the arrangements kept)
+                   hArrsCard,       // an arrangement kept (a: which): chosen; pressed twice quickly, put on the page
+                   hArrsKey,        // the keys over them, for the chosen one (a: 0 NEW, 1 COPY, 2 LOAD, 3 RENAME, 4 DELETE, held)
                    hArrTrans };     // a part's TRANSITION plate (a: the part)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain,
@@ -373,6 +379,9 @@ private:
     juce::String arrangeSig() const;        // what the arrangement's page shows that moves by itself: when it differs, the page is drawn again
     juce::String arrSig;
     int selPart = -1, arrScroll = 0;
+    bool arrShelf = false;                      // the arrangement page's shelf shows the arrangements kept (false: the snapshots, to take from)
+    int selArr = -1, arrsScroll = 0;            // the one chosen among them
+    R selArrName;                               // where its name is drawn (RENAME types over it)
     bool oneLine = false;               // legends drawn now stay on one line (there is no room on the plate under them for two)
     std::vector<R> legendRects;         // where every legend was printed, at the last record of the parts (the checks)
     bool arrLit = false;

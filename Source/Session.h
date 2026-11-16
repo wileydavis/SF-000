@@ -450,6 +450,23 @@ public:
     int arrPart() const                 { return arrOn ? arrAt : -1; }      // the part playing (-1: none yet, or not playing)
     double arrPos() const;              // where it is, in beats from the arrangement's start (below 0: it has not come in yet)
     void arrTick();                     // (the timer's while it plays; the checks')
+    // ---- the arrangements kept. The one on the page IS one of them (arrAtId), as the module in the chassis is one of the
+    // modules kept: what is changed on the page changes it, and nothing is kept by hand. NEW makes another, empty, and puts
+    // it on the page; COPY keeps the one on the page again under another name, and the page holds the copy; LOAD puts
+    // another on the page, whole, and the one that was there is kept as it stood. A snapshot that has left the library has
+    // left every arrangement's parts, when that arrangement is next on the page. No network is asked.
+    struct KeptArr { juce::String id, name; juce::var parts; };      // parts: an arrangement as the session file keeps one (arrToVar)
+    std::vector<KeptArr> arrs;
+    juce::String arrAtId;                                   // the id of the one on the page
+    void arrsReady();                                       // there is at least one, and the one on the page is among them (a session from before them: its arrangement is ARRANGEMENT 1)
+    int arrsIndex() const;                                  // the place among `arrs` of the one on the page
+    juce::String arrsName() const;
+    int arrsNew (const juce::String& name = {});            // an empty one, kept, and put on the page. Its place
+    int arrsCopy (const juce::String& name = {});           // the one on the page kept again under another name: the page holds the copy from then on. Its place
+    bool arrsLoad (int index);                              // that one onto the page, whole. False: no such one, it is the one there, or a print is being made
+    void arrsRename (int index, const juce::String&);
+    bool arrsRemove (int index);                            // out of those kept. The one on the page: the one before it (or after) takes the page first. False: it is the only one
+    juce::String arrsSays (int index) const;                // what it holds, in a line
     // ---- TRANSITION: a lead-in that ends on a bar line and a hit that starts on it (Engine::trans), fired by hand.
     // FIRE sets them off for the next line (every 4, 8 or 16 bars). ARM: lit, the next recall, mute or solo does not
     // happen at once: it sets the transition off and happens on the line the transition lands on, with whatever else

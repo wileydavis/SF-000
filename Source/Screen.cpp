@@ -675,6 +675,23 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                    + (h.a < (int) ses.arrangement.size() && (h.b == 0 ? ses.arrangement[(size_t) h.a].inFile : ses.arrangement[(size_t) h.a].hitFile).isNotEmpty()
                         ? " ITS OWN: " + juce::File (h.b == 0 ? ses.arrangement[(size_t) h.a].inFile : ses.arrangement[(size_t) h.a].hitFile).getFileName().toUpperCase() + "." : String());
             break;
+        case hArrTab:
+            t.title = h.a == 0 ? "SNAPSHOTS" : "ARRANGEMENTS";
+            body = h.a == 0 ? "THE SNAPSHOTS, TO TAKE PARTS FROM: PRESS ONE TO HEAR IT; ITS ADD PUTS IT AFTER THE CHOSEN PART."
+                            : "THE ARRANGEMENTS KEPT. THE ONE ON THE PAGE (GREEN) IS ALWAYS ONE OF THEM: WHAT IS CHANGED ON THE PAGE CHANGES IT, AND NOTHING HAS TO BE SAVED. PRESS ONE TO CHOOSE IT; THE KEYS OVER THE LIST ARE FOR THE CHOSEN ONE.";
+            break;
+        case hArrsCard:
+            t.title = "AN ARRANGEMENT KEPT";
+            body = "PRESSED: THE CHOSEN ONE. TWICE, QUICKLY: PUT ON THE PAGE (AS LOAD). THE ONE THAT WAS ON THE PAGE IS KEPT AS IT STOOD.";
+            break;
+        case hArrsKey:
+            t.title = h.a == 0 ? "NEW" : h.a == 1 ? "COPY" : h.a == 2 ? "LOAD" : h.a == 3 ? "RENAME" : "HOLD: DELETE";
+            body = h.a == 0 ? "A NEW ARRANGEMENT WITH NO PARTS, KEPT, AND PUT ON THE PAGE. THE ONE THAT WAS THERE IS KEPT AS IT STOOD."
+                 : h.a == 1 ? "KEEPS THE ARRANGEMENT ON THE PAGE AGAIN UNDER ANOTHER NAME. THE PAGE HOLDS THE COPY FROM THEN ON: CHANGE IT, AND THE FIRST IS AS IT WAS."
+                 : h.a == 2 ? "PUTS THE CHOSEN ARRANGEMENT ON THE PAGE, WHOLE. THE ONE THAT WAS THERE IS KEPT AS IT STOOD. IF THE ARRANGEMENT IS PLAYING, IT STOPS."
+                 : h.a == 3 ? "THE CHOSEN ARRANGEMENT'S NAME: TYPE, THEN RETURN."
+                 : "HELD: DELETES THE CHOSEN ARRANGEMENT. ITS SNAPSHOTS STAY IN THE LIBRARY. THE ONE ON THE PAGE: THE ONE BEFORE IT TAKES THE PAGE. NOT THE ONLY ONE (HOLD: CLEAR EMPTIES THAT).";
+            break;
         case hArrKey:
             t.title = "A PART OF THE RIG";
             body = "BLACK: WHEN THE ARRANGEMENT REACHES THIS PART, THIS PART OF THE RIG COMES FROM ITS SNAPSHOT. AN EMPTY FRAME: IT STAYS AS IT IS THEN. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. N IS THE PART'S NOTES: BLACK, EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING IN THE SNAPSHOT; EMPTY, THE SEQUENCERS STAY AS THEY ARE. (THE LIBRARY'S NOTES KEY DOES NOT DECIDE THIS: IT IS FOR A RECALL MADE BY HAND.) HEARD AT ONCE WHILE THE PART IS IN THE HEADPHONES. PRINT TAKES IT THE SAME WAY.";
@@ -2971,26 +2988,98 @@ void Screen::drawArrange (G& g)
         plate (g, x0 + 186, y0 + 76, "IN", fLbl, 9, p.transIn == 2 ? col::green : p.transIn == 1 ? col::amber : col::putty, col::black, 18);
         plate (g, x0 + 225, y0 + 76, "HIT", fLbl, 6, p.transHit == 2 ? col::green : p.transHit == 1 ? col::amber : col::putty, col::black, 18);
     }
-    // the library, to take from
-    const float top = drawFind (g, 1151.0f, 554.0f, 78.0f);
-    const auto list = listed();
-    const int lib = (int) list.size();
-    libScroll = juce::jlimit (0, std::max (0, (lib - 1) / 2 - 10), libScroll);
-    for (int q = 0; q < 22; ++q)
+    // The shelf, beside the parts: two plates over it. SNAPSHOTS: the library, to take parts from. ARRANGEMENTS: the
+    // arrangements kept, of which the one on the page is always one (what is changed here changes it).
     {
-        const int at = libScroll * 2 + q;
-        if (at >= lib) break;
-        const int i = list[(size_t) at];
-        const R cr (1151.0f + (float) (q % 2) * 282, top + (float) (q / 2) * 74, 272, 66);
-        drawSnapCard (g, ses.library[(size_t) i], i, cr, false, hPick);
-        hit (R (cr.getRight() - 6 - 44, cr.getY() + 6, 44, 24), hPickAdd, i, 0);
+        float tx = 1151.0f;
+        auto tab = [&] (const String& t, int which, bool on)
+        {
+            const float w = std::ceil (tw (fNote, t)) + 14;
+            if (vis (g, R (tx, 78.0f, w, 26))) plate (g, tx, 78.0f, t, fNote, 7, on ? col::black : col::white, on ? col::lit : col::black);
+            hit (R (tx, 78.0f, w, 26), hArrTab, which, 0);
+            tx += w + 2;
+        };
+        tab ("SNAPSHOTS", 0, ! arrShelf);
+        tab ("ARRANGEMENTS " + String ((int) ses.arrs.size()), 1, arrShelf);
+    }
+    selArrName = {};
+    if (! arrShelf)
+    {
+        // the library, to take from
+        const float top = drawFind (g, 1151.0f, 554.0f, 110.0f);
+        const auto list = listed();
+        const int lib = (int) list.size(), libRows = (int) ((974.0f - top) / 74.0f);
+        libScroll = juce::jlimit (0, std::max (0, (lib - 1) / 2 - (libRows - 1)), libScroll);
+        for (int q = 0; q < libRows * 2; ++q)
+        {
+            const int at = libScroll * 2 + q;
+            if (at >= lib) break;
+            const int i = list[(size_t) at];
+            const R cr (1151.0f + (float) (q % 2) * 282, top + (float) (q / 2) * 74, 272, 66);
+            drawSnapCard (g, ses.library[(size_t) i], i, cr, false, hPick);
+            hit (R (cr.getRight() - 6 - 44, cr.getY() + 6, 44, 24), hPickAdd, i, 0);
+        }
+    }
+    else
+    {
+        // the arrangements kept: their keys, for the chosen one, then each as a card: its number, its name (green: the one on
+        // the page) and what it holds
+        const int na = (int) ses.arrs.size(), here = ses.arrsIndex(), rows = 11;
+        selArr = juce::jlimit (0, std::max (0, na - 1), selArr < 0 ? here : selArr);
+        arrsScroll = juce::jlimit (0, std::max (0, na - rows), arrsScroll);
+        {
+            static const char* const names[] = { "NEW", "COPY", "LOAD", "RENAME", "DELETE" };
+            float kx = 1151.0f;
+            for (int k = 0; k < 5; ++k)
+            {
+                const float w = std::ceil (tw (fNote, names[k])) + 16;
+                const R kr (kx, 110.0f, w, 24);
+                // (LOAD: another than the one on the page. DELETE: held; not the only one)
+                const bool can = k == 2 ? selArr != here : k == 4 ? na > 1 : true;
+                const bool going = k == 4 && mouseIsDown && drag.kind == hArrsKey && drag.a == 4 && ! drag.fired;
+                if (vis (g, kr))
+                {
+                    if (can) { window (g, kr, going ? col::red : col::white); text (g, names[k], kr, fNote, going ? col::lit : col::black); }
+                    else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, names[k], kr, fNote, tone (col::black).withAlpha (0.45f)); }
+                }
+                if (can) hit (kr, hArrsKey, k, 0);
+                kx += w + 4;
+            }
+        }
+        for (int row = 0; row < rows; ++row)
+        {
+            const int i = arrsScroll + row;
+            if (i >= na) break;
+            const auto& a = ses.arrs[(size_t) i];
+            const R r (1151.0f, 142.0f + (float) row * 74, 554, 66);
+            hit (r, hArrsCard, i, 0);
+            const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+            const String num (i + 1);
+            const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+            if (i == selArr) selArrName = R (x0 + wTag, y0, 300, 24);
+            if (! vis (g, r)) continue;
+            card (g, r, i == selArr);
+            tag (g, R (x0, y0, wTag, 24), num);
+            const float wn = plate (g, x0 + wTag, y0, a.name, fLegend, 8, i == here ? col::green : col::white, col::black, 24);
+            if (i == here) text (g, "ON THE PAGE", R (x0 + wTag + wn + 8, y0, 120, 24), fLbl, col::black, juce::Justification::centredLeft);
+            g.setColour (tone (col::black)); g.setFont (fLbl);
+            g.drawFittedText (ses.arrsSays (i), juce::Rectangle<int> ((int) x0, (int) y0 + 28, 542, 28), juce::Justification::topLeft, 2, 0.8f);
+        }
+        if (na > rows && vis (g, R (1151, 956, 554, 20)))
+            text (g, String (arrsScroll + 1) + " TO " + String (std::min (na, arrsScroll + rows)) + " OF " + String (na) + " (THE WHEEL)", R (1151, 958, 554, 16), fNote, col::black, juce::Justification::centredLeft);
     }
     const R strip (23, 980, 1682, 110);
     panel (g, strip, col::putty);
     const float x0 = strip.getX() + 5, y0 = strip.getY() + 5, ky = y0 + 40;
     const bool pr = ses.printing(), play = ses.arrPlaying();
     const juce::ScopedValueSetter<bool> onOneLine (oneLine, true);      // (no room under these keys for a second line)
-    title (g, x0, y0, "ARRANGEMENT");
+    {
+        // (which of the arrangements kept this is)
+        const float wt = title (g, x0, y0, "ARRANGEMENT");
+        String nm = ses.arrsName();
+        while (nm.length() > 3 && std::ceil (tw (fNote, nm)) + 12.0f > 820.0f - wt) nm = nm.dropLastCharacters (1);
+        if (nm.isNotEmpty()) plate (g, x0 + wt + 2, y0, nm, fNote, 6, col::white, col::black);
+    }
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
     const bool editing = ses.arrEdit >= 0;
@@ -3363,6 +3452,22 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 recNoteAt = juce::Time::getMillisecondCounter();
             }
             break;
+        case hArrTab:   arrShelf = h->a == 1; if (arrShelf) selArr = ses.arrsIndex(); break;
+        case hArrsCard: selArr = h->a; break;
+        case hArrsKey:
+        {
+            auto says = [this] (const String& t) { recNote = t; recNoteAt = juce::Time::getMillisecondCounter(); };
+            if (h->a == 0) { selArr = ses.arrsNew(); selPart = -1; if (selArr >= 0) says ("A NEW ARRANGEMENT, ON THE PAGE: " + ses.arrsName()); else says ("NOT WHILE IT PRINTS"); }
+            else if (h->a == 1) { selArr = ses.arrsCopy(); says ("KEPT AGAIN AS " + ses.arrsName() + ": THE PAGE HOLDS THE COPY"); }
+            else if (h->a == 2) { if (ses.arrsLoad (selArr)) { selPart = -1; arrScroll = 0; says (ses.arrsName() + " IS ON THE PAGE"); } else if (ses.printing()) says ("NOT WHILE IT PRINTS"); }
+            else if (h->a == 3)
+            {
+                if (selArr >= 0 && selArr < (int) ses.arrs.size() && ! selArrName.isEmpty())
+                    beginEdit (selArrName, ses.arrs[(size_t) selArr].name, [this, i = selArr] (String t) { ses.arrsRename (i, t); });
+                return;
+            }
+            break;          // (DELETE is held: see the timer)
+        }
         case hArrPart:
         {
             // a part of the arrangement pressed: it is the chosen one, and is heard in the headphones with the parts of the rig it takes; pressed again, it stops
@@ -3601,6 +3706,7 @@ void Screen::mouseUp (const juce::MouseEvent& e)
     }
     mouseIsDown = false;
     if ((drag.kind == hRackOut || drag.kind == hKeptOut) && ! drag.fired) { recNote = "HOLD OUT TO TAKE IT OUT OF THOSE KEPT"; recNoteAt = juce::Time::getMillisecondCounter(); }
+    if (drag.kind == hArrsKey && drag.a == 4 && ! drag.fired) { recNote = "HOLD DELETE TO DELETE THE CHOSEN ARRANGEMENT"; recNoteAt = juce::Time::getMillisecondCounter(); }
     if (drag.kind == hHold) ses.userSet (drag.a, 0.0f);
     if (drag.kind == hSetup && drag.a < (int) cfgParams.size() && cfgParams[(size_t) drag.a].kind == Kind::Hold) eng.setSetup (cfg, cfgParams[(size_t) drag.a].id, 0.0f);
     if (drag.kind == hDisplay) if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouseUp();
@@ -3649,6 +3755,11 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
         else if (h->kind == hCard && page == pLibrary) act (aRecallCue);    // (the library: two quick presses take it to the set)
+        else if (h->kind == hArrsCard)                                      // (an arrangement kept: two quick presses put it on the page)
+        {
+            selArr = h->a;
+            if (ses.arrsLoad (h->a)) { selPart = -1; arrScroll = 0; recNote = ses.arrsName() + " IS ON THE PAGE"; recNoteAt = juce::Time::getMillisecondCounter(); }
+        }
         else if (h->kind == hArrBars) ses.arrSet (h->a, 8, -1);            // (eight bars; cut)
         else if (h->kind == hArrMorph) ses.arrSet (h->a, -1, 0);
         else if (h->kind == hSetup && h->a < (int) cfgParams.size())
@@ -3663,6 +3774,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
     if (page == pArrange && where (e).x < 1146.0f) { arrScroll = std::max (0, arrScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }      // (its parts; the library beside them, below)
+    if (page == pArrange && arrShelf) { arrsScroll = std::max (0, arrsScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }      // (the arrangements kept)
     if (page == pMacros && columnShown() && where (e).x >= 1146.0f && where (e).x < 1428.0f)
     {
         // (over the column: the column moves; over the library beside it, the library)
@@ -4481,6 +4593,16 @@ void Screen::timerCallback()
         drag.fired = true;
         const String gone = selMod >= 0 && selMod < (int) ses.modules.size() ? ses.modules[(size_t) selMod].name : String();
         if (ses.moduleRemove (selMod)) { selMod = ses.moduleIndex(); recNote = gone + " IS OUT OF THE MODULES KEPT"; recNoteAt = juce::Time::getMillisecondCounter(); }
+        repaint();
+    }
+    if (mouseIsDown && drag.kind == hArrsKey && drag.a == 4 && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)
+    {
+        // an arrangement's DELETE, held: it goes (the one on the page: its neighbour takes the page first)
+        drag.fired = true;
+        const String gone = selArr >= 0 && selArr < (int) ses.arrs.size() ? ses.arrs[(size_t) selArr].name : String();
+        if (ses.arrsRemove (selArr)) { selArr = ses.arrsIndex(); selPart = -1; recNote = gone + " IS DELETED. ON THE PAGE: " + ses.arrsName(); }
+        else recNote = ses.printing() ? "NOT WHILE IT PRINTS" : "IT IS THE ONLY ONE: HOLD: CLEAR EMPTIES IT";
+        recNoteAt = juce::Time::getMillisecondCounter();
         repaint();
     }
     if (mouseIsDown && (drag.kind == hRackOut || drag.kind == hKeptOut) && ! drag.fired && juce::Time::getMillisecondCounter() - drag.t0 > 700)

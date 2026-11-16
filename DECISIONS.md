@@ -3595,7 +3595,43 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      with NEW, COPY, LOAD, RENAME and HOLD: DELETE; (5) one word for one act: LOAD, KEEP,
      REMOVE (one thing out of what is on the bench), HOLD: DELETE (a kept thing, for good).
 
+## Arrangements kept; the standard, first part (Nov 16, 10:19): sixty-ninth build
+
+586. **You**, 10:19, to whether modules are a sixth object and whether the tab should say
+     CHIPS: "1. ah yes, Modules would be another object. Esentially a loadable Snapshot Module
+     rack. 2. sounds good" 10:20 "what do the RBK keys represent again?" (Answered: R the two
+     returns, the DUB delay and the SPACE reverb, with their CONFIG; B the drum bus, and
+     POCKETS' four whole-rig knobs travel with it; K the KEY, the only thing of the master a
+     snapshot holds.) 10:22 "and the more 3d the objects feel the better. keeping with the
+     instrument 3d concept."
+587. *How I read that:* 585 stands, with six kinds of thing kept: CHIPS, STACKS, MACRO KNOBS,
+     STACK KNOBS, MODULES, ARRANGEMENTS. You did not say yes to its points one by one; you
+     answered what it left open and went on, and I am building it. **It is built in parts,
+     each one whole and usable**, so that you are never left with half a page moved:
+     this build is arrangements kept (588), from the arrangement view. Next: the library's six
+     tabs (where arrangements are browsed from the library too); then the same four page keys
+     and the same shelf on MACROS and ARRANGE, and the words; then the objects drawn as things.
+588. **Arrangements are kept as modules are** (585's fourth point). The page always holds one
+     of the arrangements kept: what is changed on the page changes it, and there is no save.
+     A session starts with ARRANGEMENT 1, which is whatever arrangement it had. On the
+     arrangement page the list at the right has two plates, SNAPSHOTS and ARRANGEMENTS; under
+     ARRANGEMENTS, each kept one is a card (its name green if it is on the page, and what it
+     holds), with NEW, COPY, LOAD, RENAME and DELETE (held) over them for the chosen one. Two
+     quick presses on a card load it. LOAD stops the arrangement if it plays and drops an EDIT.
+     *Mine: DELETE on the one on the page hands the page to the one before it, and the last
+     one cannot go (a module in the chassis cannot be taken out at all: an arrangement you
+     are looking at is the one you are most likely to want gone). COPY leaves you on the
+     copy, as a module's does.* The strip says which one is on the page.
+     - Kept in the session file beside "arrangement", which is still the one on the page: a
+       build from before these opens the file, plays that one, and carries the rest.
+     - A snapshot that only a kept arrangement holds is in use (EDIT's KEEP does not take it);
+       the lead-ins and hits of its parts are kept from the sweep of unused samples.
+
 ## Not verified
+
+- **Arrangements kept (588)** are checked on the session and the drawn page. Not on the Mac,
+  and not with an arrangement of yours: the first time this build opens your session, the
+  arrangement you have is ARRANGEMENT 1 and nothing else should differ.
 
 - **N on a stack (582) and the knob's tag (583)** are checked on the session and on the drawn
   tag. **Not on the E16, not on the 3D stage, and not by ear**: whether notes on arrival is

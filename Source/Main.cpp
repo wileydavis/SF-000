@@ -1278,6 +1278,66 @@ static bool grainCheck (juce::String& said)
     return ok;
 }
 
+// The arrangements kept: the one on the page is always one of them; NEW, COPY, LOAD, RENAME, and out of them; the session
+// file, and one from before them.
+static void arrsKeptTest (int& bad)
+{
+    using namespace sf0;
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    const auto a = ses.library[1].id, b = ses.library[2].id, c = ses.library[3].id;
+    // as it comes: one, on the page, and a file that says nothing new while it is the only one and has no name of its own
+    const bool one = ses.arrs.size() == 1 && ses.arrsIndex() == 0 && ses.arrsName() == "ARRANGEMENT 1" && ses.arrsSays (0) == "NO PARTS YET";
+    ses.arrAdd (a); ses.arrAdd (b); ses.arrSet (1, 16, 5);
+    const bool says = ses.arrsSays (0).startsWith ("2 PARTS, 24 BARS") && ! ses.stateVar().hasProperty ("arrangements");
+    // COPY: kept again under another name; the page holds the copy, and what is changed on it leaves the first as it was
+    const int cp = ses.arrsCopy ("live");
+    const auto d = ses.take(), spare = ses.take();                  // (two snapshots nothing else holds: one goes into this arrangement)
+    ses.arrAdd (c); ses.arrAdd (d);
+    const bool copied = cp == 1 && ses.arrsIndex() == 1 && ses.arrsName() == "LIVE" && ses.arrangement.size() == 4 && ses.arrsSays (0).startsWith ("2 PARTS") && ses.arrsSays (1).startsWith ("4 PARTS");
+    // NEW: an empty one, on the page
+    const int nw = ses.arrsNew();
+    const bool fresh = nw == 2 && ses.arrsIndex() == 2 && ses.arrangement.empty() && ses.arrsName() == "ARRANGEMENT 3";
+    // a snapshot only an arrangement that is not on the page holds is still in use (EDIT's KEEP must not take it)
+    const bool held = ses.usedBesides (d, -1) && ! ses.usedBesides (spare, -1);
+    // LOAD: whole, with its bars and its morph; the one that was on the page is kept as it stood; the one there cannot be loaded again
+    const bool loaded = ses.arrsLoad (0) && ses.arrangement.size() == 2 && ses.arrangement[1].bars == 16 && ses.arrangement[1].morph == 5 && ! ses.arrsLoad (0) && ! ses.arrsLoad (7);
+    // while it plays: LOAD stops it
+    ses.arrPlay (0);
+    const bool wasPlaying = ses.arrPlaying();
+    const bool stops = ses.arrsLoad (1) && wasPlaying && ! ses.arrPlaying() && ses.arrangement.size() == 4 && ses.arrangement[2].snap == c;
+    e.setRunning (false);
+    // RENAME: no two of a name
+    ses.arrsRename (0, "live");
+    const bool named = ses.arrs[0].name == "LIVE 2" && ses.arrs[1].name == "LIVE";
+    // the file: all three, which is on the page, each as it was left
+    Engine e2; e2.prepare (48000.0, 256);
+    Session s2 (e2, false);
+    s2.takeState (ses.stateVar());
+    bool filed = s2.arrs.size() == 3 && s2.arrsIndex() == 1 && s2.arrsName() == "LIVE" && s2.arrangement.size() == 4 && s2.arrs[2].name == "ARRANGEMENT 3" && s2.arrsSays (2) == "NO PARTS YET";
+    filed = filed && s2.arrsLoad (0) && s2.arrangement.size() == 2 && s2.arrangement[1].bars == 16 && s2.arrangement[1].morph == 5;
+    // a file from before them: its arrangement is the first, and the only one
+    auto old = ses.stateVar();
+    old.getDynamicObject()->removeProperty ("arrangements"); old.getDynamicObject()->removeProperty ("arrangementAt");
+    Engine e3; e3.prepare (48000.0, 256);
+    Session s3 (e3, false);
+    s3.takeState (old);
+    const bool before = s3.arrs.size() == 1 && s3.arrsName() == "ARRANGEMENT 1" && s3.arrangement.size() == 4 && s3.arrsSays (0).startsWith ("4 PARTS");
+    // a snapshot that leaves the library leaves a kept arrangement's parts, when that one is next on the page
+    ses.remove (b);
+    const bool gone = ses.arrangement.size() == 3 && ses.arrsLoad (0) && ses.arrangement.size() == 1 && ses.arrangement[0].snap == a;
+    // out of them: the one on the page hands the page to its neighbour first; the last one stays
+    const bool out1 = ses.arrsRemove (0) && ses.arrs.size() == 2 && ses.arrsIndex() == 0 && ses.arrsName() == "LIVE" && ses.arrangement.size() == 3;
+    const bool out2 = ses.arrsRemove (1) && ses.arrs.size() == 1 && ! ses.arrsRemove (0) && ses.arrsName() == "LIVE";
+    const bool ok = one && says && copied && fresh && held && loaded && stops && named && filed && before && gone && out1 && out2;
+    if (! ok) ++bad;
+    std::printf ("  %s: arrangements are kept as modules are: the one on the page is always one of them; COPY keeps it again and the page holds the copy; NEW is an empty one on the page; LOAD puts another there whole "
+                 "(stopping it if it plays) and keeps the one that was there as it stood; no two of a name; a snapshot one of them holds is in use; they are in the session file, a file from before has its "
+                 "arrangement as the first, and one alone and unnamed is written as before; a deleted snapshot leaves their parts; the one on the page, taken out, hands the page on, and the last one stays\n", ok ? "ok  " : "FAIL");
+    if (! ok) std::printf ("    (one %d says %d copied %d fresh %d held %d loaded %d stops %d named %d filed %d before %d gone %d out %d %d)\n", (int) one, (int) says, (int) copied, (int) fresh, (int) held, (int) loaded, (int) stops,
+                           (int) named, (int) filed, (int) before, (int) gone, (int) out1, (int) out2);
+}
+
 static void stackNotesTest (int& bad)
 {
     using namespace sf0;
@@ -1370,7 +1430,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -3678,6 +3738,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     }
 
     stackNotesTest (bad);
+    arrsKeptTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -6117,6 +6178,38 @@ static int uiTest()
         }
         check (stacked, "TO STACK keeps the arrangement as a stack in the rack: its parts' snapshots in order, each with the keys its part has, and says which parts lean on what came before");
         if (! stacked) std::printf ("        (stacks %d of %d, note: %s)\n", (int) ses.stacks.size(), (int) stacksWas, ses.printNote.toRawUTF8());
+        {
+            // The arrangement page's shelf: the plate ARRANGEMENTS shows those kept, with their keys. COPY keeps the one on the
+            // page again (the page holds the copy); NEW is an empty one; a card pressed is the chosen one and LOAD puts it on
+            // the page; DELETE, pressed, leaves it and says to hold; held, it goes, and the page is its neighbour's.
+            auto shelf = [&] (int what, int i) { for (auto& h : sc.testHits()) if (Screen::testIsArrShelf (h, what, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            const auto partsWere = ses.arrangement.size();
+            const bool tabs = shelf (0, 0).x > 0.0f && shelf (0, 1).x > 0.0f && shelf (1, 0).x < 0.0f;
+            click (shelf (0, 1)); draw();
+            const bool up = shelf (1, 0).x > 0.0f && shelf (2, 0).x > 0.0f && shelf (2, 2).x < 0.0f && shelf (2, 4).x < 0.0f && ses.arrs.size() == 1;      // (one alone: no LOAD, no DELETE)
+            click (shelf (2, 1)); draw();
+            const bool copied = ses.arrs.size() == 2 && ses.arrsIndex() == 1 && ses.arrangement.size() == partsWere && sc.testArrChosen() == 1 && sc.testBarNote().contains ("THE PAGE HOLDS THE COPY");
+            click (shelf (2, 0)); draw();
+            const bool fresh = ses.arrs.size() == 3 && ses.arrsIndex() == 2 && ses.arrangement.empty() && sc.testBarNote().contains ("A NEW ARRANGEMENT");
+            click (shelf (1, 0)); draw();
+            const bool chosen = sc.testArrChosen() == 0 && shelf (2, 2).x > 0.0f && ses.arrsIndex() == 2;
+            click (shelf (2, 2)); draw();
+            const bool loaded = ses.arrsIndex() == 0 && ses.arrangement.size() == partsWere && sc.testBarNote().contains ("IS ON THE PAGE");
+            click (shelf (1, 2)); draw();
+            click (shelf (2, 4)); draw();
+            const bool stays = ses.arrs.size() == 3 && sc.testBarNote().contains ("HOLD DELETE");
+            { const auto at = shelf (2, 4); sc.mouseDown (ev (at, at, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (at, at, false)); }
+            draw();
+            const bool deleted = ses.arrs.size() == 2 && ses.arrsIndex() == 0 && ses.arrangement.size() == partsWere && sc.testBarNote().contains ("IS DELETED");
+            // (as it was: one, and the snapshots on the shelf)
+            while (ses.arrs.size() > 1) ses.arrsRemove ((int) ses.arrs.size() - 1);
+            click (shelf (0, 0)); draw();
+            const bool ok = tabs && up && copied && fresh && chosen && loaded && stays && deleted && ses.arrs.size() == 1 && shelf (1, 0).x < 0.0f;
+            check (ok, "the arrangement page's shelf: ARRANGEMENTS shows those kept; COPY keeps the one on the page again and the page holds the copy; NEW is an empty one on the page; a card pressed is chosen and LOAD puts it "
+                       "on the page with its parts; DELETE pressed leaves it and says to hold, held it goes");
+            if (! ok) std::printf ("        (tabs %d up %d copied %d fresh %d chosen %d loaded %d stays %d deleted %d, %d kept: %s)\n", (int) tabs, (int) up, (int) copied, (int) fresh, (int) chosen, (int) loaded, (int) stays, (int) deleted,
+                                   (int) ses.arrs.size(), sc.testBarNote().toRawUTF8());
+        }
         // (as it was)
         if (ses.stacks.size() == stacksWas + 1) ses.stackForget ((int) ses.stacks.size() - 1);
         while (! ses.arrangement.empty()) ses.arrRemove (0);
@@ -7139,6 +7232,17 @@ static int shot (const juce::StringArray& args)
         const int blocks = (int) ((14.0 * 60.0 / e.tempo()) * 48000.0 / 512.0);
         for (int i = 0; i < blocks; ++i) { e.render (b); ses.arrTick(); }
         sc.testPickPart (3);
+        if (args.contains ("--arrs"))
+        {
+            // (--arrs: the arrangements kept, on the shelf: that one named, a copy of it, and a short one, with the first back on the page)
+            ses.arrStop();
+            ses.arrsRename (0, "warehouse a");
+            ses.arrsCopy ("warehouse a live");
+            ses.arrsNew ("intro");
+            ses.arrAdd (ses.library[1].id); ses.arrAdd (ses.library[2].id);
+            ses.arrsLoad (0);
+            sc.testShowArrs (true);
+        }
         sc.testTick();
     }
     if (arg ("--edit", "").isNotEmpty())
