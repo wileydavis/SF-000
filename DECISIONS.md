@@ -3246,8 +3246,40 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      recalls** (a whole recall put on the audio clock: it is still made by the screen's thread,
      0.9 of a beat before its line), **F06** (a macro knob's MOTION is taken once a block).
 
+## TRANSITION in the arrangement; a part's own notes key (Nov 15, 18:47): sixty-third build
+
+553. **You**, 18:47: "how would I add the transitrion to an arrangement?" 18:55: "the arrange
+     doesn't seem to be bringing in the sequencer notes for a snapshot." 18:56: "I ahd to
+     toggle notes in the library. Wonder if that should be a toggle on the chip itself."
+     18:59: "I'd like to be able to add a unique riser and hit sample for each transition in
+     the arrangement."
+554. **A part of the arrangement is come into with the TRANSITION**, by itself, as the
+     arrangement plays. Each part's card has two plates, **IN** and **HIT**: a lead-in that
+     ends on the part's bar line, a hit that lands with the part. A press steps a plate: off,
+     lit with what the bar's plates say (amber), and, once a file has been dropped on it, lit
+     with **a file of the part's own** (green). The lead-in is set off the TRANSITION's BARS
+     before the part's line, or when the part before begins if that one is shorter. The files
+     are the library's own copies, read before the arrangement plays, and kept with the set.
+     A printed arrangement has them too. *The two plates, and their three states, are mine.*
+555. **A part brings its notes by its own key, N**, the fifteenth on its card, lit as a part
+     starts. The library's NOTES no longer decides what an arrangement brings: it is for a
+     recall made by hand. *That switch, on another page, had emptied every part of its notes
+     without a sign: the fault was the design's.* **Parts already in your arrangement bring
+     their notes now**, whatever NOTES says.
+     *Not done: N on a chip in the library, on a stack knob's snapshots and on a chip in hand.
+     There the fourteen keys are a number kept with each place, and a fifteenth wants every
+     place that keeps one changed together. Yours to say.*
+556. **ARM does not hold the arrangement's own recalls**: only a recall made by hand waits.
+     (As 543 was built, a part reached with ARM lit would have waited for the transition's
+     line instead of its own.)
+
 ## Not verified
 
+- **TRANSITION in the arrangement (554)** and **N (555)**: checked in the engine (a part's own
+  hit file lands on its line; its notes come with NOTES out), **the plates and the fifteenth
+  key not seen on a screen by me**: the card's keys are a little narrower to make room, and I
+  have no picture of an arrangement with parts. Dropping a file on a plate is not exercised by
+  a check.
 - **Every knob heard (549)**: measured as a difference in the lane's sound, **not judged by
   ear**: that a knob moves the sound does not say it moves it well. The amounts (a filter on an
   FM bell, the organ's cents, the drone's octave, SIGNAL's band) are first settings to be

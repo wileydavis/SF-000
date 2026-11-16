@@ -6,6 +6,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
 #include <atomic>
+#include <map>
 #include <memory>
 #include "Rig.h"
 #include "Sequencer.h"
@@ -325,6 +326,10 @@ public:
     // FIRE: the lead-in from now to the next line that many bars apart (the one after, if this one is under a beat away), the
     // hit on it. That line, in beats of the song; or -1 with the clock stopped, when the hit plays at once.
     double transFire (int bars);
+    // The same, for a line that is given (the arrangement's: a part's own bar line), and with what it plays if that is not what
+    // the two slots say (a kind of -1: the slot's; Transition::kOff; or kFile with a file from transAsset).
+    double transFireTo (double atPpq, int leadKind = -1, const sf::SampleData* lead = nullptr, int hitKind = -1, const sf::SampleData* hit = nullptr);
+    const sf::SampleData* transAsset (const juce::String& path);       // a file read once and held (an arrangement part's own lead-in or hit); nullptr: it cannot be read
     // A control set on a line of the song, made by the audio thread a block or two before the one the line falls in (ARM's
     // mutes and solos: on time whatever the screen's thread is doing). A few at a time: false, there was no room. With the
     // clock stopped they are let go (the session then makes them itself).
@@ -522,6 +527,7 @@ private:
     bool prepared = false;
     juce::AudioBuffer<float> buf, mix, sendA, sendB, work, pre, ghost, busBuf, busDry, transBuf;
     std::array<juce::String, 2> transFiles;
+    std::map<juce::String, std::shared_ptr<const sf::SampleData>> transAssets;      // (the message thread's)
     struct SetAt { std::atomic<int> state { 0 }; int ctl = 0; float v = 0.0f; double at = 0.0; };       // (state: 0 free, 1 being written, 2 waiting)
     std::array<SetAt, 32> setsAt;
     std::vector<std::shared_ptr<const sf::SampleData>> transKept;      // (every file a slot has had: the audio thread may still hold one)

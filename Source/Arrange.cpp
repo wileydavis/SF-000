@@ -97,18 +97,64 @@ void Session::recallOver (juce::int64 id, double beats, bool notes, juce::uint32
     glideOver = -1.0;
 }
 
+void Session::arrNotes (int part, bool on)
+{
+    if (part < 0 || part >= (int) arrangement.size() || arrangement[(size_t) part].notes == on) return;
+    arrangement[(size_t) part].notes = on;
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::arrTransSet (int part, int in, int hit)
+{
+    if (part < 0 || part >= (int) arrangement.size()) return;
+    auto& p = arrangement[(size_t) part];
+    // (its own file only if it has one)
+    p.transIn = juce::jlimit (0, p.inFile.isNotEmpty() ? 2 : 1, in); p.transHit = juce::jlimit (0, p.hitFile.isNotEmpty() ? 2 : 1, hit);
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::arrTransStep (int part, int slot)
+{
+    if (part < 0 || part >= (int) arrangement.size()) return;
+    auto& p = arrangement[(size_t) part];
+    int& mode = slot == 0 ? p.transIn : p.transHit;
+    const bool own = (slot == 0 ? p.inFile : p.hitFile).isNotEmpty();
+    mode = mode == 0 ? (own ? 2 : 1) : mode == 2 ? 1 : 0;              // not; its own file (if it has one); the bar's; not
+    touch();
+    if (onChange) onChange();
+}
+
+bool Session::arrTransFile (int part, int slot, const juce::File& f)
+{
+    if (part < 0 || part >= (int) arrangement.size()) return false;
+    // (the library's own copy of it, read once here so that nothing is read when it is set off)
+    const juce::String kept = keepSample (f.getFullPathName());
+    if (engine.transAsset (kept) == nullptr) return false;
+    auto& p = arrangement[(size_t) part];
+    (slot == 0 ? p.inFile : p.hitFile) = kept;
+    (slot == 0 ? p.transIn : p.transHit) = 2;
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
 void Session::arrRecall (int part, double beats)
 {
     if (part < 0 || part >= (int) arrangement.size()) return;
     // (printed, a part brings its notes whatever NOTES says: there is nothing outside to play them)
-    recallOver (arrangement[(size_t) part].snap, beats, printRig || recallNotes, arrangement[(size_t) part].lanes);
+    // (its notes: as the part's own N key says, lit as a part starts. Not as the library's NOTES says: that one is for a recall
+    // made by hand, and a switch on another page silently emptied every part of its notes.)
+    recallOver (arrangement[(size_t) part].snap, beats, arrangement[(size_t) part].notes, arrangement[(size_t) part].lanes);
 }
 
 void Session::arrPlay (int from)
 {
     if (arrangement.empty()) return;
     from = juce::jlimit (0, (int) arrangement.size() - 1, from);
-    arrOn = true; arrTicks = 0;
+    arrOn = true; arrTicks = 0; arrTransFor = -1;
+    for (auto& p : arrangement) { if (p.transIn == 2) engine.transAsset (p.inFile); if (p.transHit == 2) engine.transAsset (p.hitFile); }       // (the parts' own files, read before it plays)
     if (! engine.isRunning())
     {
         // from stopped: that part is there at once, and the clock sets off from the top
@@ -150,6 +196,26 @@ void Session::arrTick()
     if (! engine.isRunning()) { arrOn = false; arrAt = -1; if (onChange) onChange(); return; }      // stopped by hand: it is put down
     const double pos = engine.songPos() - arrZero;
     const int next = arrAt + 1;
+    // A part that is come into with the TRANSITION: set off its BARS before the part's bar line (at once, if the part before
+    // it is shorter than that), so that the lead-in ends on that line and the hit lands with the part.
+    if (next < (int) arrangement.size() && (arrangement[(size_t) next].transIn != 0 || arrangement[(size_t) next].transHit != 0) && arrTransFor != next
+        && pos >= (double) arrBarsBefore (next) * 4.0 - (double) transBars * 4.0)
+    {
+        arrTransFor = next;
+        transApply();
+        // what this one plays: the bar's lead-in and hit, or the part's own files (one that cannot be read: the bar's)
+        const auto& np = arrangement[(size_t) next];
+        auto pick = [this] (int mode, const juce::String& file, int& kind, const sf::SampleData*& smp)
+        {
+            kind = -1; smp = nullptr;
+            if (mode == 0) kind = Transition::kOff;
+            else if (mode == 2) if (const auto* a = engine.transAsset (file)) { kind = Transition::kFile; smp = a; }
+        };
+        int lk = -1, hk = -1; const sf::SampleData* ls = nullptr; const sf::SampleData* hs = nullptr;
+        pick (np.transIn, np.inFile, lk, ls); pick (np.transHit, np.hitFile, hk, hs);
+        const double at = engine.transFireTo (arrZero + (double) arrBarsBefore (next) * 4.0, lk, ls, hk, hs);
+        if (at >= 0.0) transAt = at;
+    }
     if (next < (int) arrangement.size())
     {
         if (pos >= (double) arrBarsBefore (next) * 4.0 - kArrLead)
@@ -181,6 +247,11 @@ var Session::arrToVar() const
         po->setProperty ("bars", p.bars);
         po->setProperty ("morph", glideBarsFor ((float) juce::jlimit (0, 11, p.morph) / 11.0f));       // (in bars: a later build may have other lengths)
         if ((p.lanes & kAllLanes) != kAllLanes) po->setProperty ("lanes", (juce::int64) (p.lanes & kAllLanes));     // (absent: all of them)
+        if (p.transIn != 0) po->setProperty ("transIn", p.transIn);                                                 // (absent: not)
+        if (p.transHit != 0) po->setProperty ("transHit", p.transHit);
+        if (p.inFile.isNotEmpty()) po->setProperty ("inFile", refOf (p.inFile));                                   // (a copy in the library: from its folder down)
+        if (p.hitFile.isNotEmpty()) po->setProperty ("hitFile", refOf (p.hitFile));
+        if (! p.notes) po->setProperty ("notes", false);                                                           // (absent: it brings them)                                                              // (absent: no)
         for (auto& m : p.more) po->setProperty (m.name, m.value);
         parts.add (var (po));
     }
@@ -207,7 +278,10 @@ void Session::arrFromVar (const var& v)
             for (int i = 0; i < 12; ++i) if (glideBarsFor ((float) i / 11.0f) <= mb + 1.0e-9) p.morph = i;      // the nearest length this build has, not over it
             if (auto* po = pv.getDynamicObject())
                 for (auto& q : po->getProperties())
-                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes")) p.more.set (q.name, q.value);
+                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile")) p.more.set (q.name, q.value);
+            p.transIn = juce::jlimit (0, 2, (int) pv.getProperty ("transIn", 0)); p.transHit = juce::jlimit (0, 2, (int) pv.getProperty ("transHit", 0));
+            p.inFile = pathOf (pv.getProperty ("inFile", "").toString()); p.hitFile = pathOf (pv.getProperty ("hitFile", "").toString());
+            p.notes = (bool) pv.getProperty ("notes", true);
             if (pv.hasProperty ("lanes")) p.lanes = (juce::uint32) (juce::int64) pv.getProperty ("lanes", (juce::int64) kAllLanes) & kAllLanes;
             arrangement.push_back (p);
         }

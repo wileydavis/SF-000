@@ -462,6 +462,13 @@ keeps the time, so the lead-in ends and the hit lands on the sample the line fal
   to end on the line (with less time than it is long, part way in, faded up); a hit's plays
   from its start on the line.
 
+**In the arrangement** each part's card has an **IN** and a **HIT** plate: lit, that part is
+come into with a lead-in that ends on its bar line, or a hit that lands with it, by itself as
+the arrangement plays. Amber is the sound the bar's plates say; drop a sound file on a plate and
+it is that part's own (green). A press steps a plate through its own file, the bar's sound and
+off. Each part also has its own **N** key, last of its row: lit (as a part starts) the part
+brings its snapshot's notes, whatever the library's NOTES says.
+
 It goes into the mix before the master, so the master's limiter holds it, and has a stem and a
 recorded track of its own. What it plays is kept with the session, not in a snapshot; a file
 given to it is copied into the library, as a lane's sample is. Not on the E16 or a pad yet: the keys T and G, or the mouse.

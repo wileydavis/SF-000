@@ -2251,14 +2251,58 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             }
             if (smp48 != nullptr) rateOff = peakAt (out) - (4.0 * spb96 - 4000.0);
         }
+        // In an arrangement: a part marked for it is come into with the transition, by itself, its hit on the part's own bar
+        // line; ARM, lit meanwhile, does not hold the arrangement's own recalls back; and the mark is kept with the set.
+        bool arrOk = false; double arrOff = 1.0e9, arrRecallAt = -1.0;
+        {
+            Engine e; e.prepare (SRT, 256);
+            Session ses (e, false);
+            for (int l = 0; l < kLanes; ++l) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+            const int cut = cx::lane (5, 6);
+            ses.userSet (cut, 0.2f); const auto a = ses.take();
+            // (the second snapshot's bass plays another step: a part brings its notes by its own N key, whatever the library's NOTES says)
+            const bool stepWas = e.pattern (5).steps[3].on;
+            { auto pat = e.pattern (5); pat.steps[3].on = ! stepWas; e.setPattern (5, pat, false); }
+            ses.userSet (cut, 0.9f); const auto b2 = ses.take();
+            ses.recall (a);
+            const bool stepBack = e.pattern (5).steps[3].on == stepWas;
+            ses.recallNotes = false;
+            ses.arrAdd (a); ses.arrAdd (b2);
+            ses.arrSet (0, 4, -1); ses.arrSet (1, 4, -1);
+            // (the second part is come into with a hit of its own file and no lead-in: the bar's own hit is the built-in impact,
+            // so the click on the line can only be the part's)
+            const bool given = ses.arrTransFile (1, 1, hitFile) && ! ses.arrTransFile (1, 0, tmpT.getChildFile ("none.wav"));
+            ses.arrTransSet (1, 0, 2);
+            ses.transBars = 4;
+            ses.transArm();
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 100; ++i) e.render (b);
+            ses.arrPlay (0);
+            std::vector<float> out;
+            for (int guard = 0; guard < 20000 && e.songPos() < 18.0; ++guard)
+            {
+                e.render (b); ses.arrTick(); ses.transTick();
+                for (int i = 0; i < 256; ++i) out.push_back (b.getSample (0, i));
+                if (arrRecallAt < 0.0 && std::abs (e.target (cut) - 0.9f) < 0.01f) arrRecallAt = e.songPos();
+            }
+            arrOff = peakAt (out) - (16.0 * spb + 10.0);
+            Engine e2; e2.prepare (SRT, 256);
+            Session s2 (e2, false);
+            s2.takeState (ses.stateVar());
+            const bool kept = given && s2.arrangement.size() == 2 && s2.arrangement[1].transHit == 2 && s2.arrangement[1].transIn == 0 && s2.arrangement[1].hitFile.isNotEmpty() && s2.arrangement[0].transHit == 0;
+            const bool notesCame = stepBack && e.pattern (5).steps[3].on != stepWas && ses.arrangement[1].notes;
+            if (! notesCame) std::printf ("    (a part's notes: back %d, came %d)\n", (int) stepBack, (int) (e.pattern (5).steps[3].on != stepWas));
+            arrOk = std::abs (arrOff - off1) <= 2.0 && arrRecallAt > 15.0 && arrRecallAt <= 16.0 && ses.transWaiting() == 0 && kept && notesCame;
+            if (! arrOk) std::printf ("    (in an arrangement: the hit %.0f samples from the part's line, its recall at beat %.2f, waiting %d, kept %d)\n", arrOff, arrRecallAt, ses.transWaiting(), (int) kept);
+        }
         const bool lines = h1.line == 16.0 && h2.line == 32.0 && l1.line == 16.0 && b1.line == 16.0;
         const bool onTheLine = std::abs (off1 - off2) <= 1.0 && std::abs (off1) <= 400.0 && std::abs (offL - off1) <= 2.0;
         const bool rises = before < -80.0 && late > early + 6.0 && late > -60.0 && hitDb > -40.0 && after < hitDb - 6.0;
         const bool armOk = ar.waited && ar.line == 16.0 && ar.recallAt > 15.0 && ar.recallAt <= 16.0 && ar.muteAt > 15.9 && ar.muteAt <= 16.02 && ! ar.armedAfter;
-        const bool transOk = lines && onTheLine && rises && armOk && atOnce && midiWaits && std::abs (rateOff) <= 3.0;
+        const bool transOk = lines && onTheLine && rises && armOk && atOnce && midiWaits && std::abs (rateOff) <= 3.0 && arrOk;
         std::printf ("  %s: TRANSITION: the hit lands on its bar line whenever FIRE was pressed (%.0f and %.0f samples from it through the master, two lines) and a lead-in's file ends on it (%.0f); the built-in riser grows "
-                     "(%.1f to %.1f dB) and the impact follows (%.1f dB, then %.1f); armed, a recall and a mute wait and happen at beats %.2f and %.2f of 16, and ARM goes out; a mute by MIDI under ARM waits too and is made at beat %.3f with the screen's thread idle; a file read at another rate still ends on the line (%.1f samples); stopped, the hit is at once\n",
-                     transOk ? "ok  " : "FAIL", off1, off2, offL, early, late, hitDb, after, ar.recallAt, ar.muteAt, midiAt, rateOff);
+                     "(%.1f to %.1f dB) and the impact follows (%.1f dB, then %.1f); armed, a recall and a mute wait and happen at beats %.2f and %.2f of 16, and ARM goes out; a mute by MIDI under ARM waits too and is made at beat %.3f with the screen's thread idle; a file read at another rate still ends on the line (%.1f samples); in an arrangement a part is come into with a hit of its own file on its own line (%.0f samples) and its recall on time (beat %.2f) with ARM lit, bringing its notes with the library's NOTES out; stopped, the hit is at once\n",
+                     transOk ? "ok  " : "FAIL", off1, off2, offL, early, late, hitDb, after, ar.recallAt, ar.muteAt, midiAt, rateOff, arrOff, arrRecallAt);
         if (! transOk) { ++bad; std::printf ("    (lines %d [%.1f %.1f %.1f] on the line %d rises %d [before %.1f] arm %d [waited %d line %.1f armed after %d] at once %d)\n", (int) lines, h1.line, h2.line, l1.line, (int) onTheLine, (int) rises, before, (int) armOk, (int) ar.waited, ar.line, (int) ar.armedAfter, (int) atOnce); }
         tmpT.deleteRecursively();
     }

@@ -23,6 +23,9 @@ struct Transition
     std::atomic<int> askSeq { 0 };
     std::atomic<double> askFrom { 0.0 }, askAt { 0.0 };
     std::atomic<bool> askNow { false };
+    // (what this firing plays, if not what the two slots say: -1 the slot's; kOff; or kFile with the file here)
+    std::atomic<int> askLeadKind { -1 }, askHitKind { -1 };
+    std::atomic<const sf::SampleData*> askLead { nullptr }, askHit { nullptr };
     // ---- said by the audio thread
     std::atomic<bool> busy { false };           // a line is waited for, or a hit is sounding
     std::atomic<bool> armed { false };          // (the session's ARM, for the MIDI thread: a mute or a solo that arrives there waits too)
@@ -35,12 +38,15 @@ struct Transition
         if (const int s = askSeq.load(); s != seen)
         {
             seen = s;
+            // what this firing plays, taken once: the slots as they stand now, or its own
+            { const int k = askLeadKind.load(); curLeadKind = k >= 0 ? k : leadKind.load(); curLead = k == kFile ? askLead.load() : leadSmp.load(); }
+            { const int k = askHitKind.load(); curHitKind = k >= 0 ? k : hitKind.load(); curHit = k == kFile ? askHit.load() : hitSmp.load(); }
             if (askNow.load()) { waiting = false; leadOn = false; startHit(); }
             else
             {
                 from = askFrom.load(); at = askAt.load();
                 waiting = at > from;
-                leadOn = waiting && leadKind.load() != kOff;
+                leadOn = waiting && curLeadKind != kOff;
                 leadPos = -1.0; leadFade = 1.0f;
                 for (auto& ch : svf) ch[0] = ch[1] = 0.0f;
             }
@@ -53,9 +59,9 @@ struct Transition
         int hitAt = -1;                                                                         // the sample of this block the line falls on
         if (waiting && ppq0 + beats >= at) hitAt = juce::jlimit (0, n - 1, (int) std::llround ((at - ppq0) * spb));
         const float g = level.load();
-        const int lk = leadKind.load();
-        const sf::SampleData* const ls = lk == kFile ? leadSmp.load() : nullptr;
-        const sf::SampleData* const hs = hitKind.load() == kFile ? hitSmp.load() : nullptr;
+        const int lk = curLeadKind;
+        const sf::SampleData* const ls = lk == kFile ? curLead : nullptr;
+        const sf::SampleData* const hs = curHitKind == kFile ? curHit : nullptr;
         // the riser, as far along as this block starts: its band rises from 180 Hz to 9 kHz and it grows as the square of the way
         const float x0 = waiting ? (float) juce::jlimit (0.0, 1.0, (ppq0 - from) / (at - from)) : 0.0f;
         const float fc = 180.0f * std::pow (50.0f, x0);
@@ -134,9 +140,9 @@ struct Transition
 private:
     void startHit() noexcept
     {
-        const int k = hitKind.load();
+        const int k = curHitKind;
         hitBuilt = k == kBuilt;
-        hitOn = k == kBuilt || (k == kFile && hitSmp.load() != nullptr);
+        hitOn = k == kBuilt || (k == kFile && curHit != nullptr);
         hitPos = 0.0; hitPh = 0.0f; hitLp = 0.0f;
     }
     float noise() noexcept { rng = rng * 1664525u + 1013904223u; return (float) (juce::int32) rng * (1.0f / 2147483648.0f); }
@@ -147,6 +153,8 @@ private:
     double from = 0.0, at = 0.0, leadPos = -1.0, hitPos = 0.0;
     float leadFade = 1.0f, hitPh = 0.0f, hitLp = 0.0f;
     float svf[2][2] {};
+    int curLeadKind = kBuilt, curHitKind = kBuilt;              // (this firing's)
+    const sf::SampleData* curLead = nullptr; const sf::SampleData* curHit = nullptr;
     juce::uint32 rng = 0x2545F491u;
 };
 } // namespace sf0

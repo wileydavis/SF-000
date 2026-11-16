@@ -377,6 +377,11 @@ public:
         int bars = 8;
         int morph = 0;
         juce::uint32 lanes = kAllLanes; // the parts of the rig it takes from its snapshot (the others stay as they are when it comes in)
+        // It is come into with the TRANSITION: a lead-in that ends on the part's bar line (transIn) and a hit that lands with the
+        // part (transHit). Each: 0 not, 1 with what the bar's plates say, 2 with a file of the part's own (inFile, hitFile).
+        int transIn = 0, transHit = 0;
+        juce::String inFile, hitFile;
+        bool notes = true;              // it brings its snapshot's notes (its own key, N: not the library's NOTES, which is for recalls made by hand)
         juce::NamedValueSet more;       // what the file says of it that this build does not know: carried
     };
     std::vector<ArrPart> arrangement;
@@ -389,6 +394,10 @@ public:
     bool arrAdd (juce::int64 snap, int before = -1, juce::uint32 lanes = kAllLanes);    // at the end, or before that part, taking those parts of the rig; false: there is no room, or no such snapshot
     void arrRemove (int part);
     void arrMove (int part, int by);                    // earlier (-1) or later (1)
+    void arrTransSet (int part, int in, int hit);       // a part's lead-in and hit: 0 not, 1 the bar's, 2 its own file (if it has one)
+    void arrTransStep (int part, int slot);             // the lead-in (0) or the hit (1) stepped: its own file (if it has one), the bar's, not
+    bool arrTransFile (int part, int slot, const juce::File&);     // a file of the part's own for it, which it then plays
+    void arrNotes (int part, bool on);                  // a part that brings its snapshot's notes, or leaves the sequencers as they are
     void arrSet (int part, int bars, int morph);        // (either below 0: as it is)
     void arrLanes (int part, juce::uint32 lanes);       // the parts of the rig it takes from its snapshot
     // Playing it. From stopped: its first part (or `from`) is recalled at once and the clock sets
@@ -681,6 +690,7 @@ private:
     // the arrangement, playing
     bool arrOn = false, arrWait = false;
     int arrAt = -1, arrStarts = 0, arrTicks = 0;
+    int arrTransFor = -1;                               // (the part the TRANSITION was last set off for, while the arrangement plays)
     struct TransPend { int kind = 0; juce::int64 id = 0; Scope scope; int ctl = -1; float v = 0.0f; bool sounding = true, onAudio = false; };
     std::vector<TransPend> transPend;                   // what waits for the line: recalls (kind 0) and controls set (1)
     bool transDoing = false;

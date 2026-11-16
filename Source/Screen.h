@@ -135,6 +135,7 @@ public:
     static bool testIsTrans (const TestHit& h, int which) { return h.kind == hAct && h.a == aTransFire + which; }     // (0 FIRE, 1 ARM, 2 BARS, 3 LEVEL, 4 IN, 5 HIT, 6 DUB, 7 SPACE)
     static bool testIsPlain (const TestHit& h) { return h.kind == hAct && h.a == aSamplePlain; }       // (CONFIG, a lane playing a sample: PLAIN)
     juce::String testCfgNote() const { return cfgNote; }
+    static bool testIsArrTrans (const TestHit& h, int part, int slot) { return h.kind == hArrTrans && h.a == part && h.b == slot; }     // (a part's IN, slot 0, or its HIT, 1)
     static bool testIsArrStem (const TestHit& h, int part, int stem) { return h.kind == hArrKey && h.a == part && h.b == stem; }      // (a key on a part of the arrangement)
     static bool testIsSlot (const TestHit& h, int k, int at) { return h.kind == hSlot && h.a == k && h.b == at; }       // (one of the snapshots on a stack knob's card)
     static bool testIsNotesKey (const TestHit& h) { return h.kind == hAct && h.a == aNotes; }      // NOTES: whether a recall brings a snapshot's notes
@@ -240,7 +241,8 @@ private:
                    hPickKey,        // a key on the snapshot in hand, beside the knob (a: which snapshot of the library; b: the part): what goes with it when it is added
                    hColPut,         // the column, a stack of the shelf open: ON A KNOB (the first stack knob that holds nothing takes it)
                    hKeptCard,       // a kept knob's card: carried onto a place
-                   hArrKey };       // a key on a part of the arrangement (a: the part; b: the part of the rig)
+                   hArrKey,         // a key on a part of the arrangement (a: the part; b: the part of the rig)
+                   hArrTrans };     // a part's TRANSITION plate (a: the part)
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aModLoad, aModNew, aModCopy, aModRename, aModOut, aClipReset, aRec, aRecallCue, aSamplePlain,
                aTransFire, aTransArm, aTransBars, aTransLevel, aTransLead, aTransHit, aTransDub, aTransSpace,

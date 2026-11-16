@@ -2058,7 +2058,8 @@ void Session::recallWhole (juce::int64 id)
 
 void Session::recall (juce::int64 id, const Scope& scope)
 {
-    { TransPend p; p.kind = 0; p.id = id; p.scope = scope; if (transDefer (p)) return; }        // (ARM: it waits for the line)
+    // (ARM: it waits for the line. Not a recall that is made over a given time: the arrangement's own, and ARM's when its line comes.)
+    if (glideOver < 0.0) { TransPend p; p.kind = 0; p.id = id; p.scope = scope; if (transDefer (p)) return; }
     if (scope.all()) { recallWhole (id); return; }
     auto* s = findSnap (id);
     if (s == nullptr) return;
@@ -2572,6 +2573,7 @@ int Session::sweepSamples()
     }
     useRefs (engine.heldFiles ({ 2, 0, 1 }));
     use (engine.transFile (0)); use (engine.transFile (1));        // (TRANSITION's two)
+    for (auto& p : arrangement) { use (p.inFile); use (p.hitFile); }  // (and each part's own)
     for (auto& s : library)
         for (int l = 0; l < kLanes; ++l)
         {

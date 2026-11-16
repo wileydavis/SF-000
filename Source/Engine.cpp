@@ -1315,6 +1315,27 @@ bool Engine::transLoad (int slot, const juce::File& f)
     return true;
 }
 
+const sf::SampleData* Engine::transAsset (const juce::String& path)
+{
+    if (path.isEmpty()) return nullptr;
+    if (const auto it = transAssets.find (path); it != transAssets.end()) return it->second.get();
+    auto smp = sf::loadSampleFile (juce::File (path), sr, 120.0);
+    if (smp == nullptr || smp->length() < 8) return nullptr;
+    transAssets[path] = smp;
+    return smp.get();
+}
+
+double Engine::transFireTo (double atPpq, int leadKind, const sf::SampleData* lead, int hitKind, const sf::SampleData* hit)
+{
+    if (! running.load()) return -1.0;
+    const double pos = songPos();
+    if (atPpq <= pos) return -1.0;
+    trans.askLeadKind = leadKind; trans.askLead = lead; trans.askHitKind = hitKind; trans.askHit = hit;
+    trans.askFrom = pos; trans.askAt = atPpq; trans.askNow = false;
+    trans.askSeq.fetch_add (1);
+    return atPpq;
+}
+
 bool Engine::setAt (int ctl, float v, double atPpq)
 {
     if (ctl < 0 || ctl >= cx::kCount || ! running.load()) return false;
@@ -1336,6 +1357,7 @@ void Engine::clearSetsAt()
 
 double Engine::transFire (int bars)
 {
+    trans.askLeadKind = -1; trans.askHitKind = -1;         // (FIRE by hand: what the two slots say)
     if (! running.load()) { trans.askNow = true; trans.askSeq.fetch_add (1); return -1.0; }
     const double len = (double) juce::jlimit (1, 64, bars) * 4.0, pos = songPos();
     const double at = std::ceil ((pos + 1.0) / len) * len;

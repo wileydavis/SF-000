@@ -667,9 +667,17 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             t.title = "ADD";
             body = "PUTS THIS STACK'S SNAPSHOTS INTO WHAT IS OPEN IN THE COLUMN (THE CHOSEN STACK KNOB, OR ANOTHER STACK), AFTER WHAT IT HOLDS, EACH WITH ITS PARTS. A KNOB THAT HELD NOTHING AND HAS NO NAME TAKES THE STACK'S.";
             break;
+        case hArrTrans:
+            t.title = h.b == 0 ? "A LEAD-IN INTO THIS PART" : "A HIT ON THIS PART";
+            body = String (h.b == 0 ? "LIT: WHEN THE ARRANGEMENT PLAYS, A LEAD-IN IS SET OFF BY ITSELF THAT ENDS ON THIS PART'S BAR LINE. IT STARTS THE TRANSITION'S BARS BEFORE THAT LINE, OR WHEN THE PART BEFORE BEGINS IF THAT ONE IS SHORTER. "
+                                    : "LIT: WHEN THE ARRANGEMENT PLAYS, A HIT LANDS ON THIS PART'S BAR LINE, BY ITSELF. ")
+                   + "AMBER: THE SOUND THE BAR'S PLATES SAY. GREEN: A FILE OF THIS PART'S OWN. DROP A SOUND FILE ON THE PLATE TO GIVE IT ONE; A PRESS STEPS THROUGH ITS OWN FILE, THE BAR'S SOUND, AND OFF."
+                   + (h.a < (int) ses.arrangement.size() && (h.b == 0 ? ses.arrangement[(size_t) h.a].inFile : ses.arrangement[(size_t) h.a].hitFile).isNotEmpty()
+                        ? " ITS OWN: " + juce::File (h.b == 0 ? ses.arrangement[(size_t) h.a].inFile : ses.arrangement[(size_t) h.a].hitFile).getFileName().toUpperCase() + "." : String());
+            break;
         case hArrKey:
             t.title = "A PART OF THE RIG";
-            body = "BLACK: WHEN THE ARRANGEMENT REACHES THIS PART, THIS PART OF THE RIG COMES FROM ITS SNAPSHOT. AN EMPTY FRAME: IT STAYS AS IT IS THEN. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. HEARD AT ONCE WHILE THE PART IS IN THE HEADPHONES. PRINT TAKES IT THE SAME WAY.";
+            body = "BLACK: WHEN THE ARRANGEMENT REACHES THIS PART, THIS PART OF THE RIG COMES FROM ITS SNAPSHOT. AN EMPTY FRAME: IT STAYS AS IT IS THEN. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY. N IS THE PART'S NOTES: BLACK, EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING IN THE SNAPSHOT; EMPTY, THE SEQUENCERS STAY AS THEY ARE. (THE LIBRARY'S NOTES KEY DOES NOT DECIDE THIS: IT IS FOR A RECALL MADE BY HAND.) HEARD AT ONCE WHILE THE PART IS IN THE HEADPHONES. PRINT TAKES IT THE SAME WAY.";
             break;
         case hSlot:
             t.title = "A SNAPSHOT OF THIS KNOB'S STACK";
@@ -2869,15 +2877,16 @@ void Screen::drawArrange (G& g)
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
         const R br (x0, y0 + 54, 66, 40), mr (x0 + 70, y0 + 54, 108, 40);
         if (i > 0 || true) { hit (br, hArrBars, i, 0); if (i > 0) hit (mr, hArrMorph, i, 0); }
-        for (int k = 0; k < kLanes + 3; ++k) hit (R (x0 + (float) k * 18.6f, y0 + 27, 17.0f, 24), hArrKey, i, k);
+        for (int k = 0; k < kLanes + 4; ++k) hit (R (x0 + (float) k * 17.4f, y0 + 27, 16.0f, 24), hArrKey, i, k);      // (the last: N, its notes)
+        hit (R (x0 + 184, y0 + 75, 37, 20), hArrTrans, i, 0); hit (R (x0 + 223, y0 + 75, 37, 20), hArrTrans, i, 1);      // (its IN and its HIT)
         if (! vis (g, r)) continue;
         card (g, r, i == selPart);
         {
-            static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
-            for (int k = 0; k < kLanes + 3; ++k)
+            static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N" };
+            for (int k = 0; k < kLanes + 4; ++k)
             {
-                const R kr (x0 + (float) k * 18.6f, y0 + 27, 17.0f, 24);
-                if (((p.lanes >> k) & 1u) != 0) { window (g, kr, col::black); text (g, partName[k], kr, fNote, col::lit); }
+                const R kr (x0 + (float) k * 17.4f, y0 + 27, 16.0f, 24);
+                if (k == kLanes + 3 ? p.notes : ((p.lanes >> k) & 1u) != 0) { window (g, kr, col::black); text (g, partName[k], kr, fNote, col::lit); }
                 else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[k], kr, fNote, tone (col::black).withAlpha (0.45f)); }
             }
         }
@@ -2894,6 +2903,10 @@ void Screen::drawArrange (G& g)
         const bool whole = glideBarsFor ((float) p.morph / 11.0f) > (double) p.bars;
         readout (g, mr, i == 0 ? "COMES IN" : "MORPH", i == 0 ? String ("AT ONCE") : whole ? String ("ALL OF IT") : Session::morphName (p.morph));
         text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 54, 76, 20), fLbl, col::black, juce::Justification::centredRight);
+        // TRANSITION into this part: IN, a lead-in that ends on its bar line; HIT, a hit that lands with it. Amber: with what the
+        // bar's plates say; green: with a file of the part's own (dropped on the plate).
+        plate (g, x0 + 186, y0 + 76, "IN", fLbl, 9, p.transIn == 2 ? col::green : p.transIn == 1 ? col::amber : col::putty, col::black, 18);
+        plate (g, x0 + 225, y0 + 76, "HIT", fLbl, 6, p.transHit == 2 ? col::green : p.transHit == 1 ? col::amber : col::putty, col::black, 18);
         text (g, "FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 184, y0 + 74, 76, 20), fLbl, col::black, juce::Justification::centredRight);
     }
     // the library, to take from
@@ -3263,11 +3276,15 @@ void Screen::mouseDown (const juce::MouseEvent& e)
             }
             break;
         }
+        case hArrTrans:
+            if (h->a < (int) ses.arrangement.size()) { selPart = h->a; ses.arrTransStep (h->a, h->b); repaint(); }
+            break;
         case hArrKey:
         {
             // a key on a part: that part of the rig comes from its snapshot when the arrangement reaches it, or stays as it is
             if (h->a >= (int) ses.arrangement.size()) break;
             selPart = h->a;
+            if (h->b == kLanes + 3) { ses.arrNotes (h->a, ! ses.arrangement[(size_t) h->a].notes); repaint(); break; }       // N: its notes
             const auto id = ses.arrangement[(size_t) h->a].snap;
             const juce::uint32 lanes = (ses.arrangement[(size_t) h->a].lanes ^ (1u << h->b)) & Session::kAllLanes;
             ses.arrLanes (h->a, lanes);
@@ -3683,6 +3700,20 @@ void Screen::filesDropped (const juce::StringArray& files, int x, int y)
                 repaint();
                 return;
             }
+    // a part of the arrangement: a file dropped on its IN or its HIT is that part's own lead-in or hit
+    if (page == pArrange)
+    {
+        for (auto& h : hits)
+            if (h.kind == hArrTrans && h.r.contains (p))
+            {
+                const bool ok = ses.arrTransFile (h.a, h.b, juce::File (files[0]));
+                recNote = ok ? String (h.b == 0 ? "LEAD-IN OF PART " : "HIT OF PART ") + String (h.a + 1) + ": " + juce::File (files[0]).getFileName().toUpperCase() : "COULD NOT READ " + juce::File (files[0]).getFileName().toUpperCase();
+                recNoteAt = juce::Time::getMillisecondCounter();
+                repaint();
+                return;
+            }
+        return;
+    }
     if (page != pMain) return;
     // Where it lands. An open CONFIG panel takes it for whatever that panel is set to (a lane, an
     // insert, a return). Else the panel under the pointer: a lane, an insert that takes files, the
