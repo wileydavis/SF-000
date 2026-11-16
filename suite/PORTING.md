@@ -88,3 +88,11 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   trim low until it left the memory: the set came up 0.9 LU a minute in. The first three
   seconds are still trimmed by what the meter says. **The suite's own LIMIT has this still.**
   See DECISIONS 563.
+- `modules/Synth.cpp`, GRANULAR's read, marked `(SF-000)`: `GrainRead` (sixteen points from a
+  table, both channels in one pass) and, in `Voice::Grain`, the copy a grain reads and its
+  window's turn, settled as the grain starts. A grain above the source's pitch reads the
+  octave-down copy on which it advances a sample a step at the most; it read the one above
+  through `sampleAt` (18 to 36 points a channel, a look-up each) with a cosine a sample for
+  its window, and sixteen notes of it took a core and a half. A grain at or below the source's
+  pitch is read as before. **The suite's own GRANULAR has the old read still**: the sound is
+  the same to 74 dB under a pad measured both ways. See DECISIONS 576.

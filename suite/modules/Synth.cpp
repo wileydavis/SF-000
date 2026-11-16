@@ -11,6 +11,58 @@
 
 namespace sf
 {
+// (SF-000) GRANULAR's read of an octave-down copy of its source, at a sample a step or less: sixteen points from a table (a
+// Kaiser-windowed sinc cut at the copy's own Nyquist, 256 fractions of a sample, the two nearest rows blended), both
+// channels in the one pass. A grain above the source's pitch used to read the copy an octave above this one through
+// sampleAt's low-pass, 18 to 36 points a channel with a table look-up for each: sixteen notes of four grains at twice the
+// rate spent a core and a half there. Measured on tones (a copy read at 0.51 to 1 sample a step, then halved as the voice's
+// sum is): level within 0.01 dB to 18 kHz and 0.3 dB at 20 kHz, everything else under 20 kHz more than 78 dB below the tone.
+struct GrainRead
+{
+    static constexpr int kTaps = 16, kPhases = 256;
+    static const GrainRead& get() { static const GrainRead g; return g; }
+    // the two channels' sum at a fractional position (near an end, where the table would reach past it: four points, as before)
+    float sum (const float* a, const float* b, int len, double pos) const noexcept
+    {
+        const int i = (int) pos, first = i - (kTaps / 2 - 1);
+        if (first < 0 || first + kTaps > len) return hermiteAt (a, len, pos) + hermiteAt (b, len, pos);
+        const float ph = (float) (pos - (double) i) * (float) kPhases;
+        const int p = std::min (kPhases - 1, (int) ph);
+        const float t = ph - (float) p;
+        const float* r0 = w[p]; const float* r1 = w[p + 1];
+        const float* xa = a + first; const float* xb = b + first;
+        // (four sums side by side, so that the compiler may do four points at a time: one sum in order cannot be split)
+        float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f, s3 = 0.0f;
+        for (int k = 0; k < kTaps; k += 4)
+        {
+            s0 += (r0[k] + t * (r1[k] - r0[k])) * (xa[k] + xb[k]);
+            s1 += (r0[k + 1] + t * (r1[k + 1] - r0[k + 1])) * (xa[k + 1] + xb[k + 1]);
+            s2 += (r0[k + 2] + t * (r1[k + 2] - r0[k + 2])) * (xa[k + 2] + xb[k + 2]);
+            s3 += (r0[k + 3] + t * (r1[k + 3] - r0[k + 3])) * (xa[k + 3] + xb[k + 3]);
+        }
+        return (s0 + s1) + (s2 + s3);
+    }
+private:
+    GrainRead()
+    {
+        const double beta = 7.0, pi = 3.14159265358979323846;
+        auto i0 = [] (double x) { double sum = 1.0, term = 1.0; for (int k = 1; k < 40; ++k) { term *= (x / (2.0 * k)) * (x / (2.0 * k)); sum += term; } return sum; };
+        for (int p = 0; p <= kPhases; ++p)
+        {
+            double h[kTaps], all = 0.0;
+            for (int k = 0; k < kTaps; ++k)
+            {
+                const double t = (double) (k - (kTaps / 2 - 1)) - (double) p / kPhases, u = t / (kTaps / 2.0);
+                const double win = std::abs (u) < 1.0 ? i0 (beta * std::sqrt (1.0 - u * u)) / i0 (beta) : 0.0;
+                h[k] = (std::abs (t) < 1e-12 ? 1.0 : std::sin (pi * t) / (pi * t)) * win;
+                all += h[k];
+            }
+            for (int k = 0; k < kTaps; ++k) w[p][k] = (float) (h[k] / all);       // (each fraction's points add up to one: no ripple at DC)
+        }
+    }
+    float w[kPhases + 1][kTaps];
+};
+
 enum Engine { E_SUB, E_ORGAN, E_FM, E_HOOVER, E_SYNC, E_NOISE, E_WAVETABLE, E_GRAIN, E_SAMPLE, E_FM4 };
 
 // FM 4-OP [Nov 10]: four sine operators, A B C D, on one of eight algorithms (D's output can feed
@@ -495,7 +547,10 @@ public:
         float fmEnv[4] { 1, 1, 1, 1 }, fmPrev[2] {};   // and D's last two outputs (its feedback)
         Svf svf, svf2, nbp, nbp2;         // (SF-000) nbp2: NOISE's second band, DETUNE's
         float t = 0.0f, fb = 0.0f, drift = 0.0f;
-        struct Grain { bool on = false; double pos = 0, rate = 1; int len = 0, age = 0; float pan = 0.5f; SampleRegion reg; } grains[8];   // reg: where it started (end 0: the whole source)
+        // (SF-000) lv, sc: the copy of the source it reads (-1 the source itself, else that octave-down copy) and that copy's
+        // samples for one of the source's; wc, ws, rc, rs: its window, turned a step a sample (see E_GRAIN)
+        struct Grain { bool on = false; double pos = 0, rate = 1; int len = 0, age = 0; float pan = 0.5f; SampleRegion reg;
+                       int lv = -1; double sc = 1.0, wc = 1.0, ws = 0.0, rc = 1.0, rs = 0.0; } grains[8];   // reg: where it started (end 0: the whole source)
         int grainClock = 0;
         SampleRegion reg;                 // SAMPLE: the part of the sample this note plays
         uint64_t born = 0;                // renderTick when it started: one that hasn't sounded yet is never stolen
@@ -1034,6 +1089,7 @@ private:
     {
         const auto& m = models[(size_t) v.model];
         const auto& W = *waves;
+        const auto& grainRead = GrainRead::get();          // (SF-000)
         const double vr = v.rate;
         const float invOsr = (float) (1.0 / vr);
         if (onGrid || v.ctlStale) { updateControls (c, v, kSub * v.os); v.ctlStale = false; }
@@ -1269,6 +1325,15 @@ private:
                                 gr.reg = inReg ? blockReg : SampleRegion();
                                 gr.rate = (f / root) / v.os * (1.0 + (rng.uni() - 0.5f) * det * 0.02f);
                                 gr.pan = 0.5f + (rng.uni() - 0.5f) * 0.8f;
+                                // (SF-000) Settled once, as the grain starts. A grain played above the source's pitch reads the
+                                // octave-down copy on which it advances a sample a step at the most (GrainRead: it was the copy
+                                // an octave above that one, through sampleAt's low-pass). The copy holds the source to 0.86 of
+                                // its own band; the voice runs at twice the rate, so that is 20.6 kHz at the least. One at or
+                                // below the source's pitch reads the source as it did. Its window turns a step a sample (four
+                                // multiplies) instead of a cosine a sample.
+                                gr.lv = -1; gr.sc = 1.0;
+                                for (double r = gr.rate; r > 1.0 && gr.lv + 1 < (int) mips.lv.size(); r *= 0.5) { ++gr.lv; gr.sc *= 0.5; }
+                                { const double turn = (double) kTwoPi / (double) gr.len; gr.wc = 1.0; gr.ws = 0.0; gr.rc = std::cos (turn); gr.rs = std::sin (turn); }
                                 break;
                             }
                     }
@@ -1278,8 +1343,17 @@ private:
                         if (! gr.on) continue;
                         const bool own = gr.reg.end > 0.0;
                         if ((int) gr.pos + 2 >= (own ? std::min (srcLen, gr.reg.last()) : srcLen) || gr.age >= gr.len) { gr.on = false; continue; }
-                        const float w = 0.5f - 0.5f * std::cos (kTwoPi * (float) gr.age / (float) gr.len);
-                        const float y = (readAt (src, mips, 0, gr.pos, gr.rate) + readAt (src, mips, 1, gr.pos, gr.rate)) * 0.5f * w * (own ? gr.reg.gain (gr.pos) : 1.0f);
+                        const float w = (float) (0.5 - 0.5 * gr.wc);
+                        { const double c2 = gr.wc * gr.rc - gr.ws * gr.rs; gr.ws = gr.ws * gr.rc + gr.wc * gr.rs; gr.wc = c2; }
+                        // (its copy, if the source still has one: another sample given while it plays may have fewer)
+                        const auto& from = gr.lv >= 0 && gr.lv < (int) mips.lv.size() ? mips.lv[(size_t) gr.lv] : src;
+                        const double sc = &from == &src ? 1.0 : gr.sc, at = gr.pos * sc, step = gr.rate * sc;
+                        const int fromLen = from.getNumSamples();
+                        const float* c0 = from.getReadPointer (0); const float* c1 = from.getReadPointer (std::min (1, from.getNumChannels() - 1));
+                        // (a copy, at a sample a step or less: the table. The source itself, or a copy still read faster than
+                        // that because the source has no deeper one: as before)
+                        const float both = &from != &src && step <= 1.0 ? grainRead.sum (c0, c1, fromLen, at) : sampleAt (c0, fromLen, at, step) + sampleAt (c1, fromLen, at, step);
+                        const float y = both * 0.5f * w * (own ? gr.reg.gain (gr.pos) : 1.0f);
                         xl += y * (1.0f - gr.pan); xr += y * gr.pan;
                         gr.pos += gr.rate; ++gr.age;
                     }
@@ -1378,6 +1452,7 @@ private:
             grainSrc.setSample (0, i, x); grainSrc.setSample (1, i, x);
         }
         grainMips.build (grainSrc);
+        GrainRead::get();          // (SF-000) the grains' read table, made here and not on the audio thread
     }
 
     std::string name;

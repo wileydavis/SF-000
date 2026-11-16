@@ -397,6 +397,13 @@ public:
     std::atomic<float> peakL { -100.0f }, peakR { -100.0f }, gainRed { 0.0f }, lufs { -70.0f };
     std::atomic<bool> clipL { false }, clipR { false }, fault { false };
     std::atomic<double> cpu { 0.0 };
+    // A buffer that takes longer to make than it lasts leaves a gap in the sound (a click; many of them, a crackle). Counted
+    // since the audio started, with the most a buffer took of its own time lately (it falls back over some seconds), so
+    // that a crackle heard can be told from one that is in the sound. The FAULT lamp lights for three seconds after one.
+    std::atomic<double> cpuMost { 0.0 };
+    std::atomic<int> overCount { 0 };
+    std::atomic<juce::uint32> overAt { 0 };
+    bool overLately() const                     { return overCount.load() > 0 && juce::Time::getMillisecondCounter() - overAt.load() < 3000; }
     std::array<std::atomic<float>, kLanes> laneDb;           // each lane's level as it reaches the mix (dB, falling)
     std::array<double, kLanes> laneSq {};                    // sum of squares since the start (tests)
     std::array<float, kLanes> laneMax {};                    // highest sample since the start (tests)

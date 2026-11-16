@@ -1232,6 +1232,10 @@ python3 tools/master_probe.py probe.wav           # a test signal for measuring 
 build/.../SF-000 --finishcheck in.wav out.wav     # a file through FINISH alone, as 32-bit float (--amount 0 to 1, --input dB, --auto 1: finding its own level, --says: where it puts it; --limit -1 [--gain dB]: the master's limiter after it)
 build/.../SF-000 --finishrig dir                  # the rig as it opens rendered with FINISH off and at 100, as two files to set side by side (--seconds N, --amount A, --target LUFS: the LIMIT knob, --bare: the limiter out of the way)
 build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
+build/.../SF-000 --printsession session.json dir   # a session file opened as the instrument opens it (a copy: the file is not written; its samples go in dir/session/samples) and its arrangement printed into dir (--parts A B: only those; --finish 0 to 4; --rate HZ)
+build/.../SF-000 --printsession session.json dir --load   # no print: what each part asks of the processor on this machine, by lane (instrument + effects), the returns and the master (--time: bar by bar, through the morphs)
+build/.../SF-000 --livesession session.json dir --from 7 --to 10   # the arrangement played as it is played live (the device's callback on its own thread, the timer bringing the parts; --single: both from one thread), written to dir/live.wav with how long each buffer took (live.csv); --buffer N
+build/.../SF-000 --graincheck                     # GRANULAR above its sample's pitch: the sample's tones and nothing else (one of the engine test's checks, alone)
 build/.../SF-000 --uitest                         # clicks and drags every control on every screen
 build/.../SF-000 --stagetest                      # the 3D stage, played through the eye: every control reached where it is drawn, the keys, the view, following, the tags, and falling back when it cannot start
 build/.../SF-000 --miditest                       # notes in, the E16's knobs and rings, the clock out and the clock followed, with made-up messages
@@ -1271,6 +1275,19 @@ Activity Monitor's figure is a share of one core (100 % is one of the Mac's core
 It is the engine plus the screen. SETUP shows the engine's share on its own (ENGINE: n %),
 and `./build.sh perf` measures both. The screen redraws only what moved: a travelling knob, the
 meters when a bar has moved, the playing step.
+
+**Whether the sound kept up.** A buffer of sound has to be made in the time it lasts. One that
+takes longer leaves a gap: a click, and a run of them a crackle at the sound's full level,
+which a print of the same set does not have (a print is not made in real time). The engine
+counts them. **The FAULT lamp lights for three seconds after a late buffer** (and while a
+module says its own sound has gone wrong), and SET UP's ENGINE line has a second row: the most
+a buffer took of its own time lately, how many have run late since the audio started, and what
+the interface itself counted as dropped. A crackle with the lamp dark and none late is in the
+sound; print the set and look there. What a set asks, part by part and lane by lane, without
+the Mac: `--printsession … --load` (see Checks). The dearest thing a lane can play is many
+long notes at once on a model that reads a sample for each (GRANULAR with a GRANULAR layer and
+a four-note CHORD is sixteen); a morph between snapshots whose lanes differ in their make-up
+plays both for its length.
 
 ## What is here
 

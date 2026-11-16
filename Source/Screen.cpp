@@ -1635,7 +1635,8 @@ void Screen::drawMaster (G& g, R r)
     // FAULT, gain reduction, loudness
     const float fy = body + 77;
     g.setColour (tone (col::black)); g.fillRect (R (x0 + 6, fy + 8, 14, 26));
-    g.setColour (eng.fault.load() ? col::amber : tone (col::grey)); g.fillRect (R (x0 + 8, fy + 10, 10, 22));
+    // (lit: a module said something is wrong with its sound, or a buffer ran late in the last three seconds. SET UP says which)
+    g.setColour (eng.fault.load() || eng.overLately() ? col::amber : tone (col::grey)); g.fillRect (R (x0 + 8, fy + 10, 10, 22));
     text (g, "FAULT", R (x0 + 25, fy, 40, 42), fLbl, col::black, juce::Justification::centredLeft);
     readout (g, R (x0 + 66, fy, 64, 42), "GR", String (eng.gainRed.load(), 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     const float lu = eng.lufs.load();

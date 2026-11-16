@@ -2250,6 +2250,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 void Engine::audioDeviceAboutToStart (juce::AudioIODevice* d)
 {
     prepare (d->getCurrentSampleRate(), std::max (64, d->getCurrentBufferSizeSamples()));
+    overCount = 0; cpuMost = 0.0;
     // (on the Mac the device's own figure already holds one buffer)
     devBufMs = (double) d->getCurrentBufferSizeSamples() * 1000.0 / d->getCurrentSampleRate();
     outMs = (float) ((double) d->getOutputLatencyInSamples() * 1000.0 / d->getCurrentSampleRate());
@@ -2279,5 +2280,7 @@ void Engine::audioDeviceIOCallbackWithContext (const float* const*, int, float* 
     }
     const double used = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0), avail = numSamples / sr;
     cpu = cpu.load() + 0.1 * (used / avail - cpu.load());
+    cpuMost = std::max (used / avail, cpuMost.load() * std::exp (-avail / 4.0));
+    if (used > avail) { overCount.fetch_add (1); overAt = juce::Time::getMillisecondCounter(); }
 }
 } // namespace sf0

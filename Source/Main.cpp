@@ -17,6 +17,7 @@
 #include "Online.h"
 #include "Help.h"
 #include <set>
+#include <thread>
 
 static void dumpModules()
 {
@@ -1175,6 +1176,106 @@ static void convolutionBandsTest (int& bad)
     }
     Session::homeForTests = juce::File();
     tmp.deleteRecursively();
+}
+
+// GRANULAR played above its source's pitch (where each grain reads an octave-down copy of the source): a sample of two
+// tones, 220 Hz and 7040 Hz 12 dB under it, on the PAD lane, one note an octave and a semitone over the sample's root,
+// held: the grains then read their copy at just over half a sample a step, where its top tone lies two thirds of the way
+// up the copy's band and a read of too few points mirrors it down into what is heard (four points: 44 dB under the tone).
+// What comes out must be those two tones where that note puts them and next to nothing else below 20 kHz: a read that
+// mirrored or folded any of them, or read the wrong copy, would put sound elsewhere. (Not judged: the tones'
+// levels against each other, and their place to the hertz. Grains that start a little further into the source each time
+// meet out of step, which moves a steady tone by up to half the rate grains start at and sets its level by its frequency:
+// that is granular synthesis, not the read.) Says what it found; false if any of it is off.
+static bool grainCheck (juce::String& said)
+{
+    using namespace sf0;
+    const double SR = 48000.0;
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_grain_check");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto file = dir.getChildFile ("two tones.wav");
+    {
+        const int n = (int) (SR * 3.0);
+        juce::AudioBuffer<float> src (2, n);
+        for (int i = 0; i < n; ++i)
+        {
+            const double t = (double) i / SR;
+            const float x = (float) (0.5 * std::sin (juce::MathConstants<double>::twoPi * 220.0 * t) + 0.125 * std::sin (juce::MathConstants<double>::twoPi * 7040.0 * t));
+            src.setSample (0, i, x); src.setSample (1, i, x);
+        }
+        juce::WavAudioFormat wav;
+        if (auto os = file.createOutputStream())
+            if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (os.release(), SR, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (src, 0, n);
+    }
+    bool ok = false;
+    {
+        const int lane = 9;
+        Engine e; e.prepare (SR, 256);
+        Session ses (e, false);
+        const Engine::Target t { 0, lane, 0 };
+        auto choose = [&] (const char* id, const char* name)
+        {
+            for (auto& sp : e.setupParams (t)) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup (t, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+            return false;
+        };
+        const bool set = choose ("model", "GRANULAR") && choose ("chord", "NONE");
+        e.setSetup (t, "layer", 0.0f); e.setSetup (t, "drive", 0.0f); e.setSetup (t, "drift", 0.0f);
+        const bool loaded = e.loadFile (lane, file);
+        // DETUNE 0 (every grain at the note's own pitch), RES 0, no pocket, CUTOFF open, SPACE 0, the lane's FILTER in the middle
+        for (auto kv : { std::pair<int, float> { 0, 0.0f }, { 2, 0.0f }, { 3, 0.0f }, { 6, 1.0f }, { 7, 0.0f }, { 10, 0.5f } }) ses.userSet (cx::lane (lane, kv.first), kv.second);
+        for (int l = 0; l < kLanes; ++l) if (l != lane) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+        e.set (cx::lane (lane, cx::kSeqMute), 1.0f, 0.0);
+        juce::AudioBuffer<float> b (2, 256);
+        for (int i = 0; i < 300; ++i) e.render (b);
+        struct Tap : Engine::RecSink
+        {
+            int index = 0; std::vector<float> l;
+            void begin (int) noexcept override {}
+            void track (int idx, const float* a, const float*, int n) noexcept override { if (idx == index && l.size() + (size_t) n <= l.capacity()) l.insert (l.end(), a, a + n); }
+            void end (int) noexcept override {}
+        } tap;
+        const int order = 15, N = 1 << order, total = (int) (SR * 4.0);
+        tap.index = 1 + lane; tap.l.reserve ((size_t) total + 4096);
+        const auto smp = sf::loadSampleFile (file, SR, 60.0);
+        const int root = smp != nullptr && smp->rootHz > 0.0f ? (int) std::lround (smp->rootNote) : -1, note = root + 13;
+        e.setRecSink (&tap);
+        e.noteInAt (juce::MidiMessage::noteOn (lane + 1, note, (juce::uint8) 110), 0);
+        for (int i = 0; i < total / 256; ++i) e.render (b);
+        e.setRecSink (nullptr);
+        if (set && loaded && root >= 0 && (int) tap.l.size() >= N + 4096)
+        {
+            // the last two thirds of a second of it, by its spectrum (Blackman-Harris: what is beside a tone is the sound's, not the window's)
+            std::vector<float> buf ((size_t) N * 2, 0.0f);
+            const float* x = tap.l.data() + tap.l.size() - (size_t) N;
+            for (int i = 0; i < N; ++i)
+            {
+                const double a = juce::MathConstants<double>::twoPi * (double) i / (double) (N - 1);
+                buf[(size_t) i] = x[i] * (float) (0.35875 - 0.48829 * std::cos (a) + 0.14128 * std::cos (2.0 * a) - 0.01168 * std::cos (3.0 * a));
+            }
+            juce::dsp::FFT fft (order);
+            fft.performFrequencyOnlyForwardTransform (buf.data());
+            const double hz = SR / (double) N, ratio = 440.0 * std::pow (2.0, (double) (note - 69) / 12.0) / (double) smp->rootHz;      // (the note's pitch over the root the sample was heard to have)
+            const double fLow = 220.0 * ratio, fHigh = 7040.0 * ratio;
+            double low = 0.0, high = 0.0, rest = 0.0, restAt = 0.0, restMost = 0.0; int peakBin = 0; float peak = 0.0f;
+            for (int k = (int) (20.0 / hz); k < (int) (20000.0 / hz); ++k)
+            {
+                const double f = (double) k * hz, p = (double) buf[(size_t) k] * buf[(size_t) k];
+                if (buf[(size_t) k] > peak) { peak = buf[(size_t) k]; peakBin = k; }
+                if (std::abs (f - fLow) < 600.0) low += p;
+                else if (std::abs (f - fHigh) < 600.0) high += p;
+                else { rest += p; if (p > restMost) { restMost = p; restAt = f; } }
+            }
+            const double upper = 10.0 * std::log10 ((high + 1e-30) / (low + 1e-30)), other = 10.0 * std::log10 ((rest + 1e-30) / (low + 1e-30));
+            const bool pitched = std::abs ((double) peakBin * hz - fLow) < 40.0, clean = other < -80.0;
+            ok = pitched && clean;
+            said = "the root heard " + juce::MidiMessage::getMidiNoteName (root, true, true, 3) + "; the lower tone due at " + juce::String (fLow, 1) + " Hz, found at " + juce::String ((double) peakBin * hz, 1)
+                 + "; the upper (" + juce::String (fHigh, 0) + " Hz) " + juce::String (upper, 1) + " dB against it; everything else under 20 kHz " + juce::String (other, 1)
+                 + " dB against the lower tone (the most of it at " + juce::String (restAt, 0) + " Hz)";
+        }
+        else said = "it could not be set up (model and chord " + juce::String ((int) set) + ", file " + juce::String ((int) loaded) + ", root " + juce::String (root) + ", heard " + juce::String ((int) tap.l.size()) + " samples)";
+    }
+    dir.deleteRecursively();
+    return ok;
 }
 
 static int selfTest (const juce::String& wavPath, double bars = 16.0)
@@ -3489,6 +3590,14 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
         if (hi - lo > 480) { std::printf ("  FAIL: lanes leave more than 10 ms apart\n"); ++bad; }
     }
 
+    {
+        // GRANULAR above its source's pitch: the grains' read (grainCheck)
+        juce::String said;
+        const bool ok = grainCheck (said);
+        if (! ok) ++bad;
+        std::printf ("  %s: GRANULAR an octave and a semitone over its sample: the sample's tones and nothing else (%s)\n", ok ? "ok  " : "FAIL", said.toRawUTF8());
+    }
+
     if (wavPath.isNotEmpty())
     {
         juce::File f (wavPath);
@@ -3603,6 +3712,211 @@ static int finishRig (const juce::StringArray& args)
                          100.0 * e.finish(), (double) says->finishLoud(), (double) says->finishAuto(), 2.0, (double) held, f.getFullPathName().toRawUTF8());
     }
     return 0;
+}
+
+// --livesession SESSION.json DIR [--from PART] [--to PART] [--buffer N] [--rate HZ] [--single] [--name X]: the arrangement of
+// a session file played as the instrument plays it live, not as it prints it: the device's callback on a thread of its own,
+// in buffers of N samples (256), no faster than real time, while this thread runs the session's timer, which brings each
+// part. What came out is written to DIR/X.wav (live.wav), with how long each buffer took. --single: the same calls made
+// from one thread, a buffer and then a look at the arrangement, for a render to hold the other against.
+static int liveSession (const juce::StringArray& args)
+{
+    using namespace sf0;
+    const int at = args.indexOf ("--livesession");
+    if (at + 2 >= args.size()) { std::printf ("--livesession SESSION.json DIR [--from PART] [--to PART] [--buffer N] [--rate HZ] [--single] [--name X]\n"); return 1; }
+    const juce::File src (args[at + 1].unquoted()), out (args[at + 2].unquoted());
+    auto opt = [&] (const char* n, int k, double d) { const int i = args.indexOf (n); return i >= 0 && i + k < args.size() ? args[i + k].getDoubleValue() : d; };
+    const juce::File home = out.getChildFile ("session");
+    home.createDirectory();
+    if (! src.copyFileTo (home.getChildFile ("session.json"))) { std::printf ("could not copy %s\n", src.getFullPathName().toRawUTF8()); return 1; }
+    Session::stateFileForTests = home.getChildFile ("session.json");
+    {
+        Engine e;
+        const int buffer = juce::jlimit (16, 8192, (int) opt ("--buffer", 1, 256.0));
+        const double rate = opt ("--rate", 1, 48000.0);
+        e.prepare (rate, std::max (64, buffer));
+        Session ses (e, true);
+        const int parts = (int) ses.arrangement.size();
+        if (parts == 0) { std::printf ("no arrangement in it\n"); Session::stateFileForTests = juce::File(); return 1; }
+        const int from = juce::jlimit (1, parts, (int) opt ("--from", 1, 1.0)) - 1, to = juce::jlimit (from, parts - 1, (int) opt ("--to", 1, (double) parts) - 1);
+        int bars = 0;
+        for (int i = from; i <= to; ++i) bars += ses.arrangement[(size_t) i].bars;
+        const double barSec = 240.0 / e.tempo();
+        const juce::int64 lead = (juce::int64) rate, total = lead + (juce::int64) ((double) (bars + 1) * barSec * rate);
+        juce::AudioBuffer<float> all (2, (int) total + buffer);
+        all.clear();
+        std::vector<float> took;
+        took.reserve ((size_t) (total / buffer + 8));
+        std::atomic<juce::int64> done { 0 };
+        std::atomic<bool> stop { false };
+        auto block = [&]
+        {
+            const juce::int64 d = done.load();
+            float* outs[2] = { all.getWritePointer (0, (int) d), all.getWritePointer (1, (int) d) };
+            const auto t0 = juce::Time::getHighResolutionTicks();
+            e.audioDeviceIOCallbackWithContext (nullptr, 0, outs, 2, buffer, juce::AudioIODeviceCallbackContext());
+            took.push_back ((float) (juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) / ((double) buffer / rate)));
+            done.store (d + buffer);
+        };
+        std::vector<std::pair<int, juce::int64>> began;       // each part, and the sample it was brought at
+        const bool single = args.contains ("--single");
+        std::printf ("%s: parts %d to %d of %d (%d bars at %.1f), buffers of %d at %.0f Hz, FINISH %d\n", single ? "one thread" : "two threads, as live", from + 1, to + 1, parts, bars, e.tempo(), buffer, rate, ses.finishPct());
+        int was = -2;
+        auto look = [&] { if (const int now = ses.arrPart(); now != was) { was = now; began.push_back ({ now, done.load() }); } };
+        if (single)
+        {
+            while (done.load() < lead) block();
+            ses.arrPlay (from);
+            while (done.load() + buffer <= total && ses.arrPlaying() && ses.arrPart() <= to)
+            {
+                block();
+                const double t0 = juce::Time::getMillisecondCounterHiRes();
+                ses.arrTick();
+                // (how long the bringing of a part held this thread: live, the sound runs on meanwhile)
+                if (const double ms = juce::Time::getMillisecondCounterHiRes() - t0; ms > 2.0) std::printf ("  bringing part %d took %.0f ms of this thread\n", ses.arrPart() + 1, ms);
+                look();
+            }
+        }
+        else
+        {
+            std::thread audio ([&]
+            {
+                const double t0 = juce::Time::getMillisecondCounterHiRes();
+                while (! stop.load() && done.load() + buffer <= total)
+                {
+                    block();
+                    const double ahead = (double) done.load() / rate * 1000.0 - (juce::Time::getMillisecondCounterHiRes() - t0);
+                    if (ahead > 1.0) juce::Thread::sleep ((int) ahead);
+                }
+            });
+            while (done.load() < lead) juce::Thread::sleep (5);
+            ses.arrPlay (from);
+            while (done.load() + buffer <= total && ses.arrPlaying() && ses.arrPart() <= to) { juce::MessageManager::getInstance()->runDispatchLoopUntil (5); look(); }
+            stop = true;
+            audio.join();
+        }
+        const int n = (int) done.load();
+        for (auto& b : began) std::printf ("  part %2d from %.3f s (bar %.2f of what was played)\n", b.first + 1, (double) (b.second - lead) / rate, (double) (b.second - lead) / rate / barSec + 1.0);
+        double sum = 0.0, worst = 0.0; int over = 0;
+        for (float t : took) { sum += t; worst = std::max (worst, (double) t); over += t > 1.0f ? 1 : 0; }
+        std::printf ("  %d buffers: a buffer took %.0f %% of its own time on average, %.0f %% at the most; %d took longer than they last (this machine)\n", (int) took.size(), 100.0 * sum / std::max ((size_t) 1, took.size()), 100.0 * worst, over);
+        std::printf ("  the rig said FAULT: %s\n", e.fault.load() ? "yes" : "no");
+        const juce::String name = args.contains ("--name") ? args[args.indexOf ("--name") + 1] : juce::String ("live");
+        const auto f = out.getChildFile (name + ".wav");
+        f.deleteFile();
+        juce::WavAudioFormat wav;
+        if (auto os = f.createOutputStream())
+            if (std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (os.release(), rate, 2, 32, {}, 0) }) w->writeFromAudioSampleBuffer (all, 0, n);
+        // (how long each buffer took, for a look at where the slow ones fall)
+        juce::String csv;
+        for (size_t i = 0; i < took.size(); ++i) csv << juce::String ((double) ((juce::int64) i * buffer - lead) / rate, 4) << "," << juce::String (took[i], 4) << "\n";
+        out.getChildFile (name + ".csv").replaceWithText (csv);
+        std::printf ("  wrote %s (%.1f s; the arrangement begins 1.000 s in)\n", f.getFullPathName().toRawUTF8(), (double) n / rate);
+        ses.arrStop();
+    }
+    Session::stateFileForTests = juce::File();
+    return 0;
+}
+
+// --printsession SESSION.json DIR [--finish PLACE] [--parts A B] [--rate HZ]: a session file opened as the instrument opens it
+// (a copy of it, in DIR/session: the file given is not written), and its arrangement printed into DIR. For finding out what
+// a set does that it should not. --finish: FINISH put at that place (0 OFF to 4, all of it) whatever the file says.
+// --parts A B: only those parts are played (the ones before A are brought, as FROM HERE brings them, not played).
+static int printSession (const juce::StringArray& args)
+{
+    using namespace sf0;
+    const int at = args.indexOf ("--printsession");
+    if (at + 2 >= args.size()) { std::printf ("--printsession SESSION.json DIR [--finish PLACE] [--parts A B] [--rate HZ]\n"); return 1; }
+    const juce::File src (args[at + 1].unquoted()), out (args[at + 2].unquoted());
+    auto opt = [&] (const char* n, int k, double d) { const int i = args.indexOf (n); return i >= 0 && i + k < args.size() ? args[i + k].getDoubleValue() : d; };
+    const juce::File home = out.getChildFile ("session");
+    home.createDirectory();
+    if (! src.copyFileTo (home.getChildFile ("session.json"))) { std::printf ("could not copy %s\n", src.getFullPathName().toRawUTF8()); return 1; }
+    Session::stateFileForTests = home.getChildFile ("session.json");
+    int bad = 0;
+    {
+        Engine e;
+        e.prepare (opt ("--rate", 1, 48000.0), 256);
+        Session ses (e, true);
+        std::printf ("opened: %d snapshots, an arrangement of %d parts (%d bars) at %.1f, FINISH %d\n", (int) ses.library.size(), (int) ses.arrangement.size(), ses.arrBars(), e.tempo(), ses.finishPct());
+        if (args.contains ("--finish")) ses.finishSet ((int) opt ("--finish", 1, 0.0));
+        if (args.contains ("--parts"))
+        {
+            // (the parts before the first are brought and made one snapshot, which stands for them all for one bar)
+            const int a = juce::jlimit (1, (int) ses.arrangement.size(), (int) opt ("--parts", 1, 1.0)) - 1, b = juce::jlimit (a + 1, (int) ses.arrangement.size(), (int) opt ("--parts", 2, 1.0));
+            while ((int) ses.arrangement.size() > b) ses.arrRemove ((int) ses.arrangement.size() - 1);
+            if (a > 0)
+            {
+                e.setRunning (false);
+                ses.arrBring (a - 1, 0.0);
+                const auto before = ses.take();
+                for (int i = 0; i < a; ++i) ses.arrRemove (0);
+                ses.arrAdd (before, 0, Session::kAllLanes);
+                ses.arrSet (0, 1, 0);
+            }
+            std::printf ("parts %d to %d: %d parts now, %d bars\n", a + 1, b, (int) ses.arrangement.size(), ses.arrBars());
+        }
+        if (args.contains ("--load"))
+        {
+            // --load: no print. Each part of the arrangement as it stands once arrived, played for six seconds, and what
+            // each lane's instrument and its effects, the returns and the master ask of the processor (this machine, one
+            // core; real time = 100 %). --block N: in blocks of that many samples (128).
+            const int block = (int) opt ("--block", 1, 128.0);
+            juce::AudioBuffer<float> b (2, block);
+            std::printf ("part snapshot                  all | instruments, effects by lane (%%)%*s| returns master\n", 60, "");
+            for (int i = 0; i < (int) ses.arrangement.size(); ++i)
+            {
+                e.setRunning (false);
+                for (int k = 0; k < 20; ++k) e.render (b);
+                ses.arrBring (i, 0.0);
+                e.setRunning (true);
+                for (int k = 0; k < (int) (48000.0 * 2.0 / block); ++k) e.render (b);
+                e.profLane.fill (0.0); e.profIns.fill (0.0); e.profRet = e.profMaster = e.profAll = e.profPockets = 0.0;
+                e.profile = true;
+                const double secs = 6.0;
+                double worst = 0.0;
+                for (int k = 0; k < (int) (48000.0 * secs / block); ++k)
+                {
+                    const auto t0 = juce::Time::getHighResolutionTicks();
+                    e.render (b);
+                    worst = std::max (worst, juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) / ((double) block / 48000.0));
+                }
+                const auto* sn = ses.findSnap (ses.arrangement[(size_t) i].snap);
+                std::printf ("%3d  %-22s %6.1f |", i + 1, sn != nullptr ? sn->name.toRawUTF8() : "", 100.0 * e.profAll / secs);
+                for (int l = 0; l < kLanes; ++l) std::printf (" %4.1f+%-5.1f", 100.0 * e.profLane[(size_t) l] / secs, 100.0 * e.profIns[(size_t) l] / secs);
+                std::printf ("| %5.1f %5.1f   slowest block %.0f %%\n", 100.0 * e.profRet / secs, 100.0 * e.profMaster / secs, 100.0 * worst);
+                e.profile = false;
+            }
+            Session::stateFileForTests = juce::File();
+            return 0;
+        }
+        // (--time: nothing written; what each bar asks of the processor, as a share of the time it lasts on this machine)
+        Session::printTimeOnly = args.contains ("--time");
+        const juce::String err = ses.printBegin (out);
+        if (err.isNotEmpty()) { std::printf ("the print did not begin: %s\n", err.toRawUTF8()); bad = 1; }
+        else
+        {
+            while (ses.printStep (50.0)) {}
+            std::printf ("%s\n", ses.printNote.toRawUTF8());
+            if (Session::printTimeOnly)
+            {
+                // the part each bar is in, and where its way in ends
+                std::vector<int> partOf; std::vector<bool> inMorph;
+                for (int i = 0; i < (int) ses.arrangement.size(); ++i)
+                    for (int b = 0; b < ses.arrangement[(size_t) i].bars; ++b) { partOf.push_back (i); inMorph.push_back (i > 0 && (double) b < ses.arrMorphBars (i)); }
+                std::printf ("bar  part  snapshot                 mean   slowest block   (share of real time on this machine; * a bar of the part's way in)\n");
+                for (size_t b = 0; b < ses.printTimes.size(); ++b)
+                {
+                    const int part = b < partOf.size() ? partOf[b] : -1;
+                    const auto* sn = part >= 0 ? ses.findSnap (ses.arrangement[(size_t) part].snap) : nullptr;
+                    std::printf ("%3d  %3d   %-22s %5.2f   %5.2f  %s\n", (int) b + 1, part + 1, sn != nullptr ? sn->name.toRawUTF8() : "", (double) ses.printTimes[b].first, (double) ses.printTimes[b].second, b < inMorph.size() && inMorph[b] ? "*" : "");
+                }
+            }
+        }
+        Session::printTimeOnly = false;
+    }
+    Session::stateFileForTests = juce::File();
+    return bad;
 }
 
 // --printbus [DIR]: what a print leaves, and is the drum bus in it? A four-bar arrangement of one snapshot is printed twice,
@@ -9731,7 +10045,7 @@ class SetupPanel : public juce::Component, private juce::Timer
 {
 public:
     SetupPanel (juce::AudioDeviceManager& dm, sf0::Engine& e, sf0::Midi& m)
-        : audio (dm, 0, 0, 2, 4, false, false, true, false), engine (e), midi (m)
+        : audio (dm, 0, 0, 2, 4, false, false, true, false), devices (dm), engine (e), midi (m)
     {
         addAndMakeVisible (audio);
         for (auto* l : { &load, &ins, &e16, &delay, &clockLabel, &status, &stepsLabel, &late, &knobLabel, &pagesLabel, &slotsLabel })
@@ -9851,7 +10165,7 @@ public:
         libChoose.onClick = [this] { choose (true); };
         recChoose.onClick = [this] { choose (false); };
         showFiles();
-        setSize (520, 882 + 98);
+        setSize (520, 882 + 98 + 22);
         show();
         startTimerHz (4);
     }
@@ -9860,7 +10174,7 @@ public:
         auto r = getLocalBounds();
         audio.setBounds (r.removeFromTop (380));
         r = r.reduced (16, 4);
-        load.setBounds (r.removeFromTop (24));
+        load.setBounds (r.removeFromTop (46));      // (two lines: its share of a buffer's time, and whether it kept up)
         ins.setBounds (r.removeFromTop (24));
         e16.setBounds (r.removeFromTop (24));
         {
@@ -9953,7 +10267,14 @@ private:
         delay.setText ("LATENCY: " + total + " MS FROM A NOTE ARRIVING TO ITS SOUND (" + ms (engine.waitPartMs()) + " WAITING FOR A BUFFER, " + ms (engine.outPartMs())
                            + " OUT THROUGH THE INTERFACE, " + ms (engine.insidePartMs()) + " THE LIMITER'S LOOK-AHEAD). DELAY OUTSIDE GEAR BY THAT TO HEAR IT WITH SF-000. ONLY THE BUFFER SIZE CHANGES IT.",
                        juce::dontSendNotification);
-        load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)", juce::dontSendNotification);
+        // (and whether it kept up: the buffers that took longer than they last, each a gap in the sound, and what the interface itself counted)
+        const int lateN = engine.overCount.load(), dropped = devices.getXRunCount();
+        load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)\n"
+                          + juce::String (juce::roundToInt (100.0 * engine.cpuMost.load())) + " % AT THE MOST LATELY. "
+                          + (engine.fault.load() ? juce::String ("A MODULE REPORTS A FAULT. ") : juce::String())
+                          + (lateN == 0 ? juce::String ("NO BUFFER HAS RUN LATE") : "RUN LATE (EACH A GAP IN THE SOUND): " + juce::String (lateN))
+                          + (dropped > 0 ? ", DROPPED: " + juce::String (dropped) : juce::String()),
+                      juce::dontSendNotification);
         ins.setText ("MIDI IN: " + list (midi.inputNames()) + "   (A LANE'S NUMBER IS ITS CHANNEL)", juce::dontSendNotification);
         e16.setText ("E16: " + (midi.e16Name().isNotEmpty() ? midi.e16Name() : juce::String ("NOT FOUND")) + (midi.pageNote().isNotEmpty() ? "   (" + midi.pageNote() + ")" : juce::String()), juce::dontSendNotification);
         const bool fol = midi.followsClock(), snd = ! fol && midi.sendsClock();
@@ -9983,6 +10304,7 @@ private:
         }
     }
     juce::AudioDeviceSelectorComponent audio;
+    juce::AudioDeviceManager& devices;
     sf0::Engine& engine;
     sf0::Midi& midi;
     juce::Label load, ins, e16, delay, clockLabel, status, stepsLabel, late, knobLabel, pagesLabel, slotsLabel;
@@ -10795,6 +11117,9 @@ public:
         }
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
+        if (args.contains ("--printsession")) { setApplicationReturnValue (printSession (args)); quit(); return; }
+        if (args.contains ("--livesession")) { setApplicationReturnValue (liveSession (args)); quit(); return; }
+        if (args.contains ("--graincheck")) { juce::String said; const bool ok = grainCheck (said); std::printf ("%s: %s\n", ok ? "ok" : "FAIL", said.toRawUTF8()); setApplicationReturnValue (ok ? 0 : 1); quit(); return; }
         if (args.contains ("--printbus")) { const int i = args.indexOf ("--printbus"); setApplicationReturnValue (printBusProbe (i + 1 < args.size() && ! args[i + 1].startsWith ("--") ? args[i + 1].unquoted() : juce::String())); quit(); return; }
         if (args.contains ("--finishcheck")) { setApplicationReturnValue (finishCheck (args)); quit(); return; }
         if (args.contains ("--finishrig")) { setApplicationReturnValue (finishRig (args)); quit(); return; }

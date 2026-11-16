@@ -530,6 +530,8 @@ struct Session::Print : Engine::RecSink
     float blockPeak = 0.0f;                             // the set's, this block
     juce::AudioBuffer<float> buf { 2, kBlock };
     std::array<float, 1024> tl {}, tr {}, zero {};
+    std::vector<double> barSum, barMax;                 // (printTimeOnly: by the bar, the seconds its blocks took and the longest of them against its length)
+    std::vector<int> barBlocks;
 
     enum Phase { play, tail } phase = play;
     juce::int64 total = 0, played = 0, tailed = 0, quiet = 0;
@@ -676,12 +678,13 @@ String Session::printBegin (const juce::File& root)
     p->f[Print::fBusOut].file = stems.getChildFile (Recorder::trackName (kLanes + 3) + ".wav");
     for (int k = 0; k < 2; ++k) p->f[(size_t) (Print::fRet + k)].file = stems.getChildFile (Recorder::trackName (kLanes + 1 + k) + ".wav");
     p->f[Print::fTrans].file = stems.getChildFile (Recorder::trackName (kLanes + 4) + ".wav");
+    if (! printTimeOnly)                                // (timed only: nothing is written)
     for (int which : { (int) Print::fSet, (int) Print::fPre, (int) Print::fMix })
         if (! p->open (p->f[(size_t) which])) { printEnd (false, "CANNOT WRITE IN " + dir.getFullPathName().toUpperCase()); return printNote; }
     p->loudPre.prepare (p->rate); p->loudMix.prepare (p->rate);
     p->loud.prepare (p->rate);
     p->total = (juce::int64) std::llround ((double) arrBars() * 4.0 * 60.0 / p->tempo * p->rate);
-    p->eng->setRecSink (p.get());
+    p->eng->setRecSink (printTimeOnly ? nullptr : p.get());
     p->ses->arrOn = true; p->ses->arrAt = 0; p->ses->arrZero = 0.0; p->ses->arrWait = false;
     p->eng->setRunning (true);
     printNote = "PRINTING";
@@ -698,7 +701,16 @@ bool Session::printStep (double msToSpend)
     auto render = [&p] (int n)
     {
         p.buf.setSize (2, n, false, false, true);
-        p.eng->render (p.buf);
+        if (! printTimeOnly) p.eng->render (p.buf);
+        else
+        {
+            const juce::int64 a = juce::Time::getHighResolutionTicks();
+            p.eng->render (p.buf);
+            const double took = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - a) / ((double) n / p.rate);
+            const size_t bar = (size_t) ((double) p.played / (p.rate * 240.0 / p.tempo));
+            if (p.barSum.size() <= bar) { p.barSum.resize (bar + 1, 0.0); p.barMax.resize (bar + 1, 0.0); p.barBlocks.resize (bar + 1, 0); }
+            p.barSum[bar] += took; p.barMax[bar] = std::max (p.barMax[bar], took); ++p.barBlocks[bar];
+        }
         sf::Bus::renderClockAdvance ((double) n / p.rate);
     };
     while (juce::Time::getMillisecondCounterHiRes() - t0 < msToSpend)
@@ -709,6 +721,13 @@ bool Session::printStep (double msToSpend)
             // to the sample its last bar ends on, and not one further
             const int n = (int) std::min ((juce::int64) Print::kBlock, p.total - p.played);
             if (n > 0) { render (n); p.played += n; p.ses->arrTick(); }
+            if (p.played >= p.total && printTimeOnly)
+            {
+                printTimes.clear();
+                for (size_t b = 0; b < p.barSum.size(); ++b) printTimes.push_back ({ (float) (p.barSum[b] / std::max (1, p.barBlocks[b])), (float) p.barMax[b] });
+                printEnd (false, "TIMED");
+                return false;
+            }
             if (p.played >= p.total)
             {
                 p.ses->arrOn = false; p.ses->arrAt = -1;

@@ -3448,7 +3448,105 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      its keys: the snapshot KEEP made is whole. I did not make TO STACK do that for you: it
      would put snapshots in the library that you never heard.*
 
+## A crackle in the arrangement's morphs; GRANULAR's cost (Nov 16, 08:00): sixty-seventh build
+
+574. **You**, 08:00: "some morphs in the arrangement are now producing a lot of glitch crackle
+     static (possibley speaker damaging). what do you neeed to diagnose?" Then the session file
+     (08:08) and its samples, and: (08:10) "it happens between snapshot 94 and 96." (08:11)
+     "same place (snapshot at least) every time. i believe after the very latest build.happens
+     on play from any position before the affected snapshots." (08:11, to whether a part there
+     had been edited) "one part was but it happened before and after i edited it." (08:12)
+     "finish is on . i didn't notice the lamp, but wasn't looking." (08:22) "it's not in the
+     prunted mix".
+575. **What was found**, on your session and samples, here (Linux, one slow core: every figure
+     is a share of real time on this machine, for comparing with each other, not your Mac's):
+     - **The sound itself is right.** Your arrangement printed, and played the way the
+       instrument plays it live (the device's callback, the timer bringing each part; on one
+       thread and on two): nothing but finite samples, no step out of place, no fault said.
+       What is loud and bright between SNAP 094 and SNAP 096 is what you put there: the
+       TRANSITION's own riser into SNAP 095 2 (bars 61 to 64) and its hit, and your "Guerro"
+       into SNAP 096 (bar 80). Both are in the print.
+     - **The PAD lane, in SNAP 088 to 095 and 098, took 149 to 159 % of a core by itself**; no
+       other lane's instrument took more than 10 %, no effect more than 5 %. The whole rig:
+       190 to 224 % in those parts, 48 to 69 % in the others (SNAP 017, 096, 018), 46 % as the
+       instrument comes. The pad there is GRANULAR with a GRANULAR layer on "DFAM Boom", CHORD
+       MIN7: sixteen notes sounding, four grains each, at twice the rate, and each grain read
+       the sample 5.2 times faster than it was recorded (the sample's root is far under the
+       notes played). All of it was in the read (576).
+     - **The morphs are the dearest moments.** Played the live way, SNAP 094's own bars took
+       204 % of a buffer's time on average and the four bars into SNAP 095 2 (65 to 68) 226 %;
+       SNAP 095 2's own 212 %, and the four into SNAP 017 (73 to 76) 233 %, the dearest of
+       the arrangement: for the length of a morph the lanes whose make-up changes play twice,
+       the one leaving and the one arriving, and so do the effects.
+     - *My reading, not proven:* on your Mac the rig in those parts ran close to all the time
+       a buffer has, and in those two morphs over it. A buffer that is not ready in time is a
+       gap in the sound; a run of them is a crackle at the sound's full level. A print is not
+       made in real time, so it has none. This fits "same place every time" and "not in the
+       printed mix". **It does not explain "after the very latest build"**: FINISH (build 64)
+       costs 2 % here, and nothing in builds 65 and 66 is in the sound's path while the
+       arrangement plays. The snapshots are newer than those builds; whether the pad in them
+       is, I cannot see. The Mac has not been measured: 577 is how it will be.
+576. **GRANULAR's read** (`suite/modules/Synth.cpp`, SF-000's own). A grain played above its
+     source's pitch read the source (or the octave-down copy on which it advanced one to two
+     samples a step) through `sampleAt`'s low-pass: 18 to 36 points for each channel, each with
+     a table look-up, and a cosine for its window, every sample. Now, settled once as the
+     grain starts: it reads the copy an octave further down, on which it advances a sample a
+     step at the most, with **sixteen points from a table** (a windowed sinc cut at the copy's
+     own Nyquist, 256 fractions of a sample, the two nearest blended), both channels in one
+     pass; its window turns a step a sample. A grain at or below the source's pitch reads the
+     source as it did.
+     - **Cost**: the PAD lane in those snapshots 157 % to 31 %; the rig in those parts 202 to
+       218 % to 82 to 107 %; played the live way, SNAP 094's bars 204 % to 83 %, the morph
+       into SNAP 095 2 226 % to 95 %, the morph into SNAP 017 233 % to 119 %. (Of the pad's
+       31 %: 12 the reads, 19 the rest of sixteen voices at twice the rate.)
+     - **Sound**: your pad's stem over parts 7 and 8, printed before and after: the difference
+       is 74 dB under the pad; the whole set's, 91 dB under it. On tones, each read on a copy
+       at 0.51 to 1 sample a step and halved as a voice's sum is: level within 0.01 dB to
+       18 kHz and 0.3 dB at 20 kHz, and everything else under 20 kHz more than 78 dB below the
+       tone (the read it replaces: 0.00 dB, 89 dB).
+     - *Tried and not kept:* four points on the same copy, as a sample at its own pitch is
+       read. Five points of a core cheaper, and the same on your pad to 73 dB; but a bright
+       source on some notes came out 1.1 dB down at 15 kHz, with what the read mirrored 37 to
+       44 dB under the top it came from.
+     - **Checked** in the engine test: a sample of two tones (220 Hz, and 7040 Hz 12 dB under
+       it), GRANULAR an octave and a semitone over its root: the tones where the note puts
+       them, everything else under 20 kHz 109 dB under the lower tone. (With four points:
+       70 dB, and the check fails.) `--graincheck` runs it alone.
+577. **A buffer that ran late is said.** *Mine.* The engine counts the buffers that took longer
+     to make than they last, since the audio started, and keeps the most a buffer took of its
+     own time lately. **The FAULT lamp lights for three seconds after one** (it lit only for a
+     module's own fault, which a late buffer is not: the lamp you did not see would not have
+     shown this). SET UP's ENGINE line has a second row: "n % AT THE MOST LATELY", then "NO
+     BUFFER HAS RUN LATE" or "RUN LATE (EACH A GAP IN THE SOUND): n", and what the interface
+     itself counted as dropped, if it counts.
+578. **Tools** (README): `--printsession SESSION.json DIR` opens a session file as the
+     instrument does (a copy of it) and prints its arrangement; `--load` instead says what each
+     part asks of the processor, lane by lane; `--time`, bar by bar. `--livesession` plays it
+     as it is played live and writes what came out, with how long each buffer took.
+579. *Seen on the way, not changed:* the TRANSITION bar's two files in your session are where
+     you chose them ("/Library/Audio/Presets/Xfer Records/Serum 2 Presets/…": S-Sound.wav,
+     626 Cymbal Crash.flac), not copies in the library: files given to the bar before the
+     library kept its own copy of them. Both slots are on their built-in sound, so nothing
+     plays them now; on another computer they would not be found. A lane with nothing playing
+     costs 4 to 6 % of a core here, the returns 10 %, the master 8 %: the rig at rest is 46 %.
+     That is where the next saving is, if one is wanted.
+580. **You**, 09:03, for after this: "The stack knob should also change notes if the chips have
+     n selected. we can handle it similar to the way arrangement handles it. And in the main
+     view, when moving a stack knob, it would be useful if the popup hud showed a progress bar
+     to the next snapshot so i could know when i hit a complete snapshot state and how far i
+     have to go. that way I can do a glide to a specifc snapshot or a point in between but know
+     what i'm aiming at when i trun the knob. Also need a way to delete knobs and stacks and in
+     the macro interface."
+
 ## Not verified
+
+- **The crackle (574 to 577) has not been heard here, and your Mac has not been measured.** That
+  the rig ran out of time in those morphs is my reading of what the parts cost; the cost is
+  measured, on another machine. With this build: play the arrangement through SNAP 094 to 096
+  and watch the FAULT lamp; afterwards SET UP's ENGINE line says the most a buffer took and
+  how many ran late. **If it still crackles and none ran late, it is not this**, and the line
+  says so. GRANULAR's new read is measured on tones and against your pad as it was; no one has
+  listened to a bright granular sound through it.
 
 - **EDIT (572) and TO STACK (573)** are checked on the session and the drawn screens, with the
   snapshots the instrument comes with. **Not on your Mac, not on an arrangement of yours, and

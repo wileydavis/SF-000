@@ -470,6 +470,10 @@ public:
     juce::File printFolder;                             // the last print's folder
     int printJoined = 0;                                // in the last print: lanes that went into the mix both ways and are one stem (the drum bus did nothing)
     juce::uint32 arrEditLit = 0;                        // the last KEEP: the keys it lit on the part that were out (tests, and the page's note)
+    // (a tool's: a print that writes nothing and keeps the time each bar took to render, as a share of the time the bar
+    // lasts: its blocks' mean, and its slowest block. To find where a set asks more of the processor than it has.)
+    static inline bool printTimeOnly = false;
+    std::vector<std::pair<float, float>> printTimes;
     // A recall of part of it: the lanes that are chosen, the returns, the drum bus, the key come
     // from the snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo,
     // GLIDE and the master's three knobs are the rig's and no snapshot's.)
