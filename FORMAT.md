@@ -151,6 +151,8 @@ this build does not have is written back as it was read.
   reads as the longest length it has that is not over it, and plays as no longer than the part.
   A part whose snapshot is not in the library is dropped on reading. What a build does not know
   of a part, or of the arrangement, is carried.
+  `edited: true` (sixty-sixth build on; absent: no): the part's snapshot was made for it by EDIT,
+  and the next EDIT of the part replaces it if nothing else holds it.
 - **`stacks`** (thirty-eighth build on): the rack. Until the fiftieth build, the stacks the web
   library's tray held at the last LOAD; from it, the rack ONLINE keeps the same as the library's
   (`mark`, `stacksGone`: a stack with no `mark` and no `here` is one an earlier LOAD brought, and

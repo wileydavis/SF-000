@@ -160,7 +160,8 @@ public:
     bool testDescribe (int ctl, juce::String& where, juce::String& label, const char*& what) const { return describe (ctl, where, label, what); }      // what INFO's box says of a control
     static bool testIsPanic (const TestHit& h) { return h.kind == hAct && h.a == aPanic; }
     // the arrangement's page: its key (0), PLAY, FROM HERE, EARLIER, LATER, REMOVE, CLEAR, PRINT; a part's card, its BARS, its MORPH
-    static bool testIsArrKey (const TestHit& h, int which) { return h.kind == hAct && h.a == aArrange + which; }
+    static bool testIsArrKey (const TestHit& h, int which) { return h.kind == hAct && h.a == aArrange + which; }        // (0 the page's own, 1 PLAY, 2 FROM HERE, 3 EARLIER, 4 LATER, 5 REMOVE, 6 CLEAR, 7 PRINT, 8 EDIT, 9 TO STACK)
+    static bool testIsEdit (const TestHit& h, int which) { return h.kind == hAct && h.a == aEditKeep + which; }         // (EDIT, in the main page's bar: 0 KEEP, 1 DROP)
     static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
     static bool testIsPick (const TestHit& h, int index) { return h.kind == hPick && h.a == index; }
     static bool testIsPickAdd (const TestHit& h, int index) { return h.kind == hPickAdd && h.a == index; }
@@ -250,7 +251,8 @@ private:
                aFinish,
                aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,
                aPockets, aPkAuto, aPkReset,
-               aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint,
+               aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint, aArrEdit, aArrStack,
+               aEditKeep, aEditDrop,
                aFetch,
                aStackCue };            // the snapshot module: CUE (how its stack knobs are played)       // the library screen: LOAD (what the web library's tray holds), STACK (the next of the stacks it brought)
 
@@ -453,7 +455,10 @@ private:
     R findRect;
     // TRANSITION, in the bar on the main and the macro pages: FIRE, ARM under its name, and what it plays in three columns
     float transX() const;
-    bool transShown() const { return (page == pMain || page == pMacros) && ses.learning < 0 && ! info; }
+    bool transShown() const { return (page == pMain || page == pMacros) && ses.learning < 0 && ! info && ! (page == pMain && ses.arrEdit >= 0); }
+    bool editShown() const { return page == pMain && ses.learning < 0 && ses.arrEdit >= 0; }         // EDIT's line and its two keys, in the bar
+    juce::String editTitle() const;
+    float editKeysX() const;
     void drawTrans (G&, float x);
     float drawFind (G&, float x, float w, float y);     // the row (two, where it is narrow) at the head of the snapshots; where their cards begin
     void pressFind (int what);

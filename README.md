@@ -664,7 +664,10 @@ whole of it is one travel from the snapshot before.
 - **The line** along the top is the whole of it to scale: each part as long as its bars, with
   the bar it begins on above it, and its morph as a slope. The part playing is green.
 - **PLAY.** From stopped: the first part is recalled at once and the clock starts from the top.
-  With the clock running: it comes in on the next bar line. FROM HERE plays from the chosen part.
+  With the clock running: it comes in on the next bar line. **FROM HERE** plays from the chosen
+  part, **with what every part before it left**: a part with a key out sounds as it does when
+  the arrangement reaches it, not as the rig happened to stand. (Until the sixty-sixth build it
+  recalled that part alone.)
   Each part after is recalled inside the beat before its bar line, so that everything in it sets
   off on the line: the knobs travel over the morph, patterns change on the bar, and what cannot
   travel is crossed over, exactly as in any recall. A cut lands on its line too (it is a travel
@@ -672,6 +675,27 @@ whole of it is one travel from the snapshot before.
   arrangement down; a recall made by hand while it plays is yours, and the next part still comes.
 - **What plays over it.** The snapshot knobs, where they stand, and MOTION: an arrangement is
   the scenes, and those are what you play on top. So is anything you turn while it plays.
+- **EDIT**: the chosen part in the main view, without touching its snapshot. The arrangement
+  stops, the rig is made what the arrangement has at that part (what every part before it left,
+  then it, arrived), and it plays. The bar says which part, with **KEEP** and **DROP**.
+  - **KEEP** (or Return): the rig as it stands is **a new snapshot in the library**, named after
+    the part's (ACID OPEN, then ACID OPEN 2), and takes its place in the part. It holds the whole
+    rig as you heard it, what the earlier parts set included, so it is right by itself: in the
+    library, on a stack knob. **The snapshot the part had is not touched**, and other parts that
+    use it still do.
+  - **The part's keys** stay as they were, and those of whatever part of the rig you changed are
+    lit (N, if you changed a lane's steps), so the arrangement plays what you heard and what you
+    did not touch still follows the parts before. The page says which it lit. A part after this
+    one with a key out takes that part of the rig from here on, as it did.
+  - **Edited again**, the snapshot the last edit made is replaced by the new one, which takes its
+    name: the library does not fill with every try. Unless something else holds it by then
+    (another part, a knob, a stack): then it stays and the new one is numbered on.
+  - **DROP** keeps nothing; the rig stays as you left it. Playing or printing the arrangement,
+    or moving its parts, drops an edit too.
+- **TO STACK** keeps the arrangement as a stack in the macro designer's rack (TRACK, TRACK 2):
+  its parts' snapshots in order, each with the keys its part has. On a stack knob the knob's
+  turn is the track from first part to last. A part with a key out leans on what came before
+  it, on a knob as here; the page says how many do.
 - **PRINT** renders it to files, for a release: faster than it plays, and the same every time.
   A folder `PRINT <date>` where takes go (SETUP's folder for them). **What it holds is for a
   mastering engineer as much as for you**: every file is a stereo WAV at the device's rate, one
@@ -1223,6 +1247,7 @@ build/.../SF-000 --shot x.png --page macros --knob 7 --kept   # the designer wit
 build/.../SF-000 --shot x.png --page macros --knob 5 --hand 4  # the designer with that snapshot of the list in hand (its bass and returns put out)
 build/.../SF-000 --shot x.png --page library --finder 1       # a page with a finder lit at the head of its snapshots (1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS)
 build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing
+build/.../SF-000 --shot x.png --edit 3                # the main view with part 3 of an arrangement being edited (--page arrange --edit 3: the arrangement's page meanwhile)
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
 build/.../SF-000 --shot x.png --front 12 --pointer 15   # a picture with that module in front and the wheel's pointer on that one (counted along the wheel's own list: a lane, its inserts that hold an effect, the next lane ..., the snapshot knobs, the returns, the master, the sequencer strip)
 build/.../SF-000 --shot 3d.png --3d               # the 3D stage as drawn (it opens a window): --view top|player|hero, --turn and --tilt degrees, --size WxH, --look x,y,w,h (the eye holding that much of the screen), with the options above

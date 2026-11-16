@@ -5503,13 +5503,15 @@ static int uiTest()
             const bool keyed = ses.arrangement[2].lanes == (noKick & ~(1u << 5));
             const auto filed = ses.stateVar()["arrangement"]["parts"];
             const bool inFile = filed.size() == 4 && (juce::int64) filed[2]["lanes"] == (juce::int64) (noKick & ~(1u << 5)) && ! filed[1].hasProperty ("lanes");
-            // (the kick's lane and the bass's are not what the snapshot has; the pad's is)
+            // (FROM HERE: the kick's lane and the bass's are not what the part's snapshot has, nor what a hand left them at,
+            // but what the part before it left, as when the arrangement is played through to it; the pad's is the snapshot's)
             const int kc = cx::lane (0, 5), bc = cx::lane (5, 6), pc = cx::lane (8, 6);
             const auto* sn4 = ses.findSnap (fourth);
+            const auto* sn3 = ses.findSnap (third);
             ses.userSet (cx::kGlide, 0.0f);
             ses.userSet (kc, 0.37f); ses.userSet (bc, 0.41f); ses.userSet (pc, 0.43f);
             ses.arrPlay (2); audio (4);
-            const bool comesIn = sn4 != nullptr && std::abs (ses.engine.target (kc) - 0.37f) < 1.0e-4f && std::abs (ses.engine.target (bc) - 0.41f) < 1.0e-4f
+            const bool comesIn = sn4 != nullptr && sn3 != nullptr && std::abs (ses.engine.target (kc) - sn3->values[(size_t) kc]) < 1.0e-4f && std::abs (ses.engine.target (bc) - sn3->values[(size_t) bc]) < 1.0e-4f
                                  && std::abs (ses.engine.target (pc) - sn4->values[(size_t) pc]) < 1.0e-4f;
             ses.arrStop(); ses.engine.setRunning (false); audio (4);
             // a part pressed: the chosen one, and the one in the headphones (or silent, if its snapshot has no sound kept)
@@ -5583,7 +5585,7 @@ static int uiTest()
         const bool cleared = ses.arrangement.empty() && sc.testSelPart() == -1;
         sc.keyPressed (juce::KeyPress ('a', juce::ModifierKeys(), 'a')); draw();
         const bool shut = sc.testPage() == Screen::pMain;
-        check (partStems, "the arrangement, a chip beside it pressed: in hand, not added; its ADD puts it in with the parts lit on its card; a part's own keys change what it takes, the file keeps it, and when the arrangement comes to the part the parts put out stay as they are; played with a chip being listened to, the chip is put down");
+        check (partStems, "the arrangement, a chip beside it pressed: in hand, not added; its ADD puts it in with the parts lit on its card; a part's own keys change what it takes, the file keeps it, and played FROM HERE the parts put out are as the part before it left them; played with a chip being listened to, the chip is put down");
         check (onMain && opened && added && between && dragged && later && earlier && removed && plays && stops && printing && locked && escaped && printed && cleared && shut,
                ("the ARRANGE key opens the arrangement's page; a snapshot's ADD there makes it a part after the one chosen; a part's BARS and MORPH are dragged (" + juce::String (bars) + " bars, " + Session::morphName (morph)
                     + "; a double-click: eight again); EARLIER, LATER and REMOVE; PLAY and STOP; PRINT is rendered by the page a slice at a time (" + juce::String (ticks) + " of them), takes nothing else meanwhile and stops for Esc; CLEAR, held, empties it; A shuts it").toRawUTF8());
@@ -5592,6 +5594,129 @@ static int uiTest()
                          onMain, opened, added, between, dragged, bars, morph, firstHasNoMorph, later, earlier, removed, plays, stops, printing, locked, escaped, printed, ses.printNote.toRawUTF8(), cleared, shut);
         sc.recorder = nullptr;
         tmp.deleteRecursively();
+        sc.setPage (Screen::pMain); draw();
+    }
+    // 3f. EDIT on a part of the arrangement, what came before a part, and TO STACK
+    {
+        auto key = [&] (int which) { for (auto& h : sc.testHits()) if (Screen::testIsArrKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto editKey = [&] (int which) { for (auto& h : sc.testHits()) if (Screen::testIsEdit (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto same = [] (const Snapshot& x, const Snapshot& y, juce::String& why)
+        {
+            for (int i = 0; i < cx::kSnap && i < (int) x.values.size() && i < (int) y.values.size(); ++i)
+                if (x.values[(size_t) i] >= 0.0f && y.values[(size_t) i] >= 0.0f && std::abs (x.values[(size_t) i] - y.values[(size_t) i]) > 1.0e-4f) { why = "control " + juce::String (i); return false; }
+            for (int l = 0; l < kLanes; ++l)
+            {
+                if (x.inserts[(size_t) l] != y.inserts[(size_t) l] || x.setup[(size_t) l] != y.setup[(size_t) l]) { why = "lane " + juce::String (l + 1) + "'s make-up"; return false; }
+                const auto& p = x.patterns[(size_t) l]; const auto& q = y.patterns[(size_t) l];
+                bool ok = p.length == q.length;
+                for (int k = 0; ok && k < p.length; ++k) ok = p.steps[(size_t) k].on == q.steps[(size_t) k].on && (! p.steps[(size_t) k].on || (p.steps[(size_t) k].note == q.steps[(size_t) k].note && p.steps[(size_t) k].octave == q.steps[(size_t) k].octave));
+                if (! ok) { why = "lane " + juce::String (l + 1) + "'s steps"; return false; }
+            }
+            return true;
+        };
+        while (! ses.arrangement.empty()) ses.arrRemove (0);
+        ses.engine.setRunning (false); audio (4);
+        ses.userSet (cx::kGlide, 0.0f);
+        const auto a = ses.library[1].id, bb = ses.library[2].id, c = ses.library[3].id, start = ses.library[4].id;
+        const juce::uint32 noKickBass = Session::kAllLanes & ~1u & ~(1u << 5);
+        ses.arrAdd (a); ses.arrAdd (bb); ses.arrAdd (c, -1, noKickBass);
+        const int kc = cx::lane (0, 5), bc = cx::lane (5, 6);
+        // What came before: the rig as the arrangement has it at its third part is what its three recalls leave, made one
+        // after another; and the same from wherever the rig stood (the first two parts take everything).
+        juce::String why;
+        ses.recall (start); audio (4);
+        ses.recallOver (a, 0.0, true); ses.recallOver (bb, 0.0, true); ses.recallOver (c, 0.0, true, noKickBass); audio (4);
+        const Snapshot oneByOne = ses.capture();
+        ses.recall (start); audio (4);
+        ses.arrBring (2, 0.0); audio (4);
+        const Snapshot atOnce = ses.capture();
+        const auto* sb = ses.findSnap (bb);
+        const bool before = same (oneByOne, atOnce, why) && sb != nullptr && std::abs (atOnce.values[(size_t) kc] - sb->values[(size_t) kc]) < 1.0e-4f && std::abs (atOnce.values[(size_t) bc] - sb->values[(size_t) bc]) < 1.0e-4f;
+        // EDIT: the main view, the clock running, the rig what the arrangement has there, KEEP and DROP in the bar
+        const auto libWas = ses.library.size();
+        const Snapshot cWas = *ses.findSnap (c);
+        ses.recall (start); audio (4);
+        sc.setPage (Screen::pArrange); sc.testPickPart (2); draw();
+        click (key (8)); draw();
+        juce::String why2;
+        const bool began = sc.testPage() == Screen::pMain && ses.arrEdit == 2 && ses.engine.isRunning() && editKey (0).x > 0.0f && editKey (1).x > 0.0f && same (ses.capture(), atOnce, why2);
+        // changed: the kick, a lane the part does not take, and a step of the lead's. KEEP: a new snapshot named after the
+        // part's, whole and as it sounded, in the part's place; the kick's key lit on the part; the one it had untouched.
+        ses.userSet (kc, 0.83f);
+        { auto pat = ses.pattern (7); pat.steps[3].on = ! pat.steps[3].on; ses.setPattern (7, pat); }
+        audio (8);
+        click (editKey (0)); draw();
+        const auto id1 = ses.arrangement.size() > 2 ? ses.arrangement[2].snap : 0;
+        const auto* n1 = ses.findSnap (id1);
+        const auto* cNow = ses.findSnap (c);
+        const juce::String name1 = n1 != nullptr ? n1->name : juce::String();
+        const bool kept = sc.testPage() == Screen::pArrange && ses.arrEdit < 0 && id1 != c && n1 != nullptr && ses.library.size() == libWas + 1 && name1 == cWas.name + " 2"
+                          && std::abs (n1->values[(size_t) kc] - 0.83f) < 1.0e-4f && sb != nullptr && std::abs (n1->values[(size_t) bc] - sb->values[(size_t) bc]) < 1.0e-4f
+                          && ses.arrangement[2].lanes == (noKickBass | 1u) && ses.arrangement[2].edited && ses.arrangement[2].notes && ses.arrEditLit == 1u
+                          && cNow != nullptr && cNow->values == cWas.values && cNow->name == cWas.name && ses.printNote.contains ("KEYS LIT");
+        // edited again: the snapshot the first edit made, which nothing else holds, makes way, and the new one has its name
+        sc.testPickPart (2); draw(); click (key (8)); draw();
+        ses.userSet (kc, 0.21f); audio (8);
+        sc.keyPressed (juce::KeyPress (juce::KeyPress::returnKey)); draw();                 // (Return is KEEP)
+        const auto id2 = ses.arrangement.size() > 2 ? ses.arrangement[2].snap : 0;
+        const bool again = id2 != id1 && id2 != 0 && ses.findSnap (id1) == nullptr && ses.findSnap (id2) != nullptr && ses.library.size() == libWas + 1 && ses.findSnap (id2)->name == name1 && ses.arrEdit < 0
+                           && std::abs (ses.findSnap (id2)->values[(size_t) kc] - 0.21f) < 1.0e-4f;
+        // held by another part as well: it stays, and the new one is numbered on
+        ses.arrAdd (id2);
+        sc.setPage (Screen::pArrange); sc.testPickPart (2); draw(); click (key (8)); draw();
+        ses.userSet (kc, 0.55f); audio (8);
+        click (editKey (0)); draw();
+        const auto id3 = ses.arrangement.size() > 2 ? ses.arrangement[2].snap : 0;
+        const bool besides = id3 != id2 && ses.findSnap (id2) != nullptr && ses.findSnap (id3) != nullptr && ses.library.size() == libWas + 2 && ses.findSnap (id3)->name == cWas.name + " 3" && ses.arrangement.size() == 4 && ses.arrangement[3].snap == id2;
+        // DROP keeps nothing; and an edit is dropped when the arrangement is played
+        sc.testPickPart (2); draw(); click (key (8)); draw();
+        ses.userSet (kc, 0.11f); audio (4);
+        click (editKey (1)); draw();
+        const bool dropped = sc.testPage() == Screen::pArrange && ses.arrEdit < 0 && ses.arrangement[2].snap == id3 && ses.library.size() == libWas + 2;
+        sc.testPickPart (2); draw(); click (key (8)); draw();
+        const bool wasOn = ses.arrEdit == 2;
+        ses.arrPlay (0);
+        const bool byPlay = wasOn && ses.arrEdit < 0 && ses.arrangement[2].snap == id3;
+        ses.arrStop(); ses.engine.setRunning (false); audio (4);
+        const auto filed = ses.stateVar()["arrangement"]["parts"];
+        const bool inFile = filed.size() == 4 && (bool) filed[2].getProperty ("edited", false) && ! filed[0].hasProperty ("edited");
+        // FROM HERE while the clock runs: the part comes in on the next bar line with what the parts before it left
+        ses.recall (start); audio (4);
+        ses.userSet (bc, 0.07f);
+        ses.engine.setRunning (true); audio (8);
+        ses.arrPlay (2);
+        for (int i = 0; i < 6000 && ses.arrPart() != 2; ++i) { audio (1); ses.arrTick(); }
+        audio (64);
+        const bool running = ses.arrPart() == 2 && sb != nullptr && std::abs (ses.engine.target (bc) - sb->values[(size_t) bc]) < 1.0e-4f;
+        ses.arrStop(); ses.engine.setRunning (false); audio (4);
+        check (before && began && kept && again && besides && dropped && byPlay && inFile && running,
+               (juce::String ("EDIT on a part: the rig is what the arrangement has there (what its parts leave one after another, the same made at once), in the main view and playing, with KEEP and DROP in the bar; KEEP is a new snapshot named after the part's (")
+                   + name1 + "), as it sounded and whole, in the part's place, the key of what was changed lit on the part and the snapshot it had untouched; edited again it makes way for the next unless something else holds it ("
+                   + (ses.findSnap (id3) != nullptr ? ses.findSnap (id3)->name : juce::String ("?")) + "); DROP and PLAY keep nothing; the file says which parts were edited; FROM HERE with the clock running brings what came before too").toRawUTF8());
+        if (! (before && began && kept && again && besides && dropped && byPlay && inFile && running))
+            std::printf ("        (before %d [%s] began %d [%s; page %d edit %d run %d] kept %d [%s, lanes %x lit %x, lib %d of %d, note %s] again %d besides %d dropped %d by play %d in file %d running %d [part %d bass %.2f])\n",
+                         (int) before, why.toRawUTF8(), (int) began, why2.toRawUTF8(), (int) sc.testPage(), ses.arrEdit, (int) ses.engine.isRunning(), (int) kept, name1.toRawUTF8(), ses.arrangement.size() > 2 ? ses.arrangement[2].lanes : 0u, ses.arrEditLit,
+                         (int) ses.library.size(), (int) libWas, ses.printNote.toRawUTF8(), (int) again, (int) besides, (int) dropped, (int) byPlay, (int) inFile, (int) running, ses.arrPart(), ses.engine.target (bc));
+        // TO STACK: the parts' snapshots in order, each with its part's keys, as a stack kept here
+        const auto stacksWas = ses.stacks.size();
+        sc.setPage (Screen::pArrange); draw();
+        click (key (9)); draw();
+        bool stacked = ses.stacks.size() == stacksWas + 1;
+        if (stacked)
+        {
+            const auto& st = ses.stacks.back();
+            stacked = st.here && st.name.startsWith ("TRACK") && st.snaps.size() == 4 && st.snaps[0] == a && st.snaps[1] == bb && st.snaps[2] == id3 && st.snaps[3] == id2
+                      && (st.lanesAt (2) & Session::kAllLanes) == ses.arrangement[2].lanes && (st.lanesAt (0) & Session::kAllLanes) == Session::kAllLanes
+                      && ses.printNote.contains ("KEPT AS THE STACK") && ses.printNote.contains ("1 PART HAS A KEY OUT") && ses.arrangement.size() == 4;
+        }
+        check (stacked, "TO STACK keeps the arrangement as a stack in the rack: its parts' snapshots in order, each with the keys its part has, and says which parts lean on what came before");
+        if (! stacked) std::printf ("        (stacks %d of %d, note: %s)\n", (int) ses.stacks.size(), (int) stacksWas, ses.printNote.toRawUTF8());
+        // (as it was)
+        if (ses.stacks.size() == stacksWas + 1) ses.stackForget ((int) ses.stacks.size() - 1);
+        while (! ses.arrangement.empty()) ses.arrRemove (0);
+        if (ses.findSnap (id3) != nullptr) ses.remove (id3);
+        if (ses.findSnap (id2) != nullptr) ses.remove (id2);
+        ses.recall (start); audio (4);
         sc.setPage (Screen::pMain); draw();
     }
     {
@@ -6579,6 +6704,19 @@ static int shot (const juce::StringArray& args)
         const int blocks = (int) ((14.0 * 60.0 / e.tempo()) * 48000.0 / 512.0);
         for (int i = 0; i < blocks; ++i) { e.render (b); ses.arrTick(); }
         sc.testPickPart (3);
+        sc.testTick();
+    }
+    if (arg ("--edit", "").isNotEmpty())
+    {
+        // (EDIT on a part of that arrangement: the main view with its bar; --page arrange after it: the page while a part is being edited)
+        static const int bars[] = { 8, 16, 8, 32 };
+        if (ses.arrangement.empty()) for (int i = 0; i < 4 && i + 1 < (int) ses.library.size(); ++i) { ses.arrAdd (ses.library[(size_t) (1 + (i * 3) % ((int) ses.library.size() - 1))].id); ses.arrSet (i, bars[i], 0); }
+        const int part = juce::jlimit (0, (int) ses.arrangement.size() - 1, arg ("--edit", "1").getIntValue() - 1);
+        ses.arrStop();
+        ses.arrEditBegin (part);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        sc.testPickPart (part);
+        if (page != "arrange") sc.setPage (Screen::pMain);
         sc.testTick();
     }
     if (page == "pockets")

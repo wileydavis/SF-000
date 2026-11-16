@@ -382,6 +382,7 @@ public:
         int transIn = 0, transHit = 0;
         juce::String inFile, hitFile;
         bool notes = true;              // it brings its snapshot's notes (its own key, N: not the library's NOTES, which is for recalls made by hand)
+        bool edited = false;            // its snapshot was made for it by EDIT (and is written over by the next, if nothing else uses it)
         juce::NamedValueSet more;       // what the file says of it that this build does not know: carried
     };
     std::vector<ArrPart> arrangement;
@@ -405,6 +406,28 @@ public:
     // the clock stops. RUN stopped by hand puts the arrangement down.
     void arrPlay (int from = 0);
     void arrStop();
+    // The rig as the arrangement has it once that part has arrived: what every part before it left, in order, each with
+    // the parts of the rig it takes and its notes or not, over the rig as it stands now. notes: the lanes whose sequencer
+    // some part up to it gives (the others' stay as they are). arrBring makes the rig that, over that many beats.
+    Snapshot arrStateAt (int part, std::array<bool, kLanes>& notes) const;
+    void arrBring (int part, double beats = 0.0);
+    // ---- EDIT: a part changed in the main view, and its snapshot left as it is.
+    // arrEditBegin: the arrangement and the clock stop, the rig is made what the arrangement has at that part, and it
+    // plays. arrEditKeep: the rig as it then stands is a new snapshot in the library, named after the part's, and takes
+    // its place in the part; the part's keys are what they were and those of whatever part of the rig was changed
+    // meanwhile (N, if a lane's notes were). A snapshot an EDIT made for this part before, that nothing else uses, goes:
+    // the new one has its name. arrEditDrop: nothing is kept (the rig stays as it is). Playing or printing the
+    // arrangement, or changing its parts, drops it too.
+    int arrEdit = -1;                                   // the part being edited (-1: none)
+    bool arrEditBegin (int part);
+    juce::int64 arrEditKeep();                          // the new snapshot (0: nothing was being edited, or none could be taken)
+    void arrEditDrop();
+    bool usedBesides (juce::int64 snap, int part) const;    // a snapshot that something other than that part of the arrangement holds: another part, a knob, a stack, a knob or a module kept
+    // TO STACK: the arrangement as a stack in the rack, its parts' snapshots in order, each with the parts of the rig its
+    // part takes. Where it is in the rack (-1: the arrangement is empty). arrOpenParts: how many parts have a key out
+    // (those lean on what came before, on a knob as here).
+    int arrToStack();
+    int arrOpenParts() const;
     bool arrPlaying() const             { return arrOn; }
     int arrPart() const                 { return arrOn ? arrAt : -1; }      // the part playing (-1: none yet, or not playing)
     double arrPos() const;              // where it is, in beats from the arrangement's start (below 0: it has not come in yet)
@@ -446,6 +469,7 @@ public:
     juce::String printNote;                             // the last thing worth telling: where it went, how loud it is, why it stopped
     juce::File printFolder;                             // the last print's folder
     int printJoined = 0;                                // in the last print: lanes that went into the mix both ways and are one stem (the drum bus did nothing)
+    juce::uint32 arrEditLit = 0;                        // the last KEEP: the keys it lit on the part that were out (tests, and the page's note)
     // A recall of part of it: the lanes that are chosen, the returns, the drum bus, the key come
     // from the snapshot; whatever is not chosen stays as it is now. (master: the key. The tempo,
     // GLIDE and the master's three knobs are the rig's and no snapshot's.)
@@ -711,6 +735,8 @@ private:
     void transFromVar (const juce::var&);
     double arrZero = 0.0;               // the song position at which the arrangement's first bar begins
     double glideOver = -1.0;            // a recall travelling over a time of its own (below 0: by GLIDE)
+    Snapshot arrEditWas;                // EDIT: the rig as it was brought, to tell what was changed
+    bool arrBringNext = false;          // FROM HERE while the clock runs: the part that comes in is brought with all that came before it
     double recallGlide() const          { return glideOver >= 0.0 ? glideOver : glideBeats(); }
     void arrRecall (int part, double beats);
     juce::var arrToVar() const;

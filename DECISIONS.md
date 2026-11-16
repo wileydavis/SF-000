@@ -3410,7 +3410,51 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      I would do other than you said, is in the message of this build; nothing of it is in the
      code.
 
+## EDIT on a part; what came before; TO STACK (Nov 16, 02:22): sixty-sixth build
+
+570. **You**, 02:22, to the four things I asked to settle first (what came before has to be
+     built, and FROM HERE should do the same; the new snapshot is the whole rig as heard; the
+     part keeps its keys and gains those of what was changed; an edit made again replaces the
+     snapshot the last one made, if nothing else uses it): "1. agree 2. agree 3. agree
+     4. agree  build it, and the make it a stack button."
+571. **What came before a part** is worked out, not played: the rig as it stands, with each
+     part's share of its snapshot laid over it in turn (the parts of the rig its keys take, its
+     notes or not), up to the part. Checked against the three recalls made one after another:
+     the same. **FROM HERE plays the chosen part with it**, from stopped at once, and with the
+     clock running on the next bar line over the part's own morph. *Until now FROM HERE recalled
+     the one part, and a part with a key out sounded as the rig happened to stand.*
+572. **EDIT** (a key on the arrangement's page, for the chosen part; *you said a button on the
+     chip: the card has no room for one beside IN and HIT, and FROM HERE, EARLIER, LATER and
+     REMOVE already act on the chosen part from there. Say if you want it on the card.*) The
+     arrangement and the clock stop, the rig is made what the arrangement has at that part, and
+     it plays, in the main view. The bar there says EDIT and the part, with KEEP and DROP.
+     - **KEEP** (or Return): a new snapshot, taken as SNAPSHOT takes one (so with its sound
+       kept, once it has played four bars), named after the part's: ACID OPEN 2, then 3. It is
+       the whole rig as heard. It takes the part's place; **the snapshot the part had is not
+       touched**. The part's keys are what they were and those of whatever was changed since
+       the rig was brought there (what sounds is compared, part of the rig by part; a lane's
+       steps changed lights its key and N). The page says which keys it lit.
+     - **Edited again**: the snapshot the last edit made for the part goes, and the new one has
+       its name, unless another part, a knob, a stack, or a knob or module kept aside holds it.
+     - **DROP** keeps nothing. PLAY, FROM HERE, PRINT, EARLIER and LATER drop an edit too.
+     *Mine: the part being edited is amber on its card; the rig is left as it is after DROP;
+     a turn of a snapshot knob during an edit counts as a change to what it moves.*
+573. **TO STACK** (a key on the page): the arrangement as a stack in the designer's rack, named
+     TRACK: its parts' snapshots in order, each with the keys its part has; a snapshot that is
+     in two parts is in the stack twice. It is not put on a knob: that is yours to do there.
+     **A part with a key out leans on what came before it, on a knob as in the arrangement**,
+     and going back along the knob does not put back what a later part changed. The page says
+     how many parts have one. *To make such a part stand by itself: EDIT it, KEEP, and light
+     its keys: the snapshot KEEP made is whole. I did not make TO STACK do that for you: it
+     would put snapshots in the library that you never heard.*
+
 ## Not verified
+
+- **EDIT (572) and TO STACK (573)** are checked on the session and the drawn screens, with the
+  snapshots the instrument comes with. **Not on your Mac, not on an arrangement of yours, and
+  not by ear**: that what EDIT plays is what the arrangement plays at that part is checked on
+  the knobs, the steps and the make-up of each lane, not on the sound. Not tried: an EDIT
+  while the ONE leads the clock; KEEP with ONLINE lit; a TRACK stack on a knob.
 
 - **A print's files (567)** are checked by measurement on Linux: lengths, the first hit, the
   stems against the mix. **No mastering engineer has had them**, and no print of an

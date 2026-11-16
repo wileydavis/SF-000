@@ -48,6 +48,7 @@ bool Session::arrAdd (juce::int64 snap, int before, juce::uint32 lanes)
     if (like >= 0) { p.bars = arrangement[(size_t) like].bars; p.morph = arrangement[(size_t) like].morph; }
     if (before >= 0 && before < (int) arrangement.size()) arrangement.insert (arrangement.begin() + before, p); else arrangement.push_back (p);
     if (arrOn && before >= 0 && before <= arrAt) ++arrAt;
+    if (arrEdit >= 0 && before >= 0 && before <= arrEdit) ++arrEdit;       // (the part being edited is the one it was)
     touch();
     if (onChange) onChange();
     return true;
@@ -58,6 +59,7 @@ void Session::arrRemove (int part)
     if (part < 0 || part >= (int) arrangement.size()) return;
     arrangement.erase (arrangement.begin() + part);
     if (arrOn) { if (part <= arrAt) --arrAt; if (arrangement.empty()) arrStop(); }
+    if (arrEdit == part) arrEdit = -1; else if (arrEdit > part) --arrEdit;  // (the part being edited taken out: there is nothing to keep it into)
     touch();
     if (onChange) onChange();
 }
@@ -67,6 +69,7 @@ void Session::arrMove (int part, int by)
     const int to = part + by;
     if (part < 0 || part >= (int) arrangement.size() || to < 0 || to >= (int) arrangement.size() || by == 0) return;
     std::swap (arrangement[(size_t) part], arrangement[(size_t) to]);
+    arrEdit = -1;                       // (what came before the part being edited is no longer what it was brought with)
     touch();
     if (onChange) onChange();
 }
@@ -149,10 +152,197 @@ void Session::arrRecall (int part, double beats)
     recallOver (arrangement[(size_t) part].snap, beats, arrangement[(size_t) part].notes, arrangement[(size_t) part].lanes);
 }
 
+// ---- what came before
+static bool samePattern (const Pattern& a, const Pattern& b)
+{
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length && i < kMaxSteps; ++i)
+    {
+        const auto& x = a.steps[(size_t) i]; const auto& y = b.steps[(size_t) i];
+        if (x.on != y.on) return false;
+        if (x.on && (x.vel != y.vel || x.gate != y.gate || x.ratchet != y.ratchet || x.note != y.note || x.octave != y.octave)) return false;
+    }
+    return true;
+}
+
+Snapshot Session::arrStateAt (int part, std::array<bool, kLanes>& notes) const
+{
+    // The rig as it stands, whole, and each part's share of its snapshot laid over it in turn: what a recall of that
+    // part would change (Session::recall), kept as a state to lay the next on instead of being made at once.
+    Snapshot acc = capture();
+    acc.hasPlayed = true;
+    for (int l = 0; l < kLanes; ++l) { acc.heardOn[(size_t) l] = false; acc.seqMuted[(size_t) l] = engine.target (cx::lane (l, cx::kSeqMute)) > 0.5f; }
+    notes.fill (false);
+    for (int i = 0; i <= part && i < (int) arrangement.size(); ++i)
+    {
+        const auto& p = arrangement[(size_t) i];
+        const Snapshot* s = findSnap (p.snap);
+        if (s == nullptr) continue;
+        const Scope sc = scopeOf (p.lanes & kAllLanes);
+        // (a control the snapshot says nothing of stays as it is)
+        auto take = [&] (int from, int to) { for (int c = from; c < to && c < (int) s->values.size() && c < (int) acc.values.size(); ++c) if (s->values[(size_t) c] >= 0.0f) acc.values[(size_t) c] = s->values[(size_t) c]; };
+        for (int l = 0; l < kLanes; ++l)
+        {
+            if (! sc.lane[(size_t) l]) continue;
+            // the lane's sound: all it stores but its generator's four knobs, which go with its notes
+            take (l * cx::kPerLane, cx::gen (l, 0)); take (cx::gen (l, 0) + 4, (l + 1) * cx::kPerLane);
+            acc.inserts[(size_t) l] = s->inserts[(size_t) l];
+            if (s->hasSetup) { acc.setup[(size_t) l] = s->setup[(size_t) l]; acc.insSetup[(size_t) l] = s->insSetup[(size_t) l]; }
+            if (s->hasInsFiles) acc.insFiles[(size_t) l] = s->insFiles[(size_t) l];
+            if (s->hasFiles && s->laneFiles[(size_t) l].isNotEmpty()) acc.laneFiles[(size_t) l] = s->laneFiles[(size_t) l];
+            if (! p.notes) continue;
+            take (cx::gen (l, 0), cx::gen (l, 0) + 4);
+            acc.patterns[(size_t) l] = s->patterns[(size_t) l]; acc.gen[(size_t) l] = s->gen[(size_t) l];
+            acc.heard[(size_t) l] = s->heard[(size_t) l]; acc.heardNotes[(size_t) l] = s->heardNotes[(size_t) l];
+            acc.heardOn[(size_t) l] = s->hasPlayed && s->heardOn[(size_t) l];
+            if (s->hasPlayed) acc.seqMuted[(size_t) l] = s->seqMuted[(size_t) l];
+            notes[(size_t) l] = true;
+        }
+        if (sc.returns) { take (cx::kRet, cx::kBus); if (s->hasSetup) acc.retSetup = s->retSetup; }
+        if (sc.bus) { take (cx::kBus, cx::kRetMS); if (s->hasBus) acc.busSetup = s->busSetup; }
+        if (sc.master) take (cx::kMaster, cx::kSnap);
+    }
+    return acc;
+}
+
+void Session::arrBring (int part, double beats)
+{
+    if (part < 0 || part >= (int) arrangement.size()) return;
+    std::array<bool, kLanes> notes;
+    const Snapshot st = arrStateAt (part, notes);
+    stacksLeft (-1);
+    glideOver = std::max (0.0, beats);
+    applySnapshot (st, recallGlide(), &notes);
+    glideOver = -1.0;
+    baseId = arrangement[(size_t) part].snap;
+    selStep = -1;
+    touch();
+    if (onChange) onChange();
+}
+
+// ---- EDIT
+bool Session::usedBesides (juce::int64 snap, int part) const
+{
+    for (int i = 0; i < (int) arrangement.size(); ++i) if (i != part && arrangement[(size_t) i].snap == snap) return true;
+    for (auto& k : knobs) for (auto id : k.snaps) if (id == snap) return true;
+    for (auto& st : stacks) for (auto id : st.snaps) if (id == snap) return true;
+    // (a knob or a module kept beside the chassis holds its snapshots as the file writes them: by their numbers)
+    const juce::String number (snap);
+    for (auto& k : keptKnobs) if (juce::JSON::toString (k.knob, true).contains (number)) return true;
+    for (auto& m : modules) if (m.id != moduleAt && juce::JSON::toString (m.knobs, true).contains (number)) return true;
+    return false;
+}
+
+bool Session::arrEditBegin (int part)
+{
+    if (part < 0 || part >= (int) arrangement.size() || print != nullptr) return false;
+    if (arrOn) arrStop();
+    if (cueId != 0) cue (0);
+    // (stopped, so that nothing of the way there is heard; then it plays, from the top of its bars)
+    engine.setRunning (false);
+    arrBring (part, 0.0);
+    arrEdit = part;
+    arrEditWas = capture();
+    engine.setRunning (true);
+    if (onChange) onChange();
+    return true;
+}
+
+void Session::arrEditDrop()
+{
+    if (arrEdit < 0) return;
+    arrEdit = -1;
+    if (onChange) onChange();
+}
+
+juce::int64 Session::arrEditKeep()
+{
+    if (arrEdit < 0 || arrEdit >= (int) arrangement.size()) { arrEdit = -1; return 0; }
+    const int part = arrEdit;
+    const juce::int64 was = arrangement[(size_t) part].snap;
+    // What was changed since it was brought, by the part of the rig a key stands for (what sounds: a snapshot holds each
+    // knob as it sounded). A lane's notes are its own matter, and N's.
+    const Snapshot now = capture();
+    const Snapshot& old = arrEditWas;
+    auto differs = [&] (int from, int to)
+    {
+        for (int c = from; c < to && c < (int) now.values.size() && c < (int) old.values.size(); ++c)
+            if (std::abs (now.values[(size_t) c] - old.values[(size_t) c]) > 1.0e-4f) return true;
+        return false;
+    };
+    juce::uint32 changed = 0;
+    bool notesChanged = false;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        const bool sound = differs (l * cx::kPerLane, cx::gen (l, 0)) || differs (cx::gen (l, 0) + 4, (l + 1) * cx::kPerLane)
+                           || now.inserts[(size_t) l] != old.inserts[(size_t) l] || now.setup[(size_t) l] != old.setup[(size_t) l] || now.insSetup[(size_t) l] != old.insSetup[(size_t) l]
+                           || ! (now.insFiles[(size_t) l] == old.insFiles[(size_t) l]) || now.laneFiles[(size_t) l] != old.laneFiles[(size_t) l];
+        const bool played = differs (cx::gen (l, 0), cx::gen (l, 0) + 4) || now.gen[(size_t) l] != old.gen[(size_t) l] || ! samePattern (now.patterns[(size_t) l], old.patterns[(size_t) l]);
+        if (sound || played) changed |= 1u << l;
+        notesChanged = notesChanged || played;
+    }
+    if (differs (cx::kRet, cx::kBus) || now.retSetup != old.retSetup) changed |= 1u << kLanes;
+    if (differs (cx::kBus, cx::kRetMS) || now.busSetup != old.busSetup) changed |= 1u << (kLanes + 1);
+    if (differs (cx::kMaster, cx::kSnap)) changed |= 1u << (kLanes + 2);
+
+    // (the snapshot an EDIT made for this part before, if nothing else holds it, makes way: the library does not fill with every try)
+    const bool makesWay = arrangement[(size_t) part].edited && ! usedBesides (was, part);
+    juce::String name;
+    if (const auto* s = findSnap (was))
+    {
+        name = s->name;
+        if (! makesWay)
+        {
+            // named after it: ACID OPEN, then ACID OPEN 2, 3 ...
+            // (one that is itself a numbered version of a snapshot here is numbered on from that one: ACID OPEN 2 gives
+            // ACID OPEN 3. A name that only ends in a number, SNAP 008, is a name: SNAP 008 2)
+            auto taken = [this] (const juce::String& nm) { for (auto& x : library) if (x.name == nm) return true; return false; };
+            juce::String stem = name;
+            const int sp = stem.lastIndexOfChar (' ');
+            if (sp > 0 && stem.substring (sp + 1).isNotEmpty() && stem.substring (sp + 1).containsOnly ("0123456789") && taken (stem.substring (0, sp))) stem = stem.substring (0, sp);
+            for (int n = 2; n < 1000; ++n) { name = stem.substring (0, 24 - 1 - juce::String (n).length()).trimEnd() + " " + juce::String (n); if (! taken (name)) break; }
+        }
+    }
+    const juce::int64 id = take();
+    if (id == 0 || findSnap (id) == nullptr) return 0;
+    {
+        auto& p = arrangement[(size_t) part];
+        arrEditLit = changed & ~p.lanes & kAllLanes;
+        p.snap = id;
+        p.lanes = (p.lanes | changed) & kAllLanes;
+        if (notesChanged) p.notes = true;
+        p.edited = true;
+    }
+    if (makesWay) remove (was);
+    if (name.isNotEmpty()) rename (id, name);
+    arrEdit = -1;
+    baseId = id;
+    touch();
+    if (onChange) onChange();
+    return id;
+}
+
+// ---- TO STACK
+int Session::arrOpenParts() const
+{
+    int n = 0;
+    for (auto& p : arrangement) if ((p.lanes & kAllLanes) != kAllLanes) ++n;
+    return n;
+}
+
+int Session::arrToStack()
+{
+    if (arrangement.empty()) return -1;
+    const int at = rackNew ("TRACK");
+    for (auto& p : arrangement) rackAdd (at, p.snap, p.lanes & kAllLanes);
+    return at;
+}
+
 void Session::arrPlay (int from)
 {
     if (arrangement.empty()) return;
     from = juce::jlimit (0, (int) arrangement.size() - 1, from);
+    arrEdit = -1;                       // (an EDIT under way is dropped: the rig is the arrangement's again)
     // (a chip that was being listened to is put down: its sound and the arrangement's were heard together. One pressed while
     // the arrangement plays is still heard, as one pressed while the set plays is.)
     if (cueId != 0) cue (0);
@@ -160,8 +350,8 @@ void Session::arrPlay (int from)
     for (auto& p : arrangement) { if (p.transIn == 2) engine.transAsset (p.inFile); if (p.transHit == 2) engine.transAsset (p.hitFile); }       // (the parts' own files, read before it plays)
     if (! engine.isRunning())
     {
-        // from stopped: that part is there at once, and the clock sets off from the top
-        arrRecall (from, 0.0);
+        // from stopped: that part is there at once, with what every part before it left (FROM HERE), and the clock sets off from the top
+        if (from > 0) arrBring (from, 0.0); else arrRecall (from, 0.0);
         arrAt = from;
         arrZero = -(double) arrBarsBefore (from) * 4.0;
         arrStarts = engine.starts(); arrWait = true;       // (until the clock has set off, the place it says is the last run's)
@@ -173,6 +363,7 @@ void Session::arrPlay (int from)
         const double bar = std::ceil ((engine.songPos() + kArrLead + 0.25) / 4.0) * 4.0;
         arrZero = bar - (double) arrBarsBefore (from) * 4.0;
         arrAt = from - 1; arrWait = false;
+        arrBringNext = from > 0;
     }
     if (useDisk) startTimer (15);
     if (onChange) onChange();
@@ -223,7 +414,9 @@ void Session::arrTick()
     {
         if (pos >= (double) arrBarsBefore (next) * 4.0 - kArrLead)
         {
-            arrRecall (next, std::max (kArrCut, arrMorphBars (next) * 4.0));
+            // (FROM HERE, come into while the clock runs: with what every part before it left, over its own way in)
+            if (arrBringNext) arrBring (next, std::max (kArrCut, arrMorphBars (next) * 4.0)); else arrRecall (next, std::max (kArrCut, arrMorphBars (next) * 4.0));
+            arrBringNext = false;
             arrAt = next;
             if (onChange) onChange();
         }
@@ -254,6 +447,7 @@ var Session::arrToVar() const
         if (p.transHit != 0) po->setProperty ("transHit", p.transHit);
         if (p.inFile.isNotEmpty()) po->setProperty ("inFile", refOf (p.inFile));                                   // (a copy in the library: from its folder down)
         if (p.hitFile.isNotEmpty()) po->setProperty ("hitFile", refOf (p.hitFile));
+        if (p.edited) po->setProperty ("edited", true);                                                             // (absent: no)
         if (! p.notes) po->setProperty ("notes", false);                                                           // (absent: it brings them)                                                              // (absent: no)
         for (auto& m : p.more) po->setProperty (m.name, m.value);
         parts.add (var (po));
@@ -266,6 +460,7 @@ var Session::arrToVar() const
 void Session::arrFromVar (const var& v)
 {
     arrangement.clear(); arrMore.clear();
+    arrEdit = -1;
     auto* o = v.getDynamicObject();
     if (o == nullptr) return;
     for (auto& p : o->getProperties()) if (p.name != juce::Identifier ("parts")) arrMore.set (p.name, p.value);
@@ -281,10 +476,11 @@ void Session::arrFromVar (const var& v)
             for (int i = 0; i < 12; ++i) if (glideBarsFor ((float) i / 11.0f) <= mb + 1.0e-9) p.morph = i;      // the nearest length this build has, not over it
             if (auto* po = pv.getDynamicObject())
                 for (auto& q : po->getProperties())
-                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile")) p.more.set (q.name, q.value);
+                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile") && q.name != juce::Identifier ("edited")) p.more.set (q.name, q.value);
             p.transIn = juce::jlimit (0, 2, (int) pv.getProperty ("transIn", 0)); p.transHit = juce::jlimit (0, 2, (int) pv.getProperty ("transHit", 0));
             p.inFile = pathOf (pv.getProperty ("inFile", "").toString()); p.hitFile = pathOf (pv.getProperty ("hitFile", "").toString());
             p.notes = (bool) pv.getProperty ("notes", true);
+            p.edited = (bool) pv.getProperty ("edited", false);
             if (pv.hasProperty ("lanes")) p.lanes = (juce::uint32) (juce::int64) pv.getProperty ("lanes", (juce::int64) kAllLanes) & kAllLanes;
             arrangement.push_back (p);
         }
@@ -448,6 +644,7 @@ String Session::printBegin (const juce::File& root)
     if (! dir.createDirectory()) return "CANNOT MAKE " + dir.getFullPathName().toUpperCase();
 
     if (arrOn) arrStop();
+    arrEdit = -1;                                       // (an EDIT under way is dropped)
     if (audioPause) audioPause();                       // one rig sounds at a time: this one waits
     sf::Bus::renderClockBegin();                        // (and the bus goes by the print's own time, not the wall's: DECISIONS 370)
     auto p = std::make_shared<Print>();

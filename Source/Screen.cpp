@@ -785,7 +785,11 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aFetch, "WEB LOAD", "MAKES THE SIXTEEN KNOBS WHAT THE WEB LIBRARY'S MODULE HOLDS NOW: ITS FOUR MACRO KNOBS, ITS TEN STACK KNOBS (EACH SNAPSHOT WITH THE LANES CHOSEN FOR IT THERE), AND THE SNAPSHOTS THIS LIBRARY LACKS. WHAT A KNOB HELD HERE IS SENT TO THE LIBRARY FIRST, SO NOTHING IS LOST. A SONG COMES AS THE ARRANGEMENT (IF THERE IS NONE)." },
                 { aArrange, "ARRANGE", "THE ARRANGEMENT: SNAPSHOTS IN A LINE, EACH FOR SO MANY BARS, EACH REACHED BY A MORPH FROM THE ONE BEFORE. PLAYED FROM THE CLOCK, AND PRINTED TO FILES FOR A RELEASE. A ON THE KEYBOARD TOO. LIT GREEN WHILE IT PLAYS." },
                 { aArrPlay, "PLAY", "PLAYS THE ARRANGEMENT FROM ITS FIRST PART. FROM STOPPED: THAT PART IS RECALLED AT ONCE AND THE CLOCK STARTS FROM THE TOP. WITH THE CLOCK RUNNING: IT COMES IN ON THE NEXT BAR LINE. EACH PART AFTER IS RECALLED SO AS TO SET OFF ON ITS OWN BAR LINE; AT THE END THE CLOCK STOPS. PRESSED WHILE IT PLAYS: STOP." },
-                { aArrHere, "FROM HERE", "PLAYS IT FROM THE PART THAT IS CHOSEN." },
+                { aArrHere, "FROM HERE", "PLAYS IT FROM THE PART THAT IS CHOSEN, WITH WHAT EVERY PART BEFORE IT LEFT: A PART WITH A KEY OUT SOUNDS AS IT DOES WHEN THE ARRANGEMENT REACHES IT." },
+                { aArrEdit, "EDIT", "THE PART THAT IS CHOSEN, IN THE MAIN VIEW. THE ARRANGEMENT STOPS, THE RIG IS MADE WHAT THE ARRANGEMENT HAS AT THAT PART (WHAT EVERY PART BEFORE IT LEFT, THEN IT, ARRIVED), AND IT PLAYS. CHANGE ANYTHING. KEEP, IN THE BAR THERE, MAKES THE RIG AS IT THEN STANDS A NEW SNAPSHOT IN THE LIBRARY, NAMED AFTER THE PART'S, AND PUTS IT IN THE PART'S PLACE: THE SNAPSHOT IT WAS IS NOT TOUCHED. THE PART KEEPS ITS KEYS AND GAINS THOSE OF WHATEVER YOU CHANGED. DROP KEEPS NOTHING. EDITED AGAIN, THE SNAPSHOT THE LAST EDIT MADE IS REPLACED, UNLESS SOMETHING ELSE USES IT." },
+                { aArrStack, "TO STACK", "KEEPS THE ARRANGEMENT AS A STACK IN THE MACRO DESIGNER'S RACK: ITS PARTS' SNAPSHOTS IN ORDER, EACH WITH THE KEYS ITS PART HAS. PUT ON A STACK KNOB THERE, THE KNOB'S TURN IS THE TRACK FROM FIRST PART TO LAST. A PART WITH A KEY OUT LEANS ON WHAT CAME BEFORE IT, ON A KNOB AS HERE." },
+                { aEditKeep, "KEEP", "EDIT: THE RIG AS IT STANDS BECOMES A NEW SNAPSHOT AND TAKES THE PART'S PLACE IN THE ARRANGEMENT (RETURN). THE SNAPSHOT THE PART HAD IS LEFT AS IT IS." },
+                { aEditDrop, "DROP", "EDIT: NOTHING IS KEPT, AND THE ARRANGEMENT IS AS IT WAS. THE RIG STAYS AS YOU LEFT IT." },
                 { aArrEarlier, "EARLIER", "MOVES THE CHOSEN PART ONE PLACE EARLIER." },
                 { aArrLater, "LATER", "MOVES THE CHOSEN PART ONE PLACE LATER." },
                 { aArrRemove, "REMOVE", "TAKES THE CHOSEN PART OUT OF THE ARRANGEMENT. ITS SNAPSHOT STAYS IN THE LIBRARY." },
@@ -990,13 +994,26 @@ void Screen::drawBar (G& g)
             text (g, "SET THE KNOBS AS ITS FULL TURN SHOULD LEAVE THEM.", R (tx, 20, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
             text (g, n == 0 ? String ("NONE MOVED YET.") : String (n) + " MOVED (LIT YELLOW).", R (tx, 38, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
         }
+        else if (ses.arrEdit >= 0)
+        {
+            // EDIT: which part of the arrangement the rig is, and the two ways out
+            title (g, 23 + w + 12, 24.5f, editTitle(), true);
+            const float kx = editKeysX();
+            key (g, R (kx, 17.5f, 40, 40), col::yellow, pressed (aEditKeep) ? 6.0f : 2.0f);
+            text (g, "KEEP", R (kx + 46, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
+            key (g, R (kx + 96, 17.5f, 40, 40), col::white, pressed (aEditDrop) ? 6.0f : 2.0f);
+            text (g, "DROP", R (kx + 142, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
+            const float tx = kx + 196, tw2 = std::max (60.0f, 796.0f - tx);
+            text (g, "KEEP: A NEW SNAPSHOT", R (tx, 20, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, "IN THE PART'S PLACE.", R (tx, 38, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
+        }
         else if (info)
         {
             text (g, "INFO (I): A CONTROL'S NUMBER IS ITS MIDI CC. A LANE'S IS ITS CHANNEL; ITS INSERTS ARE ON IT TOO.", R (23 + w + 16, 20, 780.0f - (23 + w + 16), 17), fLbl, col::black, juce::Justification::centredLeft);
             text (g, "RETURNS, MASTER, GLIDE, SNAPSHOT KNOBS: CHANNEL 16. REST THE MOUSE ON A CONTROL FOR WHAT IT DOES.", R (23 + w + 16, 38, 780.0f - (23 + w + 16), 17), fLbl, col::black, juce::Justification::centredLeft);
         }
         // NEW: held, the rig as it starts, for a new track (beside the flag, where LEARN's keys and INFO's lines go when they are up)
-        if (page == pMain && ses.learning < 0 && ! info)
+        if (page == pMain && ses.learning < 0 && ses.arrEdit < 0 && ! info)
         {
             key (g, R (23 + w + 16, 17.5f, 40, 40), col::white, pressed (aNewTrack) ? 6.0f : 2.0f);
             text (g, "HOLD: NEW", R (23 + w + 16 + 46, 17.5f, 110, 40), fLegend, col::black, juce::Justification::centredLeft);
@@ -1049,7 +1066,12 @@ void Screen::drawBar (G& g)
         hit (R (learnKeysX(), 17.5f, 40, 40).expanded (3), hAct, aLearnKeep, 0);
         hit (R (learnKeysX() + 96, 17.5f, 40, 40).expanded (3), hAct, aLearnDrop, 0);
     }
-    if (page == pMain && ses.learning < 0 && ! info) hit (R (23 + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 16, 17.5f, 40, 40), hAct, aNewTrack, 0);
+    if (editShown())
+    {
+        hit (R (editKeysX(), 17.5f, 40, 40).expanded (3), hAct, aEditKeep, 0);
+        hit (R (editKeysX() + 96, 17.5f, 40, 40).expanded (3), hAct, aEditDrop, 0);
+    }
+    if (page == pMain && ses.learning < 0 && ses.arrEdit < 0 && ! info) hit (R (23 + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 16, 17.5f, 40, 40), hAct, aNewTrack, 0);
     if (transShown())
     {
         const float x = transX();
@@ -2904,7 +2926,7 @@ void Screen::drawArrange (G& g)
         tag (g, R (x0, y0, wTag, 24), num);
         const auto* sn = ses.findSnap (p.snap);
         const bool on = i == playing;
-        plate (g, x0 + wTag, y0, fitted (sn != nullptr ? sn->name : String ("GONE"), fLegend, 150.0f), fLegend, 8, on ? col::green : col::white, col::black, 24);
+        plate (g, x0 + wTag, y0, fitted (sn != nullptr ? sn->name : String ("GONE"), fLegend, 150.0f), fLegend, 8, on ? col::green : i == ses.arrEdit ? col::amber : col::white, col::black, 24);
         const String from = "BAR " + String (ses.arrBarsBefore (i) + 1);
         plate (g, r.getRight() - 6 - (std::ceil (tw (fNote, from)) + 12), y0, from, fNote, 6, col::white, col::black, 24);
         readout (g, br, "BARS", String (p.bars));
@@ -2940,13 +2962,16 @@ void Screen::drawArrange (G& g)
     title (g, x0, y0, "ARRANGEMENT");
     actKey (g, aMain, x0, ky, 64, "MAIN", col::white, 5);
     actKey (g, aLibrary, x0 + 66, ky, 64, "LIBRARY", col::white, 5);
+    const bool editing = ses.arrEdit >= 0;
     actKey (g, aArrPlay, x0 + 160, ky, 64, play ? "STOP" : "PLAY", play ? col::green : col::putty, 5, n > 0, play);
     actKey (g, aArrHere, x0 + 226, ky, 64, "FROM HERE", col::yellow, 5, selPart >= 0);
-    actKey (g, aArrEarlier, x0 + 320, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
-    actKey (g, aArrLater, x0 + 386, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
-    actKey (g, aArrRemove, x0 + 452, ky, 64, "REMOVE", col::yellow, 5, selPart >= 0);
-    actKey (g, aArrClear, x0 + 534, ky, 64, "HOLD: CLEAR", col::red, 5, n > 0);
-    actKey (g, aArrPrint, x0 + 612, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
+    actKey (g, aArrEdit, x0 + 292, ky, 64, "EDIT", editing ? col::amber : col::yellow, 5, selPart >= 0 && ! pr, editing);
+    actKey (g, aArrEarlier, x0 + 386, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
+    actKey (g, aArrLater, x0 + 452, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
+    actKey (g, aArrRemove, x0 + 518, ky, 64, "REMOVE", col::yellow, 5, selPart >= 0);
+    actKey (g, aArrClear, x0 + 600, ky, 64, "HOLD: CLEAR", col::red, 5, n > 0);
+    actKey (g, aArrStack, x0 + 682, ky, 64, "TO STACK", col::yellow, 5, n > 0);
+    actKey (g, aArrPrint, x0 + 748, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
     if (vis (g, strip))
     {
         String now;
@@ -2957,21 +2982,22 @@ void Screen::drawArrange (G& g)
             now = "PLAYING PART " + String (playing + 1) + " OF " + String (n) + (sn != nullptr ? ": " + sn->name : String()) + ".  BAR " + String (juce::jlimit (1, total, (int) std::floor (std::max (0.0, ses.arrPos()) / 4.0) + 1)) + " OF " + String (total) + ".";
         }
         else if (play) now = "COMES IN ON THE NEXT BAR LINE.";
+        else if (editing) now = "PART " + String (ses.arrEdit + 1) + " IS BEING EDITED IN THE MAIN VIEW: KEEP OR DROP IT THERE (EDIT GOES BACK TO IT).";
         else now = ses.printNote;
         g.setColour (tone (col::black)); g.setFont (fLegend);
-        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 700, (int) y0, 970, 24), juce::Justification::centredLeft, 1, 0.7f);
+        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 832, (int) y0, 838, 24), juce::Justification::centredLeft, 2, 0.7f);
         const String help = "PRESS A SNAPSHOT ON THE RIGHT TO HEAR IT; ITS ADD PUTS IT AFTER THE CHOSEN PART, WITH THE PARTS LIT ON IT. A PART'S KEYS: WHAT IT TAKES OF ITS SNAPSHOT. DRAG ITS BARS, AND ITS MORPH: HOW LONG THE WAY INTO IT TAKES (CUT: IT IS SIMPLY THERE). "
                             "THE KNOBS TRAVEL OVER THE MORPH, PATTERNS CHANGE ON THE BAR, AND WHAT CANNOT TRAVEL IS CROSSED OVER, AS IN ANY RECALL. THE SNAPSHOT KNOBS AND THEIR MOTION PLAY OVER IT. "
-                            "PRINT RENDERS IT TO FILES: THE TRACK AND ITS PARTS, IN THE FOLDER TAKES GO TO.";
+                            "EDIT: THE CHOSEN PART IN THE MAIN VIEW, KEPT AS A NEW SNAPSHOT IN ITS PLACE. TO STACK: THE PARTS AS A STACK, FOR A KNOB. PRINT: THE TRACK AND ITS STEMS AS FILES, WHERE TAKES GO.";
         g.setFont (fLbl);
-        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 700, (int) y0 + 28, 970, 68), juce::Justification::topLeft, 4, 0.85f);
+        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 832, (int) y0 + 28, 838, 68), juce::Justification::topLeft, 5, 0.8f);
     }
 }
 
 String Screen::arrangeSig() const
 {
     String s;
-    s << ses.arrPart() << "|" << (ses.arrPlaying() ? (int) std::floor (ses.arrPos()) : -9) << "|" << (ses.printing() ? juce::roundToInt (ses.printDone() * 100.0f) : -1) << "|" << ses.printNote << "|" << (int) ses.arrangement.size();
+    s << ses.arrEdit << "|" << ses.arrPart() << "|" << (ses.arrPlaying() ? (int) std::floor (ses.arrPos()) : -9) << "|" << (ses.printing() ? juce::roundToInt (ses.printDone() * 100.0f) : -1) << "|" << ses.printNote << "|" << (int) ses.arrangement.size();
     return s;
 }
 
@@ -3032,6 +3058,38 @@ void Screen::act (int a)
         case aArrange:  setPage (page == pArrange ? pMain : pArrange); break;
         case aArrPlay:  if (ses.arrPlaying()) ses.arrStop(); else ses.arrPlay (0); break;
         case aArrHere:  ses.arrPlay (std::max (0, selPart)); break;
+        case aArrEdit:
+            // (the part chosen; the one already being edited: back to it)
+            if (selPart >= 0 && (ses.arrEdit == selPart || ses.arrEditBegin (selPart))) setPage (pMain);
+            break;
+        case aEditKeep:
+        {
+            const int part = ses.arrEdit;
+            const auto id = ses.arrEditKeep();
+            if (const auto* sn = ses.findSnap (id))
+            {
+                String lit;
+                static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K" };
+                for (int k = 0; k < kLanes + 3; ++k) if ((ses.arrEditLit >> k) & 1u) lit << (lit.isEmpty() ? "" : " ") << partName[k];
+                ses.printNote = "PART " + String (part + 1) + " IS NOW " + sn->name + ", A NEW SNAPSHOT IN THE LIBRARY." + (lit.isNotEmpty() ? "  KEYS LIT FOR WHAT WAS CHANGED: " + lit + "." : String());
+            }
+            selPart = part;
+            setPage (pArrange);
+            break;
+        }
+        case aEditDrop: { const int part = ses.arrEdit; ses.arrEditDrop(); ses.printNote = "NOTHING KEPT. THE RIG IS AS YOU LEFT IT."; selPart = part; setPage (pArrange); break; }
+        case aArrStack:
+        {
+            const int at = ses.arrToStack();
+            if (at >= 0)
+            {
+                const auto& st = ses.stacks[(size_t) at];
+                const int open = ses.arrOpenParts();
+                ses.printNote = "KEPT AS THE STACK " + st.name + ": " + String ((int) st.snaps.size()) + (st.snaps.size() == 1 ? " SNAPSHOT" : " SNAPSHOTS") + " IN ORDER, IN THE MACRO DESIGNER'S RACK."
+                                + (open > 0 ? "  " + String (open) + (open == 1 ? " PART HAS" : " PARTS HAVE") + " A KEY OUT: ON A KNOB, AS HERE, " + (open == 1 ? "IT LEANS" : "THEY LEAN") + " ON WHAT CAME BEFORE." : String());
+            }
+            break;
+        }
         case aArrEarlier: if (selPart > 0) { ses.arrMove (selPart, -1); --selPart; } break;
         case aArrLater: if (selPart >= 0 && selPart < (int) ses.arrangement.size() - 1) { ses.arrMove (selPart, 1); ++selPart; } break;
         case aArrRemove: if (selPart >= 0) { ses.arrRemove (selPart); selPart = std::min (selPart, (int) ses.arrangement.size() - 1); } break;
@@ -3647,6 +3705,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
         return true;
     }
     if (k == juce::KeyPress::returnKey && ses.learning >= 0) { act (aLearnKeep); repaint(); return true; }
+    if (k == juce::KeyPress::returnKey && editShown()) { act (aEditKeep); repaint(); return true; }
     if (k == juce::KeyPress::escapeKey)
     {
         if (page != pMain) setPage (pMain);
@@ -3806,6 +3865,21 @@ String Screen::learnTitle() const
     if (ses.learning < 0) return {};
     const auto& kn = ses.knobs[(size_t) ses.learning];
     return "LEARNING " + String (ses.learning + 1) + (kn.name.isNotEmpty() ? " " + kn.name : String());
+}
+
+String Screen::editTitle() const
+{
+    if (ses.arrEdit < 0 || ses.arrEdit >= (int) ses.arrangement.size()) return {};
+    const auto* sn = ses.findSnap (ses.arrangement[(size_t) ses.arrEdit].snap);
+    // (short, and its name no wider than a card gives it: KEEP and DROP stand after it, before SNAPSHOT)
+    String name = sn != nullptr ? sn->name : String();
+    while (name.length() > 1 && tw (fLegend, name) > 150.0f) name = name.dropLastCharacters (1);
+    return "EDIT " + String (ses.arrEdit + 1) + (name.isNotEmpty() ? " " + name : String());
+}
+
+float Screen::editKeysX() const
+{
+    return 23.0f + std::ceil (tw (fFlag, "SF-000")) + 28.0f + 12.0f + std::ceil (tw (fLegend, editTitle())) + 16.0f + 14.0f;
 }
 
 float Screen::learnKeysX() const

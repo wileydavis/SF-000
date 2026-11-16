@@ -2121,7 +2121,11 @@ void Session::remove (juce::int64 id)
     if (cueId == id) cue (0);
     if (useDisk) { waitForClips(); clipFile (id).deleteFile(); stemsFile (id).deleteFile(); }
     for (auto& k : knobs) { k.drop (id); if (k.picked == id) k.picked = 0; }
-    arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
+    {
+        const auto partsWere = arrangement.size();
+        arrangement.erase (std::remove_if (arrangement.begin(), arrangement.end(), [id] (const ArrPart& p) { return p.snap == id; }), arrangement.end());      // (the parts it was, in the arrangement)
+        if (arrangement.size() != partsWere) arrEdit = -1;      // (and an EDIT of one of its parts: the parts are not where they were)
+    }
     for (auto& st : stacks)                                             // (and out of the stacks: those LOAD brought, those kept here; its parts go with it)
         for (size_t i = st.snaps.size(); i-- > 0;)
             if (st.snaps[i] == id) { st.snaps.erase (st.snaps.begin() + (long) i); if (i < st.lanes.size()) st.lanes.erase (st.lanes.begin() + (long) i); }
