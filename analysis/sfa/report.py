@@ -490,9 +490,17 @@ function drawMorph(q) {
       ? `This was scanned before tunings were kept with the notes: where the two snapshots differ in a TUNE knob, its points stand on pitches between the two, in no key. SCAN again and they are in tune.`
       : `Every point plays the notes of ${sc.notes === 'b' ? 'TO' : 'FROM'}${kk ? `, in its key (${esc(kk[nEnd])}${kk[0] !== kk[1] ? `; ${sc.notes === 'b' ? 'FROM' : 'TO'} is in ${esc(kk[1 - nEnd])}, so the far end is not that snapshot as you know it` : ''})` : ''}.` +
         (sc.held.length ? ` TUNE stays with the notes on ${sc.held.map(l => LN[l]).join(', ')}: the two snapshots differ there, and gliding between would leave the points on pitches in no key. (The stack knob itself does glide TUNE as it turns.)` : '')) + `</p>`;
+  if ((sc.missing || []).length) {
+    const fname = r => esc(String(r).split('/').pop()), files = sc.missing.map(r => fname(r) + (sc.why && sc.why[r] ? ` (${esc(sc.why[r])})` : '')).join(', ');
+    h += `<p class="note" style="color:var(--hot)">` + (sc.left === undefined
+      ? `This was scanned without ${sc.missing.length} sound file(s) these snapshots name (${files}). A lane without its file does not fall silent: the voice lane sings its notes with a choir of its own, the same in every morph. SCAN again: the files are now taken from SF-000's own folder on this machine.`
+      : `Not the whole of these snapshots: ${sc.missing.length} sound file(s) could not be had (${files}).` +
+        (sc.left.length ? ` ${sc.left.map(l => LN[l]).join(', ')} is left out of every point, since without its file it would play something that is in neither snapshot.` : '') +
+        ((sc.named || []).length ? ` ${sc.named.map(l => LN[l]).join(', ')} names one too: if it plays that file, it is not as you know it here.` : '')) + `</p>`;
+  }
   const found = sc.points.filter(p => p.tags.length);
   const sel = sc.points.find(p => p.key === M.sel);
-  h += strip(sc) + `<p class="note">Left to right: the turn of the knob. Press a point to hear it. The bars: how much the sound changes in each tenth of the turn (an even morph would have them level; here the largest is ${sc.uneven}× the mean). The line: energy. Ringed: worth hearing.${(sc.missing || []).length ? ` ${sc.missing.length} sound file(s) these snapshots name are not in the web library yet: their lanes may be silent here.` : ''}</p>`;
+  h += strip(sc) + `<p class="note">Left to right: the turn of the knob. Press a point to hear it. The bars: how much the sound changes in each tenth of the turn (an even morph would have them level; here the largest is ${sc.uneven}× the mean). The line: energy. Ringed: worth hearing.</p>`;
   h += `<h2>WORTH HEARING</h2>` + (found.length ? `<div class="rel" style="grid-template-columns:60px 1fr">` + found.map(p =>
       `<b>${Math.round(p.f * 100)}%</b><div class="chips"><button class="chip" data-act="point" data-key="${p.key}">PLAY</button>${p.tags.map(t => `<span class="chip" style="cursor:default;border-color:transparent" title="${esc(TAGS[t] || 'more of this than either end has')}">${esc(t)}</span>`).join('')}</div>`).join('') + `</div>`
       : `<p class="dim">Nothing between them stands clear of both ends: it is a plain way from one to the other.</p>`);

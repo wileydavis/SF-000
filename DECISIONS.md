@@ -4519,13 +4519,37 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      hidden. *Mine:* the space bar does the same (not while typing); the combination's own PLAY
      says STOP while it plays; and a chip is lit in every place the thing playing is listed, and
      stays lit through a search or a change of tab, so the page never shows less than what sounds.
+695. **You**, 10:27: "mporph still does werid stuff. the inbetween sections have the same trumpet
+     sounding riff (doo-doo-dee-doo) that sounds the same even when fifferent snapshot morphs are
+     tested." 10:29, with a recording: "this same sound plays on all inbetween pouints of all the
+     morphs ive tried." The recording is four notes going up, C#, D, D#, E. That is the voice
+     lane's pattern in your recent snapshots (SNAP 088: C#3, D3, D#3, E3, which choose slices 2 to
+     5 of `handsup3.mp3`), played as pitches: **the voice lane without its phrase does not fall
+     silent, it sings its notes with a choir of its own** (the suite's Voice, when it has no
+     sample). Rendered here without the phrase, the lane plays exactly those four notes. So the
+     render did not have the file: the analysis fetched sound files from the web library alone,
+     and one not sent yet was passed over with a line of small print that said its lane "may be
+     silent". This is very likely what "not playing in the original key" (691) was as well.
+     *Mine:* (1) a sound file is taken from SF-000's own library on this machine first (known to
+     be that file by the SHA-256 its folder is named for), and from the web library otherwise;
+     (2) if it can be had from neither, a lane that would play a stand-in for it is left out of
+     every point, with no notes, and the page says so in yellow, with the file's name and why;
+     other lanes that name a missing file are named; (3) each render starts from nothing (the
+     instrument's kept session in the render's folder is removed first); (4) a scan made before
+     this that lacked a file says what happened and asks to be made again. The tuning staying
+     with the notes (691) stays as it is, unless you would rather have the glide.
 
 ## Not verified
 
-- **That the TUNE knobs were what you heard in 88 to 101 (691).** SNAP 101 is newer than the
-  session I have, so I could not render that pair. If its points are still out of key scanned
-  again on this build, the pair's `job.json` (in `morph/`, in the analysis's folder) would let me
-  render exactly what you rendered.
+- **That the missing phrase is the whole of what you heard (695, 691).** Here the phrase is an mp3
+  this build cannot read, so the voice lane has never sounded as yours in a render here; that
+  the Mac now finds `handsup3.mp3` in SF-000's folder and plays it is yours to hear. If a scan
+  made again still says a file could not be had, the yellow line names it and why. SNAP 101 is
+  newer than the session I have: the pair's `job.json` (in `morph/`, in the analysis's folder)
+  would let me render exactly what you rendered.
+- **Why the web library did not have the file.** ONLINE sends large files only while the rig is
+  stopped, one a pass; whether yours are still going up or were passed over, I cannot see from
+  here.
 - **A morph has been rendered on your Mac (you heard its points, 17 November) but I have not seen
   one from there.** Here it is rendered by the Linux build from your session as I have it. Two things to know. A voice lane
   whose sample is an mp3 does not sound as yours here (this build cannot read mp3; the Mac's can),

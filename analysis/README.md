@@ -73,6 +73,14 @@ one to the other as the knob turns, with the notes of the one it set out from (N
 one's key. Eleven points along the turn, each from the same beginning so that they can be compared; about a
 minute. SF-000 has to be closed while it renders, and built in this folder (`./build.sh`).
 
+**The sound files the two snapshots name** (a lane's sample, the voice lane's phrase, an impulse response) are
+put where the render can read them: from SF-000's own library on this machine if they are there (each is kept in
+a folder named for the first eight digits of its SHA-256, so it is known to be that file), and otherwise from the
+web library. If one can be had from neither, the page says which, in yellow, above the scan. A lane that would
+play a stand-in for its missing file is **left out of every point**, with no notes: the voice lane without its
+phrase does not fall silent, it sings its notes with a choir of its own, which is in neither snapshot and the
+same in every morph. Another lane that names a missing file is named too, since it may not sound as you know it.
+
 **One thing is not as the knob plays it: tuning stays with the notes.** A lane's TUNE is a sound knob, so the
 stack knob glides it; where the two snapshots have a lane tuned differently (a kick two octaves apart), a point
 part of the way would stand on a pitch between the two, in no key. That is a glide under the hand and a wrong

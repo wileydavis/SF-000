@@ -15,6 +15,7 @@ Reshaped, it is a stack: the two with snapshots made between them, which a stack
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import os
@@ -29,7 +30,7 @@ import numpy as np
 import soundfile as sf
 
 from .compose import compose
-from .library import Trouble
+from .library import Trouble, sf000_library_dirs
 from .measure import LANES, measure, read_lossless
 from .parts import fit, part_distance
 from .relate import GROUPS, energy, matrix
@@ -107,6 +108,43 @@ def refs_in(value) -> set[str]:
     return out
 
 
+def sha256_of(f: Path) -> str:
+    h = hashlib.sha256()
+    with open(f, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+# The lanes that have nothing to play without their sound file, and do not fall silent without it: the voice lane sings
+# its notes with a choir of its own when it has no phrase (suite/modules/Voice.cpp), which is not that snapshot at all.
+NEEDS_ITS_FILE = {"voice"}
+
+
+def without_files(snap: dict, missing: set[str]) -> tuple[dict, list[str], list[str]]:
+    """The snapshot as it can be rendered without those sound files: a lane that would play a stand-in for its file
+    is turned down (its level and both sends), so that what is heard is the snapshot less a lane and never something
+    that is not in it. Returns it, the lanes left out, and the other lanes that name a missing file."""
+    files = snap.get("laneFiles") if isinstance(snap.get("laneFiles"), list) else []
+    named = [LANES[i] for i, f in enumerate(files) if i < len(LANES) and f in missing]
+    left = [l for l in named if l in NEEDS_ITS_FILE]
+    if not left:
+        return snap, [], named
+    out = copy.deepcopy(snap)
+    values = out.setdefault("values", {})
+    for l in left:
+        i = LANES.index(l)
+        for k in ("level", "send_a", "send_b"):
+            values[f"{l}.{k}"] = 0.0
+        # and no notes for it, written or heard: turned down is not yet silent
+        if isinstance(out.get("patterns"), list) and i < len(out["patterns"]) and isinstance(out["patterns"][i], dict):
+            out["patterns"][i]["steps"] = []
+        played = out.get("played")
+        if isinstance(played, dict) and isinstance(played.get("in"), list):
+            played["in"] = [e for e in played["in"] if not (isinstance(e, dict) and e.get("lane") == i)]
+    return out, left, [l for l in named if l not in left]
+
+
 class Renderer:
     def __init__(self, lib, store, sf000: Path | None):
         self.lib, self.store, self.sf000 = lib, store, sf000
@@ -128,30 +166,64 @@ class Renderer:
         self.store.save_state()
         return known
 
+    def _local(self, r: str, sha: str | None) -> Path | None:
+        """The same file in SF-000's own library on this machine, if it is there and is that file. SF-000 keeps each
+        in a folder named for the first eight digits of its SHA-256, so it can be told even before the web library has
+        been sent it (large files go up only while the rig is stopped, one at a time)."""
+        for root in sf000_library_dirs():
+            f = root / r
+            try:
+                if not f.is_file():
+                    continue
+                h = sha256_of(f)
+            except OSError:
+                continue
+            parts = r.split("/")
+            if (sha and h == sha) or (not sha and len(parts) == 3 and h.startswith(parts[1])):
+                return f
+        return None
+
     def place_files(self, snaps: list[dict], scratch: Path) -> list[str]:
-        """The sound files those snapshots name, into the folder the instrument will work in. What could not be had."""
+        """The sound files those snapshots name, into the folder the instrument will work in: from the web library, or
+        from SF-000's own library on this machine. Returns what could not be had (or cannot be read on this machine)."""
         refs = set()
         for s in snaps:
             refs |= refs_in(s)
         known = self.store.state.get("file_hashes", {})
         if any(r not in known for r in refs):
-            libs = {str(s.get("uid", "")).split("-")[0] for s in snaps} | {u.split("-")[0] for u in self._sources(snaps)}
+            libs = {str(s.get("uid", "")).split(".")[0].split("-")[0] for s in snaps} | {u.split("-")[0] for u in self._sources(snaps)}
             known = self._hashes({x for x in libs if len(x) == 16})
         missing = []
+        self.from_where = {}
         for r in sorted(refs):
+            to = scratch / r
+            if r.lower().endswith(".mp3") and platform.system() != "Darwin":
+                missing.append(r)                       # (SF-000 built for this machine cannot read mp3: the Mac's can)
+                self.from_where[r] = "cannot be read on this machine"
+                continue
+            if to.exists():
+                self.from_where[r] = "kept"
+                continue
             sha = known.get(r)
             kept = self.store.root / "files" / sha if sha else None
-            if kept is not None and not kept.exists():
+            src, where = None, ""
+            if kept is not None and kept.exists():
+                src, where = kept, "kept"
+            if src is None:
+                src = self._local(r, sha)
+                where = "this machine"
+            if src is None and kept is not None:
                 data = self.lib.get_bytes("/api/files/" + sha)
                 if data:
                     self.store._write(kept, data)
-            if kept is None or not kept.exists():
+                    src, where = kept, "the web library"
+            if src is None:
                 missing.append(r)
+                self.from_where[r] = "not in the web library, not on this machine"
                 continue
-            to = scratch / r
             to.parent.mkdir(parents=True, exist_ok=True)
-            if not to.exists():
-                shutil.copyfile(kept, to)
+            shutil.copyfile(src, to)
+            self.from_where[r] = where
         return missing
 
     @staticmethod
@@ -178,14 +250,22 @@ class Renderer:
             out.update(got.get("defs") or {})
         return out
 
-    def render(self, work: Path, snaps: list[dict], defs: dict, points: list[dict], progress=None, stop=None) -> list[str]:
-        """Runs the instrument on the job. Returns the sound files that could not be had. Raises Trouble."""
+    def render(self, work: Path, snaps: list[dict], defs: dict, points: list[dict], progress=None, stop=None) -> dict:
+        """Runs the instrument on the job. Returns what was done without: {"missing": the sound files that could not
+        be had, "left": the lanes left out for want of theirs, "named": other lanes that name one}. Raises Trouble."""
         if self.sf000 is None:
             raise Trouble("SF-000 itself is needed to render this, and its program was not found. Build it (./build.sh) in the folder this came in.")
         scratch, out = work / "rig", work / "out"
         scratch.mkdir(parents=True, exist_ok=True)
         out.mkdir(parents=True, exist_ok=True)
+        (scratch / "session.json").unlink(missing_ok=True)      # (each render from nothing: the instrument keeps what it took, by uid)
         missing = self.place_files(snaps, scratch)
+        left, named = [], []
+        if missing:
+            quiet = [without_files(sn, set(missing)) for sn in snaps]
+            snaps = [q[0] for q in quiet]
+            left = [l for l in LANES if any(l in q[1] for q in quiet)]
+            named = [l for l in LANES if any(l in q[2] for q in quiet)]
         job = work / "job.json"
         job.write_text(json.dumps({"dir": str(scratch), "out": str(out), "defs": defs, "snapshots": snaps, "points": points}))
         cmd = [str(self.sf000), "--render", str(job)]
@@ -214,7 +294,7 @@ class Renderer:
             self.child = None
         if code != 0 or failed or done < len(points):
             raise Trouble("SF-000 could not render it" + (f" ({failed[0]})" if failed else f" (it stopped after {done} of {len(points)})"))
-        return missing
+        return {"missing": missing, "left": left, "named": named, "why": {r: self.from_where.get(r, "") for r in missing}}
 
 
 # ------------------------------------------------------------------------------------------------- reading a render
@@ -486,7 +566,8 @@ class Morphs:
             def progress(done, of):
                 scan["done"] = done
                 self._put(scan)
-            scan["missing"] = self.r.render(wd, [sa, sb], self.r.defs_for([a, b]), points, progress, self._stop)
+            got = self.r.render(wd, [sa, sb], self.r.defs_for([a, b]), points, progress, self._stop)
+            scan["missing"], scan["left"], scan["named"], scan["why"] = got["missing"], got["left"], got["named"], got["why"]
             scan["status"] = "measuring"
             self._put(scan)
             measured = []

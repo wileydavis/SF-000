@@ -19,6 +19,21 @@ def sf000_home() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "SF-000"
 
 
+def sf000_library_dirs() -> list[Path]:
+    """Where SF-000 keeps its library on this machine (its sound files among it, in samples/): the folder chosen in
+    SETUP if there is one and it is there (places.json), and SF-000's own. Only ever read."""
+    home = sf000_home()
+    out = []
+    try:
+        chosen = json.loads((home / "places.json").read_text()).get("library", "")
+    except (OSError, ValueError, AttributeError):
+        chosen = ""
+    if isinstance(chosen, str) and chosen and chosen != "(home)" and Path(chosen).is_dir():
+        out.append(Path(chosen))
+    out.append(home)
+    return out
+
+
 class Trouble(Exception):
     """The library did not answer, or answered with something other than what was asked for."""
 

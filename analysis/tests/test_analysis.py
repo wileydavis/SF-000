@@ -409,6 +409,43 @@ class Morphing(unittest.TestCase):
         self.assertEqual(chip["ext"]["sf000analysis"], {"a": "u1", "b": "u2", "f": 0.4, "made": 0x99})
         self.assertEqual(snap["uid"], "x")
 
+    def test_a_lane_without_its_sound_file_is_left_out_not_stood_in_for(self):
+        from sfa.morph import without_files
+        lanes = ["kick", "closed_hat", "open_hat", "clap", "perc", "bass", "rumble", "lead", "chord", "pad", "voice"]
+        files = [""] * 11
+        files[0], files[10] = "samples/aaaaaaaa/kick.wav", "samples/bbbbbbbb/hands.mp3"
+        snap = {"uid": "x", "laneFiles": files, "values": {"voice.level": 0.4, "voice.send_a": 0.3, "voice.send_b": 0.1, "kick.level": 0.7},
+                "patterns": [{"len": 16, "steps": [[0, 0.7, 1.0, 1, 0, 3]]} for _ in lanes], "played": {"seqMute": [0] * 11, "in": [{"lane": 10, "len": 16, "steps": [[4, 0.7, 1.0, 1, 2, 3]]}, {"lane": 5, "len": 16, "steps": []}]}}
+        out, left, named = without_files(snap, {"samples/bbbbbbbb/hands.mp3", "samples/aaaaaaaa/kick.wav"})
+        self.assertEqual((out["patterns"][10]["steps"], len(out["patterns"][0]["steps"]), [e["lane"] for e in out["played"]["in"]]), ([], 1, [5]))      # (no notes for it, written or heard)
+        self.assertEqual(len(snap["patterns"][10]["steps"]), 1)
+        self.assertEqual((left, named), (["voice"], ["kick"]))           # (the voice would sing its notes instead: out. The kick may not use its file: said)
+        self.assertEqual([out["values"][k] for k in ("voice.level", "voice.send_a", "voice.send_b", "kick.level")], [0.0, 0.0, 0.0, 0.7])
+        self.assertEqual(snap["values"]["voice.level"], 0.4)
+        same, left, named = without_files(snap, {"samples/cccccccc/other.wav"})
+        self.assertIs(same, snap)
+        self.assertEqual((left, named), ([], []))
+
+    def test_a_sound_file_is_taken_from_this_machine_only_if_it_is_that_file(self):
+        import hashlib, tempfile
+        from pathlib import Path
+        from unittest import mock
+        from sfa import morph
+        with tempfile.TemporaryDirectory() as d:
+            root, data = Path(d), b"the phrase"
+            sha = hashlib.sha256(data).hexdigest()
+            good, bad = f"samples/{sha[:8]}/hands.mp3", "samples/00000000/hands.mp3"
+            for r in (good, bad):
+                (root / r).parent.mkdir(parents=True)
+                (root / r).write_bytes(data)
+            r = morph.Renderer.__new__(morph.Renderer)
+            with mock.patch.object(morph, "sf000_library_dirs", return_value=[root]):
+                self.assertEqual(r._local(good, None), root / good)       # (its folder is named for what is in it)
+                self.assertEqual(r._local(good, sha), root / good)
+                self.assertIsNone(r._local(bad, None))                    # (another file under that name)
+                self.assertIsNone(r._local(good, "f" * 64))               # (not the one the library has under that name)
+                self.assertIsNone(r._local("samples/11111111/none.wav", None))
+
 
 class Texture(unittest.TestCase):
     def tone(self, am_hz=0.0, depth=0.0, sweep=0.0, noise=0.0, hz=220.0, bars=4):
