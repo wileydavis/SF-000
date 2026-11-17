@@ -90,6 +90,9 @@ PAGE = r"""<!DOCTYPE html>
   #combo .lane small { color:var(--hot); margin-left:4px; }
   #combo .lane.off { opacity:.45; text-decoration:line-through; }
   #combo .lane.from { border-color:var(--hot); }
+  #combo .lgrp { display:inline-flex; align-items:center; gap:2px; }
+  #combo .back { border:1px solid #3a3a3a; border-radius:4px; padding:3px 5px; font-size:10px; letter-spacing:.06em; color:var(--dim); cursor:pointer; }
+  #combo .back:hover { color:var(--ink); border-color:var(--ink); }
   #combo input { width:150px; }
   #combo .act { border:1px solid var(--ink); background:transparent; color:var(--ink); border-radius:5px; padding:5px 11px; font-size:12px; letter-spacing:.08em; cursor:pointer; }
   #combo .act.go { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
@@ -97,7 +100,6 @@ PAGE = r"""<!DOCTYPE html>
   #combo .said { color:var(--dim); font-size:12px; }
   main { padding-bottom:140px !important; }
   .mrow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 0; }
-  .mrow select { background:#0c0c0c; border:1px solid var(--line); color:var(--ink); padding:6px 9px; border-radius:6px; max-width:260px; }
   .act { border:1px solid var(--ink); background:transparent; color:var(--ink); border-radius:5px; padding:5px 11px; font-size:12px; letter-spacing:.08em; cursor:pointer; }
   .act.go { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
   .act.on { background:var(--ink); color:#111; }
@@ -137,7 +139,7 @@ const hasPart = (uid, key) => (D.have[uid] || []).includes(key);
 function stop() {
   if (playing) playing.forEach(s => { try { s.stop(); } catch (e) {} });
   playing = null; playingKey = null;
-  document.querySelectorAll('.chip.playing').forEach(c => c.classList.remove('playing'));
+  document.querySelectorAll('.playing').forEach(c => c.classList.remove('playing'));
 }
 // A part at another tempo is stretched to this one without its pitch moving (as the instrument would play its notes):
 // grains of 2048 samples laid every 512, each taken from where it best continues the one before.
@@ -180,7 +182,7 @@ async function playLayers(key, el, layers, tempo) {
   if (!layers.length) return;
   ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') await ctx.resume();
-  playingKey = key; el.classList.add('playing');
+  playingKey = key; el.classList.add('playing'); markPlaying();
   let bs;
   try { bs = await Promise.all(layers.map(l => buf(l.url))); } catch (e) { stop(); return; }
   if (playingKey !== key) return;
@@ -194,6 +196,21 @@ async function playLayers(key, el, layers, tempo) {
     s.connect(ctx.destination); s.start(at); return s;
   });
 }
+function markPlaying() {
+  // What is lit is what sounds. The combination playing: each lane in it from another snapshot is lit where it was
+  // pressed (and none of them once it stops, or the lane is silenced or put back).
+  document.querySelectorAll('.chip[data-act="swap"].playing, .chip[data-act="add"].playing').forEach(c => c.classList.remove('playing'));
+  if (combo && playingKey === comboKey()) {
+    for (const [l, u] of Object.entries(combo.picks))
+      if (u && !combo.off[l]) document.querySelectorAll(`.chip[data-base="${CSS.escape(combo.base)}"][data-k="${l}"]`).forEach(c => { if (c.dataset.u === u) c.classList.add('playing'); });
+    const pl = document.getElementById('cplay'); if (pl) pl.classList.add('playing');
+  }
+  // on the MORPH tab a snapshot is in more than one place (its slot, the chips to choose from): lit in each
+  const m = /^(?:clip|whole):(.*)$/.exec(playingKey || '');
+  if (!m || view !== 'morph') return;
+  document.querySelectorAll('.chip[data-act="clip"], .chip[data-act="choose"]').forEach(c => { if (c.dataset.u === m[1]) c.classList.add('playing'); });
+}
+const playSnap = (u, el) => D.clips[u] ? playLayers('clip:' + u, el, [{ url: D.clips[u] }], 0) : playLayers('whole:' + u, el, wholeLayers(u), D.bpm[u]);
 function wholeLayers(uid, without) {
   // a snapshot as its parts: every lane, return and the bus it has, less the lanes named
   return (D.have[uid] || []).filter(k => !(without || []).includes(k)).map(k => ({ url: partUrl(uid, k), bpm: D.bpm[uid] }));
@@ -243,7 +260,7 @@ function rhythmRows(r) {
 function drawSnaps(q) {
   const all = Object.entries(D.found).filter(([u, f]) => f.energy !== undefined).sort((a, b) => b[1].energy - a[1].energy);
   const shown = q ? all.filter(([u]) => (D.names[u] || '').toLowerCase().includes(q)) : all;
-  return `<p class="note">The big chip plays the snapshot. SAME TEXTURE: not alike overall, but the same to the touch (grit, resonance, noise, how alive). SAME RHYTHM: the same rhythm as it is heard, in another sound. RHYTHM: what is heard in the bar, and how much of it the sound itself adds to the steps (echoes, density, ghosts). SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane; pressed again, out). In the bar, a lane pressed is taken away. MAKE CHIP makes it a snapshot. A lane's name here plays this snapshot's own lane alone.</p>` +
+  return `<p class="note">The big chip plays the snapshot. SAME TEXTURE: not alike overall, but the same to the touch (grit, resonance, noise, how alive). SAME RHYTHM: the same rhythm as it is heard, in another sound. RHYTHM: what is heard in the bar, and how much of it the sound itself adds to the steps (echoes, density, ghosts). SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane). A chip is lit while its lane is sounding in what plays, and only then; press a lit one and it comes out. In the bar: a lane pressed is silenced (again, back); OWN beside a lane from another snapshot puts this snapshot's own back; PLAY, lit, stops it. MAKE CHIP makes it a snapshot. A lane's name here plays this snapshot's own lane alone.</p>` +
   shown.map(([u, f]) => {
     const swaps = f.swap ? ORDER.filter(l => f.swap[l] && f.swap[l].length).map(l =>
       `<b class="sub"><span class="chip" data-act="solo" data-u="${esc(u)}" data-k="${l}" style="padding:2px 6px;font-size:11px">${LN[l]}</span></b><div class="chips">${
@@ -308,19 +325,20 @@ function drawParts(q) {
 // ---------------------------------------------------------------- the combination: a snapshot, with lanes from others
 // Each SWAP, ADD or GOES WITH pressed puts its lane into it (pressed again, takes it out) and plays all of it. A lane
 // in the bar pressed is taken away (again, put back). MAKE CHIP makes it a new snapshot in the web library's MADE stack.
-let combo = null;                    // { base, picks: { lane: uid | null } }
+let combo = null;                    // { base, picks: { lane: uid }, off: { lane: true } }
 let said = '';
 function comboLayers() {
-  const taken = Object.keys(combo.picks);
+  const taken = [...new Set([...Object.keys(combo.picks), ...Object.keys(combo.off)])];
   const layers = wholeLayers(combo.base, taken);
-  for (const [l, from] of Object.entries(combo.picks)) if (from && hasPart(from, l)) layers.push({ url: partUrl(from, l), bpm: D.bpm[from] });
+  for (const [l, from] of Object.entries(combo.picks)) if (from && !combo.off[l] && hasPart(from, l)) layers.push({ url: partUrl(from, l), bpm: D.bpm[from] });
   return layers;
 }
-function comboKey() { return 'combo:' + combo.base + ':' + JSON.stringify(combo.picks); }
-function playCombo(el) { if (!combo) return; playLayers(comboKey(), el || document.getElementById('cplay'), comboLayers(), D.bpm[combo.base]); }
+function comboKey() { return 'combo:' + combo.base + ':' + JSON.stringify(combo.picks) + JSON.stringify(Object.keys(combo.off).sort()); }
+function playCombo() { if (!combo) return; playLayers(comboKey(), document.getElementById('cplay'), comboLayers(), D.bpm[combo.base]); }
 function pick(base, l, from) {
-  if (!combo || combo.base !== base) combo = { base, picks: {} };
+  if (!combo || combo.base !== base) combo = { base, picks: {}, off: {} };
   if (combo.picks[l] === from) delete combo.picks[l]; else combo.picks[l] = from;
+  delete combo.off[l];
   said = ''; drawCombo();
 }
 function drawCombo() {
@@ -328,31 +346,36 @@ function drawCombo() {
   if (!combo) { el.hidden = true; return; }
   el.hidden = false;
   const own = (D.have[combo.base] || []).filter(k => ORDER.includes(k));
-  const lanes = ORDER.filter(l => own.includes(l) || combo.picks[l] !== undefined);
+  const lanes = ORDER.filter(l => own.includes(l) || combo.picks[l]);
   const named = Object.values(combo.picks).filter(Boolean).map(u => D.names[u]);
+  // each lane: pressed, silenced (again, back). One from another snapshot has a key beside it: OWN puts this
+  // snapshot's own lane back; OUT takes away a lane this snapshot never had.
   el.innerHTML = `<b style="font-size:12px;letter-spacing:.1em">${esc(D.names[combo.base])}</b>` +
-    lanes.map(l => { const f = combo.picks[l]; const cls = f === null ? ' off' : (f ? ' from' : '');
-      return `<span class="lane${cls}" data-l="${l}">${LN[l]}${f ? `<small>${esc(D.names[f])}</small>` : ''}</span>`; }).join('') +
+    lanes.map(l => { const f = combo.picks[l], off = !!combo.off[l], mine = own.includes(l) && !(((D.found[combo.base] || {}).add || {})[l]);      // (a lane it has, and sounds)
+      return `<span class="lgrp"><span class="lane${off ? ' off' : ''}${f ? ' from' : ''}" data-l="${l}" title="${off ? 'silenced: press to bring it back' : 'press to silence it'}">${LN[l]}${f ? `<small>${esc(D.names[f])}</small>` : ''}</span>${
+        f ? `<span class="back" data-back="${l}" title="${mine ? `back to ${esc(D.names[combo.base])}'s own ${LN[l]}` : `take this ${LN[l]} out`}">${mine ? 'OWN' : 'OUT'}</span>` : ''}</span>`; }).join('') +
     `<button class="act" id="cplay">PLAY</button>` +
     `<input id="cname" placeholder="name" value="${esc(combo.name ?? ((D.names[combo.base] || '').slice(0, 10) + (named.length ? ' + ' + named[0].replace(/^SNAP /, '') : '')))}" maxlength="24">` +
     `<button class="act go" id="cmake">MAKE CHIP</button><button class="act" id="cclear">CLEAR</button><span class="said">${esc(said)}</span>`;
+  markPlaying();
 }
 document.getElementById('combo').oninput = e => { if (e.target.id === 'cname') combo.name = e.target.value; };
 document.getElementById('combo').onclick = async e => {
-  const t = e.target.closest('.lane, .act'); if (!t) return;
+  const t = e.target.closest('.lane, .back, .act'); if (!t) return;
+  if (t.classList.contains('back')) { const l = t.dataset.back; delete combo.picks[l]; delete combo.off[l]; said = ''; drawCombo(); return playCombo(); }
   if (t.classList.contains('lane')) {
     const l = t.dataset.l;
-    if (combo.picks[l] === undefined) combo.picks[l] = null; else delete combo.picks[l];      // (its own: away; away or from another: its own again)
+    if (combo.off[l]) delete combo.off[l]; else combo.off[l] = true;
     said = ''; drawCombo(); return playCombo();
   }
-  if (t.id === 'cplay') return playCombo(t);
-  if (t.id === 'cclear') { stop(); combo = null; drawCombo(); return; }
+  if (t.id === 'cplay') return playCombo();
+  if (t.id === 'cclear') { combo = null; stop(); drawCombo(); markPlaying(); return; }
   if (t.id === 'cmake') {
-    if (!Object.keys(combo.picks).length) { said = 'Nothing changed in it yet.'; return drawCombo(); }
+    if (!Object.keys(combo.picks).length && !Object.keys(combo.off).length) { said = 'Nothing changed in it yet.'; return drawCombo(); }
     const name = document.getElementById('cname').value;
     said = 'Making it...'; drawCombo();
     try {
-      const r = await fetch('/make', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: combo.base, picks: combo.picks, name }) });
+      const r = await fetch('/make', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: combo.base, picks: { ...combo.picks, ...Object.fromEntries(Object.keys(combo.off).map(l => [l, null])) }, name }) });
       const a = await r.json();
       said = a.ok ? `${a.name}: made, in the web library's MADE stack. WEB LOAD in SF-000 brings it.` : (a.error || 'It was not made.');
     } catch (err) { said = 'It was not made: open this page from the analysis window (http://localhost:8765/report.html).'; }
@@ -366,7 +389,6 @@ document.getElementById('combo').onclick = async e => {
 let M = { a: '', b: '', notes: 'a', scan: null, sel: null, lead: [], count: 3, said: '', shape: null, timer: null };
 try { Object.assign(M, JSON.parse(sessionStorage.getItem('sf000morph') || '{}'), { timer: null }); } catch (e) {}
 const keepM = () => { try { sessionStorage.setItem('sf000morph', JSON.stringify({ ...M, timer: null })); } catch (e) {} };
-const measured = () => Object.entries(D.found).filter(([u, f]) => f.energy !== undefined).sort((x, y) => (D.names[x[0]] || '').localeCompare(D.names[y[0]] || '', undefined, { numeric: true }));
 async function post(path, body) {
   try { const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return await r.json(); }
   catch (e) { return { error: 'Open this page from the analysis window (http://localhost:8765/report.html).' }; }
@@ -407,17 +429,30 @@ function shapeView(sc, sh) {
   return `<div class="mrow">${chips}</div><p class="note">The gaps: how much the sound changes between each two.${was}</p>
     <div class="mrow"><input id="sname" placeholder="name of the stack" maxlength="20" value="${esc(M.sname ?? ((D.names[sc.a] || '').replace(/^SNAP /, '') + ' > ' + (D.names[sc.b] || '').replace(/^SNAP /, '')))}"><button class="act go" id="smake">MAKE STACK</button><span class="dim">${esc(M.ssaid || '')}</span></div>`;
 }
-function drawMorph() {
-  const all = measured();
-  const opt = sel => `<option value="">choose</option>` + all.map(([u]) => `<option value="${esc(u)}"${u === sel ? ' selected' : ''}>${esc(D.names[u])}</option>`).join('');
+function drawMorph(q) {
   const sc = M.scan && M.scan.a === M.a && M.scan.b === M.b && M.scan.notes === M.notes ? M.scan : null;
-  let h = `<p class="note">The way between two snapshots, as a stack knob holding both plays it: the sound goes from one to the other, with the notes of the one it set out from. SF-000 itself renders it (close SF-000 first), eleven points along the turn, about a minute. Then: what is worth hearing between them, and the morph reshaped into a stack.</p>
-    <div class="mrow"><b>FROM</b><select id="ma">${opt(M.a)}</select><b>TO</b><select id="mb">${opt(M.b)}</select>
-      <span class="dim">notes of</span><button class="act${M.notes === 'a' ? ' on' : ''}" data-notes="a">FROM</button><button class="act${M.notes === 'b' ? ' on' : ''}" data-notes="b">TO</button>
-      <button class="act go" id="mscan"${M.a && M.b && M.a !== M.b ? '' : ' disabled'}>SCAN</button><span class="dim">${esc(M.said)}</span></div>`;
+  const there = end => M[end] && D.found[M[end]] && D.found[M[end]].energy !== undefined;
+  if (M.arm === undefined) M.arm = !there('a') ? 'a' : !there('b') ? 'b' : null;
+  const slot = (end, word) => `<b>${word}</b>${there(end) ? chip(M[end], Math.round(D.found[M[end]].energy * 100), { big: true }) : '<span class="dim">none yet</span>'}<button class="act${M.arm === end ? ' on' : ''}" data-arm="${end}">${M.arm === end ? 'CHOOSING' : 'CHOOSE'}</button>`;
+  let h = `<p class="note">The way between two snapshots, as a stack knob holding both plays it: the sound goes from one to the other, with the notes of the one it set out from. SF-000 itself renders it (close SF-000 first), eleven points along the turn, about a minute. Then: what is worth hearing between them, and the morph reshaped into a stack. The two chips here play the two ends.</p>
+    <div class="mrow">${slot('a', 'FROM')}<span style="width:14px"></span>${slot('b', 'TO')}</div>`;
+  if (M.arm) {
+    const other = M.arm === 'a' ? M.b : M.a;
+    const all = Object.entries(D.found).filter(([u, f]) => f.energy !== undefined && u !== other).sort((x, y) => y[1].energy - x[1].energy);
+    const shown = q ? all.filter(([u]) => (D.names[u] || '').toLowerCase().includes(q)) : all;
+    h += `<p class="note">Press one and it plays, and it is the ${M.arm === 'a' ? 'FROM' : 'TO'}: press through them until it is the one you want. Pressed again, it stops. Most energy first; the number is its energy, of 100.${q ? '' : ' The box at the top finds by name.'}</p>
+      <div class="chips" style="padding:6px 0 4px">${shown.map(([u, f]) => chip(u, Math.round(f.energy * 100), { act: 'choose', cls: u === M[M.arm] ? 'picked' : '' })).join('') || '<span class="dim">None by that name.</span>'}</div>`;
+  }
+  h += `<div class="mrow"><span class="dim">notes of</span><button class="act${M.notes === 'a' ? ' on' : ''}" data-notes="a">FROM</button><button class="act${M.notes === 'b' ? ' on' : ''}" data-notes="b">TO</button>
+      <button class="act go" id="mscan"${there('a') && there('b') && M.a !== M.b ? '' : ' disabled'}>SCAN</button><span class="dim">${esc(M.said)}</span></div>`;
   if (!sc) return h;
   if (sc.status === 'rendering' || sc.status === 'measuring') return h + `<p class="dim">${sc.status === 'measuring' ? 'Measuring...' : `SF-000 is rendering: ${sc.done} of ${sc.of}.`}</p>`;
   if (sc.status === 'failed') return h + `<p class="dim">${esc(sc.error || 'It could not be scanned.')}</p>`;
+  const nEnd = sc.notes === 'b' ? 1 : 0, kk = sc.keys;
+  h += `<p class="note">` + (sc.held === undefined
+      ? `This was scanned before tunings were kept with the notes: where the two snapshots differ in a TUNE knob, its points stand on pitches between the two, in no key. SCAN again and they are in tune.`
+      : `Every point plays the notes of ${sc.notes === 'b' ? 'TO' : 'FROM'}${kk ? `, in its key (${esc(kk[nEnd])}${kk[0] !== kk[1] ? `; ${sc.notes === 'b' ? 'FROM' : 'TO'} is in ${esc(kk[1 - nEnd])}, so the far end is not that snapshot as you know it` : ''})` : ''}.` +
+        (sc.held.length ? ` TUNE stays with the notes on ${sc.held.map(l => LN[l]).join(', ')}: the two snapshots differ there, and gliding between would leave the points on pitches in no key. (The stack knob itself does glide TUNE as it turns.)` : '')) + `</p>`;
   const found = sc.points.filter(p => p.tags.length);
   const sel = sc.points.find(p => p.key === M.sel);
   h += strip(sc) + `<p class="note">Left to right: the turn of the knob. Press a point to hear it. The bars: how much the sound changes in each tenth of the turn (an even morph would have them level; here the largest is ${sc.uneven}× the mean). The line: energy. Ringed: worth hearing.${(sc.missing || []).length ? ` ${sc.missing.length} sound file(s) these snapshots name are not in the web library yet: their lanes may be silent here.` : ''}</p>`;
@@ -433,19 +468,22 @@ function drawMorph() {
   h += shapeView(sc, (sc.shapes || {})[M.shape]);
   return h;
 }
-document.getElementById('list').addEventListener('change', e => {
-  if (e.target.id === 'ma') M.a = e.target.value; else if (e.target.id === 'mb') M.b = e.target.value; else return;
-  M.said = ''; keepM(); draw();
-});
 document.getElementById('list').addEventListener('input', e => {
   if (e.target.id === 'pname') M.pname = e.target.value; else if (e.target.id === 'sname') M.sname = e.target.value;
 });
 document.getElementById('list').addEventListener('click', async e => {
   const end = e.target.closest('.ab span');
-  if (end) { M[end.dataset.end] = end.dataset.u; M.said = ''; keepM(); if (M.a && M.b) { view = 'morph'; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === 'morph')); } draw(); return; }
+  if (end) { M[end.dataset.end] = end.dataset.u; if (M.arm === end.dataset.end) M.arm = null; M.said = ''; keepM(); if (M.a && M.b) { view = 'morph'; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === 'morph')); } draw(); return; }
   if (view !== 'morph') return;
-  const t = e.target.closest('.act, .pt, .chip[data-act="point"]'); if (!t) return;
+  const t = e.target.closest('.act, .pt, .chip[data-act="point"], .chip[data-act="choose"]'); if (!t) return;
   const sc = M.scan;
+  if (t.dataset.arm) { M.arm = M.arm === t.dataset.arm ? null : t.dataset.arm; keepM(); return draw(); }
+  if (t.dataset.act === 'choose') {
+    // heard and chosen in one press: the end being chosen is always the one last heard
+    const u = t.dataset.u; if (!M.arm) return;
+    M[M.arm] = u; M.said = ''; keepM(); draw();
+    return playSnap(u, [...document.querySelectorAll('.chip[data-act="choose"]')].find(c => c.dataset.u === u) || document.body);
+  }
   if (t.dataset.notes) { M.notes = t.dataset.notes; keepM(); return draw(); }
   if (t.dataset.count) { M.count = Number(t.dataset.count); keepM(); return draw(); }
   if (t.dataset.lead) { const l = t.dataset.lead; M.lead = M.lead.includes(l) ? M.lead.filter(x => x !== l) : [...M.lead, l]; keepM(); return draw(); }
@@ -455,7 +493,7 @@ document.getElementById('list').addEventListener('click', async e => {
     return playLayers('point:' + sc.id + ':' + key, document.querySelector(`.chip[data-key="${key}"]`) || document.body, [{ url: `morph/${sc.id}/${key}.ogg` }], 0);
   }
   if (t.id === 'mscan') {
-    stop(); M.said = 'Asking SF-000...'; M.sel = null; M.shape = null; draw();
+    stop(); M.said = 'Asking SF-000...'; M.sel = null; M.shape = null; M.arm = null; draw();
     const a = await post('/scan', { a: M.a, b: M.b, notes: M.notes });
     if (a.error) { M.said = a.error; return draw(); }
     M.said = ''; M.scan = a; keepM(); return readScan();
@@ -486,7 +524,8 @@ let view = 'snaps';
 function draw() {
   const q = document.getElementById('q').value.trim().toLowerCase();
   document.getElementById('lanebar').hidden = view !== 'parts';
-  document.getElementById('list').innerHTML = view === 'snaps' ? drawSnaps(q) : view === 'parts' ? drawParts(q) : drawMorph();
+  document.getElementById('list').innerHTML = view === 'snaps' ? drawSnaps(q) : view === 'parts' ? drawParts(q) : drawMorph(q);
+  markPlaying();
 }
 function drawLanes() {
   const there = new Set(Object.values(D.parts).map(p => p.lane));
@@ -498,17 +537,16 @@ document.getElementById('q').oninput = draw;
 document.getElementById('list').onclick = e => {
   const b = e.target.closest('.chip'); if (!b) return;
   const u = b.dataset.u, act = b.dataset.act;
-  if (act === 'clip') {
-    if (D.clips[u]) return playLayers('clip:' + u, b, [{ url: D.clips[u] }], 0);
-    return playLayers('whole:' + u, b, wholeLayers(u), D.bpm[u]);
-  }
+  if (act === 'clip') return playSnap(u, b);
   if (act === 'solo') return playLayers(`solo:${u}:${b.dataset.k}`, b, [{ url: partUrl(u, b.dataset.k), bpm: D.bpm[u] }], D.bpm[u]);
   if (act === 'swap' || act === 'add') {
     const base = b.dataset.base, k = b.dataset.k;
     if (!hasPart(u, k)) return;
+    // not in the combination: in, and it plays. In it and sounding (lit): out. In it and not sounding: it plays.
+    const inIt = combo && combo.base === base && combo.picks[k] === u;
+    if (inIt && (combo.off[k] || playingKey !== comboKey())) { delete combo.off[k]; drawCombo(); return playCombo(); }
     pick(base, k, u);
-    document.querySelectorAll(`.chip[data-base="${CSS.escape(base)}"][data-k="${k}"]`).forEach(x => x.classList.toggle('picked', combo && combo.picks[k] === x.dataset.u));
-    return playCombo(b);
+    return playCombo();
   }
   if (act === 'part') {
     const p = D.parts[b.dataset.p]; if (!p) return;
@@ -519,7 +557,7 @@ document.getElementById('list').onclick = e => {
     const p = D.parts[b.dataset.p], q = D.parts[b.dataset.q]; if (!p || !q) return;
     const pu = p.in.find(x => hasPart(x, p.lane)), qu = q.in.find(x => hasPart(x, q.lane)); if (!pu || !qu) return;
     // (into the combination: the first part's snapshot, with the other's lane in it)
-    combo = { base: pu, picks: { [q.lane]: qu } }; said = 'The two alone are playing; PLAY plays them in the whole of ' + D.names[pu] + '.'; drawCombo();
+    combo = { base: pu, picks: { [q.lane]: qu }, off: {} }; said = 'The two alone are playing; PLAY plays them in the whole of ' + D.names[pu] + '.'; drawCombo();
     return playLayers(`pair:${b.dataset.p}:${b.dataset.q}`, b, [{ url: partUrl(pu, p.lane), bpm: D.bpm[pu] }, { url: partUrl(qu, q.lane), bpm: D.bpm[qu] }], D.bpm[pu]);
   }
 };

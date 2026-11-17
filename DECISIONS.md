@@ -4469,11 +4469,58 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      are 0.56 apart.
 688. **Not in it.** The 3D view (680). A finer scan where a morph changes fastest. Morphs among more
      than two. Rhythm in what makes two parts fit. Learning which of the points found you keep.
+689. **You**, 17 November, 09:08: "these have been showing up while it runs. not sure if its an
+     issue:" with numpy's RuntimeWarnings (overflow, divide by zero, invalid value in matmul) from
+     `relate.py`. False alarms: numpy's matrix product on Apple's processors raises them on sums
+     that cannot overflow (noughts and ones times fixed weights), and your pass had finished ("87
+     of 92 snapshots measured ... Findings sent"). *Mine:* no matrix product is left in the
+     analysis (plain sums: the same numbers, nothing raised; on your 92 re-rendered, every ALIKE
+     list and energy the same as before), and a measurement that is not a number is refused where
+     it would be compared, so a real one cannot pass for a false one.
+690. **You**, 09:40: "how do i preview the sound in the morph tab? Not useful to choose a sound you
+     can't hear". The MORPH tab's two lists of names are gone. FROM and TO are chips that play;
+     CHOOSE beside one opens every snapshot as a chip, most energy first, and a press both plays
+     it and makes it that end, so the end is always the one last heard. *Mine, the particulars.*
+691. **You**, 09:43: "and the notes sound wrong in the morph interesting spots. like it's not
+     playing in the original key". 09:57: "88 --> 101". What I could check here: the notes and
+     the key hold (a morph from a snapshot in D# to one with no key: its bass on the same note at
+     all eleven points, KEY at D# in each), and the sound does not depend on the rate it is
+     rendered at (the same snapshots at 44.1, 48 and 96 kHz: no part moved in pitch, to within 5
+     cents). What does move: **the TUNE knobs**. They are sound knobs, so the stack knob glides
+     them, and your snapshots have KICK TUNE anywhere from -24 to 0 semitones and VOICE TUNE from
+     -12 to 0: a point part of the way stood on a pitch between the two, in no key. *Mine:* in
+     what is scanned and made here **the tuning stays with the notes**: every TUNE knob keeps the
+     value of the snapshot the notes are of. The page says which lanes it held, which key the
+     points are in, and that the far end is the other snapshot's sound under this one's notes.
+     The instrument's stack knob is not changed: it glides TUNE as it did. A scan made before
+     this says so and asks to be scanned again.
+692. **You**, 10:01: "on the snapshotw page, when swapping component chips, the chips in the menu
+     stay highlighted even when not in play. The highlighted chips (outline or fill) should
+     indicate what's playing. And should be able to be turned off. And it's unclear how to swap
+     back to the original snapshouts lane sound (in the lower composite chip bar)." So: **a chip
+     is lit while its lane is sounding in what plays, and only then** (no outline for "in the
+     combination": the bar says that). A lit chip pressed comes out; one in the combination,
+     pressed while stopped, plays it. In the bar a lane pressed is silenced and nothing else
+     (it used to go round three states); a lane from another snapshot has OWN beside it (this
+     snapshot's own back), or OUT if the snapshot never had that lane. PLAY, lit, stops.
+     *Mine, the particulars.* 09:48, of SWAP: "expressive and interesting. could use some UI work
+     in terms of how to work with it, but I like where its going."
+693. **You**, 09:41: "and how feasible is it to prescan every snapshot morph combo (as they're
+     added) to provide the interesting spots?" Answered, not built. 87 snapshots are 3,741
+     pairs, twice that with each end's notes; a scan is about a minute and a half here on two
+     cores. So a queue in the background (only while SF-000 is closed), coarse first and fine
+     only where something between is neither end, pairs you have played next to each other
+     first, near-duplicates skipped: some 60 to 95 hours of rendering for all of it one way, about
+     an hour and a half for each new snapshot after.
 
 ## Not verified
 
-- **A morph has not been rendered on a Mac, or with your library as it is on yours.** Here it is
-  rendered by the Linux build from your session as I have it. Two things to know. A voice lane
+- **That the TUNE knobs were what you heard in 88 to 101 (691).** SNAP 101 is newer than the
+  session I have, so I could not render that pair. If its points are still out of key scanned
+  again on this build, the pair's `job.json` (in `morph/`, in the analysis's folder) would let me
+  render exactly what you rendered.
+- **A morph has been rendered on your Mac (you heard its points, 17 November) but I have not seen
+  one from there.** Here it is rendered by the Linux build from your session as I have it. Two things to know. A voice lane
   whose sample is an mp3 does not sound as yours here (this build cannot read mp3; the Mac's can),
   so a scan here of a snapshot with one is not what you will get. And SF-000 started by the
   analysis to render may show itself in the Dock for a moment.

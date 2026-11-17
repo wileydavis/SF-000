@@ -63,11 +63,24 @@ together yourself (a recall of some lanes only, from the log).
 
 ### The morph between two snapshots
 
-Choose two (or press MORPH FROM and TO on any two snapshots) and SCAN. **SF-000 itself renders it**, run with no
-screen, exactly as a stack knob holding the two plays it: the sound goes from one to the other as the knob
-turns, with the notes of the one it set out from (NOTES OF chooses which). Eleven points along the turn, each
-from the same beginning so that they can be compared; about a minute. SF-000 has to be closed while it
-renders, and built in this folder (`./build.sh`).
+**Choosing the two is by ear.** FROM and TO are chips that play. CHOOSE beside one opens every snapshot as a
+chip, most energy first: press one and it plays and is that end, so you press through them until it is the one
+(pressed again, it stops; the box at the top finds by name). MORPH FROM and TO on any snapshot of the SNAPSHOTS
+tab do the same from there. Then SCAN.
+
+**SF-000 itself renders it**, run with no screen, as a stack knob holding the two plays it: the sound goes from
+one to the other as the knob turns, with the notes of the one it set out from (NOTES OF chooses which), in that
+one's key. Eleven points along the turn, each from the same beginning so that they can be compared; about a
+minute. SF-000 has to be closed while it renders, and built in this folder (`./build.sh`).
+
+**One thing is not as the knob plays it: tuning stays with the notes.** A lane's TUNE is a sound knob, so the
+stack knob glides it; where the two snapshots have a lane tuned differently (a kick two octaves apart), a point
+part of the way would stand on a pitch between the two, in no key. That is a glide under the hand and a wrong
+note in a snapshot. So in what is scanned and made here every TUNE knob keeps the value of the snapshot the
+notes are of, and each point is in tune with its own notes; the page names the lanes it held. The far end of
+the turn is therefore the other snapshot's sound under this one's notes, key and tuning: not that snapshot as
+you know it. A stack made from the scan, played in SF-000, glides TUNE only over the one stretch that reaches
+the real snapshot at the other end.
 
 What comes back is the turn of the knob, left to right. Press any point to hear it. The bars say how much
 the sound changes in each tenth of the turn: an even morph would have them level, and few do, because even in
@@ -105,8 +118,14 @@ stands well clear of how far those two are apart.
 
 Every SWAP, ADD and GOES WITH you press goes into **the combination**, in the bar at the foot of the
 page, and the whole of it plays: a snapshot with lanes from others. Press more to build it up (one of
-each lane; pressed again, it comes out). In the bar, a lane pressed is **taken away** (again: back).
-PLAY plays it; give it a name; **MAKE CHIP** makes it a snapshot.
+each lane). **A chip is lit while its lane is sounding in what plays, and only then**: stopped, nothing
+is lit. Press a lit one and it comes out; press one that is in the combination while it is stopped and
+the combination plays.
+
+In the bar each lane does one thing when pressed: it is **silenced** (struck through; again: back). A
+lane that came from another snapshot has a key beside it: **OWN** puts this snapshot's own lane back,
+or **OUT** takes it away if the snapshot never had that lane. PLAY plays it, and lit, stops it; give
+it a name; **MAKE CHIP** makes it a snapshot (a silenced lane is left out of it); CLEAR empties it.
 
 The chip is the snapshot's whole rig with each lane you chose taken whole from where you chose it:
 its controls, its pattern (or the notes that played it), its effects and their settings, its setup,

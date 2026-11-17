@@ -369,6 +369,21 @@ class Morphing(unittest.TestCase):
         even = look([pts[0]] + self.path(places) + [pts[-1]], self.library(), twin=pts[0], smooth=False)
         self.assertLess(unevenness(even["steps"]), 1.5, "and through them the change is even")
 
+    def test_the_tuning_stays_with_the_notes(self):
+        from sfa.morph import key_of, tuned_with
+        a = {"uid": "a", "values": {"kick.tune": 0.0, "voice.tune": 0.5, "lead.tune": 0.5, "kick.decay": 0.2, "g.key": 4 / 12}}
+        b = {"uid": "b", "values": {"kick.tune": 0.458, "voice.tune": 0.25, "lead.tune": 0.5, "kick.decay": 0.9, "g.key": 0.0}}
+        to, held = tuned_with(a, b)
+        self.assertEqual(held, ["kick", "voice"])                       # (the lanes whose TUNE differs, in the instrument's order)
+        self.assertEqual((to["values"]["kick.tune"], to["values"]["voice.tune"]), (0.0, 0.5))
+        self.assertEqual(to["values"]["kick.decay"], 0.9)               # (the sound still goes over)
+        self.assertEqual(b["values"]["kick.tune"], 0.458)               # (what the library holds is not touched)
+        self.assertNotEqual(to["uid"], b["uid"])                        # (and it is not that snapshot: the instrument must not take it for it)
+        self.assertEqual(tuned_with(a, {"uid": "c", "values": dict(a["values"])})[0]["uid"], "c")
+        self.assertEqual((key_of(a), key_of(b), key_of({})), ("D#", "OFF", "OFF"))
+        back, held = tuned_with(b, a)
+        self.assertEqual((back["values"]["kick.tune"], held), (0.458, ["kick", "voice"]))
+
     def test_nothing_is_called_worth_hearing_that_is_within_the_noise(self):
         fs = [i / 10 for i in range(11)]
         pts = self.path(fs)
