@@ -1107,7 +1107,9 @@ do nothing else about it.
   with (`made`: the build, and a print of each lane, effect and the chassis as they were).
 
 With ONLINE lit all of it goes to the web library (above), which is where the studying program
-fetches it from and where it will put back what it finds. Nothing here waits on any of that.
+fetches it from and puts back what it finds. Nothing here waits on any of that. The program is
+**SF-000 Analysis**, in `analysis/` (its own README): double-click `analysis/start.command` when
+you are not playing, and open the page it writes to listen to what it found.
 FORMAT.md has the files and the lines exactly.
 
 ### Knobs kept by themselves
@@ -1678,8 +1680,8 @@ Delete `session.json` to start again from the factory rig.
   before has no lanes kept, and none from before the seventy-seventh build has lossless sound
   (they could be made again from the snapshot itself, as PRINT renders, where its samples are
   on the Mac).
-- The program that studies the library is not built yet. This build keeps and sends what it
-  will need; nothing reads it yet.
+- SF-000 does not yet read what SF-000 Analysis finds: it is listened to on the analysis's own
+  page.
 - The skin is a first pass, drawn from measurements of the 3D model, not rendered from the model
   itself: no texture maps, one finish per material, and the inside of the displays (the meters,
   the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices

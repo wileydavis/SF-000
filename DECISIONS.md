@@ -4311,8 +4311,62 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      library has them: they stay, about ten megabytes a snapshot. A switch for any of this:
      it follows ONLINE.
 
+## SF-000 Analysis, the first of it (Nov 16, 23:03)
+
+661. **You**, 23:03: "so far workflow is good. you can start on the analysis app now. we can
+     probably have that up and running by the time I'm done with the testing round."
+662. **What it is.** A program of its own, in this repo's `analysis/` (its README says how to start
+     it, what it does, where it keeps things). Started by hand (`start.command`), on the laptop,
+     when the instrument is not being played (653); a window that stays open and keeps going. It
+     reaches the web library with what SET UP already keeps on that Mac: nothing new to enter.
+     *Mine, each of the particulars below.*
+     - **Python**, with numpy, scipy and soundfile, in a Python of its own that it makes the first
+       time. What it does is measuring and comparing sound; that is what those are for, and it
+       runs the same on the Mac Studio.
+     - **It stands aside while SF-000 is running** on the same machine (no disk, no processors,
+       no line), and takes up where it left off. You said you would start it when not playing; this
+       makes that safe to forget.
+     - **It never changes what SF-000 sent.** It reads, and adds its findings: the web library
+       keeps every result whole and never writes one over (one table and three addresses,
+       additions only).
+663. **What it finds, so far.** From the best there is of each snapshot (lossless where kept, else
+     the clip and its stems): loudness as the master's meter reads it, hits a beat, the pull of the
+     beat, eighth and sixteenth, the spread from sub to air, brightness, noise, width, change over
+     the bars, and each lane's loudness beside the others. From those:
+     - **energy**, 0 to 100, the library's own scale: where a snapshot stands among all of yours
+       for driving a room ("dial up or down the energy of a room");
+     - **alike** (loudness left out: alike is not as loud);
+     - **up / down**: alike, with more or less energy, the nearest first;
+     - **followed by**: what you played next, and how often (the log);
+     - **taken from**: the chip the set was on.
+     Every pass relates everything again, from scratch: what it finds improves as the library
+     grows and as the way of measuring does, and nothing old holds it back.
+664. **A page to listen to it.** `report.html`, written beside what it keeps: every snapshot by
+     energy, and beside each its alike, up, down and followed-by, each a chip that plays. **Whether
+     it is right is judged by ear on this page**, and where it is wrong by ear is what to change.
+665. **Tried on your own sounds.** Your session (the copy I have) opened in the instrument run
+     without a screen, each of its 92 snapshots recalled, played and taken again so that it had
+     sound (by this build), sent to a web library run here, and the analysis run on it. 75 have
+     sound to measure (the rest are silent). Its energy and the instrument's own energy figure
+     for the same snapshots rank them alike (0.76, where 1 is the same order). The instrument
+     mode that does this is `--seedlibrary`; it never touches the library being played.
+666. **Checks** (`analysis/tests`): sounds made in the checks whose answers are known. A kick
+     alone is one hit a beat and sixteenth hats four; hiss is octaves brighter; width; a 1 kHz
+     tone at -20 reads -20 LUFS, as the standard is made to; three families of sound each find
+     their own family nearest, and a family's busier, louder one has more energy; what followed
+     what (STOP, another run and ten minutes each break it); the log taken once however often
+     asked for, and again another day. The web library's tests have the new addresses.
+667. **Not in it yet.** SF-000 reading what was found, and the "smart" module (652). Measuring
+     snapshots that have no sound by rendering them with the instrument (for now listed as not
+     measured). Families and paths through the library. Learning from what you choose beyond
+     counting what followed what. Running on the Mac Studio as a service, without a window.
+
 ## Not verified
 
+- **SF-000 Analysis has not run on a Mac.** It is run here on Linux against a web library run
+  here. On the Mac: whether `start.command` finds a Python 3 (if not, it says to run
+  `xcode-select --install`), and that it fetches through Access with SET UP's token. And whether
+  its energy and alike are right by ear is yours to say, on its page.
 - **The archive (654 to 657) has not been against snapshots.drosaka.com, on your network, or
   on the Mac.** It is checked against the web library's own code running here, with a store
   that is a stand-in for Cloudflare's. Three things only the real one can say: that its store

@@ -4381,6 +4381,65 @@ static int cueTest()
     return bad;
 }
 
+// --seedlibrary SESSION.json DIR URL [--samples DIR] [--limit N]: a library of real sounds for the analysis to be tried
+// on, without touching the one being played. The session is opened in DIR (with its samples), each snapshot it took
+// is recalled, played four bars and taken again (so that it has a clip, stems and its sound without loss, by this
+// build), keeps its name, and goes with the rest to the web library at URL (one run locally: no token is sent).
+static int seedLibrary (const juce::StringArray& args)
+{
+    using namespace sf0;
+    const int at = args.indexOf ("--seedlibrary");
+    if (at + 3 >= args.size()) { std::printf ("--seedlibrary SESSION.json DIR URL [--samples DIR] [--limit N]\n"); return 1; }
+    const juce::File src (args[at + 1].unquoted()), out (args[at + 2].unquoted());
+    const auto url = args[at + 3].unquoted();
+    auto opt = [&] (const char* n, const juce::String& d) { const int i = args.indexOf (n); return i >= 0 && i + 1 < args.size() ? args[i + 1].unquoted() : d; };
+    out.deleteRecursively();
+    out.createDirectory();
+    if (! src.copyFileTo (out.getChildFile ("session.json"))) { std::printf ("could not copy %s\n", src.getFullPathName().toRawUTF8()); return 1; }
+    if (const juce::File samples (opt ("--samples", "")); samples.isDirectory()) samples.copyDirectoryTo (out.getChildFile ("samples"));
+    Session::stateFileForTests = out.getChildFile ("session.json");
+    const int limit = opt ("--limit", "100000").getIntValue();
+    Engine e;
+    e.prepare (48000.0, 256);
+    Session ses (e, true);
+    juce::AudioBuffer<float> b (2, 256);
+    auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 256.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+    std::vector<std::pair<juce::int64, juce::String>> taken;
+    for (auto& x : ses.library) if (x.id >= Online::kFirstTaken) taken.push_back ({ x.id, x.name });
+    std::printf ("opened: %d snapshots, %d of them taken; playing each and taking it again at %.1f\n", (int) ses.library.size(), (int) taken.size(), e.tempo());
+    e.setRunning (true);
+    bars (1.0);
+    int n = 0;
+    for (auto& t : taken)
+    {
+        if (n >= limit) break;
+        ses.recall (t.first);
+        bars (1.2);                                 // (in: what it glides from is gone)
+        const auto id = ses.take();
+        bars (4.3);                                 // (the four bars held after it is taken are its sound)
+        ses.finishTakes (true);
+        ses.rename (id, t.second);
+        ses.remove (t.first);
+        ++n;
+        if (n % 10 == 0) { ses.waitForClips(); std::printf ("  %d\n", n); }
+    }
+    ses.waitForClips();
+    ses.waitForLog();
+    Online on (ses);
+    Online::Setup st;
+    st.url = url; st.clientId = "sf-000-seed"; st.clientSecret = "local";
+    st.on = true;
+    on.setSetup (st);
+    for (int i = 0, was = -1; i < 2000; ++i)
+    {
+        on.pass(); on.archive (true);
+        if (on.status().state == Online::State::upToDate && on.requests() == was) break;
+        was = on.requests();
+    }
+    std::printf ("%d taken again and sent: %s\n", n, on.line().toRawUTF8());
+    return on.status().state == Online::State::upToDate ? 0 : 1;
+}
+
 static int printSession (const juce::StringArray& args)
 {
     using namespace sf0;
@@ -12995,6 +13054,7 @@ public:
         if (args.contains ("--shot") && args.contains ("--setup")) { setApplicationReturnValue (shotSetup (args)); quit(); return; }
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--printsession")) { setApplicationReturnValue (printSession (args)); quit(); return; }
+        if (args.contains ("--seedlibrary")) { setApplicationReturnValue (seedLibrary (args)); quit(); return; }
         if (args.contains ("--cueprobe")) { setApplicationReturnValue (cueProbe (args)); quit(); return; }
         if (args.contains ("--cuetest")) { setApplicationReturnValue (cueTest()); quit(); return; }
         if (args.contains ("--livesession")) { setApplicationReturnValue (liveSession (args)); quit(); return; }
