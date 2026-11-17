@@ -4392,6 +4392,28 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      knob, whose chips already bring some lanes only). Combinations of three parts and more. Fit
      that knows more than notes and room (groove, register, what you like).
 
+## A combination made a chip (Nov 17, 00:21)
+
+675. **You**, 00:21: "the ability to preview composite lane comboas and then create a new chip of
+     that combo would be good."
+676. **The combination**, on the analysis's page: a bar at its foot. Every SWAP, ADD and GOES WITH
+     pressed goes into it and the whole of it plays; a lane in the bar pressed is taken away.
+     PLAY, a name, MAKE CHIP. *Mine: building by pressing what is already offered, so a
+     combination is never more than a few presses from what fits.*
+677. **The chip** is the base's whole rig with each chosen lane copied whole from its snapshot (as
+     FORMAT.md says a lane is: controls, pattern or notes in, effects and their cells, generator,
+     setup, sound file, effects' files, its definition's print). The rest is the base's. A lane
+     taken away is silenced. It is a new snapshot, named under a library of the analysis's own,
+     and says in `ext.sf000analysis` what it was made of. *Mine.*
+678. **How it reaches SF-000: WEB LOAD**, as any chip from the library does: the analysis sends it
+     to the web library and puts it in a stack called MADE, marked to load. Nothing new in SF-000
+     or the web library was needed for it. *Mine: the one road chips already take.* The
+     analysis's page is served from this Mac only, and only it can ask for a chip to be made.
+679. **Checked whole, here**: chips made through the page's own request, against a web library run
+     here; SF-000 (run without a screen, `--checkmade`) brought them with WEB LOAD, recalled one,
+     played and took it again: its bass and its chord were the sources' to every control and step,
+     and both sounded. The bar was used in a browser: two swaps, a lane taken away, a name, MADE.
+
 ## Not verified
 
 - **SF-000 Analysis has not run on a Mac.** It is run here on Linux against a web library run

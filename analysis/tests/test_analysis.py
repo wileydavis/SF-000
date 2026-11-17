@@ -295,3 +295,50 @@ class Parts(unittest.TestCase):
         self.assertEqual(out["parts"][best_chord[0]]["in"], ["b"], "the chord in C goes with the bass in C")
         self.assertEqual(best_chord[2], 0, "and they have never been together: new")
         self.assertNotIn("kick", out["swap"]["a"], "the only kick there is is its own: nothing to swap")
+
+
+# ---------------------------------------------------------------------------------------------- making a chip
+import re  # noqa: E402
+
+from sfa.compose import compose  # noqa: E402
+
+
+class Making(unittest.TestCase):
+    def snap(self, uid, tag, slots=("kick", "bass", "chord")):
+        return {
+            "id": 1, "uid": uid, "name": "SNAP " + tag, "time": 1,
+            "made": {"app": "0.1.0 x", "slots": list(slots), "lanes": {s: f"{s}-{tag}" for s in slots}, "fx": {"DELAY": f"dly-{tag}"}, "returns": {"dub": "d"}},
+            "profile": {"v": 1, "energy": 0.5},
+            "values": {**{f"{s}.cut": float(len(tag)) for s in slots}, **{f"{s}.i1.c2": 0.1 for s in slots}, "g.key": 3, "ret.dub_time": 0.4, "bass.only_" + tag: 1},
+            "patterns": [{"len": 16, "steps": [[i, 1, 0.5, 1, 0, 3]]} for i, _ in enumerate(slots)],
+            "inserts": [["DELAY" if s == "bass" else "NONE", "NONE", "NONE"] for s in slots],
+            "gen": [-1] * len(slots),
+            "setup": {"lanes": [{"res": len(tag)} for _ in slots], "inserts": [[{}, {}, {}] for _ in slots], "returns": [{}, {}]},
+            "played": {"seqMute": [0] * len(slots), "in": []},
+            "laneFiles": [f"{s}-{tag}.wav" if s == "bass" else "" for s in slots],
+        }
+
+    def test_a_lane_is_taken_whole_and_the_rest_is_the_base_s(self):
+        base, src = self.snap("aaaaaaaaaaaaaaaa-1", "A"), self.snap("bbbbbbbbbbbbbbbb-2", "BB", slots=("bass", "kick", "chord"))
+        src["patterns"][0] = {"len": 16, "steps": [[3, 1, 0.5, 1, 7, 1]]}
+        out = compose(base, {"bass": src, "chord": None}, "a with b", "cccccccccccccccc", when_ms=0x1a2b)
+        self.assertTrue(re.match(r"^[0-9a-f]{16}-[0-9A-Za-z_.-]{1,64}$", out["uid"]))
+        self.assertEqual(out["uid"], "cccccccccccccccc-1a2b")
+        self.assertEqual(out["name"], "A WITH B")
+        i = base["made"]["slots"].index("bass")
+        self.assertEqual(out["patterns"][i], src["patterns"][0], "its pattern, from where it is in the other snapshot")
+        self.assertEqual(out["values"]["bass.cut"], 2.0)
+        self.assertIn("bass.only_BB", out["values"])
+        self.assertNotIn("bass.only_A", out["values"], "none of the base's own left behind")
+        self.assertEqual(out["made"]["lanes"]["bass"], "bass-BB")
+        self.assertEqual(out["made"]["fx"]["DELAY"], "dly-A", "an effect the base has keeps the base's print")
+        self.assertEqual(out["setup"]["lanes"][i], {"res": 2})
+        self.assertEqual(out["laneFiles"][i], "bass-BB.wav")
+        self.assertEqual(out["values"]["kick.cut"], 1.0, "the other lanes are the base's")
+        self.assertEqual(out["values"]["g.key"], 3)
+        c = base["made"]["slots"].index("chord")
+        self.assertEqual(out["patterns"][c]["steps"], [], "a lane taken away is silent")
+        self.assertEqual(out["played"]["seqMute"][c], 1)
+        self.assertNotIn("profile", out)
+        self.assertEqual(out["ext"]["sf000analysis"], {"base": "aaaaaaaaaaaaaaaa-1", "lanes": {"bass": "bbbbbbbbbbbbbbbb-2", "chord": None}, "made": 0x1a2b})
+        self.assertEqual(base["values"]["bass.cut"], 1.0, "the base itself is not changed")

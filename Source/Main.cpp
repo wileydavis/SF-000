@@ -4440,6 +4440,77 @@ static int seedLibrary (const juce::StringArray& args)
     return on.status().state == Online::State::upToDate ? 0 : 1;
 }
 
+// --checkmade DIR URL UID LANE SOURCE_UID: a chip SF-000 Analysis made, brought by WEB LOAD into the library in DIR
+// (a copy of it is used), recalled and played four bars, and taken again: its LANE is SOURCE's lane (every control and
+// the pattern) and sounds, and its other lanes are as they were made.
+static int checkMade (const juce::StringArray& args)
+{
+    using namespace sf0;
+    using juce::var;
+    const int at = args.indexOf ("--checkmade");
+    if (at + 5 >= args.size()) { std::printf ("--checkmade DIR URL UID LANE SOURCE_UID\n"); return 1; }
+    const juce::File src (args[at + 1].unquoted());
+    const auto url = args[at + 2].unquoted(), uid = args[at + 3].unquoted(), lane = args[at + 4].unquoted(), from = args[at + 5].unquoted();
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_checkmade");
+    dir.deleteRecursively();
+    src.copyDirectoryTo (dir);
+    Session::stateFileForTests = dir.getChildFile ("session.json");
+    Engine e;
+    e.prepare (48000.0, 256);
+    Session ses (e, true);
+    juce::AudioBuffer<float> b (2, 256);
+    auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 256.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+    Online on (ses);
+    Online::Setup st; st.url = url; st.clientId = "sf-000-check"; st.clientSecret = "local"; st.on = false;
+    on.setSetup (st);
+    const auto said = on.load();
+    const Snapshot* made = nullptr; const Snapshot* source = nullptr;
+    for (auto& x : ses.library) { if (x.uid == uid) made = &x; if (x.uid == from) source = &x; }
+    std::printf ("LOAD: %s\n", said.toRawUTF8()); std::fflush (stdout);
+    if (made == nullptr || source == nullptr) { std::printf ("FAIL: %s not in the library after LOAD\n", made == nullptr ? "the made chip" : "the source"); return 1; }
+    const auto madeId = made->id, srcId = source->id;
+    std::printf ("brought: %s\n", made->name.toRawUTF8());
+    e.setRunning (true);
+    bars (1.0);
+    ses.recall (madeId);
+    bars (1.2);
+    const auto id = ses.take();
+    bars (4.3);
+    ses.finishTakes (true);
+    ses.waitForClips();
+    const auto* taken = ses.findSnap (id);
+    const auto* s2 = ses.findSnap (srcId);
+    int bad = 0, same = 0;
+    // its lane: every control of the source's lane as the source has it
+    const var tw = ses.written (*taken), sw = ses.written (*s2);      // (each as the session file holds it)
+    const var tv = tw["values"], sv = sw["values"];
+    if (auto* o = sv.getDynamicObject())
+        for (auto& p : o->getProperties())
+            if (p.name.toString().startsWith (lane + "."))
+            {
+                const var t = tv[p.name];
+                if (t.isVoid() || std::abs ((double) t - (double) p.value) > 1.0e-3) { if (++bad <= 5) std::printf ("  %s: %s, the source %s\n", p.name.toString().toRawUTF8(), t.toString().toRawUTF8(), p.value.toString().toRawUTF8()); }
+                else ++same;
+            }
+    const var slots = tw["made"]["slots"];
+    int li = -1;
+    if (auto* a = slots.getArray()) for (int i = 0; i < a->size(); ++i) if ((*a)[i].toString() == lane) li = i;
+    const var sslots = sw["made"]["slots"];
+    int sj = -1;
+    if (auto* a = sslots.getArray()) for (int i = 0; i < a->size(); ++i) if ((*a)[i].toString() == lane) sj = i;
+    const var tp = tw["patterns"], sp = sw["patterns"];
+    const bool pattern = li >= 0 && sj >= 0 && li < tp.size() && sj < sp.size() && juce::JSON::toString (tp[li]) == juce::JSON::toString (sp[sj]);
+    // and it sounds: its stem in the four bars just taken
+    Session::Lossless ll;
+    float level = -200.0f;
+    if (Session::readLossless (ses.losslessFile (id), ll))
+        for (auto& p : ll.parts) if (p.first == lane) level = juce::Decibels::gainToDecibels (p.second.getRMSLevel (0, 0, p.second.getNumSamples()), -200.0f);
+    const bool ok = bad == 0 && same > 0 && pattern && level > -60.0f;
+    std::printf ("%s: the made chip's %s is the source's (%d controls the same, %d not; its pattern %s) and sounds (%.1f dB)\n",
+                 ok ? "ok  " : "FAIL", lane.toRawUTF8(), same, bad, pattern ? "the same" : "NOT the same", level);
+    return ok ? 0 : 1;
+}
+
 static int printSession (const juce::StringArray& args)
 {
     using namespace sf0;
@@ -13055,6 +13126,7 @@ public:
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--printsession")) { setApplicationReturnValue (printSession (args)); quit(); return; }
         if (args.contains ("--seedlibrary")) { setApplicationReturnValue (seedLibrary (args)); quit(); return; }
+        if (args.contains ("--checkmade")) { setApplicationReturnValue (checkMade (args)); quit(); return; }
         if (args.contains ("--cueprobe")) { setApplicationReturnValue (cueProbe (args)); quit(); return; }
         if (args.contains ("--cuetest")) { setApplicationReturnValue (cueTest()); quit(); return; }
         if (args.contains ("--livesession")) { setApplicationReturnValue (liveSession (args)); quit(); return; }

@@ -21,6 +21,7 @@ from pathlib import Path
 from . import MEASURE_VERSION, VERSION
 from .library import Library, Trouble
 from .measure import measure
+from .compose import compose
 from .parts import relate_parts
 from .relate import relate
 from .report import write_report
@@ -250,6 +251,62 @@ class Analysis:
         found["_pass"] = {"measured": measured_now, "log": new_lines, "sent": sent}
         return found
 
+    # -------------------------------------------------------------------------------- making a chip
+    def library_id(self) -> str:
+        """The analysis's own library, for the chips it makes (sixteen hex digits, made once)."""
+        if not self.store.state.get("library_id"):
+            self.store.state["library_id"] = os.urandom(8).hex()
+            self.store.save_state()
+        return self.store.state["library_id"]
+
+    def make(self, base_uid: str, picks: dict, name: str) -> dict:
+        """A chip of a combination: the base's rig, with lanes taken from other snapshots (or taken away), sent to the
+        web library and put in its MADE stack, for SF-000's WEB LOAD to bring."""
+        base = (self.store.snapshot(base_uid) or {}).get("snapshot")
+        if not base:
+            return {"error": "that snapshot is not here yet"}
+        sources = {}
+        for lane, uid in picks.items():
+            if uid is None:
+                sources[lane] = None
+                continue
+            src = (self.store.snapshot(uid) or {}).get("snapshot")
+            if not src:
+                return {"error": f"the snapshot for {lane} is not here yet"}
+            sources[lane] = src
+        if not sources:
+            return {"error": "nothing to make: it would be the snapshot as it is"}
+        chip = compose(base, sources, name or base.get("name", "MADE"), self.library_id())
+        status, answer = self.lib.send_snapshot(chip)
+        if status != 200 or not answer.get("ok"):
+            return {"error": f"the web library did not take it ({status}: {answer.get('error', '')})"}
+        if answer.get("missingDefs"):
+            return {"error": "the web library lacks a definition it names: send the snapshots it was made of with ONLINE first"}
+        stack = self.made_stack(chip["uid"])
+        made = self.store.state.setdefault("made", [])
+        made.append({"uid": chip["uid"], "name": chip["name"], "base": base_uid, "lanes": {k: v for k, v in picks.items()}, "at": chip["time"]})
+        self.store.save_state()
+        self.store.keep_snapshot(chip["uid"], {"uid": chip["uid"], "name": chip["name"], "snapshot": chip})
+        return {"ok": True, "uid": chip["uid"], "name": chip["name"], "stack": stack}
+
+    def made_stack(self, uid: str) -> str:
+        """The stack the chips made here go in, marked for SF-000 to load; made the first time (and again if it has
+        been removed in the library)."""
+        sid = self.store.state.get("made_stack")
+        if sid:
+            got = self.lib.stack(sid)
+            if got and not got.get("deleted_at") and not got.get("removed"):
+                items = [it.get("u") if isinstance(it, dict) else it for it in got.get("items", [])]
+                status, _ = self.lib.change_stack(sid, {"items": items + [uid], "load": True})
+                if status == 200:
+                    return sid
+        status, answer = self.lib.make_stack({"name": "MADE", "kind": "stack", "items": [uid], "load": True})
+        sid = answer.get("id") or (answer.get("stack") or {}).get("id")
+        if status == 200 and sid:
+            self.store.state["made_stack"] = sid
+            self.store.save_state()
+        return sid or ""
+
     def loop(self, every_s: float, budget_s: float, send: bool):
         while not self.stopping:
             if self.held():
@@ -278,15 +335,37 @@ class Analysis:
                 time.sleep(1)
 
 
-def serve(root: Path, port: int):
+def serve(root: Path, port: int, analysis: "Analysis | None" = None):
     """The page and what it plays, from this machine only: a page opened from the disk may not read the parts it mixes."""
     import functools
     import http.server
     import threading
 
+    lock = threading.Lock()
+
     class Quiet(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a):
             pass
+
+        def do_POST(self):
+            # MAKE CHIP, from the page: only from this machine (the server listens on it alone), and only this
+            if self.path != "/make" or analysis is None:
+                self.send_error(404)
+                return
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 100_000)) or b"{}")
+                with lock:
+                    answer = analysis.make(str(body.get("base", "")), dict(body.get("picks") or {}), str(body.get("name", "")))
+            except Trouble as e:
+                answer = {"error": str(e)}
+            except Exception as e:
+                answer = {"error": f"{type(e).__name__}: {e}"}
+            data = json.dumps(answer).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
 
     try:
         httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(Quiet, directory=str(root)))
@@ -334,7 +413,7 @@ def main(argv=None) -> int:
     say(f"SF-000 Analysis {VERSION}: {lib.url}, keeping what it finds in {root}")
     page = f"http://localhost:{args.port}/report.html"
     if not args.once:
-        serve(root, args.port)
+        serve(root, args.port, a)
         say(f"listen to what it finds: {page}")
         if platform.system() == "Darwin" and not args.no_open:
             threading_open = __import__("threading").Timer(20.0, lambda: subprocess.run(["open", page]))

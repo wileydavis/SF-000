@@ -80,10 +80,22 @@ PAGE = r"""<!DOCTYPE html>
   .chip { border:1px solid #3a3a3a; background:var(--card); color:var(--ink); border-radius:5px; padding:4px 8px; font-size:12px; cursor:pointer; white-space:nowrap; }
   .chip small { color:var(--dim); margin-left:5px; }
   .chip:hover { border-color:#666; }
+  .chip.picked { border-color:var(--hot); }
   .chip.playing { background:var(--hot); color:#111; border-color:var(--hot); }
   .chip.playing small { color:#333; }
   .big { font-size:14px; font-weight:600; padding:7px 10px; text-align:left; }
   .num { font-variant-numeric: tabular-nums; font-size:11px; }
+  #combo { position:fixed; left:0; right:0; bottom:0; z-index:3; background:#0d0d0df5; border-top:1px solid #3a3a3a; padding:10px 22px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #combo .lane { border:1px solid #3a3a3a; background:var(--card); color:var(--ink); border-radius:5px; padding:4px 8px; font-size:11px; cursor:pointer; white-space:nowrap; }
+  #combo .lane small { color:var(--hot); margin-left:4px; }
+  #combo .lane.off { opacity:.45; text-decoration:line-through; }
+  #combo .lane.from { border-color:var(--hot); }
+  #combo input { width:150px; }
+  #combo .act { border:1px solid var(--ink); background:transparent; color:var(--ink); border-radius:5px; padding:5px 11px; font-size:12px; letter-spacing:.08em; cursor:pointer; }
+  #combo .act.go { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
+  #combo .act.playing { background:var(--ink); color:#111; }
+  #combo .said { color:var(--dim); font-size:12px; }
+  main { padding-bottom:140px !important; }
   .note { color:var(--dim); font-size:12px; padding:8px 0 0; max-width:900px; }
 </style></head><body>
 <header>
@@ -94,6 +106,7 @@ PAGE = r"""<!DOCTYPE html>
 </header>
 <div class="lanebar" id="lanebar" hidden></div>
 <main id="list"></main>
+<div id="combo" hidden></div>
 <script>
 const D = /*DATA*/null;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -191,7 +204,7 @@ const partName = pid => { const p = D.parts[pid]; if (!p) return pid; const more
 function drawSnaps(q) {
   const all = Object.entries(D.found).filter(([u, f]) => f.energy !== undefined).sort((a, b) => b[1].energy - a[1].energy);
   const shown = q ? all.filter(([u]) => (D.names[u] || '').toLowerCase().includes(q)) : all;
-  return `<p class="note">The big chip plays the snapshot. SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it; pressed, it plays with that lane taken from the other. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. A lane's name plays this snapshot's own lane alone.</p>` +
+  return `<p class="note">The big chip plays the snapshot. SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane; pressed again, out). In the bar, a lane pressed is taken away. MAKE CHIP makes it a snapshot. A lane's name here plays this snapshot's own lane alone.</p>` +
   shown.map(([u, f]) => {
     const swaps = f.swap ? ORDER.filter(l => f.swap[l] && f.swap[l].length).map(l =>
       `<b class="sub"><span class="chip" data-act="solo" data-u="${esc(u)}" data-k="${l}" style="padding:2px 6px;font-size:11px">${LN[l]}</span></b><div class="chips">${
@@ -248,6 +261,61 @@ function drawParts(q) {
   }).join('');
 }
 
+// ---------------------------------------------------------------- the combination: a snapshot, with lanes from others
+// Each SWAP, ADD or GOES WITH pressed puts its lane into it (pressed again, takes it out) and plays all of it. A lane
+// in the bar pressed is taken away (again, put back). MAKE CHIP makes it a new snapshot in the web library's MADE stack.
+let combo = null;                    // { base, picks: { lane: uid | null } }
+let said = '';
+function comboLayers() {
+  const taken = Object.keys(combo.picks);
+  const layers = wholeLayers(combo.base, taken);
+  for (const [l, from] of Object.entries(combo.picks)) if (from && hasPart(from, l)) layers.push({ url: partUrl(from, l), bpm: D.bpm[from] });
+  return layers;
+}
+function comboKey() { return 'combo:' + combo.base + ':' + JSON.stringify(combo.picks); }
+function playCombo(el) { if (!combo) return; playLayers(comboKey(), el || document.getElementById('cplay'), comboLayers(), D.bpm[combo.base]); }
+function pick(base, l, from) {
+  if (!combo || combo.base !== base) combo = { base, picks: {} };
+  if (combo.picks[l] === from) delete combo.picks[l]; else combo.picks[l] = from;
+  said = ''; drawCombo();
+}
+function drawCombo() {
+  const el = document.getElementById('combo');
+  if (!combo) { el.hidden = true; return; }
+  el.hidden = false;
+  const own = (D.have[combo.base] || []).filter(k => ORDER.includes(k));
+  const lanes = ORDER.filter(l => own.includes(l) || combo.picks[l] !== undefined);
+  const named = Object.values(combo.picks).filter(Boolean).map(u => D.names[u]);
+  el.innerHTML = `<b style="font-size:12px;letter-spacing:.1em">${esc(D.names[combo.base])}</b>` +
+    lanes.map(l => { const f = combo.picks[l]; const cls = f === null ? ' off' : (f ? ' from' : '');
+      return `<span class="lane${cls}" data-l="${l}">${LN[l]}${f ? `<small>${esc(D.names[f])}</small>` : ''}</span>`; }).join('') +
+    `<button class="act" id="cplay">PLAY</button>` +
+    `<input id="cname" placeholder="name" value="${esc(combo.name ?? ((D.names[combo.base] || '').slice(0, 10) + (named.length ? ' + ' + named[0].replace(/^SNAP /, '') : '')))}" maxlength="24">` +
+    `<button class="act go" id="cmake">MAKE CHIP</button><button class="act" id="cclear">CLEAR</button><span class="said">${esc(said)}</span>`;
+}
+document.getElementById('combo').oninput = e => { if (e.target.id === 'cname') combo.name = e.target.value; };
+document.getElementById('combo').onclick = async e => {
+  const t = e.target.closest('.lane, .act'); if (!t) return;
+  if (t.classList.contains('lane')) {
+    const l = t.dataset.l;
+    if (combo.picks[l] === undefined) combo.picks[l] = null; else delete combo.picks[l];      // (its own: away; away or from another: its own again)
+    said = ''; drawCombo(); return playCombo();
+  }
+  if (t.id === 'cplay') return playCombo(t);
+  if (t.id === 'cclear') { stop(); combo = null; drawCombo(); return; }
+  if (t.id === 'cmake') {
+    if (!Object.keys(combo.picks).length) { said = 'Nothing changed in it yet.'; return drawCombo(); }
+    const name = document.getElementById('cname').value;
+    said = 'Making it...'; drawCombo();
+    try {
+      const r = await fetch('/make', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: combo.base, picks: combo.picks, name }) });
+      const a = await r.json();
+      said = a.ok ? `${a.name}: made, in the web library's MADE stack. WEB LOAD in SF-000 brings it.` : (a.error || 'It was not made.');
+    } catch (err) { said = 'It was not made: open this page from the analysis window (http://localhost:8765/report.html).'; }
+    drawCombo();
+  }
+};
+
 // ---------------------------------------------------------------- the page
 let view = 'snaps';
 function draw() {
@@ -270,15 +338,12 @@ document.getElementById('list').onclick = e => {
     return playLayers('whole:' + u, b, wholeLayers(u), D.bpm[u]);
   }
   if (act === 'solo') return playLayers(`solo:${u}:${b.dataset.k}`, b, [{ url: partUrl(u, b.dataset.k), bpm: D.bpm[u] }], D.bpm[u]);
-  if (act === 'swap') {
+  if (act === 'swap' || act === 'add') {
     const base = b.dataset.base, k = b.dataset.k;
     if (!hasPart(u, k)) return;
-    return playLayers(`swap:${base}:${k}:${u}`, b, [...wholeLayers(base, [k]), { url: partUrl(u, k), bpm: D.bpm[u] }], D.bpm[base]);
-  }
-  if (act === 'add') {
-    const base = b.dataset.base, k = b.dataset.k;
-    if (!hasPart(u, k)) return;
-    return playLayers(`add:${base}:${k}:${u}`, b, [...wholeLayers(base), { url: partUrl(u, k), bpm: D.bpm[u] }], D.bpm[base]);
+    pick(base, k, u);
+    document.querySelectorAll(`.chip[data-base="${CSS.escape(base)}"][data-k="${k}"]`).forEach(x => x.classList.toggle('picked', combo && combo.picks[k] === x.dataset.u));
+    return playCombo(b);
   }
   if (act === 'part') {
     const p = D.parts[b.dataset.p]; if (!p) return;
@@ -288,6 +353,8 @@ document.getElementById('list').onclick = e => {
   if (act === 'pair') {
     const p = D.parts[b.dataset.p], q = D.parts[b.dataset.q]; if (!p || !q) return;
     const pu = p.in.find(x => hasPart(x, p.lane)), qu = q.in.find(x => hasPart(x, q.lane)); if (!pu || !qu) return;
+    // (into the combination: the first part's snapshot, with the other's lane in it)
+    combo = { base: pu, picks: { [q.lane]: qu } }; said = 'The two alone are playing; PLAY plays them in the whole of ' + D.names[pu] + '.'; drawCombo();
     return playLayers(`pair:${b.dataset.p}:${b.dataset.q}`, b, [{ url: partUrl(pu, p.lane), bpm: D.bpm[pu] }, { url: partUrl(qu, q.lane), bpm: D.bpm[qu] }], D.bpm[pu]);
   }
 };

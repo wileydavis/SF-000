@@ -131,6 +131,22 @@ class Library:
         page = self.get_json(f"/api/actions?library={library}&after={after}&limit={limit}")
         return (page or {}).get("actions", [])
 
+    def send_snapshot(self, snap: dict):
+        return self.post_json("/api/snapshots", {"snapshot": snap, "defs": {}})
+
+    def stack(self, sid: str):
+        return self.get_json("/api/stacks/" + urllib.parse.quote(sid, safe=""))
+
+    def make_stack(self, value: dict):
+        return self.post_json("/api/stacks", value)
+
+    def change_stack(self, sid: str, value: dict):
+        status, data, _ = self.request("PATCH", "/api/stacks/" + urllib.parse.quote(sid, safe=""), json.dumps(value).encode())
+        try:
+            return status, json.loads(data) if data else {}
+        except ValueError:
+            return status, {}
+
     def latest_found(self):
         return self.get_json("/api/analysis/latest")
 

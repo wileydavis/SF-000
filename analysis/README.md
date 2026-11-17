@@ -56,6 +56,20 @@ the three parts that would fit it best. Pressed, the two play together. TOGETHER
 a snapshot together (the rest never have been: that is where the finds are). CHOSEN: you put them
 together yourself (a recall of some lanes only, from the log).
 
+### Building a combination, and making it a chip
+
+Every SWAP, ADD and GOES WITH you press goes into **the combination**, in the bar at the foot of the
+page, and the whole of it plays: a snapshot with lanes from others. Press more to build it up (one of
+each lane; pressed again, it comes out). In the bar, a lane pressed is **taken away** (again: back).
+PLAY plays it; give it a name; **MAKE CHIP** makes it a snapshot.
+
+The chip is the snapshot's whole rig with each lane you chose taken whole from where you chose it:
+its controls, its pattern (or the notes that played it), its effects and their settings, its setup,
+its sound file. Everything that is not a lane's (the returns, the drum bus, the chassis, the key) is
+the base's. A lane taken away is silent. It goes to the web library and into a stack there called
+**MADE**, marked to load: **WEB LOAD in SF-000 brings it**, into the library and the rack, like any
+other chip. It has no sound of its own until it is played (take it again there and it has).
+
 Parts at different tempos are played at the tempo of the one they go with, **stretched, not sped
 up**: the pitch stays where it is, as the instrument would play the notes. (The stretching is the
 page's own and a little grainy on held notes; the instrument's own is exact.) Parts are played dry of
@@ -129,17 +143,16 @@ offered are near the same. A pair you put together yourself counts for more.
 | `log/` | the log, a file a library |
 | `found/latest.json` | what it found last, as it was sent |
 | `report.html` | the page |
-| `state.json` | how far it has taken the log |
+| `state.json` | how far it has taken the log; the chips it has made, and its own library's name for them |
 | `lossless/` | with `--keep-lossless` only |
 
 It only ever reads from the web library and adds its findings to it. It changes nothing SF-000 sent.
 
 ## Not yet
 
-- **SF-000 reading what it found** (the "smart" module, DECISIONS 652): a SWAP or ADD as a chip, or a
-  pairing made into a stack knob (whose chips already bring some lanes only).
-- **Combinations of more than two parts** built up from these: a bass, a chord and a pad from three
-  snapshots, over a fourth's drums.
+- **SF-000 reading what it found** (the "smart" module, DECISIONS 652).
+- **Suggestions for combinations of three parts and more**: you build them by hand in the bar; it
+  does not yet propose them.
 - **Rendering the snapshots that have no sound** with the instrument run without a screen: for now
   those are listed at the foot of the page as not measured.
 - **Families and paths** (groups of snapshots, and routes through them up and down in energy);
