@@ -4511,6 +4511,95 @@ static int checkMade (const juce::StringArray& args)
     return ok ? 0 : 1;
 }
 
+// --render JOB.json: sounds rendered for SF-000 Analysis, by the instrument itself with no screen. The job:
+//   { "dir": a folder to work in (its samples/ already there), "out": where the results go, "defs": { print: definition },
+//     "snapshots": [ snapshot, ... ],
+//     "points": [ { "key": "p00", "recall": i }                               that snapshot, whole, with its notes
+//               | { "key": "p03", "morph": [i, j, f], "notes": "a" | "b" } ] }  a stack knob holding i and j, turned to f of the
+//                                                                               way from i to j: from i ("a") or from j ("b"),
+//                                                                               whose notes it therefore has
+// Every point is rendered from the same beginning, so that two can be compared and one asked for twice is the same
+// twice: the clock is stopped and what was sounding left to die away, the rig is set, the clock starts from the top,
+// four bars are played for the delays and the room to fill, and the four bars after those are its sound.
+// Each point is then taken, and written: out/<key>.json ({ "snapshot": as the session file holds it, "bpm" }) and
+// out/<key>.lossless (its four bars: the output and each stem). "done <key>" is printed as each is finished. It touches
+// no library but the folder it is given, opens no sound device, and never stands in the instrument's way.
+static int renderJob (const juce::StringArray& args)
+{
+    using namespace sf0;
+    using juce::var;
+    const int at = args.indexOf ("--render");
+    if (at + 1 >= args.size()) { std::printf ("--render JOB.json\n"); return 1; }
+    const var job = juce::JSON::parse (juce::File (args[at + 1].unquoted()).loadFileAsString());
+    const juce::File dir (job["dir"].toString()), out (job["out"].toString());
+    if (! job.isObject() || job["dir"].toString().isEmpty() || job["out"].toString().isEmpty()) { std::printf ("FAIL: no job\n"); return 1; }
+    dir.createDirectory(); out.createDirectory();
+    Session::stateFileForTests = dir.getChildFile ("session.json");
+    Engine e;
+    e.prepare (48000.0, 256);
+    Session ses (e, true);
+    ses.stackCue = false;
+    juce::AudioBuffer<float> b (2, 256);
+    auto bars = [&] (double n) { const int blocks = (int) (n * 4.0 * 60.0 / e.tempo() * 48000.0 / 256.0); for (int k = 0; k < blocks; ++k) e.render (b); };
+    std::vector<juce::int64> ids;
+    if (auto* snaps = job["snapshots"].getArray())
+        for (auto& sn : *snaps) ids.push_back (ses.takeFromLibrary (sn, sn["name"].toString(), job["defs"]));
+    const int knob = 4;                     // (the first stack knob)
+    std::pair<juce::int64, juce::int64> on { 0, 0 };
+    Session::Scope whole;                   // (every part, and its notes)
+    int bad = 0;
+    if (auto* points = job["points"].getArray())
+        for (auto& p : *points)
+        {
+            const auto key = p["key"].toString();
+            e.setRunning (false);
+            bars (2.0);                     // (what the last one left, dying away)
+            auto idAt = [&] (const var& i) { const int n = (int) i; return n >= 0 && n < (int) ids.size() ? ids[(size_t) n] : (juce::int64) 0; };
+            if (p.hasProperty ("recall"))
+            {
+                const auto id = idAt (p["recall"]);
+                if (id == 0) { std::printf ("FAIL %s: no such snapshot\n", key.toRawUTF8()); ++bad; continue; }
+                ses.recall (id, whole);
+            }
+            else
+            {
+                const var m = p["morph"];
+                const auto a = idAt (m[0]), z = idAt (m[1]);
+                const float f = juce::jlimit (0.0f, 1.0f, (float) (double) m[2]);
+                if (a == 0 || z == 0 || a == z) { std::printf ("FAIL %s: no such pair\n", key.toRawUTF8()); ++bad; continue; }
+                if (on != std::make_pair (a, z))
+                {
+                    for (int guard = 0; guard < 64 && ! ses.knobs[(size_t) knob].snaps.empty(); ++guard) ses.stackDrop (knob, 0);
+                    ses.stackAdd (knob, a); ses.stackAdd (knob, z);
+                    on = { a, z };
+                }
+                const bool fromB = p["notes"].toString() == "b";
+                ses.recall (fromB ? z : a, whole);
+                e.set (cx::kSnap + knob, fromB ? 1.0f : 0.0f);       // (the knob stands on the one just recalled)
+                bars (0.25);
+                ses.turnSnapKnob (knob, f);
+            }
+            bars (0.5);                     // (its glide over)
+            e.setRunning (true);            // (from the top)
+            bars (4.0);                     // (the delays and the room filled)
+            const auto id = ses.take();
+            bars (4.3);                     // (the four bars held after it is taken are its sound)
+            ses.finishTakes (true);
+            ses.waitForClips();
+            const auto* taken = ses.findSnap (id);
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("snapshot", ses.written (*taken));
+            o->setProperty ("bpm", e.tempo());
+            const bool wrote = out.getChildFile (key + ".json").replaceWithText (juce::JSON::toString (var (o), true))
+                               && ses.losslessFile (id).copyFileTo (out.getChildFile (key + ".lossless"));
+            ses.remove (id);                // (its sound has been copied out: the folder does not grow with every point)
+            if (! wrote) { std::printf ("FAIL %s: not written\n", key.toRawUTF8()); ++bad; continue; }
+            std::printf ("done %s\n", key.toRawUTF8());
+            std::fflush (stdout);
+        }
+    return bad == 0 ? 0 : 1;
+}
+
 static int printSession (const juce::StringArray& args)
 {
     using namespace sf0;
@@ -13093,8 +13182,10 @@ class SF000App : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override    { return "SF-000"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    // (one instrument at a time. The cue's rig is this program started again by the instrument itself: that one may be)
-    bool moreThanOneInstanceAllowed() override          { return sf0::CueWorker::wanted (getCommandLineParameters()); }
+    // (one instrument at a time. The cue's rig is this program started again by the instrument itself: that one may be.
+    // So may a render for SF-000 Analysis (--render): it has no screen and no sound device, and if it counted as the
+    // instrument, the instrument started while one ran would be turned away.)
+    bool moreThanOneInstanceAllowed() override          { return sf0::CueWorker::wanted (getCommandLineParameters()) || getCommandLineParameters().contains ("--render "); }
 
     void initialise (const juce::String& cmd) override
     {
@@ -13126,6 +13217,7 @@ public:
         if (args.contains ("--shot")) { setApplicationReturnValue (shot (args)); quit(); return; }
         if (args.contains ("--printsession")) { setApplicationReturnValue (printSession (args)); quit(); return; }
         if (args.contains ("--seedlibrary")) { setApplicationReturnValue (seedLibrary (args)); quit(); return; }
+        if (args.contains ("--render")) { setApplicationReturnValue (renderJob (args)); quit(); return; }
         if (args.contains ("--checkmade")) { setApplicationReturnValue (checkMade (args)); quit(); return; }
         if (args.contains ("--cueprobe")) { setApplicationReturnValue (cueProbe (args)); quit(); return; }
         if (args.contains ("--cuetest")) { setApplicationReturnValue (cueTest()); quit(); return; }

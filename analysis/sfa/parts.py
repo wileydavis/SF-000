@@ -19,6 +19,7 @@ from collections import Counter, defaultdict
 import numpy as np
 
 from .measure import LANES
+from .rhythm import heard, lane_rhythm, played
 
 # how much each interval between two notes rubs: a semitone or a major seventh most, then the tritone, then a tone
 ROUGH = np.zeros(12)
@@ -106,7 +107,7 @@ def fit(a: dict, b: dict) -> float:
 
 
 def part_distance(a: dict, b: dict) -> float:
-    """How unlike two parts of the same lane sound: their spectrum, their notes, their place in the bar."""
+    """How unlike two parts of the same lane sound: their spectrum, their notes, their place in the bar, their texture."""
     ba, bb = np.array(a.get("bands") or [0] * 10), np.array(b.get("bands") or [0] * 10)
     spec = np.mean(np.abs(ba - bb)) / 10.0 + abs(a.get("centroid", 0) - b.get("centroid", 0)) / 2.0
     ca, cb = np.array(a.get("chroma") or [0] * 12), np.array(b.get("chroma") or [0] * 12)
@@ -114,7 +115,9 @@ def part_distance(a: dict, b: dict) -> float:
     ga, gb = _occ(a).sum(axis=0), _occ(b).sum(axis=0)
     ga, gb = ga / (ga.max() + 1e-15), gb / (gb.max() + 1e-15)
     rhythm = float(np.mean(np.abs(ga - gb)))
-    return round(float(spec + notes + rhythm), 3)
+    touch = (abs(a.get("rough", -60) - b.get("rough", -60)) / 20.0 + abs(a.get("contrast", 0) - b.get("contrast", 0)) / 20.0
+             + abs(a.get("flatness", -30) - b.get("flatness", -30)) / 20.0 + abs(a.get("evolves", 0) - b.get("evolves", 0)) * 2.0)
+    return round(float(spec + notes + rhythm + touch), 3)
 
 
 # ------------------------------------------------------------------------------------------------- the log
@@ -163,7 +166,13 @@ def relate_parts(measured: list[dict], snaps: dict[str, dict], actions: list[dic
             sig = signature(snaps.get(uid, {}).get("snapshot") or {}, lane) if snaps.get(uid) else None
             pid = f"{lane}:{sig or uid}"
             if pid not in parts:
-                parts[pid] = {"lane": lane, "in": [], "m": p, "bpm": m.get("bpm")}
+                snap = (snaps.get(uid) or {}).get("snapshot") or {}
+                wr = lane_rhythm(snap, lane) if snap else None
+                hd = heard(p.get("p96"), played(snap, lane) if snap else None, p.get("l96")) if p.get("p96") else None
+                rh = {k: wr[k] for k in ("len", "kind", "sync", "per_bar")} if wr else {}
+                if hd:
+                    rh["heard"] = {k: v for k, v in hd.items() if k != "steps"}
+                parts[pid] = {"lane": lane, "in": [], "m": p, "bpm": m.get("bpm"), "rhythm": rh}
             parts[pid]["in"].append(uid)
             of_snap[uid][lane] = pid
     ids = list(parts)
@@ -218,6 +227,7 @@ def relate_parts(measured: list[dict], snaps: dict[str, dict], actions: list[dic
             "hits": m.get("hits"),
             "held": m.get("held"),
             "notes": _notes(m) if m.get("tonal") else None,
+            "rhythm": p.get("rhythm") or None,
             "alike": [[q, d] for d, q in alike],
             "goes": goes,
         }

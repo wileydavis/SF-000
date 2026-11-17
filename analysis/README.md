@@ -44,6 +44,9 @@ to tell whether it is right.** Where it is wrong by ear, that is what to change 
 | **ALIKE** | the snapshots that sound most like it, whatever their energy (the number: how far, 0 the same) |
 | **UP** | sound like it, with more energy: a step up for the room (the number: how much more, of 100) |
 | **DOWN** | the same, with less |
+| **SAME TEXTURE** | not alike overall, but the same to the touch: grit, resonance, noise, how alive |
+| **SAME RHYTHM** | the same rhythm as it is heard, in another sound |
+| **RHYTHM** | what is heard in the bar; each lane's written pattern; what the sound adds to the steps; which lanes run against each other; what the dub return's echoes do |
 | **FOLLOWED BY** | what you played next after it, and how often (from the log) |
 | **TAKEN FROM** | the chip the set was on when it was taken |
 | **SWAP** | for each of its lanes, the same lane from another snapshot that would fit the rest of it. Pressed: this snapshot with that lane taken from the other. The lane's name plays this snapshot's own lane alone |
@@ -55,6 +58,48 @@ each: the parts of the same lane that sound like it (ALIKE), and **GOES WITH**: 
 the three parts that would fit it best. Pressed, the two play together. TOGETHER: they are already in
 a snapshot together (the rest never have been: that is where the finds are). CHOSEN: you put them
 together yourself (a recall of some lanes only, from the log).
+
+**MORPH**: the way between two snapshots (below).
+
+### The morph between two snapshots
+
+Choose two (or press MORPH FROM and TO on any two snapshots) and SCAN. **SF-000 itself renders it**, run with no
+screen, exactly as a stack knob holding the two plays it: the sound goes from one to the other as the knob
+turns, with the notes of the one it set out from (NOTES OF chooses which). Eleven points along the turn, each
+from the same beginning so that they can be compared; about a minute. SF-000 has to be closed while it
+renders, and built in this folder (`./build.sh`).
+
+What comes back is the turn of the knob, left to right. Press any point to hear it. The bars say how much
+the sound changes in each tenth of the turn: an even morph would have them level, and few do, because even in
+the controls is not even to the ear. The ringed points are **worth hearing**, each for a reason:
+
+| | |
+|---|---|
+| **NEW** | neither end sounds like this: it is not simply between them |
+| **ROUGHER, SMOOTHER, MORE RESONANT, MORE DIFFUSE, NOISIER, PURER, MORE ALIVE, STILLER, BRIGHTER, DARKER, WIDER** | more of that quality of texture than either end has |
+| **FITS** | its parts sit together better here than at either end |
+| **LIFTS, DROPS** | more energy than both ends, or less |
+| **EDGE, HOLDS** | where the sound changes most; where it stands still |
+
+Any point can be made a chip (MAKE CHIP): the rig exactly as it stood there, with its four bars.
+
+**Reshaping it into a stack.** A stack knob plays through its chips in order, so a morph can be given
+a shape by putting snapshots between the two:
+
+- **EVEN**: one to five snapshots between, placed where the sound has changed by equal amounts, so that an even
+  turn is an even change. It says what the largest step is beside the mean, before and after; if the morph was
+  even already it says there is nothing to gain.
+- **LEAD WITH**: the lanes you choose go first. The first half of the turn changes them alone; the second
+  half, everything else. The lanes are offered most changed first.
+
+RENDER has SF-000 play the snapshots between, so they can be heard and measured; MAKE STACK sends them to the web
+library as a stack marked to load (the two ends and what is between), which WEB LOAD brings: put it on a
+stack knob.
+
+What is compared along a morph is the sound (its spread, its texture, its width, its lanes), not its
+rhythm: the notes do not change along it. No two renders of the same thing measure quite alike (hats are
+noise, oscillators drift), so the first point is rendered twice, and nothing is called worth hearing unless it
+stands well clear of how far those two are apart.
 
 ### Building a combination, and making it a chip
 
@@ -95,6 +140,38 @@ it moves with the beat, the eighth and the sixteenth, how its sound is spread fr
 bands), its brightness, how noisy or tonal, how wide, and how much it changes over its bars. From the
 lanes on their own: how loud each lane, return and the bus is beside the others, and how many lanes
 are sounding.
+
+### Texture
+
+A lot of what moves in this music is not notes or loudness but what the sound is like to the touch. Four
+things are measured for it, of the whole and of each lane:
+
+- **rough**: how much its level flutters 20 to 150 times a second (grit, growl, beating);
+- **resonant or diffuse**: how far its spectrum's peaks stand above its valleys;
+- **noisy or pure**;
+- **alive**: how far its brightness wanders from bar to bar, where a loop would stand still (a slow sweep, a
+  drifting delay), apart from how it **moves** within the bar, the same every bar.
+
+They count as much as the spread of the spectrum in what is ALIKE, they are the whole of SAME TEXTURE, and
+they are what the MORPH scan looks for between two snapshots.
+
+### Rhythm: written, and heard
+
+**Written** is read from the snapshot itself, which says what every lane's sequencer played: how long each
+pattern is, what kind it is (four on the floor, offbeats, backbeat, straight, Euclidean k/n such as the tresillo
+3/8, three of every four, every third step, syncopated, sparse, broken), how syncopated (Longuet-Higgins and
+Lee's measure), and **which lanes run against each other**: a pattern of 12 steps over patterns of 16 is three
+against four, meeting every three bars.
+
+**Heard** is taken from the sound, because the steps are half of it: a delay's echoes, a density knob, ghost
+notes and a reverb's swell make rhythm that no step says. For the whole, for every lane and for the dub and
+space returns on their own, the analysis finds where in the bar the sound rises (96 places a bar: fine enough to
+tell a triplet from a sixteenth) and how loud each hit is. Set against what was written, that gives: how many
+hits a bar are heard, **how many the sound added**, how many are **ghosts** (quiet), how many fall on triplets
+or off the grid, and **what it repeats at** (a dub delay at a dotted eighth shows as echoes every 3 steps:
+three against the kick's four, made by the delay alone).
+
+SAME RHYTHM compares snapshots by the heard rhythm only.
 
 ### What is measured of each part
 
@@ -139,6 +216,8 @@ offered are near the same. A pair you put together yourself counts for more.
 | `snapshots/` | each snapshot as the library has it |
 | `clips/` | each clip, for the page |
 | `parts/` | each lane, return and the bus of each snapshot on its own (Ogg), for the page |
+| `morph/` | each morph scanned: its points as Ogg, each as a snapshot, what was found |
+| `files/` | the sound files your snapshots name, fetched from the web library for SF-000 to render with |
 | `measured/` | what was measured of each |
 | `log/` | the log, a file a library |
 | `found/latest.json` | what it found last, as it was sent |
@@ -151,6 +230,9 @@ It only ever reads from the web library and adds its findings to it. It changes 
 ## Not yet
 
 - **SF-000 reading what it found** (the "smart" module, DECISIONS 652).
+- **Rhythm in what fits**: two parts are not yet judged by how their heard rhythms lock (the measure is
+  there: on each other, between each other, apart).
+- **A finer scan**: more points where a morph changes fastest, and morphs between more than two.
 - **Suggestions for combinations of three parts and more**: you build them by hand in the bar; it
   does not yet propose them.
 - **Rendering the snapshots that have no sound** with the instrument run without a screen: for now
@@ -161,7 +243,10 @@ It only ever reads from the web library and adds its findings to it. It changes 
 
 Its checks: `python3 -m unittest discover -s analysis/tests` (sounds made in the checks, whose answers
 are known: hits a beat, brightness, width, loudness against the standard's own reference, families
-told apart, energy the right way up, what followed what, the log taken once; a chord heard as its
+told apart, energy the right way up, what followed what, the log taken once; grit, resonance, noise and a
+slow sweep each heard as what it is; every kind of pattern named; a delay's echoes heard as added and at their
+own period, ghosts as ghosts, triplets as triplets; a morph that changes all at first found uneven and evened;
+nothing called worth hearing that is within the noise; a chord heard as its
 three notes, a chord in the bass's key fitting and one a semitone off clashing, a bass between the
 kicks fitting better than one on them, the same lane in two snapshots taken as one part, the chord in
 C found for the bass in C).

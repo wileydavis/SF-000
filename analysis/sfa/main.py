@@ -20,10 +20,12 @@ from pathlib import Path
 
 from . import MEASURE_VERSION, VERSION
 from .library import Library, Trouble
-from .measure import measure
+from .measure import LANES, measure
 from .compose import compose
+from .morph import Morphs, find_sf000, instrument_running
 from .parts import relate_parts
 from .relate import relate
+from .rhythm import describe
 from .report import write_report
 
 
@@ -38,13 +40,9 @@ def say(*words):
 
 
 def sf000_running() -> bool:
-    """SF-000 playing on this machine: the analysis keeps out of its way (the disk, the processors, the line)."""
-    if not shutil.which("pgrep"):
-        return False
-    try:
-        return subprocess.run(["pgrep", "-x", "SF-000"], capture_output=True).returncode == 0
-    except OSError:
-        return False
+    """SF-000 playing on this machine: the analysis keeps out of its way (the disk, the processors, the line). A render
+    of the analysis's own is SF-000 too, and is not counted."""
+    return instrument_running()
 
 
 class Store:
@@ -220,6 +218,9 @@ class Analysis:
                 found_snaps.setdefault(uid, {})["swap"] = lanes
         for uid, lanes in pr["add"].items():
             found_snaps.setdefault(uid, {})["add"] = lanes
+        for m in measured:
+            if m["uid"] in found_snaps and m.get("mix") and not m["mix"].get("silent"):
+                found_snaps[m["uid"]]["rhythm"] = describe((snaps.get(m["uid"]) or {}).get("snapshot") or {}, m, LANES)
         found = {
             "at": int(time.time() * 1000),
             "app": f"sf000-analysis {VERSION}",
@@ -335,7 +336,7 @@ class Analysis:
                 time.sleep(1)
 
 
-def serve(root: Path, port: int, analysis: "Analysis | None" = None):
+def serve(root: Path, port: int, analysis: "Analysis | None" = None, morphs: "Morphs | None" = None):
     """The page and what it plays, from this machine only: a page opened from the disk may not read the parts it mixes."""
     import functools
     import http.server
@@ -349,13 +350,26 @@ def serve(root: Path, port: int, analysis: "Analysis | None" = None):
 
         def do_POST(self):
             # MAKE CHIP, from the page: only from this machine (the server listens on it alone), and only this
-            if self.path != "/make" or analysis is None:
+            if self.path not in ("/make", "/scan", "/reshape", "/makepoint", "/makestack") or analysis is None:
                 self.send_error(404)
                 return
             try:
                 body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 100_000)) or b"{}")
-                with lock:
-                    answer = analysis.make(str(body.get("base", "")), dict(body.get("picks") or {}), str(body.get("name", "")))
+                if self.path == "/make":
+                    with lock:
+                        answer = analysis.make(str(body.get("base", "")), dict(body.get("picks") or {}), str(body.get("name", "")))
+                elif morphs is None:
+                    answer = {"error": "not here"}
+                elif self.path == "/scan":
+                    answer = morphs.scan(str(body.get("a", "")), str(body.get("b", "")), str(body.get("notes", "a")))
+                elif self.path == "/reshape":
+                    answer = morphs.reshape(str(body.get("scan", "")), str(body.get("kind", "even")), int(body.get("count", 3) or 3), list(body.get("lanes") or []))
+                elif self.path == "/makepoint":
+                    with lock:
+                        answer = morphs.make_point(str(body.get("scan", "")), str(body.get("key", "")), str(body.get("name", "")))
+                else:
+                    with lock:
+                        answer = morphs.make_stack(str(body.get("scan", "")), str(body.get("shape", "")), str(body.get("name", "")))
             except Trouble as e:
                 answer = {"error": str(e)}
             except Exception as e:
@@ -386,6 +400,7 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-lossless", action="store_true", help="keep each snapshot's lossless sound here too (about 10 MB each)")
     ap.add_argument("--no-send", action="store_true", help="find, but do not send what was found to the web library")
     ap.add_argument("--port", type=int, default=8765, help="where the page is served on this machine (8765)")
+    ap.add_argument("--sf000", default="", help="SF-000's program, to render with (otherwise the one built in this folder)")
     ap.add_argument("--no-open", action="store_true", help="do not open the page in the browser when it starts")
     args = ap.parse_args(argv)
 
@@ -413,7 +428,10 @@ def main(argv=None) -> int:
     say(f"SF-000 Analysis {VERSION}: {lib.url}, keeping what it finds in {root}")
     page = f"http://localhost:{args.port}/report.html"
     if not args.once:
-        serve(root, args.port, a)
+        sf000 = find_sf000(args.sf000)
+        serve(root, args.port, a, Morphs(a, sf000))
+        if sf000 is None:
+            say("SF-000's own program was not found (build it: ./build.sh): morphs cannot be rendered until it is.")
         say(f"listen to what it finds: {page}")
         if platform.system() == "Darwin" and not args.no_open:
             threading_open = __import__("threading").Timer(20.0, lambda: subprocess.run(["open", page]))

@@ -129,6 +129,68 @@ def _peaks(rise: np.ndarray, rate_frames: float) -> np.ndarray:
     return found
 
 
+def texture(mono: np.ndarray, rate: int, f: np.ndarray, P: np.ndarray, hop: int, bpm: float | None) -> dict:
+    """What a sound is like to the touch, apart from its notes and its loudness.
+
+    - rough: how much its level flutters between 20 and 150 times a second (grit, growl, beating), in eight bands, as a
+      share of each band's level (dB).
+    - contrast: how far its spectrum's peaks stand above its valleys, an octave at a time (dB): resonant and
+      ringing, against diffuse and washed.
+    - moves: how far its brightness swings within the bar, the same every bar (octaves): a filter that opens and
+      shuts with the pattern.
+    - evolves: how far its brightness wanders from one bar to the next, where a loop would stand still (octaves): a
+      slow sweep, a drifting delay, anything alive."""
+    out = {}
+    # rough: a short window (5 ms), so that flutter up to 150 Hz can be seen
+    n = 256 if rate <= 50000 else 512
+    ff, _, Z = signal.stft(mono, fs=rate, window="hann", nperseg=n, noverlap=n - n // 4, boundary=None, padded=False)
+    env_rate = rate / (n // 4)
+    E = np.abs(Z)
+    edges = np.geomspace(60, 12000, 9)
+    num = den = 0.0
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        env = E[(ff >= lo) & (ff < hi)].sum(axis=0)
+        if env.size < 64 or env.mean() <= 0:
+            continue
+        spec = np.abs(np.fft.rfft((env - env.mean()) * np.hanning(env.size))) ** 2
+        fr = np.fft.rfftfreq(env.size, 1 / env_rate)
+        weight = float(env.mean() ** 2)
+        num += weight * float(spec[(fr >= 20) & (fr <= 150)].sum()) / (float(spec[1:].sum()) + 1e-18) * float(np.var(env)) / (float(env.mean() ** 2) + 1e-18)
+        den += weight
+    out["rough"] = float(10 * np.log10(num / den + 1e-9)) if den > 0 else -90.0
+    # contrast: per octave, the strongest fifth of the bins against the weakest fifth
+    total = P.mean(axis=0)
+    cs = []
+    for lo in (100, 200, 400, 800, 1600, 3200, 6400):
+        band = np.sort(total[(f >= lo) & (f < 2 * lo)])
+        if band.size >= 10:
+            k = max(1, band.size // 5)
+            cs.append(10 * np.log10((band[-k:].mean() + 1e-18) / (band[:k].mean() + 1e-18)))
+    out["contrast"] = float(np.mean(cs)) if cs else 0.0
+    # moves, evolves: the brightness of each sixteenth, the same place in every bar against the bars one another
+    out["moves"], out["evolves"] = 0.0, 0.0
+    if bpm:
+        sel = (f >= 40) & (f < 16000)
+        per = rate / hop * 60.0 / bpm / 4.0                      # frames a sixteenth
+        bars = int(P.shape[0] / (per * 16))
+        if bars >= 2 and per >= 1:
+            cen = np.zeros((bars, 16))
+            lev = np.zeros((bars, 16))
+            for b in range(bars):
+                for s16 in range(16):
+                    a, z = int(round((b * 16 + s16) * per)), int(round((b * 16 + s16 + 1) * per))
+                    p = P[a:z, sel].sum(axis=0)
+                    lev[b, s16] = p.sum()
+                    cen[b, s16] = np.log2((f[sel] * p).sum() / (p.sum() + 1e-18) + 1e-9)
+            w = lev / (lev.sum() + 1e-18)                        # (a sixteenth with nothing in it says nothing)
+            mean_bar = (cen * lev).sum(axis=0) / (lev.sum(axis=0) + 1e-18)
+            wb = lev.sum(axis=0) / (lev.sum() + 1e-18)
+            centre = float((mean_bar * wb).sum())
+            out["moves"] = float(np.sqrt(((mean_bar - centre) ** 2 * wb).sum()))
+            out["evolves"] = float(np.sqrt((((cen - mean_bar) ** 2) * w).sum()))
+    return out
+
+
 def measure_mix(x: np.ndarray, rate: int, bpm: float | None) -> dict:
     """What the output sounds like."""
     x = x.astype(np.float64)
@@ -165,6 +227,7 @@ def measure_mix(x: np.ndarray, rate: int, bpm: float | None) -> dict:
     frames = P[:, fl] + 1e-18
     flat = np.exp(np.mean(np.log(frames), axis=1)) / np.mean(frames, axis=1)
     out["flatness"] = float(10 * np.log10(np.mean(flat) + 1e-12))
+    out.update(texture(mono, rate, f, P, hop, bpm))
 
     # rhythm: onsets, and how strongly the sound moves with the beat, the eighth and the sixteenth
     flux = onset_curve(f, P)
@@ -199,6 +262,8 @@ def measure_mix(x: np.ndarray, rate: int, bpm: float | None) -> dict:
             out["drift"] = float(np.mean(np.abs(levels[:, half:].mean(axis=1) - levels[:, :half].mean(axis=1))))
     out.setdefault("movement", 0.0)
     out.setdefault("drift", 0.0)
+    if bpm:
+        out["p96"], out["l96"] = heard_rhythm(mono, rate, max(1, int(round(seconds * bpm / 240.0))), levels=True)
     return out
 
 
@@ -257,6 +322,41 @@ def grid(mono: np.ndarray, rate: int, bars: int) -> list[list[float]]:
     return out
 
 
+SLOTS = 96          # places in a bar the heard rhythm is kept at: a sixteenth is six of them, a triplet eighth sixteen
+
+
+def heard_rhythm(mono: np.ndarray, rate: int, bars: int, levels: bool = False):
+    """The rhythm that is heard, whatever made it (steps, a delay's echoes, a density knob, ghost notes): how sharply
+    the sound rises at each of 96 places in the bar, the bars laid over one another (the mean of them). In dB of rise,
+    averaged over 24 bands from 30 Hz to 16 kHz, so a quiet hit in one band still shows. The clip starts on a bar line.
+    With `levels`, also how loud the sound is at each place (dB under the loudest place): a rise says a hit is there,
+    this says whether it is a ghost."""
+    n, hop = 1024, 128
+    if len(mono) < n * 4 or bars < 1:
+        return ([0.0] * SLOTS, [-90] * SLOTS) if levels else [0.0] * SLOTS
+    f, _, Z = signal.stft(mono, fs=rate, window="hann", nperseg=n, noverlap=n - hop, boundary=None, padded=False)
+    power = (np.abs(Z) ** 2).T
+    rise = onset_curve(f, power)
+    # (a hit is seen rising when it comes into the window's strong middle: that is when it is)
+    when = (np.arange(len(rise)) + 1) * hop + n * 0.62
+    per_bar = len(mono) / bars
+    slot = np.floor((when % per_bar) / per_bar * SLOTS + 0.5).astype(int) % SLOTS
+    bar = np.minimum(bars - 1, (when // per_bar).astype(int))
+    grid = np.zeros((bars, SLOTS))
+    np.maximum.at(grid, (bar, slot), rise)
+    seen = np.ones((bars, SLOTS), dtype=bool)
+    seen[0, : int(np.ceil(when[0] / per_bar * SLOTS))] = False       # (the very start of the clip: nothing before it to rise from)
+    if bars < 2:
+        seen[:] = True
+    p96 = [round(float(v), 2) for v in (grid * seen).sum(axis=0) / np.maximum(1, seen.sum(axis=0))]
+    if not levels:
+        return p96
+    loud = np.zeros((bars, SLOTS))
+    np.maximum.at(loud, (bar, slot), power[1:].sum(axis=1))
+    loud = (loud * seen).sum(axis=0) / np.maximum(1, seen.sum(axis=0))
+    return p96, [int(round(float(v))) for v in np.maximum(-90, 10 * np.log10(loud / (loud.max() + 1e-18) + 1e-9))]
+
+
 def measure_part(x: np.ndarray, rate: int, bpm: float | None, bars: int, key: str) -> dict:
     """One lane, a return or the bus, on its own: how loud, where in the spectrum, which notes, where in the bar."""
     x = x.astype(np.float64)
@@ -273,6 +373,10 @@ def measure_part(x: np.ndarray, rate: int, bpm: float | None, bars: int, key: st
     sel = (f >= 20) & (f < 20000)
     out["centroid"] = round(float(np.log2((f[sel] * total[sel]).sum() / (total[sel].sum() + 1e-18) + 1e-9)), 3)
     out["chroma"], out["clarity"] = chroma(mono, rate)
+    fl = (f >= 40) & (f < 16000)
+    frames = P[:, fl] + 1e-18
+    out["flatness"] = round(float(10 * np.log10(np.mean(np.exp(np.mean(np.log(frames), axis=1)) / np.mean(frames, axis=1)) + 1e-12)), 2)
+    out.update({k: round(v, 3) for k, v in texture(mono, rate, f, P, hop, bpm).items()})
     out["grid"] = [[round(v, 9) for v in row] for row in grid(mono, rate, bars)]
     rise = onset_curve(f, P)
     beats = len(mono) / rate * (bpm or 128.0) / 60.0
@@ -280,6 +384,7 @@ def measure_part(x: np.ndarray, rate: int, bpm: float | None, bars: int, key: st
     g = np.array(out["grid"]).sum(axis=0)
     out["held"] = round(float((g > g.max() * 0.25).mean()) if g.max() > 0 else 0.0, 3)      # how much of the bar it sounds in
     out["tonal"] = key in TONAL
+    out["p96"], out["l96"] = heard_rhythm(mono, rate, bars, levels=True)
     return out
 
 

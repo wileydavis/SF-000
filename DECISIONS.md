@@ -4414,8 +4414,73 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      played and took it again: its bass and its chord were the sources' to every control and step,
      and both sounded. The bar was used in a browser: two swaps, a lane taken away, a name, MADE.
 
+## Between two snapshots: the morph scanned and reshaped; texture; rhythm written and heard (Nov 17, 07:55)
+
+680. **You**, 07:55: "I'm interested in figuring out how to create a 3d interface that helps find
+     interesting relations ships and sweetspots in these combos of sounds and in the interpolations
+     between them. As well as how to have the analysis engine identify potential sweetspots.
+     Thoughts? Is there any useful research we can lean on here?" Answered in the chat (what a sweet
+     spot is so that it can be looked for; the work to lean on; the engine before the 3D view).
+     **The 3D view is not built**: it wants something to show first.
+681. **You**, 08:03: "one interesting first tool could be I choose two snapshots and the tool scans
+     the morph range between them and identifies interesting points inbetween for me to listen to,
+     allowig them to be sbnapshots if liked. Also, the tool could alter the way the morphs work
+     between two points to alter the characteristics to create smoother morphs or morphs that
+     emphasize different parts as the primary change agent. and then create a new morph stack that
+     uses generated snapshots in between to control how the morph sounds."
+682. **The instrument renders it** (`SF-000 --render`, no screen, no sound device): a stack knob
+     holding the two, turned to each of eleven places, exactly as it plays: the sound moves, the
+     notes are those of the one it set out from. *Mine:* every point from the same beginning (the
+     clock stopped, what sounded left to die, started from the top, four bars for the delays to
+     fill, then its four bars), or no two could be compared: rendered one after another as a set
+     plays, the same point measured as far from itself as from its neighbours. A render does not
+     count as the instrument: the instrument started while one runs is not turned away, and the
+     analysis stops a render the moment the instrument is opened.
+683. **What is found between** (the MORPH tab): how much the sound changes in each tenth of the turn;
+     and the points worth hearing, each for a reason (NEW: not simply between; a quality of
+     texture more than either end has; FITS; LIFTS, DROPS; EDGE, HOLDS). Any point is made a chip
+     as the rig stood there. *Mine: the reasons, and that nothing is called worth hearing unless it
+     stands clear of the noise, which is measured each time by rendering the first point twice.*
+684. **Reshaped into a stack**: EVEN (snapshots between, where the sound has changed by equal
+     amounts) and LEAD WITH (the lanes chosen go first, the rest follow), rendered to be heard,
+     and sent as a stack marked to load. *Mine: both shapes. It says so when a morph was even
+     already and there is nothing to gain.*
+685. **You**, 08:21: "keep in mind that besides things like energy, I'm also very interested in
+     finding good timbres/textures as a lot of movement in electronic music comes from texture and
+     nthe quality of the sound, not melodic movement." So texture is measured (rough, resonant or
+     diffuse, noisy or pure, alive from bar to bar, moving within the bar), of the whole and of
+     each lane; it counts as much as the spectrum in what is alike; SAME TEXTURE is by it alone;
+     and it is what the morph scan names. *Mine: which four. "Good" is yours to say; this finds
+     where a texture is, and where one stands out.*
+686. **You**, 08:33: "and rythym detection, ployryhtyhms, what kind of pattern, etc. would be
+     useful". 08:35: "make sure to include the rythm created by the density knobs, the reverbs and
+     delays, ghost notes, etc. Those are the key ways I create new organic-feeling rythms beyon
+     what's in the sequencer steps." So rhythm is taken twice. **Written**, from the snapshot's own
+     patterns: each lane's length and kind, its syncopation, and which lanes run against each
+     other. **Heard**, from the sound of the whole, of each lane and of the dub and space returns:
+     where in the bar it rises (96 places), how loud each hit is, and against what was written:
+     how many hits the sound added, how many are ghosts, how many are on triplets or off the grid,
+     and what it repeats at. SAME RHYTHM is by the heard rhythm alone. *Mine, the particulars.*
+687. **On your sounds** (the 92 re-rendered): of 340 lanes that sound, the sound adds hits to the
+     steps in 119 and ghosts in 39; the dub return echoes every 3 steps in 8 snapshots; 42
+     snapshots have lanes of different lengths running against each other. A morph between the
+     roughest and the smoothest of them measured 1.3 times as uneven as even, with one point
+     that is neither end; rendered twice, the same point is 0.02 from itself where the two ends
+     are 0.56 apart.
+688. **Not in it.** The 3D view (680). A finer scan where a morph changes fastest. Morphs among more
+     than two. Rhythm in what makes two parts fit. Learning which of the points found you keep.
+
 ## Not verified
 
+- **A morph has not been rendered on a Mac, or with your library as it is on yours.** Here it is
+  rendered by the Linux build from your session as I have it. Two things to know. A voice lane
+  whose sample is an mp3 does not sound as yours here (this build cannot read mp3; the Mac's can),
+  so a scan here of a snapshot with one is not what you will get. And SF-000 started by the
+  analysis to render may show itself in the Dock for a moment.
+- **The heard rhythm has been checked on sounds made for the checks, not by ear on yours.** A
+  note's release can read as a quiet hit, so "added by the sound" on a lane of held, gated notes
+  (a bass, a chord) may count releases with echoes. Where it says a lane has ghosts or added hits
+  and you hear none, that is the first thing to tell me.
 - **SF-000 Analysis has not run on a Mac.** It is run here on Linux against a web library run
   here. On the Mac: whether `start.command` finds a Python 3 (if not, it says to run
   `xcode-select --install`), and that it fetches through Access with SET UP's token. And whether

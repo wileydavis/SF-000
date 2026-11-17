@@ -342,3 +342,200 @@ class Making(unittest.TestCase):
         self.assertNotIn("profile", out)
         self.assertEqual(out["ext"]["sf000analysis"], {"base": "aaaaaaaaaaaaaaaa-1", "lanes": {"bass": "bbbbbbbbbbbbbbbb-2", "chord": None}, "made": 0x1a2b})
         self.assertEqual(base["values"]["bass.cut"], 1.0, "the base itself is not changed")
+
+
+# ---------------------------------------------------------------------------------------------- morphs
+from sfa.morph import even_places, lane_change, look, tags, unevenness, refs_in, brand  # noqa: E402
+
+
+class Morphing(unittest.TestCase):
+    def path(self, fs):
+        """A morph made here whose shape is known: hiss comes in over a kick, all of it in the first third of the turn."""
+        return [{"uid": f"p{i}", "from": "lossless", "mix": measure_mix(groove(kick=1.0, noise_hi=0.06 * min(1.0, f * 3), hats=0.3, seed=1), RATE, BPM)} for i, f in enumerate(fs)]
+
+    def library(self):
+        return [{"uid": f"l{i}", "from": "clip", "mix": measure_mix(groove(kick=0.5 + 0.1 * i, hats=0.1 * i, noise_hi=0.01 * i, tone=0.05 * i, seed=i), RATE, BPM)} for i in range(6)]
+
+    def test_a_morph_that_changes_all_at_first_is_found_uneven_and_evened(self):
+        fs = [i / 10 for i in range(11)]
+        pts = self.path(fs)
+        path = look(pts, self.library(), twin=pts[0])
+        self.assertEqual(path["noise"], 0.0)
+        self.assertGreater(sum(path["steps"][:4]), 4 * sum(path["steps"][5:]), "nearly all of the change is in the first part")
+        self.assertGreater(unevenness(path["steps"]), 2.0)
+        places = even_places(fs, path["steps"], 3)
+        self.assertLess(places[-1], 0.45, "so the snapshots between all go in the first part of the turn")
+        self.assertEqual(places, sorted(places))
+        even = look([pts[0]] + self.path(places) + [pts[-1]], self.library(), twin=pts[0], smooth=False)
+        self.assertLess(unevenness(even["steps"]), 1.5, "and through them the change is even")
+
+    def test_nothing_is_called_worth_hearing_that_is_within_the_noise(self):
+        fs = [i / 10 for i in range(11)]
+        pts = self.path(fs)
+        noisy = {"uid": "t", "from": "lossless", "mix": measure_mix(groove(kick=1.0, hats=0.3, noise_hi=0.03, seed=9), RATE, BPM)}
+        path = look(pts, self.library(), twin=noisy)
+        self.assertGreater(path["noise"], 0.0)
+        self.assertNotIn("NEW", [t for ts in tags(path) for t in ts])
+
+    def test_the_lanes_that_change_most_are_named_first(self):
+        part = lambda x, k: measure_part(x, RATE, BPM, 4, k)
+        a = {"lanes": {"kick": part(groove(kick=1.0), "kick"), "bass": part(notes([C / 2], on_steps=[2, 6, 10, 14]), "bass")}}
+        b = {"lanes": {"kick": part(groove(kick=1.0), "kick"), "bass": part(notes([CS], on_steps=[0, 3, 6, 9, 12]), "bass"),
+                       "chord": part(notes([C * 2, E * 2, G * 2], on_steps=[0, 8], length=3), "chord")}}
+        change = lane_change(a, b)
+        self.assertEqual([c[0] for c in change], ["chord", "bass", "kick"], "one that comes in, one that changes, one that stays")
+        self.assertLess(change[-1][1], 0.05)
+
+    def test_sound_files_named_and_a_chip_branded(self):
+        snap = {"uid": "x", "laneFiles": ["", "samples/ab12cd34/hat.wav"], "insertFiles": [{"lane": 1, "files": ["samples/ffff0000/room.wav"]}], "name": "samples/not-a-file"}
+        self.assertEqual(refs_in({k: v for k, v in snap.items() if k != "name"}), {"samples/ab12cd34/hat.wav", "samples/ffff0000/room.wav"})
+        chip = brand(snap, "between", "c" * 16, 0x99, {"a": "u1", "b": "u2", "f": 0.4})
+        self.assertEqual((chip["uid"], chip["name"], chip["id"]), ("c" * 16 + "-99", "BETWEEN", 0x99))
+        self.assertEqual(chip["ext"]["sf000analysis"], {"a": "u1", "b": "u2", "f": 0.4, "made": 0x99})
+        self.assertEqual(snap["uid"], "x")
+
+
+class Texture(unittest.TestCase):
+    def tone(self, am_hz=0.0, depth=0.0, sweep=0.0, noise=0.0, hz=220.0, bars=4):
+        n = beat_samples() * 4 * bars
+        t = np.arange(n) / RATE
+        x = sum(np.sin(2 * np.pi * hz * k * t) / k for k in range(1, 9)) * 0.1          # (a saw-like tone)
+        if depth:
+            x = x * (1 + depth * np.sin(2 * np.pi * am_hz * t))
+        if sweep:
+            # a low-pass that opens slowly over the whole clip: each harmonic comes in later
+            x = sum(np.sin(2 * np.pi * hz * k * t) / k * np.clip(t / t[-1] * 8 * sweep - (k - 1), 0, 1) for k in range(1, 9)) * 0.1
+        if noise:
+            x = x + noise * np.random.default_rng(3).standard_normal(n)
+        return np.stack([x, x], axis=1).astype(np.float32)
+
+    def test_grit_resonance_noise_and_life_are_each_heard(self):
+        plain = measure_mix(self.tone(), RATE, BPM)
+        gritty = measure_mix(self.tone(am_hz=70, depth=0.8), RATE, BPM)
+        slow = measure_mix(self.tone(am_hz=2, depth=0.8), RATE, BPM)
+        hiss = measure_mix(self.tone(noise=0.05), RATE, BPM)
+        alive = measure_mix(self.tone(sweep=1.0), RATE, BPM)
+        self.assertGreater(gritty["rough"], plain["rough"] + 15, "a flutter at 70 a second is grit")
+        self.assertGreater(gritty["rough"], slow["rough"] + 10, "a tremolo at 2 a second is not")
+        self.assertGreater(plain["contrast"], hiss["contrast"] + 10, "harmonics stand above their valleys; hiss fills them")
+        self.assertGreater(hiss["flatness"], plain["flatness"] + 10)
+        self.assertGreater(alive["evolves"], plain["evolves"] + 0.15, "a filter opening over four bars: it does not stand still")
+        self.assertLess(plain["evolves"], 0.05, "a held tone does")
+
+
+# ---------------------------------------------------------------------------------------------- rhythm
+from sfa.rhythm import against, euclid, kind, lane_rhythm, lock, snapshot_rhythm, syncopation  # noqa: E402
+
+
+class Rhythm(unittest.TestCase):
+    def test_the_kinds_of_pattern(self):
+        self.assertEqual(kind([0, 4, 8, 12], 16), "FOUR ON THE FLOOR")
+        self.assertEqual(kind([0, 4, 8, 12, 16, 20, 24, 28], 32), "FOUR ON THE FLOOR")
+        self.assertEqual(kind([2, 6, 10, 14], 16), "OFFBEATS")
+        self.assertEqual(kind([4, 12], 16), "BACKBEAT")
+        self.assertEqual(kind(list(range(16)), 16), "STRAIGHT 16THS")
+        self.assertEqual(kind([0, 3, 6], 8), "EUCLIDEAN 3/8")                   # the tresillo
+        self.assertEqual(kind([0, 3, 6, 8, 11, 14], 16), "EUCLIDEAN 3/8", "the tresillo twice in a bar")
+        self.assertEqual(kind([2, 5, 8, 12, 15], 16), kind(euclid(5, 16), 16), "turned round, it is the same pattern")
+        self.assertEqual(kind(euclid(5, 16), 16), "EUCLIDEAN 5/16")
+        self.assertEqual(kind(list(range(0, 48, 3)), 48), "EVERY 3 STEPS")
+        self.assertEqual(kind([7], 16), "SPARSE")
+        self.assertEqual(kind([3, 7, 11, 15], 16), "SYNCOPATED", "every hit a sixteenth before the beat, and no beat")
+        self.assertEqual(kind([0, 1, 4, 9, 12], 16), "BROKEN")
+
+    def test_syncopation_is_none_on_the_beat_and_plenty_off_it(self):
+        self.assertEqual(syncopation([0, 4, 8, 12], 16), 0.0)
+        self.assertEqual(syncopation(list(range(16)), 16), 0.0, "every step: nothing is left empty to be missed")
+        self.assertGreater(syncopation([2, 6, 10, 14], 16), 0.9)
+        self.assertGreater(syncopation([3, 7, 11, 15], 16), syncopation([2, 6, 10, 14], 16))
+
+    def test_lengths_that_run_against_each_other(self):
+        self.assertIsNone(against([16, 16, 32, 16][:2]))
+        a = against([16, 12, 16])
+        self.assertEqual((a["ratio"], a["steps"], a["bars"]), ("3:4", 48, 3.0))
+        self.assertEqual(against([16, 20])["ratio"], "4:5")
+        self.assertEqual(against([16, 32])["ratio"], "1:2")
+
+    def test_how_two_lanes_lock(self):
+        kick = {"len": 16, "hits": [0, 4, 8, 12]}
+        off = {"len": 16, "hits": [2, 6, 10, 14]}
+        same = {"len": 16, "hits": [0, 8]}
+        after = {"len": 16, "hits": [1, 5, 9, 13]}
+        self.assertEqual(lock(kick, off), {"on": 0.0, "between": 0.0})
+        self.assertEqual(lock(kick, same)["on"], 1.0)
+        self.assertEqual(lock(kick, after), {"on": 0.0, "between": 1.0})
+        twelve = {"len": 12, "hits": [0, 3, 6, 9]}
+        self.assertAlmostEqual(lock(kick, twelve)["on"], 4 / 12, places=2, msg="over three bars they meet on four of twelve")
+
+    def test_a_snapshot_s_rhythm_is_read_from_what_it_played(self):
+        snap = {"made": {"slots": ["kick", "closed_hat", "bass", "lead"]},
+                "patterns": [{"len": 16, "steps": [[s, 1, 0.5, 1, 0, 3] for s in (0, 4, 8, 12)]},
+                             {"len": 16, "steps": [[s, 1, 0.5, 1, 0, 3] for s in (2, 6, 10, 14)]},
+                             {"len": 12, "steps": [[0, 1, 0.5, 1, 0, 2], [3, 0.8, 0.5, 1, 3, 2], [7, 0, 0.5, 1, 3, 2]]},
+                             {"len": 16, "steps": [[0, 1, 0.5, 1, 0, 3]]}],
+                "played": {"seqMute": [0, 0, 0, 1], "in": []}}
+        r = snapshot_rhythm(snap, ["kick", "closed_hat", "bass", "lead", "pad"])
+        self.assertEqual(r["lanes"]["kick"]["kind"], "FOUR ON THE FLOOR")
+        self.assertEqual(r["lanes"]["closed_hat"]["kind"], "OFFBEATS")
+        self.assertEqual(r["lanes"]["bass"]["len"], 12)
+        self.assertEqual(lane_rhythm(snap, "bass")["hits"], [0, 3], "a step with no velocity is not a hit")
+        self.assertNotIn("lead", r["lanes"], "its sequencer was muted")
+        self.assertEqual(r["against"]["ratio"], "3:4")
+        self.assertEqual(r["against"]["by"], {"12": ["bass"], "16": ["kick", "closed_hat"]})
+
+
+# ---------------------------------------------------------------------------------------------- the rhythm that is heard
+from sfa.measure import heard_rhythm  # noqa: E402
+from sfa.rhythm import heard, heard_hits, period, rhythm_distance  # noqa: E402
+
+
+def clicks(steps16, level=1.0, bars=4, extra=()):
+    """Short hits on the sixteenths given, every bar; `extra`: (place in beats, level) hits anywhere, for echoes, ghosts, triplets."""
+    n = beat_samples() * 4 * bars
+    x = np.zeros(n)
+    t = np.arange(int(0.05 * RATE)) / RATE
+    hit = np.sin(2 * np.pi * 180 * t) * np.exp(-t * 60) + 0.3 * np.random.default_rng(1).standard_normal(len(t)) * np.exp(-t * 200)
+    for b in range(bars):
+        for s16 in steps16:
+            i = int((b * 4 + s16 / 4) * beat_samples())
+            x[i:i + len(hit)] += level * hit[: n - i]
+        for beats, lv in extra:
+            i = int((b * 4 + beats) * beat_samples())
+            x[i:i + len(hit)] += lv * hit[: n - i]
+    return x
+
+
+class Heard(unittest.TestCase):
+    def test_hits_are_heard_where_they_are(self):
+        p = heard_rhythm(clicks([0, 4, 8, 12]), RATE, 4)
+        self.assertEqual([s for s, _ in heard_hits(p)], [0, 24, 48, 72])
+        h = heard(p, ([0, 4, 8, 12], 16))
+        self.assertEqual((h["hits"], h["added"], h["ghosts"], h["kind"], h["period"]), (4, 0, 0, "FOUR ON THE FLOOR", 4.0))
+
+    def test_a_delay_s_echoes_are_heard_as_added_and_at_their_own_period(self):
+        # a hit on the one, and its echoes every three sixteenths, each quieter: what a dub delay at a dotted eighth does
+        echoes = [(3 * k / 4, 0.6 ** k) for k in range(1, 5)]
+        p, l = heard_rhythm(clicks([0], extra=echoes), RATE, 4, levels=True)
+        h = heard(p, ([0], 16), l)
+        self.assertEqual(h["steps"], [0, 3, 6, 9, 12])
+        self.assertEqual((h["hits"], h["added"]), (5, 4), "one written, four the delay made")
+        self.assertGreaterEqual(h["ghosts"], 2, "the later echoes are quiet")
+        self.assertEqual(h["period"], 3.0, "it repeats every three sixteenths: three against the beat")
+
+    def test_ghost_notes_and_triplets(self):
+        p, l = heard_rhythm(clicks([0, 8], extra=[(1.75, 0.12), (3.75, 0.12)]), RATE, 4, levels=True)
+        h = heard(p, ([0, 8], 16), l)
+        self.assertEqual((h["hits"], h["ghosts"], h["added"], h["triplets"]), (4, 2, 2, 0))
+        trip = heard_rhythm(clicks([], extra=[(k / 3, 1.0) for k in range(12)]), RATE, 4)
+        t = heard(trip, None)
+        self.assertEqual(t["hits"], 12)
+        self.assertEqual(t["triplets"], 8, "twelve to the bar: four of them are the beats, eight fall between sixteenths")
+        self.assertNotIn("added", t, "with nothing written to set it against, nothing is called added")
+
+    def test_rhythms_alike_and_not(self):
+        four = heard_rhythm(clicks([0, 4, 8, 12]), RATE, 4)
+        four_quiet = heard_rhythm(clicks([0, 4, 8, 12], level=0.4), RATE, 4)
+        offs = heard_rhythm(clicks([2, 6, 10, 14]), RATE, 4)
+        self.assertLess(rhythm_distance(four, four_quiet), 0.1)
+        self.assertGreater(rhythm_distance(four, offs), 0.8)
+        self.assertIsNone(period([0.0] * 96))

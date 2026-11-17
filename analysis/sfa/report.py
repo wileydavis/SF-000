@@ -96,11 +96,23 @@ PAGE = r"""<!DOCTYPE html>
   #combo .act.playing { background:var(--ink); color:#111; }
   #combo .said { color:var(--dim); font-size:12px; }
   main { padding-bottom:140px !important; }
+  .mrow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 0; }
+  .mrow select { background:#0c0c0c; border:1px solid var(--line); color:var(--ink); padding:6px 9px; border-radius:6px; max-width:260px; }
+  .act { border:1px solid var(--ink); background:transparent; color:var(--ink); border-radius:5px; padding:5px 11px; font-size:12px; letter-spacing:.08em; cursor:pointer; }
+  .act.go { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
+  .act.on { background:var(--ink); color:#111; }
+  .act:disabled { opacity:.4; cursor:default; }
+  svg text { font:10px -apple-system, "Helvetica Neue", Arial, sans-serif; fill:var(--dim); }
+  .pt { cursor:pointer; }
+  h2 { font-size:12px; letter-spacing:.12em; color:var(--dim); margin:22px 0 4px; font-weight:600; }
+  .ab { display:inline-flex; gap:3px; margin-left:auto; }
+  .ab span { border:1px solid #3a3a3a; border-radius:4px; padding:0 5px; font-size:10px; color:var(--dim); cursor:pointer; }
+  .ab span:hover { color:var(--ink); border-color:var(--ink); }
   .note { color:var(--dim); font-size:12px; padding:8px 0 0; max-width:900px; }
 </style></head><body>
 <header>
   <h1>SF-000 ANALYSIS</h1>
-  <div class="tabs"><button class="tab on" data-v="snaps">SNAPSHOTS</button><button class="tab" data-v="parts">PARTS</button></div>
+  <div class="tabs"><button class="tab on" data-v="snaps">SNAPSHOTS</button><button class="tab" data-v="parts">PARTS</button><button class="tab" data-v="morph">MORPH</button></div>
   <input id="q" placeholder="find by name" autocomplete="off">
   <span class="dim" id="sum"></span>
 </header>
@@ -200,11 +212,38 @@ function rel(label, items, fmt, sub) {
 const pct = x => `${x > 0 ? '+' : ''}${Math.round(x * 100)}`;
 const partName = pid => { const p = D.parts[pid]; if (!p) return pid; const more = p.in.length > 1 ? ` +${p.in.length - 1}` : ''; return `${LN[p.lane] || p.lane} of ${D.names[p.in[0]] || '?'}${more}`; };
 
+// ---------------------------------------------------------------- rhythm, in words
+const low = s => String(s || '').toLowerCase();
+const stepsOf = n => n === 16 ? '' : ` (${n} steps)`;
+function heardWords(h) {
+  if (!h) return '';
+  const w = [`${h.hits} a bar`];
+  if (h.added) w.push(`${h.added} added by the sound`);
+  if (h.ghosts) w.push(`${h.ghosts} ghost${h.ghosts > 1 ? 's' : ''}`);
+  if (h.triplets) w.push(`${h.triplets} on triplets`);
+  if (h.off) w.push(`${h.off} off the grid`);
+  if (h.period && h.period !== 4 && h.period !== 8 && h.period !== 2 && h.period !== 1) w.push(`repeats every ${h.period} steps`);
+  return w.join(' · ');
+}
+function rhythmRows(r) {
+  if (!r) return '';
+  let h = '';
+  const txt = s => `<div class="none" style="color:var(--ink)">${s}</div>`;
+  if (r.heard) h += `<b>RHYTHM</b>${txt('heard: ' + esc(heardWords(r.heard)) + (r.heard.kind ? ` · ${esc(low(r.heard.kind))}` : ''))}`;
+  const lanes = ORDER.filter(l => r.lanes && r.lanes[l] && r.lanes[l].kind);
+  if (lanes.length) h += `<b class="sub">WRITTEN</b>${txt(lanes.map(l => `${LN[l]} ${esc(low(r.lanes[l].kind))}${stepsOf(r.lanes[l].len)}`).join(' · '))}`;
+  const made = ORDER.filter(l => r.lanes && r.lanes[l] && r.lanes[l].heard && (r.lanes[l].heard.added || r.lanes[l].heard.ghosts || r.lanes[l].heard.triplets));
+  if (made.length) h += `<b class="sub">BY THE SOUND</b>${txt(made.map(l => { const x = r.lanes[l].heard; return `${LN[l]} ${[x.added ? '+' + x.added : '', x.ghosts ? x.ghosts + ' ghost' + (x.ghosts > 1 ? 's' : '') : '', x.triplets ? x.triplets + ' triplet' : ''].filter(Boolean).join(', ')}`; }).join(' · '))}`;
+  if (r.against) h += `<b class="sub">AGAINST</b>${txt(`${esc(r.against.ratio)}: ` + r.against.lengths.map(n => `${(r.against.by[n] || []).map(l => LN[l]).join(', ')} in ${n}`).join(' over ') + `, meeting every ${r.against.bars} bars`)}`;
+  if (r.dub && r.dub.hits) h += `<b class="sub">DUB</b>${txt(`${r.dub.hits} echoes a bar` + (r.dub.period ? `, every ${r.dub.period} steps` : '') + (r.dub.triplets ? `, ${r.dub.triplets} on triplets` : ''))}`;
+  return h;
+}
+
 // ---------------------------------------------------------------- SNAPSHOTS
 function drawSnaps(q) {
   const all = Object.entries(D.found).filter(([u, f]) => f.energy !== undefined).sort((a, b) => b[1].energy - a[1].energy);
   const shown = q ? all.filter(([u]) => (D.names[u] || '').toLowerCase().includes(q)) : all;
-  return `<p class="note">The big chip plays the snapshot. SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane; pressed again, out). In the bar, a lane pressed is taken away. MAKE CHIP makes it a snapshot. A lane's name here plays this snapshot's own lane alone.</p>` +
+  return `<p class="note">The big chip plays the snapshot. SAME TEXTURE: not alike overall, but the same to the touch (grit, resonance, noise, how alive). SAME RHYTHM: the same rhythm as it is heard, in another sound. RHYTHM: what is heard in the bar, and how much of it the sound itself adds to the steps (echoes, density, ghosts). SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane; pressed again, out). In the bar, a lane pressed is taken away. MAKE CHIP makes it a snapshot. A lane's name here plays this snapshot's own lane alone.</p>` +
   shown.map(([u, f]) => {
     const swaps = f.swap ? ORDER.filter(l => f.swap[l] && f.swap[l].length).map(l =>
       `<b class="sub"><span class="chip" data-act="solo" data-u="${esc(u)}" data-k="${l}" style="padding:2px 6px;font-size:11px">${LN[l]}</span></b><div class="chips">${
@@ -215,10 +254,14 @@ function drawSnaps(q) {
     return `<div class="row">
       <div class="me">${chip(u, undefined, { big: true })}
         <div class="bar"><i style="width:${Math.round(f.energy * 100)}%"></i></div>
+        <div class="ab"><span data-end="a" data-u="${esc(u)}" title="morph from this">MORPH FROM</span><span data-end="b" data-u="${esc(u)}" title="morph to this">TO</span></div>
         <div class="num dim">energy ${Math.round(f.energy * 100)} · ${esc(f.measured.loudness)} LUFS · ${esc(f.measured.onsets)} hits/beat${f.measured.sounding != null ? ` · ${f.measured.sounding} lanes` : ''} · ${D.bpm[u] ? Math.round(D.bpm[u]) + ' BPM · ' : ''}from ${esc(f.measured.from)}</div>
       </div>
       <div class="rel">
         ${rel('ALIKE', f.alike, ([v, d]) => chip(v, d.toFixed(2)))}
+        ${rel('SAME TEXTURE', f.texture, ([v, d]) => chip(v, d.toFixed(2)))}
+        ${rel('SAME RHYTHM', f.rhythm_alike, ([v, d]) => chip(v, d.toFixed(2)))}
+        ${rhythmRows(f.rhythm)}
         ${rel('UP', f.up, ([v, d, de]) => chip(v, pct(de)))}
         ${rel('DOWN', f.down, ([v, d, de]) => chip(v, pct(de)))}
         ${rel('FOLLOWED BY', f.follows, ([v, n]) => chip(v, `×${n}`))}
@@ -250,7 +293,8 @@ function drawParts(q) {
     }).join('');
     return `<div class="row">
       <div class="me">${chip(u, undefined, { big: true, act: 'part', label: partName(pid), data: `data-p="${esc(pid)}"` })}
-        <div class="num dim">${p.notes ? esc(p.notes) + ' · ' : ''}${esc(p.hits)} hits a bar · sounds in ${Math.round((p.held || 0) * 100)}% of it · ${esc(p.level)} dB</div>
+        <div class="num dim">${p.notes ? esc(p.notes) + ' · ' : ''}sounds in ${Math.round((p.held || 0) * 100)}% of the bar · ${esc(p.level)} dB</div>
+        ${p.rhythm ? `<div class="num" style="color:var(--ink)">${p.rhythm.kind ? esc(low(p.rhythm.kind)) + stepsOf(p.rhythm.len) : 'played from outside'}${p.rhythm.heard ? ' · heard ' + esc(heardWords(p.rhythm.heard)) : ''}</div>` : ''}
         <div class="num dim">in ${p.in.map(v => esc(D.names[v] || '?')).slice(0, 6).join(', ')}${p.in.length > 6 ? '…' : ''}</div>
       </div>
       <div class="rel">
@@ -316,12 +360,133 @@ document.getElementById('combo').onclick = async e => {
   }
 };
 
+// ---------------------------------------------------------------- MORPH: the way between two snapshots
+// SF-000 itself renders it, as a stack knob holding the two would play it. The scan is kept beside the page
+// (morph/<id>/scan.json) and read from there while it is made.
+let M = { a: '', b: '', notes: 'a', scan: null, sel: null, lead: [], count: 3, said: '', shape: null, timer: null };
+try { Object.assign(M, JSON.parse(sessionStorage.getItem('sf000morph') || '{}'), { timer: null }); } catch (e) {}
+const keepM = () => { try { sessionStorage.setItem('sf000morph', JSON.stringify({ ...M, timer: null })); } catch (e) {} };
+const measured = () => Object.entries(D.found).filter(([u, f]) => f.energy !== undefined).sort((x, y) => (D.names[x[0]] || '').localeCompare(D.names[y[0]] || '', undefined, { numeric: true }));
+async function post(path, body) {
+  try { const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return await r.json(); }
+  catch (e) { return { error: 'Open this page from the analysis window (http://localhost:8765/report.html).' }; }
+}
+async function readScan() {
+  if (!M.scan) return;
+  try { const r = await fetch(`morph/${M.scan.id}/scan.json?${Date.now()}`); if (r.ok) M.scan = await r.json(); } catch (e) {}
+  const busy = M.scan.status === 'rendering' || M.scan.status === 'measuring' || Object.values(M.scan.shapes || {}).some(s => s.status === 'rendering');
+  clearTimeout(M.timer);
+  if (busy) M.timer = setTimeout(readScan, 1500);
+  keepM();
+  if (view === 'morph') draw();
+}
+const TAGS = { NEW: 'neither end sounds like this', FITS: 'its parts sit together best here', EDGE: 'the sound changes most just before here', HOLDS: 'the sound holds still around here', LIFTS: 'more energy than either end', DROPS: 'less energy than either end' };
+function strip(sc) {
+  // the turn of the knob left to right; the bars: how much the sound changes in each tenth; the line: energy; a ring: worth hearing
+  const W = 1000, H = 170, x = f => 30 + f * (W - 60), top = Math.max(...sc.steps, 1e-6);
+  const bars = sc.steps.map((s, i) => `<rect x="${x(sc.points[i].f) + 2}" y="${120 - 70 * s / top}" width="${x(sc.points[i + 1].f) - x(sc.points[i].f) - 4}" height="${70 * s / top}" fill="#2f2f2f"/>`).join('');
+  const line = sc.points.map((p, i) => `${i ? 'L' : 'M'}${x(p.f)},${120 - 70 * p.energy}`).join(' ');
+  const pts = sc.points.map(p => {
+    const hot = p.tags.length > 0, sel = M.sel === p.key;
+    return `<g class="pt" data-key="${p.key}"><circle cx="${x(p.f)}" cy="140" r="${hot ? 9 : 6}" fill="${sel ? '#f2c230' : '#1f1f1f'}" stroke="${hot ? '#f2c230' : '#666'}" stroke-width="${hot ? 2 : 1}"/>` +
+      `<text x="${x(p.f)}" y="162" text-anchor="middle">${Math.round(p.f * 100)}</text>` +
+      p.tags.map((t, j) => `<text x="${x(p.f)}" y="${40 - j * 11}" text-anchor="middle" style="fill:#f2c230">${esc(t)}</text>`).join('') + `</g>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:1100px;display:block">${bars}<path d="${line}" fill="none" stroke="#e9e6df" stroke-width="1.5"/>${pts}` +
+    `<text x="30" y="12">${esc(D.names[sc.a])}</text><text x="${W - 30}" y="12" text-anchor="end">${esc(D.names[sc.b])}${sc.notes === 'a' ? "'s sound" : ''}</text></svg>`;
+}
+function shapeView(sc, sh) {
+  if (!sh) return '';
+  if (sh.status === 'rendering') return `<p class="dim">SF-000 is rendering it...</p>`;
+  if (sh.status === 'failed') return `<p class="dim">${esc(sh.error || 'It could not be rendered.')}</p>`;
+  const top = Math.max(...sh.steps, 1e-6);
+  const chips = [`<button class="chip" data-act="clip" data-u="${esc(sc.a)}">${esc(D.names[sc.a])}</button>`]
+    .concat(sh.chips.map((c, i) => `<i style="display:inline-block;width:${10 + 50 * sh.steps[i] / top}px;height:2px;background:#666;vertical-align:middle"></i><button class="chip" data-act="point" data-key="${c.key}">${sh.kind === 'lead' ? esc(sh.lanes.map(l => LN[l]).join(' + ')) + ' FIRST' : Math.round(c.how.f * 100) + '%'}</button>`))
+    .concat([`<i style="display:inline-block;width:${10 + 50 * sh.steps[sh.steps.length - 1] / top}px;height:2px;background:#666;vertical-align:middle"></i><button class="chip" data-act="clip" data-u="${esc(sc.b)}">${esc(D.names[sc.b])}</button>`]).join('');
+  const was = sh.kind === 'even' ? ` Turned evenly through these, the largest step is ${sh.uneven}× the mean (the plain morph: ${sh.plain_uneven}×).${sh.uneven >= sh.plain_uneven - 0.05 ? ' That is no more even than it was: this morph was even already, and there is nothing to gain by it.' : ''}` : ` The first half of the turn changes ${esc(sh.lanes.map(l => LN[l]).join(', '))} alone; the second half, the rest.`;
+  return `<div class="mrow">${chips}</div><p class="note">The gaps: how much the sound changes between each two.${was}</p>
+    <div class="mrow"><input id="sname" placeholder="name of the stack" maxlength="20" value="${esc(M.sname ?? ((D.names[sc.a] || '').replace(/^SNAP /, '') + ' > ' + (D.names[sc.b] || '').replace(/^SNAP /, '')))}"><button class="act go" id="smake">MAKE STACK</button><span class="dim">${esc(M.ssaid || '')}</span></div>`;
+}
+function drawMorph() {
+  const all = measured();
+  const opt = sel => `<option value="">choose</option>` + all.map(([u]) => `<option value="${esc(u)}"${u === sel ? ' selected' : ''}>${esc(D.names[u])}</option>`).join('');
+  const sc = M.scan && M.scan.a === M.a && M.scan.b === M.b && M.scan.notes === M.notes ? M.scan : null;
+  let h = `<p class="note">The way between two snapshots, as a stack knob holding both plays it: the sound goes from one to the other, with the notes of the one it set out from. SF-000 itself renders it (close SF-000 first), eleven points along the turn, about a minute. Then: what is worth hearing between them, and the morph reshaped into a stack.</p>
+    <div class="mrow"><b>FROM</b><select id="ma">${opt(M.a)}</select><b>TO</b><select id="mb">${opt(M.b)}</select>
+      <span class="dim">notes of</span><button class="act${M.notes === 'a' ? ' on' : ''}" data-notes="a">FROM</button><button class="act${M.notes === 'b' ? ' on' : ''}" data-notes="b">TO</button>
+      <button class="act go" id="mscan"${M.a && M.b && M.a !== M.b ? '' : ' disabled'}>SCAN</button><span class="dim">${esc(M.said)}</span></div>`;
+  if (!sc) return h;
+  if (sc.status === 'rendering' || sc.status === 'measuring') return h + `<p class="dim">${sc.status === 'measuring' ? 'Measuring...' : `SF-000 is rendering: ${sc.done} of ${sc.of}.`}</p>`;
+  if (sc.status === 'failed') return h + `<p class="dim">${esc(sc.error || 'It could not be scanned.')}</p>`;
+  const found = sc.points.filter(p => p.tags.length);
+  const sel = sc.points.find(p => p.key === M.sel);
+  h += strip(sc) + `<p class="note">Left to right: the turn of the knob. Press a point to hear it. The bars: how much the sound changes in each tenth of the turn (an even morph would have them level; here the largest is ${sc.uneven}× the mean). The line: energy. Ringed: worth hearing.${(sc.missing || []).length ? ` ${sc.missing.length} sound file(s) these snapshots name are not in the web library yet: their lanes may be silent here.` : ''}</p>`;
+  h += `<h2>WORTH HEARING</h2>` + (found.length ? `<div class="rel" style="grid-template-columns:60px 1fr">` + found.map(p =>
+      `<b>${Math.round(p.f * 100)}%</b><div class="chips"><button class="chip" data-act="point" data-key="${p.key}">PLAY</button>${p.tags.map(t => `<span class="chip" style="cursor:default;border-color:transparent" title="${esc(TAGS[t] || 'more of this than either end has')}">${esc(t)}</span>`).join('')}</div>`).join('') + `</div>`
+      : `<p class="dim">Nothing between them stands clear of both ends: it is a plain way from one to the other.</p>`);
+  h += `<div class="mrow"><span class="dim">${sel ? `The point at ${Math.round(sel.f * 100)}%:` : 'Press a point, then:'}</span><input id="pname" placeholder="name" maxlength="24" value="${esc(M.pname ?? '')}"><button class="act go" id="pmake"${sel ? '' : ' disabled'}>MAKE CHIP</button><span class="dim">${esc(M.psaid || '')}</span></div>`;
+  h += `<h2>RESHAPE IT INTO A STACK</h2>
+    <div class="mrow"><b>EVEN</b><span class="dim">snapshots between, placed where the sound has changed by equal amounts:</span>
+      ${[1, 2, 3, 5].map(n => `<button class="act${M.count === n ? ' on' : ''}" data-count="${n}">${n}</button>`).join('')}<button class="act" id="reven">RENDER</button></div>
+    <div class="mrow"><b>LEAD WITH</b><span class="dim">these go first, the rest follow (most changed first):</span>
+      ${(sc.lanes || []).map(([l, d]) => `<button class="act${M.lead.includes(l) ? ' on' : ''}" data-lead="${l}" title="how much it changes: ${d}">${LN[l]}</button>`).join('')}<button class="act" id="rlead"${M.lead.length ? '' : ' disabled'}>RENDER</button></div>`;
+  h += shapeView(sc, (sc.shapes || {})[M.shape]);
+  return h;
+}
+document.getElementById('list').addEventListener('change', e => {
+  if (e.target.id === 'ma') M.a = e.target.value; else if (e.target.id === 'mb') M.b = e.target.value; else return;
+  M.said = ''; keepM(); draw();
+});
+document.getElementById('list').addEventListener('input', e => {
+  if (e.target.id === 'pname') M.pname = e.target.value; else if (e.target.id === 'sname') M.sname = e.target.value;
+});
+document.getElementById('list').addEventListener('click', async e => {
+  const end = e.target.closest('.ab span');
+  if (end) { M[end.dataset.end] = end.dataset.u; M.said = ''; keepM(); if (M.a && M.b) { view = 'morph'; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === 'morph')); } draw(); return; }
+  if (view !== 'morph') return;
+  const t = e.target.closest('.act, .pt, .chip[data-act="point"]'); if (!t) return;
+  const sc = M.scan;
+  if (t.dataset.notes) { M.notes = t.dataset.notes; keepM(); return draw(); }
+  if (t.dataset.count) { M.count = Number(t.dataset.count); keepM(); return draw(); }
+  if (t.dataset.lead) { const l = t.dataset.lead; M.lead = M.lead.includes(l) ? M.lead.filter(x => x !== l) : [...M.lead, l]; keepM(); return draw(); }
+  if (t.dataset.key && sc) {
+    const key = t.dataset.key;
+    if (sc.points.some(p => p.key === key)) { M.sel = key; M.psaid = ''; keepM(); draw(); }
+    return playLayers('point:' + sc.id + ':' + key, document.querySelector(`.chip[data-key="${key}"]`) || document.body, [{ url: `morph/${sc.id}/${key}.ogg` }], 0);
+  }
+  if (t.id === 'mscan') {
+    stop(); M.said = 'Asking SF-000...'; M.sel = null; M.shape = null; draw();
+    const a = await post('/scan', { a: M.a, b: M.b, notes: M.notes });
+    if (a.error) { M.said = a.error; return draw(); }
+    M.said = ''; M.scan = a; keepM(); return readScan();
+  }
+  if ((t.id === 'reven' || t.id === 'rlead') && sc) {
+    const kind = t.id === 'reven' ? 'even' : 'lead';
+    const a = await post('/reshape', { scan: sc.id, kind, count: M.count, lanes: M.lead });
+    if (a.error) { M.said = a.error; return draw(); }
+    M.shape = a.id; M.ssaid = ''; keepM(); return readScan();
+  }
+  if (t.id === 'pmake' && sc && M.sel) {
+    const p = sc.points.find(x => x.key === M.sel);
+    const name = document.getElementById('pname').value || `${(D.names[sc.a] || '').slice(0, 9)} ${Math.round(p.f * 100)}% ${(D.names[sc.b] || '').replace(/^SNAP /, '')}`;
+    M.psaid = 'Making it...'; draw();
+    const a = await post('/makepoint', { scan: sc.id, key: M.sel, name });
+    M.psaid = a.ok ? `${a.name}: made, in the web library's MADE stack. WEB LOAD in SF-000 brings it.` : (a.error || 'It was not made.'); return draw();
+  }
+  if (t.id === 'smake' && sc && M.shape) {
+    const name = document.getElementById('sname').value;
+    M.ssaid = 'Making it...'; draw();
+    const a = await post('/makestack', { scan: sc.id, shape: M.shape, name });
+    M.ssaid = a.ok ? `${a.name}: a stack of ${a.chips} in the web library, marked to load. WEB LOAD in SF-000 brings it; put it on a stack knob.` : (a.error || 'It was not made.'); return draw();
+  }
+});
+
 // ---------------------------------------------------------------- the page
 let view = 'snaps';
 function draw() {
   const q = document.getElementById('q').value.trim().toLowerCase();
   document.getElementById('lanebar').hidden = view !== 'parts';
-  document.getElementById('list').innerHTML = view === 'snaps' ? drawSnaps(q) : drawParts(q);
+  document.getElementById('list').innerHTML = view === 'snaps' ? drawSnaps(q) : view === 'parts' ? drawParts(q) : drawMorph();
 }
 function drawLanes() {
   const there = new Set(Object.values(D.parts).map(p => p.lane));
@@ -361,5 +526,6 @@ document.getElementById('list').onclick = e => {
 const c = D.counts;
 document.getElementById('sum').textContent = `${c.measured} of ${c.snapshots} snapshots measured · ${c.parts || 0} parts · ${c.log_lines} lines of the log · ${D.made}`;
 drawLanes(); draw();
+if (M.scan) readScan();
 </script></body></html>
 """

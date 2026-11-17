@@ -13,10 +13,12 @@ from collections import Counter, defaultdict
 import numpy as np
 
 from .measure import BAND_NAMES, LANES, PARTS
+from .rhythm import rhythm_distance
 
 # what is compared, a group at a time; each group counts as much as its weight, however many numbers it has
 GROUPS = {
-    "spectrum": (1.0, [f"bands.{i}" for i in range(len(BAND_NAMES))] + ["centroid", "rolloff", "flatness"]),
+    "spectrum": (1.0, [f"bands.{i}" for i in range(len(BAND_NAMES))] + ["centroid", "rolloff"]),
+    "texture": (1.0, ["rough", "contrast", "flatness", "moves", "evolves"]),
     "rhythm": (1.0, ["onsets", "pulse.0", "pulse.1", "pulse.2"]),
     "space": (0.5, ["width", "movement", "drift"]),
     "lanes": (1.5, [f"shares.{i}" for i in range(len(PARTS))]),
@@ -128,6 +130,12 @@ def from_log(actions: list[dict]) -> tuple[dict[str, Counter], dict[str, str]]:
     return follows, grew
 
 
+def texture_only(names: list[str], w: np.ndarray) -> np.ndarray:
+    """The weights with everything but the texture left out."""
+    keep = set(GROUPS["texture"][1])
+    return np.array([x if n in keep else 0.0 for n, x in zip(names, w)])
+
+
 def relate(measured: list[dict], actions: list[dict], k_alike: int = 8, k_step: int = 4) -> dict:
     """What was found, by snapshot uid."""
     found: dict[str, dict] = {}
@@ -136,6 +144,7 @@ def relate(measured: list[dict], actions: list[dict], k_alike: int = 8, k_step: 
     if usable:
         X, M, names, w = matrix(usable)
         D = distances(X, M, w)
+        T = distances(X, M, texture_only(names, w))
         e = energy(usable)
         uids = [m["uid"] for m in usable]
         for i, m in enumerate(usable):
@@ -145,7 +154,18 @@ def relate(measured: list[dict], actions: list[dict], k_alike: int = 8, k_step: 
             up = [[uids[j], round(float(D[i, j]), 3), round(float(e[j] - e[i]), 3)] for j in near if e[j] >= e[i] + 0.08][:k_step]
             down = [[uids[j], round(float(D[i, j]), 3), round(float(e[j] - e[i]), 3)] for j in near if e[j] <= e[i] - 0.08][:k_step]
             mix = m["mix"]
+            # the same to the touch, whatever is playing: nearest by texture among those that are not alike overall
+            alike_set = {uids[j] for j in order[:k_alike]}
+            texture = [[uids[j], round(float(T[i, j]), 3)] for j in np.argsort(T[i]) if np.isfinite(T[i, j]) and uids[j] not in alike_set][:5]
+            # the same rhythm as it is heard, whatever the sound: nearest by where in the bar it rises
+            p96 = mix.get("p96")
+            same_rhythm = []
+            if p96:
+                ranked = sorted(((rhythm_distance(p96, usable[j]["mix"].get("p96")), j) for j in range(len(usable)) if j != i and uids[j] not in alike_set))
+                same_rhythm = [[uids[j], d] for d, j in ranked[:5] if d < 0.5]
             found[m["uid"]] = {
+                "texture": texture,
+                "rhythm_alike": same_rhythm,
                 "energy": round(float(e[i]), 3),
                 "alike": alike,
                 "up": up,
@@ -157,6 +177,9 @@ def relate(measured: list[dict], actions: list[dict], k_alike: int = 8, k_step: 
                     "centroid": round(mix.get("centroid", 0.0), 3),
                     "width": round(mix.get("width", 0.0), 2),
                     "movement": round(mix.get("movement", 0.0), 2),
+                    "rough": round(mix.get("rough", 0.0), 1),
+                    "contrast": round(mix.get("contrast", 0.0), 1),
+                    "evolves": round(mix.get("evolves", 0.0), 3),
                     "sounding": (m.get("parts") or {}).get("sounding"),
                 },
             }

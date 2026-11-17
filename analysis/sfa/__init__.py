@@ -5,4 +5,4 @@ snapshots relate (alike, a step up or down in energy, what follows what), and se
 back to the web library, where the instrument can read it. It never changes anything it fetched.
 """
 VERSION = "0.1.0"
-MEASURE_VERSION = 3      # a snapshot measured by an older way of measuring is measured again
+MEASURE_VERSION = 5      # a snapshot measured by an older way of measuring is measured again
