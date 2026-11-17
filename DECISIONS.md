@@ -4070,8 +4070,115 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      module's pocket; a module that is not in the chassis changed where it is kept, the
      playing knob untouched, and the change arriving with INTO THE CHASSIS.
 
+## The remaining list: ties, the old lists' handling, the keyboard (Nov 16, 17:48): seventy-sixth build
+
+634. **You**, 17:48, to the seventy-fifth build: "perfect. go ahead and wrap up the remaining
+     list of work.if there are any answers you need from me first, ask now." The list was
+     632's: a macro knob's ties where it is opened, an open pile on MACROS and beside the
+     arrangement, the old lists' press handling (621), and the rack without the mouse. Three
+     questions were asked, and answered:
+     - "The rack (pockets, piles, chips) is mouse-only today. Should it also work without the
+       mouse, and from where?" **You**: "Keyboard only (Recommended)". (The other two were the
+       keyboard and the E16, and leaving it to the mouse.)
+     - "On MACROS and ARRANGE, an open stack is a list you can sort with RECENT / FITS NOW /
+       MORE / LESS / FIND, but not reorder. Making it reorderable there forces a choice. Which
+       do you want?" **You**: "Leave it as it is". (The other two: a row as in the library,
+       with the finders sorting only the bin; the sortable list kept, reordered only while no
+       finder is lit.)
+     - "Besides the four items from my last message (macro-knob ties, piles on MACROS/ARRANGE,
+       dead-code cleanup, rack without the mouse), which older open items belong in this
+       wrap-up?" **You**: "None of these now". (Offered: the web library, the cue rig's
+       follow-ups, a find row on the kept shelves and a use for the empty area under the
+       chosen knob in MACROS.) So 498 stands: nothing is built on the web library and nothing
+       in it is changed.
+635. **An open pile on MACROS and beside the arrangement stays for taking from** (634, yours).
+     613's rule is now a decision and not a thing owed: a pile is put in order in the
+     library, and on those two pages the finders stay in force inside a stack. The README's
+     "Not built" there is reworded to say so.
+636. **A macro knob's ties are changed where it is opened**, in the library (632's first
+     item). One kept by itself (its pocket), and the macro knob pressed in an open module.
+     A tie is a plate: the knob of the rig it moves and a figure, how far the macro knob's
+     full turn takes it, in hundredths of that knob's travel. The figure is dragged, three
+     points of the hand to a hundredth; a tie pressed is the chosen one (green) and TAKE OUT,
+     the same key in the same place as a pile's, unties it. Underneath (`Session::tieIs`,
+     `ties`, `tieSet`, `tieDrop`) it goes the way a pile does (630, 631): a knob kept is
+     changed where it is kept and a knob it was put on is not; a module that is not in the
+     chassis where it is kept, and INTO THE CHASSIS brings the change; the module in the
+     chassis by its own knob as it plays, so what the knob is adding to the sound follows the
+     figure at once and its MOTION's reach follows a tie taken out.
+637. *Mine, in 636.* **A tie is never nothing**: dragged through zero it goes from +1 to -1.
+     A tie of nothing is not kept by the file (a knob read back drops it), so one dragged to
+     nothing would have gone from under the hand; TAKE OUT is how a tie goes. **A new tie is
+     still LEARN's**, on the module in the chassis: a tie is made by turning the knob it
+     should move, which needs the rig. **A knob being taught is left alone** from here until
+     KEEP or DROP. **The figure is the tie's own**, before DEPTH (the designer's line of what
+     a knob moves shows it after DEPTH, as it did). **Library only**, as a pile is: on the
+     other two pages the ties are shown and not pressed. And a kept macro knob with no tie
+     left says so when ON A KNOB is asked of it (the bar said its snapshots were gone).
+638. **The old lists' press handling is taken out** (621): the hit kinds, actions, members,
+     tips, wheel and timer lines and test hooks of the designer's lists of stacks, knobs and
+     modules, the arrangement page's shelf, the library's six plates and the stack that
+     opened in the column (fourteen hit kinds, six actions, some 360 lines). What an open
+     pocket's keys still use of the shelf code (NEW, COPY, put to work, DELETE for a knob
+     kept, a module, an arrangement) stays. Nothing on the screen changes by it. Two tips
+     were brought up to date on the way (DELETE and CLEAR are held until full of light).
+639. **The rack on the keyboard** (634, yours: the keyboard only). In LIBRARY, MACROS and
+     ARRANGE the first arrow key brings out a mark, four yellow corners, round the open pocket (the bin, with
+     nothing open), and the arrows move it over what is pressed there: pockets, chips on the
+     bench, a pile's row, the knobs of an open module, a macro knob's ties. **Return** presses
+     what it is on. **=** is ADD for the chip it is on, **Backspace** TAKE OUT, **[** and
+     **]** EARLIER and LATER, and the mark goes with a chip that is moved. On the main page
+     the arrows and Tab are what they were.
+640. *Mine, in 639.*
+     - **Where the mark goes.** To the nearest thing in line with it that way; with none in
+       line, up and down go to the nearest of all that lie that way, left and right stay (at
+       the end of a line of chips, on to the next line). A list longer than its place goes by
+       under the mark before the mark leaves it: the pockets at the shelf's edge (the bin
+       stays), a pile's lines, the bin, the chosen knob's pile, the parts.
+     - **Tab** is the next shelf (Shift: the one before), the mark on its first pocket.
+       Without it the other three shelves could not be reached.
+     - **Shift-Return** on a chip in the library is RECALL: a chip could be heard from the
+       keyboard and not taken to the set.
+     - **In MACROS the mark also reaches the places of the module in the chassis and the
+       chosen knob's pile, and beside the arrangement its parts.** ADD, TAKE OUT, EARLIER and
+       LATER act on the chosen knob's pile in MACROS and on the parts in ARRANGE, so the keys
+       for them had to reach those.
+     - **[ and ] on a tie** are a hundredth less and more (with Shift, ten).
+     - **The mark coming to a chip of a pile, a tie or a part chooses it** without playing
+       it, so the keys on the page are for it too and the page lights it as the mouse would.
+       A pocket and a chip of the bin are not chosen until Return, which is their press.
+     - **A press of the mouse puts the mark away**, and so does leaving the page. With the
+       mark away, =, Backspace, [ and ] are for what the mouse last chose.
+     - **Left to the mouse:** a chip's part keys (1 to 11, R, B, K, N), RENAME, the held keys
+       (DELETE, CLEAR), carrying a pile onto a place, the finders.
+     - **The mark is four corners and not a ring**, yellow on a dark line, round the thing it
+       is on (on the 3D stage, printed on the sheet). A whole ring round a pocket already
+       says something else: green, it is open; yellow, it holds the chip in hand. A first
+       drawing of the mark as a yellow ring stood beside one of those and read as the same.
+     - Keys that come faster than the page is drawn act on the page as it then stands: it is
+       laid out again, with nothing drawn, before a key reads where things are.
+641. **Also, found on the way.** The library strip's line of words ran off the instrument's
+     right edge for its longer sentences (it had 820 units, or 606 with ONLINE's keys there):
+     it is now on the strip's own line beside its title, the whole of it, on either. *Mine.*
+642. **Checks.** The screen checks have four more (139): a macro knob's ties (a knob kept,
+     the knob in the chassis as it plays, a module kept, the other pages); the keyboard in
+     the library; what goes by under the mark, and the mouse putting it away; the keyboard on
+     ties, in the designer and beside the arrangement. The stage's have one more (79): the
+     mark on the sheet. Every other check as before, and the engine's sixteen bars the same
+     file as the reference.
+643. **Not in it.** The rack on the E16 (634). A find row on the kept shelves, a use for the
+     empty area under a chosen macro knob in MACROS, the cue rig's follow-ups, the web
+     library (634: none of these now). A column card's number in MACROS still takes its chip
+     out at a press.
+
 ## Not verified
 
+- **The keyboard in the rack and a macro knob's ties (636 to 640) have been under no hand.**
+  They are checked with made-up key presses and drags on the drawn screens and on the 3D
+  stage under a software driver. Whether the mark goes where your eye expects from each
+  place, whether = [ ] and Backspace are the right keys on your keyboard, and whether three
+  points of the hand to a hundredth is the right gearing for a tie's figure: yours to say.
+  A tie changed on the module in the chassis is checked on the knob's value, not by ear.
 - **The rack (606 to 609, 613 to 617) has been on no Mac and under no hand.** It is checked
   with made-up presses and carries on the drawn screens, and its pile and pocket on the 3D
   stage with a software driver. Yours to say: whether carrying a chip to a place in a row,

@@ -67,8 +67,9 @@ First run:
 | Drop an audio file on a lane | load it, where the lane's model takes a sample (VOICE takes a phrase). Its CONFIG panel opens to show the waveform. SF-000 keeps its own copy (see Where everything is kept) |
 | Drop an audio file on an open CONFIG panel | it goes to whatever that panel is for: the lane, the insert, or the return. An impulse response dropped on SPACE's CONFIG (or on the RETURNS panel) makes SPACE a convolution reverb of that place |
 | Click the clip lamps above MIX | clear them |
-| Arrow keys | up and down: the active lane. Left and right: the step page |
-| **Tab** | the next module to the front: a lane, then those of its three inserts that have an effect in them, then the next lane and its inserts, and after the last lane the snapshot knobs, the returns, the master and the sequencer strip. Shift-Tab: the one before |
+| Arrow keys, on the main page | up and down: the active lane. Left and right: the step page |
+| **Tab**, on the main page | the next module to the front: a lane, then those of its three inserts that have an effect in them, then the next lane and its inserts, and after the last lane the snapshot knobs, the returns, the master and the sequencer strip. Shift-Tab: the one before |
+| Arrow keys, **Return**, **=**, **Backspace**, **[** **]**, **Tab**, in LIBRARY, MACROS and ARRANGE | the rack without the mouse: a mark (four yellow corners) that the arrows move over pockets and chips, and keys for what is done where it stands (see The rack on the keyboard, below) |
 | **C** (the keyboard's) | CONFIG for what is in front, and shut again (the returns: DUB's, then SPACE's, then shut) |
 | **N** | NOTES: whether a recall brings a snapshot's notes |
 | **I** | INFO: every control MIDI reaches shows its CC number, a panel its channel, and a control the mouse rests on says what it does. **I** again puts it away |
@@ -580,8 +581,8 @@ The other shelves open the same way:
 
 | POCKET | ON THE BENCH | KEYS |
 |---|---|---|
-| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | a stack knob's pile, out in a row and changed as a stack's is (below); or what a macro knob is tied to and how far it takes each | the row's **ADD, TAKE OUT, EARLIER, LATER**; **ON A KNOB** (the first free place of its kind), **DELETE** |
-| a **module** (green: the one in the chassis) | its knobs. Press a stack knob and its pile is out in a row under them, changed as a stack's is; press a macro knob to see what it is tied to | **NEW**, **COPY**, **INTO THE CHASSIS**, **DELETE** (never the one in the chassis); the row's **ADD, TAKE OUT, EARLIER, LATER** beside the knob's name |
+| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | a stack knob's pile, out in a row and changed as a stack's is (below); or a macro knob's ties, each the knob it moves and how far, changed there too (below) | the row's **ADD, TAKE OUT, EARLIER, LATER** (a macro knob: **TAKE OUT**); **ON A KNOB** (the first free place of its kind), **DELETE** |
+| a **module** (green: the one in the chassis) | its knobs. Press a stack knob and its pile is out in a row under them, changed as a stack's is; press a macro knob and its ties are out under them, changed as a kept macro knob's are | **NEW**, **COPY**, **INTO THE CHASSIS**, **DELETE** (never the one in the chassis); beside the pressed knob's name the row's **ADD, TAKE OUT, EARLIER, LATER** (a macro knob: **TAKE OUT**) |
 | an **arrangement** (green: the one on the page) | its parts in order, each with its chip, its bars and the parts it takes | **NEW**, **COPY**, **ONTO THE PAGE**, **DELETE** (never the last one) |
 
 **Every chip you can see plays when you press it**: in the bin, in a stack's row, in a kept
@@ -597,10 +598,60 @@ there. What changes is the thing that is open: the knob kept (not a knob it was 
 the module where it is kept (INTO THE CHASSIS then brings the change with it), or, for the
 module in the chassis, the knob itself as it plays.
 
-Not built: what a macro knob is tied to is shown and not changed where it is opened (a macro
-knob is taught on the module in the chassis, with LEARN). On MACROS and beside the
-arrangement the rack is for taking from: an open pile shows its chips, and is put in order
-here. The kept shelves have no find row.
+**A macro knob's ties are changed where it is opened**, in the library: a macro knob kept
+by itself, or the macro knob you press in an open module. Each tie is a plate: the knob of
+the rig it moves, and a figure, how far the macro knob's full turn takes that knob, in
+hundredths of its travel (DEPTH, in MACROS, scales them all).
+
+| WHAT YOU WANT | HOW |
+|---|---|
+| a tie that takes its knob further, less far, or the other way | drag its figure up or down (three points of the hand to a hundredth). It goes from +100 through +1 to -1 and on to -100: a tie is never nothing |
+| a tie gone | press it (it turns green), then **TAKE OUT**. That knob of the rig is no longer moved by the macro knob |
+| a new tie | **LEARN**, in MACROS, on the module in the chassis: a tie is made by turning the knob it should move (see A macro knob: LEARN) |
+
+What changes is the thing that is open, as with a pile: the knob kept (not a knob it was put
+on), a module where it is kept, or, for the module in the chassis, the knob itself as it
+plays. With that knob turned up you hear a figure change as you drag it. A knob that is being
+taught is left alone until KEEP or DROP.
+
+**On MACROS and beside the arrangement the rack is for taking from.** An open pile shows its
+chips there, to hear and to add from, sorted by the head of the list if you like (RECENT,
+FITS NOW, MORE, LESS, FIND); a macro knob's ties are shown and not pressed. A pile is put in
+order, and a tie changed, here in the library. (Your choice, Nov 16: the finders stay in
+force inside a stack on those two pages.) The kept shelves have no find row.
+
+#### The rack on the keyboard
+
+In LIBRARY, MACROS and ARRANGE the rack works without the mouse. The first arrow key brings
+out **a mark, four yellow corners,** round the pocket that is open (the bin, with nothing open); after that the
+arrows move it over everything that is pressed there: the pockets, the chips on the bench, a
+pile's row, the knobs of an open module, a macro knob's ties; in MACROS the places of the
+module in the chassis and the chosen knob's pile too, and beside the arrangement its parts.
+It goes to the thing in line with it that way; at the end of a line of chips, right goes on to
+the next line. A list longer than its place goes by under the mark (a long shelf of pockets,
+a pile's third line, the bin, the chosen knob's pile), then the mark goes on to what lies
+beyond it.
+
+| KEY | WHAT |
+|---|---|
+| arrows | move the mark |
+| **Return** | press what the mark is on: a pocket opens, a chip plays in the headphones (again: it stops), a knob of a module shows what it holds, a place is the chosen knob |
+| **Shift-Return** | in the library, on a chip: RECALL. It goes to the set, with the parts it takes where it is shown |
+| **=** | ADD the chip the mark is on: in the library into the pile that is out, last; in MACROS onto the chosen stack knob's pile; beside the arrangement a part after the chosen one |
+| **Backspace** | TAKE OUT what the mark is on: a chip of a pile (it stays in the bin), a tie, a part |
+| **[** **]** | EARLIER, LATER: a chip in its pile, a part in the arrangement. The mark goes with it. On a tie: a hundredth less, more (with Shift: ten) |
+| **Tab** | the next shelf (Shift-Tab: the one before); the mark is on its first pocket |
+
+Where a thing is chosen by being pressed (a chip of a pile, a tie, a part) the mark coming to
+it chooses it, without playing it: it is lit as the mouse would light it, and the keys on the
+page (TAKE OUT, EARLIER, LATER) are for it too. **A press of the mouse puts the mark away**,
+and so does leaving the page. With the mark away, =, Backspace, [ and ] are for what the
+mouse last chose, so a chip pressed with the mouse can be walked along its pile with ]. The
+keys a chip's parts are put out with (1 to 11, R, B, K, N), RENAME, and the held keys
+(DELETE, CLEAR) are the mouse's. INFO (**I**) lists these keys with the rest.
+
+Nothing of the rack is on the E16: the knobs you play are, and the rack is where a set is put
+together beforehand.
 
 #### Finding a snapshot
 
@@ -986,7 +1037,7 @@ one at a time. No network is asked.
   module's own panel goes straight there: the designer, the rack on MODULES, the one in the
   chassis open. Each module kept is a pocket (a cartridge: four caps over ten pockets); the
   one in the chassis is green. Press one and its fourteen knobs are on the bench; press a knob
-  there to see its pile, or what it is tied to.
+  there to see its pile, or what it is tied to (in the library both are changed there).
 - **INTO THE CHASSIS**, after the open one's name, puts it in the chassis, whole. The one
   that was there is kept as it stood. Nothing is heard to change: what the macro knobs were
   adding stays in the sound, and the new module's knobs start at rest.
@@ -1031,7 +1082,8 @@ asked.
 - **KNOBS** is a shelf of the rack. A stack knob kept is a pocket with its pile and a knob
   in its corner; a macro knob kept is a cap on its base, with a pip for each knob it is tied
   to. Press one and what it holds is on the bench: its chips with the parts each takes, or
-  what it is tied to and how far it takes each.
+  what it is tied to and how far it takes each. In the library either is changed there: the
+  kept knob is what changes, not a knob it was put on.
 - **KEEP KNOB n**, on the chosen knob's card in the designer, keeps the knob under its name,
   as it is: a macro knob with every knob it is tied to and how far it takes each, a stack
   knob with its chips and the parts each takes. Kept again under the same name, it is the
@@ -1210,6 +1262,8 @@ show it.
   has it is let go. CLEAR unties everything.
 - The macro designer lists what a knob is tied to and how far its full turn takes each, in
   hundredths of that knob's travel (`BASS: CUTOFF +50`). DEPTH scales the lot, to twice.
+- **One tie is changed, or taken out, in the library**: MODULES, the module's pocket, the
+  macro knob. Drag a tie's figure; press a tie and TAKE OUT (see The rack, above).
 - **Pressed** (double-click; its knob's press on the E16), knobs 1 to 3 land on the nearer end
   of their turn: past half way what the knob has pushed stays and the knob goes home, ready to
   push again; short of it the knobs go back. **Knob 4's press is CUE**, so it has no such press.
@@ -1459,6 +1513,7 @@ build/.../SF-000 --shot x.png --page macros --knob 7 --libtab 1 --open 1   # the
 build/.../SF-000 --shot x.png --page macros --knob 5 --hand 4  # the designer with that snapshot of the list in hand (its bass and returns put out)
 build/.../SF-000 --shot x.png --page library --finder 1       # a page with a finder lit at the head of its snapshots (1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS)
 build/.../SF-000 --shot x.png --page library --libtab 0 --open 1   # the library's rack: --libtab the shelf (0 stacks, 1 knobs kept, 2 modules, 3 arrangements), --open the pocket that is open (from 1; none: the bin), --rowsel a chip of an open stack's row in hand, --hand a chip of the bin in hand, --modknob a knob of an open module pressed
+build/.../SF-000 --shot x.png --page library --libtab 0 --open 1 --keys down,down,right,]   # keys of the keyboard pressed before the picture: left right up down return RETURN (with Shift) tab TAB back = [ ] { }
 build/.../SF-000 --shot x.png --page arrange          # the arrangement's page, with one made of the snapshots it comes with, playing (--arrs: three kept, the rack on ARRANGEMENTS with the second open)
 build/.../SF-000 --shot x.png --edit 3                # the main view with part 3 of an arrangement being edited (--page arrange --edit 3: the arrangement's page meanwhile)
 build/.../SF-000 --shot x.png --learn 6             # a picture with snapshot knob 6 being taught and a few knobs moved (--learnt 6: after KEEP, turned half way back; with --page macros, its card)
@@ -1612,8 +1667,9 @@ Delete `session.json` to start again from the factory rig.
   in it; notes from outside are in it as the steps a snapshot would keep of them (the last bars
   played), not as they are being played. On a session with heavy lanes it takes a moment to be
   ready (SET UP says how long).
-- The library's five kept kinds have no find row yet, and the macro designer still has its own
-  lists of stacks, knobs and modules beside the library's (DECISIONS 591).
+- The rack's kept shelves (knobs, modules, arrangements) have no find row. On MACROS and beside the
+  arrangement an open pile is for taking from, not for putting in order (your choice: DECISIONS 634).
+  The rack is on the keyboard and the mouse, not on the E16.
 - The arrangement: one on the page at a time, of those kept; no tempo of its own and no change of tempo along it (it is printed at
   the tempo that stands); no loop of a stretch of it; a part cannot be a part of a snapshot (some
   lanes and not others); what is turned by hand while it plays is not kept, so a print is the scenes,
@@ -1630,7 +1686,7 @@ Delete `session.json` to start again from the factory rig.
   be drawn; no way to hold a wave at a place; it does not listen to a lane other than the kick.
   From the E16 the way in is a held knob, which nothing on the E16 itself says.
 - A snapshot knob moves sound knobs only: it does not cross between effects or models (a recall does).
-  A knob tied to knobs (LEARN) does not reach an insert's knobs, and its ties cannot be edited one by one.
+  A knob tied to knobs (LEARN) does not reach an insert's knobs. A tie is changed or taken out in the library; a new one is made only by LEARN.
   A model changed by hand in CONFIG changes at once. Nothing on the screen shows a crossing yet.
 - Lanes as modules that load into a slot, each with a descriptor of what its knobs do to the sound.
   The session file is ready for it: `FORMAT.md`.

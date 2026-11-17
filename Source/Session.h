@@ -672,6 +672,14 @@ public:
     void pileMove (const PileAt&, int from, int to);
     void pileDrop (const PileAt&, int i);
     void pileKeys (const PileAt&, int i, juce::uint32 keys);
+    // ---- a macro knob's ties, where it is kept or stands (PileAt: 2 a knob kept, 3 a knob of a module): each a knob of the
+    // rig and how far the macro knob's full turn takes it, in hundredths of that knob's travel. A tie is never nothing:
+    // asked for none, it is the nearest of one hundredth either way to where it was (taking it out is how a tie goes).
+    // The knob in the chassis is changed as it plays; a knob kept, or a module's that is not in the chassis, where it is kept.
+    bool tieIs (const PileAt&) const;                       // there is such a macro knob
+    std::vector<MacroKnob::Link> ties (const PileAt&) const;
+    bool tieSet (const PileAt&, int i, int hundredths);     // False: no such tie, the knob is being taught, or it is that already
+    bool tieDrop (const PileAt&, int i);
     juce::var moduleMotionNow() const;
     bool rackDone (const RackStep&);                        // the step's part here. False: the stack changed meanwhile (next time)
     void rackOrder (const juce::var& stacksThere);          // the library's order; those it has not got after
@@ -771,6 +779,7 @@ public:
 private:
     void timerCallback() override;
     void applyMorph (double glideBeats);
+    bool tieChange (const PileAt&, const std::function<bool (MacroKnob&)>&);        // (a macro knob's ties changed, where it is kept or as it plays)
     // MOTION on the snapshot knobs: the laws of the knobs it is on, written down for the audio
     // thread whenever one of those knobs, or what MOTION is on, has changed (and only then).
     void motionLaws();

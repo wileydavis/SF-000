@@ -4676,6 +4676,26 @@ static int sampleCheck (const juce::StringArray& args, const juce::String& path)
     return 0;
 }
 
+// A key of the keyboard, by a name (the screen checks and the pictures press them): left right up down return tab back, a
+// capital for one with SHIFT (RETURN, TAB), and = [ ] { } as they are typed.
+static juce::KeyPress keyNamed (const juce::String& n)
+{
+    const juce::ModifierKeys none, shift (juce::ModifierKeys::shiftModifier);
+    if (n == "left")   return juce::KeyPress (juce::KeyPress::leftKey);
+    if (n == "right")  return juce::KeyPress (juce::KeyPress::rightKey);
+    if (n == "up")     return juce::KeyPress (juce::KeyPress::upKey);
+    if (n == "down")   return juce::KeyPress (juce::KeyPress::downKey);
+    if (n == "return") return juce::KeyPress (juce::KeyPress::returnKey, none, '\r');
+    if (n == "RETURN") return juce::KeyPress (juce::KeyPress::returnKey, shift, '\r');
+    if (n == "tab")    return juce::KeyPress (juce::KeyPress::tabKey, none, '\t');
+    if (n == "TAB")    return juce::KeyPress (juce::KeyPress::tabKey, shift, '\t');
+    if (n == "back")   return juce::KeyPress (juce::KeyPress::backspaceKey);
+    if (n == "{")      return juce::KeyPress ('[', shift, '{');
+    if (n == "}")      return juce::KeyPress (']', shift, '}');
+    const auto c = n[0];
+    return juce::KeyPress ((int) c, none, c);
+}
+
 static int uiTest()
 {
     using namespace sf0;
@@ -7148,7 +7168,7 @@ static int uiTest()
         auto draw9 = [&] { sc9.createComponentSnapshot (sc9.getLocalBounds(), false, 0.25f); };
         auto ev9 = [&] (juce::Point<float> p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc9, &sc9, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
         auto click9 = [&] (juce::Point<float> p) { sc9.mouseDown (ev9 (p)); sc9.mouseUp (ev9 (p)); };
-        auto keyAt = [&] (int which) { for (auto& h : sc9.testHits()) if (Screen::testIsModKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+        auto keyAt = [&] (int) { for (auto& h : sc9.testHits()) if (Screen::testIsModKey (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         auto pocketAt = [&] (int i) { for (auto& h : sc9.testHits()) if (Screen::testIsWell (h, 3, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         auto headKey = [&] (int which) { for (auto& h : sc9.testHits()) if (Screen::testIsRackKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };       // (7 NEW, 8 COPY, 6 INTO THE CHASSIS)
         auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-4f; };
@@ -7216,7 +7236,7 @@ static int uiTest()
         auto ev11 = [&] (juce::Point<float> p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc11, &sc11, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
         auto click11 = [&] (juce::Point<float> p) { sc11.mouseDown (ev11 (p)); sc11.mouseUp (ev11 (p)); };
         auto shelfAt = [&] (int which) { for (auto& h : sc11.testHits()) if (Screen::testIsRackShelf (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
-        auto keepKey = [&] { for (auto& h : sc11.testHits()) if (Screen::testIsKept (h, 0, 0)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };       // (KEEP KNOB n, on the chosen knob's card)
+        auto keepKey = [&] { for (auto& h : sc11.testHits()) if (Screen::testIsKeptKeep (h)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };       // (KEEP KNOB n, on the chosen knob's card)
         auto pocketAt = [&] (int i) { for (auto& h : sc11.testHits()) if (Screen::testIsWell (h, 2, i)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
         auto headKey = [&] (int which) { for (auto& h : sc11.testHits()) if (Screen::testIsRackKey (h, which)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };       // (6 ON A KNOB, 9 HOLD: DELETE)
         auto carry11 = [&] (juce::Point<float> from, juce::Point<float> to)
@@ -7312,6 +7332,303 @@ static int uiTest()
                    "they are in the session file, and go into another module; HOLD: DELETE takes one out");
         if (! ok) std::printf ("    (comes %d tabs %d macro %d [%s] tabs3 %d stack %d refused %d put stack %d wrong %d put macro %d own %d again %d nothing %d unnamed %d filed %d before %d out %d: %s)\n", (int) comes, (int) tabs, (int) keptMacro,
                                s11.keptSays (0).toRawUTF8(), (int) tabs3, (int) keptStack, (int) refused, (int) putStack, (int) wrong, (int) putMacro, (int) own, (int) again, (int) nothing, (int) unnamed, (int) filed, (int) fromBefore, (int) out, sc11.testBarNote().toRawUTF8());
+    }
+    // 3g2. A macro knob's ties, changed where it is opened (the seventy-sixth build): how far a tie takes its knob, and a tie
+    // taken out. A knob kept by itself; the macro knob of the module in the chassis, as it plays; that of a module that is not.
+    // (Its own rig, made after the POCKETS check and never played.)
+    {
+        Engine e14; e14.prepare (48000.0, 128);
+        Session s14 (e14, false);
+        Screen sc14 (s14);
+        sc14.setSize ((int) Screen::kW, (int) Screen::kH);
+        using Pt = juce::Point<float>;
+        auto draw14 = [&] { sc14.createComponentSnapshot (sc14.getLocalBounds(), false, 0.25f); };
+        auto ev14 = [&] (Pt p, Pt from, bool dragged) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc14, &sc14, juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, dragged); };
+        auto click14 = [&] (Pt p) { sc14.mouseDown (ev14 (p, p, false)); sc14.mouseUp (ev14 (p, p, false)); draw14(); };
+        auto pull = [&] (Pt from, float up) { sc14.mouseDown (ev14 (from, from, false)); for (int q = 1; q <= 3; ++q) sc14.mouseDrag (ev14 (from.translated (0.0f, -up * (float) q / 3.0f), from, true)); sc14.mouseUp (ev14 (from.translated (0.0f, -up), from, true)); draw14(); };
+        auto at14 = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc14.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+        auto tieAt = [&] (int i) { return at14 ([=] (const Screen::TestHit& h) { return Screen::testIsTie (h, i); }); };
+        auto tiesShown = [&] { int n = 0; for (auto& h : sc14.testHits()) if (Screen::testIsTie (h, -1)) ++n; return n; };
+        auto rkey = [&] (int which) { return at14 ([=] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, which); }); };       // 1 TAKE OUT, 6 put to work
+        auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-4f; };
+        auto hundredths = [] (float a) { return (int) std::lround (a * 100.0f); };
+        s14.userSet (cx::kGlide, 0.0f);
+        const auto energy = s14.knobs[0];                                // (as the session comes: ENERGY on 1, tied to a dozen knobs)
+        const int nTies = (int) energy.links.size();
+        const bool comes = energy.name == "ENERGY" && nTies >= 4;
+        // ---- a knob kept by itself: its pocket open in the library, its ties out on the bench
+        const int kept = s14.knobKeep (0);
+        const Session::PileAt keptAt { 2, kept, -1 };
+        sc14.setPage (Screen::pLibrary); sc14.testRack (1, kept); draw14();
+        const bool shown = kept == 0 && s14.tieIs (keptAt) && tiesShown() == nTies && rkey (1).x < 0.0f && sc14.testTieSel() == -1;       // (TAKE OUT: an empty frame until a tie is pressed)
+        click14 (tieAt (2));
+        const bool chosen = sc14.testTieSel() == 2 && rkey (1).x > 0.0f;
+        // its figure dragged up thirty points: ten hundredths further. It is the kept knob that changes: the one on the place is as it was
+        const int was2 = hundredths (energy.links[2].amount);
+        pull (tieAt (2), 30.0f);
+        const bool further = hundredths (s14.ties (keptAt)[2].amount) == std::min (100, was2 + 10) && near (s14.knobs[0].links[2].amount, energy.links[2].amount) && (int) s14.ties (keptAt).size() == nTies;
+        // dragged a long way down: it goes through nothing to the other way, and stops at a full turn back. It is never nothing
+        pull (tieAt (2), -900.0f);
+        const bool back = hundredths (s14.ties (keptAt)[2].amount) == -100;
+        const bool never = s14.tieSet (keptAt, 2, 0) && hundredths (s14.ties (keptAt)[2].amount) == -1 && s14.tieSet (keptAt, 2, 40) && s14.tieSet (keptAt, 2, 0) && hundredths (s14.ties (keptAt)[2].amount) == 1
+                           && ! s14.tieSet (keptAt, 2, 0) && ! s14.tieSet (keptAt, 99, 10);
+        // TAKE OUT: the tie pressed goes from the kept knob, and the bar says which
+        draw14(); click14 (tieAt (2)); click14 (rkey (1));
+        bool takenOut = (int) s14.ties (keptAt).size() == nTies - 1 && sc14.testBarNote().contains ("IS NO LONGER TIED TO IT") && sc14.testTieSel() == -1 && tiesShown() == nTies - 1 && (int) s14.knobs[0].links.size() == nTies;
+        for (const auto& l : s14.ties (keptAt)) takenOut = takenOut && l.ctl != energy.links[2].ctl;
+        // (it is in the session file as it was left; put on a place, the place has it so)
+        Engine e15; e15.prepare (48000.0, 128);
+        Session s15 (e15, false);
+        s15.takeState (s14.stateVar());
+        const bool filed = s15.keptKnobs.size() == 1 && (int) s15.ties ({ 2, 0, -1 }).size() == nTies - 1;
+        s14.knobClear (1); draw14();
+        click14 (rkey (6));                                                 // ON A KNOB
+        const bool put = (int) s14.knobs[1].links.size() == nTies - 1 && sc14.testBarNote().contains ("IS ON KNOB 2");
+        s14.knobClear (1);
+        // ---- the macro knob of the module in the chassis: the knob itself, as it plays. Turned all the way up, the knob it is tied to follows the figure at once
+        const int ctl = energy.links[0].ctl;
+        const int far0 = hundredths (energy.links[0].amount);
+        s14.turnSnapKnob (0, 0.0f);
+        const float rest = s14.value (ctl);
+        s14.turnSnapKnob (0, 1.0f);
+        const bool turned = near (s14.value (ctl), juce::jlimit (0.0f, 1.0f, rest + energy.links[0].amount));
+        const Session::PileAt liveAt { 3, s14.moduleIndex(), 0 };
+        sc14.testRack (2, s14.moduleIndex(), 0); draw14();
+        const bool liveShown = s14.tieIs (liveAt) && tiesShown() == nTies && ! s14.tieIs ({ 3, s14.moduleIndex(), 4 }) && ! s14.tieIs ({ 3, s14.moduleIndex(), 12 });       // (a stack knob, and the wheel's, have none)
+        pull (tieAt (0), far0 > 50 ? -30.0f : 30.0f);
+        const int far1 = far0 > 50 ? far0 - 10 : far0 + 10;
+        const bool liveFar = hundredths (s14.knobs[0].links[0].amount) == far1 && near (s14.value (ctl), juce::jlimit (0.0f, 1.0f, rest + (float) far1 / 100.0f));
+        click14 (tieAt (0)); click14 (rkey (1));                            // TAKE OUT: the knob of the rig is let go, and is where it was at rest
+        const bool liveOut = (int) s14.knobs[0].links.size() == nTies - 1 && s14.knobs[0].links[0].ctl != ctl && near (s14.value (ctl), rest);
+        // (a knob being taught is not changed from here)
+        s14.learnBegin (0);
+        const bool taught = ! s14.tieSet (liveAt, 0, 5) && ! s14.tieDrop (liveAt, 0) && (int) s14.knobs[0].links.size() == nTies - 1;
+        s14.learnDrop();
+        s14.turnSnapKnob (0, 0.0f);
+        // ---- a module that is not in the chassis: changed where it is kept; the knob that is playing is not, and INTO THE CHASSIS brings the change
+        const int first = s14.moduleIndex();
+        s14.moduleNew ("other set");
+        s14.knobs[0].links = { { ctl, 0.25f } };                            // (the new module's own knob 1)
+        const Session::PileAt awayAt { 3, first, 0 };
+        sc14.testRack (2, first, 0); draw14();
+        const int awayWas = hundredths (s14.ties (awayAt)[1].amount);
+        pull (tieAt (1), awayWas > 50 ? -60.0f : 60.0f);
+        const int awayNow = awayWas > 50 ? awayWas - 20 : awayWas + 20;
+        click14 (tieAt (0)); click14 (rkey (1));
+        const bool away = (int) s14.ties (awayAt).size() == nTies - 2 && hundredths (s14.ties (awayAt)[0].amount) == awayNow && s14.knobs[0].links.size() == 1 && near (s14.knobs[0].links[0].amount, 0.25f);
+        click14 (rkey (6));                                                 // INTO THE CHASSIS
+        const bool brought = s14.moduleIndex() == first && (int) s14.knobs[0].links.size() == nTies - 2 && hundredths (s14.knobs[0].links[0].amount) == awayNow;
+        // ---- on the other pages the rack is for taking from: the ties are shown there, and none is pressed
+        sc14.setPage (Screen::pMacros); sc14.testRack (1, kept); draw14();
+        const bool shownOnly = tiesShown() == 0 && ! s14.tieIs ({ 1, 0, -1 }) && ! s14.tieIs ({ 2, 7, -1 });
+        const bool ok = comes && shown && chosen && further && back && never && takenOut && filed && put && turned && liveShown && liveFar && liveOut && taught && away && brought && shownOnly;
+        check (ok, "a macro knob's ties are changed where it is opened, in the library: a tie pressed is the chosen one, its figure dragged is how far it takes its knob (through nothing to the other way, never nothing), TAKE OUT unties it; "
+                   "a knob kept by itself changes and the knob on the place does not; the macro knob of the module in the chassis is changed as it plays, and what it is adding follows at once; a module that is not in the chassis is changed "
+                   "where it is kept, and INTO THE CHASSIS brings the change; on the other pages the ties are shown and not pressed");
+        if (! ok) std::printf ("    (comes %d shown %d [%d of %d] chosen %d further %d back %d never %d out %d filed %d put %d; turned %d live shown %d far %d out %d taught %d; away %d brought %d; shown only %d: %s)\n", (int) comes, (int) shown, tiesShown(), nTies,
+                               (int) chosen, (int) further, (int) back, (int) never, (int) takenOut, (int) filed, (int) put, (int) turned, (int) liveShown, (int) liveFar, (int) liveOut, (int) taught, (int) away, (int) brought, (int) shownOnly, sc14.testBarNote().toRawUTF8());
+    }
+    // 3g3. The keyboard, where the rack is (the seventy-sixth build): a mark that the arrow keys move over what is pressed there;
+    // RETURN presses what it is on, SHIFT with it takes a chip to the set, = adds, BACKSPACE takes out, [ and ] move earlier and
+    // later (a tie: less and more), TAB is the next shelf. On the main page the arrows are the lane's and the sequencer's, as before.
+    // (Its own rig, made after the POCKETS check and never played.)
+    {
+        Engine e16; e16.prepare (48000.0, 128);
+        Session s16 (e16, false);
+        Screen sc16 (s16);
+        sc16.setSize ((int) Screen::kW, (int) Screen::kH);
+        using Pt = juce::Point<float>;
+        using Ids = std::vector<juce::int64>;
+        auto draw16 = [&] { sc16.createComponentSnapshot (sc16.getLocalBounds(), false, 0.25f); };
+        auto key = [&] (const char* names) { for (const auto& n : juce::StringArray::fromTokens (names, ",", "")) { sc16.keyPressed (keyNamed (n)); draw16(); } };
+        auto ev16 = [&] (Pt p) { return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc16, &sc16, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        auto click16 = [&] (Pt p) { sc16.mouseDown (ev16 (p)); sc16.mouseUp (ev16 (p)); draw16(); };
+        auto at16 = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc16.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+        auto on = [&] (const std::function<bool (const Screen::TestHit&)>& is) { return sc16.testKbOn() && is (sc16.testKbItem()); };
+        auto onWell = [&] (int kind, int i) { return on ([=] (const Screen::TestHit& h) { return Screen::testIsWell (h, kind, i); }); };
+        auto onRow = [&] (int i) { return on ([=] (const Screen::TestHit& h) { return Screen::testIsRowCard (h, i); }); };
+        auto onBin = [&] (int i) { return on ([=] (const Screen::TestHit& h) { return Screen::testIsBinChip (h, i); }); };
+        auto says = [&] (const char* t) { return sc16.testBarNote().contains (t); };
+        s16.userSet (cx::kGlide, 0.0f);
+        const int nLib = (int) s16.library.size();
+        const bool comes = nLib >= 6;
+        auto chip = [&] (int i) { return s16.library[(size_t) i].id; };
+        const int br = s16.rackNew ("breaks");
+        s16.rackAdd (br, chip (1)); s16.rackAdd (br, chip (2)); s16.rackAdd (br, chip (3));
+        // ---- the main page: the arrows are the active lane's and the sequencer's page, as they were, and no mark comes out
+        sc16.setPage (Screen::pMain); draw16();
+        const int laneWas = s16.activeLane;
+        key ("down");
+        const bool mainKeys = s16.activeLane == std::min (kLanes - 1, laneWas + 1) && ! sc16.testKbOn();
+        key ("up");
+        // ---- the library. The first arrow brings the mark out on the bin's pocket and moves nothing; nothing on the main page moves with it
+        sc16.setPage (Screen::pLibrary); sc16.testRack (0); draw16();
+        key ("down");
+        const bool out = onWell (0, -1) && s16.activeLane == laneWas && sc16.testRackOpen() == 0;
+        // right: the stack's pocket. RETURN: it is open, and the mark is still on it
+        key ("right");
+        const bool toPocket = onWell (1, br);
+        key ("return");
+        const bool opened = sc16.testRackOpen() == 1 && sc16.testLibStack() == br && onWell (1, br);
+        // down: its row, the chip under the pocket. left and right: along it. ] is LATER and [ EARLIER, and the mark goes with the chip
+        key ("down");
+        const bool toRow = onRow (1) && sc16.testRowSel() == 1;         // (and it is the chosen one there, as a press makes it: the page's own keys are for it too)
+        key ("left");
+        const bool alongBack = onRow (0);
+        key ("right");
+        const bool along = alongBack && onRow (1);
+        key ("]");
+        const bool later = s16.stacks[(size_t) br].snaps == Ids { chip (1), chip (3), chip (2) } && onRow (2) && sc16.testRowSel() == 2;
+        key ("[");
+        const bool earlier = s16.stacks[(size_t) br].snaps == Ids { chip (1), chip (2), chip (3) } && onRow (1);
+        // RETURN on it: pressed (it is the chip in hand in the row, and the one RENAME would name)
+        key ("return");
+        const bool pressed = sc16.testRowSel() == 1 && sc16.testNamedWhat() == 1 && sc16.testNamedChip() == chip (2);
+        s16.cue (0);
+        // down: the bin, under the row. = adds the chip the mark is on to the pile that is out, last
+        key ("down");
+        const auto under = sc16.testKbItem();
+        const bool toBin = on ([] (const Screen::TestHit& h) { return Screen::testIsBinChip (h, -1); });
+        key ("=");
+        const bool added = toBin && s16.stacks[(size_t) br].snaps.size() == 4 && s16.stacks[(size_t) br].snaps[3] == chip (under.a) && says ("LAST") && s16.findSnap (chip (under.a)) != nullptr;
+        // up, to the row, and along to the chip that was added: BACKSPACE takes it out of this stack (it is still in the bin)
+        key ("up,right,right,right,right");
+        const bool atLast = onRow (3);
+        key ("back");
+        const bool takenOut = atLast && s16.stacks[(size_t) br].snaps == Ids { chip (1), chip (2), chip (3) } && says ("IS OUT OF") && (int) s16.library.size() == nLib;
+        // SHIFT with RETURN on a chip of the bin: to the set
+        key ("down");
+        const auto binAt = sc16.testKbItem();
+        key ("RETURN");
+        const bool recalled = Screen::testIsBinChip (binAt, -1) && s16.baseId == chip (binAt.a);
+        // (at the end of a line of chips, right goes on to the first of the next line; left, back to the last of the one before)
+        sc16.testRack (0); draw16();
+        key ("down,down,right,right,right,right,right,right,right,right");
+        const bool lineEnd = nLib > 6 ? onBin (6) : onBin (nLib - 1);
+        key ("left");
+        const bool lineBack = nLib > 6 ? onBin (5) : onBin (nLib - 2);
+        // TAB: the next shelf, the mark on its first pocket (SHIFT: the one before)
+        key ("tab");
+        const bool shelfOn = sc16.testRackShelf() == 1 && onWell (0, -1);
+        key ("TAB");
+        const bool shelfBack = sc16.testRackShelf() == 0;
+        // ---- more stacks than the rack has pockets: at the shelf's edge they go by under the mark, and come back
+        for (int i = 0; i < 9; ++i) s16.rackNew ("s" + juce::String (i));
+        sc16.testRack (0); draw16();
+        key ("up,up");
+        for (int i = 0; i < 7; ++i) key ("right");
+        const auto lastWell = sc16.testKbItem();
+        key ("right");
+        const bool goesBy = Screen::testIsWell (lastWell, 1, 6) && sc16.testRackFirst() == 1 && onWell (1, 7);
+        for (int i = 0; i < 6; ++i) key ("left");
+        const bool firstSlot = onWell (1, 1) && sc16.testRackFirst() == 1;
+        key ("left");
+        const bool comesBack = sc16.testRackFirst() == 0 && onWell (1, 0);
+        // ---- a pile longer than its two lines goes by under the mark (the list first, then on to what is under it)
+        for (int i = 0; i < 12; ++i) s16.rackAdd (br, chip (1 + i % 3));       // (fifteen: three lines of six)
+        sc16.testRack (0, br); draw16();
+        key ("down,left");
+        const bool rowTop = onRow (0);
+        key ("down");
+        const bool rowTwo = onRow (6) && sc16.testListScroll (1) == 0;
+        key ("down");
+        const bool rowBy = onRow (12) && sc16.testListScroll (1) == 1;
+        key ("down");
+        const bool rowLeft = on ([] (const Screen::TestHit& h) { return Screen::testIsBinChip (h, -1); });
+        key ("up,up");
+        const bool rowUp = onRow (6) && sc16.testListScroll (1) == 1;
+        key ("up");
+        const bool rowBackBy = onRow (0) && sc16.testListScroll (1) == 0;
+        // ---- the mouse puts the mark away; with it away, a key is for what the mouse chose (a chip pressed in the row: ] moves it)
+        click16 (at16 ([] (const Screen::TestHit& h) { return Screen::testIsRowCard (h, 0); }));
+        const bool away = ! sc16.testKbOn() && sc16.testRowSel() == 0;
+        const auto second = s16.stacks[(size_t) br].snaps[1];
+        key ("]");
+        const bool mouseChose = ! sc16.testKbOn() && sc16.testRowSel() == 1 && s16.stacks[(size_t) br].snaps[0] == second;
+        s16.cue (0);
+        // ---- a macro knob's ties: ] a hundredth more, } ten more, [ less; BACKSPACE takes the tie out
+        const int kept = s16.knobKeep (0);
+        const Session::PileAt keptAt { 2, kept, -1 };
+        const int nTies = (int) s16.ties (keptAt).size();
+        auto far = [&] (int i) { return (int) std::lround (s16.ties (keptAt)[(size_t) i].amount * 100.0f); };
+        sc16.testRack (1, kept); draw16();
+        key ("down,down,left");                                             // (out on its pocket; the tie under it; the first)
+        const bool onTie = on ([] (const Screen::TestHit& h) { return Screen::testIsTie (h, 0); }) && sc16.testTieSel() == 0 && at16 ([] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, 1); }).x > 0.0f;
+        const int far0 = far (0);
+        key ("]");
+        const bool more1 = far (0) == std::min (100, far0 + 1) && sc16.testTieSel() == 0;
+        key ("}");
+        const bool more10 = far (0) == std::min (100, far0 + 11);
+        key ("[");
+        const bool less1 = far (0) == std::min (100, far0 + 11) - 1;
+        key ("right,back");
+        const bool tieOut = (int) s16.ties (keptAt).size() == nTies - 1 && says ("IS NO LONGER TIED TO IT");
+        const bool tiesOk = onTie && more1 && more10 && less1 && tieOut;
+        // ---- the designer: the mark reaches a place (RETURN: that knob is the chosen one), the chosen stack knob's pile and the rack.
+        // = on a chip of the rack: onto the chosen stack knob's pile. In the pile: ] later, BACKSPACE out. A long pile goes by under the mark
+        sc16.setPage (Screen::pMacros); sc16.testRack (0); sc16.testPickKnob (0); draw16();
+        key ("down,left");
+        const bool toPlace = on ([] (const Screen::TestHit& h) { return Screen::testIsPlaceCard (h, -1); });
+        for (int i = 0; i < 16 && ! on ([] (const Screen::TestHit& h) { return Screen::testIsPlaceCard (h, 5); }); ++i) key ("left");
+        key ("return");
+        const bool chose = toPlace && sc16.testKnobChosen() == 5 && on ([] (const Screen::TestHit& h) { return Screen::testIsPlaceCard (h, 5); });
+        s16.knobClear (5);
+        draw16();
+        for (int i = 0; i < 16 && ! onWell (0, -1); ++i) key ("right");
+        key ("down");
+        const auto pick = sc16.testKbItem();
+        key ("=,=,=");
+        const bool ontoKnob = Screen::testPickOf (pick) >= 0 && s16.knobs[5].snaps == Ids { chip (Screen::testPickOf (pick)), chip (Screen::testPickOf (pick)), chip (Screen::testPickOf (pick)) };
+        s16.knobs[5].snaps = { chip (1), chip (2), chip (3) }; s16.knobs[5].lanes.clear();
+        draw16();
+        key ("left");
+        const bool toColumn = on ([] (const Screen::TestHit& h) { return Screen::testIsColumn (h, 0, 0); }) && sc16.testColSel() == 0;
+        key ("]");
+        const bool colLater = s16.knobs[5].snaps == Ids { chip (2), chip (1), chip (3) } && on ([] (const Screen::TestHit& h) { return Screen::testIsColumn (h, 0, 1); }) && sc16.testColSel() == 1;
+        key ("back");
+        const bool colOut = s16.knobs[5].snaps == Ids { chip (2), chip (3) };
+        for (int i = 0; i < 9; ++i) s16.stackAdd (5, chip (1 + i % 3));        // (eleven: three more than the column shows)
+        draw16();
+        key ("up");
+        for (int i = 0; i < 7; ++i) key ("down");
+        const bool colFoot = on ([] (const Screen::TestHit& h) { return Screen::testIsColumn (h, 0, 7); }) && sc16.testListScroll (3) == 0;
+        key ("down");
+        const bool colBy = on ([] (const Screen::TestHit& h) { return Screen::testIsColumn (h, 0, 8); }) && sc16.testListScroll (3) == 1;
+        const bool designer = chose && ontoKnob && toColumn && colLater && colOut && colFoot && colBy;
+        // ---- beside the arrangement: = on a chip of the rack is a part; the mark reaches the parts: ] later, BACKSPACE out
+        sc16.setPage (Screen::pArrange); sc16.testRack (0); draw16();
+        const auto partsWere = s16.arrangement.size();
+        key ("down,down");
+        const auto pick2 = sc16.testKbItem();
+        key ("=,=");
+        const bool parts = Screen::testPickOf (pick2) >= 0 && s16.arrangement.size() == partsWere + 2 && s16.arrangement.back().snap == chip (Screen::testPickOf (pick2));
+        s16.arrangement[partsWere].snap = chip (1); s16.arrangement[partsWere + 1].snap = chip (2);
+        draw16();
+        key ("up");                                                         // (back to the pocket: the parts are in line with the pockets)
+        for (int i = 0; i < 8 && ! on ([&] (const Screen::TestHit& h) { return Screen::testIsArrPart (h, (int) partsWere); }); ++i) key ("left");
+        const bool toPart = on ([&] (const Screen::TestHit& h) { return Screen::testIsArrPart (h, (int) partsWere); }) && sc16.testSelPart() == (int) partsWere;
+        key ("]");
+        const bool partLater = toPart && s16.arrangement[partsWere].snap == chip (2) && s16.arrangement[partsWere + 1].snap == chip (1) && on ([&] (const Screen::TestHit& h) { return Screen::testIsArrPart (h, (int) partsWere + 1); });
+        key ("back");
+        const bool partOut = s16.arrangement.size() == partsWere + 1 && s16.arrangement[partsWere].snap == chip (2);
+        const bool arranger = parts && partLater && partOut;
+        const bool libOk = comes && mainKeys && out && toPocket && opened && toRow && along && later && earlier && pressed && added && takenOut && recalled && lineEnd && lineBack && shelfOn && shelfBack;
+        const bool byOk = goesBy && firstSlot && comesBack && rowTop && rowTwo && rowBy && rowLeft && rowUp && rowBackBy && away && mouseChose;
+        check (libOk, "the keyboard in the library: the first arrow brings a mark out on the open pocket; the arrows move it over pockets and chips (at the end of a line, on to the next); RETURN opens a pocket and presses a chip, "
+                      "SHIFT with it takes a chip to the set; = adds the chip it is on to the pile that is out; BACKSPACE takes a chip out of the pile; [ and ] move it earlier and later and the mark goes with it; TAB is the next shelf; "
+                      "on the main page the arrows are the lane's, as before");
+        if (! libOk) std::printf ("    (comes %d main %d out %d pocket %d opened %d row %d along %d later %d earlier %d pressed %d added %d out %d recalled %d line end %d back %d shelf %d back %d: %s)\n", (int) comes, (int) mainKeys, (int) out, (int) toPocket,
+                                  (int) opened, (int) toRow, (int) along, (int) later, (int) earlier, (int) pressed, (int) added, (int) takenOut, (int) recalled, (int) lineEnd, (int) lineBack, (int) shelfOn, (int) shelfBack, sc16.testBarNote().toRawUTF8());
+        check (byOk, "what is longer than its place goes by under the mark: the pockets at the shelf's edge, a pile's lines at the edge of its two (then on to the bin under it), and back; a press of the mouse puts the mark away, "
+                     "and with it away a key is for what the mouse chose");
+        if (! byOk) std::printf ("    (pockets: by %d first %d back %d [first %d]; row: top %d two %d by %d left %d up %d back %d [scroll %d]; away %d mouse chose %d)\n", (int) goesBy, (int) firstSlot, (int) comesBack, sc16.testRackFirst(),
+                                 (int) rowTop, (int) rowTwo, (int) rowBy, (int) rowLeft, (int) rowUp, (int) rowBackBy, sc16.testListScroll (1), (int) away, (int) mouseChose);
+        check (tiesOk && designer && arranger, "the keyboard on a macro knob's ties (] a hundredth more, SHIFT ten, [ less, BACKSPACE out), in the designer (a place chosen, = a chip onto the chosen stack knob, its pile moved, taken from, "
+                                               "and going by under the mark) and beside the arrangement (= a chip into it, a part moved later and taken out)");
+        if (! (tiesOk && designer && arranger))
+            std::printf ("    (ties: on %d +1 %d +10 %d -1 %d out %d; designer: place %d chose %d [%d] onto %d column %d later %d out %d foot %d by %d [scroll %d]; arrangement: parts %d to part %d later %d out %d: %s)\n", (int) onTie, (int) more1, (int) more10,
+                         (int) less1, (int) tieOut, (int) toPlace, (int) chose, sc16.testKnobChosen(), (int) ontoKnob, (int) toColumn, (int) colLater, (int) colOut, (int) colFoot, (int) colBy, sc16.testListScroll (3), (int) parts, (int) toPart,
+                         (int) partLater, (int) partOut, sc16.testBarNote().toRawUTF8());
     }
     // 3h. Stacks of their own (made and changed with no knob), and the head of the snapshots: whose are listed, and in what order.
     // (Its own rig, made after the POCKETS check and never played.)
@@ -8220,6 +8537,16 @@ static int shot (const juce::StringArray& args)
     {
         (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
         sc.testPointAt ({ pt.upToFirstOccurrenceOf (",", false, false).getFloatValue(), pt.fromFirstOccurrenceOf (",", false, false).getFloatValue() });
+    }
+    if (const auto ks = arg ("--keys", ""); ks.isNotEmpty())
+    {
+        // --keys a,b,c: those keys of the keyboard pressed one after another, the page drawn after each (keyNamed has their names)
+        (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.25f);
+        for (const auto& name : juce::StringArray::fromTokens (ks, ",", ""))
+        {
+            sc.keyPressed (keyNamed (name));
+            (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.25f);
+        }
     }
     juce::Image img;
     // --hold delete|open|clear|new: that key with the hand on it, a third of a second in (DELETE on the library's strip, DELETE
@@ -10896,6 +11223,57 @@ static int stageTest()
         sc.setPage (Screen::pMain); fresh();
         check (filling && letGo && onSheet && done, "a held key fills with light on the stage: CLEAR, a quarter of a second in, is " + juce::String (juce::roundToInt (light * 100.0f)) + " of 100 lit and the knob still holds its pile; let go, the light is out and nothing is done; "
                                                     "DELETE after an open stack's name fills on the sheet (" + juce::String (juce::roundToInt (plate * 100.0f)) + " of 100) and, full, the stack is deleted");
+    }
+
+    // 3h. the keyboard's mark on the stage: the same keys move it, and it is printed on the sheet round what it is on
+    if (ses.library.size() >= 4)
+    {
+        const auto stacksWere = ses.stacks;
+        { Stack st1; st1.id = "mark"; st1.name = "RING"; st1.kind = "stack"; st1.here = true; st1.snaps = { ses.library[1].id, ses.library[2].id }; ses.stacks = { st1 }; }
+        sc.setPage (Screen::pLibrary); sc.testRack (0); fresh();
+        // (how yellow the sheet is at the mark's four corners round that thing, a point on each arm: in tenths of the eight looked at)
+        auto ringOn = [&] (juce::Rectangle<float> r)
+        {
+            auto& sheet = st->sheet();
+            const float k = st->sheetScale();
+            const auto m = r.expanded (6.0f);
+            int yellow = 0, looked = 0;
+            for (int c = 0; c < 4; ++c)
+            {
+                const float x = (c & 1) ? m.getRight() : m.getX(), y = (c & 2) ? m.getBottom() : m.getY();
+                const float sx = (c & 1) ? -1.0f : 1.0f, sy = (c & 2) ? -1.0f : 1.0f;
+                for (const auto at : { juce::Point<float> (x + sx * 5.0f, y), juce::Point<float> (x, y + sy * 5.0f) })
+                {
+                    const auto px = sheet.getPixelAt ((int) std::lround (at.x * k), (int) std::lround (at.y * k));
+                    if (px.getAlpha() > 128 && px.getRed() > 170 && px.getGreen() > 140 && px.getBlue() < 120) ++yellow;
+                    ++looked;
+                }
+            }
+            return yellow * 10 / looked;
+        };
+        juce::Rectangle<float> bin, pocket;
+        for (auto& h : sc.testHits()) { if (Screen::testIsWell (h, 0, -1)) bin = h.r; if (Screen::testIsWell (h, 1, 0)) pocket = h.r; }
+        const int before = ringOn (bin);
+        sc.keyPressed (keyNamed ("down")); fresh();
+        const bool outOn = sc.testKbOn() && Screen::testIsWell (sc.testKbItem(), 0, -1) && before == 0 && ringOn (bin) >= 8;
+        sc.keyPressed (keyNamed ("right")); fresh();
+        // (the next pocket is so near that two of the eight points looked at round the bin are on the mark that is now round its neighbour)
+        const bool moved = Screen::testIsWell (sc.testKbItem(), 1, 0) && ringOn (pocket) >= 8 && ringOn (bin) <= 3;
+        sc.keyPressed (keyNamed ("return")); fresh();
+        const bool opened = sc.testRackOpen() == 1;
+        // (two keys before the stage has drawn again: the second reads the page as the first left it)
+        sc.keyPressed (keyNamed ("down")); sc.keyPressed (keyNamed ("left")); fresh();
+        const auto card = sc.testKbItem();
+        const bool onChip = Screen::testIsRowCard (card, 0) && sc.testRowSel() == 0 && ringOn (card.r) >= 8 && ringOn (pocket) == 0;
+        // (a press of the mouse, anywhere: the mark is gone from the sheet)
+        const auto off = pt (bin.getCentre());
+        sc.mouseDown (ev (off, off, false)); sc.mouseUp (ev (off, off, false)); fresh();
+        const bool gone = ! sc.testKbOn() && ringOn (card.r) == 0;
+        ses.stacks = stacksWere;
+        sc.setPage (Screen::pMain); fresh();
+        check (outOn && moved && opened && onChip && gone, "the keyboard's mark on the stage: an arrow brings it out on the bin's pocket, its four corners printed on the sheet round it; it moves to a stack's pocket, RETURN opens that, and down then left (pressed faster than the stage draws) is the first chip of its row; "
+                                                            "a press of the mouse takes it off the sheet");
+        if (! (outOn && moved && opened && onChip && gone)) std::printf ("    (out %d [%d before] moved %d opened %d on a chip %d gone %d)\n", (int) outOn, before, (int) moved, (int) opened, (int) onChip, (int) gone);
     }
 
     // 4. the eye

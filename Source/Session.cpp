@@ -3579,6 +3579,60 @@ void Session::pileKeys (const PileAt& p, int i, juce::uint32 keys)
     pileKept (*this, p, [&] (MacroKnob& kn) { if (i < 0 || i >= (int) kn.snaps.size()) return false; kn.setLanes ((size_t) i, keysOf (keys)); return true; });
 }
 
+// ---- a macro knob's ties, wherever it is kept
+bool Session::tieIs (const PileAt& p) const
+{
+    if (p.what == 2) return p.index >= 0 && p.index < (int) keptKnobs.size() && ! keptKnobs[(size_t) p.index].stack;
+    if (p.what == 3) return p.index >= 0 && p.index < (int) modules.size() && p.knob >= 0 && p.knob < 16 && ! isStack (p.knob) && ! isCorner (p.knob);
+    return false;
+}
+
+std::vector<MacroKnob::Link> Session::ties (const PileAt& p) const
+{
+    if (! tieIs (p)) return {};
+    if (p.what == 3 && p.index == moduleIndex()) return knobs[(size_t) p.knob].links;
+    return knobFrom (p.what == 2 ? keptKnobs[(size_t) p.index].knob : moduleKnob (p.index, p.knob)).links;
+}
+
+bool Session::tieChange (const PileAt& p, const std::function<bool (MacroKnob&)>& change)
+{
+    if (! tieIs (p)) return false;
+    if (pileKnobKept (*this, p)) return pileKept (*this, p, change);
+    // (the knob in the chassis: what it is adding to the sound follows, and so does what its MOTION reaches)
+    if (learning == p.knob) return false;
+    if (! change (knobs[(size_t) p.knob])) return false;
+    applyMorph (glideBeats());
+    lawsSig = 0; motionLaws();
+    touch();
+    if (onChange) onChange();
+    return true;
+}
+
+bool Session::tieSet (const PileAt& p, int i, int hundredths)
+{
+    return tieChange (p, [&] (MacroKnob& kn)
+    {
+        if (i < 0 || i >= (int) kn.links.size()) return false;
+        auto& l = kn.links[(size_t) i];
+        int h = juce::jlimit (-100, 100, hundredths);
+        if (h == 0) h = l.amount < 0.0f ? -1 : 1;
+        const float a = (float) h / 100.0f;
+        if (std::abs (a - l.amount) < 0.0005f) return false;
+        l.amount = a;
+        return true;
+    });
+}
+
+bool Session::tieDrop (const PileAt& p, int i)
+{
+    return tieChange (p, [&] (MacroKnob& kn)
+    {
+        if (i < 0 || i >= (int) kn.links.size()) return false;
+        kn.links.erase (kn.links.begin() + i);
+        return true;
+    });
+}
+
 int Session::stacksHolding (juce::int64 id, juce::StringArray* names) const
 {
     int n = 0;
