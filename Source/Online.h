@@ -60,6 +60,13 @@ public:
     // removed there is so here (the snapshots it names that this library lacks are brought first). After each pass
     // while ONLINE is on, and by LOAD (sure). True: it has more to do soon.
     bool rack (bool sure = false);
+    // The archive: what else the library is sent so that it can be studied away from the instrument. The log of what was
+    // done with the chips; the session without its chips (its modules, kept knobs, stacks, arrangements), when it has
+    // changed; the sound files a snapshot needs to be played again; each snapshot's sound without loss. After each pass
+    // while ONLINE is on, a little at a time, so that a snapshot just taken is never kept waiting by it. sure: all of it
+    // now (the checks). True: there is more to go soon.
+    bool archive (bool sure = false);
+    int archiveLeft() const                 { return archiveToGo.load(); }      // how much of it has still to go (0: the library has it all)
     juce::String loadLine() const;
     bool loading() const                    { return loadBusy.load(); }
     int requests() const                    { return asked.load(); }        // sends made so far (the checks)
@@ -93,7 +100,7 @@ private:
     CallOff callOff;
     static Reply http (const Setup&, const juce::String& method, const juce::String& path,
                        const juce::MemoryBlock* body, const juce::String& contentType, int timeoutMs = 15000, CallOff* = nullptr, bool wantBytes = false);
-    struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false, stems = false; juce::String name; };       // (stems: its stems are there, or were turned down)
+    struct Entry { bool snap = false, clip = false, gone = false, refused = false, prof = false, stems = false, lossless = false; juce::String name; };       // (stems, lossless: they are there, or were turned down)
     int bringOne (const Setup&, const juce::String& uid, bool hasClip, bool& silent, Reply& why);
     void readSetup();
     void writeSetup() const;
@@ -116,6 +123,19 @@ private:
     bool asksFirst = true;                  // the library has not yet been asked what it holds
     int failures = 0;
     bool noStems = false;                           // the library said it keeps no stems (one from before it did): not offered again this run
+    // the archive
+    bool noLossless = false, noFiles = false, noLog = false, noSession = false;     // the library has no such address (one from before it had): not offered again this run
+    std::map<juce::String, juce::int64> logSent;    // each file of the log, by its name: how many bytes of it the library has
+    std::set<juce::String> filesSent;               // the sound files it has, by their SHA-256
+    bool filesAsked = false;                        // it has been asked which of them it holds
+    juce::String sessionHash;                       // the session as it was last sent (a hash of it)
+    juce::uint32 sessionSeen = 0, sessionAt = 0;    // the session's count of changes when it was last looked at, and when that was
+    bool sessionLooked = false;
+    int archiveFails = 0;                           // calls on end that got no answer, and when the next may be made
+    std::map<juce::String, int> archiveTries;       // a large thing the library's own trouble kept out (by its hash, or its snapshot's uid): how often
+    std::set<juce::String> archiveSkip;             // ...and those left for another run: three times, or not what its name says, or too large to go
+    juce::uint32 archiveNext = 0;
+    std::atomic<int> archiveToGo { 0 };
     std::array<juce::String, 16> mirrorSeen;        // each knob as the last pass saw it (one that has just changed is given a pass to settle)
     juce::String sentTo;                    // the address the ledger was made against
     static constexpr int kRackEveryMs = 15000;     // the library is asked for its stacks no oftener, unless the rack here has changed

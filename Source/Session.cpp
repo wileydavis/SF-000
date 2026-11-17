@@ -10,6 +10,10 @@ using juce::var;
 
 static const int kMorphEnd = cx::kRetMS;      // lanes, returns and the drum bus: what a snapshot knob can reach
 
+juce::String Session::madeBy() { return juce::String (JUCE_APPLICATION_VERSION_STRING) + " " + SF000_COMMIT; }
+juce::String Session::hashOf (const juce::String& text) { return juce::SHA256 (text.toRawUTF8(), text.getNumBytesAsUTF8()).toHexString(); }
+juce::String Session::hashOf (const void* data, size_t bytes) { return juce::SHA256 (data, bytes).toHexString(); }
+
 Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 {
     genType.fill (-1);
@@ -38,6 +42,7 @@ Session::~Session()
     finishTakes (true);
     engine.dropCue();                   // before the clips go
     waitForClips();
+    waitForLog();
     if (useDisk) { save(); engine.keepFile = nullptr; }
 }
 
@@ -51,6 +56,8 @@ void Session::timerCallback()
     if (arrOn) { arrTick(); if (arrOn && ++arrTicks % 64 != 0) return; }
     else if (transWas && ! transPend.empty() && ++arrTicks % 64 != 0) return;
     finishTakes();
+    // (the log: the clock started or stopped. Seen when this looks, so to within three seconds)
+    if (const bool run = engine.isRunning(); run != logRunWas) { logRunWas = run; logAction (run ? "run" : "stop", 0, { { "bpm", (double) engine.tempo() } }); }
     engine.tidy();
     pullHeard();
     if (samplesMoved) { samplesMoved = false; sweepSamples(); }      // a sample was given: the one it replaced, if nothing holds it now, goes
@@ -103,7 +110,10 @@ void Session::transArm()
         // put out with things waiting: they happen now
         engine.clearSetsAt();
         transDoing = true;
-        for (auto& p : transPend) { if (p.kind == 0) recall (p.id, p.scope); else userSet (p.ctl, p.v, p.sounding); }
+        {
+            const Quiet q (*this);          // (each was logged when it was asked for)
+            for (auto& p : transPend) { if (p.kind == 0) recall (p.id, p.scope); else userSet (p.ctl, p.v, p.sounding); }
+        }
         transDoing = false;
         transPend.clear();
     }
@@ -557,6 +567,7 @@ void Session::turnSnapKnob (int k, float v)
         engine.set (cx::kSnap + k, v);
         applyMorph (glideBeats());
         if (kn.picked != on && onChange) onChange();        // (it has come to one, or left it: the panel names the one it stands on)
+        if (kn.picked != on && kn.picked != 0) logAction ("knob", kn.picked, { { "knob", k + 1 }, { "how", "turn" } });
     }
     touch();
 }
@@ -885,7 +896,9 @@ void Session::pressSnapKnob (int k)
         const auto it = h[(size_t) at];
         auto sc = scopeOf (it.lanes);
         sc.notes = recallNotes || it.notes;         // (the library's NOTES, as before; or its own N)
+        logFrom = "knob"; logKnob = k;
         recall (it.id, sc);
+        logFrom = nullptr; logKnob = -1;
         kn.picked = it.id;
     }
     else
@@ -913,6 +926,7 @@ void Session::pressSnapKnob (int k)
             for (int s = 0; s < kSlots; ++s)
                 slotTo (l, s, slotBetween (slotOf (sa.lane[(size_t) l] ? A.s : nullptr, l, s), slotOf (sb.lane[(size_t) l] ? B.s : nullptr, l, s), f), recallGlide());
         }
+        logAction ("between", A.id, { { "with", uidOf (B.id) }, { "f", (double) f }, { "knob", k + 1 } });
         stacksLeft (k);
         kn.picked = 0;                                      // (between two: it stands on neither)
         baseId = 0;
@@ -933,6 +947,7 @@ bool Session::stackAdd (int k, juce::int64 id, juce::uint32 lanes)
     const auto on = kn.picked;
     kn.add (id, keysOf (lanes));
     stackSettle (k, on);
+    logAction ("add", id, { { "to", "knob" }, { "knob", k + 1 }, { "at", (int) kn.snaps.size() - 1 }, { "parts", (int) (keysOf (lanes) & kAllLanes) } });
     return true;
 }
 
@@ -941,6 +956,7 @@ void Session::stackDrop (int k, int index)
     if (! isStack (k)) return;
     auto& kn = knobs[(size_t) k];
     if (index < 0 || index >= (int) kn.snaps.size()) return;
+    logAction ("drop", kn.snaps[(size_t) index], { { "from", "knob" }, { "knob", k + 1 }, { "at", index } });
     const auto on = kn.picked == kn.snaps[(size_t) index] ? 0 : kn.picked;
     kn.dropAt ((size_t) index);
     kn.picked = on;
@@ -965,6 +981,7 @@ void Session::stackMove (int k, int from, int to)
     to = juce::jlimit (0, n - 1, to);
     if (to == from) return;
     const auto on = kn.picked;
+    logAction ("move", kn.snaps[(size_t) from], { { "in", "knob" }, { "knob", k + 1 }, { "at", from }, { "to", to } });
     for (int i = from; i < to; ++i) kn.swapAt ((size_t) i, (size_t) i + 1);
     for (int i = from; i > to; --i) kn.swapAt ((size_t) i, (size_t) i - 1);
     stackSettle (k, on);
@@ -980,6 +997,7 @@ bool Session::stackInsert (int k, int at, juce::int64 id, juce::uint32 lanes)
     const int last = (int) kn.snaps.size() - 1;
     for (int i = last; i > juce::jlimit (0, last, at); --i) kn.swapAt ((size_t) i, (size_t) i - 1);
     stackSettle (k, on);
+    logAction ("add", id, { { "to", "knob" }, { "knob", k + 1 }, { "at", juce::jlimit (0, last, at) }, { "parts", (int) (keysOf (lanes) & kAllLanes) } });
     return true;
 }
 
@@ -1354,6 +1372,7 @@ void Session::sign()
 
 juce::File Session::clipFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".ogg"); }
 juce::File Session::stemsFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".stems"); }
+juce::File Session::losslessFile (juce::int64 id) const { return stateFile().getSiblingFile ("clips").getChildFile (juce::String (id) + ".lossless"); }
 juce::String Session::stemKey (int index)
 {
     if (index >= 0 && index < kLanes) return lanes()[(size_t) index].slug;
@@ -1408,7 +1427,136 @@ bool Session::readStems (juce::int64 id, Stems& out, const Scope* only) const
     return true;
 }
 
+// A lossless file: a line that says what it is, a line of JSON (the rate, the bars, the bit depth, and for each part its
+// key, how many bytes it is and the gain it was written at), then the parts one after another, each a FLAC file. The
+// first is "mix", the output; the rest are the stems that sounded, by their keys.
+static const char* const kLosslessMark = "SF0LOSSLESS1\n";
+bool Session::readLossless (const juce::File& file, Lossless& out)
+{
+    out = Lossless();
+    juce::MemoryBlock all;
+    if (! file.loadFileAsData (all) || all.getSize() < 16) return false;
+    const char* d = (const char*) all.getData();
+    const size_t size = all.getSize(), markLen = std::strlen (kLosslessMark);
+    if (std::memcmp (d, kLosslessMark, markLen) != 0) return false;
+    size_t eol = markLen;
+    while (eol < size && d[eol] != '\n') ++eol;
+    if (eol >= size) return false;
+    const var head = juce::JSON::parse (juce::String::fromUTF8 (d + markLen, (int) (eol - markLen)));
+    auto* list = head["parts"].getArray();
+    if (list == nullptr) return false;
+    out.rate = (double) head["rate"]; out.bars = (int) head["bars"]; out.bits = (int) head["bits"];
+    size_t at = eol + 1;
+    juce::FlacAudioFormat flac;
+    for (const auto& e : *list)
+    {
+        // (the length as the file says it, checked against what is left before it is used)
+        const juce::int64 said = (juce::int64) e["bytes"];
+        if (said <= 0 || at > size || (juce::uint64) said > (juce::uint64) (size - at)) return false;
+        const auto bytes = (size_t) said;
+        const float gain = e.hasProperty ("gain") ? (float) (double) e["gain"] : 1.0f;
+        if (! (gain > 0.0f)) return false;
+        std::unique_ptr<juce::AudioFormatReader> r { flac.createReaderFor (new juce::MemoryInputStream (d + at, bytes, false), true) };
+        if (r == nullptr || r->lengthInSamples < 2 || r->lengthInSamples > 48000 * 240) return false;
+        juce::AudioBuffer<float> b (2, (int) r->lengthInSamples);
+        b.clear();
+        r->read (&b, 0, (int) r->lengthInSamples, 0, true, true);
+        b.applyGain (1.0f / gain);
+        out.parts.push_back ({ e["key"].toString(), std::move (b) });
+        out.gains.push_back (gain);
+        at += bytes;
+    }
+    return at == size && ! out.parts.empty();
+}
+
+// (written by the clips' own thread: see keepClip)
+void Session::writeLossless (const juce::File& file, const juce::AudioBuffer<float>& mix, const std::vector<juce::AudioBuffer<float>>* stems, double rate, int bars)
+{
+    juce::FlacAudioFormat flac;
+    juce::Array<var> list;
+    juce::MemoryBlock body;
+    auto add = [&] (const juce::String& key, const juce::AudioBuffer<float>& b)
+    {
+        const int n = b.getNumSamples();
+        if (n < 2 || b.getNumChannels() < 2) return;
+        const float peak = b.getMagnitude (0, n);
+        if (key != "mix" && peak < 1.0e-4f) return;                     // (a lane that was silent is left out, as its stem is)
+        // (24 bits hold what is within full scale. A stem that ran over it, as one may before the master, is written
+        // quieter by a power of two, which loses nothing of a float, and says so)
+        float gain = 1.0f;
+        while (peak * gain > 0.999f && gain > 1.0e-6f) gain *= 0.5f;
+        juce::MemoryBlock one;
+        {
+            auto out = std::make_unique<juce::MemoryOutputStream> (one, false);
+            std::unique_ptr<juce::AudioFormatWriter> w (flac.createWriterFor (out.get(), rate, 2, 24, {}, 4));
+            if (w == nullptr) return;
+            out.release();
+            bool ok = false;
+            if (gain == 1.0f) ok = w->writeFromAudioSampleBuffer (b, 0, n);
+            else { juce::AudioBuffer<float> q; q.makeCopyOf (b); q.applyGain (gain); ok = w->writeFromAudioSampleBuffer (q, 0, n); }
+            if (! ok) return;
+        }
+        if (one.getSize() < 8) return;
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("key", key); o->setProperty ("bytes", (juce::int64) one.getSize()); o->setProperty ("gain", (double) gain);
+        list.add (var (o));
+        body.append (one.getData(), one.getSize());
+    };
+    add ("mix", mix);
+    if (stems != nullptr) for (size_t k = 0; k < stems->size(); ++k) add (Session::stemKey ((int) k), (*stems)[k]);
+    if (list.isEmpty()) { file.deleteFile(); return; }
+    auto* h = new juce::DynamicObject();
+    h->setProperty ("rate", rate); h->setProperty ("bars", bars); h->setProperty ("bits", 24); h->setProperty ("parts", list);
+    const auto head = juce::JSON::toString (var (h), true);
+    file.getParentDirectory().createDirectory();
+    const auto part = file.getSiblingFile (file.getFileName() + ".part");
+    part.deleteFile();
+    bool ok = false;
+    if (auto out = part.createOutputStream())
+        ok = out->write (kLosslessMark, std::strlen (kLosslessMark)) && out->writeText (head, false, false, nullptr) && out->writeByte ('\n') && out->write (body.getData(), body.getSize());
+    if (ok) part.moveFileTo (file); else part.deleteFile();
+}
+
 void Session::waitForClips() { while (clipWriter.getNumJobs() > 0) juce::Thread::sleep (2); }
+
+// ------------------------------------------------------------------------------------ the log
+juce::File Session::logDir() const { return stateFile().getSiblingFile ("log"); }
+void Session::waitForLog() { while (logWriter.getNumJobs() > 0) juce::Thread::sleep (2); }
+juce::String Session::uidOf (juce::int64 id) const { const auto* sn = id != 0 ? findSnap (id) : nullptr; return sn != nullptr ? sn->uid : juce::String(); }
+
+// A line: its own name (k: when, the count since this run began, this run's mark: no two alike, with nothing kept
+// between runs), when (t, ms), what was done (a), the chip it was done to (u, its uid; one the rig came with has its
+// number here and its name too, "id" and "name"), and whatever else says how. The chip the set was last on is "base"
+// where that matters.
+void Session::logAction (const char* what, juce::int64 chip, const juce::NamedValueSet& more)
+{
+    if (logQuiet > 0 || printRig) return;
+    const auto t = juce::Time::currentTimeMillis();
+    if (logRun.isEmpty())
+    {
+        // (the first line of a run says which build is writing: what a line means is that build's to say)
+        logRun = juce::String::toHexString (juce::Random::getSystemRandom().nextInt (0x10000)).paddedLeft ('0', 4);
+        logAction ("open", 0, { { "app", madeBy() }, { "library", libraryId } });
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("k", juce::String::toHexString (t) + "-" + juce::String::toHexString (++logCount).paddedLeft ('0', 4) + "-" + logRun);
+    o->setProperty ("t", t);
+    o->setProperty ("a", what);
+    if (chip != 0)
+    {
+        const auto u = uidOf (chip);
+        if (u.isNotEmpty()) o->setProperty ("u", u);
+        // (one the rig came with is never sent to the library, so its name there would find nothing: its number and name here say which it is)
+        if (u.isEmpty() || chip < 1000000) { o->setProperty ("id", chip); if (const auto* sn = findSnap (chip)) o->setProperty ("name", sn->name); }
+    }
+    for (const auto& m : more) o->setProperty (m.name, m.value);
+    const auto line = juce::JSON::toString (var (o), true);
+    logTail.add (line);
+    while (logTail.size() > 400) logTail.remove (0);
+    if (! useDisk) return;
+    const auto file = logDir().getChildFile (juce::Time (t).formatted ("%Y-%m") + ".jsonl");
+    logWriter.addJob ([file, line] { file.getParentDirectory().createDirectory(); file.appendText (line + "\n", false, false, "\n"); });
+}
 
 // Written by a thread of its own: Ogg Vorbis, a hundred-odd kilobytes for four bars.
 void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
@@ -1417,9 +1565,10 @@ void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
     const auto file = clipFile (id);
     const double rate = heard.sampleRate;
     // its lanes, beside it: each stem that sounded, in one file (see readStems)
+    std::shared_ptr<std::vector<juce::AudioBuffer<float>>> stems;
     if (! heard.stems.empty())
     {
-        auto stems = std::make_shared<std::vector<juce::AudioBuffer<float>>> (heard.stems);
+        stems = std::make_shared<std::vector<juce::AudioBuffer<float>>> (heard.stems);
         const auto sfile = stemsFile (id);
         const int bars = heard.bars;
         clipWriter.addJob ([stems, sfile, rate, bars]
@@ -1472,6 +1621,13 @@ void Session::keepClip (juce::int64 id, const Engine::Heard& heard)
         }
         if (ok) part.moveFileTo (file); else part.deleteFile();
     });
+    // the same bars without loss, last (what the instrument plays is on the disk first): for the library to be studied from
+    if (keepLossless)
+    {
+        const auto lfile = losslessFile (id);
+        const int bars = heard.bars;
+        clipWriter.addJob ([audio, stems, lfile, rate, bars] { writeLossless (lfile, *audio, stems.get(), rate, bars); });
+    }
 }
 
 std::vector<juce::int64> Session::mapCell (int row, int col) const
@@ -1540,7 +1696,17 @@ void Session::pruneCues()
         if (cueKept[i].second != 0 && now - cueKept[i].second > 1000) cueKept.erase (cueKept.begin() + (long) i);
 }
 
+// (the log: a chip put in the headphones that was not the one there, with the parts it is heard with)
 bool Session::cue (juce::int64 id)
+{
+    const auto was = cueId;
+    const bool ok = cueDo (id);
+    if (ok && id != 0 && cueId == id && was != id)
+        logAction ("hear", id, { { "parts", (int) (id == cueScopeFor ? lanesOf (cueScope) : kAllLanes) }, { "base", uidOf (baseId) } });
+    return ok;
+}
+
+bool Session::cueDo (juce::int64 id)
 {
     const auto now = juce::Time::getMillisecondCounter();
     auto retire = [this, now] { for (auto& k : cueKept) if (k.second == 0) k.second = now == 0 ? 1u : now; };
@@ -1659,6 +1825,7 @@ void Session::cueRigTake (const juce::var& state, juce::int64 target, juce::uint
 
 juce::int64 Session::take()
 {
+    const auto logBase = uidOf (baseId);        // (the log: what the set was last on, before this is)
     auto s = capture();
     // what each lane was playing that its steps do not say: the notes from outside, and whether its own sequencer was heard
     pullHeard();
@@ -1696,6 +1863,7 @@ juce::int64 Session::take()
     else if (engine.lastHeard (heard, 4, true)) settle (id, heard, false);     // the clock is stopped: what was last heard, if anything
     touch();
     if (onLibrary) onLibrary();
+    logAction ("take", id, { { "base", logBase }, { "running", engine.isRunning() }, { "bpm", (double) engine.tempo() } });
     return id;
 }
 
@@ -2181,6 +2349,13 @@ void Session::recallWhole (juce::int64 id)
 
 void Session::recall (juce::int64 id, const Scope& scope)
 {
+    // (the log: a recall that a hand asked for, here or on a controller. Not the arrangement's own, which logs its parts)
+    if (glideOver < 0.0 && findSnap (id) != nullptr)
+    {
+        juce::NamedValueSet how { { "parts", (int) lanesOf (scope) }, { "notes", scope.notes }, { "base", uidOf (baseId) } };
+        if (logFrom != nullptr) { how.set ("from", logFrom); if (logKnob >= 0) how.set ("knob", logKnob + 1); }
+        logAction ("recall", id, how);
+    }
     // (ARM: it waits for the line. Not a recall that is made over a given time: the arrangement's own, and ARM's when its line comes.)
     if (glideOver < 0.0) { TransPend p; p.kind = 0; p.id = id; p.scope = scope; if (transDefer (p)) return; }
     if (scope.all()) { recallWhole (id); return; }
@@ -2224,10 +2399,11 @@ void Session::remove (juce::int64 id)
 {
     const int i = indexOf (id);
     if (i < 0) return;
+    logAction ("delete", id);
     library.erase (library.begin() + i);
     waiting.erase (std::remove_if (waiting.begin(), waiting.end(), [id] (const Waiting& w) { return w.id == id; }), waiting.end());
     if (cueId == id) cue (0);
-    if (useDisk) { waitForClips(); clipFile (id).deleteFile(); stemsFile (id).deleteFile(); }
+    if (useDisk) { waitForClips(); clipFile (id).deleteFile(); stemsFile (id).deleteFile(); losslessFile (id).deleteFile(); }
     for (auto& k : knobs) { k.drop (id); if (k.picked == id) k.picked = 0; }
     {
         const auto partsWere = arrangement.size();
@@ -2521,15 +2697,15 @@ static juce::String said (const juce::File& f)
     return (f.isAChildOf (home) ? "~/" + f.getRelativePathFrom (home) : f.getFullPathName()).toUpperCase();
 }
 
-// A library, from one folder to another: the session, its id, what has been sent online, the clips
-// and the samples. (Not the backups: they are of the place they were made in.)
+// A library, from one folder to another: the session, its id, what has been sent online, the clips,
+// the samples and the log. (Not the backups: they are of the place they were made in.)
 static bool copyLibrary (const juce::File& from, const juce::File& to)
 {
     if (! to.createDirectory()) return false;
     bool ok = true;
     for (auto* name : { "session.json", "library-id.txt", "online-sent.json" })
         if (const auto f = from.getChildFile (name); f.existsAsFile()) ok = f.copyFileTo (to.getChildFile (name)) && ok;
-    for (auto* name : { "clips", "samples" })
+    for (auto* name : { "clips", "samples", "log" })
         if (const auto d = from.getChildFile (name); d.isDirectory()) ok = d.copyDirectoryTo (to.getChildFile (name)) && ok;
     return ok;
 }
@@ -3003,7 +3179,11 @@ bool Session::stackOnto (int index, int k)
     if ((int) (kn.snaps.size() + st.snaps.size()) > kStackMost) return false;
     const bool empty = kn.snaps.empty();
     bool any = false;
-    for (size_t i = 0; i < st.snaps.size(); ++i) any = stackAdd (k, st.snaps[i], st.keysAt (i)) || any;
+    {
+        const Quiet q (*this);          // (one thing done: a stack onto a knob, logged once)
+        for (size_t i = 0; i < st.snaps.size(); ++i) any = stackAdd (k, st.snaps[i], st.keysAt (i)) || any;
+    }
+    if (any) logAction ("onto", 0, { { "stack", st.id }, { "name", st.name }, { "knob", k + 1 }, { "chips", (int) st.snaps.size() } });
     if (any && empty && kn.name.isEmpty()) { kn.name = st.name.substring (0, 24); touch(); if (onChange) onChange(); }
     return any;
 }
@@ -3050,6 +3230,7 @@ bool Session::rackAdd (int index, juce::int64 id, juce::uint32 lanes)
     lanes = keysOf (lanes);
     if (lanes != kAllLanes || ! st.lanes.empty()) { st.lanes.resize (st.snaps.size(), kAllLanes); st.lanes.push_back (lanes); }
     st.snaps.push_back (id);
+    logAction ("add", id, { { "to", "stack" }, { "stack", st.id }, { "name", st.name }, { "at", (int) st.snaps.size() - 1 }, { "parts", (int) (lanes & kAllLanes) } });
     touch();
     if (onLibrary) onLibrary();
     if (onChange) onChange();
@@ -3061,6 +3242,7 @@ void Session::rackDrop (int index, int at)
     if (! rackCanChange (index)) return;
     auto& st = stacks[(size_t) index];
     if (at < 0 || at >= (int) st.snaps.size()) return;
+    logAction ("drop", st.snaps[(size_t) at], { { "from", "stack" }, { "stack", st.id }, { "name", st.name }, { "at", at } });
     st.snaps.erase (st.snaps.begin() + at);
     if (at < (int) st.lanes.size()) st.lanes.erase (st.lanes.begin() + at);
     touch();
@@ -3096,6 +3278,7 @@ void Session::rackMove (int index, int from, int to)
         st.lanes.erase (st.lanes.begin() + from); st.lanes.insert (st.lanes.begin() + to, l);
     }
     const auto id = st.snaps[(size_t) from];
+    logAction ("move", id, { { "in", "stack" }, { "stack", st.id }, { "name", st.name }, { "at", from }, { "to", to } });
     st.snaps.erase (st.snaps.begin() + from); st.snaps.insert (st.snaps.begin() + to, id);
     touch();
     if (onLibrary) onLibrary();
@@ -3106,8 +3289,13 @@ bool Session::rackInsert (int index, int at, juce::int64 id, juce::uint32 lanes)
 {
     if (! rackCanChange (index)) return false;
     const int n = (int) stacks[(size_t) index].snaps.size();
-    if (! rackAdd (index, id, lanes)) return false;
-    if (at >= 0 && at < n) rackMove (index, n, at);
+    {
+        const Quiet q (*this);          // (one thing done: logged once, with the place it went to)
+        if (! rackAdd (index, id, lanes)) return false;
+        if (at >= 0 && at < n) rackMove (index, n, at);
+    }
+    const auto& st = stacks[(size_t) index];
+    logAction ("add", id, { { "to", "stack" }, { "stack", st.id }, { "name", st.name }, { "at", at >= 0 && at < n ? at : n }, { "parts", (int) (keysOf (lanes) & kAllLanes) } });
     return true;
 }
 
@@ -3146,7 +3334,10 @@ int Session::rackCopy (int index)
     if (index < 0 || index >= (int) stacks.size()) return -1;
     const Stack from = stacks[(size_t) index];
     const int at = rackNew (from.name);                 // (an empty one of the instrument's own, under the next free name)
-    for (size_t i = 0; i < from.snaps.size(); ++i) rackAdd (at, from.snaps[i], from.keysAt (i));
+    {
+        const Quiet q (*this);          // (a copy is not each of its chips chosen again)
+        for (size_t i = 0; i < from.snaps.size(); ++i) rackAdd (at, from.snaps[i], from.keysAt (i));
+    }
     return at;
 }
 
@@ -3451,6 +3642,7 @@ bool Session::moduleLoad (int index)
     lawsSig = 0; motionLaws();
     touch();
     if (onChange) onChange();
+    logAction ("module", 0, { { "module", m.id }, { "name", m.name } });
     return true;
 }
 
@@ -4336,7 +4528,7 @@ void Session::save()
 
 // Everything the session file holds, as it stands now (the file is this, written out; a print's
 // own rig is made from it).
-var Session::stateVar()
+var Session::stateVar (bool withChips)
 {
     sign();
     auto* root = new juce::DynamicObject();
@@ -4396,9 +4588,9 @@ var Session::stateVar()
     root->setProperty ("insertFiles", insf);
 
     juce::Array<var> lib, kn;
-    for (auto& s : library) lib.add (snapToVar (s, engine));
+    if (withChips) for (auto& s : library) lib.add (snapToVar (s, engine));
     for (auto& k : knobs) kn.add (knobVar (k));
-    root->setProperty ("library", lib);
+    if (withChips) root->setProperty ("library", lib);
     root->setProperty ("knobs", kn);
     {
         // the modules kept: the one in the chassis as its knobs stand now, the others as they were left
@@ -4466,6 +4658,7 @@ var Session::stateVar()
     if (stacksGone.size() > 0) root->setProperty ("stacksGone", stacksGone);
     // The definitions: every one the file has held, and this build's own. Never pruned: a snapshot
     // made long ago still finds what it was made with.
+    if (withChips)
     {
         auto* d = new juce::DynamicObject();
         for (auto& e : defsKept) d->setProperty (e.first, e.second);

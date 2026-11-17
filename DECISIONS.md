@@ -4171,8 +4171,161 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      library (634: none of these now). A column card's number in MACROS still takes its chip
      out at a press.
 
+## A library of knobs made first: said, begun, set down (Nov 16, 19:49)
+
+644. **You**, 19:49 to 20:10, trying the seventy-sixth build, asked how to make or choose a
+     macro knob, why the right-most module could not be deleted, whether one macro knob can be
+     on several modules, how to keep a module and start an empty one. Answered in the chat;
+     nothing was built for them.
+645. **You**, 20:00: "I want to build up a collection of kacro and stack knobs as independent
+     objects, then i want to build up collections of modules made up of differen comos of those
+     knobs, then i want to be able to swap different pre-made modules into the chassis."
+     20:02: "Si I say, want to make some macros knobs that are goot for transitions, like say a
+     global filter knob. I go to the macro knob page and make one via learn. Then i save it to
+     the macro knob library. then later, i want to build some modules, so I go to the module
+     building page and I create a new m odule and fill it from the stack and macro knob
+     library. Or I want to build a stack knob so i go to the stack knob page and create a new
+     one and add chips to it and save it to the macro knob library." 20:03: "knob copies are
+     fine. But I want a library of prebuilt knobs I can put in modules ."
+646. **Begun, and set down.** I started on it (a kept knob made new on the KNOBS shelf, LEARN on
+     a kept knob). **You**, 20:08: "Okay, I'll give the existing workflow a try. then get back
+     to you if changes are needed." It stopped there. What was written is on a branch of its
+     own on the machine it was written on, unbuilt and untested, and is in no build. *Mine to
+     have started without being asked; yours whether it comes back.*
+
+## Nothing is lost from now on: lossless sound, a log, what the library is studied from (Nov 16, 20:29): seventy-seventh build
+
+647. **You**, 20:15, with a document from another chat (a plan for the web library to analyse
+     and recommend): "while i test, here's are some ideas from another chat about the online
+     library tool." It is not in the repo. What follows is what was settled talking it over.
+648. **What the analysis has to work from. You**, 20:19: "but doesn't the parameter daya give us
+     that profile since the analysis sytem would have an understanding of the character of
+     each module and what sounds it can produce?" 20:20: "but by having the isntrument as a
+     model that cun run simulations, the analysis can measure it, yes?" *Mine:* yes to both.
+     The values say what a chip is made of, and the instrument run without a screen can render
+     any chip, or anything between two, to be measured. The sound that was taken is still the
+     only record of what you heard, and of a build that has since changed: so it is kept too,
+     and without loss.
+649. **Always running, always learning. You**, 20:20: "as a background process that's always
+     running and always listening for new snapshots." 20:21: "I want the analysis to always be
+     running and making more complex relationships between chips and learning as it goes."
+650. **It is the reason for the library. You**, 20:22, to my saying it could start small on the
+     Mac: "my point isn;'t that it can do it now, my point is that the whole reaosn for storing
+     the snapshots was to do deep and complex analysis on a library of sounds that's always
+     geowing." 20:23: "that's why it needs to be off-instrument. the instrument just transm,its
+     data to the learning library. data about soundchips, arrangements, etc." *I had it wrong,
+     and this is the correction:* the analysis is not a feature of the instrument to be grown
+     into. The instrument's whole part is to keep and send; everything else is elsewhere.
+651. **Where. You**, 20:24: "I also have a mac studio that we could use as the storage library
+     and analysis machine." 20:26: "I like the web intermediary between the played instument,
+     and the analysis mac". So: the instrument sends to the web library; the web library is the
+     record and the meeting point; the analysis machine fetches from it and puts back what it
+     finds; the instrument reads what was found from the web library. The instrument and the
+     analysis machine never have to be on, or reachable, at the same time.
+652. **What comes back, in the end. You**, 20:25: "I'd think of the instrumentside as being
+     able to hold a "smart" snapshot module eventually that contains recommendation chips and
+     knobs dynamically buult around what the instrument is currenlty playing. it does this by
+     having precomputed data about the library." Not in this build (660).
+653. **Start now, on the laptop. You**, 20:29, asked whether the Mac Studio could be it: "It can
+     eventually. We can test and get the system going using my laptop, and just run the
+     analysis as a separate application that i fire up whenever I'm not playing the
+     instrument. Capture lossless" and, on a line of its own, "We can start now while i test
+     the instrument for bugs and workflow." The hold on the web
+     library (498) is lifted by this for the archive; what it may do there is still additions
+     only.
+654. **This build is the instrument's part, whole: nothing is lost from now on.** Three things
+     are kept that were not, and with ONLINE lit they go to the web library. *Mine, each of the
+     particulars below.*
+     - **Each snapshot's sound without loss** ("Capture lossless"). Beside the clip and the
+       stems, which stay Ogg Vorbis and are still what is played, the same bars as FLAC of 24
+       bits: the output, then each stem that sounded. One file, `clips/<id>.lossless`,
+       written last by the thread that writes the clip. Measured here: 10.2 MB for four bars
+       at 132 with fourteen parts sounding (the clip 166 KB, the stems 1.1 MB). Read back, a
+       sound is as it was to the last of its 24 bits (off by 1.2e-7 of full scale at most). A
+       stem that ran over full scale, as one may before the master, is written quieter by a
+       power of two and says by how much, which loses nothing.
+     - **A log of what is done with chips**, a line as each thing is done: taken, heard,
+       recalled (which parts, its notes, from which knob), a stack knob turned onto a chip or
+       pressed between two, put into or taken out of a knob, a stack or the arrangement, an
+       arrangement played and each part it came to, RUN and STOP. `log/<YYYY-MM>.jsonl`, only
+       ever added to, written by a thread of its own. A chip is named by its uid; one the rig
+       came with, which the web library never has, by its number and name too. Each line has a
+       name no other line has, so one sent twice is kept once. The first line of a run names
+       the build. What ONLINE and WEB LOAD do leaves no line; a thing done in several steps is
+       one line.
+     - **Everything else the studying will need goes up too**: every sound file the rig has
+       been given (under its SHA-256, checked here before it goes and by the store as it
+       arrives), and the session without its chips (your knobs, stacks, modules and
+       arrangements, with which chip each of their numbers is), sent when it changes. What the
+       rig is doing this minute is left out of it, or every recall would be another session.
+655. **I said a thing that was wrong.** Talking this over I told you a snapshot does not record
+     which build made it, and put "each snapshot records the build that took it" on the list
+     for this build. It has always recorded it: `made.app` is the build's version and commit, and the
+     web library indexes it. Nothing needed building. The log's `open` line is the same thing
+     for the log.
+656. **When it goes.** After the snapshots, their clips and their stems, never ahead of them.
+     The log and the session are small and go as they change (the session once a minute at
+     most). **The sound files and the lossless sound go only while the rig is stopped, one a
+     pass**: megabytes are not read off the disk or sent up the line under a set being
+     played, and a snapshot just taken never waits behind a queue of them. The strip's line
+     says how many have still to go, and that they wait for the rig to stop when they do; the
+     lamp stays the snapshots' own. No answer: not tried again at once, and longer each time,
+     ten minutes at most. One file the library's own trouble keeps out three times is left
+     for another run, so that the rest are not held up by it. *Mine: you did not ask for the
+     large things to wait for STOP. Say if you would rather they went at any time.*
+657. **The web library: additions only.** Three tables it did not have (`files`, `actions`,
+     `sessions`), one column (`snapshots.lossless`), and the addresses for them (its README).
+     Nothing it held is changed. The seventy-sixth build, which is what is on your Mac until
+     you pull, was run against it as first written and passed every check it has; what was
+     changed in it after that (how a sound file is received, and its list saying which
+     snapshots have lossless sound) is nothing that build asks for, and this build's first
+     thirty-two checks are those same checks. A library that had 244 snapshots in it was
+     opened by the new code here: the three tables and the column were added and every
+     snapshot was as it had been. A sound file is passed straight through to the store, which works out its
+     hash as it arrives and keeps nothing that does not match: the file is never held whole
+     in the Worker, and hashing it costs the Worker none of its own time (ten milliseconds a
+     request is all a free plan gives). The other way round is covered too: this build's
+     checks pass against the library as it is deployed today, which is asked once for each
+     kind, says "not found", and is left alone.
+658. **Found on the way, in what was already there.**
+     - **WEB LOAD read a snapshot's definitions out of memory it had already given back.** It
+       had worked by luck, and the same mistake in the new code is how it was found (that one
+       crashed in the checks). Both are right now. If WEB LOAD ever closed SF-000 on you for
+       no reason, this may have been why.
+     - **A library moved to another folder (LIBRARY, CHOOSE) now takes its log with it**, as it
+       takes what has been sent online. And if the log on the disk is ever shorter than what
+       went, all of it goes again rather than the new lines being passed over.
+659. **Checks.** The engine's have two more: the lossless file (the same parts as the stems,
+     the output the clip's own, exact to its last bit, a damaged file refused), and the log
+     (each kind of line, by the chip's own name, nothing for what is not your doing, on the
+     disk as in memory). ONLINE's have seven more, against the web library's own code running
+     here: what goes with the rig running and what waits, one large thing a pass, each thing
+     there to the byte, every line of the log once, the session without its chips, nothing
+     sent twice, a new line alone, opened another day, no answer. Every other check as
+     before, and the engine's sixteen bars the same file as the reference.
+660. **Not in it.** The program that does the studying (653: a separate application, on the
+     laptop first). A place in the web library for what it finds. The "smart" module (652).
+     WEB LOAD bringing lossless sound or sound files back down. Lossless sound for snapshots
+     taken before this build (none was kept; it could be rendered again from the snapshot, as
+     PRINT renders, by the build that made it). Clearing lossless files off the Mac once the
+     library has them: they stay, about ten megabytes a snapshot. A switch for any of this:
+     it follows ONLINE.
+
 ## Not verified
 
+- **The archive (654 to 657) has not been against snapshots.drosaka.com, on your network, or
+  on the Mac.** It is checked against the web library's own code running here, with a store
+  that is a stand-in for Cloudflare's. Three things only the real one can say: that its store
+  turns a sound file down for a wrong hash in words this code knows (if not, a wrong file is
+  answered as trouble and tried again, never kept; a right file is unaffected); how long ten
+  megabytes takes up your line; and what a snapshot of yours weighs without loss (the 10 MB
+  is the rig's own patterns, every lane sounding). The first time ONLINE is lit on this
+  build with the rig stopped, the strip's line should count down some twenty-seven sound
+  files (about 59 MB, if your library is as I last saw it) and then say what it always said.
+  New snapshots add one each. Old snapshots have no lossless sound and add nothing.
+- **The log has been written by no hand.** Every kind of line is made by the checks. Whether
+  what it records is what the studying will want, only the studying will show: a kind of
+  line can be added at any time, and none already written changes.
 - **The keyboard in the rack and a macro knob's ties (636 to 640) have been under no hand.**
   They are checked with made-up key presses and drags on the drawn screens and on the 3D
   stage under a software driver. Whether the mark goes where your eye expects from each

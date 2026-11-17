@@ -46,7 +46,9 @@ bool Session::arrAdd (juce::int64 snap, int before, juce::uint32 lanes)
     // (a part comes in as the one before it is: the same length, the same way in; the first: eight bars, cut)
     const int like = before >= 0 && before < (int) arrangement.size() ? before : (int) arrangement.size() - 1;
     if (like >= 0) { p.bars = arrangement[(size_t) like].bars; p.morph = arrangement[(size_t) like].morph; }
+    const int went = before >= 0 && before < (int) arrangement.size() ? before : (int) arrangement.size();
     if (before >= 0 && before < (int) arrangement.size()) arrangement.insert (arrangement.begin() + before, p); else arrangement.push_back (p);
+    logAction ("add", snap, { { "to", "arr" }, { "arr", arrAtId }, { "at", went }, { "parts", (int) p.lanes } });
     if (arrOn && before >= 0 && before <= arrAt) ++arrAt;
     if (arrEdit >= 0 && before >= 0 && before <= arrEdit) ++arrEdit;       // (the part being edited is the one it was)
     touch();
@@ -57,6 +59,7 @@ bool Session::arrAdd (juce::int64 snap, int before, juce::uint32 lanes)
 void Session::arrRemove (int part)
 {
     if (part < 0 || part >= (int) arrangement.size()) return;
+    logAction ("drop", arrangement[(size_t) part].snap, { { "from", "arr" }, { "arr", arrAtId }, { "at", part } });
     arrangement.erase (arrangement.begin() + part);
     if (arrOn) { if (part <= arrAt) --arrAt; if (arrangement.empty()) arrStop(); }
     if (arrEdit == part) arrEdit = -1; else if (arrEdit > part) --arrEdit;  // (the part being edited taken out: there is nothing to keep it into)
@@ -68,6 +71,7 @@ void Session::arrMove (int part, int by)
 {
     const int to = part + by;
     if (part < 0 || part >= (int) arrangement.size() || to < 0 || to >= (int) arrangement.size() || by == 0) return;
+    logAction ("move", arrangement[(size_t) part].snap, { { "in", "arr" }, { "arr", arrAtId }, { "at", part }, { "to", to } });
     std::swap (arrangement[(size_t) part], arrangement[(size_t) to]);
     arrEdit = -1;                       // (what came before the part being edited is no longer what it was brought with)
     touch();
@@ -336,7 +340,11 @@ int Session::arrToStack()
     if (arrangement.empty()) return -1;
     const int at = rackNew ("TRACK");
     // (each with its part's keys, N among them: put on a knob, a part that brought its notes brings them there)
-    for (auto& p : arrangement) rackAdd (at, p.snap, (p.lanes & kAllLanes) | (p.notes ? kNotesKey : 0u));
+    {
+        const Quiet q (*this);          // (one thing done: the arrangement kept as a stack, logged once)
+        for (auto& p : arrangement) rackAdd (at, p.snap, (p.lanes & kAllLanes) | (p.notes ? kNotesKey : 0u));
+    }
+    logAction ("arr_to_stack", 0, { { "arr", arrAtId }, { "stack", stacks[(size_t) at].id }, { "name", stacks[(size_t) at].name }, { "chips", (int) arrangement.size() } });
     return at;
 }
 
@@ -348,6 +356,7 @@ void Session::arrPlay (int from)
     // (a chip that was being listened to is put down: its sound and the arrangement's were heard together. One pressed while
     // the arrangement plays is still heard, as one pressed while the set plays is.)
     if (cueId != 0) cue (0);
+    logAction ("play", 0, { { "arr", arrAtId }, { "from", from }, { "parts", (int) arrangement.size() } });
     arrOn = true; arrTicks = 0; arrTransFor = -1;
     for (auto& p : arrangement) { if (p.transIn == 2) engine.transAsset (p.inFile); if (p.transHit == 2) engine.transAsset (p.hitFile); }       // (the parts' own files, read before it plays)
     if (! engine.isRunning())
@@ -355,6 +364,7 @@ void Session::arrPlay (int from)
         // from stopped: that part is there at once, with what every part before it left (FROM HERE), and the clock sets off from the top
         if (from > 0) arrBring (from, 0.0); else arrRecall (from, 0.0);
         arrAt = from;
+        logAction ("part", arrangement[(size_t) from].snap, { { "arr", arrAtId }, { "at", from }, { "bars", arrangement[(size_t) from].bars }, { "morph", arrangement[(size_t) from].morph }, { "parts", (int) (arrangement[(size_t) from].lanes & kAllLanes) } });
         arrZero = -(double) arrBarsBefore (from) * 4.0;
         arrStarts = engine.starts(); arrWait = true;       // (until the clock has set off, the place it says is the last run's)
         engine.setRunning (true);
@@ -420,6 +430,8 @@ void Session::arrTick()
             if (arrBringNext) arrBring (next, std::max (kArrCut, arrMorphBars (next) * 4.0)); else arrRecall (next, std::max (kArrCut, arrMorphBars (next) * 4.0));
             arrBringNext = false;
             arrAt = next;
+            // (the log: the arrangement has come to this part. What follows what, as it was played)
+            logAction ("part", arrangement[(size_t) next].snap, { { "arr", arrAtId }, { "at", next }, { "bars", arrangement[(size_t) next].bars }, { "morph", arrangement[(size_t) next].morph }, { "parts", (int) (arrangement[(size_t) next].lanes & kAllLanes) } });
             if (onChange) onChange();
         }
     }

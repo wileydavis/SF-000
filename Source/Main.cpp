@@ -3199,6 +3199,107 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 if (! stemsOk) ++bad;
             }
             {
+                // its sound without loss is kept beside those, for the library to be studied from: the output and each stem that
+                // sounded, as FLAC of 24 bits. The same parts as the stems file has, each as long as the clip; and the output is
+                // the clip without the clip's loss
+                ses.waitForClips();
+                Session::Lossless ll;
+                const bool read = Session::readLossless (ses.losslessFile (id), ll) && ll.bits == 24 && ll.bars == 4 && ll.parts.size() >= 3 && ll.parts[0].first == "mix";
+                Session::Stems st2;
+                ses.readStems (id, st2);
+                bool same = read && ll.parts.size() == st2.parts.size() + 1;
+                for (size_t i = 0; same && i < st2.parts.size(); ++i) same = ll.parts[i + 1].first == st2.parts[i].first && ll.parts[i + 1].second.getNumSamples() == len;
+                double err = 0.0, all = 0.0;
+                if (read && ll.parts[0].second.getNumSamples() == len)
+                    for (int c = 0; c < 2; ++c) for (int i = 0; i < len; ++i) { const double a = ll.parts[0].second.getSample (c, i), b = clip.getSample (c, i); err += (a - b) * (a - b); all += a * a; }
+                const bool isClip = all > 0.0 && err / all < 0.05;
+                // written and read back, a sound is as it was to the last of its 24 bits; one that ran over full scale is written
+                // quieter by a power of two and comes back whole; one that was silent is left out
+                juce::Random rnd (77);
+                juce::AudioBuffer<float> mx (2, 4800), over (2, 4800), quiet2 (2, 4800);
+                quiet2.clear();
+                for (int c = 0; c < 2; ++c) for (int i = 0; i < 4800; ++i) { const float v = (rnd.nextFloat() * 2.0f - 1.0f) * 0.9f; mx.setSample (c, i, v); over.setSample (c, i, v * 3.0f); }
+                std::vector<juce::AudioBuffer<float>> made (Engine::kStems);
+                for (auto& b : made) b.makeCopyOf (quiet2);
+                made[5].makeCopyOf (over);
+                const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_lossless_test.lossless");
+                Session::writeLossless (tmp, mx, &made, 48000.0, 1);
+                Session::Lossless back2;
+                const bool again = Session::readLossless (tmp, back2) && back2.parts.size() == 2 && back2.parts[1].first == "bass" && back2.gains[0] == 1.0f && back2.gains[1] == 0.25f;
+                float worstMix = 0.0f, worstOver = 0.0f;
+                if (again) for (int c = 0; c < 2; ++c) for (int i = 0; i < 4800; ++i)
+                {
+                    worstMix = std::max (worstMix, std::abs (back2.parts[0].second.getSample (c, i) - mx.getSample (c, i)));
+                    worstOver = std::max (worstOver, std::abs (back2.parts[1].second.getSample (c, i) - over.getSample (c, i)));
+                }
+                const bool exact = again && worstMix < 1.3e-7f && worstOver < 5.2e-7f;
+                const auto bad2 = tmp.getSiblingFile ("sf000_lossless_test.cut");
+                { juce::MemoryBlock mb; tmp.loadFileAsData (mb); bad2.replaceWithData (mb.getData(), mb.getSize() - 9); }
+                Session::Lossless none2;
+                const bool cut = ! Session::readLossless (bad2, none2) && ! Session::readLossless (ses.stemsFile (id), none2);
+                tmp.deleteFile(); bad2.deleteFile();
+                const bool lossless = read && same && isClip && exact && cut;
+                std::printf ("  %s: a snapshot's sound is kept without loss beside its clip (%d parts, %d KB; the clip %d KB, its stems %d KB): the same parts as its stems, the output the clip's own (apart by %.1f dB); "
+                             "read back, a sound is as it was to its last bit (off by %.1e), one over full scale whole (%.1e); a file cut short, or one of another kind, is not read\n",
+                             lossless ? "ok  " : "FAIL", (int) ll.parts.size(), (int) (ses.losslessFile (id).getSize() / 1024), (int) (ses.clipFile (id).getSize() / 1024), (int) (ses.stemsFile (id).getSize() / 1024),
+                             all > 0.0 && err > 0.0 ? 10.0 * std::log10 (err / all) : -200.0, (double) worstMix, (double) worstOver);
+                if (! lossless) ++bad;
+            }
+            {
+                // the log: what is done with chips, a line each as it is done, for the library to be studied from. Each line
+                // has a name of its own, the time, what was done, and the chip by the name the library knows it by
+                auto line = [&] (int back) { return juce::JSON::parse (ses.logTail[ses.logTail.size() - 1 - back]); };
+                const auto uid = ses.findSnap (id)->uid;
+                ses.recall (id);
+                const juce::var r = line (0);
+                const bool recalled = r["a"].toString() == "recall" && r["u"].toString() == uid && (int) r["parts"] == (int) Session::kAllLanes && (juce::int64) r["t"] > 1600000000000LL && r["k"].toString().length() >= 12;
+                const auto id2 = ses.take();
+                const auto uid2 = ses.findSnap (id2)->uid;
+                const juce::var t = line (0);
+                const bool took = t["a"].toString() == "take" && t["u"].toString() == uid2 && t["base"].toString() == uid && t["k"].toString() != r["k"].toString();
+                int n = ses.logTail.size();
+                const bool cued = ses.cue (id);
+                const juce::var h = line (0);
+                ses.cue (0);
+                const bool heard = cued && ses.logTail.size() == n + 1 && h["a"].toString() == "hear" && h["u"].toString() == uid;
+                ses.stackAdd (4, id2); ses.stackAdd (4, id);
+                const juce::var a1 = line (1), a2 = line (0);
+                const bool added = a1["a"].toString() == "add" && a1["to"].toString() == "knob" && (int) a1["knob"] == 5 && a1["u"].toString() == uid2 && a2["u"].toString() == uid && (int) a2["at"] == (int) a1["at"] + 1;
+                // one of the snapshots the rig came with has no such name: it is named by its number here
+                juce::int64 ownId = 0;
+                for (auto& x : ses.library) if (x.id < Online::kFirstTaken) { ownId = x.id; break; }
+                ses.recall (ownId);
+                const juce::var own = line (0);
+                const bool ownOk = ownId != 0 && own["a"].toString() == "recall" && (juce::int64) own["id"] == ownId && own["name"].toString() == ses.findSnap (ownId)->name && ! r.hasProperty ("id");
+                // removed: one line, and none for each knob it leaves
+                n = ses.logTail.size();
+                ses.remove (id2);
+                const bool removed = ses.logTail.size() == n + 1 && line (0)["a"].toString() == "delete" && line (0)["u"].toString() == uid2;
+                // what is not the player's doing leaves no line
+                n = ses.logTail.size();
+                { const Session::Quiet q (ses); ses.recall (id); ses.stackAdd (4, id); }
+                const bool quiet = ses.logTail.size() == n;
+                ses.recall (id);
+                // and it is on the disk as it is here: this month's file, a line each, the first of this run saying which build wrote it
+                ses.waitForLog();
+                juce::StringArray onDisk;
+                juce::Array<juce::File> files;
+                ses.logDir().findChildFiles (files, juce::File::findFiles, false, "*.jsonl");
+                for (auto& f : files) onDisk.addLines (f.loadFileAsString());
+                onDisk.removeEmptyStrings();
+                bool same = files.size() == 1 && onDisk.size() >= ses.logTail.size() && ses.logTail.size() > 8;
+                for (int i = 0; same && i < ses.logTail.size(); ++i) same = onDisk[onDisk.size() - ses.logTail.size() + i] == ses.logTail[i];
+                std::set<juce::String> names;
+                bool opened = false;
+                for (auto& l : onDisk) { const juce::var v = juce::JSON::parse (l); names.insert (v["k"].toString()); opened = opened || (v["a"].toString() == "open" && v["app"].toString() == Session::madeBy()); }
+                const bool whole = same && (int) names.size() == onDisk.size() && opened;
+                const bool logOk = recalled && took && heard && added && ownOk && removed && quiet && whole;
+                std::printf ("  %s: what is done with chips is logged as it is done (%d lines, in %s): a recall, a snapshot taken (and the chip the set was on), one heard in the cue, one put on a stack knob, "
+                             "one removed, each by the chip's own name (one the rig came with by its number here) and with a name of its own; what is not the player's doing leaves no line; the first line of a run names the build\n",
+                             logOk ? "ok  " : "FAIL", onDisk.size(), files.size() == 1 ? files[0].getFileName().toRawUTF8() : "?");
+                if (! logOk) { ++bad; std::printf ("    (recalled %d took %d heard %d added %d own %d removed %d quiet %d whole %d | %s)\n", (int) recalled, (int) took, (int) heard, (int) added, (int) ownOk, (int) removed, (int) quiet, (int) whole, ses.logTail[ses.logTail.size() - 1].toRawUTF8()); }
+            }
+            {
                 // a clip kept at another rate (the interface ran at 96 kHz then, 48 now): stopped, it plays at its own speed
                 Engine e4; e4.prepare (48000.0, 128);
                 Engine::CueClip c4; c4.rate = 96000.0; c4.audio.setSize (2, 96000);
@@ -12572,6 +12673,170 @@ static int onlineTest (const juce::String& base, const juce::String& refusing)
             check (said3.contains ("NO ANSWER") && said3.contains ("NOTHING WAS CHANGED") && ses.stacks.size() == 1, "with no answer LOAD says so and changes nothing (" + said3 + ")");
             ours.add (far);
             for (auto* id : { "sf0teststack1", "sf0teststack2", "sf0testmacro1", "sf0testmacro2", "sf0testsong01", "sf0testcue001", "sf0testlearn1" }) ask ("DELETE", juce::String ("/api/stacks/") + id + "?forget=1");
+        }
+
+        // 9. the archive: what the library is studied from away from the instrument. Each snapshot's sound without loss, the
+        // sound files the rig was given, the log of what was done, the session without its chips. It goes after the
+        // snapshots, a little a call, and only to a library that keeps it.
+        {
+            Online on (ses);
+            on.setSetup (st);
+            on.pass();
+            const bool keeps = ask ("GET", "/api/stats").json["archive"].isObject();
+            // a sound file of the library's own (as one given to a lane is), two more snapshots, and things done with them
+            const auto wav = tmp.getChildFile ("given.wav");
+            {
+                juce::Random rnd;
+                juce::AudioBuffer<float> sb (1, 4800);
+                for (int i = 0; i < 4800; ++i) sb.setSample (0, i, (rnd.nextFloat() - 0.5f) * 0.5f);
+                juce::WavAudioFormat fmt;
+                if (auto out = wav.createOutputStream())
+                {
+                    std::unique_ptr<juce::AudioFormatWriter> w (fmt.createWriterFor (out.get(), 48000.0, 1, 16, {}, 0));
+                    if (w != nullptr) { out.release(); w->writeFromAudioSampleBuffer (sb, 0, 4800); }
+                }
+            }
+            const juce::File copy (ses.keepSample (wav.getFullPathName()));
+            const auto sha = ses.samples.empty() ? juce::String() : ses.samples.back().hash;
+            bars (2.0);
+            const auto d = take();
+            bars (2.0);
+            const auto f = take();
+            ses.waitForClips();
+            ses.recall (d.first);
+            ses.stackAdd (4, f.first);
+            ses.waitForLog();
+            on.pass();
+            std::vector<std::pair<juce::int64, juce::String>> withSound;      // (those the library holds whose sound is kept without loss here)
+            for (auto& x : ses.library) if (x.id >= Online::kFirstTaken && ses.losslessFile (x.id).existsAsFile() && there (x.uid).status == 200) withSound.push_back ({ x.id, x.uid });
+            auto linesHere = [&]
+            {
+                juce::StringArray all;
+                juce::Array<juce::File> files;
+                ses.logDir().findChildFiles (files, juce::File::findFiles, false, "*.jsonl");
+                for (auto& lf : files) all.addLines (lf.loadFileAsString());
+                all.removeEmptyStrings();
+                return all;
+            };
+            const int size = (int) withSound.size();
+            const int was = on.requests();
+            if (keeps)
+            {
+                // as the sender makes its calls: a few requests each. While the rig is running only the small things go
+                // (the log, the session, the question of which sound files are held); stopped, one large thing a call, so a
+                // snapshot just taken never waits long
+                const bool more1 = on.archive();
+                const int asked1 = on.requests() - was, left1 = on.archiveLeft();
+                const bool says = on.line().contains ("TO GO WHEN THE RIG IS STOPPED") && on.status().state == Online::State::upToDate;
+                e.setRunning (false);
+                const bool more2 = on.archive();
+                const int asked2 = on.requests() - was, left2 = on.archiveLeft();
+                const bool says2 = on.line().contains ("STILL TO GO");
+                const bool more3 = on.archive();
+                const int asked3 = on.requests() - was, left3 = on.archiveLeft();
+                on.archive (true);
+                const int asked4 = on.requests() - was;
+                e.setRunning (true);
+                const bool little = size >= 2 && ! more1 && asked1 == 3 && left1 == size + 1 && says && more2 && asked2 == 4 && left2 == size && says2 && more3 && asked3 == 5 && left3 == size - 1
+                                    && asked4 == 4 + size && on.archiveLeft() == 0 && ! on.line().contains ("TO GO");
+                check (little, "the archive goes after the snapshots, a little a call: with the rig running, the log, the session and the question of which sound files are held (3 requests) and nothing large; "
+                               "stopped, one sound file or one snapshot's lossless sound a call (" + juce::String (size) + " of those), and the line says how much has still to go");
+                if (! little) std::printf ("    (size %d more %d %d %d asked %d %d %d %d left %d %d %d %d says %d %d | %s)\n", size, (int) more1, (int) more2, (int) more3, asked1, asked2, asked3, asked4, left1, left2, left3,
+                                           on.archiveLeft(), (int) says, (int) says2, on.line().toRawUTF8());
+
+                // each as it is here
+                bool sound = size > 0; juce::int64 bytes = 0;
+                for (auto& w : withSound)
+                {
+                    juce::MemoryBlock mine;
+                    ses.losslessFile (w.first).loadFileAsData (mine);
+                    bytes += (juce::int64) mine.getSize();
+                    const auto all = ask ("GET", "/api/lossless/" + w.second), mix = ask ("GET", "/api/lossless/" + w.second + "?key=mix");
+                    Session::Lossless ll;
+                    Session::readLossless (ses.losslessFile (w.first), ll);
+                    sound = sound && mine.getSize() > 10000 && all.status == 200 && all.bytes == mine && mix.status == 200 && mix.bytes.toString().startsWith ("fLaC")
+                            && there (w.second).json["lossless"].size() == (int) ll.parts.size() && ll.parts.size() >= 3;
+                }
+                check (sound, "each snapshot's sound without loss is there to the byte (" + juce::String (size) + " snapshots, " + juce::String ((int) (bytes / 1024 / juce::jmax (1, size))) + " KB each), "
+                              "the library gives one part of it by its key, and says which snapshots have it");
+                juce::MemoryBlock mineFile;
+                copy.loadFileAsData (mineFile);
+                const auto fileThere = ask ("GET", "/api/files/" + sha);
+                check (sha.length() == 64 && copy.existsAsFile() && mineFile.getSize() > 1000 && fileThere.status == 200 && fileThere.bytes == mineFile,
+                       "a sound file the rig was given is there under its SHA-256, to the byte");
+                // the log: every line, each once, by the chip's own name
+                const auto here = linesHere();
+                const auto log = ask ("GET", "/api/actions?library=" + ses.libraryId + "&limit=5000");
+                bool tookD = false, tookF = false, recalledD = false, opened = false, onKnob = false;
+                if (auto* acts = log.json["actions"].getArray())
+                    for (auto& a : *acts)
+                    {
+                        const auto what = a["a"].toString(), u = a["u"].toString();
+                        tookD = tookD || (what == "take" && u == d.second);
+                        tookF = tookF || (what == "take" && u == f.second);
+                        recalledD = recalledD || (what == "recall" && u == d.second);
+                        onKnob = onKnob || (what == "add" && u == f.second && a["to"].toString() == "knob" && (int) a["knob"] == 5);
+                        opened = opened || (what == "open" && a["app"].toString() == Session::madeBy());
+                    }
+                const bool logged = here.size() > 10 && (int) log.json["total"] == here.size() && log.json["actions"].size() == here.size() && tookD && tookF && recalledD && onKnob && opened;
+                check (logged, "the log is there, every line once (" + juce::String (here.size()) + " lines): the snapshots taken, the one recalled, the one put on a knob, and the build that wrote them");
+                if (! logged) std::printf ("    (here %d there %d total %d took %d %d recalled %d knob %d opened %d)\n", here.size(), log.json["actions"].size(), (int) log.json["total"], (int) tookD, (int) tookF, (int) recalledD, (int) onKnob, (int) opened);
+                // the session without its chips: its knobs, stacks, modules and arrangements, and which chip each number is
+                const auto sessions = ask ("GET", "/api/sessions?library=" + ses.libraryId);
+                const var first = sessions.json["sessions"].size() > 0 ? sessions.json["sessions"][0] : var();
+                const auto got = ask ("GET", "/api/sessions/" + ses.libraryId + "/" + first["at"].toString());
+                const var sj = got.json;                    // (the session as it was sent, and nothing round it)
+                bool namesD = false;
+                if (auto* chips = sj["chips"].getArray()) for (auto& c : *chips) namesD = namesD || (c["uid"].toString() == d.second && (juce::int64) c["id"] == d.first);
+                bool onFive = false;
+                if (sj["knobs"].size() == 16) if (auto* held = sj["knobs"][4]["snaps"].getArray()) for (auto& v : *held) onFive = onFive || (juce::int64) v == f.first;
+                const bool sessionOk = sessions.json["sessions"].size() == 1 && first["app"].toString() == Session::madeBy() && got.status == 200 && sj["knobs"].size() == 16 && onFive && namesD
+                                       && sj["libraryId"].toString() == ses.libraryId && ! sj.hasProperty ("library") && ! sj.hasProperty ("defs") && ! sj.hasProperty ("base") && ! sj.hasProperty ("controls") && ! sj.hasProperty ("files")
+                                       && (int) first["size"] < 200000;
+                check (sessionOk, "the session is there without its chips (" + juce::String ((int) first["size"] / 1024) + " KB): its knobs with what each holds, which chip each number is, and the build that wrote it");
+                // nothing is sent twice; a new line goes alone; opened another day it knows what went
+                const int before = on.requests();
+                on.archive (true); on.archive();
+                const bool once = on.requests() == before;
+                ses.recall (f.first);
+                ses.waitForLog();
+                on.archive();
+                const bool alone = on.requests() == before + 1 && (int) ask ("GET", "/api/actions?library=" + ses.libraryId + "&limit=1").json["total"] == here.size() + 1;
+                const var statsWas = ask ("GET", "/api/stats").json["archive"];
+                Online again (ses);
+                again.pass();
+                const int r0 = again.requests();
+                again.archive (true);
+                const var statsNow = ask ("GET", "/api/stats").json["archive"];
+                const bool another = again.requests() - r0 <= 2 && (int) statsNow["lossless"] == (int) statsWas["lossless"] && (int) statsNow["files"] == (int) statsWas["files"]
+                                     && (int) statsNow["actions"] == (int) statsWas["actions"] && again.archiveLeft() == 0;
+                check (once && alone && another, "with nothing new the archive asks nothing; a new line of the log goes alone (1 request); opened another day it knows what went, and sends none of it again");
+                if (! (once && alone && another)) std::printf ("    (once %d alone %d another %d: %d requests)\n", (int) once, (int) alone, (int) another, again.requests() - r0);
+                // with no answer it is not tried until the snapshots have got through again
+                auto dead = st; dead.url = "http://127.0.0.1:9";
+                on.setSetup (dead);
+                on.pass();
+                const int w0 = on.requests();
+                const bool held = ! on.archive() && on.requests() == w0;
+                on.setSetup (st);
+                on.pass();
+                on.archive (true);
+                const var statsBack = ask ("GET", "/api/stats").json["archive"];
+                check (held && on.archiveLeft() == 0 && (int) statsBack["actions"] == (int) statsNow["actions"] && (int) statsBack["lossless"] == (int) statsNow["lossless"] && (int) statsBack["sessions"] == (int) statsNow["sessions"],
+                       "while the library does not answer the archive is not offered; when it is back, what it already holds is not kept twice");
+            }
+            else
+            {
+                // a library from before it kept any of this: each thing is asked for once, and it is left alone from then on
+                on.archive (true);
+                const int n1 = on.requests() - was;
+                on.archive (true); on.archive();
+                const int n2 = on.requests() - was;
+                on.pass();
+                check (n1 >= 1 && n1 <= 4 && n2 == n1 && on.archiveLeft() == 0 && on.status().state == Online::State::upToDate && ! on.line().contains ("STILL TO GO"),
+                       "a library from before it kept an archive is asked once for each kind (" + juce::String (n1) + " requests) and then left alone: the snapshots go as they did");
+            }
+            ours.add (d.second); ours.add (f.second);
         }
     }
     for (auto& uid : ours) ask ("DELETE", "/api/snapshots/" + uid + "?forget=1");

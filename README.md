@@ -957,6 +957,16 @@ that travels), readable by you only. Neither the address nor the strings are in 
 
 - **Its stems go too**: each lane, the two returns and the drum bus on their own (about a
   megabyte a snapshot). The web library plays a chip from them when keys are put out on it.
+- **So does everything the library is to be studied from**, after the snapshots and never
+  ahead of them: the log of what you do with chips, the session without its chips (your knobs,
+  stacks, modules and arrangements), every sound file the rig has been given, and each
+  snapshot's sound without loss (see [What is kept to be studied](#what-is-kept-to-be-studied)).
+  The log and the session are small and go as they change. The sound files and the lossless
+  sound are megabytes each: they go one at a time **and only while the rig is stopped**, so
+  nothing large is read or sent under a set being played. While any of it has still to go the
+  line says so (`ARCHIVE: 12 STILL TO GO`, or `TO GO WHEN THE RIG IS STOPPED`); the lamp is the
+  snapshots' own and stays green. Nothing in the web library is changed by any of this: it is
+  only added to.
 - **So do the knobs of the snapshot module**, as they are made or changed here: a macro knob
   you have taught, a stack you have changed, a name. Each goes once it has stood unchanged for
   a moment, into its own place on the library's module if that place is free, else into the
@@ -1073,6 +1083,32 @@ page, where the rack is a third of the page:
   knob's pile as a stack under the knob's name (kept again under that name: the same one,
   as it is now).
 - An empty stack is the instrument's alone until it holds something.
+
+### What is kept to be studied
+
+The snapshot library is there to be studied: what sounds alike, what leads where, what you reach
+for and when. The studying is done away from the instrument, by a program of its own on another
+machine; the instrument's part is to keep and send everything that program will need, and to
+do nothing else about it.
+
+- **Each snapshot's sound without loss.** Beside its clip and its stems (Ogg Vorbis, which is
+  what the instrument and the web library play), the same four bars are kept as 24-bit FLAC:
+  the output, and each lane, return and the drum bus on its own. `clips/<id>.lossless`, about
+  ten megabytes a snapshot. It is written last, after the clip and the stems, by the thread
+  that writes those; the instrument never reads it. Snapshots taken before this build have none.
+- **A log of what is done with chips.** A line as each thing is done: a snapshot taken (and the
+  chip the set was on), a chip heard in the headphones, a chip recalled (which parts, with its
+  notes or not, from which knob), a stack knob turned onto a chip or pressed between two, a
+  chip put into or taken out of a knob, a stack or the arrangement, an arrangement played and
+  each part it came to, RUN and STOP. `log/` in the library folder, a file a month, only ever
+  added to. The first line of each run names the build. What ONLINE and WEB LOAD do is not your
+  doing and is not in it.
+- **Which build made each snapshot** was there already: every snapshot says what it was made
+  with (`made`: the build, and a print of each lane, effect and the chassis as they were).
+
+With ONLINE lit all of it goes to the web library (above), which is where the studying program
+fetches it from and where it will put back what it finds. Nothing here waits on any of that.
+FORMAT.md has the files and the lines exactly.
 
 ### Knobs kept by themselves
 
@@ -1591,7 +1627,8 @@ Two places, and a third for takes.
 | IN IT | WHAT |
 |---|---|
 | `session.json` | the snapshots, the snapshot knobs, the arrangement, the rack (with what the web library and this one last agreed each stack was, and what is still to be said there), the rig as it was left, each snapshot's profile (its layout and the rules that keep old files readable are in `FORMAT.md`) |
-| `clips/` | each snapshot's four bars |
+| `clips/` | each snapshot's four bars (`<id>.ogg`), its lanes each on their own (`<id>.stems`), and the same without loss (`<id>.lossless`, about ten megabytes) |
+| `log/` | what was done with chips, a line each, a file a month (see [What is kept to be studied](#what-is-kept-to-be-studied)) |
 | `samples/` | SF-000's own copy of every audio file it has been given: a lane's sample or phrase, an insert's impulse responses, SPACE's. Each under its own name, in a folder named for what is in the file (`samples/3fa9c2e1/kick.wav`) |
 | `backups/` | the session as each of the last twenty launches found it. To go back, quit and copy one over `session.json` |
 | `library-id.txt`, `online-sent.json` | this library's own id; what the web library has said it holds |
@@ -1600,7 +1637,7 @@ It starts in `~/Library/Application Support/SF-000/`. **LIBRARY** in SETUP puts 
 CHOOSE a folder, quit, open SF-000 again.
 
 - If the folder already holds a library, that library is used.
-- If not, the library in use is copied there (session, clips, samples) and used from there. The
+- If not, the library in use is copied there (session, clips, samples, log) and used from there. The
   old folder is left as it was: delete it when you are sure.
 - A folder that is not empty and is not a library gets a folder of its own inside it, `SF-000`,
   so nothing is spilled into the top of a disk.
@@ -1636,10 +1673,13 @@ Delete `session.json` to start again from the factory rig.
 
 - A knob made here does not go up to the web library yet, and the library's knobs cannot be
   listed and installed from inside SF-000: they come by LOAD, from the chassis there.
-- A snapshot's lanes (its stems) stay on this Mac: ONLINE does not send them and LOAD does not
-  bring them yet, so the web library cannot play some of a snapshot's lanes. And a snapshot from
-  before has no lanes kept (they could be made again from the snapshot itself, as PRINT renders,
-  where its samples are on the Mac).
+- LOAD does not bring a snapshot's lanes (its stems) or its lossless sound down from the web
+  library: a chip brought from there has its four bars and no lanes here. And a snapshot from
+  before has no lanes kept, and none from before the seventy-seventh build has lossless sound
+  (they could be made again from the snapshot itself, as PRINT renders, where its samples are
+  on the Mac).
+- The program that studies the library is not built yet. This build keeps and sends what it
+  will need; nothing reads it yet.
 - The skin is a first pass, drawn from measurements of the 3D model, not rendered from the model
   itself: no texture maps, one finish per material, and the inside of the displays (the meters,
   the step keys' bars, CONFIG's own display) is the flat drawing behind glass. The model's choices

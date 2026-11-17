@@ -282,6 +282,86 @@ snapshot may have none (taken before the fortieth build, or with nothing soundin
 ONLINE sends this file as it is to the web library (`PUT /api/stems/<uid>`, forty-fourth build
 on), which keeps it whole and gives one stem of it by its key (`GET /api/stems/<uid>?key=bass`).
 
+## A snapshot's sound without loss: `clips/<id>.lossless`
+
+Beside the clip and the stems, the same bars once more with nothing thrown away, for the library to
+be studied from away from the instrument (seventy-seventh build on). The instrument never plays this
+file: what it plays is the clip and the stems. One file:
+
+```
+SF0LOSSLESS1\n
+{"rate": 48000.0, "bars": 4, "bits": 24, "parts": [{"key": "mix", "bytes": 912345, "gain": 1.0}, {"key": "kick", "bytes": 401234, "gain": 1.0}, {"key": "bass", "bytes": 512002, "gain": 0.5}, ...]}\n
+<the first part: a FLAC file of that many bytes><the second>...
+```
+
+- `mix` is first: the output, after the master, the bars the clip holds. Then each stem that
+  sounded, under the keys the stems file uses (a lane's slug, `dub`, `space`, `bus`) and in the
+  same order. A stem that was silent is left out, as it is there.
+- Every part is a whole FLAC file: stereo, 24 bits, at the rate the interface ran at, as long as
+  the clip to the sample.
+- `gain` is what the sound was multiplied by before it was written. 1 for nearly everything. A
+  stem that ran over full scale (one may, before the master) is written quieter by a power of
+  two, which loses nothing, and says so: **divide by `gain`** to have the sound as it was.
+- Written once, after the clip and the stems (what the instrument plays is on the disk first),
+  and deleted with the snapshot. A snapshot from before the seventy-seventh build has none.
+
+About ten megabytes for four bars at 130 with every lane sounding.
+
+## The log: `log/<YYYY-MM>.jsonl`
+
+What is done with chips, a line as it is done, for the library to learn from (seventy-seventh
+build on). A month a file, a JSON object a line, only ever added to. The instrument never reads it.
+
+```
+{"k": "1a1e7a958f1-0001-3fc2", "t": 1794888009802, "a": "open", "app": "0.1.0 1a2b3c4", "library": "e1a826a5c30e4b6d"}
+{"k": "1a1e7a95a02-0002-3fc2", "t": 1794888010242, "a": "recall", "u": "e1a826a5c30e4b6d-1a1e7a958f1", "parts": 16383, "notes": false, "base": "e1a826a5c30e4b6d-1a1e79f0c11"}
+```
+
+Every line has `k` (the line's own name: no two alike, in any run), `t` (when, milliseconds since
+1970) and `a` (what was done). `u` is the chip it was done to, by its `uid`. A snapshot the rig came
+with is never sent to the web library, so it also has `id` (its number here) and `name`. `base`,
+where it is given, is the chip the set was last on (empty: on none). `parts` is which parts of the
+rig were taken, a bit each: the lanes in the rig's order, then the returns, the drum bus, the master.
+`knob` counts from 1.
+
+| `a` | WHEN | WITH |
+|---|---|---|
+| `open` | the first line of a run | `app` (the build writing: what a line means is that build's to say), `library` |
+| `run`, `stop` | the transport started or stopped (to within three seconds) | `bpm` |
+| `take` | SNAPSHOT | `u`, `base`, `running`, `bpm` |
+| `recall` | a chip recalled by hand, here or on a controller (not the arrangement's own: see `part`) | `u`, `parts`, `notes`, `base`; from a stack knob's place also `from: "knob"`, `knob` |
+| `hear` | a chip put in the headphones | `u`, `parts`, `base` |
+| `knob` | a stack knob turned (CUE out) came to a chip | `u`, `knob`, `how: "turn"` |
+| `between` | a stack knob pressed between two chips | `u` (the one below), `with` (the one above), `f` (how far between, 0 to 1), `knob` |
+| `add`, `drop`, `move` | a chip put into, taken out of, or moved within a stack knob's pile (`to`/`from`/`in`: `"knob"`, with `knob`), a stack of the rack (`"stack"`, with `stack` its id and `name`), or the arrangement (`"arr"`, with `arr` its id) | `u`, `at` (its place, from 0); `add` has `parts`, `move` has `to` |
+| `onto` | a stack of the rack put onto a knob | `stack`, `name`, `knob`, `chips` |
+| `module` | a kept module put in the chassis | `module`, `name` |
+| `arr_to_stack` | the arrangement kept as a stack | `arr`, `stack`, `name`, `chips` |
+| `play` | the arrangement started | `arr`, `from`, `parts` (how many it has) |
+| `part` | the arrangement came to a part | `u`, `arr`, `at`, `bars`, `morph`, `parts` |
+| `delete` | a chip deleted | `u` |
+
+What ONLINE and LOAD do is not the player's doing and leaves no line. A thing done in several
+steps is one line (a stack put onto a knob is `onto`, not an `add` for each chip). A tool reading
+the log takes a kind of line it does not know as something a later build writes, and passes over it.
+
+## What ONLINE sends for the library to be studied from
+
+After the snapshots, their clips and their stems, and never ahead of them (seventy-seventh build
+on). All of it is added to there; nothing a library holds is changed by it.
+
+| WHAT | HOW | WHEN |
+|---|---|---|
+| the log | `POST /api/actions` `{ "library", "lines": [...] }`, each file from where the library last took it, five hundred lines at most a time. A line sent twice (the same `k`) is kept once | as lines are written |
+| the session without its chips | `POST /api/sessions` `{ "library", "at", "app", "session" }`: `session.json` less `library` and `defs` (the library has every chip and definition already) and less the rig as it stands this minute (`wrote`, `base`, `baseId`, `controls`, `activeLane`, `files`, `space`, `insertFiles`, and each knob's `at`: a recall or a turn of a knob is not another session), plus `chips`: `[{ "id", "uid" }]`, since knobs, stacks, modules and arrangements name chips by `id`. Kept there if it differs from the last one sent | when it has changed, once a minute at most |
+| a sound file the rig was given | `POST /api/files/have` `{ "hashes" }` once, then `PUT /api/files/<sha256>?name=` for each the library lacks: the file in `samples/`, checked here against its hash first and there again | with the rig stopped, one a pass |
+| a snapshot's sound without loss | `PUT /api/lossless/<uid>`: the file above as it is. The library gives one part by its key (`GET /api/lossless/<uid>?key=mix`, with the part's `gain` in the answer's `x-gain`) | with the rig stopped, one a pass, once the library holds the snapshot |
+
+The two large kinds wait while the transport runs: nothing of megabytes is read or sent under a set
+being played. A library from before it kept any of this says "not found" and is not asked again
+that run. What has gone is remembered in `online-sent.json` (`archive`: how far into each file of
+the log, which sound files, the last session's hash; and `lossless` beside each snapshot).
+
 ## A knob in the web library
 
 A knob of the snapshot module is a stack there (`/api/stacks`). A **stack knob** is kind

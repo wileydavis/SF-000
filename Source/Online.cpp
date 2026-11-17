@@ -113,7 +113,12 @@ String Online::line() const
         case State::off:      return s.waiting > 0 ? "ONLINE IS OFF. " + n (s.waiting, "SNAPSHOT WAITS", "SNAPSHOTS WAIT") + " TO GO." : String ("ONLINE IS OFF. SNAPSHOTS TAKEN NOW GO WHEN IT IS LIT.");
         case State::notSetUp: return "ONLINE NEEDS ITS ADDRESS AND THE TWO STRINGS: SET UP.";
         case State::working:  return s.waiting > 0 ? "SENDING: " + n (s.waiting, "SNAPSHOT", "SNAPSHOTS") + " TO GO." : String ("ASKING THE LIBRARY WHAT IT HOLDS.");
-        case State::upToDate: return s.sent == 0 ? String ("ONLINE. NOTHING TAKEN YET TO SEND.") : "ONLINE. THE LIBRARY HOLDS " + (s.sent == 1 ? String ("THE ONE SNAPSHOT TAKEN.") : "ALL " + String (s.sent) + " SNAPSHOTS TAKEN.");
+        case State::upToDate:
+            // (its archive still going up says so: the lamp is the snapshots', and stays green)
+            if (const int more = archiveLeft(); more > 0 && s.sent > 0)
+                return "ONLINE. THE LIBRARY HOLDS " + (s.sent == 1 ? String ("THE ONE SNAPSHOT TAKEN") : "ALL " + String (s.sent) + " SNAPSHOTS") + ". ARCHIVE: " + String (more)
+                       + (ses.engine.isRunning() ? " TO GO WHEN THE RIG IS STOPPED." : " STILL TO GO.");
+            return s.sent == 0 ? String ("ONLINE. NOTHING TAKEN YET TO SEND.") : "ONLINE. THE LIBRARY HOLDS " + (s.sent == 1 ? String ("THE ONE SNAPSHOT TAKEN.") : "ALL " + String (s.sent) + " SNAPSHOTS TAKEN.");
         case State::waiting:  return "NO ANSWER FROM THE LIBRARY" + (s.note.isNotEmpty() ? " (" + s.note + ")" : String()) + ". " + n (s.waiting, "SNAPSHOT WAITS", "SNAPSHOTS WAIT") + "; IT TRIES AGAIN BY ITSELF.";
         case State::refused:  return "THE LIBRARY DID NOT LET SF-000 IN" + (s.note.isNotEmpty() ? " (" + s.note + ")" : String()) + ". CHECK THE TWO STRINGS IN SET UP.";
     }
@@ -126,6 +131,7 @@ void Online::readLedger()
     const var v = juce::JSON::parse (ledgerFile());
     sentTo = v.getProperty ("url", "").toString();
     ledger.clear(); defsSent.clear();
+    logSent.clear(); filesSent.clear(); sessionHash = {}; filesAsked = false;
     if (sentTo != now.url) { sentTo = now.url; return; }                    // another library: it is asked afresh
     if (auto* o = v.getProperty ("sent", var()).getDynamicObject())
         for (auto& p : o->getProperties())
@@ -136,9 +142,16 @@ void Online::readLedger()
             e.name = p.value.getProperty ("name", "").toString();
             e.prof = (bool) p.value.getProperty ("prof", false);
             e.stems = (bool) p.value.getProperty ("stems", false);
+            e.lossless = (bool) p.value.getProperty ("lossless", false);
             ledger[p.name.toString()] = e;
         }
     if (auto* a = v.getProperty ("defs", var()).getArray()) for (auto& d : *a) defsSent.insert (d.toString());
+    // (the archive: how far the log has gone, the sound files there, the session as last sent)
+    logSent.clear(); filesSent.clear(); sessionHash = {};
+    const var ar = v.getProperty ("archive", var());
+    if (auto* o = ar.getProperty ("log", var()).getDynamicObject()) for (auto& p : o->getProperties()) logSent[p.name.toString()] = (juce::int64) p.value;
+    if (auto* a = ar.getProperty ("files", var()).getArray()) for (auto& f : *a) filesSent.insert (f.toString());
+    sessionHash = ar.getProperty ("session", "").toString();
 }
 
 void Online::writeLedger() const
@@ -152,6 +165,7 @@ void Online::writeLedger() const
         if (kv.second.refused) o->setProperty ("refused", true);
         if (kv.second.prof) o->setProperty ("prof", true);
         if (kv.second.stems) o->setProperty ("stems", true);
+        if (kv.second.lossless) o->setProperty ("lossless", true);
         o->setProperty ("name", kv.second.name);
         sent->setProperty (kv.first, var (o));
     }
@@ -161,6 +175,15 @@ void Online::writeLedger() const
     root->setProperty ("url", sentTo);
     root->setProperty ("sent", var (sent));
     root->setProperty ("defs", defs);
+    {
+        auto* ar = new juce::DynamicObject();
+        auto* lg = new juce::DynamicObject();
+        for (auto& kv : logSent) lg->setProperty (kv.first, kv.second);
+        juce::Array<var> fs;
+        for (auto& f : filesSent) fs.add (f);
+        ar->setProperty ("log", var (lg)); ar->setProperty ("files", fs); ar->setProperty ("session", sessionHash);
+        root->setProperty ("archive", var (ar));
+    }
     const auto f = ledgerFile();
     f.getParentDirectory().createDirectory();
     const auto tmp = f.getSiblingFile ("online-sent.tmp");
@@ -363,7 +386,12 @@ bool Online::pass()
 
     if (! s.on)          { say (State::off, left(), held()); return false; }
     if (! s.complete())  { say (State::notSetUp, left(), held()); return false; }
-    if (sentTo != s.url) { ledger.clear(); defsSent.clear(); sentTo = s.url; asksFirst = true; }
+    if (sentTo != s.url)
+    {
+        ledger.clear(); defsSent.clear(); sentTo = s.url; asksFirst = true;
+        logSent.clear(); filesSent.clear(); sessionHash = {}; filesAsked = false;          // (another library: its archive is its own)
+        noLossless = noFiles = noLog = noSession = false;
+    }
 
     bool changed = false;
     auto fail = [&] (const Reply& r)
@@ -401,10 +429,18 @@ bool Online::pass()
             {
                 e.snap = true; e.clip = (bool) h.getProperty ("clip", false); e.gone = false;
                 e.stems = (bool) h.getProperty ("stems", false);
+                e.lossless = (bool) h.getProperty ("lossless", false);
                 if (was.name.isEmpty()) e.name = it.name;
                 e.prof = e.prof || e.clip;                      // (a clip and a profile arrive together)
             }
-            changed = changed || was.snap != e.snap || was.clip != e.clip || was.gone != e.gone || was.name != e.name || was.stems != e.stems;
+            changed = changed || was.snap != e.snap || was.clip != e.clip || was.gone != e.gone || was.name != e.name || was.stems != e.stems || was.lossless != e.lossless;
+        }
+        // (a library that says nothing of lossless sound for a snapshot it holds is one from before it kept any: none is offered)
+        {
+            bool holds = false, says = false;
+            for (auto& it : items)
+                if (const var h = have.getProperty (juce::Identifier (it.uid), var()); h.isObject() && ! (bool) h.getProperty ("gone", false)) { holds = true; says = says || h.hasProperty ("lossless"); }
+            if (holds) noLossless = ! says;
         }
         asksFirst = false;
     }
@@ -485,6 +521,226 @@ bool Online::pass()
     const int n = left();
     say (n > 0 ? State::working : State::upToDate, n, held());
     return soon || n > 0;
+}
+
+// --------------------------------------------------------------------------------- the archive
+// What else goes, for the library to be studied from: the log, the session without its chips, the sound files, each
+// snapshot's sound without loss. A few requests a call, the small things first, and the large ones (megabytes each)
+// only while the rig is stopped; a library from before it had an address for one of them says "not found", and that
+// one is not offered again this run.
+bool Online::archive (bool sure)
+{
+    const Setup s = setup();
+    if (! s.complete() || ! s.on || sentTo != s.url) return false;
+    if (! sure && (asksFirst || failures > 0 || loadBusy.load())) return false;       // (the snapshots first; nothing while the library is not answering)
+    // (it got no answer the last time: not again at once, and longer each time, ten minutes at most)
+    if (! sure && archiveFails > 0 && (juce::int32) (juce::Time::getMillisecondCounter() - archiveNext) < 0) return false;
+    int budget = sure ? 1000000 : 4;
+    // (a sound file or a snapshot's lossless sound: megabytes each. One a call, so a snapshot just taken never waits behind
+    // many; and none while the rig is running, so that nothing large is read or sent under a set being played)
+    int heavy = sure ? 1000000 : ses.engine.isRunning() ? 0 : 1;
+    const bool held = heavy == 0;
+    bool changed = false, more = false, down = false;
+    auto notFound = [] (const Reply& r) { return r.status == 404 && juce::JSON::parse (r.body).getProperty ("error", "").toString() == "not found"; };
+    auto ask = [&] (const String& method, const String& path, const juce::MemoryBlock* mb, const String& type, int ms)
+    {
+        --budget; ++asked;
+        const auto r = http (s, method, path, mb, type, ms, &callOff);
+        if (r.status == 0 || r.status >= 500 || turnedAway (r.status)) down = true;       // (no answer, or not let in: the next pass says so)
+        return r;
+    };
+
+    // what the session holds of all this: read with the message thread's lock, and let go of at once
+    struct Lossless { String uid; juce::File file; };
+    std::vector<Lossless> lossless;
+    std::vector<Session::Sample> samples;
+    String libraryId, sessionText;
+    juce::Array<var> chipIds;
+    juce::File libDir, logDir;
+    {
+        const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
+        if (! mm.lockWasGained()) return false;
+        libraryId = ses.libraryId;
+        libDir = Session::libraryDir(); logDir = ses.logDir();
+        samples = ses.samples;
+        for (auto& x : ses.library)
+            if (x.id >= kFirstTaken && x.uid.isNotEmpty())
+                if (const auto e = ledger.find (x.uid); e != ledger.end() && e->second.snap && ! e->second.gone && ! e->second.lossless)
+                    lossless.push_back ({ x.uid, ses.losslessFile (x.id) });
+        // the session without its chips, if it has changed since it was last looked at (no oftener than once a minute)
+        const auto nowMs = juce::Time::getMillisecondCounter();
+        if (! noSession && (! sessionLooked || ses.changes != sessionSeen) && (sure || ! sessionLooked || nowMs - sessionAt > 60000))
+        {
+            sessionLooked = true; sessionSeen = ses.changes; sessionAt = nowMs;
+            sessionText = juce::JSON::toString (ses.stateVar (false), true);       // (as text: what it is made of is the session's own, and is not touched)
+            // (its knobs, stacks and arrangements name chips by this library's numbers: which chip each number is)
+            for (auto& x : ses.library)
+                if (x.uid.isNotEmpty()) { auto* c = new juce::DynamicObject(); c->setProperty ("id", x.id); c->setProperty ("uid", x.uid); chipIds.add (var (c)); }
+        }
+    }
+    if (libraryId.length() != 16) return false;
+    if (sessionText.isNotEmpty())
+    {
+        // What the rig is doing this minute is not the session's own things, and would make another session of every
+        // recall and every turn of a knob: the rig as it stands (the chips hold states, and the log what was done),
+        // the files it has loaded now, and where each stack knob stands.
+        var st = juce::JSON::parse (sessionText);
+        sessionText = {};
+        if (auto* o = st.getDynamicObject())
+        {
+            for (auto* gone : { "wrote", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles" }) o->removeProperty (gone);
+            auto still = [] (const var& knobs) { if (auto* ks = knobs.getArray()) for (auto& k : *ks) if (auto* ko = k.getDynamicObject()) ko->removeProperty ("at"); };
+            still (o->getProperty ("knobs"));
+            if (auto* ms = o->getProperty ("modules").getArray()) for (auto& m : *ms) still (m.getProperty ("knobs", var()));
+            if (auto* ks = o->getProperty ("keptKnobs").getArray()) for (auto& k : *ks) if (auto* ko = k.getProperty ("knob", var()).getDynamicObject()) ko->removeProperty ("at");
+            o->setProperty ("chips", chipIds);
+            sessionText = juce::JSON::toString (st, true);
+        }
+    }
+
+    // 1. the log: each file from where the library has it to, whole lines, a few hundred at a time
+    if (! noLog)
+    {
+        juce::Array<juce::File> files;
+        logDir.findChildFiles (files, juce::File::findFiles, false, "*.jsonl");
+        files.sort();
+        for (auto& f : files)
+        {
+            const auto name = f.getFileName();
+            juce::int64 at = logSent.count (name) ? logSent[name] : 0;
+            if (f.getSize() < at) at = 0;               // (shorter than what went: not the file that was sent from. All of it again; the library keeps a line once)
+            while (! down && ! noLog && budget > 0 && f.getSize() > at)
+            {
+                juce::FileInputStream in (f);
+                if (in.failedToOpen() || ! in.setPosition (at)) break;
+                juce::MemoryBlock chunk;
+                in.readIntoMemoryBlock (chunk, 192 * 1024);
+                const char* d = (const char*) chunk.getData();
+                juce::Array<var> lines;
+                size_t used = 0, from = 0;
+                for (size_t i = 0; i < chunk.getSize() && lines.size() < 500; ++i)
+                    if (d[i] == '\n')
+                    {
+                        const var line = juce::JSON::parse (String::fromUTF8 (d + from, (int) (i - from)));
+                        if (line.isObject()) lines.add (line);
+                        from = used = i + 1;
+                    }
+                if (used == 0) break;                       // (no whole line yet: it is still being written)
+                if (! lines.isEmpty())
+                {
+                    auto* q = new juce::DynamicObject();
+                    q->setProperty ("library", libraryId); q->setProperty ("lines", lines);
+                    const auto text = juce::JSON::toString (var (q), true);
+                    const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+                    const auto r = ask ("POST", "/api/actions", &mb, "application/json", 20000);
+                    if (notFound (r)) { noLog = true; break; }
+                    if (r.status != 200 && r.status != 400 && r.status != 413) break;      // (turned down as it stands: gone past, so the rest is not held up)
+                }
+                at += (juce::int64) used; logSent[name] = at; changed = true;
+            }
+            if (f.getSize() > at && ! noLog) more = true;
+        }
+    }
+
+    // 2. the session without its chips, if it is not what the library was last sent
+    if (! down && ! noSession && sessionText.isNotEmpty() && budget > 0)
+    {
+        const auto hash = Session::hashOf (sessionText).substring (0, 32);
+        if (hash != sessionHash)
+        {
+            const String text = "{\"library\":\"" + libraryId + "\",\"at\":" + String (juce::Time::currentTimeMillis())
+                              + ",\"app\":\"" + Session::madeBy() + "\",\"session\":" + sessionText + "}";
+            const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+            const auto r = ask ("POST", "/api/sessions", &mb, "application/json", 30000);
+            if (notFound (r)) noSession = true;
+            else if (r.status == 200 || r.status == 400 || r.status == 413) { sessionHash = hash; changed = true; }
+            else sessionLooked = false;                     // (no answer: looked at again next time)
+        }
+    }
+
+    // 3. the sound files a snapshot needs to be played again: the library is asked once which it holds, then sent the rest
+    if (! down && ! noFiles && ! samples.empty())
+    {
+        if (! filesAsked && budget > 0)
+        {
+            juce::Array<var> hashes;
+            for (auto& sm : samples) if (sm.hash.length() == 64) hashes.add (sm.hash);
+            auto* q = new juce::DynamicObject();
+            q->setProperty ("hashes", hashes);
+            const auto text = juce::JSON::toString (var (q), true);
+            const juce::MemoryBlock mb (text.toRawUTF8(), text.getNumBytesAsUTF8());
+            const auto r = ask ("POST", "/api/files/have", &mb, "application/json", 15000);
+            if (notFound (r)) noFiles = true;
+            else if (r.status == 200)
+            {
+                filesAsked = true;
+                const auto before = filesSent;
+                filesSent.clear();
+                const var have = juce::JSON::parse (r.body).getProperty ("have", var());
+                if (auto* o = have.getDynamicObject()) for (auto& p : o->getProperties()) filesSent.insert (p.name.toString());
+                changed = changed || before != filesSent;
+            }
+        }
+        if (filesAsked && ! noFiles)
+            for (auto& sm : samples)
+            {
+                if (sm.hash.length() != 64 || filesSent.count (sm.hash) || archiveSkip.count (sm.hash)) continue;
+                if (down || held) break;
+                if (budget <= 0 || heavy <= 0) { more = true; break; }
+                const auto f = libDir.getChildFile (sm.file);
+                juce::MemoryBlock mb;
+                // (not here, too large to go, or no longer the file its name says: left for another run, and nothing said of it to the library)
+                if (! f.existsAsFile() || f.getSize() > 96 * 1024 * 1024 || ! f.loadFileAsData (mb) || mb.getSize() == 0 || Session::hashOf (mb.getData(), mb.getSize()) != sm.hash) { archiveSkip.insert (sm.hash); continue; }
+                --heavy;
+                const auto r = ask ("PUT", "/api/files/" + sm.hash + "?name=" + juce::URL::addEscapeChars (f.getFileName(), true), &mb, "application/octet-stream", 300000);
+                if (notFound (r)) { noFiles = true; break; }
+                if (r.status == 200 || r.status == 400 || r.status == 413) { filesSent.insert (sm.hash); changed = true; }     // (there now, or turned down as it is: not offered again)
+                else if (r.status >= 500 && ++archiveTries[sm.hash] >= 3) archiveSkip.insert (sm.hash);                       // (the library's own trouble with this one, three times: the rest are not held up by it)
+            }
+    }
+
+    // 4. each snapshot's sound without loss: the large things, last
+    if (! down && ! noLossless)
+        for (auto& it : lossless)
+        {
+            if (! it.file.existsAsFile() || archiveSkip.count (it.uid)) continue;       // (taken before they were kept, or still being written; or left for another run)
+            if (down || held) break;
+            if (budget <= 0 || heavy <= 0) { more = true; break; }
+            if (it.file.getSize() > 64 * 1024 * 1024) { archiveSkip.insert (it.uid); continue; }     // (more than the library takes)
+            juce::MemoryBlock mb;
+            if (! it.file.loadFileAsData (mb) || mb.getSize() == 0) continue;
+            --heavy;
+            const auto r = ask ("PUT", "/api/lossless/" + juce::URL::addEscapeChars (it.uid, true), &mb, "application/octet-stream", 600000);
+            auto& e = ledger[it.uid];
+            if (r.status == 404 || r.status == 501)
+            {
+                // (no such snapshot there: the pass sends it again. No such thing there: a library from before it kept them.)
+                if (juce::JSON::parse (r.body).getProperty ("error", "").toString().contains ("snapshot")) { e.snap = false; changed = true; }
+                else { noLossless = true; break; }
+                continue;
+            }
+            if (r.status == 400 || r.status == 413) { e.lossless = true; changed = true; continue; }       // (turned down: not offered again)
+            if (r.status >= 500 && ++archiveTries[it.uid] >= 3) archiveSkip.insert (it.uid);
+            if (r.status != 200) continue;
+            changed = true;
+            if (! (bool) juce::JSON::parse (r.body).getProperty ("gone", false)) e.lossless = true; else e.gone = true;
+        }
+
+    if (changed) writeLedger();
+    if (down) { ++archiveFails; archiveNext = juce::Time::getMillisecondCounter() + (juce::uint32) juce::jmin (600000, 30000 * (1 << juce::jmin (5, archiveFails - 1))); }
+    else archiveFails = 0;
+    // how much of it has still to go, for the screen
+    int left = 0;
+    if (! noLossless) for (auto& it : lossless) { const auto e = ledger.find (it.uid); if (it.file.existsAsFile() && ! archiveSkip.count (it.uid) && e != ledger.end() && ! e->second.lossless && ! e->second.gone) ++left; }
+    if (! noFiles && filesAsked) for (auto& sm : samples) if (sm.hash.length() == 64 && ! filesSent.count (sm.hash) && ! archiveSkip.count (sm.hash)) ++left;
+    if (! noLog)
+    {
+        juce::Array<juce::File> files;
+        logDir.findChildFiles (files, juce::File::findFiles, false, "*.jsonl");
+        for (auto& f : files) if (f.getSize() != (logSent.count (f.getFileName()) ? logSent[f.getFileName()] : 0)) ++left;
+    }
+    if (archiveToGo.exchange (left) != left) ++changes;
+    return more && ! down;
 }
 
 // ----------------------------------------------------------------------- the knobs, kept there
@@ -662,7 +918,8 @@ int Online::bringOne (const Setup& s, const String& uid, bool hasClip, bool& sil
         ++asked;
         const auto d = http (s, "GET", "/api/defs?prints=" + part.joinIntoString (","), nullptr, {}, 20000, &callOff);
         if (d.status != 200) { why = d; return -1; }
-        if (auto* o = juce::JSON::parse (d.body).getProperty ("defs", var()).getDynamicObject())
+        const var sent = juce::JSON::parse (d.body).getProperty ("defs", var());      // (held while it is read: what it points at is its own)
+        if (auto* o = sent.getDynamicObject())
             for (auto& p : o->getProperties()) defs->setProperty (p.name, p.value);
     }
     // its four bars
@@ -678,6 +935,7 @@ int Online::bringOne (const Setup& s, const String& uid, bool hasClip, bool& sil
     {
         const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
         if (! mm.lockWasGained()) return -2;
+        const Session::Quiet quiet (ses);                   // (what ONLINE does is not the player's doing: not in the log)
         id = ses.takeFromLibrary (snap, got.getProperty ("name", "").toString(), defsVar);
         if (id != 0)
         {
@@ -821,11 +1079,13 @@ bool Online::rack (bool sure)
         if (st != 200) { if (st == 0 || turnedAway (st)) return false; continue; }     // (no answer: all of it later. Said no to this one: the rest go on)
         const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
         if (! mm.lockWasGained()) return false;
+        const Session::Quiet quiet (ses);
         if (! ses.rackDone (step)) again = true;
     }
     {
         const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
         if (! mm.lockWasGained()) return false;
+        const Session::Quiet quiet (ses);
         ses.rackOrder (all);
     }
     if (! again) lineNow (rackSeen);
@@ -958,6 +1218,7 @@ String Online::load()
             {
                 const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
                 if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+                const Session::Quiet quiet (ses);
                 for (auto& m : moves) ses.knobMove (m.first, m.second);
             }
         }
@@ -1024,6 +1285,7 @@ String Online::load()
     {
         const juce::MessageManagerLock mm (juce::Thread::getCurrentThread());
         if (! mm.lockWasGained()) return says ("LOAD: STOPPED");
+        const Session::Quiet quiet (ses);
         line = ses.takeTray (tray, &plan);
         for (auto& k : seatedNow) sentUp.addIfNotAlreadyThere (k);
         if (sentUp.size() > 0) line << ". " << (sentUp.size() == 1 ? "KNOB " : "KNOBS ") << sentUp.joinIntoString (", ") << (sentUp.size() == 1 ? " IS" : " ARE") << " ON THE CHASSIS NOW TOO";
@@ -1053,6 +1315,7 @@ void Online::run()
         bool more = pass();
         more = mirror() || more;
         more = rack() || more;
+        more = archive() || more;
         const auto st = status().state;
         // a clip on its way: soon. Trouble: a little longer each time, two minutes at most. Else: when poked, or every so often.
         const int ms = more && failures == 0 ? 1500 : failures > 0 ? juce::jmin (120000, 5000 * (1 << juce::jmin (5, failures - 1))) : (st == State::upToDate ? 20000 : 60000);

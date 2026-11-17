@@ -245,6 +245,28 @@ public:
     struct Scope;
     bool readStems (juce::int64 id, Stems&, const Scope* only = nullptr) const;
     static juce::String stemKey (int index);        // 0 .. Engine::kStems - 1
+    static juce::String madeBy();                   // this build: its version and the commit it is built from
+    static juce::String hashOf (const juce::String& text);       // a text's SHA-256, in hex
+    static juce::String hashOf (const void* data, size_t bytes);
+    // The same bars without loss, kept beside those for the library to be studied from (the instrument itself plays the
+    // Ogg): the output ("mix") and each stem that sounded, each a FLAC file of 24 bits, in one file. A part that ran over
+    // full scale was written quieter by a power of two, and says by how much; read back, it is as it was.
+    juce::File losslessFile (juce::int64 id) const;
+    struct Lossless { double rate = 0.0; int bars = 0, bits = 0; std::vector<std::pair<juce::String, juce::AudioBuffer<float>>> parts; std::vector<float> gains; };
+    static bool readLossless (const juce::File&, Lossless&);
+    static void writeLossless (const juce::File&, const juce::AudioBuffer<float>& mix, const std::vector<juce::AudioBuffer<float>>* stems, double rate, int bars);
+    bool keepLossless = true;           // (whether a snapshot taken keeps them: the tests of other things turn it off)
+    // ---- the log: what is done with the chips, a line for each thing done, for the library to learn from (FORMAT.md, The
+    // log). A chip heard, recalled, taken, put in a pile or taken out of one, a part of the arrangement reached, the clock
+    // started or stopped. Written beside the session (log/<year>-<month>.jsonl) by a thread of its own and sent by ONLINE;
+    // nothing here reads it. What ONLINE or a LOAD does to the library is not the player's, and is not logged.
+    void logAction (const char* what, juce::int64 chip = 0, const juce::NamedValueSet& more = {});
+    juce::File logDir() const;
+    void waitForLog();                  // until what was logged is on the disk (tests; quitting)
+    juce::StringArray logTail;          // (the last lines logged, the newest last: the checks read them)
+    int logQuiet = 0;                   // (above 0: what is done now is not the player's own, or is one step of something already logged)
+    struct Quiet { Session& s; explicit Quiet (Session& x) : s (x) { ++s.logQuiet; } ~Quiet() { --s.logQuiet; } };
+    juce::String uidOf (juce::int64 id) const;      // a chip's name everywhere ("": none, or it has none)
     void waitForClips();                // until the clips being written are on the disk (tests; quitting)
     // ---- finding snapshots by their sound (those that have one kept)
     // The map: four rows of energy (0 calm .. 3 peak) by four columns of brightness (0 dark .. 3 bright).
@@ -725,7 +747,7 @@ public:
     void touch()                        { dirty = true; ++changes; }
     void save();
     bool load();
-    juce::var stateVar();               // all the file holds, as it stands
+    juce::var stateVar (bool withChips = true);     // all the file holds, as it stands (without its chips and the definitions: what ONLINE sends of the session itself)
     void takeState (const juce::var&);  // made what that says
     bool printRig = false;              // this is a print's own rig: its parts bring their notes, and the print says when it ends
     static juce::File stateFile();
@@ -846,6 +868,13 @@ private:
     float learnWas = 0.0f;              // where the knob being taught stood
     bool dirty = false, useDisk = true;
     juce::ThreadPool clipWriter { 1 };
+    juce::ThreadPool logWriter { 1 };
+    juce::String logRun;                // (this run's own mark in a line's name)
+    int logCount = 0;
+    bool logRunWas = false;             // (the clock as the log last saw it)
+    const char* logFrom = nullptr;      // (what a recall about to be made is from: a stack knob's press)
+    int logKnob = -1;
+    bool cueDo (juce::int64 id);
     juce::int64 cueId = 0;
     juce::int64 cueScopeFor = 0; Scope cueScope;                // (the scope a cue of that snapshot is narrowed to)
     int cueNotesWish = -1;                                      // (and whether its recall would bring its notes: -1 as NOTES is set)
