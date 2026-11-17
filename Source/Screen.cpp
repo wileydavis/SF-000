@@ -2322,7 +2322,8 @@ void Screen::drawWell (G& g, R r, int kind, int index)
     const bool isOpen = (kind == 0 && open == 0) || (kind == 1 && open == 1 && index == inAt()) || (kind == 2 && open == 2 && index == openKeptAt())
                      || (kind == 3 && open == 3 && index == openModAt()) || (kind == 4 && open == 4 && index == openArrAt());
     // (the chip in hand: every stack that holds it shows it)
-    const juce::int64 hand = rowSel >= 0 && inAt() >= 0 && rowSel < (int) ses.stacks[(size_t) inAt()].snaps.size() ? ses.stacks[(size_t) inAt()].snaps[(size_t) rowSel] : handId;
+    juce::int64 hand = handId;
+    if (const auto pile = rowAt(); pile.what != 0 && rowSel >= 0) { const auto snaps = ses.pileSnaps (pile); if (rowSel < (int) snaps.size()) hand = snaps[(size_t) rowSel]; }
     const bool holds = kind == 1 && hand != 0 && std::find (ses.stacks[(size_t) index].snaps.begin(), ses.stacks[(size_t) index].snaps.end(), hand) != ses.stacks[(size_t) index].snaps.end();
     const bool inUse = (kind == 3 && index == ses.moduleIndex()) || (kind == 4 && index == ses.arrsIndex());
     String name, count;
@@ -2461,21 +2462,12 @@ float Screen::openHead (G& g, float top, const String& name, const String& says)
     openNameRect = R (x, y, std::max (wn, 180.0f), 26);
     nameAt (open == 1 ? 3 : open == 2 ? 4 : open == 3 ? 5 : 6, 0, -1, open == 1 ? inStack : open == 2 ? openKept : open == 3 ? openMod : openArr, openNameRect);
     x += wn + 10.0f;
-    const bool handIn = ses.findSnap (handId) != nullptr;
+    // (its row is out on the bench here: what the hand does in it, first)
+    if (const auto pile = rowAt(); pile.what == 1 || pile.what == 2) { rowKeys (g, x, y, pile, (int) ses.pileSnaps (pile).size()); x += 10.0f; }
     if (open == 1)
     {
         const int os = inAt();
-        const bool can = ses.rackCanChange (os), inRow = rowSel >= 0;
         const int n = (int) ses.stacks[(size_t) os].snaps.size();
-        if (rp.wide)
-        {
-            // (its row is out on the bench here: what the hand does in it)
-            headKey (g, x, y, aRowAdd, "ADD", col::yellow, can && handIn);
-            headKey (g, x, y, aRowOut, "TAKE OUT", col::white, can && inRow);
-            headKey (g, x, y, aRowEarlier, "EARLIER", col::white, can && inRow && rowSel > 0);
-            headKey (g, x, y, aRowLater, "LATER", col::white, can && inRow && rowSel + 1 < n);
-            x += 10.0f;
-        }
         headKey (g, x, y, aOpenLoad, "ON A KNOB", col::white, n > 0);
         headKey (g, x, y, aOpenCopy, "COPY", col::white);
         headKey (g, x, y, aOpenDelete, "DELETE", col::red);
@@ -2510,18 +2502,15 @@ void Screen::rackTidy()
 // A chip of the open stack, in its row: its number, its name (green while it is in the headphones), and a key for every
 // part of the rig it takes there, N last. Pressed, it is the chip in hand and is heard with those parts; carried along
 // the row it is moved, off the row it is taken out of this stack.
-void Screen::drawRowCard (G& g, R r, int os, int i)
+void Screen::drawRowCard (G& g, R r, int i, juce::int64 id, juce::uint32 lanes, bool can)
 {
     static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N" };
-    const auto& st = ses.stacks[(size_t) os];
-    const auto* sn = ses.findSnap (st.snaps[(size_t) i]);
-    const juce::uint32 lanes = st.keysAt ((size_t) i);
+    const auto* sn = ses.findSnap (id);
     hit (r, hRowCard, i, 0);
-    nameAt (1, st.snaps[(size_t) i], -1, {}, chipNameRect (r, i + 1));
+    nameAt (1, id, -1, {}, chipNameRect (r, i + 1));
     const float x0 = r.getX() + 6, y0 = r.getY() + 6;
     const String num (i + 1);
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
-    const bool can = ses.rackCanChange (os);
     if (vis (g, r))
     {
         const bool heard = sn != nullptr && ses.cueing() == sn->id;
@@ -2544,27 +2533,64 @@ void Screen::drawRowCard (G& g, R r, int os, int i)
     }
 }
 
+Session::PileAt Screen::rowAt() const
+{
+    if (page != pLibrary) return {};
+    const int open = rackOpen();
+    Session::PileAt p;
+    if (open == 1) p = { 1, inAt(), -1 };
+    else if (open == 2) p = { 2, openKeptAt(), -1 };
+    else if (open == 3 && openModKnob >= 0) p = { 3, openModAt(), openModKnob };
+    return ses.pileIs (p) ? p : Session::PileAt();
+}
+
+// What the hand does in the row: the chip in hand in, last; the chip pressed in the row out, earlier, later.
+void Screen::rowKeys (G& g, float& x, float& y, const Session::PileAt& p, int n)
+{
+    const bool can = ses.pileCan (p), inRow = rowSel >= 0, handIn = ses.findSnap (handId) != nullptr;
+    headKey (g, x, y, aRowAdd, "ADD", col::yellow, can && handIn);
+    headKey (g, x, y, aRowOut, "TAKE OUT", col::white, can && inRow);
+    headKey (g, x, y, aRowEarlier, "EARLIER", col::white, can && inRow && rowSel > 0);
+    headKey (g, x, y, aRowLater, "LATER", col::white, can && inRow && rowSel + 1 < n);
+}
+
 float Screen::drawStackRow (G& g, float top)
 {
-    const int os = inAt();
-    const auto& st = ses.stacks[(size_t) os];
-    const int n = (int) st.snaps.size(), rowsAll = std::max (1, (n + 5) / 6), rows = std::min (2, rowsAll);
+    const auto p = rowAt();
+    const auto snaps = ses.pileSnaps (p);
+    const int n = (int) snaps.size(), rowsAll = std::max (1, (n + 5) / 6), rows = std::min (2, rowsAll);
     rowSel = juce::jlimit (-1, n - 1, rowSel);
     rowScroll = juce::jlimit (0, rowsAll - rows, rowScroll);
-    // its head: its name (green: it is the one out on the bench), its keys, how many
-    const bool can = ses.rackCanChange (os);
-    const String says = String (n) + (n == 1 ? " CHIP" : " CHIPS") + (! can ? ". THE WEB LIBRARY'S: IT IS CHANGED THERE."
-                          : n == 0 ? ". CARRY A CHIP UP HERE FROM THE BIN, OR PRESS ONE THERE AND THEN ADD."
-                                   : ", IN THE ORDER A KNOB TURNS THROUGH THEM. CARRY ONE ALONG THE ROW TO MOVE IT, OFF IT TO TAKE IT OUT.")
-                       + (rowsAll > rows ? "  ROWS " + String (rowScroll + 1) + " TO " + String (rowScroll + rows) + " OF " + String (rowsAll) + " (THE WHEEL)" : String());
-    const float y = openHead (g, top, st.name, says) - 2.0f;
+    const bool can = ses.pileCan (p);
+    const String count = String (n) + (n == 1 ? " CHIP" : " CHIPS");
+    const String how = ! can ? String (". THE WEB LIBRARY'S: IT IS CHANGED THERE.")
+                     : n == 0 ? String (". CARRY A CHIP UP HERE FROM THE BIN, OR PRESS ONE THERE AND THEN ADD.")
+                              : String (", IN THE ORDER A KNOB TURNS THROUGH THEM. CARRY ONE ALONG THE ROW TO MOVE IT, OFF IT TO TAKE IT OUT.");
+    const String lines = rowsAll > rows ? "  ROWS " + String (rowScroll + 1) + " TO " + String (rowScroll + rows) + " OF " + String (rowsAll) + " (THE WHEEL)" : String();
+    float y = top;
+    if (p.what == 3)
+    {
+        // a knob of the open module: its pile has a line of its own under the module's knobs (which knob, the row's keys, how many)
+        float x = rp.x;
+        const String which = "KNOB " + String (p.knob + 1) + ": " + ses.pileName (p);
+        x += plate (g, x, y, which, fNote, 8, col::green, col::lit, 26) + 10.0f;
+        rowKeys (g, x, y, p, n);
+        text (g, count + how + lines, R (x + 6.0f, y, rp.x + rp.w - x - 6.0f, 26), fLbl, col::black, juce::Justification::centredLeft);
+        y += 32.0f;
+    }
+    else
+    {
+        // its head: its name (green: it is the one out on the bench), its keys, how many
+        const String name = ses.pileName (p);
+        y = openHead (g, top, name.isEmpty() ? String ("UNNAMED") : name, (p.what == 2 ? "A STACK KNOB, KEPT BY ITSELF: " : "") + count + how + lines) - 2.0f;
+    }
     rowArea = R (23.0f, y - 4.0f, 1682.0f, (float) rows * 74.0f + 2.0f);
     if (vis (g, rowArea)) { g.setColour (tone (col::white).withAlpha (0.16f)); g.fillRoundedRectangle (rowArea.expanded (4.0f, 2.0f), 5.0f); }
     for (int q = 0; q < rows * 6; ++q)
     {
         const int i = rowScroll * 6 + q;
         if (i >= n) break;
-        drawRowCard (g, R (23.0f + (float) (q % 6) * 282, y + (float) (q / 6) * 74, 272, 66), os, i);
+        drawRowCard (g, R (23.0f + (float) (q % 6) * 282, y + (float) (q / 6) * 74, 272, 66), i, snaps[(size_t) i], ses.pileKeysAt (p, i), can);
     }
     return y + (float) rows * 74.0f + 8.0f;
 }
@@ -2645,7 +2671,7 @@ void Screen::drawKeptOpen (G& g, float top)
 
 // A module open: its four macro knobs and its ten stack knobs in a row, each stack knob a pocket with its pile. A knob
 // pressed has what it holds laid out under the row.
-void Screen::drawModOpen (G& g, float top)
+float Screen::drawModOpen (G& g, float top)
 {
     const int at = openModAt();
     const auto& m = ses.modules[(size_t) at];
@@ -2684,13 +2710,16 @@ void Screen::drawModOpen (G& g, float top)
         while (nm.length() > 2 && std::ceil (tw (fNote, nm)) + 12 > cw) nm = nm.dropLastCharacters (1);
         plate (g, r.getX(), r.getBottom() + 6.0f, nm, fNote, 6, k == openModKnob ? col::green : col::black, col::lit, 22);
     }
-    if (has)
+    const float hy = y + (float) ((13 / perLine) + 1) * 134.0f + 2.0f;
+    // (in the library a stack knob's pile is out in a row under the knobs, to be changed: the page draws it. Elsewhere, and for
+    // a macro knob, what the pressed knob holds is shown)
+    if (has && rowAt().what != 3)
     {
-        const float hy = y + (float) ((13 / perLine) + 1) * 134.0f + 2.0f;
         text (g, "KNOB " + String (openModKnob + 1) + (shown.name.isNotEmpty() ? ": " + shown.name : String()) + (shownStack ? ". ITS PILE:" : ". WHAT IT IS TIED TO:"),
               R (rp.x, hy, std::min (900.0f, rp.w), 24), fLbl, col::black, juce::Justification::centredLeft);
         drawKnobHolds (g, hy + 28.0f, shown, shownStack);
     }
+    return hy;
 }
 
 void Screen::drawArrOpen (G& g, float top)
@@ -2730,9 +2759,9 @@ const Screen::WellAt* Screen::wellAt (juce::Point<float> p) const
 
 int Screen::rowSlotAt (juce::Point<float> p) const
 {
-    const int os = inAt();
-    if (os < 0 || rowArea.isEmpty() || ! rowArea.expanded (4.0f, 6.0f).contains (p)) return -1;
-    const int n = (int) ses.stacks[(size_t) os].snaps.size();
+    const auto pile = rowAt();
+    if (pile.what == 0 || rowArea.isEmpty() || ! rowArea.expanded (4.0f, 6.0f).contains (p)) return -1;
+    const int n = (int) ses.pileSnaps (pile).size();
     const int col = juce::jlimit (0, 6, (int) std::floor ((p.x - 23.0f + 141.0f) / 282.0f));
     const int row = juce::jlimit (0, 1, (int) std::floor ((p.y - rowArea.getY()) / 74.0f));
     return juce::jlimit (0, n, (rowScroll + row) * 6 + col);
@@ -2769,7 +2798,8 @@ void Screen::openWell (int kind, int index)
 // place in the row; onto another stack's pocket, into that stack too; off the row, out of this stack.
 void Screen::rackDrop (juce::Point<float> p)
 {
-    const int os = inAt(), slot = rowSlotAt (p);
+    const auto pile = rowAt();
+    const int slot = rowSlotAt (p);
     const auto* w = wellAt (p);
     const char* const theirs = "THAT STACK IS THE WEB LIBRARY'S: IT IS CHANGED THERE";
     auto into = [&] (int index, juce::int64 id, juce::uint32 keys)
@@ -2780,26 +2810,31 @@ void Screen::rackDrop (juce::Point<float> p)
         if (index >= 0 && index < (int) ses.stacks.size() && ses.rackAdd (index, id, keys)) rackSay (sn->name + " IS IN " + ses.stacks[(size_t) index].name);
         else rackSay (theirs);
     };
+    const bool pocket = w != nullptr && (w->kind == 1 || w->kind == 5);
     if (drag.kind == hCard && drag.a < (int) ses.library.size())
     {
         const auto id = ses.library[(size_t) drag.a].id;
         const auto parts = id == handId ? handParts : Session::kAllLanes;
-        if (slot >= 0 && os >= 0) { if (! ses.rackInsert (os, slot, id, parts)) rackSay (theirs); else rowSel = -1; }
-        else if (w != nullptr && (w->kind == 1 || w->kind == 5)) into (w->index, id, parts);
+        if (slot >= 0 && pile.what != 0) { if (! ses.pileInsert (pile, slot, id, parts)) rackSay (ses.pileCan (pile) ? "NO ROOM IN THAT PILE FOR ANOTHER" : theirs); else rowSel = -1; }
+        else if (pocket) into (w->index, id, parts);
     }
-    else if (drag.kind == hRowCard && os >= 0 && drag.a < (int) ses.stacks[(size_t) os].snaps.size())
+    else if (drag.kind == hRowCard && pile.what != 0)
     {
-        const auto id = ses.stacks[(size_t) os].snaps[(size_t) drag.a];
-        const auto keys = ses.stacks[(size_t) os].keysAt ((size_t) drag.a);
-        if (! ses.rackCanChange (os)) { if (w != nullptr && (w->kind == 1 || w->kind == 5) && w->index != os) into (w->index, id, keys); else rackSay (theirs); }
-        else if (slot >= 0) { const int to = slot > drag.a ? slot - 1 : slot; ses.rackMove (os, drag.a, to); rowSel = to; }
-        else if (w != nullptr && (w->kind == 1 || w->kind == 5)) { if (w->kind == 5 || w->index != os) into (w->index, id, keys); }
+        const auto snaps = ses.pileSnaps (pile);
+        if (drag.a >= (int) snaps.size()) return;
+        const auto id = snaps[(size_t) drag.a];
+        const auto keys = ses.pileKeysAt (pile, drag.a);
+        const bool itsOwn = pile.what == 1 && w != nullptr && w->kind == 1 && w->index == pile.index;       // (let go on its own pocket: nothing)
+        if (! ses.pileCan (pile)) { if (pocket && ! itsOwn) into (w->index, id, keys); else rackSay (theirs); }
+        else if (slot >= 0) { const int to = slot > drag.a ? slot - 1 : slot; ses.pileMove (pile, drag.a, to); rowSel = to; }
+        else if (pocket) { if (! itsOwn) into (w->index, id, keys); }
         else
         {
             const auto* sn = ses.findSnap (id);
-            ses.rackDrop (os, drag.a);
+            const String from = ses.pileName (pile);
+            ses.pileDrop (pile, drag.a);
             rowSel = -1;
-            rackSay ((sn != nullptr ? sn->name : String ("IT")) + " IS OUT OF " + ses.stacks[(size_t) os].name + ". IT IS STILL IN THE BIN");
+            rackSay ((sn != nullptr ? sn->name : String ("IT")) + " IS OUT OF " + from + ". IT IS STILL IN THE BIN");
         }
     }
 }
@@ -2857,20 +2892,24 @@ void Screen::drawLibrary (G& g)
     rackTidy();
     benchArea = {};
     const int open = rackOpen();
-    if (open != 1) { rowSel = -1; rowArea = {}; }
+    const auto pile = rowAt();
+    if (pile.what == 0) { rowSel = -1; rowArea = {}; }
     drawChipRack (g);
     selNameRect = {};
     int total = 0;
-    if (open <= 1)
+    if (open == 0 || pile.what != 0)
     {
-        // the open stack's row, if one is open; then the bin: every chip
-        const float head = open == 1 ? drawStackRow (g, kBenchY) : kBenchY;
+        // a pile that is out (the open stack's, an open stack knob's, the pressed knob's of an open module) is a row to be changed;
+        // then the bin under it: every chip
+        float head = kBenchY;
+        if (open == 3) head = drawModOpen (g, kBenchY);         // (the module's knobs first: the pressed one's pile is the row under them)
+        if (pile.what != 0) head = drawStackRow (g, head);
         const float top = drawFind (g, 23.0f, 1682.0f, head);
         const auto list = listed();
         const int rows = std::max (1, (int) ((974.0f - top + 8.0f) / 74.0f));
         total = (int) list.size();
         libScroll = juce::jlimit (0, std::max (0, (total - 1) / 6 - (rows - 1)), libScroll);
-        const int os = inAt();
+        const auto inPile = ses.pileSnaps (pile);
         for (int n = 0; n < 6 * rows; ++n)
         {
             const int at = libScroll * 6 + n;
@@ -2879,8 +2918,8 @@ void Screen::drawLibrary (G& g)
             const auto& s = ses.library[(size_t) i];
             const R r (23.0f + (float) (n % 6) * 282, top + (float) (n / 6) * 74, 272, 66);
             drawSnapCard (g, s, i, r, s.id == selSnap, hCard);
-            // (a chip that is in the open stack says so, on its card)
-            if (open == 1 && s.id != handId && std::find (ses.stacks[(size_t) os].snaps.begin(), ses.stacks[(size_t) os].snaps.end(), s.id) != ses.stacks[(size_t) os].snaps.end() && vis (g, r))
+            // (a chip that is in the pile that is out says so, on its card)
+            if (pile.what != 0 && s.id != handId && std::find (inPile.begin(), inPile.end(), s.id) != inPile.end() && vis (g, r))
             { g.setColour (tone (col::green)); g.fillRect (R (r.getX() + 8.0f, r.getBottom() - 6.0f, r.getWidth() - 16.0f, 3.0f)); }       // (a green line along its near edge)
         }
     }
@@ -2917,8 +2956,8 @@ void Screen::drawLibrary (G& g)
              : open == 1 && rowSel >= 0 ? String ("TAKE OUT TAKES IT OUT OF THIS STACK ONLY: IT STAYS IN THE BIN AND IN EVERY OTHER STACK.")
              : handIn && nIn > 0 ? ses.findSnap (handId)->name + " IS IN " + String (nIn) + (nIn == 1 ? " STACK: " : " STACKS: ") + in.joinIntoString (", ") + ". ITS POCKETS ARE RINGED."
              : open == 1 ? String ("A CHIP CARRIED UP FROM THE BIN GOES INTO THE ROW WHERE IT IS LET GO. THE CHIP STAYS IN THE BIN: THE STACK HOLDS A REFERENCE.")
-             : open == 2 ? String ("A KNOB KEPT IS A COPY: PUT ON A PLACE, WHAT IS CHANGED THERE CHANGES THE MODULE'S KNOB, NOT THIS ONE.")
-             : open == 3 ? String ("THE MODULE IN THE CHASSIS IS GREEN: WHAT IS CHANGED ON ITS KNOBS CHANGES IT. ITS KNOBS ARE CHANGED IN MACROS.")
+             : open == 2 ? String ("A KNOB KEPT IS A COPY: WHAT IS CHANGED HERE CHANGES THIS ONE, NOT A KNOB IT WAS PUT ON; WHAT IS CHANGED ON A PLACE CHANGES THE MODULE'S KNOB, NOT THIS ONE.")
+             : open == 3 ? String ("PRESS A STACK KNOB OF THE MODULE: ITS PILE IS OUT IN A ROW, AND IS CHANGED AS A STACK'S IS. THE ONE IN THE CHASSIS IS GREEN: ITS KNOBS ARE THE ONES PLAYING. A MACRO KNOB IS TAUGHT IN MACROS (LEARN).")
              : open == 4 ? String ("THE ARRANGEMENT ON THE PAGE IS GREEN: WHAT IS CHANGED ON ITS PAGE CHANGES IT.")
              : ! eng.cueIsHeard() ? String ("A CHIP PRESSED PLAYS IN THE HEADPHONES. THEY NEED OUTPUTS 3 + 4 (SETUP), OR PHONES LIT: THE SET LEFT, THE CHIP RIGHT.")
              : String ("PRESS A CHIP TO HEAR IT. RECALL (OR TWO QUICK PRESSES) TAKES IT TO THE SET. CARRY IT ONTO A STACK'S POCKET, OR ADD TO AND THEN THE POCKET, TO PUT IT IN THAT STACK.");
@@ -3372,11 +3411,12 @@ void Screen::drawCarry (G& g)
     if (page == pLibrary)
     {
         // the library: a chip carried shows where it would go (a bar between two chips of the open row, a ring on a stack's pocket) and its name at the pointer
-        const int os = inAt(), slot = rowSlotAt (carryAt);
+        const auto pile = rowAt();
+        const int os = pile.what == 1 ? pile.index : -1, slot = rowSlotAt (carryAt);
         String name;
         if (drag.kind == hCard && drag.a < (int) ses.library.size()) name = ses.library[(size_t) drag.a].name;
-        else if (drag.kind == hRowCard && os >= 0 && drag.a < (int) ses.stacks[(size_t) os].snaps.size()) { if (const auto* sn = ses.findSnap (ses.stacks[(size_t) os].snaps[(size_t) drag.a])) name = sn->name; }
-        if (slot >= 0 && os >= 0)
+        else if (drag.kind == hRowCard && pile.what != 0) { const auto snaps = ses.pileSnaps (pile); if (drag.a < (int) snaps.size()) if (const auto* sn = ses.findSnap (snaps[(size_t) drag.a])) name = sn->name; }
+        if (slot >= 0 && pile.what != 0)
         {
             const int q = slot - rowScroll * 6;
             const float bx = 23.0f + (float) (q % 6) * 282 - 6.0f, by = rowArea.getY() + 4.0f + (float) (q / 6) * 74;
@@ -4124,11 +4164,11 @@ void Screen::act (int a)
                 else rackSay ("NO ROOM ON THAT KNOB");
                 break;
             }
-            if (const int os = inAt(); os >= 0 && ses.findSnap (handId) != nullptr)
+            if (const auto pile = rowAt(); pile.what != 0 && ses.findSnap (handId) != nullptr)
             {
                 const String name = ses.findSnap (handId)->name;
-                if (ses.rackAdd (os, handId, handParts)) { rackSay (name + " IS IN " + ses.stacks[(size_t) os].name + ", LAST"); rowScroll = 9999; }
-                else rackSay ("THAT STACK IS THE WEB LIBRARY'S: IT IS CHANGED THERE");
+                if (ses.pileInsert (pile, -1, handId, handParts)) { rackSay (name + " IS IN " + ses.pileName (pile) + ", LAST"); rowScroll = 9999; }
+                else rackSay (ses.pileCan (pile) ? "NO ROOM IN THAT PILE FOR ANOTHER" : "THAT STACK IS THE WEB LIBRARY'S: IT IS CHANGED THERE");
             }
             break;
         case aRowOut:
@@ -4138,13 +4178,15 @@ void Screen::act (int a)
                 { ses.stackDrop (selKnob, colSel); colSel = std::min (colSel, (int) ses.knobs[(size_t) selKnob].snaps.size() - 1); }
                 break;
             }
-            if (const int os = inAt(); os >= 0 && rowSel >= 0 && rowSel < (int) ses.stacks[(size_t) os].snaps.size())
+            if (const auto pile = rowAt(); pile.what != 0)
             {
-                const auto* sn = ses.findSnap (ses.stacks[(size_t) os].snaps[(size_t) rowSel]);
+                const auto snaps = ses.pileSnaps (pile);
+                if (rowSel < 0 || rowSel >= (int) snaps.size() || ! ses.pileCan (pile)) break;
+                const auto* sn = ses.findSnap (snaps[(size_t) rowSel]);
                 const String name = sn != nullptr ? sn->name : String ("IT");
-                ses.rackDrop (os, rowSel);
-                rackSay (name + " IS OUT OF " + ses.stacks[(size_t) os].name + ". IT IS STILL IN THE BIN");
-                rowSel = std::min (rowSel, (int) ses.stacks[(size_t) os].snaps.size() - 1);
+                ses.pileDrop (pile, rowSel);
+                rackSay (name + " IS OUT OF " + ses.pileName (pile) + ". IT IS STILL IN THE BIN");
+                rowSel = std::min (rowSel, (int) snaps.size() - 2);
             }
             break;
         case aRowEarlier: case aRowLater:
@@ -4158,10 +4200,10 @@ void Screen::act (int a)
                 }
                 break;
             }
-            if (const int os = inAt(); os >= 0 && rowSel >= 0)
+            if (const auto pile = rowAt(); pile.what != 0 && rowSel >= 0 && ses.pileCan (pile))
             {
                 const int to = rowSel + (a == aRowEarlier ? -1 : 1);
-                if (to >= 0 && to < (int) ses.stacks[(size_t) os].snaps.size()) { ses.rackMove (os, rowSel, to); rowSel = to; }
+                if (to >= 0 && to < (int) ses.pileSnaps (pile).size()) { ses.pileMove (pile, rowSel, to); rowSel = to; }
             }
             break;
         case aOpenNew:    rackOpenDo (0); break;
@@ -4375,11 +4417,11 @@ void Screen::mouseDown (const juce::MouseEvent& e)
         case hRowCard:  break;      // (pressed and let go where it is: in hand, and heard. Carried: moved, or taken out. See mouseUp)
         case hRowKey:
             // a key of a chip in the open stack's row: the part it takes there, put out or lit (N: whether a knob coming to it brings its notes)
-            if (const int os = inAt(); os >= 0 && h->a < (int) ses.stacks[(size_t) os].snaps.size())
+            if (const auto pile = rowAt(); pile.what != 0 && h->a < (int) ses.pileSnaps (pile).size())
             {
-                const juce::uint32 lanes = ses.stacks[(size_t) os].keysAt ((size_t) h->a) ^ (1u << h->b);
-                const auto id = ses.stacks[(size_t) os].snaps[(size_t) h->a];
-                ses.rackLanes (os, h->a, lanes);
+                const juce::uint32 lanes = ses.pileKeysAt (pile, h->a) ^ (1u << h->b);
+                const auto id = ses.pileSnaps (pile)[(size_t) h->a];
+                ses.pileKeys (pile, h->a, lanes);
                 if (ses.cueing() == id) ses.cueWith (id, Session::scopeOf (lanes & Session::kAllLanes), (lanes & Session::kNotesKey) != 0 ? 1 : -1);       // (heard at once, if it is the one in the headphones)
             }
             break;
@@ -4394,7 +4436,7 @@ void Screen::mouseDown (const juce::MouseEvent& e)
                 else { ses.cueWith (id, Session::scopeOf (handParts), (keys & Session::kNotesKey) != 0 ? 1 : -1); heardSays (id, ses.cue (id)); }
             }
             break;
-        case hModKnob:  openModKnob = openModKnob == h->a ? -1 : h->a; benchScroll = 0; break;
+        case hModKnob:  openModKnob = openModKnob == h->a ? -1 : h->a; benchScroll = 0; rowSel = -1; rowScroll = 0; break;
         case hShelfCard: shelfSel[(size_t) juce::jlimit (0, (int) skKinds - 1, h->a)] = h->b; break;
         case hShelfKey:
             if (h->b == 4) break;           // (DELETE is held: see the timer)
@@ -4680,10 +4722,10 @@ void Screen::mouseUp (const juce::MouseEvent& e)
         else if (drag.kind == hRowCard)
         {
             // a chip of the open stack's row, pressed: it is the one in hand there, and is heard with the parts it takes; pressed again, it stops
-            if (const int os = inAt(); os >= 0 && drag.a < (int) ses.stacks[(size_t) os].snaps.size())
+            if (const auto pile = rowAt(); pile.what != 0 && drag.a < (int) ses.pileSnaps (pile).size())
             {
-                const auto id = ses.stacks[(size_t) os].snaps[(size_t) drag.a];
-                const auto keys = ses.stacks[(size_t) os].keysAt ((size_t) drag.a);
+                const auto id = ses.pileSnaps (pile)[(size_t) drag.a];
+                const auto keys = ses.pileKeysAt (pile, drag.a);
                 rowSel = drag.a; handId = 0; selSnap = 0; nameIs (1, id);
                 if (ses.cueing() == id) ses.cue (0);
                 else { ses.cueWith (id, Session::scopeOf (keys & Session::kAllLanes), (keys & Session::kNotesKey) != 0 ? 1 : -1); heardSays (id, ses.cue (id)); }
@@ -4736,11 +4778,10 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
         else if (h->kind == hCard && page == pLibrary) act (aRecallCue);    // (the library: two quick presses take it to the set)
-        else if (h->kind == hRowCard && inAt() >= 0 && h->a < (int) ses.stacks[(size_t) inAt()].snaps.size())
+        else if (const auto pile = rowAt(); h->kind == hRowCard && pile.what != 0 && h->a < (int) ses.pileSnaps (pile).size())
         {
-            // (a chip of the open stack: to the set, with the parts it takes there)
-            const auto& st = ses.stacks[(size_t) inAt()];
-            handId = st.snaps[(size_t) h->a]; handParts = st.keysAt ((size_t) h->a) & Session::kAllLanes;
+            // (a chip of the pile that is out in a row: to the set, with the parts it takes there)
+            handId = ses.pileSnaps (pile)[(size_t) h->a]; handParts = ses.pileKeysAt (pile, h->a) & Session::kAllLanes;
             act (aRecallCue);
             handId = 0;
         }

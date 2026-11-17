@@ -3478,6 +3478,107 @@ juce::var Session::moduleKnob (int module, int k) const
     return kn.isArray() && k < kn.size() ? kn[k] : var();
 }
 
+// ---- a pile, wherever it is kept
+bool Session::pileIs (const PileAt& p) const
+{
+    if (p.what == 1) return p.index >= 0 && p.index < (int) stacks.size();
+    if (p.what == 2) return p.index >= 0 && p.index < (int) keptKnobs.size() && keptKnobs[(size_t) p.index].stack;
+    if (p.what == 3) return p.index >= 0 && p.index < (int) modules.size() && isStack (p.knob);
+    return false;
+}
+
+bool Session::pileCan (const PileAt& p) const { return pileIs (p) && (p.what != 1 || rackCanChange (p.index)); }
+
+// (a knob kept, or a knob of a module that is not in the chassis: read from how it is kept, changed, and kept again)
+static bool pileKnobKept (const Session& s, const Session::PileAt& p) { return p.what == 2 || (p.what == 3 && p.index != s.moduleIndex()); }
+
+juce::String Session::pileName (const PileAt& p) const
+{
+    if (! pileIs (p)) return {};
+    if (p.what == 1) return stacks[(size_t) p.index].name;
+    if (p.what == 2) return keptKnobs[(size_t) p.index].name();
+    const MacroKnob kn = p.index == moduleIndex() ? knobs[(size_t) p.knob] : knobFrom (moduleKnob (p.index, p.knob));
+    return kn.name.isNotEmpty() ? kn.name : "KNOB " + juce::String (p.knob + 1);
+}
+
+std::vector<juce::int64> Session::pileSnaps (const PileAt& p) const
+{
+    if (! pileIs (p)) return {};
+    if (p.what == 1) return stacks[(size_t) p.index].snaps;
+    if (p.what == 3 && p.index == moduleIndex()) return knobs[(size_t) p.knob].snaps;
+    return knobFrom (p.what == 2 ? keptKnobs[(size_t) p.index].knob : moduleKnob (p.index, p.knob)).snaps;
+}
+
+juce::uint32 Session::pileKeysAt (const PileAt& p, int i) const
+{
+    if (! pileIs (p) || i < 0) return kAllLanes;
+    if (p.what == 1) return i < (int) stacks[(size_t) p.index].snaps.size() ? stacks[(size_t) p.index].keysAt ((size_t) i) : kAllLanes;
+    const MacroKnob kn = p.what == 3 && p.index == moduleIndex() ? knobs[(size_t) p.knob] : knobFrom (p.what == 2 ? keptKnobs[(size_t) p.index].knob : moduleKnob (p.index, p.knob));
+    return i < (int) kn.snaps.size() ? kn.keysAt ((size_t) i) : kAllLanes;
+}
+
+// (what is done to a knob as it is kept: the knob read, changed, and kept again in its place)
+static bool pileKept (Session& s, const Session::PileAt& p, const std::function<bool (MacroKnob&)>& change)
+{
+    var& held = p.what == 2 ? s.keptKnobs[(size_t) p.index].knob : s.modules[(size_t) p.index].knobs;
+    MacroKnob kn = s.knobFrom (p.what == 2 ? held : (held.isArray() && p.knob < held.size() ? var (held[p.knob]) : var()));
+    if (! change (kn)) return false;
+    if (p.what == 2) held = s.knobVar (kn);
+    else if (auto* a = held.getArray(); a != nullptr && p.knob < a->size()) a->set (p.knob, s.knobVar (kn));
+    else return false;
+    s.touch();
+    if (s.onChange) s.onChange();
+    return true;
+}
+
+bool Session::pileInsert (const PileAt& p, int at, juce::int64 id, juce::uint32 keys)
+{
+    if (! pileCan (p) || findSnap (id) == nullptr) return false;
+    if (p.what == 1) return rackInsert (p.index, at, id, keys);
+    if (! pileKnobKept (*this, p)) { const int n = (int) knobs[(size_t) p.knob].snaps.size(); return stackInsert (p.knob, at < 0 ? n : at, id, keys); }
+    return pileKept (*this, p, [&] (MacroKnob& kn)
+    {
+        if ((int) kn.snaps.size() >= kStackMost) return false;
+        kn.add (id, keysOf (keys));
+        const int last = (int) kn.snaps.size() - 1;
+        if (at >= 0) for (int i = last; i > juce::jlimit (0, last, at); --i) kn.swapAt ((size_t) i, (size_t) i - 1);
+        return true;
+    });
+}
+
+void Session::pileMove (const PileAt& p, int from, int to)
+{
+    if (! pileCan (p)) return;
+    if (p.what == 1) { rackMove (p.index, from, to); return; }
+    if (! pileKnobKept (*this, p)) { stackMove (p.knob, from, to); return; }
+    pileKept (*this, p, [&] (MacroKnob& kn)
+    {
+        const int n = (int) kn.snaps.size();
+        if (from < 0 || from >= n) return false;
+        const int goal = juce::jlimit (0, n - 1, to);
+        if (goal == from) return false;
+        for (int i = from; i < goal; ++i) kn.swapAt ((size_t) i, (size_t) i + 1);
+        for (int i = from; i > goal; --i) kn.swapAt ((size_t) i, (size_t) i - 1);
+        return true;
+    });
+}
+
+void Session::pileDrop (const PileAt& p, int i)
+{
+    if (! pileCan (p)) return;
+    if (p.what == 1) { rackDrop (p.index, i); return; }
+    if (! pileKnobKept (*this, p)) { stackDrop (p.knob, i); return; }
+    pileKept (*this, p, [&] (MacroKnob& kn) { if (i < 0 || i >= (int) kn.snaps.size()) return false; kn.dropAt ((size_t) i); return true; });
+}
+
+void Session::pileKeys (const PileAt& p, int i, juce::uint32 keys)
+{
+    if (! pileCan (p)) return;
+    if (p.what == 1) { rackLanes (p.index, i, keys); return; }
+    if (! pileKnobKept (*this, p)) { stackLanes (p.knob, i, keys); return; }
+    pileKept (*this, p, [&] (MacroKnob& kn) { if (i < 0 || i >= (int) kn.snaps.size()) return false; kn.setLanes ((size_t) i, keysOf (keys)); return true; });
+}
+
 int Session::stacksHolding (juce::int64 id, juce::StringArray* names) const
 {
     int n = 0;

@@ -4038,6 +4038,38 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      above the strip, and the wheel. On the stage: the light the stage has for a held key,
      and a plate filling on the sheet.
 
+## A pile is changed where it is opened (Nov 16, 17:28): seventy-fifth build
+
+629. **You**, 16:33 (623): "Other than that, continue the build." 17:16: the screenshot of
+     623, which arrived (627). *Continued with what the seventy-third build's note said was
+     next,* and 607 and 622 had as not done: a knob kept and a module changed where they are
+     opened.
+630. **One way of changing a pile, wherever it is kept** (602's "how do i edit a stack or a
+     module or a macrio or a stack knob", the rest of it). In the library, three things now
+     open to the same row a stack has: **a stack**, **a stack knob kept by itself** (its
+     pocket), **a stack knob of any module** (the module's pocket, then the knob). The row
+     is over the bin; a chip is carried up to its place or pressed and ADDed, carried along
+     the row or moved by EARLIER and LATER, carried off or taken out by TAKE OUT; its keys
+     are the parts it takes there, N among them; pressed, it is heard with them. Underneath
+     it is one thing too (`Session::PileAt` and the `pile…` functions): a stack is changed
+     as it was, the module in the chassis by its own knob as it plays, and a knob kept or a
+     module that is not in the chassis where it is kept, with nothing that is playing
+     touched.
+631. **What changes is what is open.** A knob kept is a copy: changing it does not change a
+     knob it was put on, as putting it never changed the kept one (the fifty-second build's
+     rule, the other way round). A module that is not in the chassis is changed where it is
+     kept, and INTO THE CHASSIS then brings the change with it. *Mine.*
+632. **Not in it, and why.** A macro knob's ties are still shown and not changed where it is
+     opened: a tie is made by turning the knobs of the rig while LEARN listens, which needs
+     the knob in the chassis. On MACROS and beside the arrangement an open pile still only
+     shows its chips to take from: there the rack is a third of the page, and the rule is
+     the one a stack already had there (613), a pile is put in order in the library. The
+     old lists' press handling (621) is still owed.
+633. **Checks.** In the library: a knob kept changed by carrying, LATER, a key and TAKE OUT,
+     with the place it came from left empty; the knob in the chassis changed through its
+     module's pocket; a module that is not in the chassis changed where it is kept, the
+     playing knob untouched, and the change arriving with INTO THE CHASSIS.
+
 ## Not verified
 
 - **The rack (606 to 609, 613 to 617) has been on no Mac and under no hand.** It is checked

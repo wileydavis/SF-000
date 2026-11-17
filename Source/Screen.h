@@ -510,11 +510,15 @@ private:
     void drawPickList (G&, float top);          // the chips listed there (the bin's, or the open stack's): pressed, heard; ADD, or carried, into what the page is making
     void drawWell (G&, R, int kind, int index);
     void drawChipRack (G&);
-    float drawStackRow (G&, float top);         // the open stack's chips, in order; where the bin under them begins
-    void drawRowCard (G&, R, int stack, int i);
+    // The pile that is out in a row on the library's bench, to be changed there: the open stack's, an open stack knob's kept
+    // by itself, or that of the knob pressed in an open module. (On the other pages the rack is for taking from: none.)
+    Session::PileAt rowAt() const;
+    void rowKeys (G&, float& x, float& y, const Session::PileAt&, int n);       // ADD, TAKE OUT, EARLIER, LATER: what the hand does in that row
+    float drawStackRow (G&, float top);         // that pile's chips, in order; where the bin under them begins
+    void drawRowCard (G&, R, int i, juce::int64 id, juce::uint32 keys, bool can);
     void drawSeenCard (G&, R, juce::int64 id, int num, juce::uint32 keys, const juce::String& note);
     void drawKeptOpen (G&, float top);
-    void drawModOpen (G&, float top);
+    float drawModOpen (G&, float top);          // (where its knobs end: a pile out in a row begins there)
     void drawArrOpen (G&, float top);
     void drawKnobHolds (G&, float top, const MacroKnob&, bool stack);
     int rowSlotAt (juce::Point<float>) const;   // between which chips of the open stack's row (-1: not over it)

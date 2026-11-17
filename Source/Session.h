@@ -659,6 +659,19 @@ public:
     struct PartSeen { juce::int64 snap = 0; int bars = 0; };
     std::vector<PartSeen> arrsParts (int index) const;      // a kept arrangement's parts, in order (the one on the page: as it stands)
     int stacksHolding (juce::int64 id, juce::StringArray* names = nullptr) const;   // the stacks that hold that snapshot (a snapshot may be in many)
+    // ---- a pile, wherever it is kept: a stack of the rack, a stack knob kept by itself, a stack knob of a module (the one in
+    // the chassis: the knob itself, as it plays). The same things are done to each: a chip put in at a place, moved, taken
+    // out, and the parts of the rig it takes there (N among them).
+    struct PileAt { int what = 0, index = -1, knob = -1; };      // what: 0 none, 1 a stack (index), 2 a knob kept (index), 3 a module's knob (index: the module, knob)
+    bool pileIs (const PileAt&) const;                      // there is such a pile
+    bool pileCan (const PileAt&) const;                     // and it is changed here (a stack that is the web library's is changed there)
+    juce::String pileName (const PileAt&) const;
+    std::vector<juce::int64> pileSnaps (const PileAt&) const;
+    juce::uint32 pileKeysAt (const PileAt&, int i) const;   // the parts it takes there, and its N
+    bool pileInsert (const PileAt&, int at, juce::int64 id, juce::uint32 keys = kAllLanes);     // (at below 0, or past the end: last). False: it cannot be changed, there is no such chip, or it is full
+    void pileMove (const PileAt&, int from, int to);
+    void pileDrop (const PileAt&, int i);
+    void pileKeys (const PileAt&, int i, juce::uint32 keys);
     juce::var moduleMotionNow() const;
     bool rackDone (const RackStep&);                        // the step's part here. False: the stack changed meanwhile (next time)
     void rackOrder (const juce::var& stacksThere);          // the library's order; those it has not got after

@@ -580,8 +580,8 @@ The other shelves open the same way:
 
 | POCKET | ON THE BENCH | KEYS |
 |---|---|---|
-| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | its pile, each chip with the parts it takes; or what a macro knob is tied to and how far it takes each | **ON A KNOB** (the first free place of its kind), **DELETE** |
-| a **module** (green: the one in the chassis) | its knobs. Press one to see its pile, or what it is tied to | **NEW**, **COPY**, **INTO THE CHASSIS**, **DELETE** (never the one in the chassis) |
+| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | a stack knob's pile, out in a row and changed as a stack's is (below); or what a macro knob is tied to and how far it takes each | the row's **ADD, TAKE OUT, EARLIER, LATER**; **ON A KNOB** (the first free place of its kind), **DELETE** |
+| a **module** (green: the one in the chassis) | its knobs. Press a stack knob and its pile is out in a row under them, changed as a stack's is; press a macro knob to see what it is tied to | **NEW**, **COPY**, **INTO THE CHASSIS**, **DELETE** (never the one in the chassis); the row's **ADD, TAKE OUT, EARLIER, LATER** beside the knob's name |
 | an **arrangement** (green: the one on the page) | its parts in order, each with its chip, its bars and the parts it takes | **NEW**, **COPY**, **ONTO THE PAGE**, **DELETE** (never the last one) |
 
 **Every chip you can see plays when you press it**: in the bin, in a stack's row, in a kept
@@ -589,9 +589,18 @@ knob's pile, on a module's knob, in an arrangement's parts. Where it is shown wi
 it takes there, those are the parts you hear, with its notes if it would bring them. Pressed
 again, it stops. Two quick presses take it to the set, as RECALL does.
 
-Not built: the pile of a kept knob, and the knobs of a module that is not in the chassis, are
-shown and not changed where they are opened (a knob is changed in MACROS, on the module in
-the chassis). The kept shelves have no find row.
+**A pile is changed the same way wherever it is kept**, in the library: a stack's, a stack
+knob's kept by itself, a stack knob's of any module. It is out in a row with the bin under
+it; a chip is carried up from the bin to its place (or pressed, then ADD), carried along the
+row (or EARLIER / LATER), carried off it (or TAKE OUT), and its keys say which parts it takes
+there. What changes is the thing that is open: the knob kept (not a knob it was once put on),
+the module where it is kept (INTO THE CHASSIS then brings the change with it), or, for the
+module in the chassis, the knob itself as it plays.
+
+Not built: what a macro knob is tied to is shown and not changed where it is opened (a macro
+knob is taught on the module in the chassis, with LEARN). On MACROS and beside the
+arrangement the rack is for taking from: an open pile shows its chips, and is put in order
+here. The kept shelves have no find row.
 
 #### Finding a snapshot
 
@@ -985,6 +994,9 @@ one at a time. No network is asked.
   from then on. **NEW** is a module with nothing on its knobs. **RENAME**, on the strip,
   names the one whose pocket you pressed last. **DELETE**, held, takes the open one out,
   never the one in the chassis.
+- **A module's stack knobs are changed in the library too**, whichever module it is: press
+  its pocket, press the knob, and its pile is out in a row (see The rack). For a module that
+  is not in the chassis nothing that is playing changes.
 - The module in the chassis is always one of the kept ones: what you change while playing
   changes it. A session from before modules has one, MODULE 1.
 
@@ -1029,7 +1041,8 @@ asked.
   nothing: CLEAR it first (held, on the designer's strip). **ON A KNOB**, after the open one's name, puts it on the first
   such place. The knob starts at rest and nothing is heard to change.
 - A kept knob is a copy, and so is the one put: what you change on the place changes the
-  module's knob, not the kept one. **DELETE**, held, takes the open one out of those kept;
+  module's knob, not the kept one. A kept stack knob's own pile is changed in the library:
+  press its pocket, and it is out in a row (see The rack). **DELETE**, held, takes the open one out of those kept;
   modules that have it keep theirs.
 
 ### The snapshot module: four macro knobs, ten stack knobs

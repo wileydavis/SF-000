@@ -6701,8 +6701,23 @@ static int uiTest()
             click (well (2, kAt)); draw();
             const bool keptOpen = kAt >= 0 && sc.testRackShelf() == 1 && sc.testRackOpen() == 2 && rkey (7).x < 0.0f && rkey (8).x < 0.0f && rkey (6).x > 0.0f && rkey (5).x < 0.0f;      // (a knob is made in MACROS: no NEW, no COPY. RENAME is the page's own key)
             ses.cue (0);
-            click (benchChip (live)); draw();                                   // a chip of its pile, pressed: heard
-            const bool heardKept = sc.testHandId() == live && heard (live, Session::kAllLanes & ~1u, 1);     // (with the parts it takes on that knob, and its notes)
+            using Ids = std::vector<juce::int64>;
+            auto keptPile = [&] { return ses.knobFrom (ses.keptKnobs[(size_t) kAt].knob); };
+            click (rowCard (2)); draw();                                        // its pile is out in a row: a chip of it pressed is heard
+            const bool heardKept = sc.testRowSel() == 2 && heard (live, Session::kAllLanes & ~1u, 1);     // (with the parts it takes on that knob, and its notes)
+            // ... and the row is changed as a stack's is: a chip carried up from the bin, LATER, a key put out, TAKE OUT. It is the knob
+            // kept that changes: the place on the module it came from stays empty
+            ses.cue (0);
+            carry (chip (a), slotAt (0));
+            const bool keptIn = keptPile().snaps == Ids { a, bb, id3, live };
+            click (rowCard (0)); draw();
+            click (rkey (3)); draw();                                           // LATER
+            const bool keptLater = keptPile().snaps == Ids { bb, a, id3, live } && sc.testRowSel() == 1;
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsRowKey (h, 1, 0); })); draw();
+            const bool keptKey = (keptPile().keysAt (1) & 1u) == 0 && (keptPile().keysAt (0) & 1u) != 0 && (keptPile().keysAt (3) & Session::kNotesKey) != 0;
+            click (rkey (1)); draw();                                           // TAKE OUT
+            const bool keptEdited = keptIn && keptLater && keptKey && keptPile().snaps == Ids { bb, id3, live } && says ("IS OUT OF") && ! ses.knobHolds (freeWas) && ses.findSnap (a) != nullptr;
+            ses.cue (0);
             click (rkey (6)); draw();                                           // ON A KNOB
             const bool put = freeWas >= 0 && ses.knobHolds (freeWas) && ses.knobs[(size_t) freeWas].notesAt (2) && says ("IS ON KNOB");
             const auto nKept = ses.keptKnobs.size();
@@ -6716,13 +6731,24 @@ static int uiTest()
             const bool modOpen = sc.testRackOpen() == 3 && rkey (9).x < 0.0f;   // (the one in the chassis: no DELETE)
             click (at ([&] (const Screen::TestHit& h) { return Screen::testIsModKnob (h, freeWas); })); draw();
             ses.cue (0);
-            click (benchChip (live)); draw();
-            const bool heardMod = sc.testHandId() == live && heard (live, Session::kAllLanes & ~1u, 1);
+            click (rowCard (2)); draw();                                        // (its pile is out in a row under the module's knobs)
+            const bool heardMod = sc.testRowSel() == 2 && heard (live, Session::kAllLanes & ~1u, 1);
+            // the module in the chassis: the row is the knob itself, as it plays
+            ses.cue (0);
+            carry (chip (a), slotAt (0));
+            const bool liveIn = ses.knobs[(size_t) freeWas].snaps == Ids { a, bb, id3, live };
+            click (rowCard (0)); draw();
+            click (rkey (1)); draw();                                           // TAKE OUT
+            const bool liveEdited = liveIn && ses.knobs[(size_t) freeWas].snaps == Ids { bb, id3, live };
             click (rkey (8)); draw();                                           // COPY: the chassis holds the copy from then on
             const bool modCopied = ses.modules.size() == nMods + 1 && ses.moduleIndex() == (int) nMods;
             click (well (3, modWas)); draw();
-            click (rkey (6)); draw();                                           // INTO THE CHASSIS
-            const bool modLoaded = ses.moduleIndex() == modWas && says ("IS IN THE CHASSIS");
+            // a module that is not in the chassis: its knob's pile is changed where it is kept, and the knob that is playing is not
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsModKnob (h, freeWas); })); draw();
+            carry (chip (a), slotAt (0));
+            const bool keptModEdited = ses.knobFrom (ses.moduleKnob (modWas, freeWas)).snaps == Ids { a, bb, id3, live } && ses.knobs[(size_t) freeWas].snaps == Ids { bb, id3, live };
+            click (rkey (6)); draw();                                           // INTO THE CHASSIS: what was changed comes with it
+            const bool modLoaded = ses.moduleIndex() == modWas && says ("IS IN THE CHASSIS") && ses.knobs[(size_t) freeWas].snaps == Ids { a, bb, id3, live };
             click (well (3, (int) nMods)); draw();
             hold (rkey (9)); draw();
             const bool modGone = ses.modules.size() == nMods && sc.testRackOpen() == 0;
@@ -6759,10 +6785,14 @@ static int uiTest()
             if (! refOk) std::printf ("        (away %d lit %d second %d on pocket %d out %d off %d both %d copied %d on knob %d stays %d deleted %d chip gone %d)\n", (int) away, (int) lit, (int) second, (int) onPocket, (int) out, (int) off,
                                       (int) both, (int) copied, (int) onKnob, (int) stays, (int) deleted, (int) chipGone);
             const bool restOk = keptOpen && heardKept && put && keptGone && modOpen && heardMod && modCopied && modLoaded && modGone && heardArr && arrCopied && arrLoaded;
+            const bool pilesOk = keptEdited && liveEdited && keptModEdited;
             check (restOk, "the rack's other shelves: a kept knob's pocket opens its pile (a chip of it pressed is heard), ON A KNOB puts it on a free place, DELETE takes it; a module's pocket opens its knobs (one pressed shows "
                            "its pile, heard the same), COPY, INTO THE CHASSIS, DELETE; an arrangement's pocket opens its parts in order (heard the same), COPY, ONTO THE PAGE");
             if (! restOk) std::printf ("        (kept open %d heard %d put %d gone %d; module open %d heard %d copied %d loaded %d gone %d; arrangement heard %d copied %d loaded %d: %s)\n", (int) keptOpen, (int) heardKept, (int) put,
                                        (int) keptGone, (int) modOpen, (int) heardMod, (int) modCopied, (int) modLoaded, (int) modGone, (int) heardArr, (int) arrCopied, (int) arrLoaded, sc.testBarNote().toRawUTF8());
+            check (pilesOk, "a pile is changed where it is opened, in the library: a stack knob kept by itself has its pile out in a row (a chip carried in from the bin, LATER, a key put out, TAKE OUT) and it is the kept knob that changes; "
+                            "a stack knob of the module in the chassis the same, and it is the knob itself; of a module that is not in the chassis, where that module is kept, and INTO THE CHASSIS brings the change with it");
+            if (! pilesOk) std::printf ("        (a knob kept: in %d later %d key %d edited %d; the knob in the chassis: in %d edited %d; a module kept: %d)\n", (int) keptIn, (int) keptLater, (int) keptKey, (int) keptEdited, (int) liveIn, (int) liveEdited, (int) keptModEdited);
         }
         {
             // Every chip that is shown plays when it is pressed, on the other two pages that show chips (the library's are above): in
