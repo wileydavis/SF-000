@@ -58,7 +58,7 @@ First run:
 | **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
 | Double-click a stack knob (its press on the E16) | the set goes to its nearest snapshot, over the GLIDE time |
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
-| **HOLD: NEW** (top bar, beside the flag) | held: a new track. The rig as it starts: no steps, no effects in the racks, every knob where the rig starts it, every MUTE and SOLO out, the macro knobs at rest. TEMPO, the master, the snapshot module's knobs and the library stay. A tap does nothing |
+| **NEW** (top bar, beside the flag) | held until it is full of light: a new track. The rig as it starts: no steps, no effects in the racks, every knob where the rig starts it, every MUTE and SOLO out, the macro knobs at rest. TEMPO, the master, the snapshot module's knobs and the library stay. A tap does nothing |
 | **LOAD** (on the snapshot module) | the modules kept on the instrument: choose one, and LOAD puts it in the chassis, whole (see Modules, below). The web library's module is **WEB LOAD**, in the library |
 | LIBRARY | the snapshot library: press a snapshot to hear it in the headphones (its card then shows a key for every part of the rig), **RECALL** to take it to the set with the parts lit, rename, hold DELETE. The head of the list says whose are listed and in what order (see Finding a snapshot, below) |
 | MACROS | the designer for the sixteen knobs: pick one of 1 to 4 and press **LEARN** to tie it to knobs; pick a stack knob (5 to 12, 14, 15) and ADD snapshots to its stack (see The snapshot module, and A macro knob, below) |
@@ -440,7 +440,7 @@ came out; after PLAIN it is level with the file across the spectrum to a tenth o
 
 ### TRANSITION: a riser into a change, a hit on it
 
-In the bar of the main and the macro pages, beside HOLD: NEW. Two one-shots timed to a bar
+In the bar of the main and the macro pages, beside NEW. Two one-shots timed to a bar
 line: a **LEAD-IN** that ends on it and a **HIT** that starts on it. You say when; the machine
 keeps the time, so the lead-in ends and the hit lands on the sample the line falls on.
 
@@ -528,8 +528,26 @@ of every shelf is the bin, **ALL CHIPS**. The wheel over the rack goes along a l
 **Press a pocket and it is open**: what it holds is laid out on the bench under the rack, and
 its rim is green. Press the bin's pocket to put it away. **What is open has its own keys,
 as plates after its name** at the head of the bench; one that cannot be pressed now is an
-empty frame. The strip at the foot of the page is for the chip in hand (RECALL, ADD TO,
-RENAME, HOLD: DELETE) and PHONES and NOTES.
+empty frame. The strip at the foot of the page has RENAME and, for the chip in hand, DELETE,
+RECALL and ADD TO, then PHONES and NOTES.
+
+**RENAME is one key, in the same place on the library's, the designer's and the
+arrangement's strip, and it names the thing you pressed last**: a chip (in the bin, in a
+stack's row, in a knob's pile, on a part of the arrangement), a stack, a knob kept, a module
+or an arrangement (by its pocket), a knob of the module (by its place in the designer). Press
+the thing, press RENAME, type, Return. With nothing pressed on a page yet it names the page's
+own: the chosen knob in the designer, the arrangement on its page. The box opens over the
+name where you pressed it.
+
+**A key that must be held fills with light while your hand is on it, and does what it does
+when it is full** (about two thirds of a second): DELETE on a chip, DELETE after an open
+thing's name, CLEAR on a knob and on the arrangement, NEW on the top bar. It goes dark as you
+press it and lights from its left. Let go before it is full and nothing is done; the bar says
+to hold it. None of them says HOLD: the light does.
+
+What a knob kept, a module's knob or an arrangement holds may be more than the bench has room
+for: it shows the lines that fit above the strip, says which (1 TO 4 OF 30), and the wheel
+over them goes through the rest.
 
 **The same rack is the right-hand third of MACROS and of the arrangement's page**: the same
 shelves (in a row there), the same pockets (four across; the wheel over them goes along),
@@ -548,13 +566,13 @@ the open stack's in its order. A stack's row is put in order here, in the librar
 | which parts of the rig it takes there | the keys on its card in the row (1 to 11, R, B, K), and **N**: whether a knob coming to it brings its notes |
 | the stack on a knob | **ON A KNOB**: a copy of it on the first stack knob that holds nothing. The stack stays in its pocket, and what is changed on the knob afterwards does not change it |
 | the stack again under another name | **COPY**: the copy is the one open |
-| its name | **RENAME**, then type and Return |
-| the stack gone | **HOLD: DELETE**. Its chips stay in the bin. (With ONLINE lit it goes from the web library's rack for the instrument too) |
+| its name | press its pocket, then **RENAME** on the strip; type and Return |
+| the stack gone | **DELETE**, held until it is full of light. Its chips stay in the bin. (With ONLINE lit it goes from the web library's rack for the instrument too) |
 
 While a stack is open the bin is still under its row, every chip of it, and the chips that are
 in the open stack have a green line along their near edge. With a chip in hand, the pockets of
 the stacks that hold it are ringed, and the strip says which stacks those are. A chip deleted
-from the bin (HOLD: DELETE, with the bin open) is out of every stack that held it, and the bar
+from the bin (DELETE on the strip, held) is out of every stack that held it, and the bar
 says how many. A stack that is the web library's is changed there: the keys on its row do not
 press, and the bar says so if you try to add to it or take from it.
 
@@ -562,9 +580,9 @@ The other shelves open the same way:
 
 | POCKET | ON THE BENCH | KEYS |
 |---|---|---|
-| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | its pile, each chip with the parts it takes; or what a macro knob is tied to and how far it takes each | **ON A KNOB** (the first free place of its kind), **RENAME**, **HOLD: DELETE** |
-| a **module** (green: the one in the chassis) | its knobs. Press one to see its pile, or what it is tied to | **NEW**, **COPY**, **INTO THE CHASSIS**, **RENAME**, **HOLD: DELETE** (never the one in the chassis) |
-| an **arrangement** (green: the one on the page) | its parts in order, each with its chip, its bars and the parts it takes | **NEW**, **COPY**, **ONTO THE PAGE**, **RENAME**, **HOLD: DELETE** (never the last one) |
+| a **knob kept** (a stack knob: a pile; a macro knob: a cap) | its pile, each chip with the parts it takes; or what a macro knob is tied to and how far it takes each | **ON A KNOB** (the first free place of its kind), **DELETE** |
+| a **module** (green: the one in the chassis) | its knobs. Press one to see its pile, or what it is tied to | **NEW**, **COPY**, **INTO THE CHASSIS**, **DELETE** (never the one in the chassis) |
+| an **arrangement** (green: the one on the page) | its parts in order, each with its chip, its bars and the parts it takes | **NEW**, **COPY**, **ONTO THE PAGE**, **DELETE** (never the last one) |
 
 **Every chip you can see plays when you press it**: in the bin, in a stack's row, in a kept
 knob's pile, on a module's knob, in an arrangement's parts. Where it is shown with the parts
@@ -773,7 +791,7 @@ whole of it is one travel from the snapshot before.
   the headphones with those parts. Drag
   a part's BARS (1 to 256) and its MORPH (the GLIDE list's own lengths; never longer than the
   part). A double-click puts either back (eight bars; cut). EARLIER and LATER move the chosen
-  part, TAKE OUT takes it out, CLEAR (held) empties the line. Up to 64 parts.
+  part, TAKE OUT takes it out, CLEAR (held until it is full of light) empties the line. Up to 64 parts.
 - **The line** along the top is the whole of it to scale: each part as long as its bars, with
   the bar it begins on above it, and its morph as a slope. The part playing is green.
 - **PLAY.** From stopped: the first part is recalled at once and the clock starts from the top.
@@ -816,9 +834,10 @@ whole of it is one travel from the snapshot before.
     then on: change it and the first is as it was. (A track and its live version.)
   - **ONTO THE PAGE**: the open one onto the page, whole. The one that was there is kept as
     it stood. If the arrangement is playing, it stops.
-  - **RENAME**: type, then Return.
-  - **HOLD: DELETE**: the open one goes; its chips stay in the library. If it is the one on
-    the page, the one before it takes the page. The last one cannot go: HOLD: CLEAR empties
+  - **RENAME**, on the strip: the arrangement on the page, or the one whose pocket you
+    pressed last. Type, then Return.
+  - **DELETE**, held: the open one goes; its chips stay in the library. If it is the one on
+    the page, the one before it takes the page. The last one cannot go: CLEAR, held, empties
     it.
   They are in the session file. A snapshot deleted from the library leaves their parts.
 - **TO STACK** keeps the arrangement as a stack in the rack (TRACK, TRACK 2):
@@ -963,8 +982,9 @@ one at a time. No network is asked.
   that was there is kept as it stood. Nothing is heard to change: what the macro knobs were
   adding stays in the sound, and the new module's knobs start at rest.
 - **COPY** keeps the one in the chassis again under another name; the chassis holds the copy
-  from then on. **NEW** is a module with nothing on its knobs. **RENAME** names the open one.
-  **HOLD: DELETE** takes the open one out, never the one in the chassis.
+  from then on. **NEW** is a module with nothing on its knobs. **RENAME**, on the strip,
+  names the one whose pocket you pressed last. **DELETE**, held, takes the open one out,
+  never the one in the chassis.
 - The module in the chassis is always one of the kept ones: what you change while playing
   changes it. A session from before modules has one, MODULE 1.
 
@@ -1006,10 +1026,10 @@ asked.
   same one as it is now. The rack turns to KNOBS so that its pocket is seen.
 - **Carried from its pocket onto a place** in the designer, it is put there. The place must
   be of its kind (a macro knob on 1 to 4, a stack knob on 5 to 12, 14 or 15) and hold
-  nothing: CLEAR it first. **ON A KNOB**, after the open one's name, puts it on the first
+  nothing: CLEAR it first (held, on the designer's strip). **ON A KNOB**, after the open one's name, puts it on the first
   such place. The knob starts at rest and nothing is heard to change.
 - A kept knob is a copy, and so is the one put: what you change on the place changes the
-  module's knob, not the kept one. **HOLD: DELETE** takes the open one out of those kept;
+  module's knob, not the kept one. **DELETE**, held, takes the open one out of those kept;
   modules that have it keep theirs.
 
 ### The snapshot module: four macro knobs, ten stack knobs

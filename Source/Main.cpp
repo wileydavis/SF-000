@@ -6699,7 +6699,7 @@ static int uiTest()
             sc.testLibScroll (0);
             click (shelf (1)); draw();
             click (well (2, kAt)); draw();
-            const bool keptOpen = kAt >= 0 && sc.testRackShelf() == 1 && sc.testRackOpen() == 2 && rkey (7).x < 0.0f && rkey (8).x < 0.0f && rkey (6).x > 0.0f && rkey (5).x > 0.0f;      // (a knob is made in MACROS: no NEW, no COPY)
+            const bool keptOpen = kAt >= 0 && sc.testRackShelf() == 1 && sc.testRackOpen() == 2 && rkey (7).x < 0.0f && rkey (8).x < 0.0f && rkey (6).x > 0.0f && rkey (5).x < 0.0f;      // (a knob is made in MACROS: no NEW, no COPY. RENAME is the page's own key)
             ses.cue (0);
             click (benchChip (live)); draw();                                   // a chip of its pile, pressed: heard
             const bool heardKept = sc.testHandId() == live && heard (live, Session::kAllLanes & ~1u, 1);     // (with the parts it takes on that knob, and its notes)
@@ -6811,6 +6811,121 @@ static int uiTest()
                         "beside the arrangement, on the rack's bench and on a part's own card");
             if (! all) std::printf ("        (bench %d column %d slot %d open %d beside %d part %d; last asked for %lld, parts %x, %d times)\n", (int) bench, (int) column, (int) slot, (int) opened, (int) beside, (int) part,
                                     (long long) asked.id, (unsigned) asked.lanes, asked.times);
+        }
+        {
+            // RENAME is one key, in the same place on the library's, the designer's and the arrangement's strip, and it names the
+            // thing last pressed that has a name: a chip (wherever its card is), a stack, a knob kept, a module, an arrangement, a
+            // knob of the module. With nothing pressed on a page yet it names the page's own: the chosen knob in the designer, the
+            // arrangement on its page.
+            using Pt = juce::Point<float>;
+            auto at = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+            auto renameKey = [&] { return at (Screen::testIsRenameKey); };
+            auto well = [&] (int kind, int i) { return at ([&] (const Screen::TestHit& h) { return Screen::testIsWell (h, kind, i); }); };
+            auto rename = [&] (const char* to) { click (renameKey()); const bool box = sc.testEditing(); sc.testEndEdit (to); draw(); return box; };
+            const auto stacksWere = ses.stacks; const auto knobsWere = ses.knobs; const auto keptWere = ses.keptKnobs; const auto modulesWere = ses.modules; const auto arrsWere = ses.arrs; const auto partsWere = ses.arrangement;
+            const juce::String aName = ses.findSnap (a)->name, bName = ses.findSnap (bb)->name;
+            const int ia = ses.indexOf (a), ib = ses.indexOf (bb);
+            ses.stacks.clear();
+            const int st = ses.rackNew ("first"); ses.rackAdd (st, bb);
+            // the library: a chip of the bin, then the stack's pocket, then a chip of its row
+            sc.testPlain(); sc.setPage (Screen::pLibrary); draw();
+            const bool nothingYet = renameKey().x < 0.0f;        // (nothing pressed in the library yet: it has nothing to name)
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsCard (h) && h.a == ia; })); draw();
+            const float keyX = renameKey().x;
+            const bool chipNamed = nothingYet && sc.testNamedWhat() == 1 && rename ("named a") && ses.findSnap (a)->name == "NAMED A";
+            click (well (1, st)); draw();
+            const bool stackNamed = sc.testNamedWhat() == 3 && rename ("second") && ses.stacks[(size_t) st].name == "SECOND";
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsRowCard (h, 0); })); draw();
+            const bool rowNamed = sc.testNamedWhat() == 1 && sc.testNamedChip() == bb && rename ("named b") && ses.findSnap (bb)->name == "NAMED B" && ses.stacks[(size_t) st].name == "SECOND";
+            // the designer: the chosen knob with nothing pressed; then a chip on the rack's bench; then a module's pocket
+            sc.setPage (Screen::pMacros); sc.testRack (0); sc.testPickKnob (0); draw();
+            const bool samePlace = std::abs (renameKey().x - keyX) < 0.5f;
+            const juce::String knobWas = ses.knobs[0].name;
+            const bool knobNamed = sc.testNamedWhat() == 2 && rename ("lift") && ses.knobs[0].name == "LIFT";
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsPick (h, ia); })); draw();
+            const bool benchNamed = sc.testNamedWhat() == 1 && rename ("a again") && ses.findSnap (a)->name == "A AGAIN" && ses.knobs[0].name == "LIFT";
+            click (at ([&] (const Screen::TestHit& h) { return Screen::testIsRackShelf (h, 2); })); draw();
+            click (well (3, ses.moduleIndex())); draw();
+            const juce::String modWas = ses.moduleName();
+            const bool modNamed = sc.testNamedWhat() == 5 && rename ("my set") && ses.moduleName() == "MY SET";
+            // the arrangement's page: the arrangement on the page with nothing pressed; then a part's chip
+            sc.setPage (Screen::pArrange); sc.testRack (0); draw();
+            const bool samePlace2 = std::abs (renameKey().x - keyX) < 0.5f;
+            const juce::String arrWas = ses.arrsName();
+            const bool arrNamed = sc.testNamedWhat() == 6 && rename ("night one") && ses.arrsName() == "NIGHT ONE";
+            bool partNamed = false;
+            if (! ses.arrangement.empty())
+            {
+                const auto pid = ses.arrangement[0].snap;
+                const juce::String pWas = ses.findSnap (pid)->name;
+                click (at ([&] (const Screen::TestHit& h) { return Screen::testIsArrPart (h, 0); })); draw();
+                partNamed = sc.testNamedWhat() == 1 && sc.testNamedChip() == pid && rename ("part chip") && ses.findSnap (pid)->name == "PART CHIP";
+                ses.rename (pid, pWas);
+            }
+            // (as it was)
+            ses.cue (0);
+            ses.rename (a, aName); ses.rename (bb, bName);
+            ses.arrsRename (ses.arrsIndex(), arrWas); ses.moduleRename (ses.moduleIndex(), modWas);
+            ses.knobs = knobsWere; ses.stacks = stacksWere; ses.keptKnobs = keptWere;
+            (void) modulesWere; (void) arrsWere; (void) partsWere; (void) knobWas;
+            sc.testPlain(); sc.setPage (Screen::pArrange); draw();
+            const bool ok = chipNamed && stackNamed && rowNamed && samePlace && knobNamed && benchNamed && modNamed && samePlace2 && arrNamed && partNamed;
+            check (ok, "RENAME is one key, in the same place on the library's, the designer's and the arrangement's strip, and names the thing last pressed: a chip of the bin, a stack by its pocket, a chip of its row; "
+                       "in the designer the chosen knob, a chip on the rack's bench, a module by its pocket; beside the arrangement the arrangement on the page, and a part's chip");
+            if (! ok) std::printf ("        (chip %d stack %d row %d same place %d knob %d bench %d module %d same place %d arrangement %d part %d: %s)\n", (int) chipNamed, (int) stackNamed, (int) rowNamed, (int) samePlace, (int) knobNamed,
+                                   (int) benchNamed, (int) modNamed, (int) samePlace2, (int) arrNamed, (int) partNamed, sc.testBarNote().toRawUTF8());
+        }
+        {
+            // A key that is held fills with light while the hand is on it, and what it does is done when it is full: DELETE on a
+            // chip, DELETE after an open thing's name, CLEAR on a knob. Let go before it is full, nothing is done and the bar says
+            // to hold it. Its legend has no HOLD in it. And a long pile on the bench stays above the strip, and goes by the wheel.
+            using Pt = juce::Point<float>;
+            auto at = [&] (const std::function<bool (const Screen::TestHit&)>& is) { for (auto& h : sc.testHits()) if (is (h)) return h.r.getCentre(); return Pt (-1.0f, -1.0f); };
+            const auto stacksWere = ses.stacks; const auto knobsWere = ses.knobs;
+            const auto libWas = ses.library.size();
+            const auto doomed = ses.take();
+            const int idoomed = ses.indexOf (doomed);
+            sc.testPlain(); sc.setPage (Screen::pLibrary); draw();
+            auto chipAt = [&] { for (int rows = 0; rows < 60; ++rows) { sc.testLibScroll (rows); draw(); const auto p = at ([&] (const Screen::TestHit& h) { return Screen::testIsCard (h) && h.a == idoomed; }); if (p.x > 0.0f) return p; } return Pt (-1.0f, -1.0f); };
+            click (chipAt()); draw();
+            const Pt del = at (Screen::testIsDeleteKey);
+            sc.mouseDown (ev (del, del, false));
+            const bool empty = sc.testHoldFill (0) < 0.2f;
+            juce::Thread::sleep (360); sc.testTick(); draw();
+            const float half = sc.testHoldFill (0);
+            const bool filling = half > 0.35f && half < 0.85f && ses.findSnap (doomed) != nullptr;
+            sc.mouseUp (ev (del, del, false)); draw();
+            const bool letGo = ses.findSnap (doomed) != nullptr && sc.testHoldFill (0) == 0.0f && sc.testBarNote().contains ("HOLD DELETE UNTIL IT IS FULL");
+            sc.mouseDown (ev (del, del, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (del, del, false)); draw();
+            const bool full = ses.findSnap (doomed) == nullptr && ses.library.size() == libWas;
+            if (ses.findSnap (doomed) != nullptr) ses.remove (doomed);
+            // CLEAR, on the designer's strip: a press leaves the knob as it is; held, it holds nothing
+            const int k = ses.freeStackKnob();
+            bool clearHeld = false, longPile = false;
+            if (k >= 0)
+            {
+                for (int i = 0; i < 30; ++i) ses.stackAdd (k, ses.library[(size_t) (1 + i % ((int) ses.library.size() - 1))].id);
+                sc.setPage (Screen::pMacros); sc.testPickKnob (k); sc.testRack (2, ses.moduleIndex(), k); draw();
+                // (the module in the chassis open in the rack, that knob pressed: its thirty chips are on the bench, none of them over the strip)
+                int shown = 0; float lowest = 0.0f;
+                for (auto& h : sc.testHits()) if (Screen::testIsBenchChip (h)) { ++shown; lowest = std::max (lowest, h.r.getBottom()); }
+                juce::MouseWheelDetails w; w.deltaX = 0.0f; w.deltaY = -0.2f; w.isReversed = false; w.isSmooth = false; w.isInertial = false;
+                const Pt over (1400.0f, 860.0f);
+                sc.mouseWheelMove (ev (over, over, false), w); draw();
+                longPile = shown >= 2 && shown < 30 && lowest < 976.0f && sc.testBenchScroll() == 1;
+                if (! longPile) std::printf ("        (%d of 30 shown, the lowest ends at %.0f, the wheel has it at line %d)\n", shown, lowest, sc.testBenchScroll());
+                const Pt clr = at (Screen::testIsClearKnobKey);
+                click (clr); draw();
+                const bool stays = ses.knobs[(size_t) k].snaps.size() == 30 && sc.testBarNote().contains ("HOLD CLEAR UNTIL IT IS FULL");
+                sc.mouseDown (ev (clr, clr, false)); juce::Thread::sleep (760); sc.testTick(); sc.mouseUp (ev (clr, clr, false)); draw();
+                clearHeld = stays && ! ses.knobHolds (k);
+            }
+            ses.knobs = knobsWere; ses.stacks = stacksWere;
+            sc.testPlain(); sc.setPage (Screen::pArrange); draw();
+            const bool ok = empty && filling && letGo && full && clearHeld && longPile;
+            check (ok, ("a held key fills with light (DELETE, a third of a second in: " + juce::String (juce::roundToInt (half * 100.0f)) + " of 100) and does what it does when it is full; let go before, nothing is done and the bar says to hold it; "
+                        "CLEAR on a knob is held the same way; a pile of thirty on the bench stays above the strip and goes by the wheel").toRawUTF8());
+            if (! ok) std::printf ("        (empty %d filling %d let go %d full %d clear held %d long pile %d: %s)\n", (int) empty, (int) filling, (int) letGo, (int) full, (int) clearHeld, (int) longPile, sc.testBarNote().toRawUTF8());
         }
         {
             // A stack knob under the mouse turns finely: 800 pixels the whole turn, a click of its 127 at a time, and SHIFT is
@@ -7924,6 +8039,8 @@ static int shot (const juce::StringArray& args)
         ses.arrsRename (0, "warehouse a"); ses.arrsCopy ("warehouse a live"); ses.arrsNew ("intro"); ses.arrsLoad (0);
         // (--libtab N: the rack's shelf, 0 the stacks, 1 the knobs kept, 2 the modules, 3 the arrangements; --open I: the I-th
         // thing of it open, from 1; --modknob K: that knob of the open module; --hand I: that chip of the library in hand)
+        // (--pile N: knob 5 holds that many chips, to see a long pile on the bench)
+        for (int i = (int) ses.knobs[4].snaps.size(), want = arg ("--pile", "0").getIntValue(); i < want && ses.library.size() > 2; ++i) ses.stackAdd (4, ses.library[(size_t) (1 + i % ((int) ses.library.size() - 1))].id);
         const int shelf = juce::jlimit (0, 3, arg ("--libtab", "0").getIntValue());
         sc.testRack (shelf, arg ("--open", "0").getIntValue() - 1, arg ("--modknob", "0").getIntValue() - 1);
         if (arg ("--hand", "").isNotEmpty()) sc.testHand (arg ("--hand", "1").getIntValue() - 1, Session::kAllLanes);
@@ -8075,6 +8192,18 @@ static int shot (const juce::StringArray& args)
         sc.testPointAt ({ pt.upToFirstOccurrenceOf (",", false, false).getFloatValue(), pt.fromFirstOccurrenceOf (",", false, false).getFloatValue() });
     }
     juce::Image img;
+    // --hold delete|open|clear|new: that key with the hand on it, a third of a second in (DELETE on the library's strip, DELETE
+    // after an open thing's name, CLEAR on the designer's or the arrangement's strip, NEW on the bar)
+    const juce::String holdWhat = arg ("--hold", "");
+    auto holdAt = [&]
+    {
+        (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.25f);
+        for (auto& h : sc.testHits())
+            if ((holdWhat == "delete" && Screen::testIsDeleteKey (h)) || (holdWhat == "open" && Screen::testIsRackKey (h, 9)) || (holdWhat == "clear" && (Screen::testIsClearKnobKey (h) || Screen::testIsArrKey (h, 6)))
+                || (holdWhat == "new" && Screen::testIsNewTrack (h)))
+                return h.r.getCentre();
+        return juce::Point<float> (-1.0f, -1.0f);
+    };
     if (args.contains ("--3d"))
     {
         // The 3D stage, as drawn: --view top|player|hero (or --turn and --tilt degrees, --away units),
@@ -8106,6 +8235,21 @@ static int shot (const juce::StringArray& args)
         }
         sc.refreshNow();
         sc.stageOrNull()->settle();
+        if (holdWhat.isNotEmpty())
+        {
+            // (--hold: the hand on that key for a third of a second, so that it is caught filling with light)
+            const auto u = holdAt();
+            if (u.x > 0.0f)
+            {
+                auto* st = sc.stageOrNull();
+                const auto p = st->pointsOf (u.x, u.y, st->heightAt (u.x, u.y));
+                sc.mouseDown (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc, &sc, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false));
+                juce::Thread::sleep (380);
+                sc.refreshNow(); sc.testTick(); sc.refreshNow();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+                st->settle();
+            }
+        }
         (void) sc.stageOrNull()->capture();
         const double t0 = juce::Time::getMillisecondCounterHiRes();
         sc.refreshNow();
@@ -8115,7 +8259,20 @@ static int shot (const juce::StringArray& args)
         sc.setThree (false);
         sc.removeFromDesktop();
     }
-    else img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
+    else
+    {
+        if (holdWhat.isNotEmpty())
+        {
+            const auto p = holdAt();
+            if (p.x > 0.0f)
+            {
+                sc.mouseDown (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, juce::ModifierKeys(), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &sc, &sc, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false));
+                juce::Thread::sleep (380);
+                sc.testTick();
+            }
+        }
+        img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
+    }
     rec.stop(); sc.recorder = nullptr; recDir.deleteRecursively();
     sc.online = nullptr; online = nullptr; Session::stateFileForTests = juce::File(); onlineDir.deleteRecursively();
     juce::File f (arg ("--shot", "sf000.png"));
@@ -10677,6 +10834,38 @@ static int stageTest()
         sc.setPage (Screen::pMain); fresh();
         check (wells >= 3 && rising && inWell && four == 4, "the rack on the stage: the bin, a stack and the empty pocket are wells cut into the panel (" + juce::String (wells) + "); a stack of three is three chips, each standing on the one under it, in its well; "
                                                             "a fourth chip in the stack is a fourth on the pile (" + juce::String ((int) bases.size()) + ", then " + juce::String (four) + ")");
+    }
+
+    // 3g. a key that is held fills with light: the stage lights the key itself as far as it has filled; a plate after an open
+    // thing's name is on the sheet, and fills there. Let go before it is full, nothing is done.
+    if (ses.library.size() >= 4)
+    {
+        const auto knobsWere = ses.knobs; const auto stacksWere = ses.stacks;
+        if (! ses.knobHolds (4)) ses.stackAdd (4, ses.library[1].id);
+        sc.setPage (Screen::pMacros); sc.testPickKnob (4); fresh();
+        const auto clr = pt (find ([] (const Screen::TestHit& h) { return Screen::testIsClearKnobKey (h); }));
+        // (read at once: a picture from a software driver can take longer to draw than the key takes to fill)
+        sc.mouseDown (ev (clr, clr, false));
+        juce::Thread::sleep (250); sc.testTick();
+        const float key = sc.testHoldFill (4), light = st->holdLightNow();
+        const bool filling = key > 0.2f && key < 0.95f && light > 0.2f && light < 0.95f && ses.knobHolds (4);
+        sc.mouseUp (ev (clr, clr, false)); sc.testTick();
+        const bool letGo = st->holdLightNow() == 0.0f && sc.testHoldFill (4) == 0.0f && ses.knobHolds (4);
+        fresh();
+        { Stack held; held.id = "held"; held.name = "HELD"; held.kind = "stack"; held.here = true; held.snaps = { ses.library[1].id }; ses.stacks = { held }; }
+        sc.setPage (Screen::pLibrary); sc.testRack (0, 0); fresh();
+        const auto del = pt (find ([] (const Screen::TestHit& h) { return Screen::testIsRackKey (h, 9); }));
+        sc.mouseDown (ev (del, del, false));
+        juce::Thread::sleep (250); sc.testTick();
+        const float plate = sc.testHoldFill (1);
+        const bool onSheet = plate > 0.2f && plate < 0.95f && ses.stacks.size() == 1 && st->holdLightNow() > 0.0f;
+        juce::Thread::sleep (520); sc.testTick();
+        const bool done = ses.stacks.empty();
+        sc.mouseUp (ev (del, del, false)); sc.testTick(); fresh();
+        ses.knobs = knobsWere; ses.stacks = stacksWere;
+        sc.setPage (Screen::pMain); fresh();
+        check (filling && letGo && onSheet && done, "a held key fills with light on the stage: CLEAR, a quarter of a second in, is " + juce::String (juce::roundToInt (light * 100.0f)) + " of 100 lit and the knob still holds its pile; let go, the light is out and nothing is done; "
+                                                    "DELETE after an open stack's name fills on the sheet (" + juce::String (juce::roundToInt (plate * 100.0f)) + " of 100) and, full, the stack is deleted");
     }
 
     // 4. the eye

@@ -3986,6 +3986,58 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      chosen knob's card in the designer is empty. The walk of every control does not walk
      the arrangement's page (it never did): its rack is checked by its own check.
 
+## Black on yellow; one RENAME; a held key fills with light; a pile that ran off the bench (Nov 16, 16:33): seventy-fourth build
+
+623. **You**, 16:33, to the seventy-third build: "looks good. A couple of things: yellow
+     buttons with labels inside them should get black type, not white as the white is
+     unreadable on the yellow. ideally, anything selected can be renamed with the rename
+     button, no matter the screen. For hold delete keys, omit the hold label, just delete,
+     but have the button fill with illumination and when the button is fully lit, the delete
+     happens. The attached screenshot shows the knob pile overflowing the workspace on the
+     macro designer page. Other than that, continue the build." The screenshot did not
+     arrive at 16:33 or when it was sent again at 16:56 (an empty placeholder each time; said
+     both times). It arrived at 17:16, after 627 was written and built.
+624. **Black type on yellow** (623). It was the dark instrument's: the plates the rack
+     brought in the last two builds (an open thing's keys, the keys at the head of a knob's
+     pile) took the instrument's ink, which is light there, whatever their glass. Their type
+     is now chosen by the glass they are on, as every older plate's was: black on a light
+     glass (yellow, green, white on the light instrument), light on a dark one.
+625. **RENAME names the thing last pressed, on every page that has it** (623). One key, the
+     first after the four page keys on the library's, the designer's and the arrangement's
+     strip. What it names: a chip, wherever its card was pressed (the bin, the rack's bench,
+     a stack's row, a knob's pile or its number on the knob's card, what the rack has open,
+     a part of the arrangement); a stack, a knob kept, a module, an arrangement, by its
+     pocket; a knob of the module, by its place. The box opens over the name where it was
+     pressed. NEW and COPY make the one that RENAME then names. *Mine:* with nothing pressed
+     on a page yet it names the page's own (the chosen knob in the designer, the arrangement
+     on its page; in the library nothing, and its key is an empty frame); turning to another
+     page forgets what was pressed; the RENAME plate after an open thing's name (614) went,
+     so there is one RENAME and not two; the library's strip now begins RENAME, DELETE,
+     RECALL, ADD TO (it was RECALL, ADD TO, RENAME, DELETE) so that RENAME is where the
+     other two pages have it. Not on the main page: a snapshot knob there is named in the
+     designer, as before.
+626. **A held key fills with light** (623). DELETE on a chip and after an open thing's name
+     lose HOLD from their legends. Pressed, the key goes dark and fills with red light from
+     its left for two thirds of a second (the time it was held for before); full, it is
+     done. Let go before, nothing is done and the bar says to hold it until it is full. On
+     the 3D stage the stage lights the key itself as far as it has filled; a plate fills on
+     the sheet. *Mine, the same rule for every key that is held:* CLEAR on the arrangement
+     (was HOLD: CLEAR), NEW on the top bar (was HOLD: NEW), and **CLEAR on a knob in the
+     designer, which acted at a press and is now held** (618 had it as not yet one word:
+     now the two CLEARs are the same key).
+627. **The pile that ran off the bench** (623; found before the screenshot came, and the
+     screenshot is this). With a module or a kept knob open in the rack, a long pile was laid
+     out nine lines deep whatever room there was, over the strip and off the page (in the
+     designer from the fourth line). Yours: the designer, LIVE SET 1 open on MODULES, knob 9
+     (TRACK 000) pressed, its pile down over MOTION 3 and PHONES and off the instrument. It
+     now shows the lines that fit above the strip, says which (1 TO 4 OF 30) and goes by the
+     wheel; an arrangement's parts the same. Checked with thirty chips on a knob.
+628. **Checks.** RENAME from each kind of thing on each of the three pages, and its key in
+     the same place on all three; a held key half full after a third of a second, nothing
+     done when let go, done when full; CLEAR on a knob held; a pile of thirty on the bench
+     above the strip, and the wheel. On the stage: the light the stage has for a held key,
+     and a plate filling on the sheet.
+
 ## Not verified
 
 - **The rack (606 to 609, 613 to 617) has been on no Mac and under no hand.** It is checked

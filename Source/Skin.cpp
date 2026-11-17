@@ -307,7 +307,7 @@ const Colour kCase (0xffA4B1B7), kBlack (0xff2B2B28), kUnlit (0xff4D514E), kGree
 const Colour kNightCase (0xff24272A), kNightBase (0xff111211), kNightUnlit (0xff474B48), kNightCap (0xff232321), kNightLens (0xff3C403D), kNightBadge (0xff151615);
 }
 
-bool Skin::emits (Colour c) { return c == kGreen || c == kAmber; }
+bool Skin::emits (Colour c) { return c == kGreen || c == kAmber || c == Colour (0xffE4483C); }      // (and the red a held key fills with)
 
 void Skin::begin (G& g)
 {

@@ -137,6 +137,12 @@ public:
     int testRackShelf() const { return rackShelf; }
     void testLibScroll (int rows) { libScroll = std::max (0, rows); }
     static bool testIsDeleteKey (const TestHit& h) { return h.kind == hAct && h.a == aDelete; }
+    static bool testIsRenameKey (const TestHit& h) { return h.kind == hAct && h.a == aRename; }
+    int testNamedWhat() const { return namedNow().what; }       // what RENAME would name: 0 nothing, 1 a chip, 2 a knob, 3 a stack, 4 a knob kept, 5 a module, 6 an arrangement
+    juce::int64 testNamedChip() const { return namedNow().chip; }
+    float testHoldFill (int which) const { return holdFill (which == 0 ? aDelete : which == 1 ? aOpenDelete : which == 2 ? aArrClear : which == 3 ? aNewTrack : aClearKnob); }
+    static bool testIsClearKnobKey (const TestHit& h) { return h.kind == hAct && h.a == aClearKnob; }
+    int testBenchScroll() const { return benchScroll; }
     static bool testIsAddToKey (const TestHit& h) { return h.kind == hAct && h.a == aAddTo; }
     int testRackOpen() const { return rackOpen(); }          // 0 the bin, 1 a stack, 2 a kept knob, 3 a module, 4 an arrangement
     int testRowSel() const { return rowSel; }
@@ -476,6 +482,31 @@ private:
     float openHead (G&, float top, const juce::String& name, const juce::String& says);
     void headKey (G&, float& x, float& y, int act, const juce::String& legend, juce::Colour, bool can = true);
     void drawRackBench (G&);                    // the rack as a third of a page: what the open pocket holds, under it
+    int benchScroll = 0;                        // what an open knob, module or arrangement holds, when it is more than the bench has room for: the first line shown
+    R benchArea;                                // (as last drawn: where that is, for the wheel)
+    // Type on a plate's glass: black on a light glass (yellow and green are light on either instrument), the instrument's own ink on a dark one.
+    void onGlass (G&, const juce::String&, R, const juce::Font&, juce::Colour glassOf, juce::Colour asked);
+    // ---- RENAME: one key, in the same place on every page that has it, for the thing last pressed that has a name: a chip, a
+    // knob of the module, a stack, a knob kept, a module, an arrangement. With nothing pressed on the page yet, the page's own:
+    // the chosen knob in the designer, the arrangement on its page, the chosen chip in the library.
+    struct Named { int what = 0; juce::int64 chip = 0; int knob = -1; juce::String id; };      // what: 0 nothing, 1 a chip, 2 a knob, 3 a stack, 4 a knob kept, 5 a module, 6 an arrangement
+    Named named;
+    struct NameAt { Named n; R r; };
+    std::vector<NameAt> namesAt;                // (as last drawn: where each name is, for the box that is typed in)
+    void nameAt (int what, juce::int64 chip, int knob, const juce::String& id, R r) { namesAt.push_back ({ Named { what, chip, knob, id }, r }); }
+    juce::Point<float> namedAt;                 // (where the hand was when it pressed it: a chip shown twice is named where it was pressed)
+    void nameIs (int what, juce::int64 chip = 0, int knob = -1, const juce::String& id = {}) { named = Named { what, chip, knob, id }; namedAt = drag.start; }
+    R chipNameRect (R card, int number) const;  // where a chip's card has its name
+    bool namedThere (const Named&) const;       // it is still kept
+    Named namedNow() const;                     // what RENAME would name now
+    void renameNamed();
+    // ---- a key that is held: it fills with light while the hand is on it, and what it does is done when it is full
+    static constexpr juce::uint32 kHoldMs = 700;
+    static bool heldAct (int a)         { return a == aDelete || a == aOpenDelete || a == aArrClear || a == aNewTrack || a == aClearKnob; }
+    float holdFill (int a) const;               // how full that key is (0: the hand is not on it)
+    R holdRect;                                 // (as last drawn: the key being held, for the 3D stage's light)
+    R holdDirty;                                // (the held key or plate, to be drawn again as it fills)
+    bool holdLit = false;                       // (the stage has been told of a light)
     void drawPickList (G&, float top);          // the chips listed there (the bin's, or the open stack's): pressed, heard; ADD, or carried, into what the page is making
     void drawWell (G&, R, int kind, int index);
     void drawChipRack (G&);

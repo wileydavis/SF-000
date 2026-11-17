@@ -94,6 +94,9 @@ public:
     double frameMs() const;                     // how long the last frame took to draw
     int frames() const;                         // how many have been drawn in full
     int builds() const;                         // how many times its shapes were built and sent to the card
+    // A key that is being held fills with light from its left: how full (0: none is). The key is the one at that place.
+    void holdLight (juce::Rectangle<float> key, float fill);
+    float holdLightNow() const;                 // (how full the stage has it, for the checks)
     float keyTopNow (float ux, float uy) const; // how far the key there stands above its plate in the picture now (it travels), or -1: no key
     int keyBottoms() const;                     // how many times a key has gone to the bottom on its way from up to latched, or back
     int keyFrames() const;                      // how many frames have had a key on its way in them

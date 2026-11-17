@@ -752,6 +752,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     std::vector<KeyLive> keyLive;
     bool keysWereMoving = false;
     std::vector<KeyLive> keysShown;             // (under the lock: the same, for whoever asks from outside)
+    juce::Rectangle<float> lightKey;            // (under the lock) a key that is held, filling with light from its left ...
+    float lightFill = 0.0f;                     // ... this far
+    std::atomic<bool> lightStale { false };
     std::atomic<int> keyBottomCount { 0 };      // how many times a key has touched bottom on its way somewhere else
     std::atomic<int> keyFrameCount { 0 };       // how many frames have had a key travelling in them
     juce::uint32 lastMoveMs = 0;
@@ -1250,7 +1253,8 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         keysWereMoving = moved;
         if (moved && ! atOnce) ++keyFrameCount;
         if (! moved && ! force) return false;
-        { const juce::ScopedLock sl (lock); keysShown = keyLive; }
+        juce::Rectangle<float> fillKey; float fillNow = 0.0f;
+        { const juce::ScopedLock sl (lock); keysShown = keyLive; fillKey = lightKey; fillNow = lightFill; }
         keySlabs.data.clear();
         for (size_t i = 0; i < keyLive.size() && i < parts.keys.size(); ++i)
         {
@@ -1258,6 +1262,16 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             const juce::Colour c (k.colour);
             const float h = keyLive[i].h;
             const Rgb shown = lin (k.glows ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c);
+            if (fillNow > 0.0f && k.r.contains (fillKey.getCentre()))
+            {
+                // (held: lit red as far as it has filled, from its left; the rest as it is)
+                const auto whole = k.r.reduced (0.7f);
+                const float lw = whole.getWidth() * fillNow;
+                const Rgb glow = lin (juce::Colour (0xffE4483C).withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f));
+                if (lw > 1.5f) slab (whole.withWidth (lw), k.base, h, std::min (2.2f, lw * 0.4f), std::min (1.4f, h * 0.6f), glow, 0.5f, 3.0f, 0.85f, 0.0f, k.clip, 0.0f, &keySlabs);
+                if (whole.getWidth() - lw > 1.5f) slab (whole.withTrimmedLeft (lw), k.base, h, std::min (2.2f, (whole.getWidth() - lw) * 0.4f), std::min (1.4f, h * 0.6f), shown, 0.5f, k.glows ? 3.0f : 1.0f, k.glows ? 0.85f : 0.0f, 0.0f, k.clip, 0.0f, &keySlabs);
+                continue;
+            }
             slab (k.r.reduced (0.7f), k.base, h, 2.2f, std::min (1.4f, h * 0.6f), shown, 0.5f, k.glows ? 3.0f : 1.0f, k.glows ? 0.85f : 0.0f, 0.0f, k.clip, 0.0f, &keySlabs);
         }
         fill (keySlabs);
@@ -1401,7 +1415,8 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         const float dt = lastFrameAt > 0.0 ? (float) juce::jlimit (0.0, 0.1, (now - lastFrameAt) * 0.001) : 0.016f;
         lastFrameAt = now;
         if (snap) { curEye = softEye = goalEye; curAt = softAt = goalAt; sceneStale = true; }
-        if (keysMove (dt, false, snap)) { sceneStale = shadowStale = true; lastMoveMs = juce::Time::getMillisecondCounter(); }      // (a key on its way: its shade moves with it)
+        const bool lightMoved = lightStale.exchange (false);        // (a held key's light is fuller: the keys are drawn again)
+        if (keysMove (dt, lightMoved, snap) || lightMoved) { sceneStale = shadowStale = true; lastMoveMs = juce::Time::getMillisecondCounter(); }
         // The glow beats with the kick, if SETUP says so. The kick's meter is the engine's own (it
         // falls 30 dB a second): how near it stands to the loudest it has lately been is the beat,
         // full on a hit and gone 9 dB (0.3 s) later. Only a pulse that has moved draws the scene again.
@@ -2010,6 +2025,17 @@ float Stage::keyTopNow (float ux, float uy) const
     return -1.0f;
 }
 int Stage::keyBottoms() const { return impl->keyBottomCount.load(); }
+void Stage::holdLight (juce::Rectangle<float> key, float fill)
+{
+    {
+        const juce::ScopedLock sl (impl->lock);
+        if (impl->lightFill == fill && (fill <= 0.0f || impl->lightKey == key)) return;
+        impl->lightKey = key; impl->lightFill = fill;
+    }
+    impl->lightStale = true;
+    impl->kick();
+}
+float Stage::holdLightNow() const { const juce::ScopedLock sl (impl->lock); return impl->lightFill; }
 int Stage::keyFrames() const { return impl->keyFrameCount.load(); }
 
 void Stage::kick() { impl->kick(); }
