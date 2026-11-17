@@ -202,6 +202,87 @@ def measure_mix(x: np.ndarray, rate: int, bpm: float | None) -> dict:
     return out
 
 
+TONAL = {"bass", "rumble", "lead", "chord", "pad", "voice"}
+GRID_BANDS = [(20, 120), (120, 300), (300, 800), (800, 2000), (2000, 6000), (6000, 20000)]      # where two parts can sit on each other
+
+
+def chroma(mono: np.ndarray, rate: int) -> tuple[list[float], float]:
+    """Which of the twelve notes a sound is made of (summed over its time, each a share), and how clearly (0: noise,
+    every note alike; 1: one note alone). Spectral peaks from 27 Hz to 5 kHz, each placed at its own pitch (a window
+    long enough to tell a low C from a C sharp, and each peak's frequency found between the bins)."""
+    n = 8192 if rate <= 50000 else 16384
+    if len(mono) < n:
+        return [0.0] * 12, 0.0
+    f, t, Z = signal.stft(mono, fs=rate, window="hann", nperseg=n, noverlap=n - n // 4, boundary=None, padded=False)
+    mag = np.abs(Z).T                                     # frames x bins
+    lo, hi = np.searchsorted(f, 27.0), np.searchsorted(f, 5000.0)
+    m = mag[:, lo - 1:hi + 1] + 1e-12
+    centre = m[:, 1:-1]
+    peak = (centre > m[:, :-2]) & (centre >= m[:, 2:]) & (centre > centre.max(axis=1, keepdims=True) * 0.05)
+    la, lb, lc = np.log(m[:, :-2]), np.log(centre), np.log(m[:, 2:])
+    shift = 0.5 * (la - lc) / np.where(np.abs(la - 2 * lb + lc) < 1e-12, 1e-12, la - 2 * lb + lc)
+    bins = np.arange(lo, hi)[None, :] + np.clip(shift, -0.5, 0.5)
+    freq = bins * (f[1] - f[0])
+    c = np.zeros(12)
+    fr, bn = np.nonzero(peak)
+    if len(fr) == 0:
+        return [0.0] * 12, 0.0
+    pc = np.mod(np.round(12 * np.log2(freq[fr, bn] / 440.0)) + 9, 12).astype(int)       # 0 = C
+    np.add.at(c, pc, centre[fr, bn])
+    c = c / c.sum()
+    entropy = -(c[c > 0] * np.log(c[c > 0])).sum() / np.log(12)
+    return [round(float(x), 4) for x in c], round(float(1 - entropy), 4)
+
+
+def grid(mono: np.ndarray, rate: int, bars: int) -> list[list[float]]:
+    """Where in the bar a part's sound is: for each sixteenth of a bar, its energy in six bands from sub to air
+    (averaged over its bars: what loops), as power. The clip starts on a bar line, so a sixteenth here is a step."""
+    n = len(mono)
+    steps = 16 * max(1, bars)
+    per = n // steps
+    if per < 64:
+        return [[0.0] * 16 for _ in GRID_BANDS]
+    f, t, Z = signal.stft(mono[: per * steps], fs=rate, nperseg=min(2048, per), noverlap=min(2048, per) // 2, boundary=None, padded=False)
+    P = np.abs(Z) ** 2
+    frames = P.shape[1]
+    out = []
+    for lo, hi in GRID_BANDS:
+        e = P[(f >= lo) & (f < hi)].sum(axis=0)
+        cell = np.zeros(steps)
+        idx = np.minimum(steps - 1, (np.arange(frames) * steps) // max(1, frames))
+        np.add.at(cell, idx, e)
+        cnt = np.bincount(idx, minlength=steps).clip(min=1)
+        cell = cell / cnt
+        out.append([float(x) for x in cell.reshape(-1, 16).mean(axis=0)])
+    return out
+
+
+def measure_part(x: np.ndarray, rate: int, bpm: float | None, bars: int, key: str) -> dict:
+    """One lane, a return or the bus, on its own: how loud, where in the spectrum, which notes, where in the bar."""
+    x = x.astype(np.float64)
+    mono = x.mean(axis=1)
+    level = level_db(x)
+    out = {"level": round(level, 2)}
+    if level < -70:
+        out["silent"] = True
+        return out
+    f, P, hop = _stft_power(mono, rate)
+    total = P.mean(axis=0)
+    all_power = total[(f >= 20) & (f < 20000)].sum() + 1e-18
+    out["bands"] = [round(max(SILENT_DB, float(10 * np.log10(total[(f >= lo) & (f < hi)].sum() / all_power + 1e-12))), 2) for lo, hi in zip(BAND_EDGES[:-1], BAND_EDGES[1:])]
+    sel = (f >= 20) & (f < 20000)
+    out["centroid"] = round(float(np.log2((f[sel] * total[sel]).sum() / (total[sel].sum() + 1e-18) + 1e-9)), 3)
+    out["chroma"], out["clarity"] = chroma(mono, rate)
+    out["grid"] = [[round(v, 9) for v in row] for row in grid(mono, rate, bars)]
+    rise = onset_curve(f, P)
+    beats = len(mono) / rate * (bpm or 128.0) / 60.0
+    out["hits"] = round(float(len(_peaks(rise, rate / hop)) / max(beats, 1e-6) * 4), 2)       # a bar
+    g = np.array(out["grid"]).sum(axis=0)
+    out["held"] = round(float((g > g.max() * 0.25).mean()) if g.max() > 0 else 0.0, 3)      # how much of the bar it sounds in
+    out["tonal"] = key in TONAL
+    return out
+
+
 def measure_parts(parts: dict[str, np.ndarray]) -> dict:
     """How loud each lane, return and the bus is, as a share of all of them together (dB), and how many sound."""
     level = {k: float(np.mean(v.astype(np.float64) ** 2)) for k, v in parts.items()}
@@ -214,24 +295,49 @@ def measure_parts(parts: dict[str, np.ndarray]) -> dict:
     return {"shares": [round(shares[k], 2) for k in PARTS], "sounding": sounding}
 
 
-def measure(row: dict, lossless: bytes | None, clip: bytes | None, stems: dict[str, bytes] | None) -> dict:
-    """A snapshot measured from the best of what there is of it."""
+def _bars(seconds: float, bpm, said) -> int:
+    if said:
+        return int(said)
+    return max(1, int(round(seconds * (bpm or 128.0) / 240.0)))
+
+
+def measure(row: dict, lossless: bytes | None, clip: bytes | None, stems: dict[str, bytes] | None, keep_part=None) -> dict:
+    """A snapshot measured from the best of what there is of it. keep_part(key, ogg bytes), if given, is handed each
+    lane, return and the bus as Ogg, to be listened to on its own or with another snapshot's."""
     bpm = row.get("bpm") or None
     out = {"uid": row["uid"], "bpm": bpm}
+    audio = None
     if lossless:
         head, parts = read_lossless(lossless)
         mix, rate = parts.pop("mix")
         out["from"] = "lossless"
         out["mix"] = measure_mix(mix, rate, bpm)
-        out["parts"] = measure_parts({k: v for k, (v, _) in parts.items()})
-        return out
-    if clip:
+        audio = {k: v for k, (v, _) in parts.items()}
+        bars = _bars(len(mix) / rate, bpm, head.get("bars"))
+    elif clip:
         x, rate = read_audio(clip)
         out["from"] = "clip"
         out["mix"] = measure_mix(x, rate, bpm)
+        bars = _bars(len(x) / rate, bpm, row.get("bars"))
         if stems:
             out["from"] = "clip+stems"
-            out["parts"] = measure_parts({k: read_audio(v)[0] for k, v in stems.items()})
+            audio = {k: read_audio(v)[0] for k, v in stems.items()}
+    else:
+        out["from"] = "none"
         return out
+    out["bars"] = bars
+    if audio:
+        out["parts"] = measure_parts(audio)
+        out["lanes"] = {}
+        for k, v in audio.items():
+            out["lanes"][k] = measure_part(v, rate, bpm, bars, k)
+            if keep_part is not None and not out["lanes"][k].get("silent"):
+                if stems and k in stems:
+                    keep_part(k, stems[k])
+                else:
+                    buf = io.BytesIO()
+                    sf.write(buf, np.clip(v, -1, 1), rate, format="OGG", subtype="VORBIS")
+                    keep_part(k, buf.getvalue())
+    return out
     out["from"] = "none"
     return out

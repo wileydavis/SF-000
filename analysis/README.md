@@ -32,8 +32,12 @@ where it left off.
 
 ## Listening to what it found
 
-`report.html` in its folder (`~/Library/Application Support/SF-000 Analysis/`; it says where when it
-starts). Every snapshot, most energy first. Beside each:
+It opens its page in the browser when it starts: **http://localhost:8765/report.html** (served by the
+analysis itself, from this Mac only, while its window is open). Press any chip to hear it; again to
+stop. Everything plays from what is kept here, so it needs no line to the library. **This page is how
+to tell whether it is right.** Where it is wrong by ear, that is what to change next.
+
+**SNAPSHOTS**: every snapshot, most energy first. Beside each:
 
 | | |
 |---|---|
@@ -42,10 +46,20 @@ starts). Every snapshot, most energy first. Beside each:
 | **DOWN** | the same, with less |
 | **FOLLOWED BY** | what you played next after it, and how often (from the log) |
 | **TAKEN FROM** | the chip the set was on when it was taken |
+| **SWAP** | for each of its lanes, the same lane from another snapshot that would fit the rest of it. Pressed: this snapshot with that lane taken from the other. The lane's name plays this snapshot's own lane alone |
+| **ADD** | a lane it has not got, from another snapshot, that would go over all of it |
 
-Press any chip to hear its four bars; again to stop. The clips are kept beside the page, so it plays
-with no line to the library. **This page is how to tell whether it is right.** Where it is wrong by
-ear, that is what to change next.
+**PARTS**: every lane of every snapshot on its own, a lane at a time (BASS, CHORD, PAD, ...). A part
+that is the same in several snapshots (same sound, pattern and effects) is listed once, "+N". Beside
+each: the parts of the same lane that sound like it (ALIKE), and **GOES WITH**: for every other lane,
+the three parts that would fit it best. Pressed, the two play together. TOGETHER: they are already in
+a snapshot together (the rest never have been: that is where the finds are). CHOSEN: you put them
+together yourself (a recall of some lanes only, from the log).
+
+Parts at different tempos are played at the tempo of the one they go with, **stretched, not sped
+up**: the pitch stays where it is, as the instrument would play the notes. (The stretching is the
+page's own and a little grainy on held notes; the instrument's own is exact.) Parts are played dry of
+the other snapshot's returns: the dub and space of the snapshot it is put into are its own.
 
 ## What it does, a pass at a time
 
@@ -68,6 +82,27 @@ bands), its brightness, how noisy or tonal, how wide, and how much it changes ov
 lanes on their own: how loud each lane, return and the bus is beside the others, and how many lanes
 are sounding.
 
+### What is measured of each part
+
+Every lane, return and the bus on its own (from the lossless sound, else the stems): its level, its
+spread from sub to air, its brightness, **which notes it is made of** (all twelve, each as a share,
+and how clearly: a window long enough to tell a low C from a C sharp), **where in the bar it sounds**
+(each sixteenth, in six bands from sub to air: the clips start on a bar line, so a sixteenth here is
+a step), how many hits a bar, and how much of the bar it fills.
+
+### How parts fit
+
+Two parts fit as well as they do not get in each other's way:
+
+- **Notes**: what the two add of seconds, sevenths and tritones to each other (the tonal lanes: bass,
+  rumble, lead, chord, pad, voice). A chord in the bass's key fits; one a semitone off does not.
+- **Room**: how much they sit on each other, in the same sixteenths and the same part of the
+  spectrum. A bass between the kicks fits the kick better than one on them.
+
+For a SWAP, a candidate is weighed against the rest of the snapshot together; for ADD, against all
+of it. A candidate that is as good as the same as the lane already there is not offered, and no two
+offered are near the same. A pair you put together yourself counts for more.
+
 ### What is related
 
 - **Energy** (0 to 100): loudness, hits a beat, top end, low end, the beat's pull and how many lanes
@@ -89,6 +124,7 @@ are sounding.
 | `python/` | its own Python |
 | `snapshots/` | each snapshot as the library has it |
 | `clips/` | each clip, for the page |
+| `parts/` | each lane, return and the bus of each snapshot on its own (Ogg), for the page |
 | `measured/` | what was measured of each |
 | `log/` | the log, a file a library |
 | `found/latest.json` | what it found last, as it was sent |
@@ -100,7 +136,10 @@ It only ever reads from the web library and adds its findings to it. It changes 
 
 ## Not yet
 
-- **SF-000 reading what it found** (the "smart" module, DECISIONS 652).
+- **SF-000 reading what it found** (the "smart" module, DECISIONS 652): a SWAP or ADD as a chip, or a
+  pairing made into a stack knob (whose chips already bring some lanes only).
+- **Combinations of more than two parts** built up from these: a bass, a chord and a pad from three
+  snapshots, over a fourth's drums.
 - **Rendering the snapshots that have no sound** with the instrument run without a screen: for now
   those are listed at the foot of the page as not measured.
 - **Families and paths** (groups of snapshots, and routes through them up and down in energy);
@@ -109,4 +148,7 @@ It only ever reads from the web library and adds its findings to it. It changes 
 
 Its checks: `python3 -m unittest discover -s analysis/tests` (sounds made in the checks, whose answers
 are known: hits a beat, brightness, width, loudness against the standard's own reference, families
-told apart, energy the right way up, what followed what, the log taken once).
+told apart, energy the right way up, what followed what, the log taken once; a chord heard as its
+three notes, a chord in the bass's key fitting and one a semitone off clashing, a bass between the
+kicks fitting better than one on them, the same lane in two snapshots taken as one part, the chord in
+C found for the bass in C).

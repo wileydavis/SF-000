@@ -4361,6 +4361,37 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      measured). Families and paths through the library. Learning from what you choose beyond
      counting what followed what. Running on the Mac Studio as a service, without a window.
 
+## Parts: what goes with what, lane by lane (Nov 17, 00:05)
+
+668. **You**, 00:05: "lets keep building. i really ant this library to be a tool that helps find
+     combos of snapshots whole or as partials. like take the bass from here and mix it with htis
+     chord, etc. so we're analyzing components and how they relate as well."
+669. **A part is one lane of one snapshot**, measured on its own from its lossless sound (else its
+     stem): its notes (all twelve, each a share, and how clearly), where in the bar it sounds (each
+     sixteenth, six bands), its spread, its level. The same lane with the same sound, pattern and
+     effects in several snapshots is one part (its level alone does not make another). *Mine.*
+670. **Fit**, between two parts or a part and the rest of a snapshot: notes that do not rub
+     (seconds, sevenths, tritones added) and room (not on each other in the same sixteenths and the
+     same part of the spectrum). *Mine: the simplest two things a producer listens for. What the
+     page shows by ear will say what is missing.*
+671. **What the analysis finds of parts**: for each snapshot, **SWAP** (each of its lanes from other
+     snapshots, fitting the rest of it) and **ADD** (lanes it has not got); for each part, **ALIKE**
+     and **GOES WITH** (for every other lane, the three that fit best, and whether they have ever
+     been together, or you put them together: a recall of some lanes, from the log). Nothing offered
+     is as good as the same as what is there, and no two offered are near the same. All of it goes
+     to the web library with the rest. *Mine.*
+672. **On the page**: a PARTS view beside SNAPSHOTS, and every one of these plays: the snapshot with
+     the lane swapped or added, or the two parts together. **In time, and in tune**: a part from a
+     snapshot at another tempo is stretched to the tempo it is put with, not sped up (124 against
+     132 BPM would have been a semitone out). The page is served by the analysis on this Mac
+     (http://localhost:8765), which opens it when it starts: a page opened from the disk may not
+     mix the parts. *Mine.*
+673. **Tried on your sounds** (the 92 re-rendered, 665): 168 distinct parts (39 basses, 9 chords,
+     17 pads...); every snapshot with sound has swaps. Whether they are good is for your ears.
+674. **Not in it yet.** SF-000 using any of it (a SWAP or an ADD as a chip; a pairing as a stack
+     knob, whose chips already bring some lanes only). Combinations of three parts and more. Fit
+     that knows more than notes and room (groove, register, what you like).
+
 ## Not verified
 
 - **SF-000 Analysis has not run on a Mac.** It is run here on Linux against a web library run

@@ -21,6 +21,7 @@ from pathlib import Path
 from . import MEASURE_VERSION, VERSION
 from .library import Library, Trouble
 from .measure import measure
+from .parts import relate_parts
 from .relate import relate
 from .report import write_report
 
@@ -51,7 +52,7 @@ class Store:
     def __init__(self, root: Path, keep_lossless: bool):
         self.root = root
         self.keep_lossless = keep_lossless
-        for d in ("snapshots", "clips", "measured", "log", "found"):
+        for d in ("snapshots", "clips", "measured", "log", "found", "parts"):
             (root / d).mkdir(parents=True, exist_ok=True)
         if keep_lossless:
             (root / "lossless").mkdir(exist_ok=True)
@@ -83,6 +84,18 @@ class Store:
 
     def clip_file(self, uid: str) -> Path:
         return self.root / "clips" / (self.safe(uid) + ".ogg")
+
+    def part_file(self, uid: str, key: str) -> Path:
+        return self.root / "parts" / self.safe(uid) / (self.safe(key) + ".ogg")
+
+    def keep_part(self, uid: str, key: str, data: bytes):
+        f = self.part_file(uid, key)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        self._write(f, data)
+
+    def snapshot(self, uid: str):
+        f = self.root / "snapshots" / (self.safe(uid) + ".json")
+        return json.loads(f.read_text()) if f.exists() else None
 
     def log_file(self, library: str) -> Path:
         return self.root / "log" / (library + ".jsonl")
@@ -138,7 +151,7 @@ class Analysis:
                         data = self.lib.stem(uid, key)
                         if data:
                             stems[key] = data
-                m = measure(row, lossless, clip, stems)
+                m = measure(row, lossless, clip, stems, keep_part=lambda key, data, u=uid: self.store.keep_part(u, key, data))
             except Trouble:
                 raise
             except Exception as e:          # (a file that cannot be read: said, kept as not measurable, not tried again until there is more)
@@ -196,8 +209,16 @@ class Analysis:
         measured_now = self.measure_new(rows, budget_s)
         new_lines = self.fetch_log(libraries)
         measured = [m for m in (self.store.measured(r["uid"]) for r in rows) if m]
-        found_snaps = relate(measured, self.all_actions())
+        actions = self.all_actions()
+        found_snaps = relate(measured, actions)
         found_snaps = {u: v for u, v in found_snaps.items() if u in here}
+        snaps = {r["uid"]: self.store.snapshot(r["uid"]) or {} for r in rows}
+        pr = relate_parts([m for m in measured if m["uid"] in here], snaps, actions)
+        for uid, lanes in pr["swap"].items():
+            if lanes:
+                found_snaps.setdefault(uid, {})["swap"] = lanes
+        for uid, lanes in pr["add"].items():
+            found_snaps.setdefault(uid, {})["add"] = lanes
         found = {
             "at": int(time.time() * 1000),
             "app": f"sf000-analysis {VERSION}",
@@ -206,9 +227,11 @@ class Analysis:
                 "snapshots": len(rows),
                 "measured": sum(1 for m in measured if m.get("mix") and not m["mix"].get("silent")),
                 "lossless": sum(1 for m in measured if m.get("from") == "lossless" and m.get("mix") and not m["mix"].get("silent")),
-                "log_lines": sum(1 for _ in self.all_actions()),
+                "log_lines": len(actions),
+                "parts": len(pr["parts"]),
             },
             "snapshots": found_snaps,
+            "parts": pr["parts"],
         }
         self.store._write(self.store.root / "found" / "latest.json", json.dumps(found))
         sent = None
@@ -223,7 +246,7 @@ class Analysis:
                 self.store.save_state()
             else:
                 sent = f"not taken ({status}: {answer.get('error', '')})"
-        write_report(self.store.root, rows, measured, found)
+        write_report(self.store.root, rows, measured, found, snaps)
         found["_pass"] = {"measured": measured_now, "log": new_lines, "sent": sent}
         return found
 
@@ -255,6 +278,24 @@ class Analysis:
                 time.sleep(1)
 
 
+def serve(root: Path, port: int):
+    """The page and what it plays, from this machine only: a page opened from the disk may not read the parts it mixes."""
+    import functools
+    import http.server
+    import threading
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+    try:
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(Quiet, directory=str(root)))
+    except OSError:
+        return None          # (one is running already, from another window: that one serves the same folder)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sf000-analysis", description="Studies the SF-000 snapshot library away from the instrument.")
     ap.add_argument("--library", default="", help="the web library's address (otherwise SF-000's SET UP's)")
@@ -265,6 +306,8 @@ def main(argv=None) -> int:
     ap.add_argument("--anyway", action="store_true", help="do not stand aside while SF-000 is running")
     ap.add_argument("--keep-lossless", action="store_true", help="keep each snapshot's lossless sound here too (about 10 MB each)")
     ap.add_argument("--no-send", action="store_true", help="find, but do not send what was found to the web library")
+    ap.add_argument("--port", type=int, default=8765, help="where the page is served on this machine (8765)")
+    ap.add_argument("--no-open", action="store_true", help="do not open the page in the browser when it starts")
     args = ap.parse_args(argv)
 
     try:
@@ -289,7 +332,14 @@ def main(argv=None) -> int:
     sig.signal(sig.SIGTERM, stop)
 
     say(f"SF-000 Analysis {VERSION}: {lib.url}, keeping what it finds in {root}")
-    say(f"listen to what it finds: open \"{root / 'report.html'}\"")
+    page = f"http://localhost:{args.port}/report.html"
+    if not args.once:
+        serve(root, args.port)
+        say(f"listen to what it finds: {page}")
+        if platform.system() == "Darwin" and not args.no_open:
+            threading_open = __import__("threading").Timer(20.0, lambda: subprocess.run(["open", page]))
+            threading_open.daemon = True
+            threading_open.start()
     if args.once:
         if a.held():
             say("SF-000 is running: not now (or --anyway).")

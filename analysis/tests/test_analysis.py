@@ -207,3 +207,91 @@ class Fetching(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------------------------- parts
+from sfa.measure import measure_part  # noqa: E402
+from sfa.parts import clash, fit, masking, relate_parts, signature, _chroma, _occ  # noqa: E402
+
+
+def notes(freqs, on_steps=None, length=1.0, bars=4, level=0.3):
+    """Tones (Hz, played together) on the sixteenths given (all of them: held), each for `length` of a sixteenth."""
+    n = beat_samples() * 4 * bars
+    step = beat_samples() // 4
+    x = np.zeros(n)
+    t = np.arange(int(step * length)) / RATE
+    env = np.minimum(1, np.minimum(t * 400, (t[-1] - t) * 400 + 1e-3)) if len(t) else t
+    for b in range(bars):
+        for s16 in (on_steps if on_steps is not None else range(16)):
+            i = (b * 16 + s16) * step
+            for f0 in freqs:
+                seg = np.sin(2 * np.pi * f0 * (t + i / RATE)) * env * level
+                x[i:i + len(seg)] += seg[: n - i]
+    return np.stack([x, x], axis=1).astype(np.float32)
+
+
+C, CS, E, G = 130.81, 138.59, 164.81, 196.0
+
+
+class Parts(unittest.TestCase):
+    def part(self, x, key):
+        return measure_part(x, RATE, BPM, 4, key)
+
+    def test_notes_are_heard_as_notes(self):
+        p = self.part(notes([C * 2, E * 2, G * 2], length=16), "chord")
+        top = sorted(range(12), key=lambda i: -p["chroma"][i])[:3]
+        self.assertEqual(sorted(top), [0, 4, 7], "C, E and G")
+        self.assertGreater(p["clarity"], 0.3)
+
+    def test_a_chord_in_the_bass_s_key_fits_and_one_a_semitone_off_clashes(self):
+        bass = self.part(notes([C / 2], on_steps=[2, 6, 10, 14], length=1.5), "bass")
+        same = self.part(notes([C * 2, E * 2, G * 2], on_steps=[0, 8], length=3), "chord")
+        off = self.part(notes([CS * 2, CS * 2 * 1.26, CS * 2 * 1.5], on_steps=[0, 8], length=3), "chord")
+        self.assertLess(clash(_chroma(bass), _chroma(same)), 0.02)
+        self.assertGreater(clash(_chroma(bass), _chroma(off)), 0.05)
+        self.assertGreater(fit(bass, same), fit(bass, off) + 0.1)
+
+    def test_a_bass_between_the_kicks_sits_on_them_less_than_one_on_them(self):
+        kick = self.part(groove(kick=1.0), "kick")
+        off = self.part(notes([55.0], on_steps=[2, 6, 10, 14], length=1.5, level=0.5), "bass")
+        on = self.part(notes([55.0], on_steps=[0, 4, 8, 12], length=1.5, level=0.5), "bass")
+        self.assertLess(masking(_occ(kick), _occ(off)), masking(_occ(kick), _occ(on)) - 0.2)
+        self.assertGreater(fit(kick, off), fit(kick, on))
+
+    def test_the_same_lane_in_two_snapshots_is_one_part(self):
+        snap = {"made": {"slots": ["kick", "bass"], "lanes": {"kick": "k1", "bass": "b1"}},
+                "values": {"bass.cutoff": 0.5, "bass.level": 0.7, "kick.tune": 0.2},
+                "patterns": [{"len": 16, "steps": [[0, 1, 0.5, 1, 0, 3]]}, {"len": 16, "steps": [[2, 1, 0.5, 1, 0, 1]]}]}
+        louder = json.loads(json.dumps(snap)); louder["values"]["bass.level"] = 0.9
+        other = json.loads(json.dumps(snap)); other["patterns"][1]["steps"][0][0] = 3
+        self.assertEqual(signature(snap, "bass"), signature(louder, "bass"), "its level alone does not make it another part")
+        self.assertNotEqual(signature(snap, "bass"), signature(other, "bass"), "another pattern does")
+        self.assertEqual(signature(snap, "kick"), signature(other, "kick"))
+
+    def test_swaps_and_partners(self):
+        """Three snapshots: kick and bass in C; kick and a chord in C; kick and a chord in C sharp. For the first, a
+        chord to put with its bass is the one in C; parts found in two snapshots are one."""
+        kick = groove(kick=1.0)
+        bass = notes([C / 2], on_steps=[2, 6, 10, 14], length=1.5)
+        chord_c = notes([C * 2, E * 2, G * 2], on_steps=[0, 8], length=3)
+        chord_cs = notes([CS * 2, CS * 2 * 1.26, CS * 2 * 1.5], on_steps=[0, 8], length=3)
+        hat = groove(kick=0.0, hats=0.4)
+
+        def snap(uid, lanes):
+            m = {"uid": uid, "bpm": BPM, "lanes": {k: self.part(v, k) for k, v in lanes.items()}}
+            m["parts"] = {"shares": [0.0 if l in lanes else -60.0 for l in PARTS], "sounding": len(lanes)}
+            sj = {"snapshot": {"made": {"slots": list(lanes), "lanes": {k: k for k in lanes}},
+                               "values": {f"{k}.x": (0.1 if k != "chord" else (0.2 if uid == "b" else 0.3)) for k in lanes},
+                               "patterns": [{"len": 16, "steps": []} for _ in lanes]}}
+            return m, sj
+        ms, sj = zip(*[snap("a", {"kick": kick, "bass": bass, "closed_hat": hat}), snap("b", {"kick": kick, "chord": chord_c, "closed_hat": hat}),
+                       snap("c", {"kick": kick, "chord": chord_cs, "closed_hat": hat})])
+        out = relate_parts(list(ms), dict(zip("abc", sj)), [])
+        kicks = [p for p in out["parts"].values() if p["lane"] == "kick"]
+        self.assertEqual(len(kicks), 1, "one kick, in all three")
+        self.assertEqual(sorted(kicks[0]["in"]), ["a", "b", "c"])
+        bass_part = next(p for p in out["parts"].values() if p["lane"] == "bass")
+        best_chord = bass_part["goes"]["chord"][0]
+        self.assertEqual(out["parts"][best_chord[0]]["in"], ["b"], "the chord in C goes with the bass in C")
+        self.assertEqual(best_chord[2], 0, "and they have never been together: new")
+        self.assertNotIn("kick", out["swap"]["a"], "the only kick there is is its own: nothing to swap")
