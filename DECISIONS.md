@@ -4589,6 +4589,14 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the page can tell an SF-000 built before this and say so. On your SNAP 050 to SNAP 019 (the
      kick another model and another sample): with STAY the kick at 100% measures 11.9 from 019's
      own and with BLEND 2.2; it is 019's model and file there.
+701. **You**, 11:56: "should the n key be visible in the macros and library on the instrument?
+     because it's not". 11:57: "i see it. it's only in the macro list." It was there and next to
+     invisible: a key put out is an empty frame with a faint figure, which reads rightly for a
+     part the chip does not take, and N and M start out. *Mine:* out, N and M are pale keys with
+     their letters plain on them; lit, black as the parts are; and the two stand a little apart
+     from the parts, being switches and not parts. They are wherever a stack's chips are laid
+     out with their keys: the knob's column in MACROS, and a stack's row in the LIBRARY once its
+     pocket is opened. Not in THE BIN, where a chip is in no stack and has no keys.
 
 ## Not verified
 

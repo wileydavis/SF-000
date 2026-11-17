@@ -2446,8 +2446,27 @@ void Screen::rackTidy()
     openNameRect = {};
 }
 
-// A stack chip's row of keys: the eleven lanes, R, B, K, then N (its notes) and M (its models and samples), in the card's width.
-static constexpr float kKeyPitch = 16.3f, kKeyWide = 15.4f;
+// A stack chip's row of keys: the eleven lanes, R, B, K (the parts of the rig it takes), then, set a little apart, N (its
+// notes) and M (its models and samples), in the card's width.
+static constexpr float kKeyPitch = 16.0f, kKeyWide = 15.2f, kKeyGap = 4.0f;
+static juce::Rectangle<float> stackKeyRect (float x0, float y, int p) { return { x0 + (float) p * kKeyPitch + (p >= kLanes + 3 ? kKeyGap : 0.0f), y, kKeyWide, 24.0f }; }
+
+// A part's key: black with a lit figure while the chip takes the part, an empty frame with a faint figure when it is put
+// out. N and M are switches, and out is how they start: out, each is a pale key with its letter plain on it, so that it
+// is seen to be there and to be pressable; lit, black as the others.
+void Screen::stackKey (G& g, R kr, const char* name, bool lit, bool ownKey)
+{
+    if (lit) { window (g, kr, col::black); text (g, name, kr, fNote, col::lit); return; }
+    if (ownKey)
+    {
+        g.setColour (tone (col::white)); g.fillRect (kr);
+        g.setColour (tone (col::black)); g.drawRect (kr.reduced (0.5f), 1.0f);
+        textRaw (g, name, kr, fNote, tone (col::black));
+        return;
+    }
+    g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f);
+    textRaw (g, name, kr, fNote, tone (col::black).withAlpha (0.45f));
+}
 // A chip of the open stack, in its row: its number, its name (green while it is in the headphones), and a key for every
 // part of the rig it takes there, N last. Pressed, it is the chip in hand and is heard with those parts; carried along
 // the row it is moved, off the row it is taken out of this stack.
@@ -2471,13 +2490,8 @@ void Screen::drawRowCard (G& g, R r, int i, juce::int64 id, juce::uint32 lanes, 
     }
     for (int p = 0; p < kLanes + 5; ++p)
     {
-        const R kr (x0 + (float) p * kKeyPitch, y0 + 30, kKeyWide, 24);
-        const bool takes = ((lanes >> p) & 1u) != 0;
-        if (vis (g, kr))
-        {
-            if (takes) { window (g, kr, col::black); text (g, partName[p], kr, fNote, col::lit); }
-            else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[p], kr, fNote, tone (col::black).withAlpha (0.45f)); }
-        }
+        const R kr = stackKeyRect (x0, y0 + 30, p);
+        if (vis (g, kr)) stackKey (g, kr, partName[p], ((lanes >> p) & 1u) != 0, p >= kLanes + 3);
         if (can) hit (kr, hRowKey, i, p);
     }
 }
@@ -2576,9 +2590,7 @@ void Screen::drawSeenCard (G& g, R r, juce::int64 id, int num, juce::uint32 keys
     if (note.isNotEmpty()) { text (g, note, R (x0, y0 + 30, r.getWidth() - 12, 24), fLbl, col::black, juce::Justification::centredLeft); return; }
     for (int p = 0; p < kLanes + 5; ++p)
     {
-        const R kr (x0 + (float) p * kKeyPitch, y0 + 30, kKeyWide, 24);
-        if (((keys >> p) & 1u) != 0) { window (g, kr, col::black); text (g, partName[p], kr, fNote, col::lit); }
-        else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[p], kr, fNote, tone (col::black).withAlpha (0.45f)); }
+        stackKey (g, stackKeyRect (x0, y0 + 30, p), partName[p], ((keys >> p) & 1u) != 0, p >= kLanes + 3);
     }
 }
 
@@ -3667,13 +3679,8 @@ void Screen::drawColumn (G& g)
         // The last is N, its notes (as on a part of the arrangement): lit, the knob coming to this snapshot brings them.
         for (int p = 0; p < kLanes + 5; ++p)
         {
-            const R kr (x0 + (float) p * kKeyPitch, y0 + 30, kKeyWide, 24);
-            const bool takes = ((lanes >> p) & 1u) != 0;
-            if (vis (g, kr))
-            {
-                if (takes) { window (g, kr, col::black); text (g, partName[p], kr, fNote, col::lit); }
-                else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[p], kr, fNote, tone (col::black).withAlpha (0.45f)); }
-            }
+            const R kr = stackKeyRect (x0, y0 + 30, p);
+            if (vis (g, kr)) stackKey (g, kr, partName[p], ((lanes >> p) & 1u) != 0, p >= kLanes + 3);
             hit (kr, hColKey, i, p);
         }
     }

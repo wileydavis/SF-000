@@ -381,6 +381,7 @@ private:
     bool pressed (int act) const;       // an action's key: the hand is on it, or it was just now pressed from somewhere else
     void flatKey (G&, R, juce::Colour fill, float border = 2.0f);
     void window (G&, R, juce::Colour glass);                    // a display's pane
+    void stackKey (G&, R, const char* name, bool lit, bool ownKey);     // a key of a stack chip's row (ownKey: N or M, which start out and must still be seen)
     void tag (G&, R, const juce::String&);                      // a number, light on dark
     float title (G&, float x, float y, const juce::String&, bool inFront = false);     // a panel's name (lit up while the panel is in front)
     void card (G&, R, bool selected);
