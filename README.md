@@ -564,7 +564,7 @@ the open stack's in its order. A stack's row is put in order here, in the librar
 | another order | carry a chip of the row to another place; or press it and then **EARLIER** / **LATER** |
 | a chip out of the stack | press it in the row and then **TAKE OUT**; or carry it off the row. It stays in the bin and in every other stack |
 | a chip of this stack into another too | carry it from the row onto the other stack's pocket: its keys go with it |
-| which parts of the rig it takes there | the keys on its card in the row (1 to 11, R, B, K), and **N**: whether a knob coming to it brings its notes |
+| which parts of the rig it takes there | the keys on its card in the row (1 to 11, R, B, K), **N**: whether a knob coming to it brings its notes, and **M**: whether a knob turned toward it blends each lane's model and sample to its own |
 | the stack on a knob | **ON A KNOB**: a copy of it on the first stack knob that holds nothing. The stack stays in its pocket, and what is changed on the knob afterwards does not change it |
 | the stack again under another name | **COPY**: the copy is the one open |
 | its name | press its pocket, then **RENAME** on the strip; type and Return |
@@ -1248,7 +1248,21 @@ library, on the chips; in the designer such a snapshot's number is drawn on ambe
   - Each card of the column has **a key for every part of the rig**: the eleven lanes, **R**
     the returns, **B** the drum bus, **K** the key. Black: this chip takes that part. An
     empty frame: the part is put out, and stays as it is when the knob comes to this chip.
-    The last key is **N**, its notes: black, the knob coming to this chip brings them (above).
+    Then **N**, its notes: black, the knob coming to this chip brings them (above).
+    The last key is **M**, its models and samples. A turn of a stack knob carries the sound
+    knobs and the effects in the racks from chip to chip; what it cannot carry is a lane's own
+    instrument where the two chips differ in it: another **model**, another **sample**, the
+    rest of its CONFIG, a menu or a switch. **M out** (as every chip starts): the lanes keep
+    the instruments they have, all the way, and at the chip you hear its knobs on the sound
+    you came with. **M black**: as the knob turns toward this chip, each lane it takes whose
+    instrument is another here is **held between the two**: the one that was playing carries
+    on, the chip's arrives beside it, both are played the same notes, and the knob mixes
+    them, as far over as it has come. It is what a recall with GLIDE does, with the knob for
+    the clock. At the chip the lane is the chip's alone and the other is let go; turned back
+    before it gets there, the lane returns to the one it had. Two instruments run on such a
+    lane only while the knob stands between the two. A press on the chip brings its models
+    and samples whether M is lit or not, as a recall does. A snapshot taken while a lane is
+    held between two holds the one that was arriving.
   - **Carry a card** to another place in the column to move it; onto another stack knob's
     place to put a copy there; onto a stack's pocket to put it in that stack too; off the
     column to take it out. Its number takes it out too.

@@ -612,7 +612,7 @@ std::vector<Session::Held> Session::held (int k) const
     if (k < 0 || k >= 16) return h;
     const auto& kn = knobs[(size_t) k];
     for (size_t i = 0; i < kn.snaps.size(); ++i)
-        if (const auto* sn = findSnap (kn.snaps[i])) h.push_back ({ sn, kn.snaps[i], kn.keysAt (i) & kAllLanes, kn.notesAt (i) });
+        if (const auto* sn = findSnap (kn.snaps[i])) h.push_back ({ sn, kn.snaps[i], kn.keysAt (i) & kAllLanes, kn.notesAt (i), kn.blendAt (i) });
     return h;
 }
 
@@ -692,6 +692,9 @@ void Session::sweepKnob (int k, float from, float to)
             const float g0 = whole > 1.0e-6f ? juce::jlimit (0.0f, 1.0f, std::abs (at - behind) / whole) : 1.0f;
             const float g1 = whole > 1.0e-6f ? juce::jlimit (0.0f, 1.0f, std::abs (at + dir * step - behind) / whole) : 1.0f;
             sweepSlots (h[(size_t) next], f, g0, g1);
+            // and the lanes' own instruments, toward one whose M is lit (or back from one, to where the knob came from)
+            const int bi = next - (int) dir;
+            sweepInstruments (h[(size_t) next], bi >= 0 && bi < n ? h[(size_t) bi].id : 0, g1, step >= span);
         }
         at += dir * step;
         knobs[(size_t) k].picked = step >= span ? h[(size_t) next].id : 0;
@@ -701,6 +704,93 @@ void Session::sweepKnob (int k, float from, float to)
     }
     stacksLeft (k);
     baseId = 0;
+}
+
+static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState& b);
+static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, Engine::SetupState st);
+
+bool Session::instrumentDiffers (const Snapshot& s, int l) const
+{
+    if (s.hasFiles && s.laneFiles[(size_t) l].isNotEmpty() && s.laneFiles[(size_t) l] != engine.laneFile (l)) return true;
+    if (s.hasSetup && setupDiffers (engine.getSetup ({ 0, l, 0 }), withMotion (engine, { 0, l, 0 }, s.setup[(size_t) l]))) return true;
+    for (int k = 0; k < kLaneKnobs; ++k)
+    {
+        const int i = cx::lane (l, k);
+        const auto& c = engine.control (i);
+        const float v = i < (int) s.values.size() ? s.values[(size_t) i] : -1.0f;
+        // (a menu or a switch: what the turn itself does not carry)
+        if (v >= 0.0f && c.used && ! c.glides && ! c.morph && std::abs (v - engine.target (i)) > 1.0e-4f) return true;
+    }
+    return false;
+}
+
+void Session::bringInstrument (const Snapshot& s, int l, std::vector<std::pair<int, float>>* was)
+{
+    for (int k = 0; k < kLaneKnobs; ++k)
+    {
+        const int i = cx::lane (l, k);
+        const auto& c = engine.control (i);
+        const float v = i < (int) s.values.size() ? s.values[(size_t) i] : -1.0f;
+        if (v < 0.0f || ! c.used || c.glides || c.morph || std::abs (v - engine.target (i)) <= 1.0e-4f) continue;
+        if (was != nullptr) was->push_back ({ i, engine.target (i) });
+        base[(size_t) i] = v;
+        engine.set (i, v, 0.0);
+    }
+    if (s.hasSetup) engine.applySetup ({ 0, l, 0 }, withMotion (engine, { 0, l, 0 }, s.setup[(size_t) l]));
+    if (s.hasFiles && s.laneFiles[(size_t) l].isNotEmpty() && s.laneFiles[(size_t) l] != engine.laneFile (l))
+        engine.loadFile (l, juce::File (s.laneFiles[(size_t) l]));
+}
+
+// A stack knob gone part of the way toward a snapshot (g1 of the way from the one behind it; arrived: at its place). Each
+// lane that snapshot takes:
+//   - held between this pair already: as much of the one that arrived as the knob has come (going on), or as much less
+//     as it has gone back; at either end the lane settles on that one and the other is let go;
+//   - not held, the snapshot's M lit, and its instrument another than the lane has: the lane is held between the one
+//     playing and a copy made into the snapshot's, from here on.
+// With M out nothing is done: the lane keeps the instrument it has, as it always did.
+void Session::sweepInstruments (const Held& toward, juce::int64 behind, float g1, bool arrived)
+{
+    const auto sc = scopeOf (toward.lanes);
+    for (int l = 0; l < kLanes; ++l)
+    {
+        auto& lh = laneHold[(size_t) l];
+        if (! engine.holding (l)) lh = {};
+        if (! sc.lane[(size_t) l]) continue;
+        if (engine.holdEnding (l)) continue;                    // (settling: a fiftieth of a second, and it is one instrument again)
+        bool on = false;                                        // going on toward the one that arrived (false: back to the one that was playing)
+        if (engine.holding (l))
+        {
+            if (lh.ahead == toward.id) on = true;
+            else if (lh.behind != toward.id || toward.id == 0) { engine.endHold (l, true); lh = {}; continue; }     // (the stack has changed under it: what arrived stays)
+        }
+        else
+        {
+            if (! toward.blend || toward.s == nullptr || g1 <= 0.0f || ! instrumentDiffers (*toward.s, l)) continue;
+            LaneHold made; made.behind = behind; made.ahead = toward.id;
+            const bool held = engine.holdVoice (l);
+            bringInstrument (*toward.s, l, &made.was);
+            if (! held) continue;                               // (no audio running: the lane simply has the snapshot's now)
+            lh = made; on = true;
+        }
+        engine.blendVoice (l, on ? g1 : 1.0f - g1);
+        if (! arrived) continue;
+        if (! on)
+        {
+            // back where it came from: its menus and switches as they stood, and the lane to the one that was playing
+            for (auto& w : lh.was) { base[(size_t) w.first] = w.second; engine.set (w.first, w.second, 0.0); }
+        }
+        engine.endHold (l, on);
+        lh = {};
+    }
+}
+
+void Session::settleHolds()
+{
+    for (int l = 0; l < kLanes; ++l)
+    {
+        if (engine.holding (l)) engine.endHold (l, true);
+        laneHold[(size_t) l] = {};
+    }
 }
 
 void Session::bringNotes (const Snapshot& s, const Scope& sc)
@@ -2266,6 +2356,7 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
     // 1. the lanes whose instrument is to change that way: the one playing leaves as it stands, and
     //    a copy of it takes its place to be changed by what follows
     //    (with the audio not yet started there is nothing playing to leave: the change is simply made)
+    settleHolds();                  // (a lane a stack knob was holding between two instruments: the one that arrived is its instrument)
     if (engine.isPrepared()) for (int l = 0; l < kLanes; ++l) if (laneJumps (s, l)) engine.forkVoice (l, glide);
     // 2. the inserts: an effect that changes comes whole (the effect, its CONFIG, the files it
     //    held, its knobs); one that stays is left running, and its knobs travel
@@ -4066,8 +4157,8 @@ bool Session::rackDone (const RackStep& step)
             if (at >= 0 && st.kind != "song")
                 for (size_t i = 0; i < st.snaps.size(); ++i)
                     for (size_t j = 0; j < stacks[(size_t) at].snaps.size(); ++j)
-                        if (stacks[(size_t) at].snaps[j] == st.snaps[i] && (stacks[(size_t) at].keysAt (j) & kNotesKey) != 0)
-                        { st.lanes.resize (st.snaps.size(), kAllLanes); st.lanes[i] |= kNotesKey; break; }
+                        if (stacks[(size_t) at].snaps[j] == st.snaps[i] && (stacks[(size_t) at].keysAt (j) & (kNotesKey | kBlendKey)) != 0)
+                        { st.lanes.resize (st.snaps.size(), kAllLanes); st.lanes[i] |= stacks[(size_t) at].keysAt (j) & (kNotesKey | kBlendKey); break; }
             auto* keep = new juce::DynamicObject();
             if (at >= 0) if (auto* was = stacks[(size_t) at].kept.getDynamicObject()) for (auto& q : was->getProperties()) keep->setProperty (q.name, q.value);
             if (st.kind == "song") keep->setProperty ("parts", parts);
@@ -4354,11 +4445,11 @@ juce::String Session::takeTray (const var& tray, const std::array<KnobPlan, 16>*
                 if (learning == k) learnDrop();
                 const auto on = knob.picked;
                 // (the web library says nothing of a snapshot's N: what was lit here stays lit, on the snapshots still on the knob)
-                std::vector<juce::int64> lit;
-                for (size_t i = 0; i < knob.snaps.size(); ++i) if (knob.notesAt (i)) lit.push_back (knob.snaps[i]);
+std::vector<std::pair<juce::int64, juce::uint32>> lit;       // (and nothing of its M: the same)
+                for (size_t i = 0; i < knob.snaps.size(); ++i) if (const auto own = knob.keysAt (i) & (kNotesKey | kBlendKey); own != 0) lit.push_back ({ knob.snaps[i], own });
                 knob.snaps = m.sn; knob.lanes = m.lanes; knob.picked = 0;
                 for (size_t i = 0; i < knob.snaps.size(); ++i)
-                    if (std::find (lit.begin(), lit.end(), knob.snaps[i]) != lit.end()) knob.setLanes (i, (knob.keysAt (i) & kAllLanes) | kNotesKey);
+                    for (auto& was : lit) if (was.first == knob.snaps[i]) { knob.setLanes (i, (knob.keysAt (i) & kAllLanes) | was.second); break; }
                 knob.links = m.ln; knob.linksKept = m.lnKept;
                 // (a stack knob that stood on a snapshot the new stack holds too goes to that one's place in it; else it stays where it is)
                 if (m.stack) { for (auto id : m.sn) if (id == on) knob.picked = on; }
@@ -4850,6 +4941,7 @@ std::vector<float> Session::knobsBroughtOver (const std::array<MacroKnob, 16>& a
 // The session made what a file's contents say (see stateVar).
 void Session::takeState (const var& root)
 {
+    settleHolds();                  // (a lane held between two instruments by a knob: the file says which one it has)
     // What this build does not know is carried, not dropped: the next save writes it back.
     static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();

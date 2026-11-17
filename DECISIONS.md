@@ -4543,8 +4543,60 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      in what is made from it, as the stack knob takes it. A scan made while it was held says so
      and asks to be made again. What 691 took for the cause was not it: 695 was.
 
+## A stack chip's M key: its models and samples blend with the turn (Nov 17, 11:04): seventy-eighth build
+
+697. **You**, 10:56: "morph sounds better. However, how come when at morph 100 it doesn't sound like
+     the original chip being morphed to?" Because a stack knob's turn carried the sound knobs and
+     the racks' effects and nothing else: the notes, the key and each lane's own instrument (its
+     model, its sample, its CONFIG) stayed the starting chip's. Only a recall brought those.
+698. **You**, 10:57: "any sample and any effects shoud definitely be a part of the morph. effects
+     and samples are the foundation of the sounds design". Asked how a lane's sample should
+     change on the knob (switch at half way, or blend through the turn): "keep as it is currenlty
+     but with the option to blend just so i can see if that sounds good?", and "which they
+     currently do when morphin on the actual instrument" "IO think". They did not: said so.
+     11:03: "what happens when a chip is recalled witha glide applied?" (the sound knobs travel,
+     and what cannot travel is crossed over: the instrument that was playing fades out while the
+     new one fades in beside it, over the GLIDE time).
+699. **You**, 11:04: "So what I'd do is, like the note key, allow a snapshot to model/sample blend
+     if toggeled so it sounds like a glided recall. and when off, it keeps the model/sample the
+     same as the from". So: **M**, a key after N on every chip of a stack (the knob's column, a
+     stack's row, a kept knob). Out, as every chip starts: nothing changes, the lanes keep their
+     instruments. Lit: turned toward that chip, each lane it takes whose instrument is another
+     there is held between the two, both sounding and played the same notes, mixed by how far
+     the knob has come; at the chip it is the chip's alone; turned back first, it returns.
+     *Mine, the particulars:*
+     - **In the engine** a lane can be held between two instruments (`holdVoice`, `blendVoice`,
+       `endHold`): the machinery a recall's cross-over uses, with a share the session sets in
+       place of the clock. However the knob jumps, the whole way takes a fiftieth of a second at
+       least. The mix is the recall's own (straight, one down as the other comes up).
+     - **What counts as another instrument:** another sample, any difference in CONFIG (the model
+       among it), a menu or a switch among the lane's knobs. A lane the same in both is never
+       held: two instruments run only where they differ and only while the knob stands between.
+     - **Back to where it came from** is by the chip the knob left, whatever that chip's own M
+       says: the hold is undone the way it was made, and the menus and switches put back.
+     - **A recall, a session opened, the audio starting again** while a lane is held: it settles
+       on the one that was arriving.
+     - **A snapshot taken while a lane is held** holds the one that was arriving (a snapshot has
+       one instrument to a lane).
+     - **The web library is told nothing of M**, as it is told nothing of N: lit here, it stays
+       lit here on the chips still on the knob.
+     - **The letter M** (models): the row is 1 to 11, R, B, K, N, M, sixteen keys in the width
+       the fifteen had.
+700. **The analysis.** A scan has MODELS AND SAMPLES: STAY or BLEND (the M keys out, or lit). A
+     point of a blended morph is not made a chip, nor a blended morph a stack: it is two
+     instruments on a lane, and what plays it is the two chips on a stack knob with M lit, at
+     that place. `--render` takes `"blend": true` on a point and says `render 2` first, so that
+     the page can tell an SF-000 built before this and say so. On your SNAP 050 to SNAP 019 (the
+     kick another model and another sample): with STAY the kick at 100% measures 11.9 from 019's
+     own and with BLEND 2.2; it is 019's model and file there.
+
 ## Not verified
 
+- **The M key by ear, and on the Mac (699).** Checked here on the engine's own figures (which
+  lanes are held, how much of each, what each lane is at the chip, that nothing is left behind)
+  and on one of your pairs by measurement. Whether a blend sounds good on your sets, whether
+  two kicks together smear, and what two instruments on several lanes cost the M4 while the
+  knob stands between, are yours to hear and see.
 - **That the missing phrase is the whole of what you heard (695, 691).** Here the phrase is an mp3
   this build cannot read, so the voice lane has never sounded as yours in a render here; that
   the Mac now finds `handsup3.mp3` in SF-000's folder and plays it is yours to hear. If a scan

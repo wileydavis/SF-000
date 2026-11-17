@@ -361,7 +361,7 @@ def serve(root: Path, port: int, analysis: "Analysis | None" = None, morphs: "Mo
                 elif morphs is None:
                     answer = {"error": "not here"}
                 elif self.path == "/scan":
-                    answer = morphs.scan(str(body.get("a", "")), str(body.get("b", "")), str(body.get("notes", "a")))
+                    answer = morphs.scan(str(body.get("a", "")), str(body.get("b", "")), str(body.get("notes", "a")), bool(body.get("blend")))
                 elif self.path == "/reshape":
                     answer = morphs.reshape(str(body.get("scan", "")), str(body.get("kind", "even")), int(body.get("count", 3) or 3), list(body.get("lanes") or []))
                 elif self.path == "/makepoint":

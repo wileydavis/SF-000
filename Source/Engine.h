@@ -278,6 +278,17 @@ public:
     // CONFIG's settings, a menu, a switch. The one playing carries on exactly as it is and fades out
     // over fadeBeats; a copy of it takes its place, to be changed. Knobs that travel move both.
     void forkVoice (int lane, double fadeBeats);
+    // A lane held between two instruments (a stack knob standing between two snapshots whose lane is another model or
+    // another sample): the one playing carries on as it is, a copy takes its place to be changed, as forkVoice; but
+    // nothing fades by the clock. Both sound, played the same notes, mixed as blendVoice says (how much of the one
+    // that arrived, 0 to 1), for as long as the knob stands between them. endHold settles on one of the two: the other
+    // goes to nothing over a fiftieth of a second and is let go. holdVoice false: no audio is running, there is nothing
+    // to hold (what follows simply changes the lane). A recall's forkVoice on a held lane ends the hold at once.
+    bool holdVoice (int lane);
+    void blendVoice (int lane, float share);
+    void endHold (int lane, bool onTheOneThatArrived);
+    bool holding (int lane) const               { return heldLane[(size_t) lane]; }
+    bool holdEnding (int lane) const            { return heldLane[(size_t) lane] && this->lane[(size_t) lane].holdEnd.load() != 0; }
     // Message thread, now and then: lets go of the effects and instruments that have finished leaving.
     void tidy()                                 { collectRetired (false); }
     // How far a lane's fades have got: 1 when nothing is leaving. stage: 0 to kSlots - 1 an insert, kSlots the instrument.
@@ -490,6 +501,13 @@ private:
         double fadeStart[kStages] = {}, fadeLen[kStages] = {};
         float fadeG[kStages];
         bool fading[kStages] = {};
+        // the instrument held between two by a knob (holdVoice). holdG: how much of the one that arrived (below 0: no hold).
+        // holdEnd: 1 settling on the one that arrived, 2 on the one that was playing. holdBack: the audio thread says the
+        // one that arrived is at nothing (the fade's number), and the message thread then gives the lane back.
+        std::atomic<float> holdG { -1.0f };
+        std::atomic<int> holdEnd { 0 };
+        std::atomic<juce::uint32> holdBack { 0 };
+        bool holdingNow = false;                // audio thread
         float slotG[kSlots];                    // an insert's MUTE, as it stood last block
         Voice* voiceSeen = nullptr;
         LanePlayer player;
@@ -558,6 +576,9 @@ private:
     std::vector<std::unique_ptr<SFProcessor>> master;
     std::vector<std::pair<InsertInst*, uint64_t>> retired;
     std::vector<std::pair<Voice*, uint64_t>> retiredVoices;
+    std::array<bool, kLanes> heldLane {};               // message thread: the lanes held between two instruments
+    std::array<juce::String, kLanes> heldFile;          // the file each was playing before the one that arrived was given another
+    void dropHold (int lane);
     bool fadeStep (Lane&, int stage, double beats, float& g0, float& g1);
     juce::MidiBuffer ghostMidi;
     juce::SpinLock patLock;

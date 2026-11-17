@@ -9,6 +9,8 @@
 
 namespace sf0
 {
+// What the M key of a stack chip says (on the open stack's row and on a knob's column).
+static const char* const kBlendKeySays = "LIT: AS A KNOB TURNS TOWARD THIS CHIP, EACH LANE IT TAKES BLENDS FROM THE INSTRUMENT IT HAS TO THIS CHIP'S: ITS MODEL, ITS SAMPLE, THE REST OF ITS CONFIG. BOTH SOUND, MIXED BY HOW FAR THE KNOB HAS COME, AS A RECALL WITH GLIDE CROSSES THEM OVER; AT THE CHIP IT IS THE CHIP'S ALONE, AND TURNED BACK IT RETURNS. OUT: THE LANES KEEP THE MODELS AND SAMPLES THEY HAVE, AND THE SOUND KNOBS ALONE FOLLOW THE TURN. A PRESS ON THE CHIP BRINGS THEM EITHER WAY.";
 using juce::Colour;
 using juce::String;
 namespace col
@@ -778,8 +780,9 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             body = "PRESSED: IN HAND, AND HEARD IN THE HEADPHONES WITH THE PARTS IT TAKES HERE. CARRIED ALONG THE ROW: MOVED. OFF THE ROW: OUT OF THIS STACK (IT STAYS IN THE BIN). ONTO ANOTHER POCKET: INTO THAT STACK TOO. TWICE, QUICKLY: TO THE SET.";
             break;
         case hRowKey:
-            t.title = h.b < kLanes ? "LANE " + String (h.b + 1) : h.b == kLanes ? String ("R: THE RETURNS") : h.b == kLanes + 1 ? String ("B: THE DRUM BUS") : h.b == kLanes + 2 ? String ("K: THE KEY") : String ("N: ITS NOTES");
-            body = h.b == kLanes + 3 ? "LIT: A KNOB COMING TO THIS CHIP BRINGS ITS NOTES. OUT: THE SOUND ALONE, AND EVERY SEQUENCER STAYS AS IT IS."
+            t.title = h.b < kLanes ? "LANE " + String (h.b + 1) : h.b == kLanes ? String ("R: THE RETURNS") : h.b == kLanes + 1 ? String ("B: THE DRUM BUS") : h.b == kLanes + 2 ? String ("K: THE KEY") : h.b == kLanes + 3 ? String ("N: ITS NOTES") : String ("M: ITS MODELS AND SAMPLES");
+            body = h.b == kLanes + 4 ? kBlendKeySays
+                 : h.b == kLanes + 3 ? "LIT: A KNOB COMING TO THIS CHIP BRINGS ITS NOTES. OUT: THE SOUND ALONE, AND EVERY SEQUENCER STAYS AS IT IS."
                                      : "LIT: THIS CHIP TAKES THAT PART OF THE RIG IN THIS STACK. OUT: THE PART STAYS AS IT IS. HEARD AT ONCE, IF IT IS THE ONE IN THE HEADPHONES.";
             break;
         case hBenchChip:
@@ -820,8 +823,9 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             body = "KEEPS THE CHOSEN KNOB WITH THE KNOBS KEPT, UNDER ITS NAME: A COPY, AS IT IS NOW. A MACRO KNOB WITH EVERY KNOB IT IS TIED TO AND HOW FAR IT TAKES EACH; A STACK KNOB WITH ITS SNAPSHOTS AND THEIR PARTS. KEPT AGAIN UNDER THE SAME NAME, IT IS THE SAME ONE AS IT IS NOW.";
             break;
         case hColKey:
-            t.title = h.b == kLanes + 3 ? "N: ITS NOTES" : "A PART OF THE RIG";
-            body = h.b == kLanes + 3 ? "BLACK: WHEN THE KNOB COMES TO THIS SNAPSHOT (OR IS PRESSED ON IT), EACH LANE IT TAKES IS GIVEN WHAT THAT LANE WAS PLAYING IN THE SNAPSHOT, ON THE NEXT BAR LINE: AS A PART OF THE ARRANGEMENT WITH N LIT. AN EMPTY FRAME: THE NOTES STAY AS THEY ARE, AND ONLY THE SOUND FOLLOWS THE KNOB."
+            t.title = h.b == kLanes + 4 ? "M: ITS MODELS AND SAMPLES" : h.b == kLanes + 3 ? "N: ITS NOTES" : "A PART OF THE RIG";
+            body = h.b == kLanes + 4 ? kBlendKeySays
+                 : h.b == kLanes + 3 ? "BLACK: WHEN THE KNOB COMES TO THIS SNAPSHOT (OR IS PRESSED ON IT), EACH LANE IT TAKES IS GIVEN WHAT THAT LANE WAS PLAYING IN THE SNAPSHOT, ON THE NEXT BAR LINE: AS A PART OF THE ARRANGEMENT WITH N LIT. AN EMPTY FRAME: THE NOTES STAY AS THEY ARE, AND ONLY THE SOUND FOLLOWS THE KNOB."
                                      : "BLACK: THIS SNAPSHOT TAKES THIS PART OF THE RIG WHEN THE KNOB COMES TO IT, IS PRESSED ON IT, OR PLAYS IT IN THE HEADPHONES. AN EMPTY FRAME: THE PART STAYS AS IT IS. 1 TO 11 ARE THE LANES, R THE RETURNS, B THE DRUM BUS, K THE KEY.";
             break;
         case hPageSel:
@@ -2442,12 +2446,14 @@ void Screen::rackTidy()
     openNameRect = {};
 }
 
+// A stack chip's row of keys: the eleven lanes, R, B, K, then N (its notes) and M (its models and samples), in the card's width.
+static constexpr float kKeyPitch = 16.3f, kKeyWide = 15.4f;
 // A chip of the open stack, in its row: its number, its name (green while it is in the headphones), and a key for every
 // part of the rig it takes there, N last. Pressed, it is the chip in hand and is heard with those parts; carried along
 // the row it is moved, off the row it is taken out of this stack.
 void Screen::drawRowCard (G& g, R r, int i, juce::int64 id, juce::uint32 lanes, bool can)
 {
-    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N" };
+    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N", "M" };
     const auto* sn = ses.findSnap (id);
     hit (r, hRowCard, i, 0);
     nameAt (1, id, -1, {}, chipNameRect (r, i + 1));
@@ -2463,9 +2469,9 @@ void Screen::drawRowCard (G& g, R r, int i, juce::int64 id, juce::uint32 lanes, 
         while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > r.getRight() - 6) name = name.dropLastCharacters (1);
         plate (g, x0 + wTag, y0, name, fLegend, 8, heard ? col::green : col::white, heard ? col::lit : col::black, 24);
     }
-    for (int p = 0; p < kLanes + 4; ++p)
+    for (int p = 0; p < kLanes + 5; ++p)
     {
-        const R kr (x0 + (float) p * 17.4f, y0 + 30, 16.0f, 24);
+        const R kr (x0 + (float) p * kKeyPitch, y0 + 30, kKeyWide, 24);
         const bool takes = ((lanes >> p) & 1u) != 0;
         if (vis (g, kr))
         {
@@ -2553,7 +2559,7 @@ float Screen::drawStackRow (G& g, float top)
 // arrangement): its card, with the parts it takes there lit, or a line about it. Pressed, it is heard with those parts.
 void Screen::drawSeenCard (G& g, R r, juce::int64 id, int num, juce::uint32 keys, const String& note)
 {
-    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N" };
+    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N", "M" };
     const auto* sn = ses.findSnap (id);
     const int at = sn != nullptr ? ses.indexOf (id) : -1;
     if (at >= 0) { hit (r, hBenchChip, at, (int) (keys & Session::kAllKeys)); nameAt (1, id, -1, {}, chipNameRect (r, num)); }
@@ -2568,9 +2574,9 @@ void Screen::drawSeenCard (G& g, R r, juce::int64 id, int num, juce::uint32 keys
     while (name.length() > 3 && x0 + wTag + std::ceil (tw (fLegend, name)) + 16 > r.getRight() - 6) name = name.dropLastCharacters (1);
     plate (g, x0 + wTag, y0, name, fLegend, 8, heard ? col::green : col::white, heard ? col::lit : col::black, 24);
     if (note.isNotEmpty()) { text (g, note, R (x0, y0 + 30, r.getWidth() - 12, 24), fLbl, col::black, juce::Justification::centredLeft); return; }
-    for (int p = 0; p < kLanes + 4; ++p)
+    for (int p = 0; p < kLanes + 5; ++p)
     {
-        const R kr (x0 + (float) p * 17.4f, y0 + 30, 16.0f, 24);
+        const R kr (x0 + (float) p * kKeyPitch, y0 + 30, kKeyWide, 24);
         if (((keys >> p) & 1u) != 0) { window (g, kr, col::black); text (g, partName[p], kr, fNote, col::lit); }
         else { g.setColour (tone (col::sea)); g.drawRect (kr.reduced (0.5f), 1.0f); textRaw (g, partName[p], kr, fNote, tone (col::black).withAlpha (0.45f)); }
     }
@@ -3633,7 +3639,7 @@ void Screen::drawColumn (G& g)
         g.setColour (tone (col::black)); g.setFont (fLbl);
         g.drawFittedText ("NO CHIPS ON IT. CARRY ONE HERE FROM THE RACK AT THE RIGHT, OR PRESS A CHIP THERE AND THEN ADD, TO BEGIN ITS PILE.", juce::Rectangle<int> ((int) x + 6, (int) kColY + 6, 260, 56), juce::Justification::topLeft, 3, 1.0f);
     }
-    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N" };
+    static const char* const partName[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "R", "B", "K", "N", "M" };
     for (int row = 0; row < rows; ++row)
     {
         const int i = colScroll + row;
@@ -3659,9 +3665,9 @@ void Screen::drawColumn (G& g)
         hit (R (x0, y0, wTag, 24), hColOut, i, 0);
         // its keys: black with a lit figure while this snapshot takes the part; an empty frame when the part is put out.
         // The last is N, its notes (as on a part of the arrangement): lit, the knob coming to this snapshot brings them.
-        for (int p = 0; p < kLanes + 4; ++p)
+        for (int p = 0; p < kLanes + 5; ++p)
         {
-            const R kr (x0 + (float) p * 17.4f, y0 + 30, 16.0f, 24);
+            const R kr (x0 + (float) p * kKeyPitch, y0 + 30, kKeyWide, 24);
             const bool takes = ((lanes >> p) & 1u) != 0;
             if (vis (g, kr))
             {

@@ -37,6 +37,9 @@ from .relate import GROUPS, energy, matrix
 
 STEPS = 11          # points along a morph, both ends among them
 KEYS = ["OFF", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+# A point of a blended morph has two instruments sounding on a lane, and a snapshot holds one: it is a place of the knob.
+NOT_A_CHIP = ("A point between the two with their models and samples blended is two instruments on a lane, and a chip holds one. "
+              "It is played as it is heard here by the two chips on a stack knob, the M of the one it goes toward lit, the knob at this place.")
 
 
 def key_of(snap: dict) -> str:
@@ -253,9 +256,15 @@ class Renderer:
         env["HOME"] = str(scratch)                     # (nothing of the instrument's own settings is read or written)
         env["XDG_CONFIG_HOME"] = str(scratch / ".config")
         self.child = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
-        done, failed = 0, []
+        done, failed, knows = 0, [], 1
+        needs = 2 if any(p.get("blend") for p in points) else 1
         try:
             for line in self.child.stdout:
+                if line.startswith("render "):
+                    knows = int(line.split()[1]) if line.split()[1].isdigit() else 1
+                elif line.startswith("done ") and knows < needs:
+                    self.child.terminate()
+                    raise Trouble("The SF-000 built in this folder is older than this page: it does not know how to blend models and samples. Build it (./build.sh) and scan again.")
                 if line.startswith("done "):
                     done += 1
                     if progress:
@@ -515,21 +524,25 @@ class Morphs:
         return not self.a.anyway and instrument_running()
 
     # ---- a scan
-    def scan(self, a: str, b: str, notes: str = "a") -> dict:
+    def scan(self, a: str, b: str, notes: str = "a", blend: bool = False) -> dict:
+        """blend: the two snapshots' M keys lit on the stack knob, so that each lane's model and sample blend from the one
+        to the other with the turn (both sounding between). Out: the lanes keep the models and samples of the snapshot
+        the knob set out from, and the sound knobs alone go over."""
         if a == b:
             raise Trouble("two different snapshots")
         self._guard()
         notes = "b" if notes == "b" else "a"
-        sid = f"{self.a.store.safe(a)[-10:]}_{self.a.store.safe(b)[-10:]}_{notes}"
-        scan = {"id": sid, "a": a, "b": b, "notes": notes, "status": "rendering", "done": 0, "of": STEPS + 1, "started": int(time.time() * 1000), "shapes": {}}
+        blend = bool(blend)
+        sid = f"{self.a.store.safe(a)[-10:]}_{self.a.store.safe(b)[-10:]}_{notes}" + ("_m" if blend else "")
+        scan = {"id": sid, "a": a, "b": b, "notes": notes, "blend": blend, "status": "rendering", "done": 0, "of": STEPS + 1, "started": int(time.time() * 1000), "shapes": {}}
         self._put(scan)
 
         def work():
             sa, sb = self._snap(a), self._snap(b)
             scan["keys"] = [key_of(sa), key_of(sb)]
             fs = [round(i / (STEPS - 1), 4) for i in range(STEPS)]
-            points = [{"key": f"p{i:02d}", "morph": [0, 1, f], "notes": notes} for i, f in enumerate(fs)]
-            points.append({"key": "twin", "morph": [0, 1, 0.0], "notes": notes})        # (the first again: how alike two renders of the same are)
+            points = [{"key": f"p{i:02d}", "morph": [0, 1, f], "notes": notes, "blend": blend} for i, f in enumerate(fs)]
+            points.append({"key": "twin", "morph": [0, 1, 0.0], "notes": notes, "blend": blend})        # (the first again: how alike two renders of the same are)
             wd = self.root / sid
 
             def progress(done, of):
@@ -568,6 +581,8 @@ class Morphs:
         scan = self.get(sid)
         if not scan or scan.get("status") != "done":
             raise Trouble("scan it first")
+        if scan.get("blend"):
+            raise Trouble(NOT_A_CHIP)
         self._guard()
         a, b, notes = scan["a"], scan["b"], scan["notes"]
         sa, sb = self._snap(a), self._snap(b)
@@ -640,6 +655,8 @@ class Morphs:
         f = wd / f"{key}.snapshot.json"
         if not scan or not f.exists():
             raise Trouble("that point is not here")
+        if scan.get("blend") and key not in ("p00", f"p{STEPS - 1:02d}"):
+            raise Trouble(NOT_A_CHIP)
         p = next((p for p in scan.get("points", []) if p["key"] == key), None)
         how = {"a": scan["a"], "b": scan["b"], "f": p["f"] if p else None, "notes": scan["notes"]}
         chip = self._send(json.loads(f.read_text()), name, how, wd / f"{key}.ogg")
@@ -651,6 +668,8 @@ class Morphs:
         shape = (scan or {}).get("shapes", {}).get(shape_id)
         if not shape or shape.get("status") != "done":
             raise Trouble("render it first")
+        if scan.get("blend"):
+            raise Trouble(NOT_A_CHIP)
         wd = self.root / sid
         name = (name.strip().upper() or "MORPH")[:20]
         uids = []

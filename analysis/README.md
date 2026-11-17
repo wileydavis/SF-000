@@ -81,6 +81,16 @@ play a stand-in for its missing file is **left out of every point**, with no not
 phrase does not fall silent, it sings its notes with a choir of its own, which is in neither snapshot and the
 same in every morph. Another lane that names a missing file is named too, since it may not sound as you know it.
 
+**MODELS AND SAMPLES: STAY or BLEND**, beside SCAN, is the stack chips' **M** key (SF-000's README, the
+column of a stack knob). STAY: every point is on the models and samples of the snapshot the knob set out
+from, as a stack knob plays with M out, so the far end is the other snapshot's knobs on this one's
+sounds. BLEND: each lane whose model or sample is another in the other snapshot is held between the two,
+both sounding, mixed by where the knob is, and the far end is the other snapshot's whole sound (on this
+one's notes and key). A point of a blended morph is a place of the knob and not a chip (two instruments
+on a lane; a chip holds one), so nothing is made from it here: to play it, put the two chips on a stack
+knob, light the M of the one the knob goes toward, and turn to that place. It needs SF-000 of the
+seventy-eighth build or later built in this folder (`./build.sh`); with an older one the page says so.
+
 **TUNE goes over with the rest of the sound**, as the stack knob takes it: a lane tuned differently in the two
 snapshots bends from one tuning to the other across the turn, and a point part of the way holds the bend where
 it stood. (For a morning these scans held TUNE still with the notes; a scan made then says so and asks to be

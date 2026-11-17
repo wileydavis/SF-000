@@ -1427,12 +1427,100 @@ static void stackNotesTest (int& bad)
     }
 }
 
+static void stackBlendTest (int& bad)
+{
+    using namespace sf0;
+    // A stack knob and its snapshots' M keys. Turned toward a snapshot whose M is lit, a lane whose instrument is another
+    // there (here the kick's model) is held between the one playing and the snapshot's, both sounding, as far over as the
+    // knob has come; at the snapshot the lane is the snapshot's alone, and nothing is left behind. Turned back before it
+    // gets there, the lane goes back to the one it had. M out: the lane keeps its instrument and the sound knobs alone
+    // follow, as before. A recall while a lane is held settles it. M is kept with the knob and with the file.
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    float peak = 0.0f; bool finite = true;
+    auto run = [&] (int blocks)
+    {
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            for (int ch = 0; ch < 2; ++ch) for (int n = 0; n < 256; ++n) { const float v = buf.getSample (ch, n); finite = finite && std::isfinite (v); peak = std::max (peak, std::abs (v)); }
+        }
+        e.tidy();
+    };
+    const int kick = 0, k = 4, st = kSlots;
+    auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-3f; };
+    auto model = [&] { for (auto& kv : e.getSetup ({ 0, kick, 0 })) if (kv.first == "model") return kv.second; return -1.0f; };
+    int knob = -1;
+    for (int q = 0; q < kLaneKnobs && knob < 0; ++q) if (const auto& c = e.control (cx::lane (kick, q)); c.used && c.morph && c.glides) knob = cx::lane (kick, q);
+    ses.userSet (cx::kGlide, 0.0f);
+    e.setRunning (true);
+    const float mA = model();
+    ses.userSet (knob, 0.2f); const auto a = ses.take();
+    e.setSetup ({ 0, kick, 0 }, "model", mA > 0.5f ? 0.0f : 1.0f);
+    const float mB = model();
+    ses.userSet (knob, 0.9f); const auto b = ses.take();
+    ses.recall (a); run (16);
+    ses.knobClear (k); ses.stackAdd (k, a); ses.stackAdd (k, b);
+    const bool setUp = knob >= 0 && mA >= 0.0f && ! near (mA, mB) && near (model(), mA) && ! ses.knobs[(size_t) k].blendAt (0) && ! ses.knobs[(size_t) k].blendAt (1);
+    // M out: the knob all the way, and the model is still the first's
+    ses.turnSnapKnob (k, 1.0f); run (16);
+    const bool mOut = near (model(), mA) && near (e.target (knob), 0.9f) && ! e.holding (kick) && e.leaving() == 0;
+    ses.turnSnapKnob (k, 0.0f); run (16);
+    // M lit on the second: half way, the lane is held between the two, half of each; at the snapshot it is the snapshot's
+    ses.stackLanes (k, 1, Session::kAllLanes | Session::kBlendKey);
+    ses.turnSnapKnob (k, 0.5f); run (48);
+    const bool half = e.holding (kick) && e.leaving() == 1 && near (model(), mB) && std::abs (e.fadeShown (kick, st) - 0.5f) < 0.01f && near (e.target (knob), 0.55f);
+    ses.turnSnapKnob (k, 0.75f); run (48);
+    const bool further = e.holding (kick) && std::abs (e.fadeShown (kick, st) - 0.75f) < 0.01f;
+    ses.turnSnapKnob (k, 1.0f); run (48);
+    bool isB = near (model(), mB) && ! e.holding (kick) && e.leaving() == 0;
+    if (const auto* sb = ses.findSnap (b)) for (int q = 0; q < kLaneKnobs; ++q) { const int i = cx::lane (kick, q); if (e.control (i).used && sb->values[(size_t) i] >= 0.0f) isB = isB && near (e.target (i), sb->values[(size_t) i]); }
+    // back toward the first, whose M is out: the lane keeps the second's model all the way
+    ses.turnSnapKnob (k, 0.3f); run (16);
+    const bool keeps = near (model(), mB) && ! e.holding (kick);
+    ses.turnSnapKnob (k, 0.0f); run (16);
+    // M lit on the first too: toward it the lane is held again; turned back before it gets there, the lane is the second's again
+    ses.stackLanes (k, 0, Session::kAllLanes | Session::kBlendKey);
+    ses.turnSnapKnob (k, 1.0f); run (16);
+    ses.turnSnapKnob (k, 0.5f); run (48);
+    const bool toFirst = e.holding (kick) && near (model(), mA) && std::abs (e.fadeShown (kick, st) - 0.5f) < 0.01f;
+    ses.turnSnapKnob (k, 0.8f); run (48);
+    const bool less = e.holding (kick) && std::abs (e.fadeShown (kick, st) - 0.2f) < 0.01f;
+    ses.turnSnapKnob (k, 1.0f); run (48);
+    const bool back = ! e.holding (kick) && e.leaving() == 0 && near (model(), mB);
+    // all the way down: the first's; and a recall while a lane is held settles it
+    ses.turnSnapKnob (k, 0.0f); run (48);
+    const bool down = ! e.holding (kick) && e.leaving() == 0 && near (model(), mA) && near (e.target (knob), 0.2f);
+    ses.turnSnapKnob (k, 0.4f); run (8);
+    const bool heldAgain = e.holding (kick);
+    ses.recall (b); run (48);
+    const bool settled = heldAgain && ! e.holding (kick) && e.leaving() == 0 && near (model(), mB);
+    // a jump of the knob across the whole turn in one go (a press of a controller's key, a step in a sequence)
+    ses.recall (a); run (48);
+    ses.turnSnapKnob (k, 1.0f); run (48);
+    const bool jump = ! e.holding (kick) && e.leaving() == 0 && near (model(), mB);
+    // the file
+    Engine e2; e2.prepare (48000.0, 256);
+    Session s2 (e2, false);
+    s2.takeState (ses.stateVar());
+    const bool filed = s2.knobs[(size_t) k].blendAt (0) && s2.knobs[(size_t) k].blendAt (1) && ! s2.knobs[(size_t) k].notesAt (0) && (s2.knobs[(size_t) k].keysAt (1) & Session::kAllLanes) == Session::kAllLanes;
+    const bool sound = finite && peak > 0.01f && peak < 4.0f;
+    const bool ok = setUp && mOut && half && further && isB && keeps && toFirst && less && back && down && settled && jump && filed && sound;
+    if (! ok) ++bad;
+    std::printf ("  %s: a stack knob's snapshots have an M key each: turned toward one whose M is lit, a lane whose model is another there is held between the two, both sounding, as far over as the knob has come; "
+                 "at the snapshot it is the snapshot's alone (every knob of the lane where the snapshot has it) and nothing is left behind; turned back first, it is the one it had; M out, the lane keeps its "
+                 "model and the sound alone follows; a recall while a lane is held settles it; and M is kept with the file\n", ok ? "ok  " : "FAIL");
+    if (! ok) std::printf ("    (set up %d M out %d half %d further %d is B %d keeps %d to first %d less %d back %d down %d settled %d jump %d filed %d sound %d: model %.2f of %.2f/%.2f, fade %.3f, leaving %d, peak %.3f)\n", (int) setUp, (int) mOut, (int) half,
+                           (int) further, (int) isB, (int) keeps, (int) toFirst, (int) less, (int) back, (int) down, (int) settled, (int) jump, (int) filed, (int) sound, (double) model(), (double) mA, (double) mB, (double) e.fadeShown (kick, st), e.leaving(), (double) peak);
+}
+
 static int selfTest (const juce::String& wavPath, double bars = 16.0)
 {
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -3841,6 +3929,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     }
 
     stackNotesTest (bad);
+    stackBlendTest (bad);
     arrsKeptTest (bad);
 
     {
@@ -4515,7 +4604,7 @@ static int checkMade (const juce::StringArray& args)
 //   { "dir": a folder to work in (its samples/ already there), "out": where the results go, "defs": { print: definition },
 //     "snapshots": [ snapshot, ... ],
 //     "points": [ { "key": "p00", "recall": i }                               that snapshot, whole, with its notes
-//               | { "key": "p03", "morph": [i, j, f], "notes": "a" | "b" } ] }  a stack knob holding i and j, turned to f of the
+//               | { "key": "p03", "morph": [i, j, f], "notes": "a" | "b", "blend": true } ] }  a stack knob holding i and j, turned to f of the
 //                                                                               way from i to j: from i ("a") or from j ("b"),
 //                                                                               whose notes it therefore has
 // Every point is rendered from the same beginning, so that two can be compared and one asked for twice is the same
@@ -4545,6 +4634,8 @@ static int renderJob (const juce::StringArray& args)
     if (auto* snaps = job["snapshots"].getArray())
         for (auto& sn : *snaps) ids.push_back (ses.takeFromLibrary (sn, sn["name"].toString(), job["defs"]));
     const int knob = 4;                     // (the first stack knob)
+    std::printf ("render 2\n");             // (what this build's --render knows: 2, a point's "blend")
+    std::fflush (stdout);
     std::pair<juce::int64, juce::int64> on { 0, 0 };
     Session::Scope whole;                   // (every part, and its notes)
     int bad = 0;
@@ -4574,6 +4665,9 @@ static int renderJob (const juce::StringArray& args)
                     on = { a, z };
                 }
                 const bool fromB = p["notes"].toString() == "b";
+                // ("blend": the two snapshots' M keys lit, so each lane's model and sample blend with the turn; else out, and the lanes keep theirs)
+                const juce::uint32 keys = Session::kAllLanes | ((bool) p.getProperty ("blend", false) ? Session::kBlendKey : 0u);
+                ses.stackLanes (knob, 0, keys); ses.stackLanes (knob, 1, keys);
                 ses.recall (fromB ? z : a, whole);
                 e.set (cx::kSnap + knob, fromB ? 1.0f : 0.0f);       // (the knob stands on the one just recalled)
                 bars (0.25);

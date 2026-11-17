@@ -76,8 +76,14 @@ struct MacroKnob
     // One more key, the one after those: N, its notes. Lit, the knob coming to that snapshot brings what its lanes were
     // playing, as a part of the arrangement with N lit does. It is lit by hand only: where nothing is said, it is out.
     static constexpr juce::uint32 kNotes = 1u << (kLanes + 3), kParts = kNotes - 1u;
-    juce::uint32 keysAt (size_t i) const        { const auto m = lanesAt (i); return m == kAll ? kParts : (m & (kParts | kNotes)); }      // (its parts and its N, as they are kept)
+    // And one after N: M, its models and samples. Lit, a knob turned toward that snapshot blends each lane it takes from the
+    // instrument that is playing to the snapshot's (its model, its sample, the rest of its CONFIG), both sounding, by how far
+    // the knob has come: as a recall with GLIDE crosses them over, with the knob for the clock. Out, as where nothing is
+    // said: the lanes keep the instruments they have, and the sound knobs alone follow the turn.
+    static constexpr juce::uint32 kBlend = 1u << (kLanes + 4);
+    juce::uint32 keysAt (size_t i) const        { const auto m = lanesAt (i); return m == kAll ? kParts : (m & (kParts | kNotes | kBlend)); }      // (its parts, its N and its M, as they are kept)
     bool notesAt (size_t i) const               { return (keysAt (i) & kNotes) != 0; }
+    bool blendAt (size_t i) const               { return (keysAt (i) & kBlend) != 0; }
     void setLanes (size_t i, juce::uint32 m)    { if (i >= snaps.size()) return; if (lanes.size() <= i) lanes.resize (i + 1, kAll); lanes[i] = m; }
     void add (juce::int64 id, juce::uint32 m = kAll) { if (m != kAll || ! lanes.empty()) { lanes.resize (snaps.size(), kAll); lanes.push_back (m); } snaps.push_back (id); }
     void dropAt (size_t i)                      { if (i >= snaps.size()) return; snaps.erase (snaps.begin() + (long) i); if (i < lanes.size()) lanes.erase (lanes.begin() + (long) i); }
@@ -102,7 +108,7 @@ struct Stack
     juce::String mark;                  // its line (Session::stackPrint) as the web library and this one last agreed it was. Empty: they never have
     juce::var kept;                     // as the file had it: what this build does not know of it is carried
     juce::uint32 lanesAt (size_t i) const { return i < lanes.size() ? lanes[i] : 0xffffffffu; }
-    juce::uint32 keysAt (size_t i) const  { const auto m = lanesAt (i); return m == 0xffffffffu ? MacroKnob::kParts : (m & (MacroKnob::kParts | MacroKnob::kNotes)); }     // (with its N: MacroKnob::kNotes)
+    juce::uint32 keysAt (size_t i) const  { const auto m = lanesAt (i); return m == 0xffffffffu ? MacroKnob::kParts : (m & (MacroKnob::kParts | MacroKnob::kNotes | MacroKnob::kBlend)); }     // (with its N: MacroKnob::kNotes)
 };
 
 // A knob kept by itself, off the module: a macro knob (what it is tied to) or a stack knob (its snapshots in order, each
@@ -334,11 +340,11 @@ public:
     void setStackCue (bool on);
     static constexpr juce::uint32 kAllLanes = (1u << (kLanes + 3)) - 1u;
     // (a stack's snapshot has one key more than the parts of the rig: N, whether it brings its notes. kAllKeys: all of them as kept)
-    static constexpr juce::uint32 kNotesKey = MacroKnob::kNotes, kAllKeys = kAllLanes | kNotesKey;
+    static constexpr juce::uint32 kNotesKey = MacroKnob::kNotes, kBlendKey = MacroKnob::kBlend, kAllKeys = kAllLanes | kNotesKey | kBlendKey;
     static Scope scopeOf (juce::uint32 lanes);
     static int mixCellOf (int type);                        // an effect's MIX among its eight knobs, or -1 (effects(): Rig.h)
     static juce::uint32 lanesOf (const Scope&);
-    struct Held { const Snapshot* s = nullptr; juce::int64 id = 0; juce::uint32 lanes = kAllLanes; bool notes = false; };       // (notes: its N is lit)
+    struct Held { const Snapshot* s = nullptr; juce::int64 id = 0; juce::uint32 lanes = kAllLanes; bool notes = false, blend = false; };       // (notes: its N is lit. blend: its M)
     std::vector<Held> held (int k) const;                   // a knob's snapshots that are here, in order, each with its lanes
     static float placeOf (int i, int n)  { return n <= 1 ? 1.0f : (float) i / (float) (n - 1); }
     int nearest (int k, float v) const;                     // the index (in held) of the snapshot nearest that place of the knob; -1: none
@@ -822,6 +828,16 @@ private:
     static SlotSide slotBetween (const SlotSide& a, const SlotSide& b, float f);
     void slotTo (int lane, int slot, const SlotSide&, double glideBeats);
     void sweepSlots (const Held& toward, float f, float g0, float g1);
+    // ---- a lane's instrument between two snapshots (a stack knob turned toward one whose M is lit, with CUE out)
+    // What of a lane's instrument cannot travel on a knob: its sample, its CONFIG (its model among it), a menu or a switch.
+    bool instrumentDiffers (const Snapshot&, int lane) const;               // from the one the lane has now
+    void bringInstrument (const Snapshot&, int lane, std::vector<std::pair<int, float>>* was);      // onto the lane's instrument (was: the menus and switches it changed, as they stood)
+    // A lane the knob holds between two: the snapshot it left (0: none) and the one it is going to, whose instrument the
+    // one that arrived has; and the menus and switches as they stood, to be put back if the knob comes back.
+    struct LaneHold { juce::int64 behind = 0, ahead = 0; std::vector<std::pair<int, float>> was; };
+    std::array<LaneHold, kLanes> laneHold;
+    void sweepInstruments (const Held& toward, juce::int64 behind, float g1, bool arrived);
+    void settleHolds();                 // the set is going somewhere by another way: each held lane settles on the one that arrived
     void regenerate (int lane);
     void makeFactory();
     void ensureCleanSlate();

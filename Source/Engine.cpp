@@ -888,8 +888,43 @@ void Engine::setInsertType (int l, int slot, int type, bool defaults, const Setu
     updateLatency();
 }
 
+// A hold is over without more ado (a recall forks the lane, or the audio is starting again): the one that arrived stays.
+void Engine::dropHold (int l)
+{
+    if (! heldLane[(size_t) l]) return;
+    auto& ln = lane[(size_t) l];
+    heldLane[(size_t) l] = false;
+    ln.holdG.store (-1.0f); ln.holdEnd.store (0);
+}
+
+bool Engine::holdVoice (int l)
+{
+    if (heldLane[(size_t) l]) return true;
+    if (! prepared) return false;
+    auto& ln = lane[(size_t) l];
+    heldFile[(size_t) l] = files[(size_t) l];
+    ln.holdEnd.store (0); ln.holdBack.store (0);
+    ln.holdG.store (0.0f);                  // (before the fork: the audio thread finds the hold with the new fade)
+    forkVoice (l, 0.0);
+    heldLane[(size_t) l] = true;
+    return true;
+}
+
+void Engine::blendVoice (int l, float share)
+{
+    if (heldLane[(size_t) l] && lane[(size_t) l].holdEnd.load() == 0) lane[(size_t) l].holdG.store (juce::jlimit (0.0f, 1.0f, share));
+}
+
+void Engine::endHold (int l, bool onNew)
+{
+    if (! heldLane[(size_t) l]) return;
+    lane[(size_t) l].holdEnd.store (onNew ? 1 : 2);
+    if (! prepared) collectRetired (false);
+}
+
 void Engine::forkVoice (int l, double fadeBeats)
 {
+    dropHold (l);                           // (a lane held between two: the one that had arrived is the one playing, and leaves as any other)
     auto& ln = lane[(size_t) l];
     const auto& d = lanes()[(size_t) l];
     auto* was = ln.voice.load();
@@ -933,8 +968,35 @@ bool Engine::fadeStep (Lane& ln, int st, double beats, float& g0, float& g1)
         ln.fadeStart[st] = asked > least && wasRunning ? now + (std::ceil (ppq - 1e-9) - ppq) : now;
         ln.fadeG[st] = 0.0f;
         ln.fading[st] = true;
+        if (st == kSlots) ln.holdingNow = false;
     }
     if (! ln.fading[st]) return false;
+    if (st == kSlots)
+    {
+        const float h = ln.holdG.load (std::memory_order_relaxed);
+        if (h >= 0.0f)
+        {
+            // Held between the two by a knob: as much of the one that arrived as the knob says. However the knob jumps,
+            // the whole of the way takes a fiftieth of a second at least, so nothing clicks.
+            ln.holdingNow = true;
+            const int end = ln.holdEnd.load (std::memory_order_relaxed);
+            const double least = 0.02 * tempoFor (cur[(size_t) cx::kTempo]) / 60.0;
+            const float most = (float) juce::jlimit (0.0, 1.0, beats / least), to = end == 1 ? 1.0f : end == 2 ? 0.0f : std::min (1.0f, h);
+            g0 = ln.fadeG[st];
+            g1 = g0 + juce::jlimit (-most, most, to - g0);
+            ln.fadeG[st] = g1;
+            ln.fadeAt[st].store (g1, std::memory_order_relaxed);
+            if (end == 1 && g1 >= 1.0f) { ln.fading[st] = false; ln.holdingNow = false; ln.fadeDoneAt[st].store (blockCount.load()); ln.fadeDone[st].store (q); }
+            else if (end == 2 && g1 <= 0.0f) ln.holdBack.store (q, std::memory_order_relaxed);
+            return true;
+        }
+        if (ln.holdingNow)
+        {
+            // the hold is over and the lane given back to the one that was playing: nothing is between two any more
+            ln.holdingNow = false; ln.fading[st] = false; ln.fadeG[st] = 1.0f; ln.fadeAt[st].store (1.0f, std::memory_order_relaxed);
+            return false;
+        }
+    }
     g0 = ln.fadeG[st];
     const double t = (gClock - ln.fadeStart[st]) / ln.fadeLen[st];
     g1 = (float) juce::jlimit (0.0, 1.0, t);
@@ -962,6 +1024,28 @@ void Engine::collectRetired (bool all)
                 if (all || was->files.empty()) delete was; else park (was);
             }
         if (ln.voiceOut.load() != nullptr && gone (kSlots)) delete ln.voiceOut.exchange (nullptr);
+    }
+    // a hold that has settled: on the one that arrived (the one that was playing has left, above), or on the one that
+    // was playing (the audio thread says the other is at nothing: the lane is given back, and the other let go)
+    for (int l = 0; l < kLanes; ++l)
+    {
+        if (! heldLane[(size_t) l]) continue;
+        auto& ln = lane[(size_t) l];
+        const int end = ln.holdEnd.load();
+        const auto q = ln.fadeSeq[kSlots].load();
+        auto* was = ln.voiceOut.load();
+        if (was == nullptr || (end == 1 && ln.fadeDone[kSlots].load() == q)) dropHold (l);
+        else if (end == 2 && (all || ! prepared || ln.holdBack.load() == q))
+        {
+            auto* arrived = ln.voice.load();
+            ln.voice.store (was);           // (for a moment the lane has the same one twice: the audio thread plays it once)
+            ln.voiceOut.store (nullptr);
+            retiredVoices.push_back ({ arrived, now });
+            files[(size_t) l] = heldFile[(size_t) l];
+            dropHold (l);
+            stateMoved();
+            updateLatency();
+        }
     }
     for (size_t i = retiredLaws.size(); i-- > 0;)
         if (all || now >= retiredLaws[i].second + 2 || ! prepared)
@@ -1569,6 +1653,7 @@ void Engine::prepare (double rate, int block)
             ln.fadeSeen[k] = ln.fadeSeq[k].load(); ln.fadeDone[k] = ln.fadeSeen[k];
             ln.fading[k] = false; ln.fadeG[k] = 1.0f; ln.fadeAt[k] = 1.0f;
         }
+    for (int l = 0; l < kLanes; ++l) { dropHold (l); lane[(size_t) l].holdingNow = false; }      // (and nothing is held between two)
     auto prep = [this] (SFProcessor& p) { p.setRateAndBufferSizeDetails (sr, maxBlock); p.prepareToPlay (sr, maxBlock); };
     for (auto& ln : lane)
     {
@@ -1991,7 +2076,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
             // crosses from the old to the new.
             float f0 = 1.0f, f1 = 1.0f;
             const bool fade = fadeStep (ln, kSlots, beats, f0, f1);
-            if (fade && voiceOut != nullptr)
+            if (fade && voiceOut != nullptr && voiceOut != voice)       // (the same one twice: a lane being given back, for a moment)
             {
                 juce::AudioBuffer<float> old (ghost.getArrayOfWritePointers(), 2, n);
                 old.clear();
