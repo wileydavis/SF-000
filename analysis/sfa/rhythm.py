@@ -228,10 +228,10 @@ def period(p96: list[float]) -> float | None:
     if p.size != SLOTS or p.max() < 1.5:
         return None
     p = p - p.mean()
-    den = float(p @ p) + 1e-12
+    den = float((p * p).sum()) + 1e-12
     best, lag = 0.0, None
     for L in range(PER_STEP, SLOTS // 2 + 1):
-        r = float(p @ np.roll(p, L)) / den
+        r = float((p * np.roll(p, L)).sum()) / den
         if r > best + 0.02:
             best, lag = r, L
     return round(lag / PER_STEP, 2) if lag and best >= 0.5 else None
@@ -285,7 +285,7 @@ def rhythm_distance(a: list[float], b: list[float]) -> float:
         return 1.0
     blur = lambda v: 0.25 * np.roll(v, 1) + 0.5 * v + 0.25 * np.roll(v, -1)
     x, y = blur(np.maximum(x - 1.0, 0)), blur(np.maximum(y - 1.0, 0))
-    return round(float(1 - (x @ y) / (np.linalg.norm(x) * np.linalg.norm(y) + 1e-12)), 3)
+    return round(float(1 - (x * y).sum() / (np.sqrt((x * x).sum() * (y * y).sum()) + 1e-12)), 3)
 
 
 def describe(snap: dict, measured: dict, lanes: list[str]) -> dict:

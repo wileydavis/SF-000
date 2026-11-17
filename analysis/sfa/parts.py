@@ -70,7 +70,7 @@ def rough(c: np.ndarray) -> float:
     if s <= 0:
         return 0.0
     c = c / s
-    return float(c @ ROUGH_M @ c)
+    return float((c[:, None] * ROUGH_M * c[None, :]).sum())
 
 
 def _occ(p: dict) -> np.ndarray:

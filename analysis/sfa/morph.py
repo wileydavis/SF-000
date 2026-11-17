@@ -230,7 +230,7 @@ def look(points: list[dict], library: list[dict], twin: dict | None = None, smoo
     w = np.array([0.0 if name in steady else x for name, x in zip(names, w)])
     n0, n = len(usable), len(points)
     P = (np.where(M, X, 0.0) * np.sqrt(w / w.sum()))[n0:]            # (so that plain distance here is the weighted one)
-    noise = float(np.linalg.norm(P[n] - P[0])) if twin else 0.0
+    noise = float(np.sqrt(((P[n] - P[0]) ** 2).sum())) if twin else 0.0
     P = P[:n]
     S = P.copy()
     if smooth and n >= 4:
@@ -239,13 +239,13 @@ def look(points: list[dict], library: list[dict], twin: dict | None = None, smoo
     floor2 = (noise ** 2) / 8.0 if smooth and n >= 4 else noise ** 2
     steps = [float(np.sqrt(max(0.0, float(np.sum((S[i + 1] - S[i]) ** 2)) - floor2))) for i in range(n - 1)]
     length = float(sum(steps))
-    chord = float(np.linalg.norm(P[-1] - P[0]))
+    chord = float(np.sqrt(((P[-1] - P[0]) ** 2).sum()))
     # how far each point is from simply being between the two ends
     off = []
     d = P[-1] - P[0]
     for i in range(n):
-        t = float(np.clip(((S[i] - P[0]) @ d) / (d @ d + 1e-12), 0, 1))
-        off.append(float(np.linalg.norm(S[i] - (P[0] + t * d))))
+        t = float(np.clip(((S[i] - P[0]) * d).sum() / ((d * d).sum() + 1e-12), 0, 1))
+        off.append(float(np.sqrt(((S[i] - (P[0] + t * d)) ** 2).sum())))
     e = energy(usable + points)[n0:]
     fits = [inner_fit(m) for m in points]
     # its texture, each quality on the library's own scale (so that 1 is the spread of the middle half of the library), and

@@ -67,9 +67,13 @@ def distances(X, M, w) -> np.ndarray:
     for i in range(n):
         both = M & M[i]
         diff = (Xm - Xm[i]) ** 2 * both
-        num = diff @ w
-        den = both.astype(float) @ w
+        # (summed plainly, not as a matrix product: on Apple's processors numpy's matrix product raises false alarms
+        # of overflow and division by zero, and what it says cannot be told from a real one)
+        num = (diff * w).sum(axis=1)
+        den = (both * w).sum(axis=1)
         D[i] = np.sqrt(np.where(den > 0, num / np.maximum(den, 1e-12), np.inf))
+    if not np.all(np.isfinite(Xm)):
+        raise ValueError("a measurement that is not a number got into what is compared")
     np.fill_diagonal(D, np.inf)
     return D
 
