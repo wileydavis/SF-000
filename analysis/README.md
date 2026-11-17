@@ -81,14 +81,10 @@ play a stand-in for its missing file is **left out of every point**, with no not
 phrase does not fall silent, it sings its notes with a choir of its own, which is in neither snapshot and the
 same in every morph. Another lane that names a missing file is named too, since it may not sound as you know it.
 
-**One thing is not as the knob plays it: tuning stays with the notes.** A lane's TUNE is a sound knob, so the
-stack knob glides it; where the two snapshots have a lane tuned differently (a kick two octaves apart), a point
-part of the way would stand on a pitch between the two, in no key. That is a glide under the hand and a wrong
-note in a snapshot. So in what is scanned and made here every TUNE knob keeps the value of the snapshot the
-notes are of, and each point is in tune with its own notes; the page names the lanes it held. The far end of
-the turn is therefore the other snapshot's sound under this one's notes, key and tuning: not that snapshot as
-you know it. A stack made from the scan, played in SF-000, glides TUNE only over the one stretch that reaches
-the real snapshot at the other end.
+**TUNE goes over with the rest of the sound**, as the stack knob takes it: a lane tuned differently in the two
+snapshots bends from one tuning to the other across the turn, and a point part of the way holds the bend where
+it stood. (For a morning these scans held TUNE still with the notes; a scan made then says so and asks to be
+made again.)
 
 What comes back is the turn of the knob, left to right. Press any point to hear it. The bars say how much
 the sound changes in each tenth of the turn: an even morph would have them level, and few do, because even in

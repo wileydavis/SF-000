@@ -45,28 +45,6 @@ def key_of(snap: dict) -> str:
     return KEYS[max(0, min(12, int(round(float(v) * 12))))] if isinstance(v, (int, float)) and v >= 0 else "OFF"
 
 
-def tuned_with(notes_of: dict, other: dict) -> tuple[dict, list[str]]:
-    """The other end, with its TUNE knobs where the snapshot the notes are of has them, and the lanes that took.
-
-    A stack knob carries the sound over and leaves the notes and the key where it set out from. A lane's TUNE is a
-    sound knob, so on the knob it glides: a kick tuned two octaves apart in the two snapshots passes through every
-    pitch between, and a point taken part of the way stands on one of them, in no key. That is a glide while the
-    knob turns and a wrong note in a snapshot. So in what is scanned and made here the tuning stays with the notes
-    it was tuned to: every point is in tune with its own notes."""
-    out = copy.deepcopy(other)
-    mine, theirs = notes_of.get("values") or {}, out.get("values")
-    held = []
-    if isinstance(theirs, dict):
-        for k, v in mine.items():
-            if k.endswith(".tune") and isinstance(v, (int, float)) and v >= 0 and isinstance(theirs.get(k), (int, float)) and abs(theirs[k] - v) > 1e-4:
-                theirs[k] = v
-                held.append(k[:-5])
-    if held:
-        # (its own name in the job: the instrument keeps what it has taken by uid, and this is not the snapshot of that uid)
-        out["uid"] = f"{other.get('uid', '')}.tuned-{str(notes_of.get('uid', ''))[-10:]}"
-    return out, [l for l in LANES if l in held]
-
-
 # ------------------------------------------------------------------------------------------------- the instrument
 def find_sf000(given: str = "") -> Path | None:
     here = Path(__file__).resolve().parents[2]
@@ -490,15 +468,6 @@ class Morphs:
         d.mkdir(parents=True, exist_ok=True)
         self.a.store._write(d / "scan.json", json.dumps(scan))
 
-    def _ends(self, a: str, b: str, notes: str) -> tuple[dict, dict, list[str]]:
-        """The two snapshots as a morph here goes between them: the tuning with the notes (tuned_with)."""
-        sa, sb = self._snap(a), self._snap(b)
-        if notes == "b":
-            sa, held = tuned_with(sb, sa)
-        else:
-            sb, held = tuned_with(sa, sb)
-        return sa, sb, held
-
     def _snap(self, uid: str) -> dict:
         s = (self.a.store.snapshot(uid) or {}).get("snapshot")
         if not s:
@@ -556,7 +525,7 @@ class Morphs:
         self._put(scan)
 
         def work():
-            sa, sb, scan["held"] = self._ends(a, b, notes)
+            sa, sb = self._snap(a), self._snap(b)
             scan["keys"] = [key_of(sa), key_of(sb)]
             fs = [round(i / (STEPS - 1), 4) for i in range(STEPS)]
             points = [{"key": f"p{i:02d}", "morph": [0, 1, f], "notes": notes} for i, f in enumerate(fs)]
@@ -619,7 +588,7 @@ class Morphs:
             count = max(1, min(7, int(count)))
             shape_id = f"even_{count}"
             places = even_places([p["f"] for p in scan["points"]], scan["steps"], count)
-            snaps = list(self._ends(a, b, notes)[:2])
+            snaps = [sa, sb]
             points = [{"key": f"{shape_id}_{i}", "morph": [0, 1, f], "notes": notes} for i, f in enumerate(places)]
             how = [{"a": a, "b": b, "f": f, "notes": notes} for f in places]
         shape = {"id": shape_id, "kind": kind, "status": "rendering", "lanes": lanes if kind == "lead" else None}

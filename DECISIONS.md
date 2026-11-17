@@ -4538,6 +4538,10 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      instrument's kept session in the render's folder is removed first); (4) a scan made before
      this that lacked a file says what happened and asks to be made again. The tuning staying
      with the notes (691) stays as it is, unless you would rather have the glide.
+696. **You**, 10:44, of the tuning staying with the notes (691): "rather have it back because I
+     use tune to do pitch bends". Undone. TUNE goes over with the rest of the sound in a scan and
+     in what is made from it, as the stack knob takes it. A scan made while it was held says so
+     and asks to be made again. What 691 took for the cause was not it: 695 was.
 
 ## Not verified
 

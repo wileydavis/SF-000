@@ -486,10 +486,8 @@ function drawMorph(q) {
   if (sc.status === 'rendering' || sc.status === 'measuring') return h + `<p class="dim">${sc.status === 'measuring' ? 'Measuring...' : `SF-000 is rendering: ${sc.done} of ${sc.of}.`}</p>`;
   if (sc.status === 'failed') return h + `<p class="dim">${esc(sc.error || 'It could not be scanned.')}</p>`;
   const nEnd = sc.notes === 'b' ? 1 : 0, kk = sc.keys;
-  h += `<p class="note">` + (sc.held === undefined
-      ? `This was scanned before tunings were kept with the notes: where the two snapshots differ in a TUNE knob, its points stand on pitches between the two, in no key. SCAN again and they are in tune.`
-      : `Every point plays the notes of ${sc.notes === 'b' ? 'TO' : 'FROM'}${kk ? `, in its key (${esc(kk[nEnd])}${kk[0] !== kk[1] ? `; ${sc.notes === 'b' ? 'FROM' : 'TO'} is in ${esc(kk[1 - nEnd])}, so the far end is not that snapshot as you know it` : ''})` : ''}.` +
-        (sc.held.length ? ` TUNE stays with the notes on ${sc.held.map(l => LN[l]).join(', ')}: the two snapshots differ there, and gliding between would leave the points on pitches in no key. (The stack knob itself does glide TUNE as it turns.)` : '')) + `</p>`;
+  if (kk) h += `<p class="note">Every point plays the notes of ${sc.notes === 'b' ? 'TO' : 'FROM'}, in its key (${esc(kk[nEnd])}${kk[0] !== kk[1] ? `; ${sc.notes === 'b' ? 'FROM' : 'TO'} is in ${esc(kk[1 - nEnd])}, so the far end is not that snapshot as you know it` : ''}). Everything else goes over as the knob takes it, TUNE with it: a lane tuned differently in the two bends from one to the other.</p>`;
+  if ((sc.held || []).length) h += `<p class="note" style="color:var(--hot)">This was scanned with TUNE held still on ${sc.held.map(l => LN[l]).join(', ')}. That is undone: SCAN again and TUNE bends across the turn, as the stack knob plays it.</p>`;
   if ((sc.missing || []).length) {
     const fname = r => esc(String(r).split('/').pop()), files = sc.missing.map(r => fname(r) + (sc.why && sc.why[r] ? ` (${esc(sc.why[r])})` : '')).join(', ');
     h += `<p class="note" style="color:var(--hot)">` + (sc.left === undefined
