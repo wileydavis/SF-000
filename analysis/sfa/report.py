@@ -96,13 +96,15 @@ PAGE = r"""<!DOCTYPE html>
   #combo input { width:150px; }
   #combo .act { border:1px solid var(--ink); background:transparent; color:var(--ink); border-radius:5px; padding:5px 11px; font-size:12px; letter-spacing:.08em; cursor:pointer; }
   #combo .act.go { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
-  #combo .act.playing { background:var(--ink); color:#111; }
+  #combo .act.playing { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
   #combo .said { color:var(--dim); font-size:12px; }
   main { padding-bottom:140px !important; }
   .mrow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 0; }
   .act { border:1px solid var(--ink); background:transparent; color:var(--ink); border-radius:5px; padding:5px 11px; font-size:12px; letter-spacing:.08em; cursor:pointer; }
   .act.go { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
   .act.on { background:var(--ink); color:#111; }
+  #allplay { min-width:64px; }
+  #allplay.playing { background:var(--hot); color:#111; border-color:var(--hot); font-weight:700; }
   .act:disabled { opacity:.4; cursor:default; }
   svg text { font:10px -apple-system, "Helvetica Neue", Arial, sans-serif; fill:var(--dim); }
   .pt { cursor:pointer; }
@@ -116,6 +118,8 @@ PAGE = r"""<!DOCTYPE html>
   <h1>SF-000 ANALYSIS</h1>
   <div class="tabs"><button class="tab on" data-v="snaps">SNAPSHOTS</button><button class="tab" data-v="parts">PARTS</button><button class="tab" data-v="morph">MORPH</button></div>
   <input id="q" placeholder="find by name" autocomplete="off">
+  <button class="act" id="allplay" disabled title="stops what is playing, and starts it again (the space bar does the same)">PLAY</button>
+  <span class="dim" id="now"></span>
   <span class="dim" id="sum"></span>
 </header>
 <div class="lanebar" id="lanebar" hidden></div>
@@ -129,6 +133,7 @@ const LN = { kick:'KICK', closed_hat:'HAT', open_hat:'OPEN HAT', clap:'CLAP', pe
 
 // ---------------------------------------------------------------- playing: parts together, in time
 let ctx = null, playing = null, playingKey = null;
+let last = null;                     // what played last, so that the one key at the top starts it again: { key, layers, tempo }
 const buffers = new Map();
 async function buf(url) {
   if (!buffers.has(url)) buffers.set(url, fetch(url).then(r => { if (!r.ok) throw new Error(url); return r.arrayBuffer(); }).then(a => ctx.decodeAudioData(a)));
@@ -140,6 +145,34 @@ function stop() {
   if (playing) playing.forEach(s => { try { s.stop(); } catch (e) {} });
   playing = null; playingKey = null;
   document.querySelectorAll('.playing').forEach(c => c.classList.remove('playing'));
+  showPlay();
+}
+// One key at the top for all of it, whatever is on the page: a chip that is playing may be out of sight (found by
+// name, another tab), and it must still be seen to be playing and be stoppable. Lit, it says STOP and what is playing;
+// pressed, that stops; pressed again, the same starts again.
+function nameOf(key) {
+  const [kind, ...r] = String(key || '').split(':');
+  if (kind === 'clip' || kind === 'whole') return D.names[r.join(':')] || '';
+  if (kind === 'solo') { const k = r.pop(); return `${D.names[r.join(':')] || ''}: ${LN[k] || k} alone`; }
+  if (kind === 'combo') return combo && key === comboKey() ? `${D.names[combo.base] || ''}, the combination` : 'a combination';
+  if (kind === 'part') return D.parts[r.join(':')] ? partName(r.join(':')) : 'a part';
+  if (kind === 'pair') return 'two parts together';
+  if (kind === 'point') { const p = M.scan && M.scan.id === r[0] ? (M.scan.points || []).find(x => x.key === r[1]) : null; return p ? `the morph at ${Math.round(p.f * 100)}%` : 'a point of the morph'; }
+  return '';
+}
+function showPlay() {
+  const b = document.getElementById('allplay'), n = document.getElementById('now');
+  if (!b) return;
+  b.textContent = playingKey ? 'STOP' : 'PLAY';
+  b.classList.toggle('playing', !!playingKey);
+  b.disabled = !playingKey && !last;
+  n.textContent = playingKey ? nameOf(playingKey) : (last ? nameOf(last.key) : '');
+  const pl = document.getElementById('cplay');       // (the combination's own key says the same thing the same way)
+  if (pl) { const on = !!(combo && playingKey === comboKey()); pl.textContent = on ? 'STOP' : 'PLAY'; pl.classList.toggle('playing', on); }
+}
+function playStop() {
+  if (playingKey) return stop();
+  if (last) return playLayers(last.key, document.getElementById('allplay'), last.layers, last.tempo);
 }
 // A part at another tempo is stretched to this one without its pitch moving (as the instrument would play its notes):
 // grains of 2048 samples laid every 512, each taken from where it best continues the one before.
@@ -182,7 +215,7 @@ async function playLayers(key, el, layers, tempo) {
   if (!layers.length) return;
   ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
   if (ctx.state === 'suspended') await ctx.resume();
-  playingKey = key; el.classList.add('playing'); markPlaying();
+  playingKey = key; last = { key, layers, tempo }; el.classList.add('playing'); markPlaying();
   let bs;
   try { bs = await Promise.all(layers.map(l => buf(l.url))); } catch (e) { stop(); return; }
   if (playingKey !== key) return;
@@ -197,18 +230,22 @@ async function playLayers(key, el, layers, tempo) {
   });
 }
 function markPlaying() {
-  // What is lit is what sounds. The combination playing: each lane in it from another snapshot is lit where it was
-  // pressed (and none of them once it stops, or the lane is silenced or put back).
-  document.querySelectorAll('.chip[data-act="swap"].playing, .chip[data-act="add"].playing').forEach(c => c.classList.remove('playing'));
-  if (combo && playingKey === comboKey()) {
+  // What is lit is what sounds: every chip that is the thing playing, wherever on the page it is, through any redraw;
+  // and nothing else. (A snapshot playing is lit in each place it is listed. The combination playing: each lane in it
+  // from another snapshot is lit where it was pressed.)
+  document.querySelectorAll('.chip.playing').forEach(c => c.classList.remove('playing'));
+  showPlay();
+  const key = playingKey || '', [kind, ...r] = key.split(':'), rest = r.join(':');
+  const light = (sel, ok) => document.querySelectorAll(sel).forEach(c => { if (!ok || ok(c)) c.classList.add('playing'); });
+  if (kind === 'clip' || kind === 'whole') light('.chip[data-act="clip"], .chip[data-act="choose"]', c => c.dataset.u === rest);
+  else if (kind === 'solo') { const k = r[r.length - 1], u = r.slice(0, -1).join(':'); light('.chip[data-act="solo"]', c => c.dataset.u === u && c.dataset.k === k); }
+  else if (kind === 'part') light('.chip[data-act="part"]', c => c.dataset.p === rest);
+  else if (kind === 'pair') light('.chip[data-act="pair"]', c => `${c.dataset.p}:${c.dataset.q}` === rest);
+  else if (kind === 'point') light('.chip[data-act="point"]', c => M.scan && r[0] === M.scan.id && c.dataset.key === r[1]);
+  else if (kind === 'combo' && combo && key === comboKey()) {
     for (const [l, u] of Object.entries(combo.picks))
-      if (u && !combo.off[l]) document.querySelectorAll(`.chip[data-base="${CSS.escape(combo.base)}"][data-k="${l}"]`).forEach(c => { if (c.dataset.u === u) c.classList.add('playing'); });
-    const pl = document.getElementById('cplay'); if (pl) pl.classList.add('playing');
+      if (u && !combo.off[l]) light(`.chip[data-base="${CSS.escape(combo.base)}"][data-k="${l}"]`, c => c.dataset.u === u);
   }
-  // on the MORPH tab a snapshot is in more than one place (its slot, the chips to choose from): lit in each
-  const m = /^(?:clip|whole):(.*)$/.exec(playingKey || '');
-  if (!m || view !== 'morph') return;
-  document.querySelectorAll('.chip[data-act="clip"], .chip[data-act="choose"]').forEach(c => { if (c.dataset.u === m[1]) c.classList.add('playing'); });
 }
 const playSnap = (u, el) => D.clips[u] ? playLayers('clip:' + u, el, [{ url: D.clips[u] }], 0) : playLayers('whole:' + u, el, wholeLayers(u), D.bpm[u]);
 function wholeLayers(uid, without) {
@@ -260,7 +297,7 @@ function rhythmRows(r) {
 function drawSnaps(q) {
   const all = Object.entries(D.found).filter(([u, f]) => f.energy !== undefined).sort((a, b) => b[1].energy - a[1].energy);
   const shown = q ? all.filter(([u]) => (D.names[u] || '').toLowerCase().includes(q)) : all;
-  return `<p class="note">The big chip plays the snapshot. SAME TEXTURE: not alike overall, but the same to the touch (grit, resonance, noise, how alive). SAME RHYTHM: the same rhythm as it is heard, in another sound. RHYTHM: what is heard in the bar, and how much of it the sound itself adds to the steps (echoes, density, ghosts). SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane). A chip is lit while its lane is sounding in what plays, and only then; press a lit one and it comes out. In the bar: a lane pressed is silenced (again, back); OWN beside a lane from another snapshot puts this snapshot's own back; PLAY, lit, stops it. MAKE CHIP makes it a snapshot. A lane's name here plays this snapshot's own lane alone.</p>` +
+  return `<p class="note">The big chip plays the snapshot. SAME TEXTURE: not alike overall, but the same to the touch (grit, resonance, noise, how alive). SAME RHYTHM: the same rhythm as it is heard, in another sound. RHYTHM: what is heard in the bar, and how much of it the sound itself adds to the steps (echoes, density, ghosts). SWAP: for each of its lanes, the same lane from another snapshot that would fit the rest of it. ADD: a lane it has not got, from another snapshot, that would go over all of it. The number: how well it fits, of 100. Pressed, each goes into the combination at the foot of the page and it plays: press more to build it up (one of each lane). A chip is lit while its lane is sounding in what plays, and only then; press a lit one and it comes out. In the bar: a lane pressed is silenced (again, back); OWN beside a lane from another snapshot puts this snapshot's own back. MAKE CHIP makes it a snapshot. The key at the top of the page stops whatever is playing and starts it again (so does the space bar), and says what it is. A lane's name here plays this snapshot's own lane alone.</p>` +
   shown.map(([u, f]) => {
     const swaps = f.swap ? ORDER.filter(l => f.swap[l] && f.swap[l].length).map(l =>
       `<b class="sub"><span class="chip" data-act="solo" data-u="${esc(u)}" data-k="${l}" style="padding:2px 6px;font-size:11px">${LN[l]}</span></b><div class="chips">${
@@ -534,6 +571,12 @@ function drawLanes() {
 document.querySelector('.tabs').onclick = e => { const t = e.target.closest('.tab'); if (!t) return; view = t.dataset.v; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t)); draw(); };
 document.getElementById('lanebar').onclick = e => { const b = e.target.closest('.lanebtn'); if (!b) return; lane = b.dataset.l; drawLanes(); draw(); };
 document.getElementById('q').oninput = draw;
+document.getElementById('allplay').onclick = playStop;
+document.addEventListener('keydown', e => {
+  // the space bar: the same key, unless something is being typed
+  if (e.code !== 'Space' || e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target || {}).tagName || '')) return;
+  e.preventDefault(); playStop();
+});
 document.getElementById('list').onclick = e => {
   const b = e.target.closest('.chip'); if (!b) return;
   const u = b.dataset.u, act = b.dataset.act;

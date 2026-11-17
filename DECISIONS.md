@@ -4512,6 +4512,13 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      only where something between is neither end, pairs you have played next to each other
      first, near-duplicates skipped: some 60 to 95 hours of rendering for all of it one way, about
      an hour and a half for each new snapshot after.
+694. **You**, 10:09: "play button should stop/start all sounds. right now, a playing chip can
+     play when hidden by search and can't be stopped". One key at the top of the page, beside
+     the search: lit while anything plays, it says STOP and what is playing; pressed, that stops;
+     pressed again, the same starts again. It is there on every tab and whatever the search has
+     hidden. *Mine:* the space bar does the same (not while typing); the combination's own PLAY
+     says STOP while it plays; and a chip is lit in every place the thing playing is listed, and
+     stays lit through a search or a change of tab, so the page never shows less than what sounds.
 
 ## Not verified
 

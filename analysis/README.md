@@ -122,6 +122,12 @@ each lane). **A chip is lit while its lane is sounding in what plays, and only t
 is lit. Press a lit one and it comes out; press one that is in the combination while it is stopped and
 the combination plays.
 
+**One key stops and starts everything**: at the top of the page, beside the box that finds by name. While
+anything plays it is lit, says STOP and names what is playing, whatever tab is showing and whether or not
+the chip that started it is still on the page (found by name, it may not be). Pressed, the sound stops;
+pressed again, the same starts again. The space bar does the same, unless you are typing. And what is lit
+is what sounds: every chip that is the thing playing, in each place it is listed, and nothing else.
+
 In the bar each lane does one thing when pressed: it is **silenced** (struck through; again: back). A
 lane that came from another snapshot has a key beside it: **OWN** puts this snapshot's own lane back,
 or **OUT** takes it away if the snapshot never had that lane. PLAY plays it, and lit, stops it; give
