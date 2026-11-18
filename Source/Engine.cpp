@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include <complex>
 #include "core/Processor.h"
 #include "core/Registry.h"
 #include "core/Bus.h"
@@ -214,6 +215,13 @@ void Engine::applyBind (const Bind& b, float v)
 Engine::Engine()
 {
     SFProcessor::keyFromHost = true;        // KEY is this rig's own: the modules follow it with no SF CONTROL running
+    for (auto& ln : lane)
+        for (int b = 0; b < kEqBands; ++b)
+        {
+            const auto d = eqDefault (b);
+            ln.eqType[b] = d.type; ln.eqHz[b] = d.hz; ln.eqGain[b] = 0.0f; ln.eqQ[b] = d.q;
+            ln.eqHzNow[b] = d.hz; ln.eqQNow[b] = d.q; ln.eqSet[b] = 99.0f; ln.eqTypeSet[b] = -1;
+        }
     controls.resize ((size_t) cx::kCount);
     for (auto& c : controls) { c.used = false; c.snapshot = false; }
     auto named = [this] (int i, juce::String id, juce::String label, Kind k, float def, bool snap, bool morph) -> Control&
@@ -1475,6 +1483,39 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         }
     }
     boxes ({ "BANDS", "LOW BAND", "MID BAND", "HIGH BAND", "SAMPLE", "WAVETABLE", "FM 4-OP", "GRANULAR", "KICK FORGE", "USUAL KNOBS" });
+    // the lane's EQ, a row a band (the screen draws them as a graph, and the E16 has them as its last pages)
+    if (t.kind == 0)
+        for (int b = 0; b < kEqBands; ++b)
+        {
+            const auto band = eqBand (t.lane, b), d = eqDefault (b);
+            const int knob = eqKnobOf (b);
+            const juce::String group = "EQ " + juce::String (b + 1) + (knob == 0 ? " LOW" : knob == 1 ? " MID" : knob == 2 ? " HIGH" : "");
+            for (int w = 0; w < 4; ++w)
+            {
+                SetupParam sp;
+                sp.id = eqIdOf (b, w); sp.group = group; sp.ownRow = w == 0;
+                if (w == 0)
+                {
+                    sp.name = "KIND"; sp.kind = Kind::List;
+                    for (int k = 0; k < kEqTypes; ++k) sp.choices.add (eqTypeName (k));
+                    sp.value = (float) band.type / (float) (kEqTypes - 1); sp.def = (float) d.type / (float) (kEqTypes - 1); sp.text = eqTypeName (band.type);
+                }
+                else if (w == 1)
+                {
+                    sp.name = "FREQ"; sp.kind = Kind::Knob; sp.value = eqHzPlace (band.hz); sp.def = eqHzPlace (d.hz);
+                    sp.text = band.hz >= 1000.0f ? juce::String (band.hz / 1000.0f, band.hz >= 10000.0f ? 1 : 2) + " KHZ" : juce::String ((int) std::lround (band.hz)) + " HZ";
+                }
+                else if (w == 2)
+                {
+                    // (a knob band's gain is its knob: shown here as the knob stands)
+                    sp.name = "GAIN"; sp.kind = Kind::Bipolar;
+                    sp.value = knob >= 0 ? target (cx::lane (t.lane, cx::kEqLow + knob)) : eqDbPlace (band.db); sp.def = 0.5f;
+                    sp.text = (band.db > 0.0f ? "+" : "") + juce::String (band.db, 1) + " DB";
+                }
+                else { sp.name = "WIDTH"; sp.kind = Kind::Knob; sp.value = eqQPlace (band.q); sp.def = eqQPlace (d.q); sp.text = "Q " + juce::String (band.q, 2); }
+                out.push_back (sp);
+            }
+        }
     return out;
 }
 
@@ -1643,6 +1684,17 @@ bool Engine::laneFollowsKey (int lane) const
 void Engine::setSetup (Target t, const juce::String& id, float v)
 {
     stateMoved();
+    if (int b = 0, w = 0; t.kind == 0 && eqId (id, b, w))
+    {
+        // a band of the lane's EQ (a knob band's gain is its knob's: the session sets that)
+        auto band = eqBand (t.lane, b);
+        if (w == 0) band.type = (int) std::lround (juce::jlimit (0.0f, 1.0f, v) * (float) (kEqTypes - 1));
+        else if (w == 1) band.hz = eqHzOf (v);
+        else if (w == 2) band.db = eqDbOf (v);
+        else band.q = eqQOf (v);
+        setEqBand (t.lane, b, band);
+        return;
+    }
     if (id == kModelId)
     {
         if (t.kind == 2 && t.slot == 1) setSpaceModel ((int) std::lround (juce::jlimit (0.0f, 1.0f, v) * (float) (kSpaceModels - 1)));
@@ -1688,6 +1740,16 @@ Engine::SetupState Engine::getSetup (Target t) const
                 if (isMotionId (specs[(size_t) i].id)) st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
         }
     }
+    // a lane's EQ with it, where it is not as it starts (the LOW, MID and HIGH knobs' gains are controls of their own)
+    if (t.kind == 0 && ! eqIsDefault (t.lane))
+        for (int b = 0; b < kEqBands; ++b)
+        {
+            const auto band = eqBand (t.lane, b);
+            st.push_back ({ eqIdOf (b, 0), (float) band.type / (float) (kEqTypes - 1) });
+            st.push_back ({ eqIdOf (b, 1), eqHzPlace (band.hz) });
+            if (eqKnobOf (b) < 0) st.push_back ({ eqIdOf (b, 2), eqDbPlace (band.db) });
+            st.push_back ({ eqIdOf (b, 3), eqQPlace (band.q) });
+        }
     return st;
 }
 
@@ -1745,6 +1807,15 @@ void Engine::applySetup (Target t, const SetupState& st)
         }
         applySetupTo (*p, boundIds (t), st);
         updateLatency();
+    }
+    if (t.kind == 0)
+    {
+        // the lane's EQ: as the setup has it, and as it starts where a lane's whole setup says nothing of it (a snapshot
+        // from before the EQ, or one whose EQ was untouched)
+        bool any = false;
+        for (auto& kv : st) { int b = 0, w = 0; any = any || eqId (kv.first, b, w); }
+        if (any) { for (auto& kv : st) { int b = 0, w = 0; if (eqId (kv.first, b, w)) setSetup (t, kv.first, kv.second); } }
+        else if (st.size() > 6) eqReset (t.lane);
     }
 }
 
@@ -1940,20 +2011,54 @@ void Engine::advanceControls (double beats, int n)
     }
 }
 
-void Engine::setEq (Lane& ln, int band, float db)
+const char* Engine::eqTypeName (int type)
 {
-    // LOW: a shelf below 200 Hz. MID: a wide bell at 700 Hz. HIGH: a shelf above 2.5 kHz.
-    static const double f0[] = { 200.0, 700.0, 2500.0 };
-    const double A = std::pow (10.0, db / 40.0), w = juce::MathConstants<double>::twoPi * f0[band] / sr, cs = std::cos (w), sn = std::sin (w);
-    double b0, b1, b2, a0, a1, a2;
-    if (band == 1)
+    static const char* const n[kEqTypes] = { "OFF", "BELL", "LOW SHELF", "HIGH SHELF", "LOW CUT", "HIGH CUT", "NOTCH" };
+    return n[juce::jlimit (0, (int) kEqTypes - 1, type)];
+}
+
+Engine::EqBand Engine::eqDefault (int band)
+{
+    // LOW: a shelf below 200 Hz. MID: a wide bell at 700 Hz. HIGH: a shelf above 2.5 kHz (the three-knob EQ, as it always
+    // was). The five between and after them: off, a bell waiting at a place of its own.
+    static const EqBand d[kEqBands] = { { eqLowShelf, 200.0f, 0.0f, 0.70710678f }, { eqOff, 80.0f, 0.0f, 0.70710678f }, { eqOff, 350.0f, 0.0f, 1.0f },
+                                        { eqBell, 700.0f, 0.0f, 0.6f }, { eqOff, 1400.0f, 0.0f, 1.0f }, { eqOff, 5000.0f, 0.0f, 1.0f },
+                                        { eqHighShelf, 2500.0f, 0.0f, 0.70710678f }, { eqOff, 12000.0f, 0.0f, 0.70710678f } };
+    return d[juce::jlimit (0, kEqBands - 1, band)];
+}
+
+bool Engine::eqId (const juce::String& id, int& band, int& what)
+{
+    if (id.length() < 5 || ! id.startsWith ("eq") || id[3] != '_') return false;
+    band = id[2] - '1';
+    if (band < 0 || band >= kEqBands) return false;
+    const auto tail = id.substring (4);
+    what = tail == "type" ? 0 : tail == "hz" ? 1 : tail == "gain" ? 2 : tail == "q" ? 3 : -1;
+    return what >= 0;
+}
+
+juce::String Engine::eqIdOf (int band, int what)
+{
+    static const char* const t[4] = { "type", "hz", "gain", "q" };
+    return "eq" + juce::String (band + 1) + "_" + t[juce::jlimit (0, 3, what)];
+}
+
+// A band's five coefficients (b0 b1 b2 a1 a2, a0 divided out): the cookbook's filters.
+void Engine::eqCoefs (int type, double hz, double db, double q, double sr, double c[5])
+{
+    hz = juce::jlimit (10.0, 0.45 * sr, hz);
+    // (the three knobs' own widths, to the last bit what they always were)
+    const double qd = std::abs (q - 0.70710678) < 1.0e-6 ? 1.0 / std::sqrt (2.0) : std::abs (q - 0.6) < 1.0e-6 ? 0.6 : juce::jlimit (0.1, 40.0, q);
+    const double A = std::pow (10.0, db / 40.0), w = juce::MathConstants<double>::twoPi * hz / sr, cs = std::cos (w), sn = std::sin (w);
+    double b0 = 1, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
+    if (type == eqBell)
     {
-        const double al = sn / (2.0 * 0.6);
+        const double al = sn / (2.0 * qd);
         b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A;
     }
-    else
+    else if (type == eqLowShelf || type == eqHighShelf)
     {
-        const double al = sn / 2.0 * std::sqrt (2.0), rt = 2.0 * std::sqrt (A) * al, sg = band == 0 ? 1.0 : -1.0;
+        const double al = qd == 1.0 / std::sqrt (2.0) ? sn / 2.0 * std::sqrt (2.0) : sn / (2.0 * qd), rt = 2.0 * std::sqrt (A) * al, sg = type == eqLowShelf ? 1.0 : -1.0;
         b0 = A * ((A + 1) - sg * (A - 1) * cs + rt);
         b1 = sg * 2 * A * ((A - 1) - sg * (A + 1) * cs);
         b2 = A * ((A + 1) - sg * (A - 1) * cs - rt);
@@ -1961,8 +2066,80 @@ void Engine::setEq (Lane& ln, int band, float db)
         a1 = -sg * 2 * ((A - 1) + sg * (A + 1) * cs);
         a2 = (A + 1) + sg * (A - 1) * cs - rt;
     }
+    else if (type == eqLowCut || type == eqHighCut)
+    {
+        const double al = sn / (2.0 * qd), k = type == eqLowCut ? 1.0 + cs : 1.0 - cs;
+        b0 = k / 2; b1 = type == eqLowCut ? -k : k; b2 = k / 2; a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al;
+    }
+    else if (type == eqNotch)
+    {
+        const double al = sn / (2.0 * qd);
+        b0 = 1; b1 = -2 * cs; b2 = 1; a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al;
+    }
+    c[0] = b0 / a0; c[1] = b1 / a0; c[2] = b2 / a0; c[3] = a1 / a0; c[4] = a2 / a0;
+}
+
+void Engine::setEq (Lane& ln, int band, int type, float hz, float db, float q)
+{
+    double c[5];
+    eqCoefs (type, hz, db, q, sr, c);
     auto& e = ln.eq[band];
-    e.b0 = (float) (b0 / a0); e.b1 = (float) (b1 / a0); e.b2 = (float) (b2 / a0); e.a1 = (float) (a1 / a0); e.a2 = (float) (a2 / a0);
+    e.b0 = (float) c[0]; e.b1 = (float) c[1]; e.b2 = (float) c[2]; e.a1 = (float) c[3]; e.a2 = (float) c[4];
+}
+
+Engine::EqBand Engine::eqBand (int l, int band) const
+{
+    EqBand b;
+    if (l < 0 || l >= kLanes || band < 0 || band >= kEqBands) return b;
+    const auto& ln = lane[(size_t) l];
+    b.type = ln.eqType[band].load(); b.hz = ln.eqHz[band].load(); b.q = ln.eqQ[band].load();
+    const int knob = eqKnobOf (band);
+    b.db = knob >= 0 ? eqKnobDb (target (cx::lane (l, cx::kEqLow + knob))) : ln.eqGain[band].load();
+    return b;
+}
+
+void Engine::setEqBand (int l, int band, EqBand b)
+{
+    if (l < 0 || l >= kLanes || band < 0 || band >= kEqBands) return;
+    auto& ln = lane[(size_t) l];
+    ln.eqType[band] = juce::jlimit (0, (int) kEqTypes - 1, b.type);
+    ln.eqHz[band] = juce::jlimit (20.0f, 20000.0f, b.hz);
+    ln.eqQ[band] = juce::jlimit (0.3f, 12.0f, b.q);
+    if (eqKnobOf (band) < 0) ln.eqGain[band] = juce::jlimit (-18.0f, 18.0f, b.db);
+    stateMoved();
+}
+
+bool Engine::eqIsDefault (int l) const
+{
+    for (int b = 0; b < kEqBands; ++b)
+    {
+        const auto now = eqBand (l, b), d = eqDefault (b);
+        if (now.type != d.type || std::abs (now.hz - d.hz) > 0.01f * d.hz || std::abs (now.q - d.q) > 1.0e-3f || (eqKnobOf (b) < 0 && std::abs (now.db) > 1.0e-3f)) return false;
+    }
+    return true;
+}
+
+void Engine::eqReset (int l)
+{
+    for (int b = 0; b < kEqBands; ++b) setEqBand (l, b, eqDefault (b));
+}
+
+float Engine::eqResponse (int l, float hz, int only) const
+{
+    double db = 0.0;
+    const double w = juce::MathConstants<double>::twoPi * (double) hz / sr;
+    const std::complex<double> z1 = std::polar (1.0, -w), z2 = std::polar (1.0, -2.0 * w);
+    for (int b = 0; b < kEqBands; ++b)
+    {
+        if (only >= 0 && b != only) continue;
+        const auto band = eqBand (l, b);
+        if (band.type == eqOff || (eqHasGain (band.type) && std::abs (band.db) < 0.005f)) continue;
+        double c[5];
+        eqCoefs (band.type, band.hz, band.db, band.q, sr, c);
+        const double m = std::abs ((c[0] + c[1] * z1 + c[2] * z2) / (1.0 + c[3] * z1 + c[4] * z2));
+        db += 20.0 * std::log10 (std::max (1.0e-6, m));
+    }
+    return (float) db;
 }
 
 // An EQ knob: centre is flat, down cuts to -24 dB, up lifts to +9 dB.
@@ -2276,19 +2453,31 @@ void Engine::render (juce::AudioBuffer<float>& out)
         profIns[(size_t) l] += since (tp);
         // the lane EQ, after the inserts
         bool eqOn = false;
-        for (int e = 0; e < 3; ++e)
+        for (int e = 0; e < kEqBands; ++e)
         {
-            const float want = eqDbFor (snd[(size_t) cx::lane (l, cx::kEqLow + e)]);
+            const int knob = eqKnobOf (e), type = ln.eqType[e].load (std::memory_order_relaxed);
+            const float want = knob >= 0 ? eqDbFor (snd[(size_t) cx::lane (l, cx::kEqLow + knob)]) : ln.eqGain[e].load (std::memory_order_relaxed);
+            const float wantHz = ln.eqHz[e].load (std::memory_order_relaxed), wantQ = ln.eqQ[e].load (std::memory_order_relaxed);
             ln.eqDb[e] += 0.25f * (want - ln.eqDb[e]);
             if (std::abs (want - ln.eqDb[e]) < 0.02f) ln.eqDb[e] = want;
-            if (std::abs (ln.eqDb[e] - ln.eqSet[e]) > 0.01f) { setEq (ln, e, ln.eqDb[e]); ln.eqSet[e] = ln.eqDb[e]; }
-            eqOn = eqOn || std::abs (ln.eqDb[e]) > 0.01f || std::abs (want) > 0.01f;
+            // (a band's place and width travel as its gain does: no step in the sound as it is dragged)
+            if (ln.eqHzNow[e] != wantHz) { ln.eqHzNow[e] = ln.eqHzNow[e] < 1.0f ? wantHz : ln.eqHzNow[e] * std::pow (wantHz / ln.eqHzNow[e], 0.25f); if (std::abs (wantHz - ln.eqHzNow[e]) < 0.001f * wantHz) ln.eqHzNow[e] = wantHz; }
+            if (ln.eqQNow[e] != wantQ) { ln.eqQNow[e] = ln.eqQNow[e] <= 0.0f ? wantQ : ln.eqQNow[e] + 0.25f * (wantQ - ln.eqQNow[e]); if (std::abs (wantQ - ln.eqQNow[e]) < 0.001f) ln.eqQNow[e] = wantQ; }
+            if (type != ln.eqTypeSet[e] || std::abs (ln.eqDb[e] - ln.eqSet[e]) > 0.01f || ln.eqHzNow[e] != ln.eqHzSet[e] || ln.eqQNow[e] != ln.eqQSet[e])
+            {
+                setEq (ln, e, type, ln.eqHzNow[e], ln.eqDb[e], ln.eqQNow[e]);
+                ln.eqTypeSet[e] = type; ln.eqSet[e] = ln.eqDb[e]; ln.eqHzSet[e] = ln.eqHzNow[e]; ln.eqQSet[e] = ln.eqQNow[e];
+            }
+            const bool live = type != eqOff && (! eqHasGain (type) || std::abs (ln.eqDb[e]) > 0.01f || std::abs (want) > 0.01f);
+            if (live && ! ln.eqLive[e]) { ln.eq[e].z1[0] = ln.eq[e].z1[1] = ln.eq[e].z2[0] = ln.eq[e].z2[1] = 0.0f; }
+            ln.eqLive[e] = live;
+            eqOn = eqOn || live;
         }
         const int dly = ln.delay.load();
         for (int ch = 0; ch < 2; ++ch)
         {
             float* x = b2.getWritePointer (ch);
-            if (eqOn) for (int i = 0; i < n; ++i) x[i] = ln.eq[2].tick (ln.eq[1].tick (ln.eq[0].tick (x[i], ch), ch), ch);
+            if (eqOn) for (int e = 0; e < kEqBands; ++e) if (ln.eqLive[e]) for (int i = 0; i < n; ++i) x[i] = ln.eq[e].tick (x[i], ch);
             // delay compensation: every lane leaves as late as the latest one
             auto& d = ln.dl[ch];
             int pos = ln.dlPos;

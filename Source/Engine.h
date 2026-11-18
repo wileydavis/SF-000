@@ -281,6 +281,38 @@ public:
     // ---- a model's own sound knobs (Rig.h, ModelKnobs)
     // The knobs a lane has now: its usual ones, or its model's own in the eight sound places.
     const KnobDef& laneKnob (int lane, int k) const;
+
+    // ---- the lane EQ: eight bands on every lane, after its inserts. A band is OFF, a BELL, a LOW or HIGH SHELF, a LOW or
+    // HIGH CUT (12 dB an octave; two of them for 24) or a NOTCH, at a frequency, with a gain (bell and shelves) and a
+    // width (Q). Three of the bands are the panel's LOW, MID and HIGH knobs (bands 1, 4 and 7: a shelf at 200 Hz, a wide
+    // bell at 700, a shelf at 2.5 kHz, as the three-knob EQ always was): their gain is the knob's, and is not set here;
+    // their kind, frequency and width are. The other five start OFF. Kept in a lane's setup (eq1_type ... eq8_q), so in
+    // snapshots, and listed in CONFIG, so on the E16.
+    static constexpr int kEqBands = 8;
+    enum EqType { eqOff = 0, eqBell, eqLowShelf, eqHighShelf, eqLowCut, eqHighCut, eqNotch, kEqTypes };
+    struct EqBand { int type = eqOff; float hz = 1000.0f, db = 0.0f, q = 0.70710678f; };
+    static const char* eqTypeName (int type);
+    static EqBand eqDefault (int band);
+    static int eqKnobOf (int band)              { return band == 0 ? 0 : band == 3 ? 1 : band == 6 ? 2 : -1; }      // LOW, MID, HIGH, or none
+    static bool eqHasGain (int type)            { return type == eqBell || type == eqLowShelf || type == eqHighShelf; }
+    EqBand eqBand (int lane, int band) const;                   // (a knob band's db: what its knob says now)
+    void setEqBand (int lane, int band, EqBand);                // (a knob band's db is left to its knob)
+    bool eqIsDefault (int lane) const;                          // (but for the three knobs)
+    void eqReset (int lane);
+    // What the EQ does at a frequency, dB: for the graph. One band's alone, or (band -1) all of them.
+    float eqResponse (int lane, float hz, int band = -1) const;
+    // A band's control as CONFIG has it, 0 to 1: kinds along their list, 20 Hz to 20 kHz, -18 to +18 dB, a Q of 0.3 to 12.
+    static float eqHzPlace (float hz)           { return juce::jlimit (0.0f, 1.0f, std::log (std::max (1.0f, hz) / 20.0f) / std::log (1000.0f)); }
+    static float eqHzOf (float v)               { return 20.0f * std::pow (1000.0f, juce::jlimit (0.0f, 1.0f, v)); }
+    static float eqQPlace (float q)             { return juce::jlimit (0.0f, 1.0f, std::log (std::max (0.01f, q) / 0.3f) / std::log (40.0f)); }
+    static float eqQOf (float v)                { return 0.3f * std::pow (40.0f, juce::jlimit (0.0f, 1.0f, v)); }
+    static float eqDbPlace (float db)           { return juce::jlimit (0.0f, 1.0f, (db + 18.0f) / 36.0f); }
+    static float eqDbOf (float v)               { return -18.0f + 36.0f * juce::jlimit (0.0f, 1.0f, v); }
+    static float eqKnobDb (float v)             { return v < 0.5f ? -24.0f * (1.0f - 2.0f * v) : 9.0f * (2.0f * v - 1.0f); }   // a LOW, MID or HIGH knob's
+    static float eqKnobPlace (float db)         { return db < 0.0f ? 0.5f * (1.0f + std::max (-24.0f, db) / 24.0f) : 0.5f + 0.5f * std::min (9.0f, db) / 9.0f; }
+    // "eq3_hz" and the like: which band (0 to 7) and which of its four (0 type, 1 hz, 2 gain, 3 q); false: not one of them
+    static bool eqId (const juce::String& id, int& band, int& what);
+    static juce::String eqIdOf (int band, int what);
     unsigned int lanePlate (int lane) const;        // its model's own faceplate colour (ARGB), or 0: the lane's usual
     // The lane's model may have changed: its knobs reach what that model's knobs are, and are named for them. fresh: a
     // place whose meaning changed starts where that control starts (a model chosen by hand); else every place keeps the
@@ -531,8 +563,14 @@ private:
         Voice* voiceSeen = nullptr;
         LanePlayer player;
         juce::MidiBuffer midi;
-        Biquad eq[3];
-        float eqDb[3] = { 0, 0, 0 }, eqSet[3] = { 99, 99, 99 };
+        // the lane EQ (see eqBand): what is wanted, set by the message thread, and what the audio thread has made of it
+        std::atomic<int> eqType[kEqBands];
+        std::atomic<float> eqHz[kEqBands], eqGain[kEqBands], eqQ[kEqBands];
+        Biquad eq[kEqBands];
+        float eqDb[kEqBands] = {}, eqHzNow[kEqBands] = {}, eqQNow[kEqBands] = {};
+        float eqSet[kEqBands], eqHzSet[kEqBands] = {}, eqQSet[kEqBands] = {};
+        int eqTypeSet[kEqBands];
+        bool eqLive[kEqBands] = {};
         float sendWas[2] = { 0, 0 }, gainWas = 1.0f, hold = -100.0f;
         bool seqOff = false;                    // audio thread: its sequencer was muted last block
         std::vector<float> dl[2];
@@ -549,7 +587,8 @@ private:
     static float readBind (const Bind&);
     static void applyBind (const Bind&, float v);
     void advanceControls (double beats, int n);
-    void setEq (Lane&, int band, float db);
+    void setEq (Lane&, int band, int type, float hz, float db, float q);
+    static void eqCoefs (int type, double hz, double db, double q, double sr, double c[5]);
     void updateLatency();
     void collectRetired (bool all);
 

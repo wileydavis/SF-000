@@ -2016,6 +2016,84 @@ static void pocketCurveTest (int& bad)
         std::printf ("    (tenths 3 to 9 of the beat, dB against no pocket, with what the decay says in brackets. full: %s; SHAPE half: %s; SHAPE nought: %s; DEPTH half: %s)\n", sFull.toRawUTF8(), sHalf.toRawUTF8(), sShort.toRawUTF8(), sShallow.toRawUTF8());
 }
 
+static void eqTest (int& bad)
+{
+    using namespace sf0;
+    // The lane EQ: eight bands a lane (Engine.h, eqBand). The three knobs are three of them and sound as they always did;
+    // a band is a bell, a shelf, a cut or a notch where it is put; a lane's setup holds it, so a snapshot does, and one
+    // with nothing to say of it puts it back as it starts; CONFIG lists it, and a knob band's GAIN there is its knob.
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i) { buf.clear(); e.render (buf); if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n))); }
+        e.tidy();
+    };
+    int hat = -1, pad = -1;
+    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "pad") pad = l; else if (hat < 0 && juce::String (lanes()[(size_t) l].module) == "PERC") hat = l; }
+    bool starts = true;
+    for (int l = 0; l < kLanes; ++l) starts = starts && e.eqIsDefault (l) && std::abs (e.eqResponse (l, 1000.0f)) < 0.01f;
+    // ---- what a band does, by its own arithmetic: a bell is its gain at its place, a notch nothing there, a cut 3 dB
+    // down at its place and 12 an octave past it; a knob band is its knob
+    auto put = [&] (int l, int b, int type, float hz, float db, float q) { Engine::EqBand x; x.type = type; x.hz = hz; x.db = db; x.q = q; e.setEqBand (l, b, x); };
+    put (pad, 1, Engine::eqBell, 1000.0f, 12.0f, 2.0f);
+    const float bell = e.eqResponse (pad, 1000.0f), bellOff = e.eqResponse (pad, 100.0f);
+    put (pad, 1, Engine::eqNotch, 800.0f, 0.0f, 4.0f);
+    const float notch = e.eqResponse (pad, 800.0f);
+    put (pad, 1, Engine::eqLowCut, 500.0f, 0.0f, 0.70710678f);
+    const float lc0 = e.eqResponse (pad, 500.0f), lc1 = e.eqResponse (pad, 125.0f);
+    put (pad, 1, Engine::eqHighCut, 2000.0f, 0.0f, 0.70710678f);
+    const float hc0 = e.eqResponse (pad, 2000.0f), hc1 = e.eqResponse (pad, 8000.0f);
+    put (pad, 1, Engine::eqOff, 80.0f, 0.0f, 0.70710678f);
+    ses.userSet (cx::lane (pad, cx::kEqLow), 0.25f);                    // (LOW half way down: -12 dB)
+    const float knobBand = e.eqBand (pad, 0).db, shelf = e.eqResponse (pad, 30.0f);
+    ses.userSet (cx::lane (pad, cx::kEqLow), 0.5f);
+    const bool maths = std::abs (bell - 12.0f) < 0.1f && std::abs (bellOff) < 0.3f && notch < -40.0f && std::abs (lc0 + 3.0f) < 0.3f && lc1 < -22.0f && lc1 > -26.0f
+                       && std::abs (hc0 + 3.0f) < 0.3f && hc1 < -22.0f && std::abs (knobBand + 12.0f) < 0.01f && std::abs (shelf + 12.0f) < 0.6f && e.eqIsDefault (pad);
+    if (! maths) std::printf ("    (bell %.2f and %.2f away, notch %.1f, low cut %.2f and %.2f two octaves under, high cut %.2f and %.2f two over, LOW's band %.2f and %.2f at 30 Hz)\n", bell, bellOff, notch, lc0, lc1, hc0, hc1, knobBand, shelf);
+    // ---- and by ear: a hat alone, its top cut at 2 kHz twice over (24 dB an octave), against itself
+    for (int l = 0; l < kLanes; ++l) if (l != hat) { Pattern none; e.setPattern (l, none); }
+    e.solo = hat;
+    ses.userSet (cx::kGlide, 0.0f);
+    ses.userSet (cx::lane (hat, cx::kSendA), 0.0f); ses.userSet (cx::lane (hat, cx::kSendB), 0.0f);
+    auto bar = [&] () { e.setRunning (false); run (4.0); heard.clear(); e.setRunning (true); run (4.0); run (4.0, true); e.setRunning (false); return heard; };
+    auto top = [] (const std::vector<float>& x) { double hf = 0.0; for (size_t n = 2; n < x.size(); ++n) { const double d2 = (double) x[n] - 2.0 * x[n - 1] + x[n - 2]; hf += d2 * d2; } return 10.0 * std::log10 (hf / (double) std::max<size_t> (1, x.size()) + 1e-14); };
+    const double open = top (bar());
+    put (hat, 1, Engine::eqHighCut, 2000.0f, 0.0f, 0.70710678f); put (hat, 2, Engine::eqHighCut, 2000.0f, 0.0f, 0.70710678f);
+    const double cut = top (bar());
+    const bool hears = open > -110.0 && open - cut > 15.0;
+    if (! hears) std::printf ("    (the hat's top: %.1f dB open, %.1f dB cut at 2 kHz)\n", open, cut);
+    // ---- a snapshot holds it; one with nothing to say of it puts it back as it starts
+    e.solo = -1;
+    const auto plain = ses.take();                                      // (the pad's EQ as it starts; the hat's cut)
+    put (pad, 4, Engine::eqBell, 1500.0f, -9.0f, 3.0f); put (pad, 0, Engine::eqLowCut, 120.0f, 0.0f, 1.0f);
+    const auto shaped = ses.take();
+    const juce::var v = ses.written (*ses.findSnap (shaped)), v0 = ses.written (*ses.findSnap (plain));
+    auto says = [] (const juce::var& snap, int l, const char* id) { if (auto* o = snap["setup"]["lanes"][l].getDynamicObject()) return o->hasProperty (id); return false; };
+    const bool written = says (v, pad, "eq5_hz") && says (v, pad, "eq1_type") && ! says (v, pad, "eq1_gain") && says (v, pad, "eq5_gain") && ! says (v0, pad, "eq5_hz") && says (v0, hat, "eq2_type");
+    ses.recall (plain); run (2.0);
+    const bool back = e.eqIsDefault (pad) && e.eqBand (hat, 1).type == Engine::eqHighCut;
+    ses.recall (shaped); run (2.0);
+    const auto b4 = e.eqBand (pad, 4), b0 = e.eqBand (pad, 0);
+    const bool kept = b4.type == Engine::eqBell && std::abs (b4.hz - 1500.0f) < 2.0f && std::abs (b4.db + 9.0f) < 0.02f && std::abs (b4.q - 3.0f) < 0.01f && b0.type == Engine::eqLowCut && std::abs (b0.hz - 120.0f) < 0.5f;
+    if (! (written && back && kept)) std::printf ("    (written %d, back to its start %d, kept %d: band 5 %s %.1f Hz %.2f dB Q %.2f)\n", (int) written, (int) back, (int) kept, Engine::eqTypeName (b4.type), b4.hz, b4.db, b4.q);
+    // ---- CONFIG lists it, a row a band, after everything else; a knob band's GAIN there is the knob
+    const auto list = e.setupParams ({ 0, pad, 0 });
+    int first = -1, count = 0; bool last = true;
+    for (int i = 0; i < (int) list.size(); ++i) { int b = 0, w = 0; if (Engine::eqId (list[(size_t) i].id, b, w)) { if (first < 0) first = i; ++count; } else if (first >= 0) last = false; }
+    ses.setupByHand ({ 0, pad, 0 }, "eq1_gain", 0.75f);                // (LOW's band)
+    ses.setupByHand ({ 0, pad, 0 }, "eq2_hz", Engine::eqHzPlace (300.0f));
+    const bool config = count == Engine::kEqBands * 4 && last && std::abs (e.target (cx::lane (pad, cx::kEqLow)) - 0.75f) < 1.0e-4f && std::abs (e.eqBand (pad, 0).db - 4.5f) < 0.01f && std::abs (e.eqBand (pad, 1).hz - 300.0f) < 0.5f;
+    if (! config) std::printf ("    (config: %d of them from %d, last %d; LOW at %.3f, its band %.2f dB; band 2 at %.1f Hz)\n", count, first, (int) last, e.target (cx::lane (pad, cx::kEqLow)), e.eqBand (pad, 0).db, e.eqBand (pad, 1).hz);
+    const bool ok = starts && maths && hears && written && back && kept && config;
+    if (! ok) ++bad;
+    std::printf ("  %s: the lane EQ: eight bands a lane, flat as it starts; a bell, a notch, a cut and a knob's shelf are what their arithmetic says, and a cut is heard; "
+                 "a snapshot holds a lane's EQ and one with nothing to say of it puts it back; CONFIG lists it last, a row a band, and LOW's GAIN there is the LOW knob\n", ok ? "ok" : "FAIL");
+}
+
 static void granularTest (int& bad)
 {
     using namespace sf0;
@@ -2186,7 +2264,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -4614,6 +4692,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     samplerTest (bad);
     forgeTest (bad);
     pocketCurveTest (bad);
+    eqTest (bad);
     arrsKeptTest (bad);
 
     {

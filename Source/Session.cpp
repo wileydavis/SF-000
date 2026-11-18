@@ -506,6 +506,8 @@ void Session::setConfig (int index, int v7)
 
 void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
 {
+    // (the gain of an EQ band that is the panel's LOW, MID or HIGH is that knob)
+    if (int b = 0, w = 0; t.kind == 0 && Engine::eqId (id, b, w) && w == 2 && Engine::eqKnobOf (b) >= 0) { userSet (cx::lane (t.lane, cx::kEqLow + Engine::eqKnobOf (b)), v); return; }
     engine.setSetup (t, id, v);
     // (another model, with sound knobs of its own: the places it renamed start where those start, and that is where they stand)
     if (t.kind == 0 && id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (t.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
