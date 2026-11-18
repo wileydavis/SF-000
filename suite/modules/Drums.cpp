@@ -9,20 +9,7 @@
 
 namespace sf
 {
-// DECAY as a gate on samples: 0 = 10 ms, 90 %+ = the whole sample, exponential in between;
-// echo generations shorter. The cut is an 8 ms fade, never a click.
-static float sampleGateSeconds (float decayKnob, float sampleSeconds, int gen)
-{
-    const float full = std::max (0.01f, sampleSeconds);
-    if (decayKnob >= 0.9f && gen == 0) return 1.0e9f;
-    const float t = 0.01f * std::pow (full / 0.01f, clamp01 (decayKnob / 0.9f));
-    return t * std::pow (0.65f, (float) gen);
-}
-static float sampleGateGain (float t, float gateSeconds)
-{
-    if (t <= gateSeconds) return 1.0f;
-    return std::max (0.0f, 1.0f - (t - gateSeconds) / 0.008f);
-}
+// (SF-000) DECAY as a gate on samples (sampleGateSeconds, sampleGateGain): in Kit.h now, for the loop there.
 
 // =====================================================================================  KICK
 // KICK 909-TYPE and KICK 808-TYPE are their circuits [Nov 10] (renderVoice: kick909, kick808); the
@@ -164,6 +151,7 @@ public:
         osr = 2.0 * rate;
         dec.set (HalfbandDesign::forStage (rate, 0));
         decB.set (HalfbandDesign::forStage (rate, 0));
+        decS.set (HalfbandDesign::forStage (rate, 0)); decSB.set (HalfbandDesign::forStage (rate, 0));      // (SF-000)
         split.prepare (rate);
         ground.prepare (osr);               // (SF-000)
         out.prepare (rate, mb, ROLE_KICK, "KICK", false);
@@ -176,6 +164,7 @@ public:
         for (auto& v : voices) v.active = false;
         dec.reset();
         decB.reset();
+        decS.reset(); decSB.reset(); sideLive = 0; wasWide = false;     // (SF-000)
         split.reset();
         ground.reset();
         out.reset();
@@ -264,6 +253,9 @@ public:
         float fgPrev = 0, fgHarm = 0, fgBody = 1, fgImp = 0, fgSub = 1, fgLo = 0, fgLoK = 0, fgHpK = 0, fgHp1 = 0, fgHp2 = 0, fgImpTau = 0.006f, fgClip = 1, fgOut = 1, fgBright = 0;
         double fgPos = -1.0;
         float fgNoise = 1.0f;             // with no file: what the impact's noise, through its band, is turned by to be one strength
+        // (SF-000) a stereo file's impact: its left less its right (halved) has the high-passes and the tone's low-pass of
+        // its own, and takes the gain DRIVE and the clipper give the sum at each moment
+        float fgHpS1 = 0, fgHpS2 = 0; Svf resS; bool fgWide = false;
         bool fgFeeds = false;
         float level() const { return active ? vel * std::exp (-(float) t / std::max (0.01f, decay)) : 0.0f; }
     };
@@ -499,6 +491,7 @@ public:
             const float rms = (float) std::sqrt (sum / (double) std::max (1, n1 - n0));
             v.fgImp *= std::min (300.0f, 0.4f / std::max (rms, 1.0e-5f));        // (a quiet place in a recording is brought up as far as 50 dB)
             v.fgPos = at;
+            v.fgWide = smp->wide;             // (SF-000) a stereo file: the impact keeps its left and right
         }
         v.fgFeeds = main;
         if (main && gen == 0)
@@ -506,7 +499,7 @@ public:
     }
 
     // One sample of it (at osr).
-    float forgeVoice (Voice& v, float t, const SampleData* s)
+    float forgeVoice (Voice& v, float t, const SampleData* s, float& side)
     {
         // BODY: the wave starts at nought, rising, every hit
         const float f = v.f1 + (v.f0 - v.f1) * std::exp (-t / v.tau);
@@ -521,32 +514,53 @@ public:
         if (v.fgFeeds) groundIn += body * v.fade * v.mix * v.vel;
         v.fgLo += v.fgLoK * (body - v.fgLo);
         float mid = body - v.fgLo;
+        float sd = 0.0f;                    // (SF-000) a stereo file's impact: its left less its right, halved
         // IMPACT
         if (v.fgImp > 0.0f && t < 0.09f)
         {
-            float x;
+            float x, xs = 0.0f;
             if (v.fgPos >= 0.0 && s != nullptr && (int) v.fgPos + 3 < s->length())
             {
-                x = 0.5f * (s->read (0, v.fgPos, 0.5) + s->read (1, v.fgPos, 0.5));
+                const float a = s->read (0, v.fgPos, 0.5), b = v.fgWide ? s->read (1, v.fgPos, 0.5) : a;
+                x = 0.5f * (a + b);
                 v.fgPos += 0.5;
                 v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;       // (the file's lows are the body's to have)
                 v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
+                if (v.fgWide)
+                {
+                    xs = 0.5f * (a - b);
+                    v.fgHpS1 += v.fgHpK * (xs - v.fgHpS1); xs -= v.fgHpS1;
+                    v.fgHpS2 += v.fgHpK * (xs - v.fgHpS2); xs -= v.fgHpS2;
+                }
             }
             else x = v.clickBp.tickBP (rng.next()) * v.fgNoise;        // (the noise's band is its colour)
             const float tail = clamp01 ((t - 0.07f) / 0.02f);           // (and out by its end, whatever its decay)
             const float e = std::min (1.0f, t / 0.0003f) * std::exp (-t / v.fgImpTau) * (1.0f - tail * tail * (3.0f - 2.0f * tail));
             mid += x * e * v.fgImp;
+            sd = xs * e * v.fgImp;
         }
         if (v.click > 0.0f && t < 0.0003f) mid += v.click * 0.6f;
-        if (v.drive > 0.0f) { const float g = 1.0f + v.drive * 9.0f; mid = fastTanh (mid * g) / std::sqrt (g) * 1.25f; }
+        if (v.drive > 0.0f)
+        {
+            const float g = 1.0f + v.drive * 9.0f, u = mid * g, sat = fastTanh (u);
+            mid = sat / std::sqrt (g) * 1.25f;
+            if (sd != 0.0f) sd *= (std::abs (u) > 1.0e-4f ? sat / u : 1.0f) * g / std::sqrt (g) * 1.25f;
+        }
         float y = (v.fgLo * v.fgSub + mid) * v.vel;
+        sd *= v.vel;
         // the tone's low-pass: open on the hit, closing onto where TONE and CHARACTER have it
+        const bool sideOn = v.fgWide && t < 0.2f;              // (its low-pass rings a little past the impact's end)
         if (v.lp < 15000.0f)
         {
-            if ((v.tick++ & 15) == 0) v.res.set (v.lp + v.fgBright * std::exp (-t / 0.03f), 0.7071f, osr);
+            if ((v.tick++ & 15) == 0) { v.res.set (v.lp + v.fgBright * std::exp (-t / 0.03f), 0.7071f, osr); if (sideOn) { v.resS.g = v.res.g; v.resS.k = v.res.k; v.resS.a1 = v.res.a1; v.resS.a2 = v.res.a2; v.resS.a3 = v.res.a3; } }
             y = v.res.tickLP (y);
+            if (sideOn) sd = v.resS.tickLP (sd);
         }
-        y = fastTanh (y * v.fgClip) * v.fgOut;
+        {
+            const float u = y * v.fgClip, sat = fastTanh (u);
+            y = sat * v.fgOut;
+            side = sideOn ? sd * (std::abs (u) > 1.0e-4f ? sat / u : 1.0f) * v.fgClip * v.fgOut : 0.0f;
+        }
         v.phase += f / osr;
         if (v.phase > 1.0) v.phase -= 1.0;
         v.t += 1.0 / osr;
@@ -559,16 +573,19 @@ public:
     {
         const float t = (float) v.t;
         float y = 0.0f;
-        if (v.model == kKickForge) y = forgeVoice (v, t, s);
+        float side = 0.0f;                  // (SF-000) a stereo sample's left less its right, halved: y is their sum, halved, as it always was
+        if (v.model == kKickForge) y = forgeVoice (v, t, s, side);
         else if (v.model == kKickSample)
         {
             if (s == nullptr || (int) v.phase + 2 >= (v.reg.end > 0.0 ? std::min (s->length(), v.reg.last()) : s->length())) { v.active = false; return 0.0f; }
             const double rate = v.srate * 0.5;               // input samples per output (2x) sample
-            y = 0.5f * (s->read (0, v.phase, rate) + s->read (1, v.phase, rate)) * v.vel;
+            const float a = s->read (0, v.phase, rate), b = s->wide ? s->read (1, v.phase, rate) : a;
+            y = 0.5f * (a + b) * v.vel;
             const float g = sampleGateGain (t, v.gate);
             if (g <= 0.0f) { v.active = false; return 0.0f; }
             y *= g;
             y *= v.reg.gain (v.phase);
+            if (s->wide) side = 0.5f * (a - b) * v.vel * g * v.reg.gain (v.phase);
             v.t += 1.0 / osr;
             v.phase += v.srate * 0.5;
         }
@@ -604,7 +621,8 @@ public:
             v.t += 1.0 / osr;
             if (t > v.decay * 9.0f + 0.05f) v.active = false;
         }
-        if (v.fadeStep > 0.0f) { v.fade -= v.fadeStep; if (v.fade <= 0.0f) { v.active = false; return 0.0f; } y *= v.fade; }
+        if (v.fadeStep > 0.0f) { v.fade -= v.fadeStep; if (v.fade <= 0.0f) { v.active = false; return 0.0f; } y *= v.fade; side *= v.fade; }
+        if (side != 0.0f) sideIn[v.layer == 1 ? 1 : 0] += side * v.cal * v.mix;
         return y * v.cal * v.mix;
     }
 
@@ -621,6 +639,13 @@ public:
         const bool splitOff = split.off (LayerSplit::amount (k0), LayerSplit::amount (k1));
         size_t e = 0;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
+        // (SF-000) a stereo sample (MODEL or the layer at SAMPLE, or KICK FORGE's impact from a file): its left less its
+        // right goes beside the kick through halfbands and the split of its own, and is put back at the end. With none,
+        // and none still ringing, the kick is one channel exactly as it was.
+        auto reads = [] (int m) { return m == kKickSample || m == kKickForge; };
+        const bool wide = (smp != nullptr && smp->wide && (reads (model) || (layer > 0.01f && reads (layerModel)))) || sideLive > 0;
+        if (wide && ! wasWide) { decS.reset(); decSB.reset(); split.widen(); }
+        wasWide = wide;
         for (int i = 0; i < c.n; ++i)
         {
             while (e < events.size() && events[e].offset <= i)
@@ -640,13 +665,26 @@ public:
             // MODEL's voices and the layer's sum apart, each through its own halfband, then split
             // (or added: with no layer, exactly the sound there was before the split).
             float y0 = 0.0f, y1 = 0.0f, b0 = 0.0f, b1 = 0.0f;
-            groundIn = 0.0f;
+            groundIn = 0.0f; sideIn[0] = sideIn[1] = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b0 : y0) += renderVoice (v, smp);
             if (ground.awake()) y0 += ground.tick (groundIn);              // (SF-000) KICK FORGE's ground, with MODEL's voices
-            groundIn = 0.0f;
+            const float sa0 = sideIn[0], sb0 = sideIn[1];
+            groundIn = 0.0f; sideIn[0] = sideIn[1] = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b1 : y1) += renderVoice (v, smp);
             if (ground.awake()) y1 += ground.tick (groundIn);
             const float ya = dec.down (y0, y1), yb = decB.down (b0, b1);
+            if (wide)
+            {
+                if (sa0 != 0.0f || sb0 != 0.0f || sideIn[0] != 0.0f || sideIn[1] != 0.0f) sideLive = 4096;      // (and the filters' tails after)
+                else if (sideLive > 0) --sideLive;
+                const float sa = decS.down (sa0, sideIn[0]), sb = decSB.down (sb0, sideIn[1]);
+                float l = ya + sa, r = ya - sa;
+                if (splitOff) { l += yb + sb; r += yb - sb; }
+                else split.tick (l, r, yb + sb, yb - sb, LayerSplit::amount (k0 + (k1 - k0) * (float) i / (float) c.n));
+                L[i] = l; R[i] = r;
+                hist.push (std::fabs (0.5f * (l + r)));
+                continue;
+            }
             const float y = splitOff ? ya + yb : split.tick (ya, yb, LayerSplit::amount (k0 + (k1 - k0) * (float) i / (float) c.n));
             L[i] = y; R[i] = y;
             hist.push (std::fabs (y));
@@ -687,6 +725,9 @@ private:
     struct DecimHist { std::atomic<float> v[512] {}; int w = 0, k = 0; float acc = 0; void push (float x) { acc = std::max (acc, x); if (++k >= 512) { v[w].store (std::min (1.0f, acc)); w = (w + 1) % 512; k = 0; acc = 0; } } };
     double sr = 48000.0, osr = 96000.0;
     Halfband dec, decB;                 // MODEL's voices, the layer's
+    Halfband decS, decSB;               // (SF-000) a stereo sample's left less its right: MODEL's, the layer's
+    float sideIn[2] = { 0.0f, 0.0f };   // (what the voices gave of it this sample)
+    int sideLive = 0; bool wasWide = false;
     LayerSplit split;
     Ground ground; float groundIn = 0.0f;   // (SF-000) KICK FORGE's ground, and what the body gives it this sample
     static constexpr int kVoices = 8;
@@ -734,12 +775,12 @@ class PercModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { TUNE, DECAY, TONE, DENS, FILT, ACCENT, DRIVE, LEVEL, MODEL, ESPACE, ESWING, EPROB, CHOKE, SPREAD, RES, ALLOCON, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE };     // (SF-000) GAIN, NORM, SLICE, CYCLEALISE
+    enum { TUNE, DECAY, TONE, DENS, FILT, ACCENT, DRIVE, LEVEL, MODEL, ESPACE, ESWING, EPROB, CHOKE, SPREAD, RES, ALLOCON, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, SBARS };     // (SF-000) GAIN, NORMALISE, SLICE, CYCLE, LOOP
     std::string id() const override { return "PERC"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        return withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
+        return withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
                  pct ("decay", "DECAY", 0.5f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
@@ -754,7 +795,7 @@ public:
                  toggle ("choke", "CHOKE", true),
                  pct ("spread", "SPREAD", 0.3f).slow(),
                  pct ("res", "FILTER RES", 0.1f),
-                 toggle ("alloc", "ALLOC", true).noPreset().forget() })));
+                 toggle ("alloc", "ALLOC", true).noPreset().forget() }))));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL: SAMPLE)"; }
@@ -774,6 +815,7 @@ public:
     void reset() override
     {
         echoes.reset();
+        lp.reset();                                 // (SF-000)
         for (auto& v : voices) v.active = false;
         for (auto& d : dec) d.reset();
         out.reset();
@@ -793,6 +835,7 @@ public:
         float gate = 1.0e9f;
         SampleRegion reg;                   // SAMPLE: the part of the sample this hit plays
         float tilt = 0.0f, tiltLp = 0.0f, tiltA = 0.0f, tiltLo = 1.0f, tiltHi = 1.0f;      // (SF-000) TONE on a sample
+        float side = 0.0f, tiltLp2 = 0.0f;  // (SF-000) a sample's left less its right, halved (what the hit returns is their sum, halved), and TONE's state for it
         // The circuits: the 909's ROM (its sample's own decay, the held 6-bit value), filters, the
         // body's pitch, the snappy noise's level and decay, a DC blocker.
         float romDecay = 0.1f, romHeld = 0.0f, body = 200.0f, snappy = 0.5f, nzDecay = 0.0f, dcX = 0.0f, dcY = 0.0f, lpZ = 0.0f;
@@ -816,7 +859,7 @@ public:
         v.tune = semis (c.v (TUNE));
         v.tone = c.v (TONE);
         // (SF-000) TONE on a sample: a tilt about 2 kHz, darker under the centre, brighter over it, none at it
-        v.tilt = (v.tone - 0.5f) * 2.0f; v.tiltLp = 0.0f;
+        v.tilt = (v.tone - 0.5f) * 2.0f; v.tiltLp = 0.0f; v.tiltLp2 = 0.0f; v.side = 0.0f;
         v.tiltA = 1.0f - std::exp (-kTwoPi * 2000.0f / (float) osr); v.tiltLo = std::pow (10.0f, -v.tilt * 0.6f); v.tiltHi = std::pow (10.0f, v.tilt * 0.6f);
         v.decay = m.decay * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * std::pow (0.65f, (float) ev.gen);
         v.noise = m.noise;
@@ -1034,12 +1077,23 @@ public:
             }
             case P_SAMPLE:
             {
+                v.side = 0.0f;
                 if (s == nullptr || (int) v.spos + 2 >= (v.reg.end > 0.0 ? std::min (s->length(), v.reg.last()) : s->length())) { v.active = false; return 0.0f; }
                 const float g = sampleGateGain (t, v.gate);
                 if (g <= 0.0f) { v.active = false; return 0.0f; }
-                y = 0.5f * (s->read (0, v.spos, v.tune * 0.5) + s->read (1, v.spos, v.tune * 0.5)) * g * v.reg.gain (v.spos);
+                // (SF-000) in stereo: the two channels' sum is the hit, as it always was, and their difference goes with it
+                // (v.side), to be put back as left and right where the voices are mixed
+                const float a = s->read (0, v.spos, v.tune * 0.5), b = s->wide ? s->read (1, v.spos, v.tune * 0.5) : a;
+                const float rg = v.reg.gain (v.spos);
+                y = 0.5f * (a + b) * g * rg;
+                float sd = s->wide ? 0.5f * (a - b) * g * rg : 0.0f;
                 v.spos += v.tune * 0.5;
-                if (std::abs (v.tilt) > 0.002f) { v.tiltLp += v.tiltA * (y - v.tiltLp); y = v.tiltLp * v.tiltLo + (y - v.tiltLp) * v.tiltHi; }      // (SF-000) TONE
+                if (std::abs (v.tilt) > 0.002f)       // (SF-000) TONE
+                {
+                    v.tiltLp += v.tiltA * (y - v.tiltLp); y = v.tiltLp * v.tiltLo + (y - v.tiltLp) * v.tiltHi;
+                    v.tiltLp2 += v.tiltA * (sd - v.tiltLp2); sd = v.tiltLp2 * v.tiltLo + (sd - v.tiltLp2) * v.tiltHi;
+                }
+                v.side = sd;
                 break;
             }
         }
@@ -1050,7 +1104,8 @@ public:
         }
         v.t += 1.0 / osr;
         if (v.type != P_SAMPLE && t > std::max (v.decay, v.nzDecay) * 8.0f + 0.03f) v.active = false;
-        if (v.fadeStep > 0.0f) { v.fade -= v.fadeStep; if (v.fade <= 0.0f) { v.active = false; return 0.0f; } y *= v.fade; }
+        if (v.fadeStep > 0.0f) { v.fade -= v.fadeStep; if (v.fade <= 0.0f) { v.active = false; v.side = 0.0f; return 0.0f; } y *= v.fade; v.side *= v.fade; }
+        v.side *= v.vel;
         return y * v.vel;
     }
 
@@ -1061,6 +1116,9 @@ public:
         const int model = c.ci (MODEL);
         const float drv = c.v (DRIVE);
         const float dg = 1.0f + drv * 8.0f, dn = 1.0f / (1.0f + drv * 2.0f);
+        // (SF-000) LOOP: the sample goes round on the rig's bars (see loopSetup). The lane's hits then open it and do not
+        // start it again.
+        const bool loop = loopSetup (c, model, smp);
         size_t e = 0;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
         for (int i = 0; i < c.n; ++i)
@@ -1068,22 +1126,50 @@ public:
             while (e < events.size() && events[e].offset <= i)
             {
                 const auto& ev = events[e++];
-                if (ev.on) trigger (c, model, ev);
+                if (! ev.on) continue;
+                if (loop) loopHit (c, ev); else trigger (c, model, ev);
             }
             float l[2] {}, r[2] {};
             for (int k = 0; k < 2; ++k)
+            {
+                if (lp.live()) loopTick (smp, drv, dg, dn, l[k], r[k]);
                 for (auto& v : voices)
                     if (v.active)
                     {
                         float y = render (v, smp);
+                        if (v.side != 0.0f)             // (SF-000) a stereo sample: its own left and right, each through DRIVE, then where the hit sits
+                        {
+                            float a = y + v.side, b = y - v.side;
+                            if (drv > 0.001f) { a = fastTanh (a * dg) * dn; b = fastTanh (b * dg) * dn; }
+                            l[k] += a * v.gl; r[k] += b * v.gr;
+                            continue;
+                        }
                         if (drv > 0.001f) y = fastTanh (y * dg) * dn;
                         l[k] += y * v.gl; r[k] += y * v.gr;
                     }
+            }
             L[i] = dec[0].down (l[0], l[1]) * 1.41f;
             R[i] = dec[1].down (r[0], r[1]) * 1.41f;
         }
         out.process (c, io, FILT, RES, 0.0f, 0.0f, c.b (ALLOCON), LEVEL);
     }
+    // (SF-000) LOOP. A sample on a hat or the clap is a hit: every step starts it again, and DECAY cuts it. With LOOP on
+    // (SAMPLE the model, a file loaded) it is a loop instead: START..END is taken to be a number of bars (AUTO: the power
+    // of two it is nearest to at the tempo; or the count chosen) and goes round on the rig's bars while the clock runs,
+    // at the rig's tempo, so its pitch moves with the tempo's ratio to its own, as a record's does. Where it is in the
+    // file is where the clock is in those bars, whenever it is heard: stopping, starting or opening it late never puts
+    // it out. TUNE turns it by whole octaves only (twice as fast, half as fast: still on the bars). DECAY right up (90 %
+    // and over): it plays through, at one level. Under that the lane's steps open it, each for as long as DECAY says
+    // (10 ms to a bar) and as loud as the hit is (ACCENT, DENSITY and the echoes as on any hit): the loop, chopped by the
+    // pattern. In stereo, if the file is; TONE, DRIVE and the rest of the lane after it as on a hit. Stopped: silence.
+    SampleLoop lp;
+    bool loopSetup (Ctx& c, int model, const SampleData* smp)
+    {
+        return lp.setup (c, c.ci (SBARS), kPercModels[model].type == P_SAMPLE, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
+                         osr, cal::at (cal::perc, model), c.v (TONE), c.v (DECAY), c.v (TUNE));
+    }
+    void loopHit (Ctx& c, const NoteEvent& ev) { lp.hit (c, c.v (DECAY), lerp (0.7f, ev.vel, c.v (ACCENT)) * ev.gain, ev.gen); }
+    void loopTick (const SampleData* smp, float drv, float dg, float dn, float& l, float& r) { lp.tick (smp, drv, dg, dn, l, r); }
     // No display of its own: with a sample loaded, the sample (its START and END to drag).
     int displayHeight() const override { return sample.get() != nullptr ? SampleStrip::kHeight : 0; }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
@@ -1233,13 +1319,19 @@ public:
                 else ++k;
 
             // Exciter.
-            float x = 0.0f;
+            float x = 0.0f, xs = 0.0f;          // (SF-000) xs: a stereo sample's left less its right, halved (x is their sum, halved)
             if (thumpT < 0.4f)
             {
                 if (model == 5 && smp != nullptr)
                 {
                     const int len = sReg.end > 0.0 ? std::min (smp->length(), sReg.last()) : smp->length();
-                    if ((int) sPos + 2 < len) x = 0.5f * (smp->read (0, sPos, tune) + smp->read (1, sPos, tune)) * thumpVel * sReg.gain (sPos);
+                    if ((int) sPos + 2 < len)
+                    {
+                        const float a = smp->read (0, sPos, tune), b = smp->wide ? smp->read (1, sPos, tune) : a;
+                        const float g = thumpVel * sReg.gain (sPos);
+                        x = 0.5f * (a + b) * g;
+                        if (smp->wide) xs = 0.5f * (a - b) * g;
+                    }
                     sPos += tune;
                 }
                 else
@@ -1254,6 +1346,8 @@ public:
             float wl = 0, wr = 0;
             pre[0].push (x);
             const float xp = preS > 1 ? pre[0].read (preS) : x;
+            float xsp = 0.0f;
+            if (model == 5) { pre[1].push (xs); xsp = preS > 1 ? pre[1].read (preS) : xs; }
             switch (model)
             {
                 case 0: case 3: fdn.tick (xp, xp, wl, wr, false); wl *= 2.0f; wr *= 2.0f; break;
@@ -1290,9 +1384,11 @@ public:
                 default:
                 {
                     // (SF-000) a sample: SIZE is the room behind it (and WIDTH that room's width); with SIZE at nought, the sample alone
-                    float rl, rr; fdn.tick (xp, xp, rl, rr, false);
+                    // (SF-000) in stereo: the sample's own left and right, into the room and beside it
+                    const float al = xp + xsp, ar = xp - xsp;
+                    float rl, rr; fdn.tick (al, ar, rl, rr, false);
                     const float room = c.v (SIZE) * 1.5f;
-                    wl = xp + rl * room; wr = xp + rr * room;
+                    wl = al + rl * room; wr = ar + rr * room;
                     break;
                 }
             }
@@ -1362,7 +1458,7 @@ private:
     RoleOutput out;
     Oversampler os;
     Fdn fdn;
-    DelayLine dly[2], pre[1];
+    DelayLine dly[2], pre[2];           // (SF-000) pre[1]: a stereo sample's left less its right, beside it
     Svf lp[2][2], hp[2];
     SampleSlot sample;
     std::vector<std::pair<double, float>> midiDelay, extras;

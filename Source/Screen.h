@@ -704,6 +704,7 @@ private:
     juce::uint32 pkNoteAt = 0;
     juce::String cfgName, cfgNote, cfgStatus;
     juce::String saysPath; Session::SampleSays saysOf;      // (the lane's file in CONFIG: what it is heard to be, read when the file changes)
+    juce::String loopText, loopPath; juce::uint32 loopStamp = 0; int loopLane = -1; double loopTempo = 0.0;      // (and, with LOOP on, its bars and own tempo)
     R cfgDisplay, cfgRect;
     std::unique_ptr<juce::TextEditor> editor;
     std::function<void (juce::String)> editDone;

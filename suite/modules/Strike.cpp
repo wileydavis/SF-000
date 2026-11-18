@@ -36,20 +36,23 @@ const ObjectModel kObjects[] = {
     { "GONG", 16, { 1.0f, 1.1f, 1.38f, 1.5f, 1.73f, 1.96f, 2.24f, 2.6f, 2.83f, 3.2f, 3.6f, 4.1f, 4.7f, 5.3f, 6.1f, 7.0f },
                   { 1.0f, 0.8f, 0.75f, 0.7f, 0.65f, 0.6f, 0.55f, 0.5f, 0.45f, 0.42f, 0.38f, 0.34f, 0.3f, 0.26f, 0.22f, 0.18f }, 1.0f, 2.2f, 1.0f, 1.0f } };
 constexpr int kNumObjects = 6;
-std::vector<std::string> objectNames() { std::vector<std::string> v; for (auto& o : kObjects) v.push_back (o.name); return v; }
+// (SF-000) SAMPLE, after the objects (a model's number never moves): a file, as a hit or as a loop on the rig's bars.
+constexpr int kStrikeSample = kNumObjects;
+std::vector<std::string> objectNames() { std::vector<std::string> v; for (auto& o : kObjects) v.push_back (o.name); v.push_back ("SAMPLE"); return v; }
 }
 
 class StrikeModule : public Module
 {
 public:
     enum { POWER, DISTANCE, SIZE, MATERIAL, DECAY, DENS, FILT, LEVEL,
-           MODEL, POSITION, SPREAD, TENSION, TUNE, KEYTRACK, RES, ESPACE, ESWING, VELSENS, ALLOCON, KEYFOLLOW };
+           MODEL, POSITION, SPREAD, TENSION, TUNE, KEYTRACK, RES, ESPACE, ESWING, VELSENS, ALLOCON, KEYFOLLOW,
+           SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, SBARS };      // (SF-000) the sample's: START, END, the fades, GAIN, NORMALISE, SLICE, CYCLE, LOOP
     std::string id() const override { return "STRIKE"; }
     bool instrument() const override { return true; }
     double tailSeconds() const override { return 12.0; }
     std::vector<ParamSpec> params() const override
     {
-        return { pct ("power", "POWER", 0.4f).prim().dir (1),
+        return withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).prim().dir (1),
                  pct ("distance", "DISTANCE", 0.3f).prim(),
                  pct ("size", "SIZE", 0.5f).prim(),
                  pct ("material", "MATERIAL", 0.5f).prim(),
@@ -57,7 +60,7 @@ public:
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  levelParam (-6.0f).prim(),
-                 choice ("model", "OBJECT", objectNames(), 0),
+                 choice ("model", "MODEL", objectNames(), 0),      // (SF-000) MODEL, as on every other lane, now that SAMPLE is one of them (the suite: OBJECT)
                  pct ("position", "POSITION", 0.3f).slow(),
                  pct ("spread", "SPREAD", 0.5f).slow(),
                  pct ("tension", "TENSION", 0.3f).slow(),
@@ -68,10 +71,17 @@ public:
                  pct ("echo_swing", "ECHO SWING", 0.0f),
                  pct ("vel_sens", "VEL SENS", 0.5f),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() };
+                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }))));
     }
+    // (SF-000) SAMPLE's file
+    bool acceptsFiles() const override { return true; }
+    juce::String fileHint() const override { return "DROP A SAMPLE (MODEL: SAMPLE)"; }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); }
+    void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
     void prepare (double rate, int mb) override
     {
+        if (auto s = sample.get(); s != nullptr && std::abs (s->sr - rate) > 1 && s->flac.getSize() > 0) sample.set (loadSampleFlac (s->flac, s->name, rate, s->flacGain));
         sr = rate;
         out.prepare (rate, mb, ROLE_PERC, "STRIKE", false);
         os.prepare (rate, 2);
@@ -82,6 +92,8 @@ public:
     {
         echoes.reset();
         for (auto& v : voices) v.active = false;
+        for (auto& h : shots) h.active = false;     // (SF-000)
+        lp.reset();
         out.reset();
         os.reset();
         fractureSm = 0.0f;
@@ -104,16 +116,53 @@ public:
     {
         echoes.run (c, midi, events, c.v (DENS), echoSpaceBeats (c.ci (ESPACE)), c.v (ESWING), 1.0f, false);
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
+        // (SF-000) SAMPLE: the file as a hit (every step starts it; the one before is cut, as a hat's is; DECAY its gate),
+        // or, with LOOP on, as a loop on the rig's bars (SampleLoop, Kit.h). In stereo. The sound knobs then: SPREAD is
+        // its WIDTH (the middle: as recorded; down: to one channel; up: wider), MATERIAL its TONE (a tilt about 2 kHz),
+        // POWER its DRIVE (2x oversampled, with FRACTURE's), VEL SENS how much a step's velocity counts.
+        const SampleData* smp = sample.audio();
+        const bool sampleModel = c.ci (MODEL) == kStrikeSample;
+        const float width = c.v (SPREAD) * 2.0f, sCal = cal::at (cal::perc, 12);
+        const bool loop = lp.setup (c, c.ci (SBARS), sampleModel, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
+                                    sr, sCal * 1.41f, c.v (MATERIAL), c.v (DECAY), c.v (TUNE), width);
+        const float sTilt = (c.v (MATERIAL) - 0.5f) * 2.0f, sTiltA = 1.0f - std::exp (-kTwoPi * 2000.0f / (float) sr),
+                    sTiltLo = std::pow (10.0f, -sTilt * 0.6f), sTiltHi = std::pow (10.0f, sTilt * 0.6f);
         size_t e = 0;
         for (int i = 0; i < c.n; ++i)
         {
             while (e < events.size() && events[e].offset <= i)
             {
                 const auto& ev = events[e++];
-                if (ev.on) strike (c, ev);
+                if (! ev.on) continue;
+                if (! sampleModel) { strike (c, ev); continue; }
+                const float velK = (ev.gen == 0 ? lerp (1.0f, ev.vel, c.v (VELSENS)) : ev.vel) * std::pow (0.7f, (float) ev.gen) * ev.gain;
+                if (loop) lp.hit (c, c.v (DECAY), velK, ev.gen);
+                else if (smp != nullptr) shoot (c, ev, *smp, velK);
             }
             float l = 0.0f, r = 0.0f;
             for (auto& v : voices) if (v.active) render (v, l, r);
+            if (lp.live()) lp.tick (smp, 0.0f, 1.0f, 1.0f, l, r);
+            if (smp != nullptr)
+                for (auto& h : shots)
+                {
+                    if (! h.active) continue;
+                    if ((int) h.pos + 2 >= (h.reg.end > 0.0 ? std::min (smp->length(), h.reg.last()) : smp->length())) { h.active = false; continue; }
+                    float g = sampleGateGain ((float) h.t, h.gate);
+                    if (h.fadeStep > 0.0f) { h.fade -= h.fadeStep; g *= std::max (0.0f, h.fade); }
+                    if (g <= 0.0f) { h.active = false; continue; }
+                    float a = smp->read (0, h.pos, h.step), b = smp->wide ? smp->read (1, h.pos, h.step) : a;
+                    if (smp->wide && width != 1.0f) { const float m = 0.5f * (a + b), sd = 0.5f * (a - b) * width; a = m + sd; b = m - sd; }
+                    g *= h.reg.gain (h.pos) * h.vel * sCal;
+                    a *= g; b *= g;
+                    if (std::abs (sTilt) > 0.002f)
+                    {
+                        h.tl += sTiltA * (a - h.tl); a = h.tl * sTiltLo + (a - h.tl) * sTiltHi;
+                        h.tr += sTiltA * (b - h.tr); b = h.tr * sTiltLo + (b - h.tr) * sTiltHi;
+                    }
+                    l += a; r += b;
+                    h.pos += h.step; h.t += 1.0 / sr;
+                }
+            else for (auto& h : shots) h.active = false;
             L[i] = l; R[i] = r;
         }
         // FRACTURE: the object distorts (2x oversampled). The amount follows the fractured voices'
@@ -130,12 +179,17 @@ public:
         fractureSm = target + coef * (fractureSm - target);
         if (fractureSm < 1.0e-5f) fractureSm = 0.0f;
         const float f1 = fractureSm, span = 1.0f / (float) (2 * c.n);
+        // (SF-000) SAMPLE's DRIVE (POWER's knob), across the chunk from where it was: each side through it
+        const float d1 = sampleModel ? c.v (POWER) : 0.0f, d0 = driveWas;
+        driveWas = d1;
         for (int ch = 0; ch < 2; ++ch)
         {
             int k = 0;
             os.process (ch, io.getWritePointer (ch), c.n, [&] (float x)
             {
-                const float f = f0 + (f1 - f0) * (float) (k++) * span;
+                const float f = f0 + (f1 - f0) * (float) (k) * span;
+                if (const float d = d0 + (d1 - d0) * (float) (k) * span; d > 0.001f) x = fastTanh (x * (1.0f + d * 8.0f)) / (1.0f + d * 2.0f);
+                ++k;
                 if (f <= 0.0f) return x;
                 const float drv = 1.0f + 4.0f * f;
                 return x + f * (fastTanh (x * drv) / std::sqrt (drv) - x);
@@ -147,9 +201,26 @@ public:
         activeVoices = act;
     }
 
-    int displayHeight() const override { return 110; }
+    // (SF-000) under its own display, with a sample loaded: the sample (its START and END to drag)
+    int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
+    {
+        if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty() && sample.get() != nullptr) strip.mouse (p, SampleStrip::wave (st), down, *this, SSTART);
+        else if (down) strip.up();
+    }
+    void displayMouseUp() override { strip.up(); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (auto smp = sample.get())
+            if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) strip.paint (g, st, *smp, *this, SSTART);
+        r = r.withHeight ((float) kOwn);
+        if (dispObject.load() == kStrikeSample)     // (SF-000) SAMPLE: no blast and no modes
+        {
+            ui::frame (g, r, "SAMPLE");
+            auto smp = sample.get();
+            ui::label (g, smp != nullptr ? smp->name.toUpperCase() : juce::String ("NO SAMPLE: LOAD ONE, OR DROP IT HERE"), r.reduced (10, 20), ui::kFaint, 11.0f, juce::Justification::centred);
+            return;
+        }
         const float power = dispPower.load(), dist = dispDistance.load();
         auto left = r.removeFromLeft (r.getWidth() * 0.45f);
         ui::frame (g, left, "BLAST (FRIEDLANDER)");
@@ -205,6 +276,23 @@ private:
         T = 0.0003f + 0.0035f * w3 * (1.0f + 0.15f * std::log (R));
         amp = std::min (1.0f, 1.6f * w3 / std::pow (R, 0.45f));
         lpHz = 18000.0f / (1.0f + R * 0.18f);
+    }
+
+    // (SF-000) SAMPLE: a hit of the file
+    struct Shot { bool active = false; double pos = 0.0, step = 1.0, t = 0.0; float gate = 1.0e9f, vel = 1.0f, fade = 1.0f, fadeStep = 0.0f, tl = 0.0f, tr = 0.0f; SampleRegion reg; };
+    void shoot (Ctx& c, const NoteEvent& ev, const SampleData& s, float vel)
+    {
+        // a hit cuts the one before it (4 ms); a quiet DENSITY ghost plays over it
+        if (ev.gen == 0 || ev.gain >= 0.5f) for (auto& h : shots) if (h.active && h.fadeStep == 0.0f) h.fadeStep = 1.0f / (0.004f * (float) sr);
+        Shot* at = nullptr;
+        for (auto& h : shots) if (! h.active) { at = &h; break; }
+        if (at == nullptr) { at = &shots[0]; for (auto& h : shots) if (h.fade < at->fade) at = &h; }
+        *at = Shot();
+        at->active = true; at->vel = vel;
+        at->step = semis (c.v (TUNE) + (c.b (KEYTRACK) ? (float) (ev.note - 60) : 0.0f));
+        at->reg = hitRegion (c, s, regionFrom (c, SSTART, s, SGAIN), SSLICE, sliceHits++, sliceRng.uni());
+        at->pos = at->reg.start;
+        at->gate = sampleGateSeconds (c.v (DECAY), (float) (at->reg.length() / s.sr) / (float) at->step, ev.gen);
     }
 
     void strike (Ctx& c, const NoteEvent& ev)
@@ -344,6 +432,13 @@ private:
     RoleOutput out;
     Oversampler os;
     Noise rng;
+    SampleSlot sample;                      // (SF-000) SAMPLE
+    SampleStrip strip;
+    static constexpr int kOwn = 110;
+    std::array<Shot, 6> shots;
+    SampleLoop lp;
+    int sliceHits = 0; Noise sliceRng;
+    float driveWas = 0.0f;
     float fractureSm = 0.0f;
     std::atomic<float> dispPower { 0.4f }, dispDistance { 0.3f };
     std::atomic<int> dispObject { 0 }, activeVoices { 0 };

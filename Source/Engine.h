@@ -396,6 +396,7 @@ public:
     // The controls the seventy-ninth build added (GRANULAR's own, a sample's slices, loop and starts, the kick FORGE's),
     // each where it changes nothing: a snapshot from before them means this, whatever the lane was left at.
     SetupState newerOff (Target) const;
+    SetupState laterOff (Target) const;     // what came after that: the same, for any snapshot that does not name them
     // A menu that has grown by one (BASS's and LEAD's MODEL and LAYER MODEL: WAVETABLE, second to last). A setup keeps a
     // menu's place as how far down the list it is; one kept from before the list grew is told by where it falls, and is
     // given as the same entry of the list as it is now.

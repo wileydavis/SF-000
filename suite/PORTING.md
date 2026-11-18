@@ -116,6 +116,21 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   "the last model" was meant). **Brought into the suite, a model list longer by one moves the
   place of every model after the new one in presets that hold a place and not a name**: here
   the new ones are last, or after SAMPLE, and SF-000 converts its own snapshots (DECISIONS 707).
+- **Eighty-first build, all marked `(SF-000)`. None of it is in the suite.** Samples in stereo:
+  `core/Sample.h`, `Sample.cpp`: `SampleData::wide` (the channels differ). `modules/Synth.cpp`:
+  `GrainRead::both` and the grains' read (left and right apart); `Voice::svfS`, the filter
+  again for a stereo file's sides on SAMPLE and GRANULAR (the other engines' `sideK` as it
+  was). `modules/Drums.cpp`: KICK's SAMPLE and KICK FORGE's impact carry the left less the
+  right beside the kick (`sideIn`, `decS`, `decSB`, `LayerSplit::widen` in `Kit.h`; `fgWide`,
+  `resS`); PERC's SAMPLE (`Voice::side`); RUMBLE's SAMPLE (`pre[1]`). `modules/Voice.cpp`:
+  SAMPLE and STUTTER (`sideBuf`, the oversampler's second channel). A file of one channel, or
+  the same in both, takes the old path in each. **LOOP**: `modules/Kit.h`: `withLoop`
+  (`smp_bars`, appended last), `loopBars`, `SampleLoop`; `sampleGateSeconds` and
+  `sampleGateGain` moved there from `Drums.cpp`; PERC uses it. `modules/Strike.cpp`: **SAMPLE,
+  a seventh model after the six objects** (`kStrikeSample`), a sample slot, the region, gain,
+  slice and loop parameters (appended), `Shot` voices, the loop, DRIVE in FRACTURE's
+  oversampler, the sample under its display. The suite's STRIKE has six objects and no file.
+  See DECISIONS 715, 716.
 - `core/Pocket.h`, marked `(SF-000)`, seventy-ninth build: **the pocket is another thing here.**
   The hole is the kick's own envelope (its reported decay), turned over and squared, on the
   whole lane's level; DEPTH is its depth and SHAPE its length (a quarter to the whole of the

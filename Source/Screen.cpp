@@ -1371,13 +1371,15 @@ void Screen::drawConfig (G& g, R r)
     if (cfg.kind == 0 && m.acceptsFiles())
     {
         const String f = juce::File (eng.laneFile (cfg.lane)).getFileName();
+        if (f.isNotEmpty() && saysPath != eng.laneFile (cfg.lane)) { saysPath = eng.laneFile (cfg.lane); saysOf = ses.sampleSays (cfg.lane); }
+        // (LOOP on: how many bars the file is taken for and the tempo it was made at, first, where a long name cannot push it off)
+        if (f.isEmpty()) loopText.clear();
+        else if (loopStamp != eng.stateStamp() || loopLane != cfg.lane || loopTempo != eng.tempo() || loopPath != saysPath)      // (asked again only when something has moved)
+        { loopStamp = eng.stateStamp(); loopLane = cfg.lane; loopTempo = eng.tempo(); loopPath = saysPath; loopText = ses.loopSays (cfg.lane, saysOf); }
+        if (loopText.isNotEmpty()) status << (status.isEmpty() ? "" : "   ") << "LOOP " << loopText;
         status << (status.isEmpty() ? "" : "   ") << (f.isNotEmpty() ? "FILE: " + f : m.fileHint() + " ON THIS LANE");
         // (what the file is heard to be: its loudest point, which nothing here raises, and the note that plays it at its own pitch)
-        if (f.isNotEmpty())
-        {
-            if (saysPath != eng.laneFile (cfg.lane)) { saysPath = eng.laneFile (cfg.lane); saysOf = ses.sampleSays (cfg.lane); }
-            if (saysOf.has) status << "   PEAK " << String (saysOf.peakDb, 1) << " DB" << (saysOf.pitched ? "   ROOT " + saysOf.root : String());
-        }
+        if (f.isNotEmpty() && saysOf.has) status << "   PEAK " << String (saysOf.peakDb, 1) << " DB" << (saysOf.pitched ? "   ROOT " + saysOf.root : String());
     }
     else if (cfg.kind != 0 && eng.acceptsFiles (cfg) && status.isEmpty())
         status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");

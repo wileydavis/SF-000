@@ -110,6 +110,122 @@ inline std::vector<ParamSpec> withSlices (std::vector<ParamSpec> v)
     v.push_back (choice ("smp_cycle", "CYCLE", { "OFF", "ROUND", "RANDOM" }, 0).noPreset().sampleGroup());
     return v;
 }
+// (SF-000) A drum's LOOP: the sample as a loop on the rig's bars and not a hit (PERC: the hats and the clap). OFF: hits, as
+// before. AUTO: as many bars as it is nearest to at the tempo (a power of two: a quarter of a bar to 64). Or a count.
+// Appended last, after SLICE and CYCLE.
+inline std::vector<ParamSpec> withLoop (std::vector<ParamSpec> v)
+{
+    v.push_back (choice ("smp_bars", "LOOP", { "OFF", "AUTO", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", "32 BARS" }, 0).noPreset().sampleGroup());
+    return v;
+}
+// DECAY as a gate on samples: 0 = 10 ms, 90 %+ = the whole sample, exponential in between;
+// echo generations shorter. The cut is an 8 ms fade, never a click.
+inline float sampleGateSeconds (float decayKnob, float sampleSeconds, int gen)
+{
+    const float full = std::max (0.01f, sampleSeconds);
+    if (decayKnob >= 0.9f && gen == 0) return 1.0e9f;
+    const float t = 0.01f * std::pow (full / 0.01f, clamp01 (decayKnob / 0.9f));
+    return t * std::pow (0.65f, (float) gen);
+}
+inline float sampleGateGain (float t, float gateSeconds)
+{
+    if (t <= gateSeconds) return 1.0f;
+    return std::max (0.0f, 1.0f - (t - gateSeconds) / 0.008f);
+}
+inline double loopBars (int choice, double seconds, double bpm, double beatsPerBar)
+{
+    if (choice >= 2) return (double) (1 << std::min (5, choice - 2));
+    const double bars = seconds * bpm / (60.0 * std::max (1.0, beatsPerBar));
+    return std::pow (2.0, (double) std::min (6, std::max (-2, (int) std::lround (std::log2 (std::max (1.0e-3, bars))))));
+}
+// (SF-000) The loop itself. A sample on a drum lane is a hit: every step starts it again, and DECAY cuts it. With LOOP on
+// (SAMPLE the model, a file loaded) it is a loop instead: START..END is taken to be a number of bars (loopBars) and goes
+// round on the rig's bars while the clock runs, at the rig's tempo, so its pitch moves with the tempo's ratio to its own,
+// as a record's does. Where it is in the file is where the clock is in those bars, whenever it is heard: stopping,
+// starting or opening it late never puts it out. TUNE turns it by whole octaves only (twice as fast, half as fast: still
+// on the bars). DECAY right up (90 % and over): it plays through, at one level. Under that the lane's steps open it, each
+// for as long as DECAY says (10 ms to a bar) and as loud as the hit is: the loop, chopped by the pattern. In stereo, if
+// the file is; TONE's tilt and DRIVE on each side. Stopped: silence. It opens over 1 ms and shuts over 8.
+struct SampleLoop
+{
+    bool on = false, want = false, wide = false, through = true;
+    double pos = 0.0, step = 0.0, start = 0.0, len = 0.0, rate = 96000.0;
+    float gate = 0.0f, up = 0.01f, down = 0.001f, level = 0.7f, levelTo = 0.7f, cal = 1.0f, width = 1.0f;
+    int open = 0;                           // ticks the steps' gate still has
+    float tilt = 0.0f, tiltA = 0.0f, tiltLo = 1.0f, tiltHi = 1.0f, tl = 0.0f, tr = 0.0f;
+    SampleRegion reg;
+    void reset() { *this = SampleLoop(); }
+    bool live() const { return gate > 0.0f || want; }
+    // Each block. sel: LOOP's choice. tickRate: how often tick is called a second. calGain: the model's level (a hit's,
+    // in the middle). widthGain: what the left less the right is turned by (1: as recorded). True: the loop is on, and
+    // the lane's hits are its to have (hit), not the drum's.
+    bool setup (const Ctx& c, int sel, bool sampleModel, const SampleData* smp, const SampleRegion& region, double tickRate, float calGain,
+                float tone, float decay, float tuneSemis, float widthGain = 1.0f)
+    {
+        const bool loop = sel > 0 && sampleModel && smp != nullptr && smp->length() > 256;
+        if (smp == nullptr || smp->length() <= 256) { gate = 0.0f; on = want = false; return false; }
+        if (! loop && gate <= 0.0f) { on = want = false; return false; }
+        reg = region; rate = tickRate;
+        start = reg.start; len = std::max (64.0, reg.length());
+        wide = smp->wide; width = widthGain;
+        up = 1.0f / (0.001f * (float) rate); down = 1.0f / (0.008f * (float) rate);
+        cal = calGain * 0.7071f;            // (a hit in the middle: each side has this much of it)
+        tilt = (tone - 0.5f) * 2.0f;
+        tiltA = 1.0f - std::exp (-kTwoPi * 2000.0f / (float) rate); tiltLo = std::pow (10.0f, -tilt * 0.6f); tiltHi = std::pow (10.0f, tilt * 0.6f);
+        through = decay >= 0.9f;
+        if (through) levelTo = 0.7f;
+        if (loop)
+        {
+            const double bars = loopBars (sel, len / smp->sr, c.bpm, c.beatsPerBar);
+            const double beats = bars * c.beatsPerBar / std::pow (2.0, (double) std::min (2, std::max (-2, (int) std::lround (tuneSemis / 12.0f))));
+            double ph = (c.ppq - c.barPhase) / beats; ph -= std::floor (ph);
+            const double at = start + ph * len;
+            step = len / (beats * c.samplesPerBeat()) * (c.sr / rate);
+            // where the clock says: held to it each block (a hair), or, if it is somewhere else (the clock moved, the
+            // bars or the part changed, it has only now come on), taken there from silence
+            double d = at - pos; d -= len * std::round (d / len);
+            if (! on || std::abs (d) > 64.0) { pos = at; gate = 0.0f; tl = tr = 0.0f; if (! on) { open = 0; level = levelTo; } }
+            else pos += d;
+        }
+        on = loop;
+        want = loop && c.playing;
+        return loop;
+    }
+    // A hit of the lane's, while the loop is on: level, what the hit has of ACCENT, DENSITY and the echoes.
+    void hit (const Ctx& c, float decay, float hitLevel, int gen)
+    {
+        if (through) return;
+        const float bar = (float) (c.beatsPerBar * c.samplesPerBeat() / c.sr);
+        open = (int) (sampleGateSeconds (decay, bar, gen) * (float) rate);
+        levelTo = hitLevel;
+        if (gate <= 0.0f) level = levelTo;      // (from shut: at this hit's level; over an open one: toward it)
+    }
+    // One tick of it, added to l and r. drv: DRIVE (dg, dn: its gain in and out, as the drum has them).
+    void tick (const SampleData* smp, float drv, float dg, float dn, float& l, float& r)
+    {
+        const bool openNow = want && (through || open > 0);
+        gate = openNow ? std::min (1.0f, gate + up) : std::max (0.0f, gate - down);
+        if (open > 0) --open;
+        level += (levelTo - level) * down * 2.0f;
+        if (gate > 0.0f)
+        {
+            const double at = std::min (pos, (double) (smp->length() - 3));
+            float a = smp->read (0, at, step), b = wide ? smp->read (1, at, step) : a;
+            if (wide && width != 1.0f) { const float m = 0.5f * (a + b), sd = 0.5f * (a - b) * width; a = m + sd; b = m - sd; }
+            const float g = reg.gain (pos) * gate * level;
+            a *= g; b *= g;
+            if (std::abs (tilt) > 0.002f)
+            {
+                tl += tiltA * (a - tl); a = tl * tiltLo + (a - tl) * tiltHi;
+                tr += tiltA * (b - tr); b = tr * tiltLo + (b - tr) * tiltHi;
+            }
+            if (drv > 0.001f) { a = fastTanh (a * dg) * dn; b = fastTanh (b * dg) * dn; }
+            l += a * cal; r += b * cal;
+        }
+        pos += step;
+        if (pos >= start + len) pos -= len;
+    }
+};
 // The region a hit plays: the whole of it, or the slice SLICE and CYCLE say (hits: how many this drum has played, counted
 // by its module; chance: 0 to 1, drawn for this hit).
 inline SampleRegion hitRegion (const Ctx& c, const SampleData& s, const SampleRegion& whole, int sliceAt, int hits, float chance)
@@ -239,6 +355,9 @@ struct LayerSplit
         l = l + bl + r * (yl - l - bl);
         rr = rr + br + r * (yr - rr - br);
     }
+    // (SF-000) The mono tick's state as the stereo one's too: before the first stereo tick after mono ones (KICK, when a
+    // stereo sample starts to play), so that the right continues where the left is.
+    void widen() { xo[1] = xo[0]; xo[3] = xo[2]; }
     // The layers, mono (KICK).
     float tick (float ma, float mb, float sv)
     {

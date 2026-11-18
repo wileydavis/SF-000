@@ -1516,6 +1516,281 @@ static void stackBlendTest (int& bad)
                            (int) further, (int) isB, (int) keeps, (int) toFirst, (int) less, (int) back, (int) down, (int) settled, (int) jump, (int) filed, (int) sound, (double) model(), (double) mA, (double) mB, (double) e.fadeShown (kick, st), e.leaving(), (double) peak);
 }
 
+static void stereoLoopTest (int& bad)
+{
+    using namespace sf0;
+    // Stereo samples and LOOP (suite: Synth's GRANULAR, the drums' SAMPLE, KICK FORGE's impact, RUMBLE, VOICE, STRIKE's SAMPLE;
+    // Kit.h's SampleLoop). Three files. wide.wav: struck tones, 500 Hz on the left and 2 kHz on the right, at the same
+    // moments. same.wav: the 500 Hz ones in both channels. loop.wav: two bars at 120, a struck tone a beat, 200, 800, 3200,
+    // 400 Hz in the first bar and 800, 3200, 400, 200 in the second: which beat of it is playing can be told by ear.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-stereotest");
+    dir.deleteRecursively(); dir.createDirectory();
+    const double pi = juce::MathConstants<double>::pi;
+    auto write = [&] (const char* name, const juce::AudioBuffer<float>& b)
+    {
+        const auto f = dir.getChildFile (name);
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (f), 48000.0, 2, 24, {}, 0) };
+        if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        return f;
+    };
+    juce::AudioBuffer<float> wb (2, 96000), sb (2, 96000), lb (2, 192000);
+    for (int n = 0; n < 96000; ++n)
+    {
+        const int i = n % 24000;
+        const double env = std::exp (-(double) i / 6000.0) * std::min (1.0, i / 24.0);
+        const float a = (float) (0.6 * std::sin (2.0 * pi * 500.0 * n / 48000.0) * env), b = (float) (0.6 * std::sin (2.0 * pi * 2000.0 * n / 48000.0) * env);
+        wb.setSample (0, n, a); wb.setSample (1, n, b); sb.setSample (0, n, a); sb.setSample (1, n, a);
+    }
+    const double loopHz[8] = { 200.0, 800.0, 3200.0, 400.0, 800.0, 3200.0, 400.0, 200.0 };
+    for (int n = 0; n < 192000; ++n)
+    {
+        const int k = n / 24000, i = n % 24000;
+        const float v = (float) (0.6 * std::sin (2.0 * pi * loopHz[k] * i / 48000.0) * std::exp (-(double) i / 5000.0) * std::min (1.0, i / 24.0));
+        lb.setSample (0, n, v); lb.setSample (1, n, v);
+    }
+    const auto wide = write ("wide.wav", wb), same = write ("same.wav", sb), loopFile = write ("loop.wav", lb);
+
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> hl, hr;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) std::lround (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            if (keep) for (int n = 0; n < 256; ++n) { hl.push_back (buf.getSample (0, n)); hr.push_back (buf.getSample (1, n)); }
+        }
+        e.tidy();
+    };
+    auto laneOf = [] (const char* slug) { for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == slug) return l; return -1; };
+    const int kick = laneOf ("kick"), hat = laneOf ("closed_hat"), clap = laneOf ("clap"), perc = laneOf ("perc"), rumble = laneOf ("rumble"), lead = laneOf ("lead"), pad = laneOf ("pad"), voice = laneOf ("voice");
+    auto choose = [&] (int l, const char* id, const char* name)
+    {
+        for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { ses.setupByHand ({ 0, l, 0 }, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+        return false;
+    };
+    auto textOf = [&] (int l, const char* id) { for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) return sp.text.toUpperCase(); return juce::String(); };
+    auto knobOf = [&] (int l, const char* param) { for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = e.laneKnob (l, k); kd.param != nullptr && juce::String (kd.param) == param) return k; return -1; };
+    // the strength of one tone in a stretch (dB)
+    auto at = [] (const std::vector<float>& x, double hz, size_t from, size_t to)
+    {
+        to = std::min (to, x.size());
+        if (to <= from) return -200.0;
+        double re = 0, im = 0;
+        for (size_t n = from; n < to; ++n) { const double w = 2.0 * juce::MathConstants<double>::pi * hz * (double) n / 48000.0; re += x[n] * std::cos (w); im += x[n] * std::sin (w); }
+        return 20.0 * std::log10 (2.0 * std::sqrt (re * re + im * im) / (double) (to - from) + 1.0e-10);
+    };
+    auto level = [] (const std::vector<float>& x, size_t from, size_t to) { double s2 = 0; to = std::min (to, x.size()); for (size_t n = from; n < to; ++n) s2 += (double) x[n] * x[n]; return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, to - from) + 1.0e-20); };
+    for (int l = 0; l < kLanes; ++l) { Pattern none; e.setPattern (l, none); }
+    ses.userSet (cx::kGlide, 0.0f);
+    ses.userSet (cx::kTempo, tempoToValue (120.0));
+    run (4.0);
+    double beatN = 60.0 / e.tempo() * 48000.0;
+    auto bars = [&] (double beats)
+    {
+        e.setRunning (false); run (4.0); hl.clear(); hr.clear(); e.setRunning (true); run (beats, true); e.setRunning (false);
+    };
+    auto plain = [&] (int l)
+    {
+        ses.samplePlain (l);
+        ses.userSet (cx::lane (l, cx::kSendA), 0.0f); ses.userSet (cx::lane (l, cx::kSendB), 0.0f);
+        for (int sl = 0; sl < kSlots; ++sl) ses.userSet (cx::insMute (l, sl), 1.0f);
+    };
+
+    // (a value by its id, wherever it is: on a knob of the lane, or in CONFIG)
+    auto put = [&] (int l, const char* id, float v) { if (const int k = knobOf (l, id); k >= 0) ses.userSet (cx::lane (l, k), v); else e.setSetup ({ 0, l, 0 }, id, v); };
+    // ---- stereo: each lane that plays a file, on the two-tone file: the left has the left's tone, the right the right's
+    struct Heard { double l5 = -200, r5 = -200, l2 = -200, r2 = -200; bool ok = false; };
+    juce::String widths;
+    auto stereo = [&] (int l, const char* name, const char* model, const juce::File& f, double need)
+    {
+        Heard h;
+        if (l < 0 || ! e.loadFile (l, f) || ! choose (l, "model", model)) { widths << name << " (not set up) "; return h; }
+        plain (l);
+        // (what a lane does to its own width, out of the way: RUMBLE's room and WIDTH, PAD's SPACE)
+        if (l == rumble) { put (l, "size", 0.0f); put (l, "width", 1.0f); put (l, "dark", 0.0f); }
+        if (l == pad) { put (l, "space", 0.0f); put (l, "cutoff", 1.0f); choose (l, "gr_follow", "FIXED"); }      // (its filter open, and the grains at the file's own pitch)
+        run (2.0);
+        Pattern p; for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; st.gate = 3.5f; st.octave = 3; st.note = 0; }
+        if (const auto says = ses.sampleSays (l); says.has && lanes()[(size_t) l].pitched && juce::String (lanes()[(size_t) l].module) != "VOICE")
+            for (auto& st : p.steps) { st.octave = says.rootNote / 12 - 2; st.note = says.rootNote % 12; }
+        if (l == rumble) { e.setPattern (kick, p); } else e.setPattern (l, p);
+        e.solo = l;
+        bars (8.0);
+        e.solo = -1;
+        { Pattern none; e.setPattern (l, none); e.setPattern (kick, none); }
+        h.l5 = at (hl, 500.0, 0, hl.size()); h.r5 = at (hr, 500.0, 0, hr.size()); h.l2 = at (hl, 2000.0, 0, hl.size()); h.r2 = at (hr, 2000.0, 0, hr.size());
+        h.ok = h.l5 > -70.0 && h.r2 > -70.0 && h.l5 - h.r5 > need && h.r2 - h.l2 > need;
+        widths << name << " " << juce::String ((int) std::lround (h.l5 - h.r5)) << "/" << juce::String ((int) std::lround (h.r2 - h.l2)) << " ";
+        return h;
+    };
+    const auto wKick = stereo (kick, "KICK", "SAMPLE", wide, 12.0);
+    const auto wHat = stereo (hat, "HAT", "SAMPLE", wide, 12.0);
+    const auto wPerc = stereo (perc, "PERC", "SAMPLE", wide, 12.0);
+    const auto wLead = stereo (lead, "LEAD", "SAMPLE", wide, 12.0);
+    if (voice >= 0) choose (voice, "slice_mode", "WHOLE");
+    const auto wVoice = stereo (voice, "VOICE", "SAMPLE", wide, 12.0);
+    const auto wRumble = stereo (rumble, "RUMBLE", "SAMPLE", wide, 12.0);
+    const auto wPad = stereo (pad, "PAD", "GRANULAR", wide, 12.0);
+    // (KICK FORGE: the impact alone is the file's, over a body that is one signal. The right's tone, which only the file has,
+    // is on the right and not the left.)
+    Heard wForge;
+    if (kick >= 0 && choose (kick, "model", "KICK FORGE"))
+    {
+        e.setSetup ({ 0, kick, 0 }, "fg_impact", 1.0f); e.setSetup ({ 0, kick, 0 }, "fg_pos", 0.0f);
+        if (const int k = knobOf (kick, "fg_impact"); k >= 0) ses.userSet (cx::lane (kick, k), 1.0f);
+        if (const int k = knobOf (kick, "fg_pos"); k >= 0) ses.userSet (cx::lane (kick, k), 0.0f);
+        Pattern p; for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; }
+        e.setPattern (kick, p); e.solo = kick; bars (8.0); e.solo = -1;
+        { Pattern none; e.setPattern (kick, none); }
+        wForge.l2 = at (hl, 2000.0, 0, hl.size()); wForge.r2 = at (hr, 2000.0, 0, hr.size());
+        wForge.ok = wForge.r2 > -80.0 && wForge.r2 - wForge.l2 > 4.0;
+        widths << "FORGE " << juce::String ((int) std::lround (wForge.r2 - wForge.l2));
+    }
+    // a file with the same in both channels: the two sides of a drum are the same (to -80 dB of it)
+    double sameOff = 0.0;
+    if (hat >= 0 && e.loadFile (hat, same) && choose (hat, "model", "SAMPLE"))
+    {
+        Pattern p; for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; }
+        e.setPattern (hat, p); e.solo = hat; bars (4.0); e.solo = -1;
+        { Pattern none; e.setPattern (hat, none); }
+        std::vector<float> d (hl.size()); for (size_t n = 0; n < d.size(); ++n) d[n] = hl[n] - hr[n];
+        sameOff = level (d, 0, d.size()) - level (hl, 0, hl.size());
+    }
+    const bool wideOk = wKick.ok && wHat.ok && wPerc.ok && wLead.ok && wVoice.ok && wRumble.ok && wPad.ok && wForge.ok && sameOff < -80.0;
+    if (! wideOk) ++bad;
+    std::printf ("  %s: a stereo file is played in stereo on every lane that plays one: the left's tone on the left and the right's on the right, on KICK, a hat, PERC, LEAD and VOICE on SAMPLE, on RUMBLE's SAMPLE (its room, WIDTH and DARK out of the way), "
+                 "in PAD's grains (SPACE down, the filter open), and in KICK FORGE's impact; a file with the same in both channels comes out the same on both sides\n", wideOk ? "ok  " : "FAIL");
+    std::printf ("    (dB by which each side's own tone is over the other side's, left/right: %s; same-file sides apart %.0f dB)\n", widths.toRawUTF8(), sameOff);
+    if (! wideOk) std::printf ("    (kick %d hat %d perc %d lead %d voice %d rumble %d pad %d forge %d; own tones at dB, left's/right's: %.0f/%.0f %.0f/%.0f %.0f/%.0f %.0f/%.0f %.0f/%.0f %.0f/%.0f %.0f/%.0f, forge's right %.0f)\n",
+                               (int) wKick.ok, (int) wHat.ok, (int) wPerc.ok, (int) wLead.ok, (int) wVoice.ok, (int) wRumble.ok, (int) wPad.ok, (int) wForge.ok, wKick.l5, wKick.r2, wHat.l5, wHat.r2, wPerc.l5, wPerc.r2, wLead.l5, wLead.r2,
+                               wVoice.l5, wVoice.r2, wRumble.l5, wRumble.r2, wPad.l5, wPad.r2, wForge.r2);
+
+    // ---- LOOP
+    auto tone = [&] (const std::vector<float>& x, int beat)
+    {
+        const size_t a = (size_t) (beat * beatN + 0.02 * 48000.0), b = (size_t) (beat * beatN + 0.2 * 48000.0);
+        if (level (x, a, b) < -75.0) return -1;
+        const double hz[4] = { 200.0, 800.0, 3200.0, 400.0 };
+        int best = -1; double most = -300.0;
+        for (int k = 0; k < 4; ++k) if (const double v = at (x, hz[k] * e.tempo() / 120.0, a, b); v > most) { most = v; best = k; }
+        return best;
+    };
+    const int want[8] = { 0, 1, 2, 3, 1, 2, 3, 0 };
+    auto loopOn = [&] (int l, const char* name, juce::String& says)
+    {
+        if (l < 0 || ! e.loadFile (l, loopFile) || ! choose (l, "model", "SAMPLE")) { says << name << ": not set up. "; return false; }
+        plain (l);
+        // as a hit: every step starts the file again (the first tone on each beat)
+        const int dk = knobOf (l, "decay");
+        if (dk >= 0) ses.userSet (cx::lane (l, dk), 0.5f);
+        Pattern p; for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; }
+        e.setPattern (l, p); e.solo = l; bars (4.0);
+        const bool hits = tone (hl, 0) == 0 && tone (hl, 1) == 0 && tone (hl, 2) == 0 && tone (hl, 3) == 0;
+        // LOOP AUTO chosen by hand: DECAY goes right up; with no steps at all it plays through, each beat the file's own
+        { Pattern none; e.setPattern (l, none); }
+        const bool has = choose (l, "smp_bars", "AUTO");
+        const bool up = dk >= 0 && e.target (cx::lane (l, dk)) > 0.95f;
+        bars (16.0);
+        bool through = true; juce::String got;
+        for (int b = 0; b < 16; ++b) { const int t = tone (hl, b); got << t; through = through && t == want[b % 8]; }
+        // stopped: silence
+        hl.clear(); hr.clear(); run (4.0, true);
+        const bool quiet = level (hl, (size_t) (0.5 * beatN), hl.size()) < -90.0;
+        // the tempo moved: it is still on the beats (and its pitch has moved with it)
+        ses.userSet (cx::kTempo, tempoToValue (132.0)); run (4.0);
+        const double was = beatN; beatN = 60.0 / e.tempo() * 48000.0;
+        bars (8.0);
+        bool faster = true; juce::String got2;
+        for (int b = 0; b < 8; ++b) { const int t = tone (hl, b); got2 << t; faster = faster && t == want[b]; }
+        ses.userSet (cx::kTempo, tempoToValue (120.0)); run (4.0);
+        beatN = was;
+        // TUNE an octave up: twice round in the time (beat 1 plays the file's third beat)
+        const int tk = knobOf (l, "tune");
+        const float tuneWas = tk >= 0 ? e.target (cx::lane (l, tk)) : 0.5f;
+        bool twice = tk >= 0;
+        if (tk >= 0)
+        {
+            ses.userSet (cx::lane (l, tk), 0.5f + 12.0f / 48.0f); run (2.0);
+            bars (4.0);
+            const double a0 = at (hl, 3200.0 * 2.0, (size_t) (1.0 * beatN + 0.01 * 48000.0), (size_t) (1.0 * beatN + 0.1 * 48000.0)), a1 = at (hl, 800.0 * 2.0, (size_t) (1.0 * beatN + 0.01 * 48000.0), (size_t) (1.0 * beatN + 0.1 * 48000.0));
+            twice = a0 > -70.0 && a0 - a1 > 10.0;
+            ses.userSet (cx::lane (l, tk), tuneWas); run (2.0);
+        }
+        // DECAY down: the steps open it. Steps on the second and fourth beats alone: silence on the first and third, and
+        // on the second the file's second beat (where the clock is, not the file's start)
+        if (dk >= 0) ses.userSet (cx::lane (l, dk), 0.55f);
+        Pattern two; for (int b : { 1, 3 }) { auto& st = two.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; }
+        e.setPattern (l, two); bars (4.0);
+        const int g0 = tone (hl, 0), g1 = tone (hl, 1), g2 = tone (hl, 2), g3 = tone (hl, 3);
+        const bool gated = g0 == -1 && g1 == want[1] && g2 == -1 && g3 == want[3];
+        { Pattern none; e.setPattern (l, none); }
+        e.solo = -1;
+        // LOOP at 1 BAR: the two bars in one (beat 1 plays the file's third beat, an octave up)
+        if (dk >= 0) ses.userSet (cx::lane (l, dk), 1.0f);
+        choose (l, "smp_bars", "1 BAR"); e.solo = l; bars (4.0); e.solo = -1;
+        const double c0 = at (hl, 3200.0 * 2.0, (size_t) (1.0 * beatN + 0.01 * 48000.0), (size_t) (1.0 * beatN + 0.1 * 48000.0)), c1 = at (hl, 800.0 * 2.0, (size_t) (1.0 * beatN + 0.01 * 48000.0), (size_t) (1.0 * beatN + 0.1 * 48000.0));
+        const bool counted = c0 > -70.0 && c0 - c1 > 10.0;
+        choose (l, "smp_bars", "OFF");
+        const bool ok = hits && has && up && through && quiet && faster && twice && gated && counted;
+        if (! ok) says << name << ": hits " << (int) hits << " has " << (int) has << " decay up " << (int) up << " through " << (int) through << " (" << got << ") quiet " << (int) quiet << " at 132 " << (int) faster << " (" << got2
+                       << ") octave " << (int) twice << " gated " << (int) gated << " (" << g0 << g1 << g2 << g3 << ") 1 bar " << (int) counted << ". ";
+        return ok;
+    };
+    juce::String says;
+    const bool loopHat = loopOn (hat, "HAT", says), loopClap = loopOn (clap, "CLAP", says), loopPerc = loopOn (perc, "PERC", says);
+    // in stereo: the two-tone file as a loop
+    bool loopWide = false;
+    if (hat >= 0 && e.loadFile (hat, wide) && choose (hat, "model", "SAMPLE") && choose (hat, "smp_bars", "AUTO"))
+    {
+        e.solo = hat; bars (4.0); e.solo = -1;
+        loopWide = at (hl, 500.0, 0, hl.size()) - at (hr, 500.0, 0, hr.size()) > 12.0 && at (hr, 2000.0, 0, hr.size()) - at (hl, 2000.0, 0, hl.size()) > 12.0;
+        choose (hat, "smp_bars", "OFF");
+    }
+    const bool loopOk = loopHat && loopClap && loopPerc && loopWide;
+    if (! loopOk) ++bad;
+    std::printf ("  %s: LOOP on a hat, the clap and PERC: with it off every step starts the file again; chosen, DECAY goes right up and the file goes round on the rig's bars with no steps at all, each beat of it on its beat for two "
+                 "rounds; stopped it is silent; at another tempo it is still on the beats; TUNE an octave up plays it twice in the time; DECAY down, the lane's steps open it where the clock has it; 1 BAR plays two bars in one; "
+                 "and a stereo file loops in stereo\n", loopOk ? "ok  " : "FAIL");
+    if (! loopOk) std::printf ("    (%s stereo %d)\n", says.toRawUTF8(), (int) loopWide);
+
+    // ---- PERC's SAMPLE: its own sound knobs, and a snapshot from before it is still on its object
+    bool percKnobs = false, before = false, later = false;
+    if (perc >= 0)
+    {
+        choose (perc, "model", "SAMPLE");
+        auto label = [&] (int k) { return e.control (cx::lane (perc, k)).label.toUpperCase(); };
+        percKnobs = label (0) == "TUNE" && label (4) == "WIDTH" && label (5) == "ACCENT" && label (6) == "TONE" && label (7) == "DRIVE" && e.target (cx::lane (perc, 7)) < 0.01f && std::abs (e.target (cx::lane (perc, 4)) - 0.5f) < 0.01f;
+        choose (perc, "model", "MEMBRANE");
+        choose (hat, "smp_bars", "AUTO");
+        const auto taken = ses.take();
+        juce::var old = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (taken)), true));
+        if (auto* o = old.getDynamicObject())
+        {
+            // (as the build before this one wrote it: lists 2, PERC's MEMBRANE the fifth of six, and no LOOP named)
+            o->setProperty ("lists", 2); o->setProperty ("uid", "sf0testbefore81-1"); o->setProperty ("id", 0);
+            auto lanesV = old["setup"]["lanes"];
+            if (auto* ls = lanesV[perc].getDynamicObject()) { ls->setProperty ("model", 4.0 / 5.0); for (const char* id : { "smp_bars", "smp_start", "smp_end", "smp_gain", "smp_slice" }) ls->removeProperty (id); }
+            if (auto* ls = lanesV[hat].getDynamicObject()) ls->removeProperty ("smp_bars");
+            choose (perc, "model", "SAMPLE"); e.setSetup ({ 0, perc, 0 }, "smp_start", 0.4f);
+            const auto id = ses.takeFromLibrary (old, "BEFORE", juce::var());
+            ses.recall (id); run (8.0);
+            before = id != 0 && textOf (perc, "model") == "MEMBRANE";
+            later = textOf (hat, "smp_bars") == "OFF";
+            for (auto& kv : e.getSetup ({ 0, perc, 0 })) if (kv.first == "smp_start") later = later && kv.second < 0.01f;
+        }
+    }
+    const bool percOk = percKnobs && before && later;
+    if (! percOk) ++bad;
+    std::printf ("  %s: PERC on SAMPLE has sound knobs of its own where a hat has their like (WIDTH at SPREAD's place, in the middle; ACCENT; TONE; DRIVE, at nought); a snapshot from the build before, with PERC on MEMBRANE as the "
+                 "fifth of six, is on MEMBRANE; and what it does not name (LOOP, PERC's sample) is where it changes nothing\n", percOk ? "ok  " : "FAIL");
+    if (! percOk) std::printf ("    (knobs %d before %d later %d: PERC is on %s, the hat's LOOP %s)\n", (int) percKnobs, (int) before, (int) later, perc >= 0 ? textOf (perc, "model").toRawUTF8() : "-", hat >= 0 ? textOf (hat, "smp_bars").toRawUTF8() : "-");
+    dir.deleteRecursively();
+}
+
 static void samplerTest (int& bad)
 {
     using namespace sf0;
@@ -2264,7 +2539,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -4693,6 +4968,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     forgeTest (bad);
     pocketCurveTest (bad);
     eqTest (bad);
+    stereoLoopTest (bad);
     arrsKeptTest (bad);
 
     {
@@ -9673,6 +9949,7 @@ static int shot (const juce::StringArray& args)
         for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains ("SAMPLE")) e.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1));
         e.loadFile (ses.activeLane, juce::File (arg ("--sample", "")));
         if (args.contains ("--plain")) ses.samplePlain (ses.activeLane);
+        if (args.contains ("--loop")) ses.setupByHand (t, "smp_bars", 1.0f / 7.0f);       // (--loop: and LOOP at AUTO, as chosen by hand)
     }
     if (cfg == "lane") sc.showConfig ({ 0, ses.activeLane, 0 });
     else if (cfg == "insert") sc.showConfig ({ 1, ses.activeLane, 0 });

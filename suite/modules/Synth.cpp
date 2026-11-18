@@ -42,6 +42,27 @@ struct GrainRead
         }
         return (s0 + s1) + (s2 + s3);
     }
+    // (SF-000) the two channels apart, at the same place: a grain keeps the recording's own left and right. (A file of one
+    // channel gives the two the same, and each is half of what sum gives, to the bit.)
+    void both (const float* a, const float* b, int len, double pos, float& l, float& r) const noexcept
+    {
+        const int i = (int) pos, first = i - (kTaps / 2 - 1);
+        if (first < 0 || first + kTaps > len) { l = hermiteAt (a, len, pos); r = a == b ? l : hermiteAt (b, len, pos); return; }
+        const float ph = (float) (pos - (double) i) * (float) kPhases;
+        const int p = std::min (kPhases - 1, (int) ph);
+        const float t = ph - (float) p;
+        const float* r0 = w[p]; const float* r1 = w[p + 1];
+        const float* xa = a + first; const float* xb = b + first;
+        float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f, b0 = 0.0f, b1 = 0.0f, b2 = 0.0f, b3 = 0.0f;
+        for (int k = 0; k < kTaps; k += 4)
+        {
+            const float w0 = r0[k] + t * (r1[k] - r0[k]), w1 = r0[k + 1] + t * (r1[k + 1] - r0[k + 1]);
+            const float w2 = r0[k + 2] + t * (r1[k + 2] - r0[k + 2]), w3 = r0[k + 3] + t * (r1[k + 3] - r0[k + 3]);
+            a0 += w0 * xa[k]; a1 += w1 * xa[k + 1]; a2 += w2 * xa[k + 2]; a3 += w3 * xa[k + 3];
+            b0 += w0 * xb[k]; b1 += w1 * xb[k + 1]; b2 += w2 * xb[k + 2]; b3 += w3 * xb[k + 3];
+        }
+        l = (a0 + a1) + (a2 + a3); r = (b0 + b1) + (b2 + b3);
+    }
 private:
     GrainRead()
     {
@@ -604,6 +625,7 @@ public:
         double fmPh[4] {};                // FM 4-OP: the operators' phases (from 0 at the note), envelopes,
         float fmEnv[4] { 1, 1, 1, 1 }, fmPrev[2] {};   // and D's last two outputs (its feedback)
         Svf svf, svf2, nbp, nbp2;         // (SF-000) nbp2: NOISE's second band, DETUNE's
+        Svf svfS;                         // (SF-000) SAMPLE and GRANULAR on a stereo file: the filter again, for the left less the right
         float t = 0.0f, fb = 0.0f, drift = 0.0f;
         // (SF-000) lv, sc: the copy of the source it reads (-1 the source itself, else that octave-down copy) and that copy's
         // samples for one of the source's; wc, ws, rc, rs: its window, turned a step a sample (see E_GRAIN)
@@ -1098,7 +1120,9 @@ private:
         switch (m.filt)
         {
             case F_LADDER: v.ladder.set (cutHz, k.res * 0.98f, vr); break;
-            case F_SVF:    v.svf.set (cutHz, 0.6f + k.res * 8.0f, vr); break;
+            case F_SVF:    v.svf.set (cutHz, 0.6f + k.res * 8.0f, vr);
+                           if (m.engine == E_SAMPLE || m.engine == E_GRAIN) { v.svfS.g = v.svf.g; v.svfS.k = v.svf.k; v.svfS.a1 = v.svf.a1; v.svfS.a2 = v.svf.a2; v.svfS.a3 = v.svf.a3; }     // (SF-000)
+                           break;
             case F_MS20:   v.svf.set (cutHz, 0.6f + k.res * 12.0f, vr); v.svf2.set (std::max (20.0f, cutHz * 0.08f), 0.7f + k.res * 3.0f, vr); break;
             case F_NONE: case F_DIODE: break;      // F_DIODE: per sample (render)
         }
@@ -1515,9 +1539,13 @@ private:
                         const float* c0 = from.getReadPointer (0); const float* c1 = from.getReadPointer (std::min (1, from.getNumChannels() - 1));
                         // (a copy, at a sample a step or less: the table. The source itself, or a copy still read faster than
                         // that because the source has no deeper one: as before)
-                        const float both = &from != &src && step <= 1.0 ? grainRead.sum (c0, c1, fromLen, at) : sampleAt (c0, fromLen, at, step) + sampleAt (c1, fromLen, at, step);
-                        const float y = both * 0.5f * w * (own ? gr.reg.gain (gr.pos) : 1.0f);
-                        xl += y * (1.0f - gr.pan); xr += y * gr.pan;
+                        // (SF-000) the two channels apart: the left of the recording to the left, its right to the right, and the
+                        // grain's own place across them as before (a file of one channel: as it always was)
+                        float gl, gR;
+                        if (&from != &src && step <= 1.0) grainRead.both (c0, c1, fromLen, at, gl, gR);
+                        else { gl = sampleAt (c0, fromLen, at, step); gR = c1 == c0 ? gl : sampleAt (c1, fromLen, at, step); }
+                        const float gg = own ? gr.reg.gain (gr.pos) : 1.0f;
+                        xl += gl * w * gg * (1.0f - gr.pan); xr += gR * w * gg * gr.pan;
                         gr.pos += gr.rate; ++gr.age;
                     }
                     break;
@@ -1602,7 +1630,10 @@ private:
             {
                 const float mid = filt (0.5f * (xl + xr));
                 const float side = 0.5f * (xl - xr);
-                yl = mid + side * sideK; yr = mid - side * sideK;
+                // (SF-000) a file's own two sides (SAMPLE, GRANULAR): what is between them goes through the filter too, so
+                // a stereo recording is filtered as one. (The other engines' spread: turned down as the filter closes, as before.)
+                if (m.filt == F_SVF && (m.engine == E_SAMPLE || m.engine == E_GRAIN)) { const float s2 = side != 0.0f || v.svfS.ic1 != 0.0f || v.svfS.ic2 != 0.0f ? v.svfS.tickLP (side) : 0.0f; yl = mid + s2; yr = mid - s2; }
+                else { yl = mid + side * sideK; yr = mid - side * sideK; }
             }
             else if (stereo) { yl = xl; yr = xr; }
             else { yl = yr = filt (xl); }

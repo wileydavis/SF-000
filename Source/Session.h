@@ -342,7 +342,7 @@ public:
     // (a stack's snapshot has one key more than the parts of the rig: N, whether it brings its notes. kAllKeys: all of them as kept)
     // Which lists of models, and which knobs of theirs, a snapshot is written on ("lists" in it; absent: 1, every build
     // before the seventy-ninth). Session.cpp, fromListsBefore.
-    static constexpr int kListsNow = 2;
+    static constexpr int kListsNow = 3;       // (3: the PERC lane has SAMPLE after its objects)
     static constexpr juce::uint32 kNotesKey = MacroKnob::kNotes, kBlendKey = MacroKnob::kBlend, kAllKeys = kAllLanes | kNotesKey | kBlendKey;
     static Scope scopeOf (juce::uint32 lanes);
     static int mixCellOf (int type);                        // an effect's MIX among its eight knobs, or -1 (effects(): Rig.h)
@@ -423,7 +423,9 @@ public:
     // and, where the lane plays a sample at the pitch of the note, TUNE set so that its first lit step plays it at its own.
     // LEVEL, the sends and the lane's insert effects are left. What it did, in words (empty: the lane plays no sample).
     bool playsSample (int lane) const;
-    struct SampleSays { bool has = false; juce::String root; float peakDb = 0.0f; bool pitched = false; int rootNote = 60; };
+    struct SampleSays { bool has = false; juce::String root; float peakDb = 0.0f; bool pitched = false; int rootNote = 60; double seconds = 0.0; };
+    // LOOP on a lane's sample: how many bars it is taken for now and the tempo it was made at ("8 BARS AT 131.1"); nothing with LOOP off
+    juce::String loopSays (int lane, const SampleSays&) const;
     SampleSays sampleSays (int lane) const;         // what the lane's file is heard to be (its root, its loudest point)
     // A CONFIG control set by hand, from the panel or a controller: the engine's, and where a lane's MODEL brings sound
     // knobs of its own the session's knobs stand where those start.

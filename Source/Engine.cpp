@@ -1673,6 +1673,20 @@ Engine::SetupState Engine::newerOff (Target t) const
     return st;
 }
 
+// LOOP on a drum's sample, and the PERC lane's sample (its START, END, fades, GAIN, NORMALISE, SLICE, CYCLE): a snapshot
+// from before them does not name them, and is not left with what the one before it set.
+Engine::SetupState Engine::laterOff (Target t) const
+{
+    SetupState st;
+    if (t.kind != 0) return st;
+    const bool strike = juce::String (lanes()[(size_t) t.lane].module) == "STRIKE";
+    if (auto* p = processorFor (t))
+        for (const char* id : { "smp_bars", "smp_start", "smp_end", "smp_fade_in", "smp_fade_out", "smp_gain", "smp_norm", "smp_slice", "smp_cycle" })
+            if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams() && (strike || juce::String (id) == "smp_bars"))
+                st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
+    return st;
+}
+
 bool Engine::laneFollowsKey (int lane) const
 {
     if (auto* p = processorFor ({ 0, lane, 0 }))
@@ -1717,7 +1731,15 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
         if (t.kind == 0 && id == "model" && remapLane (t.lane, true))    // (a model chosen by hand: its own knobs, where they start)
             if (const int now = mapOf (t.lane, *p); now > 0)
                 for (auto& w : lanes()[(size_t) t.lane].own[(size_t) now - 1].with)       // (and what it puts away)
-                    if (const int wi = p->paramIndex (w.param); wi >= 0 && wi < p->numModuleParams()) p->param (wi)->setValueNotifyingHost (w.place);
+                    if (const int wi = p->paramIndex (w.param); wi >= 0 && wi < p->numModuleParams())
+                    {
+                        p->param (wi)->setValueNotifyingHost (w.place);
+                        // (one of its own sound knobs: the knob stands there too, or it would put the parameter back)
+                        if (auto* vc = lane[(size_t) t.lane].voice.load())
+                            for (int k = 0; k < kSoundKnobs; ++k)
+                                if (const auto& b = vc->maps[(size_t) now][(size_t) k]; b.pi == wi && b.n == 0)
+                                    set (cx::lane (t.lane, k), juce::jlimit (0.0f, 1.0f, (w.place - b.lo) / std::max (1e-6f, b.hi - b.lo)));
+                    }
         updateLatency();
     }
 }

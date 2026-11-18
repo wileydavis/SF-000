@@ -451,14 +451,32 @@ between START and END.
   join, for a loop cut on its beat. Half: no seam, for a texture.
 - **VEL START**: a soft note starts further in (at full, the softest half way through).
   **RANDOM START**: each note starts somewhere else.
-- **SLICE** and **CYCLE** (KICK, the hats, CLAP, RUMBLE): SLICE is which slice a hit plays (all
-  the way down: the whole, as before); CYCLE ROUND plays the next one each hit, RANDOM any.
+- **SLICE** and **CYCLE** (KICK, the hats, CLAP, PERC, RUMBLE): SLICE is which slice a hit plays
+  (all the way down: the whole, as before); CYCLE ROUND plays the next one each hit, RANDOM any.
+- **LOOP** (the hats, CLAP, PERC; eighty-first build): a file on a drum lane is a hit, started
+  again by every step and cut by DECAY. With LOOP on it is a loop: START..END is taken to be a
+  number of bars (AUTO: the power of two it is nearest to at the tempo; or 1 to 32) and goes
+  round on the rig's bars while the clock runs, at the rig's tempo. Its pitch moves with the
+  tempo's ratio to its own, as a record's does; nothing is stretched. Where it is in the file is
+  where the clock is in those bars, so it cannot be put out of time. DECAY right up plays it
+  through (choosing LOOP puts DECAY there); lower, the lane's steps open it, each for as long as
+  DECAY says: the loop chopped by the pattern. TUNE moves it by whole octaves, twice or half the
+  speed. Stopped, it is silent. CONFIG's line under the display says what it is taken for and
+  the tempo it was made at ("LOOP 8 BARS AT 131.1").
+- **PERC has SAMPLE** (eighty-first build), a seventh model after its objects, with everything a
+  hat's sample has. On it the lane's sound knobs are TUNE, FILTER RES, ECHO SPACE, ECHO SWING,
+  WIDTH (the middle: as recorded), ACCENT, TONE and DRIVE, each where a hat has its like.
+- **Stereo** (eighty-first build): every lane that plays a file plays its left and right: the
+  note lanes' SAMPLE and GRANULAR (through the filter, both sides), KICK, the hats, CLAP and
+  PERC on SAMPLE, RUMBLE's SAMPLE (under its WIDTH), VOICE's SAMPLE and STUTTER, and KICK
+  FORGE's impact. VOICE's RADIO, VOCODER, ROBOT and CHOIR work on one signal. The master folds
+  everything under 150 Hz to the middle.
 - **RESAMPLE**, a key beside LOAD: the last four bars the rig played (its whole output, from a
   bar line) become this lane's sample, written into the library's samples as RESAMPLE and the
   date and time. What the rig just played is then something to slice, loop or make grains of.
   The lane's model is left as it is.
-- BASS, LEAD, CHORD and PAD read **five minutes** of a file (a field recording); the drums one
-  minute. A file is read whole into memory as it is loaded: five minutes is about a quarter of
+- BASS, LEAD, CHORD, PAD and PERC read **five minutes** of a file (a field recording); the
+  other drums one minute. A file is read whole into memory as it is loaded: five minutes is about a quarter of
   a gigabyte and a moment's pause.
 
 All of these open where they change nothing, a snapshot holds them, and a snapshot from before
@@ -1643,7 +1661,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

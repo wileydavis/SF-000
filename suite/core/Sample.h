@@ -45,6 +45,7 @@ struct SampleData
     float flacGain = 1.0f;          // the copy is scaled to fit FLAC's range: multiply back by this
     float peak = 1.0f;
     float chanPeak = 1.0f;      // (SF-000) the loudest point of either channel (peak is of their sum, which two channels can cancel in): NORMALISE's
+    bool wide = false;          // (SF-000) the two channels differ: a stereo recording (false: one channel, or the same in both; every reader then reads one)
     Mips mips;                      // octave-down copies of buf (readAt)
     std::vector<float> overview;    // kOverview parts: the largest |x| of either channel in each, over the peak (displays)
     int length() const { return buf.getNumSamples(); }

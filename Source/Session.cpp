@@ -508,7 +508,14 @@ void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
 {
     // (the gain of an EQ band that is the panel's LOW, MID or HIGH is that knob)
     if (int b = 0, w = 0; t.kind == 0 && Engine::eqId (id, b, w) && w == 2 && Engine::eqKnobOf (b) >= 0) { userSet (cx::lane (t.lane, cx::kEqLow + Engine::eqKnobOf (b)), v); return; }
+    const bool loopOn = t.kind == 0 && id == "smp_bars" && v > 0.0f;
+    bool loopWas = false;
+    if (loopOn) for (auto& sp : engine.setupParams (t)) if (sp.id == id) loopWas = sp.value > 0.0f;
     engine.setSetup (t, id, v);
+    // (LOOP turned on: DECAY goes right up, so that the loop plays through; turned down from there, the steps chop it)
+    if (loopOn && ! loopWas)
+        for (int k = 0; k < kLaneKnobs; ++k)
+            if (const auto& kd = engine.laneKnob (t.lane, k); kd.param != nullptr && juce::String (kd.param) == "decay") userSet (cx::lane (t.lane, k), 1.0f);
     // (another model, with sound knobs of its own: the places it renamed start where those start, and that is where they stand)
     if (t.kind == 0 && id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (t.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
 }
@@ -1998,8 +2005,28 @@ Session::SampleSays Session::sampleSays (int lane) const
         out.rootNote = out.pitched ? (int) std::lround (smp->rootNote) : 60;
         out.root = juce::MidiMessage::getMidiNoteName (out.rootNote, true, true, 3);
         out.peakDb = juce::Decibels::gainToDecibels (smp->chanPeak, -100.0f);
+        out.seconds = (double) smp->length() / std::max (1.0, smp->sr);
     }
     return out;
+}
+
+juce::String Session::loopSays (int lane, const SampleSays& says) const
+{
+    if (! says.has || says.seconds <= 0.0) return {};
+    int sel = 0; float from = 0.0f, to = 1.0f;
+    for (auto& kv : engine.getSetup ({ 0, lane, 0 }))
+    {
+        if (kv.first == "smp_bars") sel = (int) std::lround (kv.second * 7.0f);
+        else if (kv.first == "smp_start") from = kv.second;
+        else if (kv.first == "smp_end") to = kv.second;
+    }
+    if (sel <= 0) return {};
+    // (as the loop itself counts them: suite/modules/Kit.h, loopBars)
+    const double secs = says.seconds * std::max (0.001, (double) (to - from));
+    const double bars = sel >= 2 ? (double) (1 << std::min (5, sel - 2))
+                                 : std::pow (2.0, (double) juce::jlimit (-2, 6, (int) std::lround (std::log2 (std::max (1.0e-3, secs * engine.tempo() / 240.0)))));
+    const juce::String count = bars >= 1.0 ? juce::String ((int) bars) + (bars == 1.0 ? " BAR" : " BARS") : "1/" + juce::String ((int) std::lround (1.0 / bars)) + " BAR";
+    return count + " AT " + juce::String (bars * 240.0 / secs, 1);
 }
 
 juce::String Session::resampleInto (int lane)
@@ -4642,9 +4669,12 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
     {
         const juce::String module (lanes()[(size_t) l].module);
         if (taken[(size_t) l] >= Session::kListsNow) continue;         // (this lane is of now)
-        const int before = module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
+        // (lists 2, the seventy-ninth build: BASS, LEAD, KICK and PAD grew. Lists 3: the PERC lane's STRIKE has SAMPLE
+        // after its six objects.)
+        const bool first = taken[(size_t) l] < 2;
+        const int before = module == "STRIKE" ? 6 : ! first ? 0 : module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
         // (what this build added, where it changes nothing: the lane is not left with what the snapshot before it set)
-        if (s.hasSetup)
+        if (s.hasSetup && first)
             for (auto& d : e.newerOff ({ 0, l, 0 }))
             {
                 bool named = false;
@@ -4776,6 +4806,16 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         bool any = false;
         for (int t : taken) any = any || t < Session::kListsNow;
         if (any) fromListsBefore (s, e, taken);
+        // (and what has come since with no list changed: LOOP, the PERC lane's sample. A snapshot that does not name
+        // them has them where they change nothing.)
+        if (s.hasSetup)
+            for (int l = 0; l < kLanes; ++l)
+                for (auto& d : e.laterOff ({ 0, l, 0 }))
+                {
+                    bool named = false;
+                    for (auto& kv : s.setup[(size_t) l]) named = named || kv.first == d.first;
+                    if (! named) s.setup[(size_t) l].push_back (d);
+                }
     }
     return s;
 }

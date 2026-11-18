@@ -134,7 +134,7 @@ this build does not have is written back as it was read.
   "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
   "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
-  "lists": 2,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
+  "lists": 3,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
 }
 ```
 
@@ -156,9 +156,18 @@ this build does not have is written back as it was read.
   `fg_body`, `fg_ground`, `fg_pos`, `fg_tone`, and 1 and 8 TUNE and DRIVE as ever. Without
   `lists`, a PAD on GRANULAR has those six places as the pad's usual knobs, which GRANULAR then
   read as its size (COLOR) and its scatter (DETUNE).
+  **`lists` 3** (eighty-first build): PERC's list has SAMPLE after its six objects, and a snapshot
+  with `lists` under 3 has PERC's `model` as a place among six. Nothing else moved between 2 and
+  3. PERC on SAMPLE, places 1 to 8 are `tune`, `res`, `echo_space`, `echo_swing`, `spread` (its
+  WIDTH), `vel_sens` (ACCENT), `material` (TONE) and `power` (DRIVE).
   The lane's definition (`defs`) says which models these are, in `own`: `[ { "model", "knobs":
   [ 8, each under the id of the place it takes ], "with"?: { param: place } } ]`: a model's own
   knobs, and what choosing it by hand also set.
+- **LOOP** (eighty-first build) is `smp_bars` in the `setup` of a lane that has it (the hats,
+  the clap, PERC): a place among OFF, AUTO, 1, 2, 4, 8, 16, 32 BARS. PERC's `setup` also has a
+  sample's ids from this build on (`smp_start`, `smp_end`, `smp_fade_in`, `smp_fade_out`,
+  `smp_gain`, `smp_norm`, `smp_slice`, `smp_cycle`). A snapshot that names none of these is read
+  with each where it starts (LOOP off, the whole file).
 - **A lane's EQ** (eightieth build) is in its `setup`: `eq1_type`, `eq1_hz`, `eq1_gain`, `eq1_q` ...
   `eq8_q`, each a place from 0 to 1. `type`: OFF, BELL, LOW SHELF, HIGH SHELF, LOW CUT, HIGH
   CUT, NOTCH along 0 to 1 (sixths). `hz`: 20 Hz · 1000^v. `gain`: -18 dB + 36 v. `q`:

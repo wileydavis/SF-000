@@ -93,7 +93,12 @@ inline const std::vector<LaneDef>& lanes()
             { "level", -14 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "SIZE", "size", 'u' }, { "POSITION", "position", 'u' }, { "DISTANCE", "distance", 'u' },
             { "SPREAD", "spread", 'u' }, { "TENSION", "tension", 'u' }, { "MATERIAL", "material", 'u' }, { "POWER", "power", 'u' },
-            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // SAMPLE's own sound knobs, each where a hat or the clap has its like: the echoes' two, WIDTH where SPREAD is,
+          // ACCENT, TONE and DRIVE. SIZE, POSITION, DISTANCE and TENSION (the object's) are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "tune", 'b' }, { "FILTER RES", "res", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
+                          { "WIDTH", "spread", 'u' }, { "ACCENT", "vel_sens", 'u' }, { "TONE", "material", 'u' }, { "DRIVE", "power", 'u' } },
+              { { "spread", 0.5f }, { "vel_sens", 0.5f }, { "material", 0.5f }, { "power", 0.0f } }, 0u } } },
 
         { "BASS", "bass", "BASS", true, 1,
           // a rolling ladder bass with a sine sub under it (LAYER); the kick's pocket is cut for it

@@ -250,6 +250,13 @@ SamplePtr makeSample (juce::AudioBuffer<float>&& audio, double fileSr, double ta
         else
             SincResampler::process (audio.getReadPointer (src), inN, s->buf.getWritePointer (c), outN, fileSr, targetSr);
     }
+    // (SF-000) a stereo recording: the channels differ somewhere by more than a rounding (-100 dB of the louder channel's peak)
+    if (inCh > 1)
+    {
+        const float* a = s->buf.getReadPointer (0); const float* b = s->buf.getReadPointer (1);
+        const float floor = 1.0e-5f * std::max (1.0e-6f, std::max (s->buf.getMagnitude (0, 0, outN), s->buf.getMagnitude (1, 0, outN)));
+        for (int i = 0; i < outN && ! s->wide; ++i) s->wide = std::abs (a[i] - b[i]) > floor;
+    }
     analyse (*s);
     s->mips.build (s->buf);
     // The displays' waveform: the largest |x| of either channel over each part, over the peak.

@@ -108,6 +108,10 @@ public:
                     for (int k = 0; k < 3; ++k) v.fm[k].set (formant[k], 8.0f, sr);
         }
         float dry[Oversampler::kBlock];
+        // (SF-000) a stereo phrase, played as it is (SAMPLE) or stuttered: its left less its right (halved) goes beside it
+        // through TONE and SIGNAL, and the two sides are put back before DRIVE. The other models work on one signal.
+        float sideBuf[Oversampler::kBlock];
+        const bool wideNow = smp != nullptr && smp->wide;
         const int nn = std::min (c.n, Oversampler::kBlock);
         const float choirCal = cal::gain (cal::voiceChoir);
         const float phraseCal = smp != nullptr ? cal::at (cal::voice, model) : 1.0f;
@@ -128,7 +132,7 @@ public:
                 if (ev.on) noteOn (ev, smp, c.ci (SLICEMODE), autoOff, relMul, reg);
                 else noteOff (ev.note, ev.gen);
             }
-            float x = 0.0f;
+            float x = 0.0f, sd = 0.0f;
             if (smp != nullptr)
             {
                 if (play.active)
@@ -138,11 +142,14 @@ public:
                     if (ip + 2 >= play.end || ip + 2 >= len) play.active = false;
                     else
                     {
-                        const float a = 0.5f * (smp->read (0, play.pos, rate) + smp->read (1, play.pos, rate)) * play.reg.gain (play.pos);
+                        const float ra = smp->read (0, play.pos, rate), rb = wideNow ? smp->read (1, play.pos, rate) : ra;
+                        const float a = 0.5f * (ra + rb) * play.reg.gain (play.pos);
+                        const float as = 0.5f * (ra - rb) * play.reg.gain (play.pos);
                         float env = std::min (1.0f, (float) (play.pos - play.start) / (0.003f * (float) sr) + 0.001f);
                         if (play.releasing) { play.rel *= play.relCoef; env *= play.rel; if (play.rel < 1e-4f) play.active = false; }
                         if (play.autoOff > 0 && --play.autoOff == 0) startRelease (relMul);
                         x = a * env * play.vel;
+                        if (wideNow && (model == 0 || model == 5)) sd = as * env * play.vel;
                         play.pos += rate;
                         if (model == 5)
                         {
@@ -157,6 +164,11 @@ public:
                     case 0: case 5:     // (SF-000) TONE's tilt (not STUTTER's: its TONE is the loop's length), then SIGNAL's band
                         if (model == 0 && std::abs (vTilt) > 0.002f) { tiltLp += tiltA * (x - tiltLp); x = tiltLp * tiltLo + (x - tiltLp) * tiltHi; }
                         if (sigOn) { sigLo += sigLoA * (x - sigLo); x -= sigLo; sigHi += sigHiA * (x - sigHi); x = sigHi; }
+                        if (wideNow)
+                        {
+                            if (model == 0 && std::abs (vTilt) > 0.002f) { tiltLp2 += tiltA * (sd - tiltLp2); sd = tiltLp2 * tiltLo + (sd - tiltLp2) * tiltHi; }
+                            if (sigOn) { sigLo2 += sigLoA * (sd - sigLo2); sd -= sigLo2; sigHi2 += sigHiA * (sd - sigHi2); sd = sigHi2; }
+                        }
                         break;
                     case 1:             // (SF-000) RADIO takes TONE's tilt after its own chain
                         x = radioChain (x, sig);
@@ -169,22 +181,25 @@ public:
             else
                 x = choirSynth() * choirCal;
             dry[i] = x * phraseCal;
+            if (wideNow) { const float s2 = sd * phraseCal; sideBuf[i] = dry[i] - s2; dry[i] += s2; }       // (left in dry, right beside it)
         }
         // DRIVE, 2x oversampled. Always through the oversampler (no delay switching in or out);
         // below 2 % the drive fades in from exactly clean.
         {
             const float g = 1.0f + drive * 8.0f, nrm = 1.0f / std::sqrt (g), w = std::min (1.0f, drive / 0.02f);
             os.process (0, dry, nn, [g, nrm, w] (float x) { return x + w * (fastTanh (x * g) * nrm - x); });
+            if (wideNow) os.process (1, sideBuf, nn, [g, nrm, w] (float x) { return x + w * (fastTanh (x * g) * nrm - x); });
         }
         // Pass 2: dub echo send.
         for (int i = 0; i < nn; ++i)
         {
-            const float x = dry[i];
+            const float xl = dry[i], xr = wideNow ? sideBuf[i] : xl;
+            const float x = wideNow ? 0.5f * (xl + xr) : xl;           // (the echo is sent the two sides' sum)
             const float yl = echoLine[0].read (echoD), yr = echoLine[1].read (echoD * 1.5f > sr * 8.5f ? echoD : echoD * 1.5f);
             echoLine[0].push (x * echoAmt + echoLp[0].tickLP (fastTanh (yr * echoFb)));
             echoLine[1].push (echoLp[1].tickLP (fastTanh (yl * echoFb)));
-            L[i] = x + yl * 0.9f;
-            R[i] = x + yr * 0.9f;
+            L[i] = xl + yl * 0.9f;
+            R[i] = xr + yr * 0.9f;
         }
         out.process (c, io, FILT, -1, c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
         dispSlice = play.active ? play.slice : -1;
@@ -224,6 +239,7 @@ private:
     static constexpr int kVb = 16;
     float tiltLp = 0.0f;        // (SF-000) TONE's tilt on the phrase: its low part
     float sigLo = 0.0f, sigHi = 0.0f;       // (SF-000) SIGNAL's band on the phrase: what is under it, and what is left
+    float tiltLp2 = 0.0f, sigLo2 = 0.0f, sigHi2 = 0.0f;     // (SF-000) the same, for a stereo phrase's left less its right
     struct Play { bool active = false, releasing = false; double pos = 0, start = 0; int end = 0, slice = -1, autoOff = -1; float vel = 1, rel = 1, relCoef = 0.999f; SampleRegion reg; };
     struct ChoirVoice { bool active = false; int note = 0, gen = 0; float f = 220, a = 0, target = 0; Osc osc; Svf fm[3]; };
 

@@ -4845,8 +4845,92 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        and its spectral tools, mid/side, and a finer analyser. A second step, if the plain one
        is right.
 
+## Samples in stereo, and LOOP: a file on the rig's bars (Nov 18, 12:31): eighty-first build
+
+715. **You**, Nov 18, 12:31: "works well. is the eq post insert effects?
+     Also, do all the samples lanes play the samples in stereo? if not, they should" and, the same
+     minute: "also, the eq probably should be post effects". **The EQ already is**: a lane is its
+     instrument, its three inserts, the EQ, then its level, its sends and the mix, so the returns
+     are sent the EQ'd sound (they are shared, and no lane's EQ touches them). Nothing changed
+     there. **Stereo: most lanes were not.** Only BASS, LEAD, CHORD and PAD on SAMPLE read the two
+     channels; everything else read their sum. Now every lane that plays a file plays it in
+     stereo:
+     - **KICK on SAMPLE, the hats and the clap on SAMPLE**: the two channels' sum is the hit, as it
+       was, and their difference goes beside it (through TONE, DRIVE on each side, the kick's
+       layer split) and is put back as left and right.
+     - **RUMBLE on SAMPLE**: the sample's own left and right, into its room and beside it. RUMBLE's
+       WIDTH then scales it as it scales everything of RUMBLE's (it opens at 30 %).
+     - **VOICE**: the phrase as it is (SAMPLE) and STUTTER. *Mine:* RADIO, VOCODER, ROBOT and
+       CHOIR work on one signal and stay as they were.
+     - **GRANULAR**: each grain reads the left and the right apart and is then placed across the
+       two sides as before (a grain far to the left is mostly the recording's left).
+     - **KICK FORGE's impact**, where it is from a file: its left less its right goes beside the
+       body with the gain DRIVE and the clipper give the sum at each moment. The body, the ground
+       and the drive are one signal, as they must be.
+     - *Mine, found on the way:* on BASS, LEAD, CHORD and PAD the filter worked on the two sides'
+       sum, and what is between them was only turned down as CUTOFF closed, unfiltered. A stereo
+       file's highs stayed in the sides under a closed filter. On SAMPLE and GRANULAR the sides
+       now go through the same filter. (The other engines' spread is as it was.)
+     - A file with the same in both channels, or one channel, plays exactly as before. The
+       master still folds everything under 150 Hz to the middle.
+716. **You**, 12:36: "also, what's the best way to play samples. I have a timed click effect
+     that's beat matched to 131.1bpm and I want it to play as a percussive layer, but it eem to
+     play too fast in the clap or ohh layer. It's 4 bars long." with the file
+     (`131bpm_coffee_crackle.wav`), and 12:46: "add sample and loop to the perc lane as well, in
+     case I need more." **What was happening:** a file on a hat or the clap is a hit. Every step
+     starts it again and DECAY cuts it: on CLAP as it opens, the first quarter of a second on each
+     hit; on OPEN HAT about two seconds of it started again every beat, copies over each other.
+     Nothing in the rig played a long file in time. (The file is 14.645 s: eight bars at 131.1,
+     not four. It is stereo.) **LOOP**, *mine, the particulars:*
+     - **A setting of the sample, in CONFIG's SAMPLE box, on both hats, the clap and PERC**: OFF
+       (hits, as before), AUTO, or 1, 2, 4, 8, 16 or 32 BARS. On, START..END is taken to be that
+       many bars (AUTO: the power of two it is nearest to at the tempo, a quarter of a bar to 64)
+       and **goes round on the rig's bars while the clock runs, at the rig's tempo**. Its pitch
+       moves with the tempo's ratio to its own, as a record's does: at 132 the crackle is 0.7 %
+       fast and about a tenth of a semitone up. There is no time-stretching in this.
+     - **Where it is in the file is where the clock is in those bars**, always: stopping,
+       starting, muting or opening it late never puts it out of time. Stopped, it is silent.
+     - **DECAY right up (90 % and over): it plays through**, at one level, whatever the lane's
+       steps are. **Under that, the lane's steps open it**, each for as long as DECAY says (10 ms
+       to a bar) and as loud as the hit is: the loop chopped by the pattern, with ACCENT, DENSITY
+       and the echoes doing what they do to hits. Choosing LOOP by hand puts DECAY right up, so
+       it starts as the whole loop.
+     - **TUNE turns it by whole octaves only** (12 up: twice round in the time; 12 down: half),
+       so it cannot be put off the bars. TONE, DRIVE, FILTER, LEVEL, the inserts and the EQ as on
+       any hit. In stereo.
+     - **PERC has SAMPLE**, a seventh model after its six objects, with LOOP and everything a
+       hat's sample has (START, END, the fades, GAIN, NORMALISE, SLICE, CYCLE; a hit cuts the one
+       before). On SAMPLE its sound knobs are a sample's, each where a hat has its like: TUNE,
+       FILTER RES, ECHO SPACE, ECHO SWING, **WIDTH** where SPREAD is (the middle: as recorded;
+       down: one channel; up: wider), **ACCENT**, **TONE**, **DRIVE**. SIZE, POSITION, DISTANCE
+       and TENSION are the objects' and go to CONFIG while SAMPLE is on. PERC reads five minutes
+       of a file (the hats and the clap one minute).
+     - **Snapshots.** PERC's list is one longer, so a snapshot now says `lists` 3; one from
+       before is read against the six it was taken on and stays on its object. LOOP and PERC's
+       sample settings, which older snapshots do not name, are put where they change nothing.
+     - **CONFIG says what it is taken for**: with LOOP on, the line under the display begins
+       with the bars and the tempo the file was made at ("LOOP 8 BARS AT 131.1"): the tempo to
+       set for the loop at its own pitch.
+     - PERC's model control is named MODEL, as on every other lane (it was OBJECT), and on SAMPLE
+       its display shows the file and not a blast and an object's modes.
+     - **Not in this:** stretching a loop to the tempo without moving its pitch; a loop on KICK,
+       RUMBLE, VOICE or the note lanes.
+
 ## Not verified
 
+- **Stereo samples and LOOP (715, 716) have been measured, not heard.** Measured: each side's
+  own tone 46 dB or more over the other's on every lane that plays a file (12 dB in KICK FORGE's
+  impact, which sits on a body that is one signal); a loop on its beats for two rounds, at two
+  tempos, an octave up, chopped by steps, and silent when stopped; your crackle on CLAP as a
+  loop against the file itself played 0.7 % fast (the envelopes agree to 0.99). Not known: how
+  the kick's layer split, RUMBLE's room or a hard DRIVE sound with a wide file; whether a loop
+  whose end does not meet its start clicks on the bar (nothing fades the join unless FADE IN
+  and FADE OUT are turned up); how LOOP feels with the steps opening it; whether AUTO's guess
+  is right for a loop that is not a power of two of bars (three bars will be taken for four or
+  two: choose the count, or cut it with START and END). PERC's SAMPLE has been seen in one
+  picture on this machine and not on the Mac or the E16. On the note lanes a
+  closed CUTOFF now darkens a stereo file's sides too, and GRANULAR's spread with it: a pad on
+  GRANULAR with its filter low is a little narrower in its highs than it was.
 - **The lane EQ (714) has been seen in one picture and not used by a hand.** Its arithmetic is
   checked (a bell, a notch, a cut, a knob's shelf), a cut is heard, a snapshot keeps it and the
   graph draws. Dragging, the wheel and the double-clicks have only the checks' blind presses
