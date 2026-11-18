@@ -4720,26 +4720,53 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
 711. **You**, Nov 18, 00:49, with a picture (a kick, and under it a sub faded in on a curve that
      stays low while the kick is loud and is up as it ends): "for kick ducking, are we doing that
      with audio levels (not compression)? And can we shape the curve of the audio face to be the
-     inverse of the kick decay (see screenshot)." It is levels: a lane's POCKET draws its gain
-     from what the kick says of each hit (when, how hard, how its pitch falls, how long it lasts);
-     nothing listens and nothing compresses. But its curve was the other way up from the
-     picture's: deepest on the hit and back along the kick's decay, so quickest straight after
-     the hit. So **POCKET CURVE**, in the CONFIG of every lane with a pocket (BASS, LEAD, CHORD,
-     PAD, VOICE, and RUMBLE, where the depth is PUMP). *Mine, the particulars:* at nought it is
-     the pocket as it was, and that is where it starts, so nothing kept changes. At full the
-     hole is held while the kick sounds and comes up late on the picture's curve, at full as the
-     kick is over; its length is the kick's own, to where the kick's decay has it 24 dB down,
-     and never past nine tenths of a beat. Between the two it is a mix of them. With a long kick
-     on every beat the picture's curve leaves the lane little time at full: that is the
-     technique's own trade, and the kick's DECAY is what sets it. The picture is not kept in the
-     repository.
+     inverse of the kick decay (see screenshot)." It was levels already: a lane's POCKET draws its
+     gain from what the kick says of each hit (when, how hard, how its pitch falls, how long it
+     lasts); nothing listens and nothing compresses. But the curve was not the kick's own (the
+     decay stretched by SHAPE, held to a part of a beat, shortened when kicks come thick), and
+     at the SHAPE most lanes had it was mostly a notch at the kick's pitch, not a cut in level.
+     01:22: "the idea is to wrap the kick in the bass." 01:32: "the shape knob could adjust the
+     length of the kick to match. that way a long kick get get a shorter pocket that was still
+     matched to the kick shape but of varying length. and depth adjust the depth of the audio
+     cut". 01:34: "i would have the shape always wrap, but adjust length of pocket, depth of cut".
+     (Between those I had made, and then taken out again, a third knob, POCKET CURVE, that kept
+     the old pocket at its bottom.) So **the pocket is the wrap, always, on two knobs**, on every
+     lane that has one (BASS, LEAD, CHORD, PAD, VOICE; RUMBLE, where the depth is PUMP):
+     - **The hole is made from the kick's own envelope**, by the decay the kick reports, neither
+       stretched for the tempo nor shortened when kicks come thick.
+     - **POCKET DEPTH** is how deep the lane's level is cut. The whole lane, as a fade drawn on
+       its track would be.
+     - **POCKET SHAPE** is the length: the kick's curve scaled in time, all of the kick's length
+       at full, a quarter of it at nought.
+     *Mine, the particulars:*
+     - **The curve is what the kick has left of the level, squared.** The straight inverse
+       starts back the instant the kick hits and is fastest there, under the kick's punch; its
+       square starts flat, so the lane is out through the punch and swells up to meet the kick's
+       end, which is the relation in the picture. The straight one is a line in
+       `suite/core/Pocket.h` if you would rather.
+     - **Every snapshot's ducking sounds different from this build on.** Nothing in a snapshot
+       is changed: its DEPTH and SHAPE are what they were and mean the new things. Where the old
+       pocket was a notch the new one is a cut in level by the same DEPTH: the bass, which the
+       rig opens with DEPTH at 70, pumps where it did not. Said to you before it was built.
+     - **The kick's DECAY sets how long a full-length pocket is.** The rig's own kick is long
+       (0.35 s to fall to a third): with SHAPE where the lanes have it, about a quarter up, the
+       pocket is a third of that.
+     - **A kick whose lows are filtered out** still closes the pocket as it thins, as before.
+     - Measured on the pad under a kick of 0.175 s: its level through the beat is what the
+       kick's decay says it should be at full length, at half, at a quarter, and at half depth.
+     - The 16 bars of the rig as it opens, which the checks hold every build to sample for
+       sample, are different for this, as they must be: the new ones are the reference from here.
+     The picture is not kept in the repository.
 
 ## Not verified
 
-- **POCKET CURVE (711) has not been heard.** Measured on a held bass note under the rig's kick
-  (how far down just after the hit, two thirds through the beat, and before the next). Whether
-  it is the picture's curve to your ear, and whether its length should follow the kick more or
-  less closely, are yours to say: both are one line each in `suite/core/Pocket.h`.
+- **The pocket as the wrap (711) has not been heard.** It is measured against the kick's own
+  decay on a pad. Whether it is your picture to your ear, whether the square or the straight
+  inverse is right, whether a quarter to the whole of the kick is the right travel for SHAPE,
+  and what your sets now do with the DEPTHs they were given for the old pocket, are yours to
+  hear. With KICK FORGE, its GROUND is the kick's own low tail between the kicks, which is
+  where a wrapped bass now also is. A SAMPLE kick reports a decay heard from its file, a
+  rougher figure than a synth kick's.
 - **The seventy-ninth build has not been heard by anyone (707 to 710).** All of it is checked by
   measurement: GRANULAR's knobs each do what they say on a pad's own source; a sample's slices,
   loop and starts on a file of four tones; KICK FORGE's loudness along CHARACTER, its body the

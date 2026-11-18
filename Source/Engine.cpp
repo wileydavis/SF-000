@@ -1605,7 +1605,7 @@ Engine::SetupState Engine::newerOff (Target t) const
     if (auto* p = processorFor (t))
         for (const char* id : { "gr_pos", "gr_scan", "gr_size", "gr_dens", "gr_spray", "gr_pitch", "gr_shape", "gr_rev", "gr_clock", "gr_spread", "gr_follow", "gr_sync",
                                 "smp_notes", "smp_loop", "smp_xfade", "smp_vel", "smp_rand", "smp_slice", "smp_cycle",
-                                "fg_char", "fg_impact", "fg_body", "fg_ground", "fg_pos", "fg_tone", "pocket_curve" })
+                                "fg_char", "fg_impact", "fg_body", "fg_ground", "fg_pos", "fg_tone" })
             if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams())
                 st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
     return st;

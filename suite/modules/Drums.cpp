@@ -1110,14 +1110,14 @@ class RumbleModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, PCURVE };     // (SF-000) GAIN, NORMALISE
+    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE };     // (SF-000) GAIN, NORMALISE
     std::string id() const override { return "RUMBLE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        auto all = withSlices (withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
+        return withSlices (withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
                  pct ("dark", "DARK", 0.6f).prim(),
                  pct ("grit", "GRIT", 0.3f).prim().dir (1),
                  pct ("pump", "PUMP", 0.7f).prim(),
@@ -1134,8 +1134,6 @@ public:
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })));
-        all.push_back (pct ("pocket_curve", "POCKET CURVE", 0.0f));        // (SF-000) Pocket.h: PUMP's curve
-        return all;
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP RUMBLE ONE-SHOT (MODEL: SAMPLE)"; }
@@ -1309,7 +1307,6 @@ public:
             L[i] = (m + s) * gates[i] * modelCal;
             R[i] = (m - s) * gates[i] * modelCal;
         }
-        out.pocket.curve = c.v (PCURVE);        // (SF-000)
         out.process (c, io, FILT, -1, c.v (PUMP), c.v (PSHAPE), c.b (ALLOCON), LEVEL, false);
     }
     // The pocket; under it, with a sample loaded, the sample (its START and END to drag).

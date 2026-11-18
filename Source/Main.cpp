@@ -1911,9 +1911,11 @@ static void forgeTest (int& bad)
 static void pocketCurveTest (int& bad)
 {
     using namespace sf0;
-    // POCKET CURVE (the suite's Pocket.h): the hole the kick makes in a lane, drawn from what the kick says of itself.
-    // At nought it is as it was, deepest on the hit and back along the kick's decay; at full it is held down while the
-    // kick sounds and is back as the kick is over. The pad's own chord (held, nothing drifting) under a kick on every beat, the pad alone heard, against the same with no pocket.
+    // The pocket (the suite's Pocket.h): the kick wrapped in a lane. The hole is drawn from the kick's own envelope as the
+    // kick reports it: what the kick has left of the level, squared. POCKET SHAPE is its length (all of the kick's at
+    // full, a quarter at nought) and POCKET DEPTH how deep. The pad's own chord (held, nothing drifting) under a kick on
+    // every beat, the pad alone heard, against the same with no pocket: what is measured through the beat is set beside
+    // what the kick's decay says it should be.
     Engine e; e.prepare (48000.0, 256);
     Session ses (e, false);
     juce::AudioBuffer<float> buf (2, 256);
@@ -1924,26 +1926,23 @@ static void pocketCurveTest (int& bad)
         for (int i = 0; i < blocks; ++i) { buf.clear(); e.render (buf); if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n))); }
         e.tidy();
     };
-    int bass = -1, kick = -1;
-    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "pad") bass = l; else if (sl == "kick") kick = l; }
-    const Engine::Target t { 0, bass, 0 };
-    bool has = false;
-    for (auto& sp : e.setupParams (t))
-    {
-        if (sp.id == "pocket_curve") has = sp.def == 0.0f;
-    }
-    // (the pad's own part, the same every bar, under a kick on every beat)
+    int pad = -1, kick = -1;
+    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "pad") pad = l; else if (sl == "kick") kick = l; }
+    const Engine::Target t { 0, pad, 0 };
     Pattern four; for (int b = 0; b < 4; ++b) { four.steps[(size_t) (b * 4)].on = true; four.steps[(size_t) (b * 4)].vel = 1.0f; }
     e.setPattern (kick, four);
-    e.solo = bass;
+    e.solo = pad;
     ses.userSet (cx::kGlide, 0.0f);
-    e.setSetup (t, "layer", 0.0f); e.setSetup (t, "drift", 0.0f); e.setSetup (t, "pocket_shape", 1.0f);       // (the whole lane turned down: the plainest to measure)
-    ses.userSet (cx::lane (bass, cx::kSendA), 0.0f); ses.userSet (cx::lane (bass, cx::kSendB), 0.0f);
-    const double beatN = 60.0 / e.tempo() * 48000.0;
-    auto bar = [&] (float depth, float curve)
+    // the kick a quarter of the way up its DECAY: half its model's own, 0.175 s (KICK 909-TYPE's is 0.35)
+    ses.userSet (cx::lane (kick, 8), 0.25f);
+    const double tau = 0.35 * std::pow (2.0, (0.25 - 0.5) * 4.0);
+    e.setSetup (t, "layer", 0.0f); e.setSetup (t, "drift", 0.0f);
+    ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f);
+    const double beatN = 60.0 / e.tempo() * 48000.0, beatS = 60.0 / e.tempo();
+    auto bar = [&] (float depth, float shape)
     {
-        ses.userSet (cx::lane (bass, 3), depth);                // (POCKET DEPTH)
-        e.setSetup (t, "pocket_curve", curve);
+        ses.userSet (cx::lane (pad, 3), depth);                 // (POCKET DEPTH)
+        e.setSetup (t, "pocket_shape", shape);
         e.setRunning (false); run (4.0); heard.clear(); e.setRunning (true); run (4.0); run (4.0, true); e.setRunning (false);
         return heard;
     };
@@ -1954,23 +1953,31 @@ static void pocketCurveTest (int& bad)
         for (int b = 1; b <= 2; ++b) for (size_t i = (size_t) ((b + from) * beatN); i < (size_t) ((b + to) * beatN) && i < x.size(); ++i) { s2 += (double) x[i] * x[i]; ++n; }
         return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, n) + 1e-12);
     };
-    const auto open = bar (0.0f, 0.0f), was = bar (1.0f, 0.0f), late = bar (1.0f, 1.0f);
-    const double ref = rms (open, 0.1, 0.25), early0 = rms (was, 0.1, 0.25) - ref, early1 = rms (late, 0.1, 0.25) - ref;
-    const double mid0 = rms (was, 0.3, 0.45) - rms (open, 0.3, 0.45), mid1 = rms (late, 0.3, 0.45) - rms (open, 0.3, 0.45);
-    const double end1 = rms (late, 0.93, 0.99) - rms (open, 0.93, 0.99);
-    const bool ok = has && ref > -60.0 && early0 < -3.0 && early1 < early0 - 6.0 && mid1 < mid0 - 3.0 && end1 > -2.0;
-    if (! ok) ++bad;
-    std::printf ("  %s: POCKET CURVE: at nought the pocket is as it was (the pad %.1f dB down just after the kick, %.1f dB a third of the way through the beat); at full it is held under the kick and comes up late "
-                 "(%.1f dB, %.1f dB) and is back as the kick is over (%.1f dB against no pocket, before the next)\n", ok ? "ok" : "FAIL", early0, mid0, early1, mid1, end1);
-    if (! ok) std::printf ("    (the lane has it, at nought: %d; the pad with no pocket %.1f dB)\n", (int) has, ref);
-    if (! ok || std::getenv ("SF000_POCKET_DEBUG") != nullptr)
+    const auto open = bar (0.0f, 1.0f);
+    // through the beat in tenths, from the third to the ninth, against what the kick's decay says (the master is ten
+    // thousandths of a second behind the beat): depth, and the length as a share of the kick's
+    auto against = [&] (float depth, float shape, double share, juce::String& says)
     {
-        std::printf ("    (through the beat, in tenths, dB against no pocket. at nought:");
-        for (int k = 0; k < 10; ++k) std::printf (" %.1f", rms (was, k * 0.1, k * 0.1 + 0.1) - rms (open, k * 0.1, k * 0.1 + 0.1));
-        std::printf ("; at full:");
-        for (int k = 0; k < 10; ++k) std::printf (" %.1f", rms (late, k * 0.1, k * 0.1 + 0.1) - rms (open, k * 0.1, k * 0.1 + 0.1));
-        std::printf (")\n");
-    }
+        const auto x = bar (depth, shape);
+        double worst = 0.0;
+        for (int k = 2; k <= 8; ++k)
+        {
+            const double a = k * 0.1, b = a + 0.1, tm = (a + 0.05) * beatS - 0.010;
+            const double room = 1.0 - std::exp (-tm / (tau * share));
+            const double due = 20.0 * std::log10 (1.0 - (double) depth * (1.0 - room * room)), got = rms (x, a, b) - rms (open, a, b);
+            worst = std::max (worst, std::abs (got - due));
+            says << juce::String (got, 1) << " (" << juce::String (due, 1) << ") ";
+        }
+        return worst;
+    };
+    juce::String sFull, sHalf, sShort, sShallow;
+    const double full = against (1.0f, 1.0f, 1.0, sFull), half = against (1.0f, 0.5f, 0.5, sHalf), quarter = against (1.0f, 0.0f, 0.25, sShort), shallow = against (0.5f, 1.0f, 1.0, sShallow);
+    const bool ok = rms (open, 0.2, 0.9) > -60.0 && full < 4.0 && half < 3.0 && quarter < 3.0 && shallow < 3.0;
+    if (! ok) ++bad;
+    std::printf ("  %s: the pocket is the kick wrapped in the lane: with DEPTH full and SHAPE full the pad's level through the beat is what the kick has left, squared, by the kick's own decay (within %.1f dB); "
+                 "SHAPE half way and at nought, the same curve in half and in a quarter of the time (%.1f, %.1f dB); DEPTH half way, half as deep (%.1f dB)\n", ok ? "ok" : "FAIL", full, half, quarter, shallow);
+    if (! ok || std::getenv ("SF000_POCKET_DEBUG") != nullptr)
+        std::printf ("    (tenths 3 to 9 of the beat, dB against no pocket, with what the decay says in brackets. full: %s; SHAPE half: %s; SHAPE nought: %s; DEPTH half: %s)\n", sFull.toRawUTF8(), sHalf.toRawUTF8(), sShort.toRawUTF8(), sShallow.toRawUTF8());
 }
 
 static void granularTest (int& bad)

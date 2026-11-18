@@ -116,3 +116,9 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   "the last model" was meant). **Brought into the suite, a model list longer by one moves the
   place of every model after the new one in presets that hold a place and not a name**: here
   the new ones are last, or after SAMPLE, and SF-000 converts its own snapshots (DECISIONS 707).
+- `core/Pocket.h`, marked `(SF-000)`, seventy-ninth build: **the pocket is another thing here.**
+  The hole is the kick's own envelope (its reported decay), turned over and squared, on the
+  whole lane's level; DEPTH is its depth and SHAPE its length (a quarter to the whole of the
+  kick's). The suite's is as it was: a notch at the kick's pitch, through the lows, to a pump,
+  on a decay held to a part of a beat and shortened when kicks come thick. The crossover and
+  the bell are still in the file and do nothing here. See DECISIONS 711.

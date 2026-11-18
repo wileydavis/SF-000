@@ -25,11 +25,6 @@ public:
     // Takes part in SF BUILD's drop duck. Off on a TAP or STRIP whose ROLE is KICK, PERC or DECK:
     // like SF KICK, PERC, STRIKE and DECK, which have no Pocket, they never duck under the kick.
     bool dropDuck = true;
-    // (SF-000) POCKET CURVE, 0 to 1, set by the module before process. 0: the hole is deepest on the hit and comes back
-    // along the kick's decay (fastest straight after the hit). 1: it is held while the kick sounds and comes up late, at
-    // full as the kick is over: a fade-in drawn under the kick, the kick's own length long (to where its decay has it
-    // 24 dB down, and never past nine tenths of a beat). Between: a mix of the two.
-    float curve = 0.0f;
 
     void prepare (double rate, int maxBlock)
     {
@@ -53,7 +48,14 @@ public:
         presence = 0.0f; duty = 0.0f; envHold = 0.0f; sidePeak = 0.05f; act = 0.0f; dropDip = 1.0f;
     }
 
-    // depth 0..1, shape 0..1 (0 transparent pitch-tracking cut .. 1 full-band pump).
+    // (SF-000) The pocket is the kick wrapped in the lane. The hole is made from the kick's own envelope as the kick
+    // reports it (its decay): what the kick has left of the level is 1 less that envelope, and the lane's level is that,
+    // squared: the lane is out through the kick's punch and comes up to meet its end. DEPTH is how deep the cut goes
+    // (the whole lane's level, as a fade drawn on its track would be) and SHAPE is its length: the kick's curve scaled
+    // in time, a quarter of the kick's length at nought, all of it at full. Neither stretched for the tempo nor
+    // shortened when kicks come thick: it is the kick's. (Before the seventy-ninth build SHAPE went from a notch at the
+    // kick's pitch, through a cut in the lows, to a pump of the whole lane, on a decay held to a part of a beat.)
+    // depth 0..1, shape 0..1.
     // enabled=false still delays (latency must stay constant) but applies no gain change.
     void process (const Ctx& c, float* const* ch, int numCh, int n, float depth, float shape,
                   const juce::AudioBuffer<float>* side, bool enabled = true, bool preferSide = false, bool delayAudio = true)
@@ -80,15 +82,13 @@ public:
         if (useSide) f1 = 55.0f;
 
         const float s = clamp01 (shape);
-        const float bandAmt = clamp01 (depth) * smoothstep (0.12f, 0.55f, s);
-        const float bellAmt = clamp01 (depth) * (1.0f - smoothstep (0.35f, 0.75f, s));
+        const float bandAmt = clamp01 (depth);                 // (SF-000) the whole lane, as deep as DEPTH
+        const float bellAmt = 0.0f;
         const float fcLow = std::max (40.0f, f1 * 3.0f);
-        const float fc = fcLow * std::pow (20000.0f / fcLow, smoothstep (0.55f, 1.0f, s));
+        const float wrapLen = std::pow (4.0f, s - 1.0f);        // (SF-000) SHAPE: a quarter of the kick's length, to all of it
         // A high-passed kick has no sub to make room for: the pocket closes as the kick thins.
         float lowPresence = 1.0f;
         if (kickHp > 30.0f) lowPresence = clamp01 (std::pow (fcLow / kickHp, 2.0f));
-        if (s > 0.8f) lowPresence = lerp (lowPresence, 1.0f, (s - 0.8f) * 5.0f);   // pump ignores it
-        for (int ci = 0; ci < 2; ++ci) xo[ci].set (fc, sr);
 
         // SF BUILD's drop: full-band duck to each kick, dropDb deep, for dropBeats after the drop's
         // bar line (full for the first half, easing out over the second). Kick reports only: the
@@ -113,7 +113,7 @@ public:
         // otherwise the audio passes untouched (crossfaded over 10 ms when that changes).
         const float actTarget = enabled && bandAmt > 0.0005f ? 1.0f : 0.0f;
         const float actCoef = std::exp (-1.0f / (float) (0.01 * sr));
-        const float holdCoef = std::exp (-1.0f / (float) (std::max (0.001f, (1.0f - s) * 0.08f) * sr));
+        const float holdCoef = std::exp (-1.0f / (float) (0.001 * sr));        // (SF-000) the curve is the kick's: nothing holds it on
         const float dutyCoef = std::exp (-1.0f / (float) (2.0 * secPerBeat * sr));
         const float presUp = (float) (1.0 / (secPerBeat * sr)), presDown = (float) (1.0 / (8.0 * secPerBeat * sr));
 
@@ -132,18 +132,10 @@ public:
                     if (! Bus::kickCurrent (hits[h], dtBeats, secPerBeat, lookSec)) continue;   // left over from before a jump
                     anyRecent = anyRecent || dtBeats < 8.0;
                     const float dt = (float) (dtBeats * secPerBeat);
-                    const float dutyScale = clamp01 (1.0f - (duty - 0.55f) * 2.5f);
-                    const float dec = std::max (0.02f, std::min (hits[h].decay * (1.0f + 1.5f * s), (float) secPerBeat * (0.3f + 0.45f * s)) * std::max (0.15f, dutyScale));
-                    const float att = std::min (1.0f, dt / 0.001f);
-                    float fall = std::exp (-dt / dec);
-                    if (curve > 0.001f)
-                    {
-                        const float len = std::max (0.03f, std::min (2.76f * hits[h].decay, 0.9f * (float) secPerBeat) * std::max (0.15f, dutyScale));
-                        const float x = dt / len;
-                        const float late = x >= 1.0f ? 0.0f : 1.0f - (std::exp (4.0f * x) - 1.0f) * (1.0f / 53.59815f);
-                        fall += std::min (1.0f, curve) * (late - fall);
-                    }
-                    const float e = hits[h].vel * att * fall;
+                    // (SF-000) what the kick has left of the level: nothing on the hit, all of it when the kick is gone
+                    const float att = std::min (1.0f, dt / 0.002f);
+                    const float room = 1.0f - std::exp (-dt / std::max (0.01f, hits[h].decay * wrapLen));
+                    const float e = hits[h].vel * att * (1.0f - room * room);
                     env = std::max (env, e);
                     if (dropDb > 0.0f && hits[h].ppq >= dropAt - dropEarly)
                     {
@@ -203,13 +195,7 @@ public:
             {
                 float x = ch[ci][i];
                 if (delayAudio) { delay[ci].push (x); x = delay[ci].tap (kLatency); }
-                if (act > 0.0f)
-                {
-                    float lo, hi;
-                    xo[ci].split (x, lo, hi);
-                    x = x + act * ((lo * lowGain + hi) - x);
-                }
-                else xo[ci].reset();
+                if (act > 0.0f) x = x + act * (x * lowGain - x);          // (SF-000) the lane's level
                 ch[ci][i] = bell[ci].tick (x) * dropGain;
             }
             traceAcc = std::max ({ traceAcc, e * std::max (bandAmt, bellAmt), 1.0f - dropGain });

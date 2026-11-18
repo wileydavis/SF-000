@@ -313,14 +313,15 @@ not a job for afterwards.
 (POCKET DEPTH and POCKET SHAPE, on a lane, are something else and were there before: the kick's
 pocket in **time**, a duck round each kick. POCKETS is each lane's place in **frequency**.)
 
-**The kick's hole in a lane is drawn, not compressed.** A lane's POCKET takes what the kick says
-of each hit (when it lands, how hard, how its pitch falls, how long it lasts) and draws the
-lane's level from it. POCKET DEPTH is how deep (PUMP on RUMBLE), POCKET SHAPE what is turned
-down (a cut that follows the kick's pitch, the lows, or the whole lane), and **POCKET CURVE**, in
-CONFIG (seventy-ninth build), the shape in time: all the way down, deepest on the hit and back
-along the kick's decay, as it always was; all the way up, held down while the kick sounds and up
-late, at full as the kick is over, like a fade-in drawn under the kick (its length the kick's
-own, never more than nine tenths of a beat).
+**The pocket is the kick wrapped in the lane** (seventy-ninth build), drawn and not compressed.
+A lane's POCKET takes what the kick says of each hit (when it lands, how hard, how long it lasts)
+and cuts the lane's level along the kick's own decay turned over: the lane is out through the
+kick's punch and comes up to meet its end. **POCKET DEPTH** is how deep the cut goes (PUMP on
+RUMBLE). **POCKET SHAPE** is its length: the kick's curve scaled in time, all of the kick's
+length at full and a quarter of it at nought, so a long kick can have a short pocket that is
+still the kick's shape. The kick's own DECAY sets what "all of it" is. (Before this build SHAPE
+went from a notch at the kick's pitch to a pump of the whole lane, on a decay of its own: every
+snapshot's ducking sounds different from here on, by the DEPTH and SHAPE it already had.)
 
 **P** on the keyboard, or the POCKETS key on the master, opens its page: a row for each lane and
 the two returns, each with a map of the spectrum from 31 Hz to 16 kHz. On a map the yellow shape
@@ -1617,7 +1618,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, c POCKET CURVE, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
