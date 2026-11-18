@@ -340,6 +340,9 @@ public:
     void setStackCue (bool on);
     static constexpr juce::uint32 kAllLanes = (1u << (kLanes + 3)) - 1u;
     // (a stack's snapshot has one key more than the parts of the rig: N, whether it brings its notes. kAllKeys: all of them as kept)
+    // Which lists of models, and which knobs of theirs, a snapshot is written on ("lists" in it; absent: 1, every build
+    // before the seventy-ninth). Session.cpp, fromListsBefore.
+    static constexpr int kListsNow = 2;
     static constexpr juce::uint32 kNotesKey = MacroKnob::kNotes, kBlendKey = MacroKnob::kBlend, kAllKeys = kAllLanes | kNotesKey | kBlendKey;
     static Scope scopeOf (juce::uint32 lanes);
     static int mixCellOf (int type);                        // an effect's MIX among its eight knobs, or -1 (effects(): Rig.h)

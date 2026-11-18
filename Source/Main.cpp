@@ -1515,12 +1515,165 @@ static void stackBlendTest (int& bad)
                            (int) further, (int) isB, (int) keeps, (int) toFirst, (int) less, (int) back, (int) down, (int) settled, (int) jump, (int) filed, (int) sound, (double) model(), (double) mA, (double) mB, (double) e.fadeShown (kick, st), e.leaving(), (double) peak);
 }
 
+static void granularTest (int& bad)
+{
+    using namespace sf0;
+    // GRANULAR's own knobs (Rig.h, ModelKnobs; the suite's Synth, E_GRAIN). While it is a lane's model the lane's first six
+    // sound places are POSITION, SCAN, SIZE, GRAINS, SPRAY and PITCH, named so, and what those places moved before is in
+    // CONFIG; another model chosen, they are the lane's usual knobs again. It is on BASS, LEAD and CHORD as well as PAD.
+    // And the knobs do what they say: POSITION is where in the source the grains come from, SCAN stopped holds that
+    // place still, CLOCK puts the grains on the song's grid, FOLLOW FIXED plays the source at its own pitch.
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n)));
+        }
+        e.tidy();
+    };
+    int pad = -1, bass = -1, lead = -1, chord = -1, kick = -1;
+    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "pad") pad = l; else if (sl == "bass") bass = l; else if (sl == "lead") lead = l; else if (sl == "chord") chord = l; else if (sl == "kick") kick = l; }
+    auto choose = [&] (int l, const char* id, const char* name)
+    {
+        for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup ({ 0, l, 0 }, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+        return false;
+    };
+    auto label = [&] (int l, int k) { return e.control (cx::lane (l, k)).label; };
+    auto inConfig = [&] (int l, const char* id) { for (auto& kv : e.getSetup ({ 0, l, 0 })) if (kv.first == id) return true; return false; };
+    const juce::String padWas0 = label (pad, 0), padWas6 = label (pad, 6);
+    const float cutWas = e.target (cx::lane (pad, 6));
+    // chosen by hand: its own knobs, where they start
+    const bool chosen = choose (pad, "model", "GRANULAR");
+    const bool named = chosen && label (pad, 0) == "POSITION" && label (pad, 1) == "SCAN" && label (pad, 2) == "SIZE" && label (pad, 3) == "GRAINS" && label (pad, 4) == "SPRAY" && label (pad, 5) == "PITCH"
+                       && label (pad, 6) == padWas6 && e.control (cx::lane (pad, 1)).kind == Kind::Bipolar && e.control (cx::lane (pad, 0)).morph;
+    auto near = [] (float x, float y) { return std::abs (x - y) < 2.0e-3f; };
+    const bool starts = near (e.target (cx::lane (pad, 0)), 0.0f) && near (e.target (cx::lane (pad, 1)), 0.5f + 0.5f * 0.1581139f) && near (e.target (cx::lane (pad, 2)), 0.7456836f)
+                        && near (e.target (cx::lane (pad, 3)), 0.75f) && near (e.target (cx::lane (pad, 6)), cutWas);
+    const bool config = inConfig (pad, "res") && inConfig (pad, "attack") && inConfig (pad, "detune") && ! inConfig (pad, "gr_pos") && inConfig (pad, "gr_clock") && ! inConfig (pad, "cutoff");
+    // and back: the lane's usual knobs, and GRANULAR's in CONFIG no more than its switches
+    const bool back = choose (pad, "model", "POLY PAD") && label (pad, 0) == padWas0 && inConfig (pad, "gr_pos") && ! inConfig (pad, "res");
+    bool others = true;
+    for (int l : { bass, lead, chord }) others = others && choose (l, "model", "GRANULAR") && label (l, 0) == "POSITION" && label (l, 5) == "PITCH" && label (l, 6) == "CUTOFF";
+    for (int l : { bass, lead, chord }) choose (l, "model", l == bass ? "BASS LADDER" : "ACID 303-TYPE");
+    // ---- what the knobs do: the pad alone, one long note, its own source
+    for (int l = 0; l < kLanes; ++l) if (l != pad) { Pattern none; e.setPattern (l, none); }
+    choose (pad, "model", "GRANULAR"); choose (pad, "chord", "NONE");
+    e.setSetup ({ 0, pad, 0 }, "drift", 0.0f);                                      // (nothing wandering of its own)
+    Pattern one; one.steps[0].on = true; one.steps[0].gate = 16.0f; one.steps[0].note = 0; one.steps[0].octave = 3;
+    e.setPattern (pad, one);
+    auto set = [&] (int k, float v) { ses.userSet (cx::lane (pad, k), v); };
+    ses.userSet (cx::kGlide, 0.0f);
+    set (6, 1.0f); set (7, 0.0f); set (4, 0.0f); set (5, 0.0f); set (11, 0.8f);          // (open, no ensemble, no spray, no pitch spread)
+    ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f);
+    e.setRunning (true);
+    auto take = [&] (double beats) { heard.clear(); run (4.0); run (beats, true); return heard; };
+    auto bands = [] (const std::vector<float>& x)
+    {
+        // the level in eight bands, an octave each from 100 Hz (a bank of two-pole filters: enough to tell two sounds apart)
+        std::array<double, 8> out {};
+        for (int b = 0; b < 8; ++b)
+        {
+            const double f = 100.0 * std::pow (2.0, b), w = 2.0 * juce::MathConstants<double>::pi * f / 48000.0, r = 0.995;
+            double y1 = 0, y2 = 0, sum = 0;
+            for (float v : x) { const double y = (double) v + 2.0 * r * std::cos (w) * y1 - r * r * y2; y2 = y1; y1 = y; sum += y * y; }
+            out[(size_t) b] = 10.0 * std::log10 (sum / (double) std::max<size_t> (1, x.size()) + 1e-12);
+        }
+        return out;
+    };
+    auto apart = [] (const std::array<double, 8>& a, const std::array<double, 8>& b) { double d = 0; for (int i = 0; i < 8; ++i) d += (a[(size_t) i] - b[(size_t) i]) * (a[(size_t) i] - b[(size_t) i]); return std::sqrt (d / 8.0); };
+    auto level = [] (const std::vector<float>& x) { double s2 = 0; for (float v : x) s2 += (double) v * v; return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, x.size()) + 1e-12); };
+    // SCAN stopped: the same place twice over sounds the same; another POSITION is another sound
+    set (1, 0.5f); set (0, 0.2f);
+    const auto a1 = bands (take (8.0)), a2 = bands (take (8.0));
+    set (0, 0.7f);
+    const auto b1 = bands (take (8.0));
+    const bool position = level (heard) > -60.0 && apart (a1, a2) < 1.0 && apart (a1, b1) > 2.0 * std::max (0.5, apart (a1, a2));
+    // GRAINS: far fewer of them is far quieter
+    set (0, 0.2f); set (3, 0.75f); const double full = level (take (8.0));
+    set (3, 0.0f); const double sparse = level (take (8.0));
+    const bool grains = full - sparse > 4.0;
+    // CLOCK 1/4, short grains: sound on the beats and next to none between
+    set (3, 0.75f); set (2, 0.25f); choose (pad, "gr_clock", "1/4");
+    run (4.0); heard.clear();
+    e.setRunning (false); e.setRunning (true);                                      // (from the top: the beats are where the count starts)
+    run (8.0, true);
+    double on = 0, off = 0; const double beatN = 60.0 / e.tempo() * 48000.0;
+    for (size_t n = 0; n < heard.size(); ++n) { const double ph = std::fmod ((double) n, beatN) / beatN; (ph < 0.25 ? on : (ph > 0.5 ? off : on)) += (ph < 0.25 || ph > 0.5) ? (double) heard[n] * heard[n] : 0.0; }
+    const bool clocked = on > 0.0 && 10.0 * std::log10 ((on + 1e-12) / (off * 0.5 + 1e-12)) > 6.0;
+    choose (pad, "gr_clock", "FREE"); set (2, 0.7456836f);
+    // FOLLOW FIXED: another note, the same sound; FOLLOW NOTES: another sound
+    set (1, 0.5f);
+    const auto n0 = bands (take (8.0));
+    one.steps[0].note = 7; e.setPattern (pad, one);
+    const auto n7 = bands (take (8.0));
+    choose (pad, "gr_follow", "FIXED");
+    const auto f7 = bands (take (8.0));
+    one.steps[0].note = 0; e.setPattern (pad, one);
+    const auto f0 = bands (take (8.0));
+    const bool follow = apart (n0, n7) > 2.0 && apart (f0, f7) < 0.5 * apart (n0, n7);
+    choose (pad, "gr_follow", "NOTES");
+    // ---- a snapshot from before, on the lists and the knobs of now: PAD on GRANULAR with DETUNE 0.6 and COLOR 0.2; BASS's and
+    // KICK's last models (SAMPLE both); LEAD's eighth
+    const auto taken = ses.take();
+    juce::var old = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (taken)), true));
+    bool migrated = false;
+    if (auto* o = old.getDynamicObject())
+    {
+        o->removeProperty ("lists"); o->setProperty ("uid", "sf0testbefore79-1"); o->setProperty ("id", 0);
+        auto lanesV = old["setup"]["lanes"];
+        auto setIn = [&] (int l, const char* id, double v) { if (auto* ls = lanesV[l].getDynamicObject()) ls->setProperty (id, v); };
+        auto drop = [&] (int l, const char* id) { if (auto* ls = lanesV[l].getDynamicObject()) ls->removeProperty (id); };
+        setIn (pad, "model", 3.0 / 8.0); setIn (bass, "model", 7.0 / 9.0); setIn (kick, "model", 1.0); setIn (lead, "model", 9.0 / 11.0);
+        for (const char* id : { "res", "attack", "decay", "pocket_depth", "detune", "color" }) drop (pad, id);
+        if (auto* vals = old["values"].getDynamicObject())
+        {
+            const juce::String sl ("pad.");
+            vals->setProperty (e.control (cx::lane (pad, 0)).id, 0.6); vals->setProperty (e.control (cx::lane (pad, 1)).id, 0.2);
+            vals->setProperty (e.control (cx::lane (pad, 2)).id, 0.33); vals->setProperty (e.control (cx::lane (pad, 5)).id, 0.44);
+        }
+        choose (pad, "model", "POLY PAD");
+        const auto id = ses.takeFromLibrary (old, "BEFORE", juce::var());
+        ses.recall (id); run (8.0);
+        auto setupOf = [&] (int l, const char* idc) { for (auto& kv : e.getSetup ({ 0, l, 0 })) if (kv.first == idc) return kv.second; return -1.0f; };
+        auto modelOf = [&] (int l) { for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") return sp.text.toUpperCase(); return juce::String(); };
+        migrated = id != 0 && modelOf (pad) == "GRANULAR" && label (pad, 0) == "POSITION"
+                   && near (e.target (cx::lane (pad, 0)), 0.0f) && near (e.target (cx::lane (pad, 2)), std::log ((30.0f + 250.0f * 0.2f) / 5.0f) / std::log (100.0f))
+                   && near (e.target (cx::lane (pad, 4)), std::sqrt (0.3f * 0.6f)) && near (e.target (cx::lane (pad, 5)), 0.3f)
+                   && near (setupOf (pad, "res"), 0.33f) && near (setupOf (pad, "attack"), 0.44f) && near (setupOf (pad, "color"), 0.2f)
+                   && modelOf (bass) == "SAMPLE" && modelOf (kick) == "SAMPLE" && modelOf (lead) == "SAMPLE";
+        if (! migrated) std::printf ("    (from before: pad %s place0 %s %.3f size %.3f spray %.3f pitch %.3f res %.3f attack %.3f; bass %s kick %s lead %s)\n", modelOf (pad).toRawUTF8(), label (pad, 0).toRawUTF8(),
+                                     (double) e.target (cx::lane (pad, 0)), (double) e.target (cx::lane (pad, 2)), (double) e.target (cx::lane (pad, 4)), (double) e.target (cx::lane (pad, 5)),
+                                     (double) setupOf (pad, "res"), (double) setupOf (pad, "attack"), modelOf (bass).toRawUTF8(), modelOf (kick).toRawUTF8(), modelOf (lead).toRawUTF8());
+    }
+    // the file: the model, its knobs and where they stand
+    ses.recall (taken); run (4.0);
+    set (0, 0.37f);
+    Engine e2; e2.prepare (48000.0, 256);
+    Session s2 (e2, false);
+    s2.takeState (ses.stateVar());
+    const bool filed = e2.control (cx::lane (pad, 0)).label == "POSITION" && near (e2.target (cx::lane (pad, 0)), 0.37f) && near (e2.target (cx::lane (pad, 2)), e.target (cx::lane (pad, 2)));
+    const bool ok = named && starts && config && back && others && position && grains && clocked && follow && migrated && filed;
+    if (! ok) ++bad;
+    std::printf ("  %s: GRANULAR has sound knobs of its own: chosen, the lane's first six places are POSITION, SCAN, SIZE, GRAINS, SPRAY and PITCH where those start, and what the places moved is in CONFIG; "
+                 "another model, and they are the lane's own again; it is on BASS, LEAD and CHORD too; POSITION is where the grains come from and SCAN stopped holds it; fewer GRAINS is quieter; on a CLOCK they "
+                 "fall on the song's grid; FOLLOW FIXED plays the source at its own pitch; a snapshot from before the lists grew means what it meant; and the file keeps it all\n", ok ? "ok  " : "FAIL");
+    if (! ok) std::printf ("    (named %d starts %d config %d back %d others %d position %d (%.2f twice, %.2f moved) grains %d (%.1f dB) clocked %d (%.1f dB) follow %d (%.2f notes, %.2f fixed) migrated %d filed %d)\n",
+                           (int) named, (int) starts, (int) config, (int) back, (int) others, (int) position, apart (a1, a2), apart (a1, b1), (int) grains, full - sparse, (int) clocked,
+                           10.0 * std::log10 ((on + 1e-12) / (off * 0.5 + 1e-12)), (int) follow, apart (n0, n7), apart (f0, f7), (int) migrated, (int) filed);
+}
+
 static int selfTest (const juce::String& wavPath, double bars = 16.0)
 {
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -3930,6 +4083,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 
     stackNotesTest (bad);
     stackBlendTest (bad);
+    granularTest (bad);
     arrsKeptTest (bad);
 
     {

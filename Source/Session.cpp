@@ -499,6 +499,8 @@ void Session::setConfig (int index, int v7)
         return;
     }
     engine.setSetup (cfg, sp.id, v);
+    // (another model, with sound knobs of its own: the places it renamed start where those start, and that is where they stand)
+    if (cfg.kind == 0 && sp.id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (cfg.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
     cfgTouched = sp.id;
     touch();
     if (onChange) onChange();
@@ -1999,7 +2001,7 @@ juce::String Session::samplePlain (int lane)
     auto put = [&] (const char* id, float v)
     {
         for (int k = 0; k < kLaneKnobs; ++k)
-            if (engine.control (cx::lane (lane, k)).id == slug + "." + id) { userSet (cx::lane (lane, k), v); return true; }
+            if (juce::String (engine.laneKnob (lane, k).param) == id) { userSet (cx::lane (lane, k), v); return true; }
         if (setupOf (ps, id) == nullptr) return false;
         engine.setSetup (t, id, v);
         return true;
@@ -2007,7 +2009,7 @@ juce::String Session::samplePlain (int lane)
     auto has = [&] (const char* id)
     {
         if (setupOf (ps, id) != nullptr) return true;
-        for (int k = 0; k < kLaneKnobs; ++k) if (engine.control (cx::lane (lane, k)).id == slug + "." + id) return true;
+        for (int k = 0; k < kLaneKnobs; ++k) if (juce::String (engine.laneKnob (lane, k).param) == id) return true;
         return false;
     };
     auto choose = [&] (const char* id, const char* name)
@@ -2358,6 +2360,12 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
     //    (with the audio not yet started there is nothing playing to leave: the change is simply made)
     settleHolds();                  // (a lane a stack knob was holding between two instruments: the one that arrived is its instrument)
     if (engine.isPrepared()) for (int l = 0; l < kLanes; ++l) if (laneJumps (s, l)) engine.forkVoice (l, glide);
+    // (and each lane's model before its knobs: a model with sound knobs of its own names what the first eight places mean,
+    // so the values that follow reach what this snapshot meant by them)
+    if (s.hasSetup)
+        for (int l = 0; l < kLanes; ++l)
+            if (! lanes()[(size_t) l].own.empty())
+                for (auto& kv : s.setup[(size_t) l]) if (kv.first == "model") { engine.applySetup ({ 0, l, 0 }, { kv }); break; }
     // 2. the inserts: an effect that changes comes whole (the effect, its CONFIG, the files it
     //    held, its knobs); one that stays is left running, and its knobs travel
     std::array<std::array<bool, kSlots>, kLanes> stays {};
@@ -3089,6 +3097,7 @@ static var snapToVar (const Snapshot& s, const Engine& e)
     if (s.kept.isObject()) return s.kept;           // as it was read: nothing in it is lost (Session.h)
     auto* o = new juce::DynamicObject();
     o->setProperty ("id", s.id);
+    o->setProperty ("lists", Session::kListsNow);   // (which lists of models, and which knobs of theirs, it was taken on: fromListsBefore)
     if (s.uid.isNotEmpty()) o->setProperty ("uid", s.uid);
     o->setProperty ("name", s.name);
     o->setProperty ("time", s.time.toMilliseconds());
@@ -4526,6 +4535,65 @@ std::vector<std::pair<juce::int64, juce::uint32>> lit;       // (and nothing of 
     return line;
 }
 
+// A snapshot written before the seventy-ninth build, made to mean on this one what it meant on that. Two things moved:
+//   - the lists of models grew (GRANULAR on BASS and on LEAD and CHORD, the new kick on KICK), and a model is kept as
+//     its place on its list, of 0 to 1: its place is found on the list of before and put on the list of now. (The lists
+//     had grown once already, BASS from 8 and LEAD from 10, told then by where a value fell: that is done first.)
+//   - GRANULAR has sound knobs of its own (Rig.h, ModelKnobs). On PAD, where it already was, the places held DETUNE,
+//     COLOR, RES, POCKET DEPTH, DECAY and ATTACK: those go into the lane's CONFIG as they stood, and the places become
+//     POSITION at the start of the source, SCAN at the pace the grains drifted at, SIZE from COLOR, four GRAINS at once,
+//     SPRAY and PITCH from DETUNE: what GRANULAR did with those two knobs, so it sounds as it did.
+static void fromListsBefore (Snapshot& s, const Engine& e)
+{
+    static std::array<int, kLanes> counts {};       // (how many models each lane has now: the same for as long as this runs)
+    if (counts[0] == 0)
+        for (int l = 0; l < kLanes; ++l)
+        {
+            counts[(size_t) l] = 1;
+            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") counts[(size_t) l] = std::max (1, sp.choices.size());
+        }
+    for (int l = 0; l < kLanes; ++l)
+    {
+        const juce::String module (lanes()[(size_t) l].module);
+        const int before = module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
+        if (before == 0) continue;
+        int model = -1;
+        for (auto& kv : s.setup[(size_t) l])
+        {
+            if (kv.first != "model" && kv.first != "layer_model") continue;
+            float v = kv.second;
+            if (module == "BASS" || module == "LEAD")
+            {
+                // (the growth before this one, as Engine's grownPlace told it while the lists were that long)
+                const float was = v * (float) (before - 2);
+                const int k = (int) std::lround (was);
+                if (std::abs (was - (float) k) <= 0.02f && k > 0 && k < before - 2) v = (float) k / (float) (before - 1);
+            }
+            const int at = juce::jlimit (0, before - 1, (int) std::lround (v * (float) (before - 1)));
+            kv.second = (float) at / (float) std::max (1, now - 1);
+            if (kv.first == "model") model = at;
+        }
+        if (module == "PAD" && model == 3 && s.hasSetup)
+        {
+            auto at = [&] (int k) -> float& { return s.values[(size_t) cx::lane (l, k)]; };
+            auto put = [&] (const char* id, float v)
+            {
+                if (v < 0.0f) return;
+                for (auto& kv : s.setup[(size_t) l]) if (kv.first == id) { kv.second = v; return; }
+                s.setup[(size_t) l].push_back ({ id, v });
+            };
+            const float det = at (0) >= 0.0f ? at (0) : 0.5f, color = at (1) >= 0.0f ? at (1) : 0.5f;
+            put ("detune", at (0)); put ("color", at (1)); put ("res", at (2)); put ("pocket_depth", at (3)); put ("decay", at (4)); put ("attack", at (5));
+            at (0) = 0.0f;                                                              // POSITION
+            at (1) = 0.5f + 0.5f * 0.1581139f;                                          // SCAN: a twentieth of the source's pace
+            at (2) = std::log ((30.0f + 250.0f * color) / 5.0f) / std::log (100.0f);    // SIZE: 30 to 280 ms, as COLOR had it
+            at (3) = 0.75f;                                                             // GRAINS: four at once
+            at (4) = std::sqrt (0.3f * det);                                            // SPRAY: three tenths of the source at DETUNE's top
+            at (5) = 0.5f * det;                                                        // PITCH: a hundredth either way at DETUNE's top
+        }
+    }
+}
+
 static Snapshot snapFromVar (const var& v, const Engine& e)
 {
     Snapshot s;
@@ -4603,6 +4671,7 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         for (int l = 0; l < kLanes && l < fl.size(); ++l) s.laneFiles[(size_t) l] = fl[l].toString();
         s.hasFiles = true;
     }
+    if ((int) v.getProperty ("lists", 1) < Session::kListsNow) fromListsBefore (s, e);
     return s;
 }
 

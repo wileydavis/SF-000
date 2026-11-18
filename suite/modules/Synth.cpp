@@ -125,6 +125,8 @@ static std::vector<SynthModel> bassModels()
     // Second to last, so the first and the last of the list are who they were: a place kept from before is told by that.
     { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.6f; x.sus = 0.8f; x.rel = 0.08f; x.envMul = 0.5f; m.push_back (x); }
     { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.8f; x.sus = 0.9f; x.rel = 0.08f; x.fDec = 0.3f; x.envMul = 0.3f; m.push_back (x); }
+    // (SF-000) GRANULAR, as PAD has it, with a bass's envelope and one voice. Last on the list: every place before it is who it was.
+    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.mono = true; x.att = 0.004f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.12f; x.envMul = 0.0f; m.push_back (x); }
     return m;
 }
 static std::vector<SynthModel> leadModels()
@@ -143,6 +145,8 @@ static std::vector<SynthModel> leadModels()
     // (SF-000) WAVETABLE (see BASS), second to last.
     { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; m.push_back (x); }
     { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF /* (SF-000) was none */; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
+    // (SF-000) GRANULAR (see BASS), last on the list.
+    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.att = 0.01f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.4f; x.envMul = 0.0f; x.ensemble = 0.3f; m.push_back (x); }
     return m;
 }
 static std::vector<SynthModel> padModels()
@@ -264,6 +268,8 @@ public:
            SPLIT, SPLITHZ, DRIFT, TABLE,
            FMALGO, FMRATIO, FMLEVEL = FMRATIO + 4, FMDECAY = FMLEVEL + 4, FMFB = FMDECAY + 4,
            SGAIN, SNORM, SPLAY, SENV,       // (SF-000) the sample's own: its gain, NORMALISE, PLAY (held or through), ENVELOPE
+           // (SF-000) GRANULAR's own (see E_GRAIN)
+           GRPOS, GRSCAN, GRSIZE, GRDENS, GRSPRAY, GRPITCH, GRSHAPE, GRREV, GRCLOCK, GRSPREAD, GRFOLLOW, GRSYNC,
            kParams };
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
@@ -342,6 +348,36 @@ public:
         // the centre, DETUNE adds a second reading a few cents off and SPACE the ensemble (not on a mono model), and in
         // PLAY THROUGH GATE is how much of the sample plays. Off: as samples played before, all of those asleep.
         p.push_back (toggle ("smp_env", "KNOBS", true).noPreset().sampleGroup());
+        // (SF-000) GRANULAR's own knobs. Until now the grains had two knobs shared with other things (COLOR their size,
+        // DETUNE their scatter and pitch spread), four to a grain's length always, and the place they came from drifted
+        // through the source at one fixed pace. Where each of these starts is what GRANULAR did before, so nothing that
+        // played it changes until one is turned.
+        //   POSITION  where in the source (its START..END) the grains come from
+        //   SCAN      how fast that place travels as a note is held, as a pace of the source's own: stopped in the middle
+        //             (the place stands still: a held note is a frozen moment), forwards to the right, backwards to the left
+        //   SIZE      a grain's length, 5 ms to half a second
+        //   GRAINS    how many overlap: one in two lengths (gaps between them) up to eight at once. On a CLOCK: how likely
+        //             each tick is to fire
+        //   SPRAY     how far from the place each grain may start: none, to anywhere in the source
+        //   PITCH     how far each grain's pitch may stray: FINE a few cents, or by OCTAVES, or FIFTHS AND OCTAVES (SPREAD)
+        //   SHAPE     a grain's envelope: struck (a click and a decay) at the left, rounded in the middle, held flat at the right
+        //   REVERSE   how many of the grains play backwards
+        //   CLOCK     FREE: grains follow each other at their own length. Or on the song's grid: a grain a tick
+        //   FOLLOW    NOTES: a grain is pitched by the note. FIXED: at the source's own pitch whatever the note (TUNE still shifts)
+        //   SYNC      OFF. Or the source's START..END spans that many beats of the song, and the place is where the song
+        //             is in them: a recorded loop holds the tempo whatever the note, and SCAN is not used
+        p.push_back (pct ("gr_pos", "POSITION", 0.0f).slow().engineGroup());
+        p.push_back (knob ("gr_scan", "SCAN", -1.0f, 1.0f, 0.1581139f, "BIP").slow().engineGroup());
+        p.push_back (pct ("gr_size", "SIZE", 0.7456836f).slow().engineGroup());
+        p.push_back (pct ("gr_dens", "GRAINS", 0.75f).slow().engineGroup());
+        p.push_back (pct ("gr_spray", "SPRAY", 0.3872983f).slow().engineGroup());
+        p.push_back (pct ("gr_pitch", "PITCH", 0.25f).slow().engineGroup());
+        p.push_back (pct ("gr_shape", "SHAPE", 0.5f).slow().engineGroup());
+        p.push_back (pct ("gr_rev", "REVERSE", 0.0f).slow().engineGroup());
+        p.push_back (choice ("gr_clock", "CLOCK", { "FREE", "1/4", "1/8", "1/8 T", "1/16", "1/16 T", "1/32" }, 0).engineGroup());
+        p.push_back (choice ("gr_spread", "SPREAD", { "FINE", "OCTAVES", "FIFTHS AND OCTAVES" }, 0).engineGroup());
+        p.push_back (choice ("gr_follow", "FOLLOW", { "NOTES", "FIXED" }, 0).engineGroup());
+        p.push_back (choice ("gr_sync", "SYNC", { "OFF", "1 BEAT", "2 BEATS", "1 BAR", "2 BARS", "4 BARS", "8 BARS" }, 0).engineGroup());
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -507,6 +543,10 @@ public:
     {
         float res = 0, driveG = 1, driveNorm = 1, driveW = 1, color = 0.5f, det = 0.5f, cutT = 0.5f, gainAll = 0, subMul = 1, pw2 = 0.5f, osc2Amt = 0, subLvl = 0, sideK = 1;
         float detCents = 0, uniR[8] {}, pw[8] {}, r2[8] {};
+        // (SF-000) GRANULAR's knobs for the block: the place, the pace of SCAN (the source's samples a sample), a grain's
+        // length (seconds), how many overlap, the spray (of the source's length), the pitch spread, the shape, how many backwards
+        float grPos = 0, grSpeed = 0.05f, grLenS = 0.155f, grOv = 4.0f, grSpray = 0.15f, grPitch = 0.25f, grShape = 0.5f, grRev = 0.0f;
+        int grClock = 0, grSpread = 0, grFollow = 0, grSync = 0;
         int uni = 1, shape1 = 0, oct1[8] {}, oct2[8] {}, octSub = 0;
         bool doSub = false;
         // ACID 303-TYPE: the cutoff's log (natural) at rest and at the envelope's peak, the accent
@@ -550,8 +590,11 @@ public:
         // (SF-000) lv, sc: the copy of the source it reads (-1 the source itself, else that octave-down copy) and that copy's
         // samples for one of the source's; wc, ws, rc, rs: its window, turned a step a sample (see E_GRAIN)
         struct Grain { bool on = false; double pos = 0, rate = 1; int len = 0, age = 0; float pan = 0.5f; SampleRegion reg;
-                       int lv = -1; double sc = 1.0, wc = 1.0, ws = 0.0, rc = 1.0, rs = 0.0; } grains[8];   // reg: where it started (end 0: the whole source)
+                       int lv = -1; double sc = 1.0, wc = 1.0, ws = 0.0, rc = 1.0, rs = 0.0; } grains[12];   // reg: where it started (end 0: the whole source)
         int grainClock = 0;
+        double grScan = 0.0;              // (SF-000) how far SCAN has carried the place since the note began, in the source's samples
+        double grBeat = 0.0;              // the song's place at this sample, in beats, and the last tick of CLOCK that was looked at
+        long long grTick = -1;
         SampleRegion reg;                 // SAMPLE: the part of the sample this note plays
         uint64_t born = 0;                // renderTick when it started: one that hasn't sounded yet is never stolen
         float level() const { return active ? amp.v * vel * gain : 0.0f; }
@@ -582,7 +625,16 @@ public:
             v[DRIVE] = std::min (1.0f, v[DRIVE] + 0.35f * acid);
             v[CUTOFF] = std::min (1.0f, v[CUTOFF] + 0.1f * acid);
         }
-        if (const float warp = clamp01 (v[WARP]); warp > 0.0f) { toward (v[DETUNE], 1.0f, 0.6f * warp); toward (v[SPACE], 1.0f, 0.5f * warp); }
+        if (const float warp = clamp01 (v[WARP]); warp > 0.0f)
+        {
+            toward (v[DETUNE], 1.0f, 0.6f * warp); toward (v[SPACE], 1.0f, 0.5f * warp);
+            // (SF-000) GRANULAR's scatter and pitch spread have knobs of their own now: WARP smears by those, as far as it
+            // did by DETUNE (SPRAY's square is how much of the source, three tenths of it at DETUNE's top)
+            float d = std::min (1.0f, v[GRSPRAY] * v[GRSPRAY] / 0.3f);
+            toward (d, 1.0f, 0.6f * warp);
+            v[GRSPRAY] = std::max (v[GRSPRAY], std::sqrt (0.3f * d));
+            toward (v[GRPITCH], 0.5f, 0.6f * warp);
+        }
     }
     void processVoices (Ctx& c, juce::AudioBuffer<float>& io, juce::AudioBuffer<float>*, juce::AudioBuffer<float>*, juce::MidiBuffer& midi)
     {
@@ -636,6 +688,8 @@ public:
         split.set (c.v (SPLITHZ), 1.0f / (1.0f + layer * 0.5f), sv1);
         for (int i0 = 0; i0 < c.n;)
         {
+            segPpq = c.ppq + (double) i0 * c.bpm / (60.0 * c.sr);        // (SF-000) for a note that starts in it
+
             // Sub-blocks end at the next event: every note starts on its own sample.
             while (e < events.size() && events[e].offset <= i0)
             {
@@ -860,6 +914,7 @@ private:
         v.fenv.on (retrigger || ! wasActive);
         v.autoOff = autoOff > 0 ? autoOff * v.os : autoOff;
         v.t = 0.0f;
+        v.grScan = 0.0; v.grTick = -1; v.grBeat = segPpq;        // (SF-000)
         v.ctlStale = true;
         v.born = renderTick;
     }
@@ -960,6 +1015,21 @@ private:
         // the level (the shaper alone is +1.6 dB at its gentlest).
         k.driveW = std::min (1.0f, drive / 0.1f);
         k.color = c.v (COLOR); k.det = c.v (DETUNE);
+        if (m.engine == E_GRAIN)
+        {
+            // (SF-000) each from its knob. Where they start: 0.05 of the source's pace, 155 ms, four at once, 0.15 of the
+            // source, 0.01 either way: GRANULAR as it was with COLOR and DETUNE in the middle.
+            const float scan = juce::jlimit (-1.0f, 1.0f, c.v (GRSCAN));
+            k.grPos = clamp01 (c.v (GRPOS));
+            k.grSpeed = scan * std::abs (scan) * 2.0f;
+            k.grLenS = 0.005f * std::pow (100.0f, clamp01 (c.v (GRSIZE)));
+            k.grOv = 0.5f * std::pow (16.0f, clamp01 (c.v (GRDENS)));
+            { const float sp = clamp01 (c.v (GRSPRAY)); k.grSpray = sp * sp; }
+            k.grPitch = clamp01 (c.v (GRPITCH));
+            k.grShape = clamp01 (c.v (GRSHAPE));
+            k.grRev = clamp01 (c.v (GRREV));
+            k.grClock = c.ci (GRCLOCK); k.grSpread = c.ci (GRSPREAD); k.grFollow = c.ci (GRFOLLOW); k.grSync = c.ci (GRSYNC);
+        }
         const float fe = v.fenv.v;
         const float keyTrack = std::log2 (std::max (20.0f, v.freq) / 130.0f) * 0.3f;
         k.cutT = clamp01 (cutK + envA * fe * 0.6f + keyTrack * 0.1f) * std::pow (0.75f, (float) v.gen);
@@ -1304,26 +1374,54 @@ private:
                     // it started in, faded at its ends, so a part moved while grains play never cuts
                     // one. The built-in source is played whole. A part shorter than the grains makes
                     // them shorter.
+                    // (SF-000) The place they come from is POSITION, carried on by SCAN as the note is held (or, on SYNC,
+                    // where the song is in the beats the source spans); SPRAY strays from it. See the knobs' own words.
                     const int srcLen = src.getNumSamples();
                     const bool inReg = smp != nullptr && blockReg.end > 0.0;
                     const int r0 = inReg ? (int) blockReg.start : 0;
                     const int len = (inReg ? std::min (srcLen, blockReg.last()) : srcLen) - r0;
                     const float root = smp != nullptr && smp->rootHz > 0 ? smp->rootHz : 130.81f;
-                    int glen = (int) ((0.03f + color * 0.25f) * sr);             // source samples
+                    int glen = (int) (k.grLenS * sr);                            // source samples
                     if (inReg && (blockReg.start > 0.0 || blockReg.end < (double) srcLen)) glen = std::min (glen, std::max (16, len - 8));
-                    if (len > glen + 4 && --v.grainClock <= 0)
+                    const double beatStep = c.bpm / (60.0 * vr);
+                    bool fire = false;
+                    if (k.grClock == 0) { if (--v.grainClock <= 0) { fire = true; v.grainClock = std::max (1, (int) ((float) (glen * v.os) / k.grOv)); } }
+                    else
                     {
-                        v.grainClock = std::max (1, glen * v.os / 4);             // voice-rate samples (= glen / 4 at 1x)
+                        // a grain a tick of the song's grid, GRAINS how likely each is (three quarters of the way up: every one)
+                        static const double ticks[] = { 1.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
+                        const long long tick = (long long) std::floor (v.grBeat / ticks[juce::jlimit (0, 6, k.grClock)]);
+                        if (tick != v.grTick) { v.grTick = tick; fire = rng.uni() < (k.grOv <= 0.5f ? 0.0f : std::log (k.grOv * 2.0f) / std::log (8.0f)); }
+                    }
+                    if (fire && len > glen + 4)
+                    {
                         for (auto& gr : v.grains)
                             if (! gr.on)
                             {
                                 gr.on = true; gr.age = 0; gr.len = glen * v.os;
-                                const float scatter = det * 0.3f;
-                                gr.pos = std::fmod (v.t * 0.05f * sr + rng.uni() * scatter * len, (double) (len - glen - 4));
-                                if (gr.pos < 0) gr.pos += len - glen - 4;
+                                const double span = (double) (len - glen - 4);
+                                double at = (double) k.grPos * span;
+                                if (k.grSync > 0)
+                                {
+                                    static const double spans[] = { 1.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0 };
+                                    const double beats = spans[juce::jlimit (0, 6, k.grSync)];
+                                    at += (v.grBeat / beats - std::floor (v.grBeat / beats)) * span;
+                                }
+                                else at += v.grScan;
+                                gr.pos = std::fmod (at + (double) (rng.uni() * k.grSpray * (float) len), span);
+                                if (gr.pos < 0) gr.pos += span;
                                 gr.pos += r0;
                                 gr.reg = inReg ? blockReg : SampleRegion();
-                                gr.rate = (f / root) / v.os * (1.0 + (rng.uni() - 0.5f) * det * 0.02f);
+                                // its pitch: the note's (or the source's own), and as far from it as PITCH lets it stray
+                                double pitch = (k.grFollow == 1 ? (double) semis (pitchOffset) : (double) (f / root)) / v.os;
+                                if (k.grSpread == 0) pitch *= 1.0 + (double) ((rng.uni() - 0.5f) * k.grPitch * 0.04f);
+                                else if (rng.uni() < k.grPitch)
+                                {
+                                    static const double oct[] = { 0.5, 2.0 }, fifths[] = { 0.5, 0.75, 1.5, 2.0 };
+                                    const float pick = rng.uni();
+                                    pitch *= k.grSpread == 1 ? oct[pick < 0.5f ? 0 : 1] : fifths[juce::jlimit (0, 3, (int) (pick * 4.0f))];
+                                }
+                                gr.rate = pitch;
                                 gr.pan = 0.5f + (rng.uni() - 0.5f) * 0.8f;
                                 // (SF-000) Settled once, as the grain starts. A grain played above the source's pitch reads the
                                 // octave-down copy on which it advances a sample a step at the most (GrainRead: it was the copy
@@ -1334,20 +1432,38 @@ private:
                                 gr.lv = -1; gr.sc = 1.0;
                                 for (double r = gr.rate; r > 1.0 && gr.lv + 1 < (int) mips.lv.size(); r *= 0.5) { ++gr.lv; gr.sc *= 0.5; }
                                 { const double turn = (double) kTwoPi / (double) gr.len; gr.wc = 1.0; gr.ws = 0.0; gr.rc = std::cos (turn); gr.rs = std::sin (turn); }
+                                // backwards: from where it would have ended (as much of the source as its length takes at its pitch)
+                                if (k.grRev > 0.0f && rng.uni() < k.grRev)
+                                {
+                                    const double end = gr.pos + gr.rate * (double) gr.len, last = (double) (inReg ? std::min (srcLen, blockReg.last()) : srcLen) - 3.0;
+                                    gr.pos = std::min (end, last); gr.rate = -gr.rate;
+                                }
                                 break;
                             }
                     }
+                    if (k.grSync == 0) { v.grScan += (double) k.grSpeed / v.os; const double span = (double) std::max (1, len - glen - 4); if (v.grScan >= span) v.grScan -= span; else if (v.grScan < 0.0) v.grScan += span; }
+                    v.grBeat += beatStep;
                     stereo = true;
+                    // (SF-000) SHAPE: the rounded window in the middle (as it always was), toward a struck one at the left
+                    // and a flat-topped one at the right
+                    const float shapeA = k.grShape < 0.5f ? (0.5f - k.grShape) * 2.0f : 0.0f, shapeB = k.grShape > 0.5f ? (k.grShape - 0.5f) * 2.0f : 0.0f;
                     for (auto& gr : v.grains)
                     {
                         if (! gr.on) continue;
                         const bool own = gr.reg.end > 0.0;
-                        if ((int) gr.pos + 2 >= (own ? std::min (srcLen, gr.reg.last()) : srcLen) || gr.age >= gr.len) { gr.on = false; continue; }
-                        const float w = (float) (0.5 - 0.5 * gr.wc);
+                        const double apos = gr.rate < 0.0 ? -gr.rate : gr.rate;
+                        if ((int) gr.pos + 2 >= (own ? std::min (srcLen, gr.reg.last()) : srcLen) || gr.pos < 1.0 || gr.age >= gr.len) { gr.on = false; continue; }
+                        float w = (float) (0.5 - 0.5 * gr.wc);
                         { const double c2 = gr.wc * gr.rc - gr.ws * gr.rs; gr.ws = gr.ws * gr.rc + gr.wc * gr.rs; gr.wc = c2; }
+                        if (shapeA > 0.0f || shapeB > 0.0f)
+                        {
+                            const float ph = (float) gr.age / (float) gr.len, back = 1.0f - ph;
+                            if (shapeA > 0.0f) w += (std::min (1.0f, ph * 50.0f) * back * back * back - w) * shapeA;
+                            else               w += (std::min (1.0f, std::min (ph, back) * 10.0f) - w) * shapeB;
+                        }
                         // (its copy, if the source still has one: another sample given while it plays may have fewer)
                         const auto& from = gr.lv >= 0 && gr.lv < (int) mips.lv.size() ? mips.lv[(size_t) gr.lv] : src;
-                        const double sc = &from == &src ? 1.0 : gr.sc, at = gr.pos * sc, step = gr.rate * sc;
+                        const double sc = &from == &src ? 1.0 : gr.sc, at = gr.pos * sc, step = apos * sc;
                         const int fromLen = from.getNumSamples();
                         const float* c0 = from.getReadPointer (0); const float* c1 = from.getReadPointer (std::min (1, from.getNumChannels() - 1));
                         // (a copy, at a sample a step or less: the table. The source itself, or a copy still read faster than
@@ -1475,6 +1591,7 @@ private:
     float acidCap[2] {};
     bool acidOwned[2] {};
     float pushed[kParams] {}, pushed0[kParams] {};    // the knobs as ACID and WARP push them (process)
+    double segPpq = 0.0;                              // (SF-000) the song's place where the part of the block being rendered starts
     static float acidDrainSeconds (float res) { return 0.15f + 0.35f * res; }
     EchoScheduler echoes;
     std::vector<NoteEvent> events;

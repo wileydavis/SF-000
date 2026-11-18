@@ -278,6 +278,13 @@ public:
     // CONFIG's settings, a menu, a switch. The one playing carries on exactly as it is and fades out
     // over fadeBeats; a copy of it takes its place, to be changed. Knobs that travel move both.
     void forkVoice (int lane, double fadeBeats);
+    // ---- a model's own sound knobs (Rig.h, ModelKnobs)
+    // The knobs a lane has now: its usual ones, or its model's own in the eight sound places.
+    const KnobDef& laneKnob (int lane, int k) const;
+    // The lane's model may have changed: its knobs reach what that model's knobs are, and are named for them. fresh: a
+    // place whose meaning changed starts where that control starts (a model chosen by hand); else every place keeps the
+    // value it has (a snapshot or a file is being put back, and brings its own). True if the knobs changed.
+    bool remapLane (int lane, bool fresh);
     // A lane held between two instruments (a stack knob standing between two snapshots whose lane is another model or
     // another sample): the one playing carries on as it is, a copy takes its place to be changed, as forkVoice; but
     // nothing fades by the clock. Both sound, played the same notes, mixed as blendVoice says (how much of the one
@@ -458,6 +465,7 @@ private:
         juce::RangedAudioParameter* param = nullptr;
         float lo = 0.0f, hi = 1.0f;
         int n = 0;                              // > 0: a menu or switch with n positions
+        int pi = -1;                            // which of the module's parameters (two instruments' binds mean the same if this is the same)
     };
     struct InsertInst
     {
@@ -481,7 +489,12 @@ private:
     struct Voice
     {
         std::unique_ptr<SFProcessor> proc;
-        Bind bind[kLaneKnobs];
+        // Its knobs' binds: the lane's usual twelve (0), then one set for each model with sound knobs of its own (Rig.h,
+        // ModelKnobs). All are made once, when the voice is; `map` says which the knobs reach now, and only that changes
+        // afterwards (the message thread sets it as the model changes, the audio thread reads it).
+        std::vector<std::array<Bind, kLaneKnobs>> maps;
+        std::atomic<int> map { 0 };
+        const Bind& bind (int k) const          { return maps[(size_t) map.load (std::memory_order_relaxed)][(size_t) k]; }
         Voice();
         ~Voice();
     };
@@ -501,6 +514,8 @@ private:
         double fadeStart[kStages] = {}, fadeLen[kStages] = {};
         float fadeG[kStages];
         bool fading[kStages] = {};
+        std::atomic<juce::uint32> knobsMoved { 0 };     // the model's knobs are others now (remapLane): the audio thread applies them all
+        juce::uint32 knobsSeen = 0;                     // audio thread
         // the instrument held between two by a knob (holdVoice). holdG: how much of the one that arrived (below 0: no hold).
         // holdEnd: 1 settling on the one that arrived, 2 on the one that was playing. holdBack: the audio thread says the
         // one that arrived is at nothing (the fade's number), and the message thread then gives the lane back.
@@ -576,6 +591,9 @@ private:
     std::vector<std::unique_ptr<SFProcessor>> master;
     std::vector<std::pair<InsertInst*, uint64_t>> retired;
     std::vector<std::pair<Voice*, uint64_t>> retiredVoices;
+    int mapOf (int lane, SFProcessor&) const;           // which set of knobs that instrument's model has (0: the lane's usual)
+    void bindVoice (int lane, Voice&);                  // every set, made
+    static float startOf (const Bind&);                 // where a bound control starts, as its knob's value
     std::array<bool, kLanes> heldLane {};               // message thread: the lanes held between two instruments
     std::array<juce::String, kLanes> heldFile;          // the file each was playing before the one that arrived was given another
     void dropHold (int lane);

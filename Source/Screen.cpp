@@ -611,7 +611,7 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
     const int l = ctl / cx::kPerLane, j = ctl % cx::kPerLane;
     const auto& d = lanes()[(size_t) l];
     where = String (l + 1) + " " + d.name;
-    if (j < kLaneKnobs) what = help::param (d.module, d.knobs[j].param);
+    if (j < kLaneKnobs) what = help::param (d.module, ses.engine.laneKnob (l, j).param);      // (the knob as the lane's model has it)
     else if (j == cx::kSendA) what = help::param ("LANE", "send_a");
     else if (j == cx::kSendB) what = help::param ("LANE", "send_b");
     else if (j == cx::kEqLow) what = help::param ("LANE", "eq_low");

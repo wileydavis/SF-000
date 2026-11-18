@@ -108,6 +108,7 @@ Engine::Bind Engine::makeBind (SFProcessor& p, const KnobDef& k, Control* c)
     const auto& spec = p.allSpecs()[(size_t) i];
     b.raw = p.apvts.getRawParameterValue (spec.id);
     b.param = p.param (i);
+    b.pi = i;
     b.lo = k.lo; b.hi = k.hi;
     if (spec.type == sf::PType::Choice) b.n = (int) spec.choices.size();
     else if (spec.type != sf::PType::Float) b.n = 2;
@@ -130,6 +131,69 @@ float Engine::readBind (const Bind& b)
     if (b.raw == nullptr) return 0.0f;
     if (b.n > 0) return juce::jlimit (0.0f, 1.0f, b.raw->load() / (float) std::max (1, b.n - 1));
     return juce::jlimit (0.0f, 1.0f, (b.param->convertTo0to1 (b.raw->load()) - b.lo) / std::max (1e-6f, b.hi - b.lo));
+}
+
+float Engine::startOf (const Bind& b)
+{
+    if (b.raw == nullptr) return 0.0f;
+    const float plain = b.param->convertFrom0to1 (b.param->getDefaultValue());
+    if (b.n > 0) return juce::jlimit (0.0f, 1.0f, plain / (float) std::max (1, b.n - 1));
+    return juce::jlimit (0.0f, 1.0f, (b.param->getDefaultValue() - b.lo) / std::max (1e-6f, b.hi - b.lo));
+}
+
+// ---- a model's own sound knobs
+int Engine::mapOf (int l, SFProcessor& p) const
+{
+    const auto& own = lanes()[(size_t) l].own;
+    if (own.empty()) return 0;
+    const int mi = p.paramIndex ("model");
+    if (mi < 0) return 0;
+    const juce::String model = p.param (mi)->getCurrentValueAsText();
+    for (size_t m = 0; m < own.size(); ++m) if (model.equalsIgnoreCase (own[m].model)) return (int) m + 1;
+    return 0;
+}
+
+const KnobDef& Engine::laneKnob (int l, int k) const
+{
+    const auto& d = lanes()[(size_t) l];
+    const auto* v = lane[(size_t) l].voice.load();
+    const int m = v != nullptr ? v->map.load() : 0;
+    return m > 0 && k < kSoundKnobs ? d.own[(size_t) m - 1].knobs[k] : d.knobs[k];
+}
+
+void Engine::bindVoice (int l, Voice& v)
+{
+    const auto& d = lanes()[(size_t) l];
+    v.maps.assign (1 + d.own.size(), {});
+    for (size_t m = 0; m < v.maps.size(); ++m)
+        for (int k = 0; k < kLaneKnobs; ++k)
+            v.maps[m][(size_t) k] = makeBind (*v.proc, m > 0 && k < kSoundKnobs ? d.own[m - 1].knobs[k] : d.knobs[k], nullptr);
+    v.map.store (mapOf (l, *v.proc));
+}
+
+bool Engine::remapLane (int l, bool fresh)
+{
+    auto& ln = lane[(size_t) l];
+    auto* v = ln.voice.load();
+    if (v == nullptr || v->maps.size() < 2) return false;
+    const int was = v->map.load(), now = mapOf (l, *v->proc);
+    if (was == now) return false;
+    const auto& d = lanes()[(size_t) l];
+    for (int k = 0; k < kSoundKnobs; ++k)
+    {
+        const int i = cx::lane (l, k);
+        auto& ct = controls[(size_t) i];
+        const bool same = v->maps[(size_t) was][(size_t) k].pi == v->maps[(size_t) now][(size_t) k].pi;
+        const juce::String id = ct.id;
+        makeBind (*v->proc, now > 0 ? d.own[(size_t) now - 1].knobs[k] : d.knobs[k], &ct);      // (its name, its kind, its menu)
+        ct.id = id; ct.snapshot = true;
+        ct.def = startOf (v->maps[(size_t) now][(size_t) k]);
+        if (fresh && ! same) set (i, ct.def);
+    }
+    v->map.store (now);
+    ln.knobsMoved.fetch_add (1);            // (the audio thread puts every knob to what it now reaches)
+    stateMoved();
+    return true;
 }
 
 void Engine::applyBind (const Bind& b, float v)
@@ -167,10 +231,13 @@ Engine::Engine()
         {
             const int i = cx::lane (l, k);
             auto& c = controls[(size_t) i];
-            first->bind[k] = makeBind (*first->proc, d.knobs[k], &c);     // (a lane's knobs reach its voice; the table's own bind stays empty)
+            makeBind (*first->proc, d.knobs[k], &c);          // (a lane's knobs reach its voice; the table's own bind stays empty)
             c.id = slug + "." + d.knobs[k].param;
             c.snapshot = true;
         }
+        bindVoice (l, *first);
+        first->map.store (0);
+        remapLane (l, false);               // (a lane that starts on a model with knobs of its own)
         named (cx::lane (l, cx::kSendA), slug + ".send_a", "SEND A", Kind::Knob, kSendDefaults[l][0], true, true);
         named (cx::lane (l, cx::kSendB), slug + ".send_b", "SEND B", Kind::Knob, kSendDefaults[l][1], true, true);
         named (cx::lane (l, cx::kEqLow), slug + ".eq_low", "LOW", Kind::Bipolar, 0.5f, true, true);
@@ -937,7 +1004,7 @@ void Engine::forkVoice (int l, double fadeBeats)
         if (auto* from = was->proc->param (i))
             if (auto* to = v->proc->param (i))
                 if (std::abs (to->getValue() - from->getValue()) > 1.0e-7f) to->setValueNotifyingHost (from->getValue());
-    for (int k = 0; k < kLaneKnobs; ++k) v->bind[k] = makeBind (*v->proc, d.knobs[k], nullptr);
+    bindVoice (l, *v);                      // (the copy has the model the one before it had, and so its knobs)
     // (made ready at the engine's rate before it asks for its file: a sample that is only held in memory is held at that rate,
     // and a voice still at the rate it was born with would ask for another and, the file gone, be given none)
     if (prepared && files[(size_t) l].isNotEmpty()) { v->proc->setRateAndBufferSizeDetails (sr, maxBlock); v->proc->prepareToPlay (sr, maxBlock); }
@@ -1269,7 +1336,7 @@ std::vector<std::string> Engine::boundIds (Target t) const
 {
     std::vector<std::string> ids;
     auto add = [&ids] (const KnobDef* k, int n) { for (int i = 0; i < n; ++i) if (k[i].param != nullptr) ids.push_back (k[i].param); };
-    if (t.kind == 0) add (lanes()[(size_t) t.lane].knobs, kLaneKnobs);
+    if (t.kind == 0) { for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = laneKnob (t.lane, k); kd.param != nullptr) ids.push_back (kd.param); }
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) add (effects()[(size_t) ty].cells, kCells); }
     else if (t.kind == 3) add (drumBus().cells, kCells);
     else add ((t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells, kCells);
@@ -1321,6 +1388,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         if (t.kind == 3 && id.startsWith ("in_")) return "LANES";       // (which lanes play through the drum bus)
         if (id.startsWith ("fm_")) return plays ("FM 4-OP") ? "FM 4-OP" : juce::String();
         if (id == "table") return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
+        if (id.startsWith ("gr_")) return plays ("GRANULAR") ? "GRANULAR" : juce::String();      // (those of them that are not its knobs)
         if (s.inEngine) return "ENGINE";
         if (s.inSample) return phraseIsTheSource || ! sampleIsAModel || plays ("SAMPLE") || tableFromSample ? "SAMPLE" : juce::String();
         if (s.inLayer) return "LAYER";
@@ -1334,7 +1402,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         return plain;
     };
     for (auto& sp : out) sp.group = plain;                  // (SPACE's MODEL, put in above)
-    for (const char* g : { "SOUND", "EFFECT", "BANDS", "LOW BAND", "MID BAND", "HIGH BAND", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" })
+    for (const char* g : { "SOUND", "EFFECT", "BANDS", "LOW BAND", "MID BAND", "HIGH BAND", "LAYER", "SAMPLE", "WAVETABLE", "FM 4-OP", "GRANULAR", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" })
         for (int i = 0; i < p->numModuleParams(); ++i)
         {
             const auto& s = specs[(size_t) i];
@@ -1393,7 +1461,8 @@ std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArra
     const auto& specs = p.allSpecs();
     // the knobs on its own panel: a lane's twelve, an effect's or a return's cells
     const KnobDef* defs = nullptr; int count = 0;
-    if (t.kind == 0) { defs = lanes()[(size_t) t.lane].knobs; count = kLaneKnobs; }
+    KnobDef laneNow[kLaneKnobs];
+    if (t.kind == 0) { for (int k = 0; k < kLaneKnobs; ++k) laneNow[k] = laneKnob (t.lane, k); defs = laneNow; count = kLaneKnobs; }
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) { defs = effects()[(size_t) ty].cells; count = kCells; } }
     else if (t.kind == 3) { defs = drumBus().cells; count = kCells; }
     else { defs = (t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells; count = kCells; }
@@ -1552,6 +1621,7 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
             v = p->param (i)->convertTo0to1 (at == 0 ? 0.0f : (float) order[(size_t) at - 1]);
         }
         p->param (i)->setValueNotifyingHost (v);
+        if (t.kind == 0 && id == "model") remapLane (t.lane, true);       // (a model chosen by hand: its own knobs, where they start)
         updateLatency();
     }
 }
@@ -1622,6 +1692,12 @@ void Engine::applySetup (Target t, const SetupState& st)
             int from = 0;
             for (auto& kv : st) if (kv.first == kModelId) from = (int) std::lround (kv.second);
             if (from != spaceWant.load()) return;
+        }
+        if (t.kind == 0 && ! lanes()[(size_t) t.lane].own.empty())
+        {
+            // the model first: which controls are knobs and which are CONFIG follows from it
+            for (auto& kv : st) if (kv.first == "model") { applySetupTo (*p, {}, { kv }); break; }
+            remapLane (t.lane, false);
         }
         applySetupTo (*p, boundIds (t), st);
         updateLatency();
@@ -1805,9 +1881,11 @@ void Engine::advanceControls (double beats, int n)
                 if (k < kLaneKnobs)
                 {
                     auto& ln = lane[(size_t) (i / cx::kPerLane)];
-                    if (auto* v = ln.voice.load()) applyBind (v->bind[k], out);
-                    // one on its way out follows the knobs that travel; a menu or a switch stays as it left it
-                    if (controls[s].glides && ln.fading[kSlots]) if (auto* o = ln.voiceOut.load()) applyBind (o->bind[k], out);
+                    auto* v = ln.voice.load();
+                    if (v != nullptr) applyBind (v->bind (k), out);
+                    // one on its way out follows the knobs that travel; a menu or a switch stays as it left it, and so
+                    // does a place that means something else on it (another model, with knobs of its own)
+                    if (controls[s].glides && ln.fading[kSlots]) if (auto* o = ln.voiceOut.load()) if (v == nullptr || o->bind (k).pi == v->bind (k).pi) applyBind (o->bind (k), out);
                 }
                 else if (k >= cx::kIns && k < cx::kGen)
                     if (auto* in = lane[(size_t) (i / cx::kPerLane)].ins[(k - cx::kIns) / kCells].load())
@@ -2025,11 +2103,12 @@ void Engine::render (juce::AudioBuffer<float>& out)
         if (stopping || pan || starting || again) ln.player.stop (ln.midi, 0);
         auto* voice = ln.voice.load();
         auto* voiceOut = ln.voiceOut.load();
-        if (voice != ln.voiceSeen)
+        if (const auto moved = ln.knobsMoved.load (std::memory_order_relaxed); voice != ln.voiceSeen || moved != ln.knobsSeen)
         {
-            // a voice that has just taken the lane: every knob as it stands now (it was copied a moment before it was put here)
-            ln.voiceSeen = voice;
-            for (int k = 0; k < kLaneKnobs; ++k) applyBind (voice->bind[k], snd[(size_t) cx::lane (l, k)]);
+            // a voice that has just taken the lane, or whose model's knobs are others now: every knob as it stands (it
+            // was copied a moment before it was put here)
+            ln.voiceSeen = voice; ln.knobsSeen = moved;
+            for (int k = 0; k < kLaneKnobs; ++k) applyBind (voice->bind (k), snd[(size_t) cx::lane (l, k)]);
         }
         if (pan)
         {

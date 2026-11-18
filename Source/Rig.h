@@ -21,6 +21,13 @@ constexpr int kChassisVersion = 1;
 struct KnobDef { const char* label; const char* param; char kind; float lo = 0.0f, hi = 1.0f; };
 struct Fixed   { const char* param; float value; };     // plain units; a menu by index
 
+// A model with sound knobs of its own: while it is the lane's MODEL, the lane's eight sound places are these instead of
+// the lane's usual ones (the last four places, DECAY or GATE, DENSITY, FILTER and LEVEL, are every model's). A place keeps
+// its control id (snapshots are stored by those), so a snapshot's value at a place means what its lane's model made of it.
+// What the usual knobs moved is then in CONFIG, where it stays as it was left.
+constexpr int kSoundKnobs = 8;
+struct ModelKnobs { const char* model; KnobDef knobs[kSoundKnobs]; };
+
 struct LaneDef
 {
     const char* name;       // on the panel
@@ -30,6 +37,7 @@ struct LaneDef
     int octave;             // a new step's octave (C3 = MIDI 60)
     std::vector<Fixed> fixed;
     KnobDef knobs[kLaneKnobs];
+    std::vector<ModelKnobs> own;    // the models with sound knobs of their own (none: every model has the lane's)
 };
 
 struct FxDef
@@ -83,7 +91,10 @@ inline const std::vector<LaneDef>& lanes()
             { "env_amt", 0.45f }, { "gate", 0.4f }, { "decay", 0.4f }, { "pocket_depth", 0.7f }, { "level", -7 }, { "alloc", 0 } },
           { { "GLIDE", "glide", 'u' }, { "LAYER", "layer", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
+          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
 
         { "RUMBLE", "rumble", "RUMBLE", false, 3,
           // made from the kick itself (and from its own steps, if any are lit)
@@ -97,21 +108,30 @@ inline const std::vector<LaneDef>& lanes()
           { { "model", 0 }, { "cutoff", 0.35f }, { "res", 0.75f }, { "env_amt", 0.6f }, { "accent", 0.7f }, { "gate", 0.5f }, { "level", -12 }, { "alloc", 0 }, { "detune", 0.0f }, { "space", 0.0f } },
           { { "TUNE", "tune", 'b' }, { "ACCENT", "accent", 'u' }, { "RES", "res", 'u' }, { "COLOR", "color", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
+          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
 
         { "CHORD", "chord", "LEAD", true, 3,
           // the dub stab: one note plays the chord
           { { "model", 3 }, { "cutoff", 0.4f }, { "res", 0.3f }, { "env_amt", 0.5f }, { "space", 0.6f }, { "gate", 0.5f }, { "level", -15 }, { "alloc", 0 } },
           { { "DETUNE", "detune", 'u' }, { "ATTACK", "attack", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
+          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
 
         { "PAD", "pad", "PAD", true, 3,
           // a drifting dub wash that plays a minor seventh from one note
           { { "model", 4 }, { "chord", 2 }, { "cutoff", 0.4f }, { "space", 0.7f }, { "drift", 0.6f }, { "attack", 0.35f }, { "level", -15 }, { "alloc", 0 } },
           { { "DETUNE", "detune", 'u' }, { "COLOR", "color", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "DECAY", "decay", 'u' }, { "ATTACK", "attack", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
+          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
 
         { "VOICE", "voice", "VOICE", true, 3,
           // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,
