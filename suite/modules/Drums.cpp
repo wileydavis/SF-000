@@ -37,8 +37,68 @@ static const KickModel kKickModels[] = {
     { "KICK INDUSTRIAL",  52.0f, 7.0f, 0.006f, 0.45f, 0.70f, 4500.0f, 0.85f, 0.30f,  9000.0f, 0.00f, 0.6f },
     { "KICK MODULAR",     55.0f, 4.0f, 0.015f, 0.30f, 0.30f, 2500.0f, 0.30f, 0.60f,  3000.0f, 0.35f, 0.72f },
     { "KICK DUB",         44.0f, 2.0f, 0.025f, 0.60f, 0.00f, 2000.0f, 0.10f, 0.00f,   600.0f, 0.00f, 0.8f },
-    { "SAMPLE",           50.0f, 1.0f, 0.010f, 0.50f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f } };
-static constexpr int kNumKickModels = 7;
+    { "SAMPLE",           50.0f, 1.0f, 0.010f, 0.50f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f },
+    // (SF-000) KICK FORGE (see ForgeShape, and forgeVoice): of this row only the resting pitch (G1, where a key moves it
+    // from) and the gain are read. After SAMPLE: a model's number never moves.
+    { "KICK FORGE",       49.0f, 3.0f, 0.012f, 0.40f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f } };
+static constexpr int kNumKickModels = 8;
+static constexpr int kKickSample = 6, kKickForge = 7;
+
+// (SF-000) KICK FORGE. One kick made of three parts that are tied to each other, and one knob, CHARACTER, that takes all
+// of them through four kicks with no step between: mellow and dubby, punchy and tight, boomy, distorted.
+//   IMPACT  the first thirty-odd thousandths of a second: a piece of the lane's own file (a field recording: a door, a
+//           stone, a tool), from POSITION, with its lows taken out and brought to one strength wherever it is from. With
+//           no file, a burst of noise. This is the one part that is not the same hit after hit.
+//   BODY    a sine that starts at the same point of its wave every hit (the low end is the same every time), falling from
+//           above onto the kick's note (the key's root with KEY FOLLOW); for its first thirtieth of a second it bends
+//           its own pitch with its own output, which is where the knock is; harmonics that die sooner than the
+//           fundamental; its lows (under 120 Hz) kept clean and its mids driven
+//   GROUND  the body's own tail, held in a small room of delays under 150 Hz, rung at the kick's note, and held down
+//           while the body sounds: what is heard between the kicks
+// and a soft clipper over the impact and the body, which is what makes them one sound when driven.
+// What CHARACTER sets, at its four kicks (in between: a smooth curve through them). The lane's own knobs move from there.
+struct ForgeShape { float ratio, tau, decay, fm, harm, drive, impact, impTau, impHp, ground, groundT, lp, clip, sub; };
+static const ForgeShape kForge[4] = {
+    //  ratio  tau     decay  fm    harm  drive impact impTau  impHp   ground groundT lp       clip  sub
+    {   1.7f,  0.034f, 0.170f, 0.00f, 0.00f, 0.00f, 0.12f, 0.005f, 2600.0f, 0.45f, 0.55f,   700.0f, 0.8f, 1.00f },    // mellow, dubby
+    {   5.2f,  0.007f, 0.055f, 0.55f, 0.22f, 0.20f, 0.85f, 0.006f, 1800.0f, 0.06f, 0.20f, 14000.0f, 1.2f, 0.90f },    // punchy, tight
+    {   3.0f,  0.018f, 0.240f, 0.25f, 0.12f, 0.30f, 0.45f, 0.008f, 1300.0f, 0.90f, 0.95f,  5000.0f, 1.4f, 1.15f },    // boomy
+    {   6.5f,  0.011f, 0.130f, 1.30f, 0.80f, 1.00f, 1.00f, 0.011f,  900.0f, 0.60f, 0.70f, 16000.0f, 2.2f, 1.00f } };  // distorted
+// The shape at a place on CHARACTER: a curve through the four that passes each of them (Catmull-Rom), so the way from
+// one to the next has no corner in it. Never below a tenth of the smallest of them (a curve can dip under its points).
+static ForgeShape forgeAt (float c)
+{
+    const float x = std::min (std::max (c, 0.0f), 1.0f) * 3.0f;
+    const int i = std::min (2, (int) x);
+    const float t = x - (float) i;
+    const ForgeShape& p0 = kForge[std::max (0, i - 1)], & p1 = kForge[i], & p2 = kForge[i + 1], & p3 = kForge[std::min (3, i + 2)];
+    auto cr = [t] (float a, float b, float c2, float d)
+    {
+        const float v = 0.5f * ((2.0f * b) + (-a + c2) * t + (2.0f * a - 5.0f * b + 4.0f * c2 - d) * t * t + (-a + 3.0f * b - 3.0f * c2 + d) * t * t * t);
+        const float lo = std::min (b, c2), hi = std::max (b, c2), over = 0.15f * (hi - lo);      // (a curve may pass a little beyond its two points; never below nought)
+        return std::min (std::max (v, std::max (0.0f, lo - over)), hi + over);
+    };
+    ForgeShape o;
+    o.ratio = cr (p0.ratio, p1.ratio, p2.ratio, p3.ratio);          o.tau = cr (p0.tau, p1.tau, p2.tau, p3.tau);
+    o.decay = cr (p0.decay, p1.decay, p2.decay, p3.decay);          o.fm = cr (p0.fm, p1.fm, p2.fm, p3.fm);
+    o.harm = cr (p0.harm, p1.harm, p2.harm, p3.harm);               o.drive = cr (p0.drive, p1.drive, p2.drive, p3.drive);
+    o.impact = cr (p0.impact, p1.impact, p2.impact, p3.impact);     o.impTau = cr (p0.impTau, p1.impTau, p2.impTau, p3.impTau);
+    o.impHp = cr (p0.impHp, p1.impHp, p2.impHp, p3.impHp);          o.ground = cr (p0.ground, p1.ground, p2.ground, p3.ground);
+    o.groundT = cr (p0.groundT, p1.groundT, p2.groundT, p3.groundT);
+    o.lp = std::exp (cr (std::log (p0.lp), std::log (p1.lp), std::log (p2.lp), std::log (p3.lp)));
+    o.clip = cr (p0.clip, p1.clip, p2.clip, p3.clip);               o.sub = cr (p0.sub, p1.sub, p2.sub, p3.sub);
+    return o;
+}
+// CHARACTER holds its loudness: what each place on it is turned by, in dB, so that the kick is as loud at every one of
+// them, and 2 dB over KICK 909-TYPE alone (measured by SF-000's check of it, forgeTest, which prints the kick's loudest
+// tenth of a second at each of eleven places with the kick alone and under the master's limiter; straight lines between).
+static const float kForgeTrim[11] = { 0.0f, -0.1f, 0.7f, 2.0f, 0.6f, -1.2f, -2.1f, -2.5f, -2.4f, -2.2f, -2.1f };
+static float forgeTrim (float c)
+{
+    const float x = std::min (std::max (c, 0.0f), 1.0f) * 10.0f;
+    const int i = std::min (9, (int) x);
+    return std::pow (10.0f, (kForgeTrim[i] + (kForgeTrim[i + 1] - kForgeTrim[i]) * (x - (float) i)) / 20.0f);
+}
 static std::vector<std::string> kickModelNames() { std::vector<std::string> v; for (auto& m : kKickModels) v.push_back (m.name); return v; }
 
 class KickModule : public Module
@@ -47,7 +107,8 @@ public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams); then
     // SPLIT and SPLIT HZ [Nov 10] (ids are appended, never moved).
     enum { TUNE, DECAY, PUNCH, CLICK, DRIVE, FILT, DENS, LEVEL, MODEL, LAYERMODEL, LAYER, PTIME, VELSENS, ESPACE, ESWING, KEYTRACK, RES, ALLOCON, KEYFOLLOW, SSTART,
-           SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM, SSLICE, SCYCLE };       // (SF-000) the sample's own GAIN and NORMALISE, then SLICE and CYCLE, last
+           SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM, SSLICE, SCYCLE,         // (SF-000) the sample's own GAIN and NORMALISE, then SLICE and CYCLE
+           FGCHAR, FGIMPACT, FGBODY, FGGROUND, FGPOS, FGTONE };               // (SF-000) KICK FORGE's own, last
     std::string id() const override { return "KICK"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
@@ -75,11 +136,22 @@ public:
         p.push_back (knob ("split", "SPLIT", 0.0f, 1.0f, 0.5f, "SPLIT").layerGroup());
         p.push_back (knob ("split_hz", "SPLIT HZ", 50.0f, 800.0f, 150.0f, "Hz", 200.0f).layerGroup());
         p = withSlices (withSampleGain (std::move (p)));    // (SF-000)
-        jassert ((int) p.size() == SNORM + 1);
+        // (SF-000) KICK FORGE's own. CHARACTER: mellow and dubby, through punchy and tight and boomy, to distorted. IMPACT,
+        // BODY and GROUND: how much of each part, each at its middle what CHARACTER makes it (none, to twice that).
+        // POSITION: where in the lane's file the impact is taken from. TONE: darker and plainer to the left, brighter and
+        // richer in harmonics to the right. The lane's TUNE, DECAY and DRIVE act on it; PUNCH (how far the pitch falls),
+        // PITCH TIME (how fast) and CLICK (a pulse on the front of it) move it from where CHARACTER has them.
+        p.push_back (pct ("fg_char", "CHARACTER", 0.3f).slow().engineGroup());
+        p.push_back (pct ("fg_impact", "IMPACT", 0.5f).engineGroup());
+        p.push_back (pct ("fg_body", "BODY", 0.5f).engineGroup());
+        p.push_back (pct ("fg_ground", "GROUND", 0.5f).slow().engineGroup());
+        p.push_back (pct ("fg_pos", "POSITION", 0.1f).engineGroup());
+        p.push_back (pct ("fg_tone", "TONE", 0.5f).slow().engineGroup());
+        jassert ((int) p.size() == FGTONE + 1);
         return p;
     }
     bool acceptsFiles() const override { return true; }
-    juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL OR LAYER MODEL: SAMPLE)"; }
+    juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL OR LAYER MODEL: SAMPLE), OR A RECORDING FOR KICK FORGE'S IMPACT"; }
     void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr)); }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
     void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
@@ -92,6 +164,7 @@ public:
         dec.set (HalfbandDesign::forStage (rate, 0));
         decB.set (HalfbandDesign::forStage (rate, 0));
         split.prepare (rate);
+        ground.prepare (osr);               // (SF-000)
         out.prepare (rate, mb, ROLE_KICK, "KICK", false);
         events.reserve (2048);
         reset();
@@ -103,8 +176,70 @@ public:
         dec.reset();
         decB.reset();
         split.reset();
+        ground.reset();
         out.reset();
     }
+
+    // (SF-000) KICK FORGE's GROUND: the body's tail in four delays that feed each other (41 to 80 ms, each darker as it
+    // goes round, nothing over 150 Hz going in), then rung at the kick's note, and held down while the body sounds. The
+    // module's, not a hit's: it rings on from one kick into the next. Asleep, it costs nothing.
+    struct Ground
+    {
+        std::vector<float> d[4];
+        int len[4] = { 1, 1, 1, 1 }, w[4] = {}, live = 0;
+        float z[4] = {}, inLp = 0, inK = 0, damp = 0, fb = 0.4f, level = 0, env = 0, rel = 0, dcX = 0, dcY = 0, dcR = 0;
+        Svf ring;
+        double rate = 96000.0;
+        void prepare (double r)
+        {
+            rate = r;
+            static const double ms[4] = { 41.3, 53.7, 67.1, 79.9 };
+            for (int i = 0; i < 4; ++i) { len[i] = std::max (8, (int) (ms[i] * 0.001 * r)); d[i].assign ((size_t) len[i], 0.0f); }
+            inK = 1.0f - std::exp (-kTwoPi * 150.0f / (float) r);
+            damp = 1.0f - std::exp (-kTwoPi * 420.0f / (float) r);
+            rel = std::exp (-1.0f / (0.07f * (float) r));
+            dcR = 1.0f - kTwoPi * 28.0f / (float) r;
+            reset();
+        }
+        void reset()
+        {
+            for (auto& x : d) std::fill (x.begin(), x.end(), 0.0f);
+            for (auto& x : z) x = 0.0f;
+            inLp = env = dcX = dcY = 0.0f; live = 0;
+            for (auto& x : w) x = 0;
+            ring.ic1 = ring.ic2 = 0.0f;
+        }
+        // A hit: how long it rings (seconds to 60 dB down), how much of it, and the note it is rung at.
+        void hit (float seconds, float amount, float hz)
+        {
+            fb = std::pow (10.0f, -3.0f * 0.0605f / std::max (0.08f, seconds));
+            level = amount;
+            ring.set (hz, 5.0f, rate);
+            live = (int) ((2.0 * (double) seconds + 1.0) * rate);
+        }
+        bool awake() const { return live > 0; }
+        // One sample: in, the body as it is before its clipper.
+        float tick (float in)
+        {
+            if (live <= 0) return 0.0f;
+            if (--live == 0) { reset(); return 0.0f; }
+            env = std::max (std::abs (in), env * rel);
+            inLp += inK * (in - inLp);
+            float o[4], sum = 0.0f;
+            for (int i = 0; i < 4; ++i) { o[i] = d[i][(size_t) w[i]]; sum += o[i]; }
+            for (int i = 0; i < 4; ++i)
+            {
+                z[i] += damp * ((o[i] - 0.5f * sum) - z[i]);          // (each back into the others: a Householder turn; darker each time round)
+                d[i][(size_t) w[i]] = inLp * 0.25f + fb * z[i] + 1.0e-20f;
+                if (++w[i] >= len[i]) w[i] = 0;
+            }
+            ring.tick (sum);
+            const float y = 0.8f * sum + 2.0f * ring.bp;
+            dcY = y - dcX + dcR * dcY; dcX = y;
+            const float open = 1.0f - std::min (1.0f, env * 1.6f);
+            return dcY * level * open * open;
+        }
+    };
 
     struct Voice
     {
@@ -122,6 +257,12 @@ public:
         // the retrigger, the 909's click filters; both a DC blocker at the output.
         float accent = 1.0f, shift = 1.2f, sigh = 0.2f, sighTau = 0.1f, toneK = 1.0f, clickNz = 0.0f, clickLp = 0.0f, dcX = 0.0f, dcY = 0.0f, toneZ = 0.0f;
         Svf bridgedT, clickBp;
+        // (SF-000) KICK FORGE: the fundamental's last value (it bends itself), harmonics, the body's and the impact's level,
+        // the sub's, the split's state and pace, the impact's place in the file, its two high-passes, its strength, how long
+        // it lasts, the clipper's drive and what it is turned by after, and whether it feeds the ground
+        float fgPrev = 0, fgHarm = 0, fgBody = 1, fgImp = 0, fgSub = 1, fgLo = 0, fgLoK = 0, fgHpK = 0, fgHp1 = 0, fgHp2 = 0, fgImpTau = 0.006f, fgClip = 1, fgOut = 1, fgBright = 0;
+        double fgPos = -1.0;
+        bool fgFeeds = false;
         float level() const { return active ? vel * std::exp (-(float) t / std::max (0.01f, decay)) : 0.0f; }
     };
 
@@ -159,7 +300,7 @@ public:
         // KEY: the body lands on the SF CONTROL key root (nearest), TUNE moves from there.
         if (c.b (KEYFOLLOW) && c.keyRoot >= 0)
         {
-            const float hz = model == kNumKickModels - 1 ? (smp != nullptr && smp->rootHz > 20.0f && smp->rootHz < 200.0f ? smp->rootHz : 0.0f) : m.f1;
+            const float hz = model == kKickSample ? (smp != nullptr && smp->rootHz > 20.0f && smp->rootHz < 200.0f ? smp->rootHz : 0.0f) : m.f1;
             if (hz > 0.0f) tune += keySnap (hz, c.keyRoot);
         }
         const float decScale = std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * std::pow (0.6f, (float) gen);
@@ -196,7 +337,8 @@ public:
             v.toneK = 1.0f - std::exp (-kTwoPi * 120.0f * std::pow (58.0f, c.v (CLICK)) / (float) osr);
         }
         if (model == 0) { v.clickBp.set (4500.0f, 0.9f, osr); }
-        if (model == kNumKickModels - 1)
+        if (model == kKickForge) forgeStart (c, v, vel, gen, smp, publish);          // (SF-000)
+        if (model == kKickSample)
             if (auto s = smp)
             {
                 // From START; DECAY's gate measures the part that plays.
@@ -209,7 +351,7 @@ public:
             float hp, lp;
             DJFilter::corners (c.v (FILT), hp, lp);
             float f1r = v.f1, f0r = v.f0, decr = v.decay;
-            if (model == kNumKickModels - 1)
+            if (model == kKickSample)
                 if (auto s = smp)
                 {
                     f1r = s->rootHz > 20 && s->rootHz < 200 ? s->rootHz * v.srate : 50.0f; f0r = f1r * 2.0f; decr = std::max (0.02f, std::min (s->decaySec * 0.4f, v.gate));
@@ -298,12 +440,110 @@ public:
         return v.dcY;
     }
 
+    // (SF-000) KICK FORGE: a hit's settings, from CHARACTER and the lane's knobs (trigger has set the pitch it lands on,
+    // v.f1, and DECAY's and DENSITY's share of the decay is taken here).
+    void forgeStart (Ctx& c, Voice& v, float vel, int gen, const SampleData* smp, bool main)
+    {
+        const float ch = c.v (FGCHAR);
+        const ForgeShape f = forgeAt (ch);
+        const float tone = c.v (FGTONE) * 2.0f - 1.0f;                           // -1 .. 1
+        const float echo = std::pow (0.6f, (float) gen);
+        v.f0 = v.f1 * (1.0f + (f.ratio - 1.0f) * std::pow (2.0f, (c.v (PUNCH) - 0.5f) * 2.0f));
+        v.tau = f.tau * std::pow (2.0f, (c.v (PTIME) - 0.5f) * 3.0f);
+        v.decay = f.decay * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * echo;
+        v.fm = f.fm * (1.0f + 0.5f * tone);
+        v.fgHarm = std::max (0.0f, f.harm + 0.5f * tone * (0.25f + f.harm));
+        v.drive = clamp01 (f.drive * 0.7f + c.v (DRIVE) * 0.8f);
+        v.fgBody = 2.0f * c.v (FGBODY);
+        v.fgSub = f.sub;
+        v.fgLoK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) osr);
+        v.lp = std::min (18000.0f, f.lp * std::pow (4.0f, tone)) * echo;
+        v.fgBright = std::min (6000.0f, v.lp * 2.0f);                           // (the filter opens on the hit and closes onto v.lp)
+        v.click = c.v (CLICK) * 2.0f * 0.5f;
+        v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
+        v.fgOut = forgeTrim (ch) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
+        // the impact: from the lane's file at POSITION (thirty-five thousandths of a second of it, a little either side
+        // from hit to hit), brought to one strength; or noise
+        v.fgImp = 2.0f * c.v (FGIMPACT) * f.impact * (0.9f + 0.2f * rng.uni());
+        v.fgImpTau = f.impTau;
+        v.fgHpK = 1.0f - std::exp (-kTwoPi * f.impHp / (float) osr);
+        v.fgPos = -1.0;
+        if (smp != nullptr && smp->length() > 4096 && v.fgImp > 0.0f)
+        {
+            const auto reg = regionFrom (c, SSTART, *smp, SGAIN);
+            const double span = 0.035 * smp->sr, room = std::max (0.0, reg.end - reg.start - span - 8.0);
+            double at = reg.start + (double) c.v (FGPOS) * room + (double) rng.next() * 0.0015 * smp->sr;
+            at = std::min (std::max (at, reg.start), reg.start + room);
+            // (its strength: the grain's own, over what will sound of it)
+            double sum = 0.0;
+            const int n0 = (int) at, n1 = std::min (smp->length() - 2, n0 + (int) (0.012 * smp->sr));
+            const float* l = smp->buf.getReadPointer (0); const float* r = smp->buf.getReadPointer (smp->buf.getNumChannels() > 1 ? 1 : 0);
+            for (int n = n0; n < n1; ++n) { const float x = 0.5f * (l[n] + r[n]); sum += (double) x * x; }
+            const float rms = (float) std::sqrt (sum / (double) std::max (1, n1 - n0));
+            v.fgImp *= std::min (40.0f, 0.22f / std::max (rms, 1.0e-4f));
+            v.fgPos = at;
+        }
+        v.fgFeeds = main;
+        if (main && gen == 0)
+            ground.hit (f.groundT * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 2.0f), 2.0f * c.v (FGGROUND) * f.ground * forgeTrim (ch), v.f1);
+    }
+
+    // One sample of it (at osr).
+    float forgeVoice (Voice& v, float t, const SampleData* s)
+    {
+        // BODY: the wave starts at nought, rising, every hit
+        const float f = v.f1 + (v.f0 - v.f1) * std::exp (-t / v.tau);
+        const float w = kTwoPi * (float) v.phase;
+        const float bend = v.fm * std::exp (-t / 0.03f);
+        const float fund = std::sin (w + bend * v.fgPrev);
+        v.fgPrev = fund;
+        const float hE = v.fgHarm * std::exp (-t / (0.22f * v.decay + 0.012f));
+        float body = fund;
+        if (hE > 1.0e-4f) body += hE * (0.55f * std::sin (2.0f * w + 0.5f * bend * fund) + 0.30f * std::sin (3.0f * w));
+        body *= std::min (1.0f, t / 0.0004f) * std::exp (-t / v.decay) * v.fgBody;
+        if (v.fgFeeds) groundIn += body * v.fade * v.mix * v.vel;
+        v.fgLo += v.fgLoK * (body - v.fgLo);
+        float mid = body - v.fgLo;
+        // IMPACT
+        if (v.fgImp > 0.0f && t < 0.035f)
+        {
+            float x;
+            if (v.fgPos >= 0.0 && s != nullptr && (int) v.fgPos + 3 < s->length())
+            {
+                x = 0.5f * (s->read (0, v.fgPos, 0.5) + s->read (1, v.fgPos, 0.5));
+                v.fgPos += 0.5;
+            }
+            else x = rng.next() * 0.35f;
+            v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;
+            v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
+            const float tail = clamp01 ((t - 0.025f) / 0.010f);         // (and out by its end, whatever its decay)
+            const float e = std::min (1.0f, t / 0.0003f) * std::exp (-t / v.fgImpTau) * (1.0f - tail * tail * (3.0f - 2.0f * tail));
+            mid += x * e * v.fgImp;
+        }
+        if (v.click > 0.0f && t < 0.0003f) mid += v.click * 0.6f;
+        if (v.drive > 0.0f) { const float g = 1.0f + v.drive * 9.0f; mid = fastTanh (mid * g) / std::sqrt (g) * 1.25f; }
+        float y = (v.fgLo * v.fgSub + mid) * v.vel;
+        // the tone's low-pass: open on the hit, closing onto where TONE and CHARACTER have it
+        if (v.lp < 15000.0f)
+        {
+            if ((v.tick++ & 15) == 0) v.res.set (v.lp + v.fgBright * std::exp (-t / 0.03f), 0.7071f, osr);
+            y = v.res.tickLP (y);
+        }
+        y = fastTanh (y * v.fgClip) * v.fgOut;
+        v.phase += f / osr;
+        if (v.phase > 1.0) v.phase -= 1.0;
+        v.t += 1.0 / osr;
+        if (t > v.decay * 9.0f + 0.06f) v.active = false;
+        return y;
+    }
+
     // One sample at the oversampled rate (osr).
     float renderVoice (Voice& v, const SampleData* s)
     {
         const float t = (float) v.t;
         float y = 0.0f;
-        if (v.model == kNumKickModels - 1)
+        if (v.model == kKickForge) y = forgeVoice (v, t, s);
+        else if (v.model == kKickSample)
         {
             if (s == nullptr || (int) v.phase + 2 >= (v.reg.end > 0.0 ? std::min (s->length(), v.reg.last()) : s->length())) { v.active = false; return 0.0f; }
             const double rate = v.srate * 0.5;               // input samples per output (2x) sample
@@ -383,8 +623,12 @@ public:
             // MODEL's voices and the layer's sum apart, each through its own halfband, then split
             // (or added: with no layer, exactly the sound there was before the split).
             float y0 = 0.0f, y1 = 0.0f, b0 = 0.0f, b1 = 0.0f;
+            groundIn = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b0 : y0) += renderVoice (v, smp);
+            if (ground.awake()) y0 += ground.tick (groundIn);              // (SF-000) KICK FORGE's ground, with MODEL's voices
+            groundIn = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b1 : y1) += renderVoice (v, smp);
+            if (ground.awake()) y1 += ground.tick (groundIn);
             const float ya = dec.down (y0, y1), yb = decB.down (b0, b1);
             const float y = splitOff ? ya + yb : split.tick (ya, yb, LayerSplit::amount (k0 + (k1 - k0) * (float) i / (float) c.n));
             L[i] = y; R[i] = y;
@@ -427,6 +671,7 @@ private:
     double sr = 48000.0, osr = 96000.0;
     Halfband dec, decB;                 // MODEL's voices, the layer's
     LayerSplit split;
+    Ground ground; float groundIn = 0.0f;   // (SF-000) KICK FORGE's ground, and what the body gives it this sample
     static constexpr int kVoices = 8;
     std::array<Voice, kVoices> voices;
     EchoScheduler echoes;

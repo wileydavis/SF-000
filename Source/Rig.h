@@ -26,7 +26,10 @@ struct Fixed   { const char* param; float value; };     // plain units; a menu b
 // its control id (snapshots are stored by those), so a snapshot's value at a place means what its lane's model made of it.
 // What the usual knobs moved is then in CONFIG, where it stays as it was left.
 constexpr int kSoundKnobs = 8;
-struct ModelKnobs { const char* model; KnobDef knobs[kSoundKnobs]; };
+// with: what choosing the model by hand also sets, each a place from 0 to 1 (KICK FORGE is a whole kick: the 808 laid under
+// the rig's kick, and the crossover that takes the model's own lows out for it, are put away. They are in CONFIG.)
+struct ModelWith { const char* param; float place; };
+struct ModelKnobs { const char* model; KnobDef knobs[kSoundKnobs]; std::vector<ModelWith> with; };
 
 struct LaneDef
 {
@@ -57,7 +60,12 @@ inline const std::vector<LaneDef>& lanes()
             { "punch", 0.45f }, { "click", 0.35f }, { "drive", 0.12f }, { "level", -3 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "LAYER", "layer", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
             { "PITCH TIME", "pitch_time", 'u' }, { "PUNCH", "punch", 'u' }, { "CLICK", "click", 'u' }, { "DRIVE", "drive", 'u' },
-            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // KICK FORGE's own sound knobs: one that takes it from mellow to distorted, its three parts, where its impact is
+          // from, its tone. TUNE and DRIVE stay where they are; LAYER, the echo's two, PITCH TIME, PUNCH and CLICK are in CONFIG.
+          { { "KICK FORGE", { { "TUNE", "tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "CLOSED HAT", "closed_hat", "PERC", false, 3,
           { { "model", 0 }, { "decay", 0.28f }, { "tone", 0.55f }, { "spread", 0.3f }, { "level", -13 }, { "alloc", 0 } },

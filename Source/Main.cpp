@@ -1689,6 +1689,214 @@ static void samplerTest (int& bad)
     if (! (listed && drumsHave && resampleSays)) std::printf ("    (listed %d, the drums have them %d, resample says %d: \"%s\", the lane's file %s)\n", (int) listed, (int) drumsHave, (int) resampleSays, told.toRawUTF8(), e.laneFile (lead).toRawUTF8());
 }
 
+static void forgeTest (int& bad)
+{
+    using namespace sf0;
+    // KICK FORGE (the suite's Drums.cpp): chosen, the kick lane's sound places are TUNE, CHARACTER, IMPACT, BODY, GROUND,
+    // POSITION, TONE and DRIVE, and what the places moved is in CONFIG. CHARACTER goes from mellow to distorted without a
+    // step and without getting louder or quieter; the body is the same hit after hit; GROUND is what is heard between
+    // the kicks; POSITION is where in the lane's file the impact is from.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-forgetest");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto file = dir.getChildFile ("two.wav");
+    {
+        // half a second of a low rumble with a 1 kHz tone, then half a second with a 5 kHz one
+        juce::AudioBuffer<float> b (2, 48000);
+        for (int n = 0; n < 48000; ++n)
+        {
+            const double t = n / 48000.0, hz = n < 24000 ? 1000.0 : 5000.0;
+            const float v = (float) (0.3 * std::sin (2.0 * juce::MathConstants<double>::pi * hz * t) + 0.3 * std::sin (2.0 * juce::MathConstants<double>::pi * 90.0 * t));
+            b.setSample (0, n, v); b.setSample (1, n, v);
+        }
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (file), 48000.0, 2, 24, {}, 0) };
+        if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, 48000);
+    }
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    bool finite = true;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            if (keep) for (int n = 0; n < 256; ++n) { const float v = 0.5f * (buf.getSample (0, n) + buf.getSample (1, n)); finite = finite && std::isfinite (v); heard.push_back (v); }
+        }
+        e.tidy();
+    };
+    int kick = -1;
+    for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kick = l;
+    auto choose = [&] (const char* id, const char* name)
+    {
+        for (auto& sp : e.setupParams ({ 0, kick, 0 })) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup ({ 0, kick, 0 }, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+        return false;
+    };
+    auto label = [&] (int k) { return juce::String (e.control (cx::lane (kick, k)).label); };
+    auto inConfig = [&] (const char* id) { for (auto& sp : e.setupParams ({ 0, kick, 0 })) if (sp.id == id) return true; return false; };
+    const juce::String was1 = label (1), was5 = label (5);
+    const bool chosen = choose ("model", "KICK FORGE");
+    const bool named = chosen && label (0) == "TUNE" && label (1) == "CHARACTER" && label (2) == "IMPACT" && label (3) == "BODY" && label (4) == "GROUND" && label (5) == "POSITION" && label (6) == "TONE" && label (7) == "DRIVE"
+                       && label (8) == "DECAY" && inConfig ("layer") && inConfig ("punch") && inConfig ("pitch_time") && inConfig ("click") && ! inConfig ("fg_char");
+    const bool back = choose ("model", "KICK 909-TYPE") && label (1) == was1 && label (5) == was5 && ! inConfig ("punch");
+    choose ("model", "KICK FORGE");
+    if (! (named && back)) std::printf ("    (named %d back %d: %s %s %s %s %s %s %s %s)\n", (int) named, (int) back, label (0).toRawUTF8(), label (1).toRawUTF8(), label (2).toRawUTF8(), label (3).toRawUTF8(), label (4).toRawUTF8(), label (5).toRawUTF8(), label (6).toRawUTF8(), label (7).toRawUTF8());
+    // the kick alone, on every beat, nothing after it
+    for (int l = 0; l < kLanes; ++l) { Pattern none; e.setPattern (l, none); }
+    Pattern four; for (int b = 0; b < 4; ++b) { four.steps[(size_t) (b * 4)].on = true; four.steps[(size_t) (b * 4)].vel = 1.0f; }
+    e.setPattern (kick, four);
+    e.solo = kick;                                  // (RUMBLE answers the kick with no steps of its own: only the kick is heard)
+    auto set = [&] (int k, float v) { ses.userSet (cx::lane (kick, k), v); };
+    ses.userSet (cx::kGlide, 0.0f);
+    ses.userSet (cx::lane (kick, cx::kSendA), 0.0f); ses.userSet (cx::lane (kick, cx::kSendB), 0.0f);
+    e.setSetup ({ 0, kick, 0 }, "layer", 0.0f);
+    set (9, 0.0f); set (10, 0.5f);                  // (no DENSITY, FILTER open)
+    set (11, e.target (cx::lane (kick, 11)) * 0.35f);          // (LEVEL well down: the kick alone must not reach the master's limiter, or it is the limiter that is measured)
+    const double beatN = 60.0 / e.tempo() * 48000.0;
+    // two bars from the top; the second is what is heard (the first lets the rig settle to the kick)
+    auto bar = [&] ()
+    {
+        e.setRunning (false); run (4.0); heard.clear(); e.setRunning (true); run (4.0); run (4.0, true); e.setRunning (false);
+        return heard;
+    };
+    auto rms = [] (const std::vector<float>& x, size_t from, size_t to) { double s2 = 0; to = std::min (to, x.size()); for (size_t n = from; n < to; ++n) s2 += (double) x[n] * x[n]; return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, to - from) + 1e-12); };
+    // how loud a kick is: its loudest tenth of a second, over the bar's second and third hits
+    auto loud = [&] (const std::vector<float>& x)
+    {
+        double best = -200.0;
+        for (size_t at = (size_t) beatN; at + 4800 < (size_t) (3.0 * beatN) && at + 4800 < x.size(); at += 480) best = std::max (best, rms (x, at, at + 4800));
+        return best;
+    };
+    auto bands = [] (const std::vector<float>& x, size_t from, size_t to)
+    {
+        std::array<double, 8> out {};
+        to = std::min (to, x.size());
+        for (int b = 0; b < 8; ++b)
+        {
+            const double f = 50.0 * std::pow (2.0, b), w = 2.0 * juce::MathConstants<double>::pi * f / 48000.0, r = 0.995;
+            double y1 = 0, y2 = 0, sum = 0;
+            for (size_t n = from; n < to; ++n) { const double y = (double) x[n] + 2.0 * r * std::cos (w) * y1 - r * r * y2; y2 = y1; y1 = y; sum += y * y; }
+            out[(size_t) b] = std::max (-60.0, 10.0 * std::log10 (sum * (1.0 - 2.0 * r * std::cos (2.0 * w) + r * r) * (1.0 - r) * (1.0 - r) / (double) std::max<size_t> (1, to - from) + 1e-12));
+        }
+        return out;
+    };
+    auto apart = [] (const std::array<double, 8>& a, const std::array<double, 8>& b) { double d = 0; for (int i = 0; i < 8; ++i) d += (a[(size_t) i] - b[(size_t) i]) * (a[(size_t) i] - b[(size_t) i]); return std::sqrt (d / 8.0); };
+    // (how loud the rig's own kick is, for the measure of this one)
+    choose ("model", "KICK 909-TYPE");
+    const auto x909 = bar();
+    const double ref909 = loud (x909);
+    float peak909 = 0.0f; for (float v : x909) peak909 = std::max (peak909, std::abs (v));
+    choose ("model", "KICK FORGE");
+    // ---- CHARACTER, at eleven places: how loud, and what it sounds like
+    set (2, 0.5f); set (3, 0.5f); set (4, 0.5f); set (5, 0.1f); set (6, 0.5f); set (7, 0.0f); set (8, 0.5f);
+    std::array<double, 11> ld {}, tail {}, highs {};
+    std::array<std::array<double, 8>, 11> sp {};
+    float peak = 0.0f;
+    for (int i = 0; i <= 10; ++i)
+    {
+        set (1, (float) i / 10.0f);
+        const auto x = bar();
+        ld[(size_t) i] = loud (x);
+        sp[(size_t) i] = bands (x, (size_t) beatN, (size_t) (3.0 * beatN));
+        tail[(size_t) i] = rms (x, (size_t) (beatN + 0.25 * 48000.0), (size_t) (beatN + 0.40 * 48000.0)) - ld[(size_t) i];
+        {
+            // its top: what is left of the hit's first fifteen thousandths of a second with the lows taken out (twice differenced), against how loud the kick is
+            double hf = 0.0; const size_t h0 = (size_t) beatN + 2;
+            for (size_t n = h0; n < h0 + 720 && n < x.size(); ++n) { const double d2 = (double) x[n] - 2.0 * x[n - 1] + x[n - 2]; hf += d2 * d2; }
+            highs[(size_t) i] = 10.0 * std::log10 (hf / 720.0 + 1e-14) - ld[(size_t) i];
+        }
+        for (float v : x) peak = std::max (peak, std::abs (v));
+        if (std::getenv ("SF000_FORGE_DEBUG") != nullptr)
+        {
+            {
+                // (the bar as a file, to be looked at)
+                juce::AudioBuffer<float> b (1, (int) x.size());
+                for (size_t n = 0; n < x.size(); ++n) b.setSample (0, (int) n, x[n]);
+                const juce::File f ("/tmp/forge-c" + juce::String (i) + ".wav"); f.deleteFile();
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (f), 48000.0, 1, 24, {}, 0) };
+                if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, (int) x.size());
+            }
+            float pk = 0.0f; for (float v : x) pk = std::max (pk, std::abs (v));
+            std::printf ("      c %.1f: peak %.3f, bands", (float) i / 10.0f, pk);
+            for (double v : sp[(size_t) i]) std::printf (" %.0f", v);
+            std::printf ("\n");
+        }
+    }
+    const double lo = *std::min_element (ld.begin(), ld.end()), hi = *std::max_element (ld.begin(), ld.end());
+    const bool level = hi - lo < 1.5 && lo > -40.0;
+    double step = 0.0;
+    for (int i = 0; i < 10; ++i) step = std::max (step, apart (sp[(size_t) i], sp[(size_t) i + 1]));
+    const double ends = apart (sp[0], sp[10]);
+    const bool smooth = step < 6.0 && highs[10] - highs[0] > 20.0;        // (no step on the way; and the two ends are far apart: the top of the hit)
+    juce::ignoreUnused (ends);
+    // mellow has the least top, distorted the most; boomy rings longest, tight shortest
+    const bool shaped = highs[0] < highs[3] - 4.0 && highs[10] > highs[3] && tail[7] > tail[3] + 2.0 && tail[0] > tail[3];
+    std::printf ("    (the 909 alone: %.2f dB, peak %.3f. CHARACTER 0..1, the kick's loudest tenth of a second, dB:", ref909, peak909);
+    for (double v : ld) std::printf (" %.2f", v);
+    std::printf (")\n");
+    if (! (level && smooth && shaped))
+    {
+        std::printf ("    (spread %.2f dB; biggest step %.1f, ends %.1f apart; top over bottom:", hi - lo, step, ends);
+        for (double v : highs) std::printf (" %.0f", v);
+        std::printf ("; tail:");
+        for (double v : tail) std::printf (" %.0f", v);
+        std::printf (")\n");
+    }
+    // ---- the body is the same every hit (no impact, no ground): the second and third hits, sample for sample
+    set (1, 0.4f); set (2, 0.0f); set (4, 0.0f); e.setSetup ({ 0, kick, 0 }, "click", 0.0f);
+    const auto same = bar();
+    double worst = 0.0, big = 0.0;
+    {
+        // the two hits lined up by their own starts (the first sample over a thousandth of full scale)
+        auto startOf = [&] (size_t from) { for (size_t n = from; n < same.size(); ++n) if (std::abs (same[n]) > 1.0e-3f) return n; return same.size(); };
+        const size_t a = startOf ((size_t) (beatN - 200.0)), b = startOf ((size_t) (2.0 * beatN - 200.0));
+        double pa = 0.0, pb = 0.0;
+        for (size_t n = 0; n < 9600 && b + n < same.size(); ++n) { pa = std::max (pa, (double) std::abs (same[a + n])); pb = std::max (pb, (double) std::abs (same[b + n])); }
+        // (each against its own peak: what the master does to a kick's level is not the kick's)
+        size_t wn = 0;
+        for (size_t n = 0; n < 9600 && b + n < same.size(); ++n) if (const double dd = std::abs ((double) same[a + n] / std::max (pa, 1e-9) - (double) same[b + n] / std::max (pb, 1e-9)); dd > worst) { worst = dd; wn = n; }
+        big = pa;
+        if (std::getenv ("SF000_FORGE_DEBUG") != nullptr)
+        {
+            std::printf ("    (debug: a %d b %d beatN %.2f pa %.4f pb %.4f worst at %d)\n", (int) a, (int) b, beatN, pa, pb, (int) wn);
+            for (size_t n = 150; n < 260; n += 6) std::printf ("      %d: %.4f %.4f\n", (int) n, same[a + n], same[b + n]);
+        }
+    }
+    const bool locked = big > 0.05 && worst < 0.06;
+    if (! locked) std::printf ("    (the body, hit to hit: differs by %.4f of its peak, %.4f)\n", worst, big);
+    // ---- GROUND: what is heard between the kicks (the last quarter of a beat), at boomy with a short DECAY
+    set (1, 0.67f); set (4, 0.0f); set (8, 0.2f);
+    const auto dry = bar();
+    set (4, 1.0f);
+    const auto wet = bar();
+    const double between0 = rms (dry, (size_t) (1.75 * beatN), (size_t) (2.0 * beatN)), between1 = rms (wet, (size_t) (1.75 * beatN), (size_t) (2.0 * beatN));
+    const double on0 = rms (dry, (size_t) beatN, (size_t) (beatN + 2400)), on1 = rms (wet, (size_t) beatN, (size_t) (beatN + 2400));
+    const bool ground = between1 - between0 > 6.0 && std::abs (on1 - on0) < 1.5;
+    if (! ground || std::getenv ("SF000_FORGE_DEBUG") != nullptr) std::printf ("    (ground: between the kicks %.1f dB without it and %.1f dB with it; on the hit %.1f and %.1f)\n", between0, between1, on0, on1);
+    // ---- POSITION: the impact is from the lane's file, where the knob says (1 kHz in its first half, 5 kHz in its second)
+    set (8, 0.5f); set (4, 0.0f); set (1, 0.33f); set (2, 1.0f); set (3, 0.0f);
+    const bool loaded = e.loadFile (kick, file);
+    set (5, 0.2f); const auto p1 = bar();
+    set (5, 0.8f); const auto p2 = bar();
+    const auto i1 = bands (p1, (size_t) beatN, (size_t) (beatN + 1440)), i2 = bands (p2, (size_t) beatN, (size_t) (beatN + 1440));
+    const bool position = loaded && i2[7] - i2[4] > i1[7] - i1[4] + 6.0;
+    if (! position) std::printf ("    (position: loaded %d; 6.4 kHz over 800 Hz in the hit, %.1f dB from the first half and %.1f dB from the second)\n", (int) loaded, i1[7] - i1[4], i2[7] - i2[4]);
+    // ---- everything up: finite, and under full scale
+    set (1, 1.0f); set (2, 1.0f); set (3, 1.0f); set (4, 1.0f); set (6, 1.0f); set (7, 1.0f);
+    const auto all = bar();
+    for (float v : all) peak = std::max (peak, std::abs (v));
+    const bool safe = finite && peak < 1.6f;
+    if (! safe) std::printf ("    (finite %d, peak %.3f)\n", (int) finite, peak);
+    dir.deleteRecursively();
+    const bool ok = named && back && level && smooth && shaped && locked && ground && position && safe;
+    if (! ok) ++bad;
+    std::printf ("  %s: KICK FORGE: chosen, the kick's sound places are TUNE, CHARACTER, IMPACT, BODY, GROUND, POSITION, TONE and DRIVE and the usual ones are in CONFIG, and back; CHARACTER goes from mellow to distorted "
+                 "with no step and within 1.5 dB of one loudness; its body is the same hit after hit; GROUND is heard between the kicks and not on them; POSITION is where in the lane's file the impact is from; all of it up is finite\n", ok ? "ok" : "FAIL");
+}
+
 static void granularTest (int& bad)
 {
     using namespace sf0;
@@ -1847,7 +2055,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -4259,6 +4467,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     stackBlendTest (bad);
     granularTest (bad);
     samplerTest (bad);
+    forgeTest (bad);
     arrsKeptTest (bad);
 
     {
