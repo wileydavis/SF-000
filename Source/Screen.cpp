@@ -583,8 +583,8 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
     }
     if (ctl >= cx::kMaster)
     {
-        static const char* const ids[3] = { "tape", "comp", "limit" };
-        where = "MASTER"; what = help::param ("MASTER", ids[ctl - cx::kMaster]);
+        static const char* const ids[4] = { "tape", "comp", "limit", "gain" };
+        where = "MASTER"; what = help::param ("MASTER", ids[juce::jlimit (0, 3, ctl - cx::kMaster)]);
         return true;
     }
     if (ctl >= cx::kRetMS) { where = ctl - cx::kRetMS < 2 ? "RETURN A, THE DUB DELAY" : "RETURN B, THE SPACE"; what = help::param ("LANE", (ctl - cx::kRetMS) % 2 == 0 ? "mute" : "solo"); return true; }
@@ -1940,6 +1940,8 @@ void Screen::drawMaster (G& g, R r)
     const float wTitle = title (g, x0, y0, "MASTER", ses.front.kind == Session::fMaster);
     const float wChan = chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
+    // GAIN, under TAPE: the whole mix's level into the three above it (FAULT, which was here, is beside the title)
+    control (g, cx::kGain, x0, body + 77, 64, col::lit);
     // FINISH, the stage before the limiter: a plate, stepped by a press (OFF, 25, 50, 75, 100); lit while it is in. It ends
     // where the drum bus begins (and gives way to the channel's plate while INFO shows that: only its number is left).
     {
@@ -1947,6 +1949,15 @@ void Screen::drawMaster (G& g, R r)
         const float fw = std::ceil (tw (fLbl, says)) + 8.0f, fx = x0 + 198 - fw;
         plate (g, fx, y0 + 4, says, fLbl, 4, ses.finishAt > 0 ? col::amber : col::putty, col::black, 18);
         hit (R (fx - 2, y0 + 3, fw + 4, 20), hAct, aFinish, 0);
+        // FAULT, between the title and FINISH: its lamp, and the word where there is room for it
+        // (lit: a module said something is wrong with its sound, or a buffer ran late in the last three seconds. SET UP says which)
+        const float lx = x0 + wTitle + 2 + wChan + 4;
+        if (lx + 9 < fx - 2)
+        {
+            g.setColour (tone (col::black)); g.fillRect (R (lx, y0 + 5, 9, 18));
+            g.setColour (eng.fault.load() || eng.overLately() ? col::amber : tone (col::grey)); g.fillRect (R (lx + 2, y0 + 7, 5, 14));
+            if (lx + 12 + std::ceil (tw (fLbl, "FAULT")) < fx - 2) text (g, "FAULT", R (lx + 12, y0, 40, 26), fLbl, col::black, juce::Justification::centredLeft);
+        }
     }
     // the drum bus: its four knobs, and C for the rest of it
     {
@@ -1959,22 +1970,19 @@ void Screen::drawMaster (G& g, R r)
         for (int k = 0; k < kBusKnobs; ++k) control (g, cx::kBus + k, bx + (float) (k % 2) * 66, body + (float) (k / 2) * 77, 64, col::lit);
     }
     if (! vis (g, R (x0, body + 60, 544, 100))) return;
-    // FAULT, gain reduction, loudness
+    // gain reduction, loudness
     const float fy = body + 77;
-    g.setColour (tone (col::black)); g.fillRect (R (x0 + 6, fy + 8, 14, 26));
-    // (lit: a module said something is wrong with its sound, or a buffer ran late in the last three seconds. SET UP says which)
-    g.setColour (eng.fault.load() || eng.overLately() ? col::amber : tone (col::grey)); g.fillRect (R (x0 + 8, fy + 10, 10, 22));
-    text (g, "FAULT", R (x0 + 25, fy, 40, 42), fLbl, col::black, juce::Justification::centredLeft);
     readout (g, R (x0 + 66, fy, 64, 42), "GR", String (eng.gainRed.load(), 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     const float lu = eng.lufs.load();
     readout (g, R (x0 + 132, fy, 64, 42), "LUFS", lu < -60.0f ? String ("--") : String (lu, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
     // POCKETS: its page, and how much of it is on
     {
-        const R kr (x0 + 6, fy + 49, 22, 22);
+        // (beside GAIN, under the two readouts)
+        const R kr (x0 + 70, fy + 49, 22, 22);
         key (g, kr, eng.target (cx::kPkG) > 0.0f ? col::green : col::white, pressed (aPockets) ? 6.0f : 2.0f);
-        text (g, "POCKETS", R (x0 + 34, fy + 49, 60, 22), fLbl, col::black, juce::Justification::centredLeft);
-        text (g, eng.valueText (cx::kPkG), R (x0 + 96, fy + 49, 40, 22), fLbl, col::black, juce::Justification::centredLeft);
-        hit (R (x0 + 4, fy + 47, 130, 26), hAct, aPockets, 0);
+        text (g, "POCKETS", R (x0 + 97, fy + 49, 60, 22), fLbl, col::black, juce::Justification::centredLeft);
+        text (g, eng.valueText (cx::kPkG), R (x0 + 158, fy + 49, 40, 22), fLbl, col::black, juce::Justification::centredLeft);
+        hit (R (x0 + 68, fy + 47, 130, 26), hAct, aPockets, 0);
     }
     // meters: every lane as it reaches the mix, then the mix itself
     const R mp (x0 + 342, y0, 202, 180);

@@ -4916,8 +4916,62 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - **Not in this:** stretching a loop to the tempo without moving its pitch; a loop on KICK,
        RUMBLE, VOICE or the note lanes.
 
+## GAIN, and a recall's notes at the end of its glide (Nov 18, 14:25): eighty-second build
+
+717. **You**, Nov 18, 14:25: "for luffs outpout, my target is -9 to -6. how to achieve this?";
+     14:34: "I seem to be stuck around -22. Should I raise all the levels? And is clockwise louder
+     on limit?"; 14:35: "should we add a global level knob that raises everything while keeping
+     the ratios between them?" **What was said:** LIMIT is the loudness aimed for (-16 to -5 LUFS,
+     clockwise louder), and what comes out is a little under its figure, because the clipper and
+     the limiter take off the top after the gain is set (the rig as it opens: -9.6 LUFS at -9,
+     -8.3 at -7.5, -7.1 at -6; FINISH changes none of them by more than 0.1). **And LIMIT only
+     lifts a mix that is within 6 dB of its figure**: further under, it takes what it hears for a
+     breakdown and holds. A set at -22 is never lifted. So: **GAIN**, *mine, the particulars:*
+     - **A knob on the MASTER panel, under TAPE**: the whole mix, up or down by as much as 24 dB,
+       as it goes into the master chain (before TAPE, COMP, FINISH and LIMIT, which then have the
+       level they were set up for). Every lane and both returns keep their place against each
+       other. The middle is no change, to the sample: the rig's opening bars are as they were.
+     - **Kept with the set, not in a snapshot**, as TAPE, COMP and LIMIT are: a recall never
+       moves the whole level. A stack knob does not sweep it. A print has it.
+     - **Not on the E16**: its MASTER page has a free knob (the fourth), and putting GAIN there
+       means a new scene to load into the E16. Yours to ask for.
+     - **FAULT moved** from under TAPE to beside MASTER's title, to make room. POCKETS' key is
+       beside GAIN, under the two readouts.
+     - **Not done:** LIMIT's own reach and its figure. It could aim at what comes out (so the
+       knob's number is the number heard) and lift a set that has been steadily quiet. Offered.
+718. **You**, 14:37: "and do the notes from a snapshot on a glide come in at the beginning or the
+     end of the glide? Should proably come in/swap at the end." They came in at the beginning: on
+     the first bar line after the recall, while the knobs were still on their way. **Now they
+     come in at the end.** *Mine, the particulars:*
+     - **A recall that travels for a bar or more**: the notes of before play through the travel,
+       and the snapshot's are taken up on **the first bar line at or after the travel's end**.
+       A recall made on a bar line (an armed one, a part of the arrangement) over whole bars has
+       them exactly on its end. One made mid-bar has them up to a bar after it.
+     - **What belongs to the notes goes with them, on that line**: whether a lane's own sequencer
+       is muted, and KEY. (They went over on the beat the knobs set off on.)
+     - **GLIDE OFF, or a glide shorter than a bar**: the next bar line, as before. A quarter or
+       half a bar's travel is over before the line comes anyway.
+     - **The arrangement is the same rule**, since a part's MORPH is a glide: a part's notes now
+       begin when its morph is over, not on its first bar. **A part whose morph is as long as
+       the part never plays its own notes**: it is one travel from the part before, on the part
+       before's notes, and the next part's take over on the line where its own would have come
+       in. Arrangements made before this sound different wherever a part has a morph. PRINT
+       follows, being the same engine.
+     - **The step keys show the snapshot's notes from the moment of the recall**, while the notes
+       of before are still playing: what is coming, not what is sounding. A step pressed during
+       the wait takes over at once, as a step always has.
+
 ## Not verified
 
+- **GAIN and the notes at a glide's end (717, 718) are measured, not heard.** GAIN: a set put
+  6 dB under where LIMIT lifts (-15.7 LUFS) comes back to -9.5 with GAIN up 14; a recall leaves
+  it; the set keeps it. Its place on the panel has been seen in one picture here. How hard TAPE
+  and COMP sound with GAIN well up is yours to hear: they are after it. The notes: a hat's steps
+  counted bar by bar through a two-bar glide made mid-bar and on a line, a half-bar one, GLIDE
+  OFF, and a snapshot whose sequencer is muted. Not tried: KEY going over with the notes by ear;
+  a very long glide (the notes of before for 64 bars); a second recall made while the first's
+  notes are still waiting (the second's take the first's place, and wait for the second's end);
+  what your arrangements now sound like.
 - **Stereo samples and LOOP (715, 716) have been measured, not heard.** Measured: each side's
   own tone 46 dB or more over the other's on every lane that plays a file (12 dB in KICK FORGE's
   impact, which sits on a body that is one signal); a loop on its beats for two rounds, at two

@@ -50,8 +50,9 @@ namespace cx
     constexpr int kBus = kRet + kRetKnobs;                  // the drum bus's four knobs: DRIVE, CRUNCH, PUNCH, BOOM
     constexpr int kPkG = kBus + kBusKnobs;                  // POCKETS, for the whole rig: AMOUNT, CLEAR, SPEED, RETURNS
     constexpr int kRetMS = kPkG + kPkGlobals;               // A MUTE, A SOLO, B MUTE, B SOLO
-    constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT
-    constexpr int kTempo = kMaster + 3, kKey = kTempo + 1, kGlide = kKey + 1;
+    constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT, and GAIN: the whole mix's level into them
+    constexpr int kGain = kMaster + 3;
+    constexpr int kTempo = kMaster + 4, kKey = kTempo + 1, kGlide = kKey + 1;
     // MOTION on the snapshot knobs: three of them, each a WAVE, a SPEED, the KNOB it is on and an AMOUNT
     constexpr int kMotUnits = 3, kMotKnobs = 4;
     constexpr int kMot = kGlide + 1;
@@ -117,7 +118,11 @@ public:
     // ---- patterns
     Pattern pattern (int lane) const;
     // onBarLine: while the clock runs the lane takes it up at the next bar line (a recall). Otherwise at once (an edit).
-    void setPattern (int lane, const Pattern&, bool onBarLine = false);
+    // onBarLine: taken up on the next bar line while the clock runs. afterBeats (with it): not before a move that sets off
+    // on the next beat and takes that long has ended (a recall's notes come in when its glide is over).
+    void setPattern (int lane, const Pattern&, bool onBarLine = false, double afterBeats = 0.0);
+    // GAIN: what the whole mix is turned by on its way into the master chain (dB, 24 either way; 0 in the middle)
+    static float gainDb (float v)               { return (juce::jlimit (0.0f, 1.0f, v) - 0.5f) * 48.0f; }
     static Pattern defaultPattern (int lane);
 
     // ---- MIDI in: notes for the lanes. A lane's number is its channel. Any thread.
@@ -579,6 +584,7 @@ private:
         std::atomic<int> delay { 0 };
         Pattern shared;                         // under patLock
         std::atomic<bool> patDirty { true }, patWait { false };    // patWait: taken up at the next bar line
+        std::atomic<float> patAfter { 0.0f }; std::atomic<bool> patFresh { false }; double patDue = -1.0e18;      // (not before this bar line: setPattern's afterBeats)
         Lane();
         ~Lane();
     };
@@ -662,6 +668,7 @@ private:
     std::vector<std::string> boundIds (Target) const;
     std::vector<int> motionOrder (Target, SFProcessor&, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
+    float mixGainWas = 1.0f;            // GAIN, at the last block's end
     juce::MidiBuffer noMidi;
 
     // MIDI in and clock out (audio thread, but for the queues' other ends)

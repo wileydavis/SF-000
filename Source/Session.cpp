@@ -825,7 +825,7 @@ void Session::bringNotes (const Snapshot& s, const Scope& sc)
             base[(size_t) c] = morph ? v - offset[(size_t) c] : v;
             if (! morph) engine.set (c, v, 0.0);
         }
-        engine.setPattern (l, played (s, l), true);         // (on the next bar line while the clock runs)
+        engine.setPattern (l, played (s, l), true);         // (on the next bar line while the clock runs: nothing travels here)
         genType[(size_t) l] = s.gen[(size_t) l];
         if (s.hasPlayed) engine.set (cx::lane (l, cx::kSeqMute), ! s.heardOn[(size_t) l] && s.seqMuted[(size_t) l] ? 1.0f : 0.0f, glide);
     }
@@ -2472,6 +2472,8 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
     //    a copy of it takes its place to be changed by what follows
     //    (with the audio not yet started there is nothing playing to leave: the change is simply made)
     settleHolds();                  // (a lane a stack knob was holding between two instruments: the one that arrived is its instrument)
+    // (the notes, and what goes with them: at the end of a travel of a bar or more; with a shorter one, or none, on the next bar line)
+    const double notesAfter = glide >= 4.0 ? glide : 0.0;
     if (engine.isPrepared()) for (int l = 0; l < kLanes; ++l) if (laneJumps (s, l)) engine.forkVoice (l, glide);
     // (and each lane's model before its knobs: a model with sound knobs of its own names what the first eight places mean,
     // so the values that follow reach what this snapshot meant by them)
@@ -2511,18 +2513,21 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
         const int k = i < cx::kRet ? i % cx::kPerLane : -1;
         const bool cell = k >= cx::kIns && k < cx::kGen;
         const bool travels = cell && engine.control (i).glides && stays[(size_t) (i / cx::kPerLane)][(size_t) ((k - cx::kIns) / kCells)];
-        // (the key every lane follows goes over on the beat the knobs set off on: with the sound, not ahead of it)
-        engine.set (i, v, travels || i == cx::kKey ? glide : 0.0);
+        // (the key every lane follows goes over with the notes: at the end of a travel of a bar or more, as they do; on the
+        // beat the knobs set off on for a shorter one. Never ahead of the sound.)
+        engine.set (i, v, i == cx::kKey ? (notesAfter > 0.0 ? -notesAfter : glide) : travels ? glide : 0.0);
     }
     for (int l = 0; l < kLanes; ++l)
     {
         if (notes == nullptr || (*notes)[(size_t) l])
         {
-            // What the lane was playing: into its sequencer, on the next bar line while the clock
-            // runs. A snapshot that says what was sounding sets the sequencer's mute to match.
-            engine.setPattern (l, played (s, l), true);
+            // What the lane was playing: into its sequencer, on a bar line while the clock runs: the next one, or, when
+            // the recall travels for a bar or more, the first one at or after the travel's end (the notes of before play
+            // through the glide, and the snapshot's come in with its sound arrived). A snapshot that says what was
+            // sounding sets the sequencer's mute to match, on that line too.
+            engine.setPattern (l, played (s, l), true, notesAfter);
             genType[(size_t) l] = s.gen[(size_t) l];
-            if (s.hasPlayed) engine.set (cx::lane (l, cx::kSeqMute), ! s.heardOn[(size_t) l] && s.seqMuted[(size_t) l] ? 1.0f : 0.0f, glide);      // (on that beat too)
+            if (s.hasPlayed) engine.set (cx::lane (l, cx::kSeqMute), ! s.heardOn[(size_t) l] && s.seqMuted[(size_t) l] ? 1.0f : 0.0f, notesAfter > 0.0 ? -notesAfter : glide);
         }
         if (s.hasSetup)
         {

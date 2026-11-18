@@ -344,6 +344,8 @@ Engine::Engine()
         }
     }
 
+    // GAIN: the whole mix into the master chain, 24 dB either way. Kept with the set, as TAPE, COMP and LIMIT are.
+    named (cx::kGain, "mst.gain", "GAIN", Kind::Bipolar, 0.5f, false, false);
     named (cx::kTempo, "g.tempo", "TEMPO", Kind::Knob, tempoToValue (132.0), false, false);
     auto& key = named (cx::kKey, "g.key", "KEY", Kind::List, 0.0f, true, false);
     for (auto* n : kKeyNames) key.choices.add (n);
@@ -423,6 +425,7 @@ juce::String Engine::valueText (int i) const
     const auto& c = controls[(size_t) i];
     const float v = target (i);
     if (i == cx::kTempo) return juce::String (tempoFor (v), 1);
+    if (i == cx::kGain) { const float db = gainDb (v); return (db > 0.05f ? "+" : "") + juce::String (std::abs (db) < 0.05f ? 0.0f : db, 1) + " DB"; }
     // MOTION's AMOUNT: how much of the knob's turn the wave swings it, and which way
     if (cx::isMot (i) && (i - cx::kMot) % cx::kMotKnobs == 3) { const int a = (int) std::lround ((v - 0.5f) * 200.0f); return a == 0 ? juce::String ("NONE") : (a > 0 ? "+" : "-") + juce::String (std::abs (a)); }
     if (cx::isPk (i))
@@ -480,7 +483,7 @@ Pattern Engine::pattern (int l) const
     return lane[(size_t) l].shared;
 }
 
-void Engine::setPattern (int l, const Pattern& p, bool onBarLine)
+void Engine::setPattern (int l, const Pattern& p, bool onBarLine, double afterBeats)
 {
     stateMoved();
     auto& ln = lane[(size_t) l];
@@ -488,7 +491,7 @@ void Engine::setPattern (int l, const Pattern& p, bool onBarLine)
         const juce::SpinLock::ScopedLockType g (patLock);
         ln.shared = p;
     }
-    if (onBarLine && prepared && running.load()) { ln.patDirty = false; ln.patWait = true; }
+    if (onBarLine && prepared && running.load()) { ln.patAfter = (float) std::max (0.0, afterBeats); ln.patFresh = true; ln.patDirty = false; ln.patWait = true; }
     else { ln.patWait = false; ln.patDirty = true; }
 }
 
@@ -1994,6 +1997,14 @@ void Engine::advanceControls (double beats, int n)
                 gStart[s] = gClock - beats + (std::ceil (ppq - 1e-9) - ppq);
                 gLen[s] = 1.0e-9; gliding[s] = true;
             }
+            else if (len < 0.0f && wasRunning)
+            {
+                // The same, sent to go with a recall's notes: over on the first bar line at or after the end of a travel
+                // that long (as a waiting pattern is taken up: setPattern's afterBeats).
+                const double due = std::ceil ((std::ceil (ppq - 1e-9) + (double) -len) / 4.0 - 1e-6) * 4.0;
+                gStart[s] = gClock - beats + (due - ppq);
+                gLen[s] = 1.0e-9; gliding[s] = true;
+            }
             else { cur[s] = gTo[s]; gliding[s] = false; }
         }
         if (gliding[s])
@@ -2369,7 +2380,14 @@ void Engine::render (juce::AudioBuffer<float>& out)
         {
             // a recalled pattern is taken up on the bar line, to the sample: the block is rendered round it
             const double to = ppq + beats, bar = std::ceil (ppq / 4.0 - 1e-9) * 4.0;
-            if (ln.patWait.load() && bar < to - 1e-12)
+            // (one that waits for a travel to end: the travel sets off on the next beat, and the first bar line at or after
+            // its end is the one)
+            if (ln.patWait.load() && ln.patFresh.exchange (false))
+            {
+                const double after = (double) ln.patAfter.load();
+                ln.patDue = after > 0.0 ? std::ceil ((std::ceil (ppq - 1e-9) + after) / 4.0 - 1e-6) * 4.0 : -1.0e18;
+            }
+            if (ln.patWait.load() && bar < to - 1e-12 && bar >= ln.patDue - 1e-6)
             {
                 if (bar > ppq && ! seqOff) ln.player.render (ppq, bar, spb, n, ln.midi, ppq);
                 {
@@ -2650,6 +2668,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     float inPk = 0.0f;
     tr = clock();
+    // GAIN: the whole mix, as it goes into the master chain (in the middle, where it starts: untouched)
+    {
+        const float db = gainDb (snd[(size_t) cx::kGain]);
+        const float g1 = std::abs (db) < 0.01f ? 1.0f : std::pow (10.0f, db * 0.05f);
+        if (g1 != 1.0f || mixGainWas != 1.0f) for (int ch = 0; ch < 2; ++ch) m2.applyGainRamp (ch, 0, n, mixGainWas, g1);
+        mixGainWas = g1;
+    }
     if (recMore) rec->also (RecSink::kMasterIn, m2.getReadPointer (0), m2.getReadPointer (1), n);
     for (size_t k = 0; k < master.size(); ++k)
     {

@@ -54,7 +54,7 @@ First run:
 | **SNAPSHOT** (top bar, beside REC and RUN) | keep everything on the main screen as a new snapshot. If the clock is running, the last four bars are kept with it as a clip and it is given a profile: nothing to name or tag (see The library, below) |
 | Turn knob 1 to 4 of the snapshot module (a **macro knob**) | push the knobs it is tied to, from wherever they stand, over the GLIDE time |
 | Turn knob 5 to 12, 14 or 15 (a **stack knob**) | **CUE** out: morph the set from wherever it is toward the next of the knob's snapshots, the way the knob is going. **CUE** lit: go through its snapshots in the headphones. A press takes the set to where the knob is: a snapshot on its place, between two that far between them (see The snapshot module, below) |
-| Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on the next bar line while the clock runs; the rest changes at once |
+| Recall a snapshot | sound knobs travel over the GLIDE time; step patterns change on a bar line while the clock runs: the next one, or, with a glide of a bar or more, the first at or after the glide's end; the rest changes at once |
 | **NOTES** (on the snapshot module, in the library; **N**) | whether a recall brings a snapshot's notes. Lit: each lane's sequencer is given what the lane was playing, and plays it. Out: a recall is the sound alone and every sequencer stays as it is (see What a snapshot holds of the playing, below) |
 | Double-click a stack knob (its press on the E16) | the set goes to its nearest snapshot, over the GLIDE time |
 | **CUE** (on the snapshot module; knob 4 pressed) | how the stack knobs are played: lit, they choose in the headphones; out, they morph the set |
@@ -600,6 +600,17 @@ It goes into the mix before the master, so the master's limiter holds it, and ha
 recorded track of its own. What it plays is kept with the session, not in a snapshot; a file
 given to it is copied into the library, as a lane's sample is. Not on the E16 or a pad yet: the keys T and G, or the mouse.
 
+### GAIN: the whole mix, into the master
+
+A knob on the MASTER panel, under TAPE (eighty-second build). It turns the whole mix up or down
+by as much as 24 dB on its way into the master chain; every lane and return keeps its place
+against the others, and the middle is no change. **LIMIT only lifts a mix that is within 6 dB of
+its figure** (further under, it takes it for a breakdown and holds), so a set that reads far
+under LIMIT on the LUFS readout is brought up here until it is within reach, and LIMIT does the
+rest. What comes out is a little under LIMIT's figure, more the harder it is pushed (the rig as
+it opens: -9.6 LUFS at -9, -8.3 at -7.5, -7.1 at -6). Kept with the set, as TAPE, COMP and LIMIT
+are, and not in a snapshot. Not on the E16.
+
 ### FINISH: the master's last stage before its limiter
 
 A plate on the MASTER panel, beside the title. A press steps it: **OFF, 25, 50, 75, 100**; lit
@@ -953,9 +964,17 @@ With GLIDE OFF the crossing takes a fiftieth of a second: enough not to click. W
 crosses, that lane runs both, so a long glide between very different snapshots costs more of the
 processor until it is over.
 
-A switch that cannot travel and has nothing to cross (the key every lane follows, a lane's
-sequencer muted or not) goes over on that same beat when the recall travels, all at once: it
-used to go at once, ahead of the knobs. With GLIDE OFF it still does.
+**The notes come in when the glide is over** (eighty-second build). A recall that travels for
+a bar or more leaves the notes of before playing through the travel; the snapshot's are taken
+up on the first bar line at or after its end (exactly on it for a recall made on a bar line, as
+an armed one and the arrangement's are). What belongs to the notes goes over on that line with
+them: a lane's sequencer muted or not, and the key every lane follows. With GLIDE OFF, or a
+glide shorter than a bar, the notes come on the next bar line as they always did, and those two
+switches on the beat the knobs set off on (at once with GLIDE OFF). The step keys show the
+snapshot's notes from the moment of the recall.
+
+**In the arrangement** a part's MORPH is a glide, so a part's notes begin when its morph is
+over. A part whose morph is as long as the part is one travel on the notes of the part before.
 
 ### The arrangement: snapshots in a line
 
@@ -986,7 +1005,7 @@ whole of it is one travel from the snapshot before.
   the arrangement reaches it, not as the rig happened to stand. (Until the sixty-sixth build it
   recalled that part alone.)
   Each part after is recalled inside the beat before its bar line, so that everything in it sets
-  off on the line: the knobs travel over the morph, patterns change on the bar, and what cannot
+  off on the line: the knobs travel over the morph, the notes come in when the morph is over (on the bar, with a cut), and what cannot
   travel is crossed over, exactly as in any recall. A cut lands on its line too (it is a travel
   of a few hundredths of a beat). At the end the clock stops. RUN stopped by hand puts the
   arrangement down; a recall made by hand while it plays is yours, and the next part still comes.
@@ -1661,7 +1680,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

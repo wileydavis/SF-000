@@ -777,7 +777,7 @@ static void arrangementTest (int& bad)
         ses.recall (C); run (30);                       // (somewhere else first: PLAY brings the first part)
         ses.arrPlay();
         const bool atOnce = ses.baseId == A && std::abs (e.target (cut) - 0.20f) < 1.0e-6f && ses.arrPlaying() && ses.arrPart() == 0 && e.isRunning();
-        float before8 = -1.0f, at9 = -1.0f, at10 = -1.0f, at12 = -1.0f, before16 = -1.0f, after16 = -1.0f, keyBefore8 = -1.0f, keyAfter8 = -1.0f;
+        float before8 = -1.0f, at9 = -1.0f, at10 = -1.0f, at12 = -1.0f, before16 = -1.0f, after16 = -1.0f, keyBefore8 = -1.0f, keyAfter8 = -1.0f, keyBefore12 = -1.0f, keyAfter12 = -1.0f;
         double recalledB = -1.0, recalledC = -1.0, stoppedAt = -1.0;
         bool patB = false;
         for (int i = 0; i < (int) (22.0 * spb / block) && (ses.arrPlaying() || i < 10); ++i)
@@ -791,6 +791,8 @@ static void arrangementTest (int& bad)
             auto crossed = [&] (double at) { return p0 < at && p1 >= at; };
             if (crossed (7.97)) { before8 = e.shown (cut); keyBefore8 = e.shown (cx::kKey); }
             if (crossed (8.1)) keyAfter8 = e.shown (cx::kKey);
+            if (crossed (11.9)) keyBefore12 = e.shown (cx::kKey);
+            if (crossed (12.1)) keyAfter12 = e.shown (cx::kKey);
             if (crossed (9.0)) at9 = e.shown (cut);
             if (crossed (10.0)) at10 = e.shown (cut);
             if (crossed (12.05)) { at12 = e.shown (cut); patB = ses.pattern (0).steps[0].on; }
@@ -798,13 +800,13 @@ static void arrangementTest (int& bad)
             if (crossed (16.2)) after16 = e.shown (cut);
             if (stoppedAt < 0.0 && ! e.isRunning()) stoppedAt = p1;
         }
-        const bool onTheBar = recalledB > 7.4 && recalledB < 8.0 && std::abs (before8 - 0.20f) < 0.004f && keyBefore8 == 0.0f && std::abs (keyAfter8 - 0.25f) < 1.0e-6f;
+        const bool onTheBar = recalledB > 7.4 && recalledB < 8.0 && std::abs (before8 - 0.20f) < 0.004f && keyBefore8 == 0.0f && keyAfter8 == 0.0f && keyBefore12 == 0.0f && std::abs (keyAfter12 - 0.25f) < 1.0e-6f;      // (the key: with the notes, when the travel is over)
         const bool travels = std::abs (at9 - 0.35f) < 0.012f && std::abs (at10 - 0.50f) < 0.012f && std::abs (at12 - 0.80f) < 1.0e-4f && patB;
         const bool cuts = recalledC > 15.4 && recalledC < 16.0 && std::abs (before16 - 0.80f) < 1.0e-4f && std::abs (after16 - 0.40f) < 1.0e-4f && ! ses.pattern (0).steps[0].on;
         const bool ends = ! ses.arrPlaying() && ! e.isRunning() && stoppedAt > 19.9 && stoppedAt < 20.0 + 1.0e-6 && ses.arrPart() == -1;
         say (atOnce && onTheBar && travels && cuts && ends,
              "PLAY from stopped brings its first part at once and starts the clock. The second is recalled inside the beat before its bar (at beat " + juce::String (recalledB, 2) + ") and nothing moves until the bar line: the filter is where it was at 7.97 ("
-                 + juce::String (before8, 3) + "), the key goes over on the line, and the filter travels its bar (" + juce::String (at9, 3) + " a beat in, " + juce::String (at10, 3) + " at half, " + juce::String (at12, 3)
+                 + juce::String (before8, 3) + "), the filter travels its bar and the key goes over with the notes at its end (" + juce::String (at9, 3) + " a beat in, " + juce::String (at10, 3) + " at half, " + juce::String (at12, 3)
                  + " when it is done). A part that cuts is there on its line (" + juce::String (before16, 3) + " before, " + juce::String (after16, 3) + " after). At its end the clock stops, short of the next bar (beat " + juce::String (stoppedAt, 3) + ")");
         if (! (atOnce && onTheBar && travels && cuts && ends)) std::printf ("        (at once %d, on the bar %d [B at %.3f, key %.3f then %.3f], travels %d [pattern %d], cuts %d [C at %.3f], ends %d)\n", atOnce, onTheBar, recalledB, keyBefore8, keyAfter8, travels, patB, cuts, recalledC, ends);
 
@@ -835,13 +837,26 @@ static void arrangementTest (int& bad)
         e.render (b);
         const float keyNow = e.shown (cx::kKey);
         const bool said = std::abs (e.target (cx::kKey) - 0.25f) < 1.0e-6f;
-        while (e.songPos() < 3.05) e.render (b);
+        // (a bar's travel from beat 3: over at beat 7, and the key goes with the notes, on the bar line after)
+        while (e.songPos() < 7.9) e.render (b);
         const float keyThen = e.shown (cx::kKey);
+        while (e.songPos() < 8.05) e.render (b);
+        const float keyEnd = e.shown (cx::kKey);
+        // (a travel shorter than a bar: on the beat its knobs set off on)
         ses.userSet (cx::kGlide, 0.0f);
         ses.recall (A); e.render (b);
         const float keyCut = e.shown (cx::kKey);
+        while (e.songPos() < 9.4) e.render (b);
+        ses.recallOver (B, 2.0, true);
+        e.render (b);
+        const float keyShortNow = e.shown (cx::kKey);
+        while (e.songPos() < 10.05) e.render (b);
+        const float keyShort = e.shown (cx::kKey);
+        ses.recall (A); e.render (b);
         e.setRunning (false); run (4);
-        say (said && keyNow == 0.0f && std::abs (keyThen - 0.25f) < 1.0e-6f && keyCut == 0.0f, "a recall that travels takes the key over on the beat its knobs set off on (asked for at beat 2.4: still the old key then, the new one after beat 3); with GLIDE off it is there at once");
+        say (said && keyNow == 0.0f && keyThen == 0.0f && std::abs (keyEnd - 0.25f) < 1.0e-6f && keyCut == 0.0f && keyShortNow == 0.0f && std::abs (keyShort - 0.25f) < 1.0e-6f,
+             "a recall that travels for a bar or more takes the key over with its notes, on the first bar line at or after the travel's end (asked for at beat 2.4 over a bar: still the old key at beat 7.9, the new one after beat 8); "
+             "one that travels for less, on the beat its knobs set off on; with GLIDE off it is there at once");
 
         // ---- printed
         ses.recall (B); run (20);
@@ -1791,6 +1806,124 @@ static void stereoLoopTest (int& bad)
     dir.deleteRecursively();
 }
 
+static void gainAndGlideNotesTest (int& bad)
+{
+    using namespace sf0;
+    // GAIN (the whole mix into the master chain), and a recall's notes coming in at the end of its glide.
+    // ---- GAIN
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> buf (2, 256);
+        auto loud = [&] (double seconds)
+        {
+            // (the loudest three seconds' loudness the master's meter says over the last of it)
+            float most = -100.0f;
+            const int blocks = (int) (seconds * 48000.0 / 256.0);
+            for (int i = 0; i < blocks; ++i) { buf.clear(); e.render (buf); if (i > blocks * 2 / 3) most = std::max (most, e.lufs.load()); }
+            return most;
+        };
+        const bool middle = std::abs (Engine::gainDb (e.target (cx::kGain))) < 1.0e-6f && e.valueText (cx::kGain) == "0.0 DB" && ! e.control (cx::kGain).snapshot;
+        e.setRunning (true);
+        const float open = loud (24.0);
+        // every lane's LEVEL down: a quiet set, further under LIMIT's figure than LIMIT lifts
+        std::vector<float> levels;
+        for (int l = 0; l < kLanes; ++l)
+            for (int k = 0; k < kLaneKnobs; ++k)
+                if (const auto& kd = e.laneKnob (l, k); kd.param != nullptr && juce::String (kd.param) == "level") { levels.push_back (e.target (cx::lane (l, k))); ses.userSet (cx::lane (l, k), e.target (cx::lane (l, k)) * 0.62f); }
+        const float quiet = loud (40.0);
+        // GAIN up 14 dB: every lane as it was against the others, the mix that much up into the master, and LIMIT has it
+        const auto taken = ses.take();
+        ses.userSet (cx::kGain, 0.5f + 14.0f / 48.0f);
+        const bool says = e.valueText (cx::kGain) == "+14.0 DB";
+        const float up = loud (40.0);
+        // a snapshot recalled does not move it; the set keeps it
+        ses.recall (taken);
+        for (int i = 0; i < 400; ++i) { buf.clear(); e.render (buf); }
+        const bool stays = std::abs (Engine::gainDb (e.target (cx::kGain)) - 14.0f) < 0.01f;
+        Engine e2; e2.prepare (48000.0, 256);
+        Session s2 (e2, false);
+        s2.takeState (ses.stateVar());
+        const bool kept = std::abs (Engine::gainDb (e2.target (cx::kGain)) - 14.0f) < 0.01f;
+        const bool ok = middle && says && open > -11.5f && quiet < open - 6.0f && up > quiet + 6.0f && up > -11.5f && stays && kept;
+        if (! ok) ++bad;
+        std::printf ("  %s: GAIN turns the whole mix up into the master chain: in the middle it does nothing; with every lane's LEVEL down the set sits far under LIMIT's figure (%.1f LUFS, from %.1f) and GAIN up 14 dB brings it "
+                     "back to where LIMIT has it (%.1f); a recalled snapshot leaves it, and the set keeps it\n", ok ? "ok  " : "FAIL", (double) quiet, (double) open, (double) up);
+        if (! ok) std::printf ("    (middle %d says %d (%s) stays %d kept %d)\n", (int) middle, (int) says, e.valueText (cx::kGain).toRawUTF8(), (int) stays, (int) kept);
+    }
+    // ---- a recall's notes and its glide. One hat alone: snapshot A has a step on the second beat, B on the fourth.
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> buf (2, 256);
+        int hat = -1;
+        for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "closed_hat") hat = l;
+        for (int l = 0; l < kLanes; ++l) { Pattern none; e.setPattern (l, none); }
+        ses.userSet (cx::kTempo, tempoToValue (120.0));
+        ses.userSet (cx::lane (hat, cx::kSendA), 0.0f); ses.userSet (cx::lane (hat, cx::kSendB), 0.0f);
+        Pattern pa, pb; pa.steps[4].on = true; pa.steps[4].vel = 1.0f; pb.steps[12].on = true; pb.steps[12].vel = 1.0f;
+        ses.setPattern (hat, pa);
+        for (int i = 0; i < 200; ++i) { buf.clear(); e.render (buf); }
+        const auto A = ses.take();
+        ses.setPattern (hat, pb);
+        const auto B = ses.take();
+        // (and B again with the hat's own sequencer muted: C)
+        ses.userSet (cx::lane (hat, cx::kSeqMute), 1.0f);
+        for (int i = 0; i < 400; ++i) { buf.clear(); e.render (buf); }
+        const auto C = ses.take();
+        ses.userSet (cx::lane (hat, cx::kSeqMute), 0.0f);
+        std::vector<float> heard;
+        const double beatN = 24000.0;
+        // from the top on `from` with GLIDE at `glideAt` (its place on the list); `to` recalled when the clock is at `at` beats
+        // (over `over` beats where that is not under 0, as the arrangement and an armed recall do); then which beat of
+        // each of the first six bars had a hit: '2', '4', or '-' for neither
+        auto play = [&] (juce::int64 from, juce::int64 to, int glideAt, double at, double over)
+        {
+            e.setRunning (false);
+            ses.userSet (cx::kGlide, 0.0f);
+            ses.recall (from);
+            for (int i = 0; i < 400; ++i) { buf.clear(); e.render (buf); }
+            ses.userSet (cx::kGlide, (float) glideAt / 11.0f);
+            heard.clear();
+            e.setRunning (true);
+            bool done = false;
+            while (heard.size() < (size_t) (24.5 * beatN))
+            {
+                if (! done && (double) heard.size() / beatN >= at) { if (over >= 0.0) ses.recallOver (to, over, true); else ses.recall (to); done = true; }
+                buf.clear(); e.render (buf);
+                for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n)));
+            }
+            e.setRunning (false);
+            juce::String s;
+            for (int bar = 0; bar < 6; ++bar)
+            {
+                auto lev = [&] (int beat) { double q = 0; const size_t a = (size_t) ((bar * 4 + beat) * beatN), b = a + 7200; for (size_t n = a; n < b && n < heard.size(); ++n) q += (double) heard[n] * heard[n]; return 10.0 * std::log10 (q / 7200.0 + 1.0e-12); };
+                const double l2 = lev (1), l4 = lev (3);
+                s << (l2 > -60.0 && l2 > l4 + 10.0 ? "2" : l4 > -60.0 && l4 > l2 + 10.0 ? "4" : "-");
+            }
+            return s;
+        };
+        // GLIDE OFF, recalled in the first bar: the next bar line, as ever
+        const auto off = play (A, B, 0, 1.5, -1.0);
+        // GLIDE 2 BARS, recalled at beat 1.5: the knobs set off on beat 2 and arrive on beat 2 of the third bar; the notes
+        // come in on the bar line after (the fourth bar). Until then, the notes of before.
+        const auto two = play (A, B, 4, 1.5, -1.0);
+        // made in the beat before a bar line, as an armed recall and the arrangement make theirs, over two bars: the travel
+        // is bars two and three, and the notes come in exactly on its end (the fourth bar)
+        const auto armed = play (A, B, 0, 3.4, 8.0);
+        // a glide shorter than a bar: the next bar line
+        const auto half = play (A, B, 2, 1.5, -1.0);
+        // the sequencer's mute goes with the notes: C over 2 BARS, the hat plays on through the glide and stops on that line
+        const auto mute = play (A, C, 4, 1.5, -1.0);
+        const bool ok = off == "244444" && two == "222444" && armed == "222444" && half == "244444" && mute == "222---";
+        if (! ok) ++bad;
+        std::printf ("  %s: a recalled snapshot's notes come in when its glide is over: GLIDE OFF, on the next bar line; over two bars, the notes of before play through the travel and the snapshot's begin on the first bar line at "
+                     "or after its end (exactly on it for a recall made on a bar line, as an armed one and the arrangement's are); a glide shorter than a bar, the next bar line; and a lane's sequencer muted in the "
+                     "snapshot stops with them, not before\n", ok ? "ok  " : "FAIL");
+        if (! ok) std::printf ("    (which beat of each of six bars was hit: off %s, two bars %s, on the line %s, half a bar %s, muted %s)\n", off.toRawUTF8(), two.toRawUTF8(), armed.toRawUTF8(), half.toRawUTF8(), mute.toRawUTF8());
+    }
+}
+
 static void samplerTest (int& bad)
 {
     using namespace sf0;
@@ -2539,7 +2672,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -4969,6 +5102,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     pocketCurveTest (bad);
     eqTest (bad);
     stereoLoopTest (bad);
+    gainAndGlideNotesTest (bad);
     arrsKeptTest (bad);
 
     {
