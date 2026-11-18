@@ -48,7 +48,7 @@ static constexpr int kKickSample = 6, kKickForge = 7;
 // of them through four kicks with no step between: mellow and dubby, punchy and tight, boomy, distorted.
 //   IMPACT  the first thirty-odd thousandths of a second: a piece of the lane's own file (a field recording: a door, a
 //           stone, a tool), from POSITION, with its lows taken out and brought to one strength wherever it is from. With
-//           no file, a burst of noise. This is the one part that is not the same hit after hit.
+//           no file, a burst of noise in a band POSITION places. This is the one part that is not the same hit after hit.
 //   BODY    a sine that starts at the same point of its wave every hit (the low end is the same every time), falling from
 //           above onto the kick's note (the key's root with KEY FOLLOW); for its first thirtieth of a second it bends
 //           its own pitch with its own output, which is where the knock is; harmonics that die sooner than the
@@ -151,7 +151,7 @@ public:
         return p;
     }
     bool acceptsFiles() const override { return true; }
-    juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL OR LAYER MODEL: SAMPLE), OR A RECORDING FOR KICK FORGE'S IMPACT"; }
+    juce::String fileHint() const override { return "DROP A SAMPLE: FOR SAMPLE, OR FORGE'S IMPACT"; }
     void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr)); }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
     void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
@@ -262,6 +262,7 @@ public:
         // it lasts, the clipper's drive and what it is turned by after, and whether it feeds the ground
         float fgPrev = 0, fgHarm = 0, fgBody = 1, fgImp = 0, fgSub = 1, fgLo = 0, fgLoK = 0, fgHpK = 0, fgHp1 = 0, fgHp2 = 0, fgImpTau = 0.006f, fgClip = 1, fgOut = 1, fgBright = 0;
         double fgPos = -1.0;
+        float fgNoise = 1.0f;             // with no file: what the impact's noise, through its band, is turned by to be one strength
         bool fgFeeds = false;
         float level() const { return active ? vel * std::exp (-(float) t / std::max (0.01f, decay)) : 0.0f; }
     };
@@ -459,7 +460,7 @@ public:
         v.fgLoK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) osr);
         v.lp = std::min (18000.0f, f.lp * std::pow (4.0f, tone)) * echo;
         v.fgBright = std::min (6000.0f, v.lp * 2.0f);                           // (the filter opens on the hit and closes onto v.lp)
-        v.click = c.v (CLICK) * 2.0f * 0.5f;
+        v.click = c.v (CLICK) * f.impact * 1.2f;            // (the pulse on the front of it: as much as the impact, so next to none on the mellow kick)
         v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
         v.fgOut = forgeTrim (ch) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
         // the impact: from the lane's file at POSITION (thirty-five thousandths of a second of it, a little either side
@@ -468,6 +469,13 @@ public:
         v.fgImpTau = f.impTau;
         v.fgHpK = 1.0f - std::exp (-kTwoPi * f.impHp / (float) osr);
         v.fgPos = -1.0;
+        {
+            // with no file POSITION is the noise's colour, a band from a low thud (400 Hz) to a bright tick (12 kHz), so
+            // the knob is never one that does nothing
+            const float hz = 400.0f * std::pow (30.0f, c.v (FGPOS));
+            v.clickBp.set (hz, 1.2f, osr);
+            v.fgNoise = 0.2f / (0.577f * std::sqrt (2.617f * hz / (float) osr));
+        }
         if (smp != nullptr && smp->length() > 4096 && v.fgImp > 0.0f)
         {
             const auto reg = regionFrom (c, SSTART, *smp, SGAIN);
@@ -513,7 +521,7 @@ public:
                 x = 0.5f * (s->read (0, v.fgPos, 0.5) + s->read (1, v.fgPos, 0.5));
                 v.fgPos += 0.5;
             }
-            else x = rng.next() * 0.35f;
+            else x = v.clickBp.tickBP (rng.next()) * v.fgNoise;
             v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;
             v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
             const float tail = clamp01 ((t - 0.025f) / 0.010f);         // (and out by its end, whatever its decay)

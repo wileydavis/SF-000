@@ -4614,8 +4614,130 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      held at that place after the sound has settled (not a turn in motion), on a fresh rig with
      everything else at rest; and a lane left out for want of its file.
 
+## Granular, the sampler and KICK FORGE, built whole to be tested whole (Nov 17, 22:29): seventy-ninth build
+
+703. **You**, 21:57: "how do we make this a discovery tool for finding interesting sounds hiding in
+     the snapshot library? Ideall something where I can move around and hear interpolations. If
+     this was your library of discovered sounds, what would you want from it in order to discover
+     the most sonic goodness?" Answered, not built: a place to scrub between any two (or four)
+     snapshots by hand and hear it, a map of the library to walk, and a feed of the interesting
+     spots found ahead of time, each to keep or dismiss. 22:29: "then we'll work out the discovery
+     tool details afterward." It waits for that.
+704. **You**, 22:00: "also, because I think samples and granular synthesis will become a very heavy
+     part of the workflow with sf-000 (enables me to use field recordings and make complex sounds
+     without always haveing to build new tools i to this instrument, how should we make those two
+     models as powerful as they can be in SF-000?" 22:15: "does every lane have the sampler?"
+     (Every lane but PERC, which is the struck membrane: KICK, the two hats and CLAP, BASS,
+     RUMBLE, LEAD, CHORD and PAD have SAMPLE among their models, and VOICE is one.) 22:24: "Oka, I
+     like all the granular and sampler improvements."
+705. **You**, 22:24: "Also, for kick, what can we build that would be the most intense and unique
+     but nice sounding kick synth? Just something that would absolutely wreck a club (in a good
+     way) and make people wonder how I got that kick sound?" 22:25: "but the kick van go from
+     mellow and dubby to punchy and tioght to boomy, to distorted all in a smooth progressing way".
+706. **You**, 22:29: "Do everything on the granular, sampler, and kick, then we'll work out the
+     discovery tool details afterward. Also, when the kick is in the mode of this new synth, let's
+     make the faceplate the distressed panel but a dark red instead of black just on the kick
+     module." 22:30: "ideally, just build it all and I will test complete. Like the minuteman
+     missile program :) You've been nailing it with the modules, so i trust the work and think a
+     complete test is the best use of time." So it was built as one and pushed once.
+707. **A model can have sound knobs of its own.** *Mine, and what the rest stands on.* A lane has
+     twelve knobs; the first eight are its sound. A model named in the lane's list (`Rig.h`,
+     `ModelKnobs`) puts its own eight there while it is the lane's MODEL: the names on the panel
+     change, and what those places moved before is in CONFIG, where it stays as it was left.
+     - **A place keeps its control id** (`lane.pad.k1`...), so everything stored by id (snapshots,
+       macro ties, the E16's numbers) still points at the same place; what the place means is
+       its lane's model's. A stack knob or a recall that changes the model changes the meaning
+       with it: the model is applied before the knobs.
+     - **Chosen by hand, the new knobs stand where they start**, from the panel with the mouse as
+       from the E16. (Caught on a picture before it left: chosen with the mouse they went back to
+       where the lane's usual knobs had been at the next macro touched. `Session::setupByHand`.)
+     - **A snapshot says which lists it was taken on** (`"lists": 2`). One without it is from
+       before: its models' places are moved to the longer lists (BASS and LEAD have GRANULAR
+       last, KICK has KICK FORGE after SAMPLE: a model's number never moves), and a PAD on
+       GRANULAR has its six places turned into what they did then (COLOR was the grains' size,
+       DETUNE their scatter and their pitch), so it sounds as it did. Every control this build
+       adds is put where it does nothing for a snapshot from before it. Old snapshots are not
+       rewritten in their files: they are read this way each time.
+     - **A chip the analysis makes of lanes from two builds' snapshots** says lane by lane which
+       lists each lane was on (`listsBy`), and SF-000 reads each lane by its own. Without it a
+       new kick put into an old snapshot would have been read on the old list.
+     - **The E16's little screens still show the lane's usual names** on those eight knobs while
+       such a model is on: its scene is sent once. The knobs do what the big screen says.
+708. **GRANULAR.** It had two knobs borrowed from other things. Now, on PAD and also BASS, LEAD
+     and CHORD, six of its own on the panel: **POSITION** (where in the source the grains come
+     from), **SCAN** (how fast that place travels: stopped in the middle, a held note is a frozen
+     moment; backwards to the left), **SIZE** (5 ms to half a second), **GRAINS** (gaps between
+     them, to eight at once), **SPRAY** (how far from the place a grain may start), **PITCH**
+     (how far a grain's pitch may stray). In CONFIG: **SPREAD** (PITCH by cents, by octaves, or
+     by fifths and octaves), **SHAPE** (struck, rounded, flat), **REVERSE** (how many play
+     backwards), **CLOCK** (free, or a grain a tick of the song's grid: 1/4 to 1/32, triplets),
+     **FOLLOW** (the note sets the pitch, or the source plays at its own whatever the note),
+     **SYNC** (the source spans 1 beat to 8 bars of the song: a recorded loop holds the tempo
+     with its pitch unchanged. This is the stretch). Where each starts is what GRANULAR did
+     before, so nothing that played it changes until one is turned.
+709. **The sampler.** *Mine, the particulars:*
+     - **Slices on every lane that plays a sample.** A file's own onsets cut it (every one found,
+       not the first 32; eight equal parts where there are fewer than two). BASS, LEAD, CHORD,
+       PAD: **NOTES: SLICES**, C3 the first slice and each key above it the next, each at the
+       pitch it was recorded at. KICK, the hats, CLAP, RUMBLE: **SLICE** (which one a hit plays;
+       all the way down, the whole as before) and **CYCLE** (OFF, ROUND: the next each hit,
+       RANDOM).
+     - **LOOP** and **CROSSFADE** (PLAY HELD): what plays goes round while the note is held, its
+       end faded into its start at equal power.
+     - **VEL START** and **RANDOM START**: a soft note starts further in; each note starts
+       somewhere else.
+     - **Five minutes of a file** on BASS, LEAD, CHORD and PAD (it was one), as VOICE has. The
+       drums keep one minute. A file is read whole into memory when it is loaded: five minutes is
+       about a quarter of a gigabyte, and a second or two of the screen standing still.
+     - **RESAMPLE**, a key beside LOAD in a lane's CONFIG: the bars of the snapshot last taken or
+       recalled (its whole output, as kept without loss) are written into the library's samples
+       and become that lane's sample. The lane's model is left as it is.
+     - **Cut, and said:** the analysis finding the good parts of a long recording. Not begun.
+710. **KICK FORGE**, the kick's eighth model. Three parts tied to each other: **IMPACT**, the
+     first thirty thousandths of a second, a piece of the lane's own file from **POSITION** with
+     its lows taken out and brought to one strength wherever it is from (with no file, noise in a
+     band POSITION places, so the knob is never one that does nothing), the
+     one part that differs hit to hit; **BODY**, a sine that starts at the same point of its wave
+     every hit and falls onto the kick's note (the key's root with KEY FOLLOW), bending its own
+     pitch with its own output for its first thirtieth of a second, its harmonics dying sooner
+     than its fundamental, its lows under 120 Hz kept clean and its mids driven; **GROUND**, the
+     body's own tail held in a small room of delays under 150 Hz, rung at the kick's note, and
+     held down while the body sounds. A soft clipper over the impact and the body.
+     - **CHARACTER** is one curve through four kicks (mellow and dubby, punchy and tight, boomy,
+       distorted) with no step on it, held to one loudness: measured at eleven places with the
+       kick alone, it is within a tenth of a dB of itself at each, and 2 dB over KICK 909-TYPE
+       alone. The knobs on the panel are TUNE, CHARACTER, IMPACT, BODY, GROUND, POSITION, TONE,
+       DRIVE (then DECAY, DENSITY, FILTER, LEVEL as ever); PUNCH, PITCH TIME and CLICK are in
+       CONFIG and move it from where CHARACTER has them.
+     - **Chosen by hand it puts LAYER at nought and the crossover (SPLIT) off.** The rig's kick is
+       a 909 with an 808 under it and a crossover that takes the 909's own lows out for the 808:
+       left on, FORGE had no low end of its own. Both are in CONFIG to bring back.
+     - **The plate.** While KICK FORGE is the kick's model its module's faceplate, on the dark
+       instrument, is the same worn plate dyed dark red. Only that module. The light instrument
+       is unchanged.
+     - The name is mine. Say another and it is that.
+
 ## Not verified
 
+- **The seventy-ninth build has not been heard by anyone (707 to 710).** All of it is checked by
+  measurement: GRANULAR's knobs each do what they say on a pad's own source; a sample's slices,
+  loop and starts on a file of four tones; KICK FORGE's loudness along CHARACTER, its body the
+  same hit to hit, its ground between the kicks, its impact from the file. Whether KICK FORGE is
+  the kick you asked for, whether the four kicks on CHARACTER are the right four and the way
+  between them good, whether the ground is too much or too little, are yours to hear: every
+  figure in its table (`suite/modules/Drums.cpp`, `kForge`) is a first setting.
+- **RUMBLE's SLICE and CYCLE** are there and not measured (its sample goes through its room).
+- **The red plate's scratches.** The plate is drawn here and is red; the scratches are the Mac's
+  drawing, by the same code as the black plates', and this machine's pictures draw them on none.
+- **GRANULAR on BASS, LEAD and CHORD is level with their other models by measurement** (`--audit
+  N --model ALL --level`, its own source, the lane's own notes): with a file of yours it is as
+  loud as the file makes it. GAIN and NORMALISE are there for that.
+- **A five-minute file** has not been loaded here: the figures for memory and the pause are
+  arithmetic.
+- **RESAMPLE on the Mac**, with a real snapshot's kept bars and the library's folder.
+- **Your snapshots with a pad on GRANULAR (27 of them)** are converted as 707 says and measure
+  within a dB of what they were lane by lane (grains are scattered by chance, so no two runs
+  match exactly). By ear they are yours to check.
 - **The M key by ear, and on the Mac (699).** Checked here on the engine's own figures (which
   lanes are held, how much of each, what each lane is at the chip, that nothing is left behind)
   and on one of your pairs by measurement. Whether a blend sounds good on your sets, whether

@@ -153,6 +153,14 @@ int Engine::mapOf (int l, SFProcessor& p) const
     return 0;
 }
 
+unsigned int Engine::lanePlate (int l) const
+{
+    const auto& d = lanes()[(size_t) l];
+    const auto* v = lane[(size_t) l].voice.load();
+    const int m = v != nullptr ? v->map.load() : 0;
+    return m > 0 && m <= (int) d.own.size() ? d.own[(size_t) m - 1].plate : 0u;
+}
+
 const KnobDef& Engine::laneKnob (int l, int k) const
 {
     const auto& d = lanes()[(size_t) l];

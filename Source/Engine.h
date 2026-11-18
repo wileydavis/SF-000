@@ -281,6 +281,7 @@ public:
     // ---- a model's own sound knobs (Rig.h, ModelKnobs)
     // The knobs a lane has now: its usual ones, or its model's own in the eight sound places.
     const KnobDef& laneKnob (int lane, int k) const;
+    unsigned int lanePlate (int lane) const;        // its model's own faceplate colour (ARGB), or 0: the lane's usual
     // The lane's model may have changed: its knobs reach what that model's knobs are, and are named for them. fresh: a
     // place whose meaning changed starts where that control starts (a model chosen by hand); else every place keeps the
     // value it has (a snapshot or a file is being put back, and brings its own). True if the knobs changed.

@@ -498,12 +498,17 @@ void Session::setConfig (int index, int v7)
         if (onChange) onChange();
         return;
     }
-    engine.setSetup (cfg, sp.id, v);
-    // (another model, with sound knobs of its own: the places it renamed start where those start, and that is where they stand)
-    if (cfg.kind == 0 && sp.id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (cfg.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
+    setupByHand (cfg, sp.id, v);
     cfgTouched = sp.id;
     touch();
     if (onChange) onChange();
+}
+
+void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
+{
+    engine.setSetup (t, id, v);
+    // (another model, with sound knobs of its own: the places it renamed start where those start, and that is where they stand)
+    if (t.kind == 0 && id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (t.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
 }
 
 void Session::userSet (int i, float v, bool sounding)
@@ -4595,7 +4600,7 @@ std::vector<std::pair<juce::int64, juce::uint32>> lit;       // (and nothing of 
 //     COLOR, RES, POCKET DEPTH, DECAY and ATTACK: those go into the lane's CONFIG as they stood, and the places become
 //     POSITION at the start of the source, SCAN at the pace the grains drifted at, SIZE from COLOR, four GRAINS at once,
 //     SPRAY and PITCH from DETUNE: what GRANULAR did with those two knobs, so it sounds as it did.
-static void fromListsBefore (Snapshot& s, const Engine& e)
+static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int, kLanes>& taken)
 {
     static std::array<int, kLanes> counts {};       // (how many models each lane has now: the same for as long as this runs)
     if (counts[0] == 0)
@@ -4607,6 +4612,7 @@ static void fromListsBefore (Snapshot& s, const Engine& e)
     for (int l = 0; l < kLanes; ++l)
     {
         const juce::String module (lanes()[(size_t) l].module);
+        if (taken[(size_t) l] >= Session::kListsNow) continue;         // (this lane is of now)
         const int before = module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
         // (what this build added, where it changes nothing: the lane is not left with what the snapshot before it set)
         if (s.hasSetup)
@@ -4731,7 +4737,17 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         for (int l = 0; l < kLanes && l < fl.size(); ++l) s.laneFiles[(size_t) l] = fl[l].toString();
         s.hasFiles = true;
     }
-    if ((int) v.getProperty ("lists", 1) < Session::kListsNow) fromListsBefore (s, e);
+    {
+        // which lists it was taken on: one figure for all of it, or (a chip the analysis made of lanes from snapshots of
+        // different builds) a figure a lane, `listsBy`
+        std::array<int, kLanes> taken;
+        taken.fill ((int) v.getProperty ("lists", 1));
+        if (auto* by = v.getProperty ("listsBy", var()).getArray())
+            for (int l = 0; l < kLanes && l < by->size(); ++l) if ((*by)[l].isInt() || (*by)[l].isInt64()) taken[(size_t) l] = (int) (*by)[l];
+        bool any = false;
+        for (int t : taken) any = any || t < Session::kListsNow;
+        if (any) fromListsBefore (s, e, taken);
+    }
     return s;
 }
 

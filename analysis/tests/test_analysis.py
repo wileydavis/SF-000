@@ -343,6 +343,22 @@ class Making(unittest.TestCase):
         self.assertEqual(out["ext"]["sf000analysis"], {"base": "aaaaaaaaaaaaaaaa-1", "lanes": {"bass": "bbbbbbbbbbbbbbbb-2", "chord": None}, "made": 0x1a2b})
         self.assertEqual(base["values"]["bass.cut"], 1.0, "the base itself is not changed")
 
+    def test_a_lane_from_another_build_says_which_lists_it_was_taken_on(self):
+        # (FORMAT.md, `lists`: a model's place and a model's own knobs mean what the build that took them made of them)
+        old, new = self.snap("aaaaaaaaaaaaaaaa-1", "A"), self.snap("bbbbbbbbbbbbbbbb-2", "BB", slots=("bass", "kick", "chord"))
+        new["lists"] = 2
+        out = compose(old, {"bass": new}, "x", "cccccccccccccccc", when_ms=1)
+        self.assertEqual(out["listsBy"], [1, 2, 1], "kick and chord the base's, bass the newer snapshot's, by the base's places")
+        self.assertEqual(out["lists"], 1)
+        back = compose(new, {"kick": old}, "x", "cccccccccccccccc", when_ms=1)
+        self.assertEqual(back["listsBy"], [2, 1, 2])
+        again = compose(out, {"kick": new, "chord": new}, "x", "cccccccccccccccc", when_ms=1)
+        self.assertEqual(again.get("lists"), 2, "all of now: one figure")
+        self.assertNotIn("listsBy", again)
+        same = compose(old, {"bass": self.snap("dddddddddddddddd-3", "D")}, "x", "cccccccccccccccc", when_ms=1)
+        self.assertNotIn("lists", same, "all from before: as snapshots from before are")
+        self.assertNotIn("listsBy", same)
+
 
 # ---------------------------------------------------------------------------------------------- morphs
 from sfa.morph import even_places, lane_change, look, tags, unevenness, refs_in, brand  # noqa: E402

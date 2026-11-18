@@ -126,7 +126,7 @@ static std::vector<SynthModel> bassModels()
     { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.6f; x.sus = 0.8f; x.rel = 0.08f; x.envMul = 0.5f; m.push_back (x); }
     { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.8f; x.sus = 0.9f; x.rel = 0.08f; x.fDec = 0.3f; x.envMul = 0.3f; m.push_back (x); }
     // (SF-000) GRANULAR, as PAD has it, with a bass's envelope and one voice. Last on the list: every place before it is who it was.
-    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.mono = true; x.att = 0.004f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.12f; x.envMul = 0.0f; m.push_back (x); }
+    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 2.1f /* (SF-000) level with BASS's other models: --audit 6 --model ALL --level */; x.filt = F_SVF; x.mono = true; x.att = 0.004f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.12f; x.envMul = 0.0f; m.push_back (x); }
     return m;
 }
 static std::vector<SynthModel> leadModels()
@@ -146,7 +146,7 @@ static std::vector<SynthModel> leadModels()
     { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; m.push_back (x); }
     { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF /* (SF-000) was none */; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
     // (SF-000) GRANULAR (see BASS), last on the list.
-    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.att = 0.01f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.4f; x.envMul = 0.0f; x.ensemble = 0.3f; m.push_back (x); }
+    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 3.5f /* (SF-000) level with LEAD's and CHORD's other models: --audit 8 --model ALL --level */; x.filt = F_SVF; x.att = 0.01f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.4f; x.envMul = 0.0f; x.ensemble = 0.3f; m.push_back (x); }
     return m;
 }
 static std::vector<SynthModel> padModels()
@@ -401,7 +401,7 @@ public:
     {
         // One sample for the plugin: MODEL's and LAYER MODEL's (and GRANULAR's and WAVETABLE's, where there are).
         const bool grains = std::any_of (models.begin(), models.end(), [] (const SynthModel& m) { return m.engine == E_GRAIN; });
-        return grains ? "DROP SAMPLE (MODEL OR LAYER MODEL: SAMPLE, GRANULAR; WAVETABLE ON TABLE SAMPLE)" : "DROP SAMPLE (MODEL OR LAYER MODEL: SAMPLE)";
+        return grains ? "DROP A SAMPLE: FOR SAMPLE, GRANULAR, WAVETABLE" : "DROP SAMPLE (MODEL OR LAYER MODEL: SAMPLE)";      // (SF-000) short enough to be read beside RESAMPLE and LOAD
     }
     void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); buildFrames(); } }      // (SF-000) five minutes of a file, as VOICE has (it was one): a field recording to cut slices and grains from
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
@@ -1447,7 +1447,7 @@ private:
                             {
                                 gr.on = true; gr.age = 0; gr.len = glen * v.os;
                                 const double span = (double) (len - glen - 4);
-                                double at = (double) k.grPos * span;
+                                double at = (double) k.grPos * span * 0.98;         // (not quite all the way round: the top of the knob is the source's end, not its start again)
                                 if (k.grSync > 0)
                                 {
                                     static const double spans[] = { 1.0, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0 };

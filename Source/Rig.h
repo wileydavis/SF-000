@@ -29,7 +29,9 @@ constexpr int kSoundKnobs = 8;
 // with: what choosing the model by hand also sets, each a place from 0 to 1 (KICK FORGE is a whole kick: the 808 laid under
 // the rig's kick, and the crossover that takes the model's own lows out for it, are put away. They are in CONFIG.)
 struct ModelWith { const char* param; float place; };
-struct ModelKnobs { const char* model; KnobDef knobs[kSoundKnobs]; std::vector<ModelWith> with; };
+// plate: the colour of the lane's faceplate while the model is on, on the dark instrument (0: the lane's usual). KICK
+// FORGE's is a dark red: the same worn anodized plate, dyed red where the others are black.
+struct ModelKnobs { const char* model; KnobDef knobs[kSoundKnobs]; std::vector<ModelWith> with; unsigned int plate = 0; };
 
 struct LaneDef
 {
@@ -65,7 +67,7 @@ inline const std::vector<LaneDef>& lanes()
           // from, its tone. TUNE and DRIVE stay where they are; LAYER, the echo's two, PITCH TIME, PUNCH and CLICK are in CONFIG.
           { { "KICK FORGE", { { "TUNE", "tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } } } },
+              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
 
         { "CLOSED HAT", "closed_hat", "PERC", false, 3,
           { { "model", 0 }, { "decay", 0.28f }, { "tone", 0.55f }, { "spread", 0.3f }, { "level", -13 }, { "alloc", 0 } },

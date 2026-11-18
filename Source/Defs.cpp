@@ -109,6 +109,28 @@ const Engine::Defs& Engine::defs() const
         juce::Array<var> knobs;
         for (int k = 0; k < kLaneKnobs; ++k) knobs.add (knobVar (ld.knobs[k], juce::String (ld.slug) + "." + juce::String (ld.knobs[k].param)));
         o->setProperty ("knobs", knobs);
+        // The models with sound knobs of their own: while one is the lane's model, the first eight ids above are these
+        // (each still stored under the id above it stands for), and `with` is what choosing it by hand also set.
+        if (! ld.own.empty())
+        {
+            juce::Array<var> own;
+            for (auto& mk : ld.own)
+            {
+                auto* m = new juce::DynamicObject();
+                m->setProperty ("model", juce::String (mk.model));
+                juce::Array<var> its;
+                for (int k = 0; k < kSoundKnobs; ++k) its.add (knobVar (mk.knobs[k], juce::String (ld.slug) + "." + juce::String (ld.knobs[k].param)));
+                m->setProperty ("knobs", its);
+                if (! mk.with.empty())
+                {
+                    auto* w = new juce::DynamicObject();
+                    for (auto& x : mk.with) w->setProperty (juce::String (x.param), x.place);
+                    m->setProperty ("with", var (w));
+                }
+                own.add (var (m));
+            }
+            o->setProperty ("own", own);
+        }
         d->slots.add (ld.slug);
         d->lane[(size_t) l] = add (var (o));
     }

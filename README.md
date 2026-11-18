@@ -425,8 +425,81 @@ under its file on BASS, the hats, the clap and VOICE, and 3 dB under on KICK, be
 **A sample as a wave to play: WAVETABLE**, a MODEL of BASS, LEAD, CHORD and PAD. With TABLE
 (in CONFIG's WAVETABLE box) at SAMPLE it takes eight single waves from the loaded file and
 COLOR moves across them, at any pitch, for as long as a note is held; with TABLE at BUILT-IN it
-plays four waves of its own. Every knob of the lane acts on it as on any synth model. PAD also
-has **GRANULAR**, which plays grains of the file from between START and END, COLOR their length.
+plays four waves of its own. Every knob of the lane acts on it as on any synth model. **GRANULAR**
+(below) plays grains of it.
+
+**Slices, loops and starts** (seventy-ninth build), in the same SAMPLE box. A file's own onsets
+cut it into slices, every one found, or eight equal parts where there are fewer than two
+between START and END.
+
+- **NOTES** (BASS, LEAD, CHORD, PAD): **PITCH**, a note plays the sample at its pitch;
+  **SLICES**, a note chooses a slice: C3 the first, each key above it the next, round again past
+  the last, each at the pitch it was recorded at (TUNE shifts it). One recording is a kit, or a
+  set of phrases.
+- **LOOP** and **CROSSFADE** (with PLAY HELD): what plays, START..END or the note's slice, goes
+  round for as long as the note is held, its end faded into its start. No crossfade: a hard
+  join, for a loop cut on its beat. Half: no seam, for a texture.
+- **VEL START**: a soft note starts further in (at full, the softest half way through).
+  **RANDOM START**: each note starts somewhere else.
+- **SLICE** and **CYCLE** (KICK, the hats, CLAP, RUMBLE): SLICE is which slice a hit plays (all
+  the way down: the whole, as before); CYCLE ROUND plays the next one each hit, RANDOM any.
+- **RESAMPLE**, a key beside LOAD: the bars of the snapshot last taken or recalled (its whole
+  output, as it was kept) become this lane's sample, written into the library's samples. What
+  the rig just played is then something to slice, loop or make grains of. The lane's model is
+  left as it is.
+- BASS, LEAD, CHORD and PAD read **five minutes** of a file (a field recording); the drums one
+  minute. A file is read whole into memory as it is loaded: five minutes is about a quarter of
+  a gigabyte and a moment's pause.
+
+All of these open where they change nothing, a snapshot holds them, and a snapshot from before
+them recalls with them at rest.
+
+**GRANULAR**, a MODEL of BASS, LEAD, CHORD and PAD, plays grains of the file from between START
+and END (of its own source with no file). While it is a lane's model the lane's first six knobs
+are its own, named so on the panel, and what those places moved before is in CONFIG:
+
+| knob | |
+|---|---|
+| POSITION | where in the source the grains come from |
+| SCAN | how fast that place travels while a note is held: stopped in the middle (a held note is one frozen moment), forwards to the right, backwards to the left |
+| SIZE | a grain's length, 5 ms to half a second |
+| GRAINS | how many overlap: gaps between them, to eight at once. On a CLOCK: how likely each tick is to fire |
+| SPRAY | how far from the place each grain may start |
+| PITCH | how far each grain's pitch may stray |
+
+and in CONFIG's GRANULAR box: **SPREAD** (PITCH by a few cents, by OCTAVES, or by FIFTHS AND
+OCTAVES), **SHAPE** (a grain struck, rounded or held flat), **REVERSE** (how many play
+backwards), **CLOCK** (FREE, or a grain a tick of the song's grid, 1/4 to 1/32 and triplets),
+**FOLLOW** (NOTES: the note sets a grain's pitch; FIXED: the source at its own pitch whatever
+the note), **SYNC** (the source's START..END spans 1 beat to 8 bars of the song and the place
+is where the song is in them: a recorded loop holds the tempo with its pitch unchanged). Each
+starts where GRANULAR was before these, so a snapshot that played it sounds as it did (a PAD
+from before has its COLOR and DETUNE turned into the SIZE, SPRAY and PITCH they were).
+
+**A model with knobs of its own** is the rule GRANULAR and KICK FORGE share: the lane's first
+eight knobs are the model's while it is on, a snapshot holds them, and a stack knob or a recall
+that changes the model changes what the knobs are with it. The E16's own little screens keep
+the lane's usual names on those knobs (its scene is sent once); the knobs do what this screen
+says.
+
+**KICK FORGE**, the kick's eighth model (seventy-ninth build): one kick of three parts tied to
+each other, and one knob through four kicks.
+
+| knob | |
+|---|---|
+| CHARACTER | mellow and dubby, then punchy and tight, then boomy, then distorted: one curve with no step on it, at one loudness |
+| IMPACT | the first thirty thousandths of a second: a piece of the lane's file (LOAD a field recording), or noise with none. The one part that is not the same hit after hit |
+| BODY | a sine that starts at the same point of its wave every hit and falls onto the kick's note (the key's root with KEY FOLLOW); its lows clean, its mids driven |
+| GROUND | the body's own tail, held under 150 Hz, rung at the kick's note and held down while the body sounds: what is heard between the kicks |
+| POSITION | where in the file the impact is from, each place brought to one strength. With no file: the colour of the noise, a low thud to a bright tick |
+| TONE | darker and plainer, or brighter and richer |
+
+with TUNE and DRIVE where they were and DECAY, DENSITY, FILTER and LEVEL as on every model.
+PUNCH (how far the pitch falls), PITCH TIME (how fast) and CLICK are in CONFIG and move it from
+where CHARACTER has them. **Chosen by hand it puts LAYER at nought and SPLIT off** (the rig's
+kick is a 909 over an 808 with a crossover that takes the 909's own lows out: left on, FORGE
+would have no low end of its own); both are in CONFIG. While it is on, the kick's module is a
+dark red plate on the dark instrument. None of it has been heard: see Not verified in DECISIONS.
 
 **Every knob is heard, on every model.** `--audit` (see Checks) turns each of a lane's twelve
 knobs down and up and measures what the lane's sound does, for every model the lane has (85
@@ -1533,12 +1606,12 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
-build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each
+build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each (a model with sound knobs of its own is named by them)
 build/.../SF-000 --printbus                       # what a print leaves: prints a small arrangement three ways (the drum bus at work, at rest, a lane leaving it part way) and says whether the files are one length, the stems add up to the mix, and where the bus's lanes are (--printbus DIR keeps the prints there)
 python3 tools/master_probe.py probe.wav           # a test signal for measuring what a mix-bus processor does: sweeps and noise at stepped levels, tone steps, sides alone (bounce it through the processor)
 build/.../SF-000 --finishcheck in.wav out.wav     # a file through FINISH alone, as 32-bit float (--amount 0 to 1, --input dB, --auto 1: finding its own level, --says: where it puts it; --limit -1 [--gain dB]: the master's limiter after it)

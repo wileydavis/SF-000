@@ -425,6 +425,9 @@ public:
     bool playsSample (int lane) const;
     struct SampleSays { bool has = false; juce::String root; float peakDb = 0.0f; bool pitched = false; int rootNote = 60; };
     SampleSays sampleSays (int lane) const;         // what the lane's file is heard to be (its root, its loudest point)
+    // A CONFIG control set by hand, from the panel or a controller: the engine's, and where a lane's MODEL brings sound
+    // knobs of its own the session's knobs stand where those start.
+    void setupByHand (Engine::Target, const juce::String& id, float v);
     juce::String samplePlain (int lane);
     // RESAMPLE: the bars of the snapshot last taken or recalled (its whole output, as it was kept without loss) become
     // this lane's sample: written as a file into the library's samples and loaded as LOAD would. What the rig just played

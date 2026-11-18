@@ -102,3 +102,17 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   first (`Source/CueRig.h`): on the shared block it ducked under the first rig's kick, and
   would have written its key and its lanes' energies where the first reads them. The suite
   has no such process and nothing there changes. See DECISIONS 598.
+- **Seventy-ninth build, all marked `(SF-000)`. None of it is in the suite.**
+  `modules/Synth.cpp`: GRANULAR's own parameters (`gr_pos` ... `gr_sync`, appended to the enum
+  and the list) and its block rewritten around them (the same sound where they start; the
+  same order of chance); GRANULAR appended last to BASS's and LEAD's models; SAMPLE's
+  `smp_notes`, `smp_loop`, `smp_xfade`, `smp_vel`, `smp_rand` (appended) and its voice start
+  and read; a file read to five minutes. `modules/Kit.h`: `sliceSpan`, `sliceCount`,
+  `sliceRegion`, `withSlices`, `hitRegion`. `core/Sample.h`, `Sample.cpp`: `SampleData::onsets`,
+  every onset found (`slices` still the first 32, as VOICE reads them). `modules/Drums.cpp`:
+  `smp_slice`, `smp_cycle` on KICK, PERC and RUMBLE (appended); KICK FORGE, the kick's eighth
+  model after SAMPLE (`ForgeShape`, `kForge`, `forgeAt`, `kForgeTrim`, `Ground`, `forgeStart`,
+  `forgeVoice`, `fg_char` ... `fg_tone` appended; `kKickSample` names SAMPLE's number where
+  "the last model" was meant). **Brought into the suite, a model list longer by one moves the
+  place of every model after the new one in presets that hold a place and not a name**: here
+  the new ones are last, or after SAMPLE, and SF-000 converts its own snapshots (DECISIONS 707).

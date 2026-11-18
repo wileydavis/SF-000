@@ -31,10 +31,20 @@ def _put(lst, i, value, fill):
     lst[i] = value
 
 
+def _lists(snap: dict, i: int) -> int:
+    """Which lists of models (and which knobs of theirs) a snapshot's lane was taken on: FORMAT.md, `lists`."""
+    by = snap.get("listsBy")
+    if isinstance(by, list) and i < len(by) and isinstance(by[i], int):
+        return by[i]
+    v = snap.get("lists", 1)
+    return v if isinstance(v, int) else 1
+
+
 def compose(base: dict, picks: dict[str, dict | None], name: str, library_id: str, when_ms: int | None = None) -> dict:
     """base: a snapshot (as SF-000 keeps it). picks: lane -> the snapshot to take it from, or None to take it away."""
     out = copy.deepcopy(base)
     slots = _slots(out)
+    lists = [_lists(base, i) for i in range(len(slots))]
     made = out.setdefault("made", {})
     vals = out.setdefault("values", {})
     took = {}
@@ -50,6 +60,7 @@ def compose(base: dict, picks: dict[str, dict | None], name: str, library_id: st
         if lane not in sslots:
             continue
         j = sslots.index(lane)
+        lists[i] = _lists(src, j)           # (a lane's model and knobs mean what they meant where it was taken)
         # its controls: every one of the lane's, and none of the base's left behind
         for k in [k for k in vals if k.startswith(lane + ".")]:
             del vals[k]
@@ -86,6 +97,16 @@ def compose(base: dict, picks: dict[str, dict | None], name: str, library_id: st
     out["uid"] = f"{library_id}-{when:x}"
     out["name"] = name.strip().upper()[:24] or "MADE"
     out.pop("profile", None)                    # (what it sounds like is for it to be played and heard)
+    # which lists each lane was taken on: one figure where they agree, and lane by lane where a lane came from a
+    # snapshot of another build (SF-000 reads `listsBy` over `lists`)
+    out.pop("lists", None)
+    out.pop("listsBy", None)
+    if lists and all(v == lists[0] for v in lists):
+        if lists[0] != 1:
+            out["lists"] = lists[0]
+    elif lists:
+        out["lists"] = min(lists)
+        out["listsBy"] = lists
     ext = out.setdefault("ext", {})
     ext["sf000analysis"] = {"base": base.get("uid"), "lanes": took, "made": when}
     return out

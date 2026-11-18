@@ -134,9 +134,31 @@ this build does not have is written back as it was read.
   "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
   "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
+  "lists": 2,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
 }
 ```
 
+- **`lists`** (seventy-ninth build on). A lane's `model` (and `layer_model`) in `setup` is a place
+  on its list, 0 to 1, and the lists have grown: BASS and LEAD have GRANULAR last, KICK has KICK
+  FORGE after SAMPLE. A snapshot without `lists` was taken on the lists of before (BASS 10, LEAD
+  and CHORD 12, KICK 7, PAD 9): a build that knows `lists` reads its places against those. A
+  snapshot is never rewritten for this: one read from a file is written back as it was read.
+  `listsBy` (an array, a figure a lane, read over `lists` where it is there): a chip the analysis
+  made of lanes from snapshots of different builds says lane by lane which lists each was on.
+  **A model can have sound knobs of its own** (GRANULAR on BASS, LEAD, CHORD and PAD; KICK FORGE
+  on KICK): while it is the lane's model, the lane's first eight knobs are the model's. Their
+  ids in `values` are still the lane's usual ones (`pad.detune` is the pad's first place, which
+  on GRANULAR is POSITION), so **a value of one of those eight means what the lane's model in the
+  same snapshot makes of it**, and what the usual knob held is in `setup` under its own name.
+  With `lists` at 2: PAD on GRANULAR, places 1 to 6 are `gr_pos`, `gr_scan`, `gr_size`,
+  `gr_dens`, `gr_spray`, `gr_pitch` (and so on BASS, LEAD and CHORD, where 7 and 8 are CUTOFF and
+  the lane's own eighth); KICK on KICK FORGE, places 2 to 7 are `fg_char`, `fg_impact`,
+  `fg_body`, `fg_ground`, `fg_pos`, `fg_tone`, and 1 and 8 TUNE and DRIVE as ever. Without
+  `lists`, a PAD on GRANULAR has those six places as the pad's usual knobs, which GRANULAR then
+  read as its size (COLOR) and its scatter (DETUNE).
+  The lane's definition (`defs`) says which models these are, in `own`: `[ { "model", "knobs":
+  [ 8, each under the id of the place it takes ], "with"?: { param: place } } ]`: a model's own
+  knobs, and what choosing it by hand also set.
 - **`values`**: every stored control by id. A lane's knob is `<slot>.<param>`; an insert's cell
   is `<slot>.i<insert>.c<cell>` (by place: what the place is depends on the effect in `inserts`);
   the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on (`.gen_seed` has 128

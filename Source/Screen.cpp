@@ -1593,7 +1593,9 @@ void Screen::drawLane (G& g, int l, R r)
     const bool active = l == ses.activeLane;
     stopAt (l < 5 ? l : l + 1, r.translated (shift, 0.0f).getIntersection (rowsClip));
     hit (r, hLanePanel, l, 0);
-    panel (g, r, col::putty);
+    // (a model with a faceplate of its own, on the dark instrument: KICK FORGE's dark red)
+    const unsigned int own = night() ? eng.lanePlate (l) : 0u;
+    panel (g, r, own != 0u ? Colour (own) : col::putty);
     const String num (l + 1);
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
     if (lit)
@@ -4518,7 +4520,7 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
                 const int nc = sp.choices.size();
                 const float v = sp.kind == Kind::List && nc > 1 ? drag.v0 + std::round (dy / 14.0f) / (float) (nc - 1)
                                                                : drag.v0 + dy / (e.mods.isShiftDown() ? 800.0f : 160.0f);
-                eng.setSetup (cfg, sp.id, v);
+                ses.setupByHand (cfg, sp.id, v);
                 cfgStale = true;
                 ses.touch();
                 repaint();
@@ -4688,7 +4690,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hSetup && h->a < (int) cfgParams.size())
         {
             const auto& sp = cfgParams[(size_t) h->a];
-            if (sp.kind == Kind::Knob || sp.kind == Kind::Bipolar || sp.kind == Kind::List) { eng.setSetup (cfg, sp.id, sp.def); cfgStale = true; ses.touch(); }
+            if (sp.kind == Kind::Knob || sp.kind == Kind::Bipolar || sp.kind == Kind::List) { ses.setupByHand (cfg, sp.id, sp.def); cfgStale = true; ses.touch(); }
         }
         repaint();
     }

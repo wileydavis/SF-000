@@ -1740,7 +1740,17 @@ static void forgeTest (int& bad)
     const bool chosen = choose ("model", "KICK FORGE");
     const bool named = chosen && label (0) == "TUNE" && label (1) == "CHARACTER" && label (2) == "IMPACT" && label (3) == "BODY" && label (4) == "GROUND" && label (5) == "POSITION" && label (6) == "TONE" && label (7) == "DRIVE"
                        && label (8) == "DECAY" && inConfig ("layer") && inConfig ("punch") && inConfig ("pitch_time") && inConfig ("click") && ! inConfig ("fg_char");
-    const bool back = choose ("model", "KICK 909-TYPE") && label (1) == was1 && label (5) == was5 && ! inConfig ("punch");
+    bool back = choose ("model", "KICK 909-TYPE") && label (1) == was1 && label (5) == was5 && ! inConfig ("punch");
+    {
+        // chosen from the panel (the session's way): its knobs stand where they start, and stay there when the session next
+        // puts its knobs to the rig (they used to go back to where the lane's usual knobs had been)
+        for (auto& sp : e.setupParams ({ 0, kick, 0 })) if (sp.id == "model") ses.setupByHand ({ 0, kick, 0 }, "model", (float) sp.choices.indexOf ("KICK FORGE") / (float) std::max (1, sp.choices.size() - 1));
+        ses.userSet (cx::kGlide, 0.0f); ses.turnSnapKnob (5, 0.0f);       // (a macro knob touched: the session puts every knob to the rig)
+        run (1.0);
+        const bool stands = std::abs (e.target (cx::lane (kick, 1)) - 0.3f) < 1.0e-3f && std::abs (e.target (cx::lane (kick, 3)) - 0.5f) < 1.0e-3f && std::abs (e.target (cx::lane (kick, 5)) - 0.1f) < 1.0e-3f;
+        if (! stands) std::printf ("    (chosen from the panel: CHARACTER %.3f, BODY %.3f, POSITION %.3f; they start at 0.3, 0.5, 0.1)\n", e.target (cx::lane (kick, 1)), e.target (cx::lane (kick, 3)), e.target (cx::lane (kick, 5)));
+        back = back && stands;
+    }
     choose ("model", "KICK FORGE");
     if (! (named && back)) std::printf ("    (named %d back %d: %s %s %s %s %s %s %s %s)\n", (int) named, (int) back, label (0).toRawUTF8(), label (1).toRawUTF8(), label (2).toRawUTF8(), label (3).toRawUTF8(), label (4).toRawUTF8(), label (5).toRawUTF8(), label (6).toRawUTF8(), label (7).toRawUTF8());
     // the kick alone, on every beat, nothing after it
@@ -2029,6 +2039,18 @@ static void granularTest (int& bad)
                    && near (e.target (cx::lane (pad, 4)), std::sqrt (0.3f * 0.6f)) && near (e.target (cx::lane (pad, 5)), 0.3f)
                    && near (setupOf (pad, "res"), 0.33f) && near (setupOf (pad, "attack"), 0.44f) && near (setupOf (pad, "color"), 0.2f)
                    && modelOf (bass) == "SAMPLE" && modelOf (kick) == "SAMPLE" && modelOf (lead) == "SAMPLE";
+        // the same, saying lane by lane which lists it was taken on (a chip the analysis made of lanes from two builds): the
+        // kick of now, where the last model is KICK FORGE; the rest from before
+        if (auto* o = old.getDynamicObject())
+        {
+            juce::Array<juce::var> by; for (int l = 0; l < kLanes; ++l) by.add (l == kick ? 2 : 1);
+            o->setProperty ("listsBy", by); o->setProperty ("uid", "sf0testbefore79-2");
+            const auto id2 = ses.takeFromLibrary (old, "BEFORE AND NOW", juce::var());
+            ses.recall (id2); run (8.0);
+            const bool laneBy = id2 != 0 && modelOf (kick) == "KICK FORGE" && modelOf (bass) == "SAMPLE" && modelOf (pad) == "GRANULAR";
+            if (! laneBy) std::printf ("    (lane by lane: kick %s, bass %s, pad %s)\n", modelOf (kick).toRawUTF8(), modelOf (bass).toRawUTF8(), modelOf (pad).toRawUTF8());
+            migrated = migrated && laneBy;
+        }
         if (! migrated) std::printf ("    (from before: pad %s place0 %s %.3f size %.3f spray %.3f pitch %.3f res %.3f attack %.3f; bass %s kick %s lead %s)\n", modelOf (pad).toRawUTF8(), label (pad, 0).toRawUTF8(),
                                      (double) e.target (cx::lane (pad, 0)), (double) e.target (cx::lane (pad, 2)), (double) e.target (cx::lane (pad, 4)), (double) e.target (cx::lane (pad, 5)),
                                      (double) setupOf (pad, "res"), (double) setupOf (pad, "attack"), modelOf (bass).toRawUTF8(), modelOf (kick).toRawUTF8(), modelOf (lead).toRawUTF8());
@@ -5444,7 +5466,7 @@ static int knobAudit (int only, const juce::String& modelArg = {}, const juce::F
         e.prepare (48000.0, 512);
         Session ses (e, false);
         const Engine::Target t { 0, laneIdx, 0 };
-        if (model.isNotEmpty()) for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains (model)) e.setSetup (t, "model", (float) sp.choices.indexOf (model) / (float) std::max (1, sp.choices.size() - 1));
+        if (model.isNotEmpty()) for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains (model)) ses.setupByHand (t, "model", (float) sp.choices.indexOf (model) / (float) std::max (1, sp.choices.size() - 1));
         if (file.existsAsFile()) e.loadFile (laneIdx, file);
         if (table) e.setSetup (t, "table", 1.0f);
         if (plain) ses.samplePlain (laneIdx);
@@ -5484,6 +5506,8 @@ static int knobAudit (int only, const juce::String& modelArg = {}, const juce::F
         {
         model = mName;
         if (! hasModel (probe, l)) continue;
+        // (the probe on that model too: a model with sound knobs of its own names them)
+        if (model.isNotEmpty()) for (auto& sp : probe.setupParams ({ 0, l, 0 })) if (sp.id == "model") if (const int at = sp.choices.indexOf (model); at >= 0) probe.setSetup ({ 0, l, 0 }, "model", (float) at / (float) std::max (1, sp.choices.size() - 1));
         if (levelOnly)
         {
             // (--level: only how loud the lane is as it plays, to set a new model's figure by its neighbours')
@@ -9419,6 +9443,12 @@ static int shot (const juce::StringArray& args)
         sc.testTick();
     }
     const auto cfg = arg ("--cfg", "");
+    if (arg ("--model", "").isNotEmpty())
+    {
+        // (--model NAME: the active lane's MODEL chosen, as by hand)
+        const Engine::Target t { 0, ses.activeLane, 0 };
+        for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int at = sp.choices.indexOf (arg ("--model", "")); at >= 0) ses.setupByHand (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1));
+    }
     if (arg ("--sample", "").isNotEmpty())
     {
         // (--sample FILE: the active lane plays that file, its MODEL at SAMPLE; --plain: and PLAIN was pressed)

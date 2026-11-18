@@ -166,6 +166,12 @@ the base's. A lane taken away is silent. It goes to the web library and into a s
 **MADE**, marked to load: **WEB LOAD in SF-000 brings it**, into the library and the rack, like any
 other chip. It has no sound of its own until it is played (take it again there and it has).
 
+A lane keeps its meaning across builds. From SF-000's seventy-ninth build a snapshot says which
+lists of models it was taken on (`lists`), because the lists grew and some models have knobs of
+their own; a chip made of lanes from snapshots of both kinds says so lane by lane (`listsBy`), and
+SF-000 reads each lane as it was taken. Nothing to do about it: it is why a new kick put into an
+old snapshot is still the new kick.
+
 Parts at different tempos are played at the tempo of the one they go with, **stretched, not sped
 up**: the pitch stays where it is, as the instrument would play the notes. (The stretching is the
 page's own and a little grainy on held notes; the instrument's own is exact.) Parts are played dry of
