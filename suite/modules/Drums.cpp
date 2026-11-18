@@ -46,9 +46,10 @@ static constexpr int kKickSample = 6, kKickForge = 7;
 
 // (SF-000) KICK FORGE. One kick made of three parts that are tied to each other, and one knob, CHARACTER, that takes all
 // of them through four kicks with no step between: mellow and dubby, punchy and tight, boomy, distorted.
-//   IMPACT  the first thirty-odd thousandths of a second: a piece of the lane's own file (a field recording: a door, a
-//           stone, a tool), from POSITION, with its lows taken out and brought to one strength wherever it is from. With
-//           no file, a burst of noise in a band POSITION places. This is the one part that is not the same hit after hit.
+//   IMPACT  the front of the hit, up to nine hundredths of a second dying away: a piece of the lane's own file (a field
+//           recording: a door, a stone, a tool), from POSITION, with its lows under the body taken out and brought to one
+//           strength wherever it is from, so that another place in the file is another thing struck. With no file, a
+//           burst of noise in a band POSITION places. This is the one part that is not the same hit after hit.
 //   BODY    a sine that starts at the same point of its wave every hit (the low end is the same every time), falling from
 //           above onto the kick's note (the key's root with KEY FOLLOW); for its first thirtieth of a second it bends
 //           its own pitch with its own output, which is where the knock is; harmonics that die sooner than the
@@ -60,10 +61,10 @@ static constexpr int kKickSample = 6, kKickForge = 7;
 struct ForgeShape { float ratio, tau, decay, fm, harm, drive, impact, impTau, impHp, ground, groundT, lp, clip, sub; };
 static const ForgeShape kForge[4] = {
     //  ratio  tau     decay  fm    harm  drive impact impTau  impHp   ground groundT lp       clip  sub
-    {   1.7f,  0.034f, 0.170f, 0.00f, 0.00f, 0.00f, 0.12f, 0.005f, 2600.0f, 0.45f, 0.55f,   700.0f, 0.8f, 1.00f },    // mellow, dubby
-    {   5.2f,  0.007f, 0.055f, 0.55f, 0.22f, 0.20f, 0.85f, 0.006f, 1800.0f, 0.06f, 0.20f, 14000.0f, 1.2f, 0.90f },    // punchy, tight
-    {   3.0f,  0.018f, 0.240f, 0.25f, 0.12f, 0.30f, 0.45f, 0.008f, 1300.0f, 0.90f, 0.95f,  5000.0f, 1.4f, 1.15f },    // boomy
-    {   6.5f,  0.011f, 0.130f, 1.30f, 0.80f, 1.00f, 1.00f, 0.011f,  900.0f, 0.60f, 0.70f, 16000.0f, 2.2f, 1.00f } };  // distorted
+    {   1.7f,  0.034f, 0.170f, 0.00f, 0.00f, 0.00f, 0.25f, 0.012f, 1200.0f, 0.45f, 0.55f,   700.0f, 0.8f, 1.00f },    // mellow, dubby
+    {   5.2f,  0.007f, 0.055f, 0.55f, 0.22f, 0.20f, 0.90f, 0.022f,  500.0f, 0.18f, 0.25f, 14000.0f, 1.2f, 0.90f },    // punchy, tight
+    {   3.0f,  0.018f, 0.240f, 0.25f, 0.12f, 0.30f, 0.65f, 0.035f,  350.0f, 0.90f, 0.95f,  5000.0f, 1.4f, 1.15f },    // boomy
+    {   6.5f,  0.011f, 0.130f, 1.30f, 0.80f, 1.00f, 1.00f, 0.045f,  250.0f, 0.60f, 0.70f, 16000.0f, 2.2f, 1.00f } };  // distorted
 // The shape at a place on CHARACTER: a curve through the four that passes each of them (Catmull-Rom), so the way from
 // one to the next has no corner in it. Never below a tenth of the smallest of them (a curve can dip under its points).
 static ForgeShape forgeAt (float c)
@@ -463,32 +464,40 @@ public:
         v.click = c.v (CLICK) * f.impact * 1.2f;            // (the pulse on the front of it: as much as the impact, so next to none on the mellow kick)
         v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
         v.fgOut = forgeTrim (ch) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
-        // the impact: from the lane's file at POSITION (thirty-five thousandths of a second of it, a little either side
-        // from hit to hit), brought to one strength; or noise
+        // the impact: from the lane's file at POSITION (ninety thousandths of a second of it, a little either side from hit
+        // to hit), brought to one strength; or noise
         v.fgImp = 2.0f * c.v (FGIMPACT) * f.impact * (0.9f + 0.2f * rng.uni());
         v.fgImpTau = f.impTau;
         v.fgHpK = 1.0f - std::exp (-kTwoPi * f.impHp / (float) osr);
         v.fgPos = -1.0;
         {
-            // with no file POSITION is the noise's colour, a band from a low thud (400 Hz) to a bright tick (12 kHz), so
+            // with no file POSITION is the noise's colour, a band from a low knock (250 Hz) to a bright tick (10 kHz), so
             // the knob is never one that does nothing
-            const float hz = 400.0f * std::pow (30.0f, c.v (FGPOS));
-            v.clickBp.set (hz, 1.2f, osr);
-            v.fgNoise = 0.2f / (0.577f * std::sqrt (2.617f * hz / (float) osr));
+            const float hz = 250.0f * std::pow (40.0f, c.v (FGPOS));
+            v.clickBp.set (hz, 1.6f, osr);
+            v.fgNoise = 0.4f / (0.577f * std::sqrt (1.9635f * hz / (float) osr));
         }
         if (smp != nullptr && smp->length() > 4096 && v.fgImp > 0.0f)
         {
             const auto reg = regionFrom (c, SSTART, *smp, SGAIN);
-            const double span = 0.035 * smp->sr, room = std::max (0.0, reg.end - reg.start - span - 8.0);
+            const double span = 0.09 * smp->sr, room = std::max (0.0, reg.end - reg.start - span - 8.0);
             double at = reg.start + (double) c.v (FGPOS) * room + (double) rng.next() * 0.0015 * smp->sr;
             at = std::min (std::max (at, reg.start), reg.start + room);
-            // (its strength: the grain's own, over what will sound of it)
+            // (its strength: the grain's own over what will sound of it, with its lows out as they will be when it plays)
             double sum = 0.0;
-            const int n0 = (int) at, n1 = std::min (smp->length() - 2, n0 + (int) (0.012 * smp->sr));
+            const int n0 = (int) at, n1 = std::min (smp->length() - 2, n0 + (int) (0.03 * smp->sr));
             const float* l = smp->buf.getReadPointer (0); const float* r = smp->buf.getReadPointer (smp->buf.getNumChannels() > 1 ? 1 : 0);
-            for (int n = n0; n < n1; ++n) { const float x = 0.5f * (l[n] + r[n]); sum += (double) x * x; }
+            const float hk = 1.0f - std::exp (-kTwoPi * f.impHp / (float) smp->sr);
+            float h1 = 0.0f, h2 = 0.0f;
+            for (int n = n0; n < n1; ++n)
+            {
+                float x = 0.5f * (l[n] + r[n]);
+                h1 += hk * (x - h1); x -= h1;
+                h2 += hk * (x - h2); x -= h2;
+                sum += (double) x * x;
+            }
             const float rms = (float) std::sqrt (sum / (double) std::max (1, n1 - n0));
-            v.fgImp *= std::min (40.0f, 0.22f / std::max (rms, 1.0e-4f));
+            v.fgImp *= std::min (300.0f, 0.4f / std::max (rms, 1.0e-5f));        // (a quiet place in a recording is brought up as far as 50 dB)
             v.fgPos = at;
         }
         v.fgFeeds = main;
@@ -513,18 +522,18 @@ public:
         v.fgLo += v.fgLoK * (body - v.fgLo);
         float mid = body - v.fgLo;
         // IMPACT
-        if (v.fgImp > 0.0f && t < 0.035f)
+        if (v.fgImp > 0.0f && t < 0.09f)
         {
             float x;
             if (v.fgPos >= 0.0 && s != nullptr && (int) v.fgPos + 3 < s->length())
             {
                 x = 0.5f * (s->read (0, v.fgPos, 0.5) + s->read (1, v.fgPos, 0.5));
                 v.fgPos += 0.5;
+                v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;       // (the file's lows are the body's to have)
+                v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
             }
-            else x = v.clickBp.tickBP (rng.next()) * v.fgNoise;
-            v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;
-            v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
-            const float tail = clamp01 ((t - 0.025f) / 0.010f);         // (and out by its end, whatever its decay)
+            else x = v.clickBp.tickBP (rng.next()) * v.fgNoise;        // (the noise's band is its colour)
+            const float tail = clamp01 ((t - 0.07f) / 0.02f);           // (and out by its end, whatever its decay)
             const float e = std::min (1.0f, t / 0.0003f) * std::exp (-t / v.fgImpTau) * (1.0f - tail * tail * (3.0f - 2.0f * tail));
             mid += x * e * v.fgImp;
         }

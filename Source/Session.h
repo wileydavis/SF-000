@@ -429,10 +429,11 @@ public:
     // knobs of its own the session's knobs stand where those start.
     void setupByHand (Engine::Target, const juce::String& id, float v);
     juce::String samplePlain (int lane);
-    // RESAMPLE: the bars of the snapshot last taken or recalled (its whole output, as it was kept without loss) become
-    // this lane's sample: written as a file into the library's samples and loaded as LOAD would. What the rig just played
-    // is then something to slice, loop and make grains of. What it did, in words.
-    juce::String resampleInto (int lane, const juce::File* bars = nullptr);      // (bars: the kept bars to read, where a check names its own)
+    // RESAMPLE: the last four bars the rig played (from a bar line, as they left the master; its last seconds where no
+    // clock ran) become this lane's sample: written as a file into the library's samples (RESAMPLE and the time) and
+    // loaded as LOAD would. What the rig just played is then something to slice, loop and make grains of. What it did,
+    // in a few words (they are shown on one line).
+    juce::String resampleInto (int lane);
     // A snapshot's sound is the bars the rig held its state through. Taken while something had just
     // moved (or was still travelling), it waits for four such bars; this looks whether they have
     // come. If the rig moves on first it takes what was held, or failing that the bars it was taken

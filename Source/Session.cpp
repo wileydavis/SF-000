@@ -1999,53 +1999,36 @@ Session::SampleSays Session::sampleSays (int lane) const
     return out;
 }
 
-juce::String Session::resampleInto (int lane, const juce::File* from)
+juce::String Session::resampleInto (int lane)
 {
     if (lane < 0 || lane >= kLanes) return {};
-    const Snapshot* snap = findSnap (baseId);
-    if (snap == nullptr) return "RESAMPLE TAKES THE BARS OF THE SNAPSHOT LAST TAKEN OR RECALLED: THERE IS NONE YET";
+    // the last four bars the rig played, from a bar line, as they left the master (the engine's own tape of them, which
+    // is what a snapshot's bars are taken from): or its last seconds, where no clock was running
+    Engine::Heard h;
+    if (! engine.lastHeard (h, 4) || h.audio.getNumSamples() < 2 || h.sampleRate <= 0.0) return "NOTHING HAS PLAYED YET TO RESAMPLE";
     juce::AudioBuffer<float> bars;
-    double rate = 0.0;
-    if (Lossless kept; readLossless (from != nullptr ? *from : losslessFile (baseId), kept))
-    {
-        for (auto& p : kept.parts) if (p.first == "mix") { bars = p.second; rate = kept.rate; }
-    }
-    if (bars.getNumSamples() < 2)
-    {
-        // (a snapshot from before its bars were kept without loss: the compressed clip of them)
-        juce::OggVorbisAudioFormat ogg;
-        if (const auto f = clipFile (baseId); f.existsAsFile())
-            if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (f.createInputStream().release(), true) }; r != nullptr && r->lengthInSamples > 1 && r->lengthInSamples < 48000 * 240)
-            {
-                bars.setSize (2, (int) r->lengthInSamples);
-                bars.clear();
-                r->read (&bars, 0, (int) r->lengthInSamples, 0, true, true);
-                rate = r->sampleRate;
-            }
-    }
-    if (bars.getNumSamples() < 2 || rate <= 0.0) return "THE BARS OF " + snap->name.toUpperCase() + " ARE NOT ON THE DISK (IF IT WAS JUST TAKEN THEY ARE STILL BEING WRITTEN: PRESS AGAIN)";
+    bars.makeCopyOf (h.audio);
+    if (bars.getNumChannels() < 2) return "NOTHING HAS PLAYED YET TO RESAMPLE";
     // (a file holds no more than full scale: bars that ran over it are written that much quieter)
     if (const float peak = bars.getMagnitude (0, bars.getNumSamples()); peak > 0.98f) bars.applyGain (0.98f / peak);
-    juce::String name = juce::File::createLegalFileName (snap->name.trim());
-    if (name.isEmpty()) name = "SNAPSHOT";
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("SF-000 resample");
     dir.createDirectory();
-    const auto file = dir.getChildFile (name + " BARS.wav");
+    const auto file = dir.getChildFile ("RESAMPLE " + juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S") + ".wav");
     file.deleteFile();
     {
         juce::WavAudioFormat wav;
         auto out = file.createOutputStream();
-        if (out == nullptr) return "COULD NOT WRITE THE BARS AS A FILE";
-        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (out.get(), rate, 2, 24, {}, 0) };
-        if (w == nullptr) return "COULD NOT WRITE THE BARS AS A FILE";
+        if (out == nullptr) return "COULD NOT WRITE THE RESAMPLE";
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (out.get(), h.sampleRate, 2, 24, {}, 0) };
+        if (w == nullptr) return "COULD NOT WRITE THE RESAMPLE";
         out.release();
         w->writeFromAudioSampleBuffer (bars, 0, bars.getNumSamples());
     }
     const juce::String kept = keepSample (file.getFullPathName());
-    if (! engine.loadFile (lane, juce::File (kept))) return "COULD NOT READ THE BARS BACK";
+    if (! engine.loadFile (lane, juce::File (kept))) return "COULD NOT READ THE RESAMPLE BACK";
     if (kept != file.getFullPathName()) file.deleteFile();          // (the library has its copy)
     touch();
-    return "THE BARS OF " + snap->name.toUpperCase() + " ARE THIS LANE'S SAMPLE";
+    return h.bars > 0 ? "THE LAST " + juce::String (h.bars) + (h.bars == 1 ? " BAR IS" : " BARS ARE") + " THIS LANE'S SAMPLE" : juce::String ("THE LAST SECONDS ARE THIS LANE'S SAMPLE");
 }
 
 juce::String Session::samplePlain (int lane)

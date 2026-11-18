@@ -453,10 +453,10 @@ between START and END.
   **RANDOM START**: each note starts somewhere else.
 - **SLICE** and **CYCLE** (KICK, the hats, CLAP, RUMBLE): SLICE is which slice a hit plays (all
   the way down: the whole, as before); CYCLE ROUND plays the next one each hit, RANDOM any.
-- **RESAMPLE**, a key beside LOAD: the bars of the snapshot last taken or recalled (its whole
-  output, as it was kept) become this lane's sample, written into the library's samples. What
-  the rig just played is then something to slice, loop or make grains of. The lane's model is
-  left as it is.
+- **RESAMPLE**, a key beside LOAD: the last four bars the rig played (its whole output, from a
+  bar line) become this lane's sample, written into the library's samples as RESAMPLE and the
+  date and time. What the rig just played is then something to slice, loop or make grains of.
+  The lane's model is left as it is.
 - BASS, LEAD, CHORD and PAD read **five minutes** of a file (a field recording); the drums one
   minute. A file is read whole into memory as it is loaded: five minutes is about a quarter of
   a gigabyte and a moment's pause.
@@ -486,6 +486,11 @@ is where the song is in them: a recorded loop holds the tempo with its pitch unc
 starts where GRANULAR was before these, so a snapshot that played it sounds as it did (a PAD
 from before has its COLOR and DETUNE turned into the SIZE, SPRAY and PITCH they were).
 
+**Everything in CONFIG keeps its place.** The boxes that are always there come first, in one
+order on every lane, with MODEL the first control of all; MOTION follows them; the boxes that
+come and go with a model (its own controls, SAMPLE's, and USUAL KNOBS: the knobs a model's own
+took the places of) come after. Choosing a model moves nothing that was there before it.
+
 **A model with knobs of its own** is the rule GRANULAR and KICK FORGE share: the lane's first
 eight knobs are the model's while it is on, a snapshot holds them, and a stack knob or a recall
 that changes the model changes what the knobs are with it. The E16's own little screens keep
@@ -498,10 +503,10 @@ each other, and one knob through four kicks.
 | knob | |
 |---|---|
 | CHARACTER | mellow and dubby, then punchy and tight, then boomy, then distorted: one curve with no step on it, at one loudness |
-| IMPACT | the first thirty thousandths of a second: a piece of the lane's file (LOAD a field recording), or noise with none. The one part that is not the same hit after hit |
+| IMPACT | the front of the hit, up to nine hundredths of a second dying away: a piece of the lane's file (LOAD a field recording), or noise with none. The one part that is not the same hit after hit |
 | BODY | a sine that starts at the same point of its wave every hit and falls onto the kick's note (the key's root with KEY FOLLOW); its lows clean, its mids driven |
 | GROUND | the body's own tail, held under 150 Hz, rung at the kick's note and held down while the body sounds: what is heard between the kicks |
-| POSITION | where in the file the impact is from, each place brought to one strength. With no file: the colour of the noise, a low thud to a bright tick |
+| POSITION | where in the file the impact is from, each place brought to one strength, so another place is another thing struck. With no file: the colour of the noise, a low knock to a bright tick |
 | TONE | darker and plainer, or brighter and richer |
 
 with TUNE and DRIVE where they were and DECAY, DENSITY, FILTER and LEVEL as on every model.

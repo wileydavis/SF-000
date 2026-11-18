@@ -1665,29 +1665,43 @@ static void samplerTest (int& bad)
     const bool kickOk = drumsHave && drum (kick), hatOk = drumsHave && drum (hat);
 
     // ---- RESAMPLE: a snapshot's bars are a lane's sample
-    const juce::String told = ses.resampleInto (lead);        // (its bars are not kept: it says so, and the lane's file is as it was)
-    bool resampleSays = told.contains ("NOT ON THE DISK") && e.laneFile (lead) == file.getFullPathName();
+    // ---- RESAMPLE: the last four bars the rig played are a lane's sample. A rig that has played nothing says so.
+    bool resampleSays = false;
+    juce::String told, did;
     {
-        // bars kept (two seconds of the 800 Hz tone, over full scale): they are the lane's sample, heard, and not clipped
-        juce::AudioBuffer<float> mix (2, 96000);
-        for (int n = 0; n < 96000; ++n) { const float v = (float) (1.6 * std::sin (2.0 * juce::MathConstants<double>::pi * 800.0 * n / 48000.0)); mix.setSample (0, n, v); mix.setSample (1, n, v); }
-        const auto kept = dir.getChildFile ("bars.lossless");
-        Session::writeLossless (kept, mix, nullptr, 48000.0, 4);
-        const juce::String did = ses.resampleInto (lead, &kept);
+        Engine e2; e2.prepare (48000.0, 256);
+        Session s2 (e2, false);
+        told = s2.resampleInto (lead);
+        const bool none = told.contains ("NOTHING HAS PLAYED") && e2.laneFile (lead).isEmpty();
+        // the lead playing the 800 Hz slice on every beat for five bars, then resampled into the lead itself
+        choose (lead, "model", "SAMPLE"); choose (lead, "smp_notes", "SLICES"); choose (lead, "smp_play", "HELD");
+        Pattern p; for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.gate = 2.0f; st.octave = 3; st.note = 1; }
+        e.setPattern (lead, p);
+        e.setRunning (false); run (2.0); e.setRunning (true); run (20.0);
+        did = ses.resampleInto (lead);
+        e.setRunning (false);
         const juce::File now (e.laneFile (lead));
-        choose (lead, "smp_notes", "SLICES"); choose (lead, "smp_play", "HELD");
-        Pattern p; p.steps[0].on = true; p.steps[0].gate = 4.0f; p.steps[0].octave = 3;
-        const auto x = bar (lead, p);
-        resampleSays = resampleSays && did.contains ("ARE THIS LANE'S SAMPLE") && now.getFileName().endsWith (" BARS.wav") && now.existsAsFile() && tone (x, 2400, 9600) == 1;
-        if (! resampleSays) std::printf ("    (resample: \"%s\", file %s, tone %d)\n", did.toRawUTF8(), now.getFullPathName().toRawUTF8(), tone (x, 2400, 9600));
+        const auto says = ses.sampleSays (lead);
+        // (four bars of it: as long as four bars are at this tempo, and the tone that was playing)
+        const double due = 16.0 * 60.0 / e.tempo();
+        double seconds = 0.0;
+        {
+            juce::WavAudioFormat wav;
+            if (std::unique_ptr<juce::AudioFormatReader> r { wav.createReaderFor (now.createInputStream().release(), true) }; r != nullptr && r->sampleRate > 0.0) seconds = (double) r->lengthInSamples / r->sampleRate;
+        }
+        choose (lead, "smp_notes", "PITCH");
+        Pattern one; one.steps[0].on = true; one.steps[0].gate = 4.0f; one.steps[0].octave = says.rootNote / 12 - 2; one.steps[0].note = says.rootNote % 12;
+        const auto x = bar (lead, one);
+        resampleSays = none && did.contains ("THE LAST 4 BARS ARE THIS LANE'S SAMPLE") && now.getFileName().startsWith ("RESAMPLE ") && now.existsAsFile() && says.has && std::abs (seconds - due) < 0.05 && tone (x, 480, 4800) == 1;
+        if (! resampleSays) std::printf ("    (resample: with nothing played \"%s\"; then \"%s\", file %s, %.2f s of a due %.2f, tone %d)\n", told.toRawUTF8(), did.toRawUTF8(), now.getFullPathName().toRawUTF8(), seconds, due, tone (x, 480, 4800));
         now.deleteFile();
     }
     dir.deleteRecursively();
     const bool ok = listed && slices && loop && velStart && randStart && drumsHave && kickOk && hatOk && resampleSays;
     if (! ok) ++bad;
     std::printf ("  %s: a sample's slices, loop and starts: NOTES SLICES plays the next slice a key at its own pitch, LOOP goes round without a click, VEL START and RANDOM START move where a note starts; "
-                 "the drums' SLICE chooses one and CYCLE ROUND moves on a hit; RESAMPLE makes a snapshot's kept bars the lane's sample, and with none kept says so and leaves its file\n", ok ? "ok" : "FAIL");
-    if (! (listed && drumsHave && resampleSays)) std::printf ("    (listed %d, the drums have them %d, resample says %d: \"%s\", the lane's file %s)\n", (int) listed, (int) drumsHave, (int) resampleSays, told.toRawUTF8(), e.laneFile (lead).toRawUTF8());
+                 "the drums' SLICE chooses one and CYCLE ROUND moves on a hit; RESAMPLE makes the last four bars the rig played the lane's sample, and a rig that has played nothing says so\n", ok ? "ok" : "FAIL");
+    if (! (listed && drumsHave)) std::printf ("    (listed %d, the drums have them %d)\n", (int) listed, (int) drumsHave);
 }
 
 static void forgeTest (int& bad)
@@ -1887,6 +1901,14 @@ static void forgeTest (int& bad)
     const double on0 = rms (dry, (size_t) beatN, (size_t) (beatN + 2400)), on1 = rms (wet, (size_t) beatN, (size_t) (beatN + 2400));
     const bool ground = between1 - between0 > 6.0 && std::abs (on1 - on0) < 1.5;
     if (! ground || std::getenv ("SF000_FORGE_DEBUG") != nullptr) std::printf ("    (ground: between the kicks %.1f dB without it and %.1f dB with it; on the hit %.1f and %.1f)\n", between0, between1, on0, on1);
+    // ---- POSITION with no file: the colour of the impact's noise, low to bright, and plain to hear with the body in
+    set (8, 0.5f); set (4, 0.0f); set (1, 0.33f); set (2, 0.5f); set (3, 0.5f);
+    set (5, 0.1f); const auto n1 = bar();
+    set (5, 0.9f); const auto n2 = bar();
+    const auto c1 = bands (n1, (size_t) beatN, (size_t) (beatN + 2880)), c2 = bands (n2, (size_t) beatN, (size_t) (beatN + 2880));
+    // (bands 3 and 4 are 400 and 800 Hz, 6 and 7 are 3.2 and 6.4 kHz: the low colour has more of the first, the bright of the second)
+    const bool colour = std::max (c1[3], c1[4]) - std::max (c2[3], c2[4]) > 3.0 && std::max (c2[6], c2[7]) - std::max (c1[6], c1[7]) > 2.5;
+    if (! colour) std::printf ("    (position with no file, the hit's first 60 ms: 400/800 Hz %.1f dB low and %.1f dB bright; 3.2/6.4 kHz %.1f dB low and %.1f dB bright)\n", std::max (c1[3], c1[4]), std::max (c2[3], c2[4]), std::max (c1[6], c1[7]), std::max (c2[6], c2[7]));
     // ---- POSITION: the impact is from the lane's file, where the knob says (1 kHz in its first half, 5 kHz in its second)
     set (8, 0.5f); set (4, 0.0f); set (1, 0.33f); set (2, 1.0f); set (3, 0.0f);
     const bool loaded = e.loadFile (kick, file);
@@ -1895,6 +1917,20 @@ static void forgeTest (int& bad)
     const auto i1 = bands (p1, (size_t) beatN, (size_t) (beatN + 1440)), i2 = bands (p2, (size_t) beatN, (size_t) (beatN + 1440));
     const bool position = loaded && i2[7] - i2[4] > i1[7] - i1[4] + 6.0;
     if (! position) std::printf ("    (position: loaded %d; 6.4 kHz over 800 Hz in the hit, %.1f dB from the first half and %.1f dB from the second)\n", (int) loaded, i1[7] - i1[4], i2[7] - i2[4]);
+    // ---- IMPACT, with the file and the body both in: what it adds to the hit's first 40 ms from 800 Hz up is plain
+    set (3, 0.5f); set (5, 0.2f);
+    set (2, 0.0f); const auto m0 = bar();
+    set (2, 0.5f); const auto m1 = bar();
+    set (2, 1.0f); const auto m2 = bar();
+    // (what is left of the hit's first 40 ms with the lows taken out: twice differenced)
+    auto top = [&] (const std::vector<float>& x)
+    {
+        double hf = 0.0; const size_t h0 = (size_t) beatN + 2;
+        for (size_t n = h0; n < h0 + 1920 && n < x.size(); ++n) { const double d2 = (double) x[n] - 2.0 * x[n - 1] + x[n - 2]; hf += d2 * d2; }
+        return 10.0 * std::log10 (hf / 1920.0 + 1e-14);
+    };
+    const bool impact = loaded && top (m1) - top (m0) > 6.0 && top (m2) - top (m1) > 2.0;
+    if (! impact) std::printf ("    (impact with a file, the top of the hit's first 40 ms: %.1f dB with none, %.1f dB at its middle, %.1f dB full)\n", top (m0), top (m1), top (m2));
     // ---- everything up: finite, and under full scale
     set (1, 1.0f); set (2, 1.0f); set (3, 1.0f); set (4, 1.0f); set (6, 1.0f); set (7, 1.0f);
     const auto all = bar();
@@ -1902,10 +1938,10 @@ static void forgeTest (int& bad)
     const bool safe = finite && peak < 1.6f;
     if (! safe) std::printf ("    (finite %d, peak %.3f)\n", (int) finite, peak);
     dir.deleteRecursively();
-    const bool ok = named && back && level && smooth && shaped && locked && ground && position && safe;
+    const bool ok = named && back && level && smooth && shaped && locked && ground && colour && position && impact && safe;
     if (! ok) ++bad;
     std::printf ("  %s: KICK FORGE: chosen, the kick's sound places are TUNE, CHARACTER, IMPACT, BODY, GROUND, POSITION, TONE and DRIVE and the usual ones are in CONFIG, and back; CHARACTER goes from mellow to distorted "
-                 "with no step and within 1.5 dB of one loudness; its body is the same hit after hit; GROUND is heard between the kicks and not on them; POSITION is where in the lane's file the impact is from; all of it up is finite\n", ok ? "ok" : "FAIL");
+                 "with no step and within 1.5 dB of one loudness; its body is the same hit after hit; GROUND is heard between the kicks and not on them; POSITION is where in the lane's file the impact is from, and with no file the colour of its noise; IMPACT is plain in the hit; all of it up is finite\n", ok ? "ok" : "FAIL");
 }
 
 static void pocketCurveTest (int& bad)

@@ -4689,9 +4689,9 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - **Five minutes of a file** on BASS, LEAD, CHORD and PAD (it was one), as VOICE has. The
        drums keep one minute. A file is read whole into memory when it is loaded: five minutes is
        about a quarter of a gigabyte, and a second or two of the screen standing still.
-     - **RESAMPLE**, a key beside LOAD in a lane's CONFIG: the bars of the snapshot last taken or
-       recalled (its whole output, as kept without loss) are written into the library's samples
-       and become that lane's sample. The lane's model is left as it is.
+     - **RESAMPLE**, a key beside LOAD in a lane's CONFIG: the last four bars the rig played are
+       written into the library's samples and become that lane's sample (712: it was first the
+       bars of the snapshot last recalled). The lane's model is left as it is.
      - **Cut, and said:** the analysis finding the good parts of a long recording. Not begun.
 710. **KICK FORGE**, the kick's eighth model. Three parts tied to each other: **IMPACT**, the
      first thirty thousandths of a second, a piece of the lane's own file from **POSITION** with
@@ -4758,6 +4758,42 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        sample, are different for this, as they must be: the new ones are the reference from here.
      The picture is not kept in the repository.
 
+712. **You**, Nov 18, 08:23: "what does the forge position knob do? It makes almost no difference
+     to the sound. Also, on all knob pages try to keep similar function knobs in  consistent
+     positions. on the kick config page, the model knob moves to different positions as you turn
+     it." 08:35: "and where do the resamples go? When i press the button theres a cutoff message
+     that says the bars of clean slate are not on the disk (if it was j". 08:42: "Im pact knob
+     also does very little", "and moving the start bar of the sample in forge doesn't relly change
+     the sound". 08:43: "forge is a granular correct?" (It is not: a synthesised kick that lays
+     one piece of the lane's file on the front of each hit. If the file should be more of the
+     kick than that, it is another instrument, and yours to ask for.) Three faults, all mine.
+     - **POSITION did next to nothing because the IMPACT was next to nothing**: a few thousandths
+       of a second, with everything under 900 to 2600 Hz taken out, so every place in a file was
+       the same tick. The impact is now up to nine hundredths of a second dying away (longer as
+       CHARACTER goes up), keeps the file down to 250 to 1200 Hz, and is louder. With no file,
+       POSITION is the colour of its noise from a low knock (250 Hz) to a bright tick (10 kHz).
+       A file's piece is levelled after its lows are out, and a quiet place in a recording is
+       brought up as far as 50 dB (it was levelled before, and held to 32). By the audit, with
+       no file and with one of your own recordings, IMPACT and POSITION each change the kick
+       about as much as DRIVE does (-9 and -8 dB against the kick; they were -31 and -21, at the
+       edge of being heard); GROUND on the tight kick is up as well. START and END are the part
+       of the file POSITION moves within, so they are heard as it is. CHARACTER still holds one
+       loudness, within a quarter of a dB.
+     - **Everything keeps its place** is now the rule of CONFIG, and yours for every knob page.
+       The boxes that are always there come first, in one order on every lane, with **MODEL the
+       first control of all**; MOTION follows them; and the boxes that come and go with a model
+       (its own controls, a sample's, and USUAL KNOBS: the knobs a model's own took the places
+       of) come after, so that choosing a model moves nothing that was there before it. KICK
+       FORGE's own controls are no longer listed while it is not playing. On the panel a model's
+       own knobs keep the lane's fixed ones where they are (TUNE and DRIVE on the kick, CUTOFF
+       and the lane's eighth on the others).
+     - **RESAMPLE takes the last four bars the rig played**, from a bar line, as they left the
+       master: the engine's own tape, whatever is on. (It had been the stored bars of the
+       snapshot last recalled, which CLEAN SLATE has none of, and which was the wrong thing to
+       take in any case.) Its messages are a few words, to fit their line. The file goes into
+       SF-000's own library, under `samples`, named RESAMPLE and the date and time, where a file
+       you LOAD is copied to, and is loaded into the lane.
+
 ## Not verified
 
 - **The pocket as the wrap (711) has not been heard.** It is measured against the kick's own
@@ -4782,7 +4818,7 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   loud as the file makes it. GAIN and NORMALISE are there for that.
 - **A five-minute file** has not been loaded here: the figures for memory and the pause are
   arithmetic.
-- **RESAMPLE on the Mac**, with a real snapshot's kept bars and the library's folder.
+- **RESAMPLE on the Mac**, with the library's own folder (here it is checked with no disk).
 - **Your snapshots with a pad on GRANULAR (27 of them)** are converted as 707 says and measure
   within a dB of what they were lane by lane (grains are scattered by chance, so no two runs
   match exactly). By ear they are yours to check.
