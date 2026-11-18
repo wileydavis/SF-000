@@ -927,6 +927,12 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
         if (! fromE16) engine.noteIn (m, juce::Time::getMillisecondCounterHiRes());
         return;
     }
+    // a pitch wheel on a lane's channel bends that lane
+    if (m.isPitchWheel())
+    {
+        if (! fromE16 && m.getChannel() >= 1 && m.getChannel() <= kLanes) engine.bendIn (m.getChannel() - 1, (float) (m.getPitchWheelValue() - 8192) / 8192.0f);
+        return;
+    }
     if (! m.isController()) return;
     const int ch = m.getChannel(), num = m.getControllerNumber(), val = m.getControllerValue();
     const auto nowMs = juce::Time::getMillisecondCounter();

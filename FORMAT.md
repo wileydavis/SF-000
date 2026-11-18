@@ -168,6 +168,9 @@ this build does not have is written back as it was read.
   sample's ids from this build on (`smp_start`, `smp_end`, `smp_fade_in`, `smp_fade_out`,
   `smp_gain`, `smp_norm`, `smp_slice`, `smp_cycle`). A snapshot that names none of these is read
   with each where it starts (LOOP off, the whole file).
+- **Slice markers** (eighty-third build) are in a lane's `setup`: `smp_cuts` (0 or 1: the slices
+  are the file's own, or the markers') and `smp_cut01` ... `smp_cut32`, each a place in the whole
+  file (0 to 1). Only the markers in use are written; a setup that names none has none.
 - **A lane's EQ** (eightieth build) is in its `setup`: `eq1_type`, `eq1_hz`, `eq1_gain`, `eq1_q` ...
   `eq8_q`, each a place from 0 to 1. `type`: OFF, BELL, LOW SHELF, HIGH SHELF, LOW CUT, HIGH
   CUT, NOTCH along 0 to 1 (sixths). `hz`: 20 Hz · 1000^v. `gain`: -18 dB + 36 v. `q`:

@@ -15,14 +15,14 @@ class VoiceModule : public Module
 {
 public:
     // SSTART: the phrase's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIGNAL, TONE, GATE, DENS, FILT, ECHO, DRIVE, LEVEL, MODEL, SLICEMODE, TUNE, ECHOTIME, ECHOFB, PDEPTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM };      // (SF-000) GAIN, NORMALISE
+    enum { SIGNAL, TONE, GATE, DENS, FILT, ECHO, DRIVE, LEVEL, MODEL, SLICEMODE, TUNE, ECHOTIME, ECHOFB, PDEPTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SCUTS };      // (SF-000) GAIN, NORMALISE, MARKERS (and the 32 after it)
     std::string id() const override { return "VOICE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
+        return withCuts (withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("gate", "GATE", 0.6f).prim(),
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
@@ -39,7 +39,7 @@ public:
                  pct ("pocket_shape", "POCKET SHAPE", 0.3f),
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }));
+                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP PHRASE (C3 = SLICE 1)"; }
@@ -92,7 +92,7 @@ public:
         const bool sigOn = sig < 0.995f;
         const float sigLoA = 1.0f - std::exp (-kTwoPi * 300.0f * (1.0f - sig) * (1.0f - sig) / (float) sr), sigHiA = 1.0f - std::exp (-kTwoPi * std::min (2200.0f * std::pow (9.09f, sig), 0.45f * (float) sr) / (float) sr);
         const float vTilt = (tone - 0.5f) * 2.0f, tiltA = 1.0f - std::exp (-kTwoPi * 1500.0f / (float) sr), tiltLo = std::pow (10.0f, -vTilt * 0.6f), tiltHi = std::pow (10.0f, vTilt * 0.6f);
-        const float rate = semis (c.v (TUNE));
+        const float rate = semis (c.v (TUNE) + c.bend);        // (SF-000: and the pitch wheel)
         keyShift = c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f;
         // Carrier pitch for VOCODER / ROBOT / CHOIR: C1..C4 from TONE (in the KEY).
         const float carrierHz = noteHz (36.0f + std::round (tone * 36.0f) + keyShift);
@@ -129,7 +129,7 @@ public:
             while (e < events.size() && events[e].offset <= i)
             {
                 const auto& ev = events[e++];
-                if (ev.on) noteOn (ev, smp, c.ci (SLICEMODE), autoOff, relMul, reg);
+                if (ev.on) noteOn (ev, smp, c.ci (SLICEMODE), autoOff, relMul, reg, smp != nullptr ? cutsFrom (c, SCUTS, *smp) : Cuts());
                 else noteOff (ev.note, ev.gen);
             }
             float x = 0.0f, sd = 0.0f;
@@ -210,30 +210,44 @@ public:
     int displayHeight() const override { return 110; }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        ui::frame (g, r, "PHRASE");
+        ui::frame (g, r, "PHRASE", ui::kWords);        // (SF-000) its wording bright enough to read
         auto in = r.reduced (8, 18);
         auto s = sample.get();
-        if (s == nullptr) { ui::label (g, "NO PHRASE: FORMANT CHOIR PLAYS THE NOTES", in, ui::kFaint, 11.0f, juce::Justification::centred); return; }
+        if (s == nullptr) { ui::label (g, "NO PHRASE: FORMANT CHOIR PLAYS THE NOTES", in, ui::kWords, 11.0f, juce::Justification::centred); return; }
         const int n = std::max (1, s->length());
         const auto reg = SampleStrip::regionOf (*s, *this, SSTART);
         SampleStrip::drawRegion (g, in, *s, reg);
-        const int count = Slices::count (*s, sliceModeDisp, reg);
+        // (SF-000) the hand's markers, where MARKERS is on: each with its tab; a press on a line takes hold of it, a
+        // double-click puts one in or takes one out
+        const Cuts cuts = cutsOf (*this, SCUTS, *s);
+        if (cuts.on) SampleStrip::drawCuts (g, in, *s, *this, SCUTS, nullptr, 0);
+        const int mode = getParam ? (int) std::lround (getParam (SLICEMODE)) : sliceModeDisp;
+        const int count = cutCount (*s, mode, reg, cuts);
         for (int k = 0; k < count; ++k)
         {
-            const float x = in.getX() + (float) (Slices::start (*s, sliceModeDisp, k, reg) / n) * in.getWidth();
+            const float x = in.getX() + (float) (cutStart (*s, mode, k, reg, cuts) / n) * in.getWidth();
             g.setColour ((int) k == dispSlice.load() ? ui::kGreen : ui::kText);
             g.drawVerticalLine ((int) x, in.getY(), in.getBottom());
-            ui::label (g, juce::MidiMessage::getMidiNoteName (60 + (int) k, true, true, 3), { x + 2, in.getY(), 30, 12 }, ui::kFaint, 9.0f);
+            ui::label (g, juce::MidiMessage::getMidiNoteName (60 + (int) k, true, true, 3), { x + 2, in.getY(), 30, 12 }, ui::kWords, 10.0f);
         }
-        ui::label (g, SampleStrip::times (*s, reg), r.reduced (8, 2).removeFromTop (14), ui::kFaint, 10.0f, juce::Justification::centredRight);
-        ui::label (g, s->name.toUpperCase(), r.reduced (8, 2).removeFromBottom (14), ui::kFaint, 10.0f, juce::Justification::centredRight);
+        ui::label (g, SampleStrip::times (*s, reg), r.reduced (8, 2).removeFromTop (14), ui::kWords, 10.0f, juce::Justification::centredRight);
+        ui::label (g, s->name.toUpperCase(), r.reduced (8, 2).removeFromBottom (14), ui::kWords, 10.0f, juce::Justification::centredRight);
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
-        if (sample.get() != nullptr) strip.mouse (p, r.reduced (8, 18), down, *this, SSTART);
+        if (auto smp = sample.get(); smp != nullptr)
+        {
+            double a[65]; int n = 0;
+            if (down) n = startsNow (*smp, a);
+            strip.mouse (p, r.reduced (8, 18), down, *this, SSTART, SCUTS, smp.get(), a, n);
+        }
         else if (down) strip.up();
     }
     void displayMouseUp() override { strip.up(); }
+    void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
+    {
+        if (auto smp = sample.get(); smp != nullptr) { double a[65]; const int n = startsNow (*smp, a); SampleStrip::doubleClick (p, r.reduced (8, 18), *this, SCUTS, *smp, a, n); }
+    }
 
 private:
     static constexpr int kVb = 16;
@@ -243,7 +257,28 @@ private:
     struct Play { bool active = false, releasing = false; double pos = 0, start = 0; int end = 0, slice = -1, autoOff = -1; float vel = 1, rel = 1, relCoef = 0.999f; SampleRegion reg; };
     struct ChoirVoice { bool active = false; int note = 0, gen = 0; float f = 220, a = 0, target = 0; Osc osc; Svf fm[3]; };
 
-    void noteOn (const NoteEvent& ev, const SampleData* s, int sliceMode, int autoOff, float relMul, const SampleRegion& reg)
+    // (SF-000) The phrase's slices: where the hand's markers are (MARKERS), or as SLICE MODE cuts it.
+    static int cutCount (const SampleData& s, int mode, const SampleRegion& reg, const Cuts& cuts)
+    {
+        if (cuts.on) { double o[kCuts + 1]; return handStarts (s, reg, cuts, o); }
+        return Slices::count (s, mode, reg);
+    }
+    static double cutStart (const SampleData& s, int mode, int k, const SampleRegion& reg, const Cuts& cuts)
+    {
+        if (cuts.on) { double o[kCuts + 1]; const int n = handStarts (s, reg, cuts, o); return o[juce::jlimit (0, n - 1, k)]; }
+        return Slices::start (s, mode, k, reg);
+    }
+    // (as they stand, for the display's hand: the first 65 of them)
+    int startsNow (const SampleData& s, double* out) const
+    {
+        const auto reg = SampleStrip::regionOf (s, *this, SSTART);
+        const Cuts cuts = cutsOf (*this, SCUTS, s);
+        const int mode = getParam ? (int) std::lround (getParam (SLICEMODE)) : sliceModeDisp;
+        const int n = std::min (65, cutCount (s, mode, reg, cuts));
+        for (int k = 0; k < n; ++k) out[k] = cutStart (s, mode, k, reg, cuts);
+        return n;
+    }
+    void noteOn (const NoteEvent& ev, const SampleData* s, int sliceMode, int autoOff, float relMul, const SampleRegion& reg, const Cuts& cuts)
     {
         sliceModeDisp = sliceMode;
         if (s == nullptr)
@@ -255,11 +290,11 @@ private:
             for (int k = 0; k < 3; ++k) v->fm[k].set (formant[k], 8.0f, sr);
             return;
         }
-        const int count = Slices::count (*s, sliceMode, reg);
+        const int count = cutCount (*s, sliceMode, reg, cuts);
         const int idx = ev.note - 60;
-        play.slice = (idx >= 0 && sliceMode != 3) ? std::min (idx, count - 1) : -1;
-        play.start = play.slice >= 0 ? Slices::start (*s, sliceMode, play.slice, reg) : reg.start;
-        play.end = play.slice >= 0 && play.slice + 1 < count ? (int) Slices::start (*s, sliceMode, play.slice + 1, reg) : (int) reg.end;
+        play.slice = (idx >= 0 && (sliceMode != 3 || cuts.on)) ? std::min (idx, count - 1) : -1;
+        play.start = play.slice >= 0 ? cutStart (*s, sliceMode, play.slice, reg, cuts) : reg.start;
+        play.end = play.slice >= 0 && play.slice + 1 < count ? (int) cutStart (*s, sliceMode, play.slice + 1, reg, cuts) : (int) reg.end;
         play.reg = reg;
         play.pos = play.start;
         play.active = true; play.releasing = false; play.rel = 1.0f;

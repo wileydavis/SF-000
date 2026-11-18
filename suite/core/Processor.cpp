@@ -615,6 +615,7 @@ void SFProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuff
         else if (keyHold > 0) { if (d.keyRoot.load() == keyUsed) keyHold = 0; else keyHold -= n; }
         else keyUsed = d.keyRoot.load();
         c.keyRoot = keyUsed >= 0 && keyUsed < 12 && (controlOn || keyFromHost.load()) ? keyUsed : -1;     // (SF-000: or the host's own key)
+        c.bend = bendSt.load();                 // (SF-000) the pitch wheel
         c.n = n;
         c.samplePos = (int64_t) streamPos;
         processChunk (buffer, mainOut, side, start, n, c, midi, panicNow && start == 0, panicHold, start + n >= total);

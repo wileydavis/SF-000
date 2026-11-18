@@ -75,6 +75,7 @@ public:
     // (SF-000) The host sets the key itself (it is the rig's KEY): it is in force with no SF CONTROL
     // running. Nothing else a CONTROL says is taken as said.
     static inline std::atomic<bool> keyFromHost { false };
+    std::atomic<float> bendSt { 0.0f };     // (SF-000) the pitch wheel's bend for this instrument, in semitones: its Ctx's bend
     sf::Module& mod() { return *module; }
     const std::vector<sf::ParamSpec>& allSpecs() const { return specs; }
     int numModuleParams() const { return numModParams; }

@@ -121,6 +121,11 @@ public:
     // onBarLine: taken up on the next bar line while the clock runs. afterBeats (with it): not before a move that sets off
     // on the next beat and takes that long has ended (a recall's notes come in when its glide is over).
     void setPattern (int lane, const Pattern&, bool onBarLine = false, double afterBeats = 0.0);
+    // A pitch wheel on a lane's channel (-1 to 1): it adds to the lane's TUNE, kBendSemis either way at its ends. The
+    // note lanes, RUMBLE and VOICE follow it while a note sounds; a drum takes it as each hit starts. Any thread.
+    static constexpr float kBendSemis = 2.0f;
+    void bendIn (int lane, float v)             { if (lane >= 0 && lane < kLanes) bendWant[(size_t) lane] = juce::jlimit (-1.0f, 1.0f, v); }
+    float bend (int lane) const                 { return lane >= 0 && lane < kLanes ? bendWant[(size_t) lane].load() : 0.0f; }
     // GAIN: what the whole mix is turned by on its way into the master chain (dB, 24 either way; 0 in the middle)
     static float gainDb (float v)               { return (juce::jlimit (0.0f, 1.0f, v) - 0.5f) * 48.0f; }
     static Pattern defaultPattern (int lane);
@@ -669,6 +674,7 @@ private:
     std::vector<int> motionOrder (Target, SFProcessor&, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
     float mixGainWas = 1.0f;            // GAIN, at the last block's end
+    std::array<std::atomic<float>, kLanes> bendWant {}; std::array<float, kLanes> bendNow {};      // the pitch wheels: where each is, and where its lane's pitch has come to
     juce::MidiBuffer noMidi;
 
     // MIDI in and clock out (audio thread, but for the queues' other ends)

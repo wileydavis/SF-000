@@ -116,6 +116,16 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   "the last model" was meant). **Brought into the suite, a model list longer by one moves the
   place of every model after the new one in presets that hold a place and not a name**: here
   the new ones are last, or after SAMPLE, and SF-000 converts its own snapshots (DECISIONS 707).
+- **Eighty-third build, all marked `(SF-000)`. None of it is in the suite.** Slice markers:
+  `modules/Kit.h`: `kCuts`, `Cuts`, `withCuts` (`smp_cuts` and `smp_cut01` ... `smp_cut32`,
+  appended last on KICK, PERC, STRIKE, RUMBLE, the synths and VOICE), `cutsFrom`, `cutsOf`,
+  `handStarts`, `autoStarts`; `sliceCount`, `sliceRegion` and `hitRegion` take them;
+  `SampleStrip` draws them, moves them (`mouse`, `mouseKit`) and puts them in and takes them out
+  (`doubleClick`, `doubleKit`), and takes START or END only from a press near one where there
+  are markers. `core/Module.h`: `displayDouble`. `modules/Voice.cpp`: `cutCount`, `cutStart`,
+  `startsNow`. The pitch wheel: `core/Module.h`: `Ctx::bend`; `core/Processor.h`, `.cpp`:
+  `bendSt`; each instrument adds `c.bend` where it reads TUNE. `core/Ui.h`: `kWords`, and
+  `frame`'s title in a colour given; the sample displays' wording uses it. See DECISIONS 719, 720.
 - **Eighty-first build, all marked `(SF-000)`. None of it is in the suite.** Samples in stereo:
   `core/Sample.h`, `Sample.cpp`: `SampleData::wide` (the channels differ). `modules/Synth.cpp`:
   `GrainRead::both` and the grains' read (left and right apart); `Voice::svfS`, the filter

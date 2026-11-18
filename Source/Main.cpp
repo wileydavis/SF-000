@@ -1924,6 +1924,279 @@ static void gainAndGlideNotesTest (int& bad)
     }
 }
 
+static void markersTest (int& bad)
+{
+    using namespace sf0;
+    // Slice markers set by hand (suite: Kit.h's Cuts, SampleStrip; VOICE, the note lanes' SAMPLE, the drums). The file: four
+    // struck tones a quarter of a second apart, 200, 800, 3200 and 400 Hz: its own onsets cut it in four.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-markerstest");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto file = dir.getChildFile ("four.wav");
+    {
+        juce::AudioBuffer<float> b (2, 48000);
+        const double hz[4] = { 200.0, 800.0, 3200.0, 400.0 };
+        for (int n = 0; n < 48000; ++n)
+        {
+            const int k = n / 12000, i = n % 12000;
+            const float v = (float) (0.7 * std::sin (2.0 * juce::MathConstants<double>::pi * hz[k] * i / 48000.0) * std::exp (-(double) i / 2400.0) * std::min (1.0, i / 24.0));
+            b.setSample (0, n, v); b.setSample (1, n, v);
+        }
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (file), 48000.0, 2, 24, {}, 0) };
+        if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, 48000);
+    }
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n)));
+        }
+        e.tidy();
+    };
+    auto laneOf = [] (const char* slug) { for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == slug) return l; return -1; };
+    const int voice = laneOf ("voice"), lead = laneOf ("lead"), hat = laneOf ("closed_hat");
+    auto choose = [&] (int l, const char* id, const char* name)
+    {
+        for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { ses.setupByHand ({ 0, l, 0 }, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+        return false;
+    };
+    auto valueOf = [&] (int l, const char* id) { for (auto& kv : e.getSetup ({ 0, l, 0 })) if (kv.first == id) return kv.second; return -1.0f; };
+    // the markers a lane has in use, in order
+    auto markers = [&] (int l)
+    {
+        std::vector<float> m;
+        for (auto& kv : e.getSetup ({ 0, l, 0 })) if (kv.first.startsWith ("smp_cut") && kv.first != "smp_cuts" && kv.second > 0.0f) m.push_back (kv.second);
+        std::sort (m.begin(), m.end());
+        return m;
+    };
+    auto said = [] (const std::vector<float>& m) { juce::String s; for (float v : m) s << juce::String (v, 2) << " "; return s.trim(); };
+    auto tone = [] (const std::vector<float>& x, size_t from, size_t to)
+    {
+        const double hz[4] = { 200.0, 800.0, 3200.0, 400.0 };
+        double best = 0, all = 0; int at = -1;
+        to = std::min (to, x.size());
+        for (size_t n = from; n < to; ++n) all += (double) x[n] * x[n];
+        if (to <= from || all / (double) (to - from) < 1.0e-7) return -1;
+        for (int k = 0; k < 4; ++k)
+        {
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz[k] / 48000.0, r = 0.99;
+            double y1 = 0, y2 = 0, sum = 0;
+            for (size_t n = from; n < to; ++n) { const double y = (double) x[n] * (1.0 - r) + 2.0 * r * std::cos (w) * y1 - r * r * y2; y2 = y1; y1 = y; sum += y * y; }
+            sum *= 1.0 - 2.0 * r * std::cos (2.0 * w) + r * r;
+            if (sum > best) { best = sum; at = k; }
+        }
+        return at;
+    };
+    for (int l = 0; l < kLanes; ++l) { Pattern none; e.setPattern (l, none); }
+    ses.userSet (cx::kGlide, 0.0f);
+    const double beatN = 60.0 / e.tempo() * 48000.0;
+    // a bar from the top with the lane alone: C3 on the first beat, C#3 on the third (hits, on a drum); the tone each begins with
+    auto notes = [&] (int l)
+    {
+        Pattern p;
+        for (int b : { 0, 2 }) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; st.gate = 1.0f; st.octave = 3; st.note = b / 2; }
+        e.setPattern (l, p); e.solo = l;
+        e.setRunning (false); run (2.0); heard.clear(); e.setRunning (true); run (4.0, true); e.setRunning (false);
+        e.solo = -1;
+        { Pattern none; e.setPattern (l, none); }
+        auto at = [&] (int beat) { return tone (heard, (size_t) (beat * beatN + 0.01 * 48000.0), (size_t) (beat * beatN + 0.1 * 48000.0)); };
+        return std::pair<int, int> { at (0), at (2) };
+    };
+    auto plain = [&] (int l)
+    {
+        ses.samplePlain (l);
+        ses.userSet (cx::lane (l, cx::kSendA), 0.0f); ses.userSet (cx::lane (l, cx::kSendB), 0.0f);
+        for (int sl = 0; sl < kSlots; ++sl) ses.userSet (cx::insMute (l, sl), 1.0f);
+    };
+    auto set = [&] (int l, const char* id, float v) { e.setSetup ({ 0, l, 0 }, id, v); };
+
+    // ---- VOICE: the file's own cuts, then one marker by hand, then that marker moved
+    bool voiceOk = false; juce::String voiceSays;
+    if (voice >= 0 && e.loadFile (voice, file) && choose (voice, "model", "SAMPLE"))
+    {
+        plain (voice);
+        choose (voice, "slice_mode", "AUTO");
+        const auto own = notes (voice);                         // (C3 the first slice, C#3 the second: tones 0 and 1)
+        set (voice, "smp_cut01", 0.5f); set (voice, "smp_cuts", 1.0f);
+        const auto one = notes (voice);                         // (two slices: C#3 begins half way, on the third tone)
+        set (voice, "smp_cut01", 0.75f);
+        const auto moved = notes (voice);                       // (C#3 begins on the fourth)
+        choose (voice, "slice_mode", "WHOLE");
+        const auto whole = notes (voice);                       // (markers are the cuts whatever SLICE MODE says)
+        set (voice, "smp_cuts", 0.0f);
+        const auto off = notes (voice);                         // (MARKERS off: WHOLE, any note the whole phrase)
+        const bool kept = std::abs (valueOf (voice, "smp_cut01") - 0.75f) < 1.0e-4f;        // (and the marker is kept for when it is on again)
+        voiceOk = own.first == 0 && own.second == 1 && one.first == 0 && one.second == 2 && moved.second == 3 && whole.second == 3 && off.first == 0 && off.second == 0 && kept;
+        voiceSays << "VOICE: own " << own.first << own.second << ", a marker half way " << one.first << one.second << ", moved " << moved.first << moved.second << ", on WHOLE " << whole.first << whole.second << ", off " << off.first << off.second << ", kept " << (int) kept;
+        choose (voice, "slice_mode", "AUTO");
+    }
+    // ---- the display: a double-click puts a marker in (the file's own cuts become markers first), a double-click on one
+    // takes it out, a press on one and a drag moves it. VOICE's display is a frame with the wave 8 in and 18 down.
+    bool handOk = false; juce::String handSays;
+    if (auto* pr = voice >= 0 ? e.processorFor ({ 0, voice, 0 }) : nullptr)
+    {
+        set (voice, "smp_cut01", 0.0f);
+        const juce::Rectangle<float> r (0.0f, 0.0f, 416.0f, 110.0f), w = r.reduced (8.0f, 18.0f);
+        auto at = [&] (float frac) { return juce::Point<float> (w.getX() + frac * w.getWidth(), w.getCentreY()); };
+        auto& m = pr->mod();
+        const bool before = valueOf (voice, "smp_cuts") < 0.5f && markers (voice).empty();
+        m.displayMouse (at (0.6f), r, true); m.displayMouseUp();                    // (a press in the open: nothing moves, START and END least of all)
+        const bool still = markers (voice).empty() && valueOf (voice, "smp_start") < 0.001f && valueOf (voice, "smp_end") > 0.999f;
+        m.displayDouble (at (0.6f), r);
+        const auto put = markers (voice);                                           // (the three onsets, and the new one)
+        m.displayDouble (at (0.5f), r);
+        const auto took = markers (voice);
+        m.displayMouse (at (0.75f), r, true); m.displayMouse (at (0.85f), r, false); m.displayMouseUp();
+        const auto dragged = markers (voice);
+        auto near = [] (const std::vector<float>& a, std::initializer_list<float> b) { if (a.size() != b.size()) return false; size_t i = 0; for (float v : b) if (std::abs (a[i++] - v) > 0.012f) return false; return true; };
+        handOk = before && still && valueOf (voice, "smp_cuts") > 0.5f && near (put, { 0.25f, 0.5f, 0.6f, 0.75f }) && near (took, { 0.25f, 0.6f, 0.75f }) && near (dragged, { 0.25f, 0.6f, 0.85f });
+        handSays << "before " << (int) before << " still " << (int) still << "; put in [" << said (put) << "] taken out [" << said (took) << "] dragged [" << said (dragged) << "]";
+    }
+    // ---- a snapshot keeps them, names only those in use, and one from before has none
+    bool snapOk = false; juce::String snapSays;
+    if (voice >= 0)
+    {
+        const auto taken = ses.take();
+        const auto was = markers (voice);
+        int named = 0, listed = 0;
+        for (auto& kv : e.getSetup ({ 0, voice, 0 })) if (kv.first.startsWith ("smp_cut") && kv.first != "smp_cuts") ++named;
+        bool hasKey = false;
+        for (auto& sp : e.setupParams ({ 0, voice, 0 })) { if (sp.id.startsWith ("smp_cut") && sp.id != "smp_cuts") ++listed; hasKey = hasKey || sp.id == "smp_cuts"; }
+        set (voice, "smp_cut01", 0.0f); set (voice, "smp_cut02", 0.0f); set (voice, "smp_cut03", 0.0f); set (voice, "smp_cut04", 0.0f); set (voice, "smp_cuts", 0.0f);
+        const bool cleared = markers (voice).empty();
+        ses.recall (taken); run (4.0);
+        const bool back = markers (voice) == was && valueOf (voice, "smp_cuts") > 0.5f;
+        juce::var old = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (taken)), true));
+        bool none = false;
+        if (auto* o = old.getDynamicObject())
+        {
+            o->setProperty ("uid", "sf0testbefore83-1"); o->setProperty ("id", 0);
+            auto lanesV = old["setup"]["lanes"];
+            if (auto* ls = lanesV[voice].getDynamicObject())
+                for (int k = 0; k <= 32; ++k) ls->removeProperty (k == 0 ? juce::Identifier ("smp_cuts") : juce::Identifier ("smp_cut" + juce::String (k).paddedLeft ('0', 2)));
+            const auto id = ses.takeFromLibrary (old, "BEFORE", juce::var());
+            ses.recall (id); run (4.0);
+            none = id != 0 && markers (voice).empty() && valueOf (voice, "smp_cuts") < 0.5f;
+        }
+        // (and one taken here with none, kept in the session and not read from a file: recalled over markers, it has none)
+        const auto bare = ses.take();
+        set (voice, "smp_cut05", 0.4f); set (voice, "smp_cuts", 1.0f);
+        ses.recall (bare); run (4.0);
+        const bool bareNone = markers (voice).empty() && valueOf (voice, "smp_cuts") < 0.5f;
+        snapOk = named == (int) was.size() && was.size() == 3 && listed == 0 && hasKey && cleared && back && none && bareNone;
+        snapSays << "named " << named << " of " << (int) was.size() << " in use, listed in CONFIG " << listed << ", MARKERS there " << (int) hasKey << ", cleared " << (int) cleared << ", back " << (int) back << ", none from before " << (int) none << ", none from one with none " << (int) bareNone;
+    }
+    // ---- the note lanes' SAMPLE on SLICES, and a drum's SLICE: the same markers
+    bool leadOk = false, hatOk = false; juce::String otherSays;
+    if (lead >= 0 && e.loadFile (lead, file) && choose (lead, "model", "SAMPLE"))
+    {
+        plain (lead);
+        choose (lead, "smp_notes", "SLICES");
+        const auto own = notes (lead);
+        set (lead, "smp_cut01", 0.5f); set (lead, "smp_cuts", 1.0f);
+        const auto one = notes (lead);
+        set (lead, "smp_cut01", 0.75f);
+        const auto moved = notes (lead);
+        leadOk = own.first == 0 && own.second == 1 && one.first == 0 && one.second == 2 && moved.second == 3;
+        otherSays << "LEAD: own " << own.first << own.second << ", half way " << one.first << one.second << ", moved " << moved.first << moved.second << ". ";
+    }
+    if (hat >= 0 && e.loadFile (hat, file) && choose (hat, "model", "SAMPLE"))
+    {
+        plain (hat);
+        set (hat, "smp_slice", 0.9f);                           // (the last slice: of the file's own four, the fourth tone)
+        const auto own = notes (hat);
+        set (hat, "smp_cut01", 0.5f); set (hat, "smp_cuts", 1.0f);
+        const auto one = notes (hat);                           // (of two: from half way, the third tone)
+        // (and on its display, the strip at the foot of it: a double-click puts a second marker in)
+        bool put = false;
+        if (auto* pr = e.processorFor ({ 0, hat, 0 }))
+        {
+            const juce::Rectangle<float> r (0.0f, 0.0f, 416.0f, 50.0f);
+            const auto w = r.withTrimmedTop (4.0f).reduced (8.0f, 0.0f).withTrimmedTop (18.0f).withTrimmedBottom (5.0f);
+            pr->mod().displayDouble ({ w.getX() + 0.25f * w.getWidth(), w.getCentreY() }, r);
+            const auto m = markers (hat);
+            put = m.size() == 2 && std::abs (m[0] - 0.25f) < 0.012f && std::abs (m[1] - 0.5f) < 1.0e-4f;
+        }
+        hatOk = own.first == 3 && one.first == 2 && put;
+        otherSays << "HAT: the last slice, own " << own.first << ", of two " << one.first << ", a marker put in on its strip " << (int) put;
+    }
+    const bool ok = voiceOk && handOk && snapOk && leadOk && hatOk;
+    if (! ok) ++bad;
+    std::printf ("  %s: slice markers by hand: on VOICE a marker half way makes two slices and C#3 begins there, moved it begins where it was moved to, whatever SLICE MODE says, and MARKERS off gives the file's own cuts back with "
+                 "the markers kept; on the display a press in the open moves nothing, a double-click puts a marker in (the file's own cuts become markers first), a double-click on one takes it out and a drag moves one; a "
+                 "snapshot keeps them, names only those in use, CONFIG lists MARKERS and no marker, and a snapshot from before has none; the note lanes' SLICES and a drum's SLICE are cut by them too\n", ok ? "ok  " : "FAIL");
+    if (! ok) std::printf ("    (%s | %s | %s | %s)\n", voiceSays.toRawUTF8(), handSays.toRawUTF8(), snapSays.toRawUTF8(), otherSays.toRawUTF8());
+    dir.deleteRecursively();
+}
+
+static void pitchBendTest (int& bad)
+{
+    using namespace sf0;
+    // A pitch wheel on a lane's channel: the lane's pitch follows it, two semitones either way at its ends, while a note sounds.
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n)));
+        }
+    };
+    int bass = -1;
+    for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "bass") bass = l;
+    for (int l = 0; l < kLanes; ++l) { Pattern none; e.setPattern (l, none); }
+    ses.userSet (cx::kGlide, 0.0f);
+    Pattern p;
+    for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; st.gate = 4.0f; st.octave = 2; st.note = 0; }
+    e.setPattern (bass, p); e.solo = bass;
+    // the pitch of what is heard: the lag at which it is most like itself, 40 to 400 Hz
+    auto pitch = [&] ()
+    {
+        heard.clear(); run (8.0, true);
+        const size_t n = 16384, from = heard.size() > n + 4000 ? heard.size() - n - 2000 : 0;
+        double best = -1.0; int at = 0;
+        std::vector<double> r (1300, 0.0);
+        for (int lag = 120; lag < 1200; ++lag)
+        {
+            double a = 0, x = 0, y = 0;
+            for (size_t i = from; i + (size_t) lag < from + n && i + (size_t) lag < heard.size(); ++i) { a += (double) heard[i] * heard[i + (size_t) lag]; x += (double) heard[i] * heard[i]; y += (double) heard[i + (size_t) lag] * heard[i + (size_t) lag]; }
+            r[(size_t) lag] = a / std::sqrt (x * y + 1.0e-20);
+        }
+        // (the first lag that is nearly as good as the best: the note itself and not twice its period)
+        for (int lag = 121; lag < 1199; ++lag) best = std::max (best, r[(size_t) lag]);
+        for (int lag = 121; lag < 1199; ++lag) if (r[(size_t) lag] > 0.95 * best && r[(size_t) lag] >= r[(size_t) lag - 1] && r[(size_t) lag] >= r[(size_t) lag + 1]) { at = lag; break; }
+        if (at == 0) return 0.0;
+        const double a = r[(size_t) at - 1], b = r[(size_t) at], c = r[(size_t) at + 1], d = a - 2.0 * b + c;
+        return 48000.0 / ((double) at + (std::abs (d) > 1.0e-12 ? 0.5 * (a - c) / d : 0.0));
+    };
+    e.setRunning (true);
+    run (8.0);
+    const double f0 = pitch();
+    e.bendIn (bass, 1.0f);
+    const double up = pitch();
+    e.bendIn (bass, -0.5f);
+    const double down = pitch();
+    e.bendIn (bass, 0.0f);
+    const double back = pitch();
+    e.setRunning (false);
+    // (the lag found may be the note's or its octave's: a bend is two semitones at most, so the octaves are taken off)
+    auto semis = [] (double a, double b) { const double st = 12.0 * std::log2 (a / std::max (1.0e-9, b)); return st - 12.0 * std::round (st / 12.0); };
+    const bool ok = f0 > 30.0 && std::abs (semis (up, f0) - 2.0) < 0.08 && std::abs (semis (down, f0) + 1.0) < 0.08 && std::abs (semis (back, f0)) < 0.03;
+    if (! ok) ++bad;
+    std::printf ("  %s: a pitch wheel bends its lane: the bass's held note at %.1f Hz is %.2f semitones up with the wheel right up, %.2f with it half way down, and back where it was with the wheel let go (%.2f)\n",
+                 ok ? "ok  " : "FAIL", f0, semis (up, f0), semis (down, f0), semis (back, f0));
+}
+
 static void samplerTest (int& bad)
 {
     using namespace sf0;
@@ -2672,7 +2945,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -5103,6 +5376,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     eqTest (bad);
     stereoLoopTest (bad);
     gainAndGlideNotesTest (bad);
+    markersTest (bad);
+    pitchBendTest (bad);
     arrsKeptTest (bad);
 
     {

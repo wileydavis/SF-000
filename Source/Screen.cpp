@@ -4916,6 +4916,8 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
 {
     if (const auto* h = hitAt (where (e)))
     {
+        // (a display's own: a sample's slice markers, put in and taken out)
+        if (h->kind == hDisplay) { if (auto* pr = eng.processorFor (cfg)) pr->mod().displayDouble (where (e), cfgDisplay); ses.touch(); cfgStale = true; repaint(); return; }
         if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
         else if (h->kind == hEq && cfgOpen && cfg.kind == 0)

@@ -2213,6 +2213,15 @@ static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, En
     if (! motion) for (auto& kv : engine.motionOff (t)) st.push_back (kv);
     // (and one taken before a sample had controls of its own means them as they open: no gain, HELD, no envelope)
     if (! own) for (auto& kv : engine.sampleOwnOff (t)) st.push_back (kv);
+    // (and what came later still, where the state does not name it: LOOP, PERC's sample, the slice markers. A marker
+    // not in use is never written, so a state that names none has none: it is not left with the one before's.)
+    if (t.kind == 0)
+        for (auto& d : engine.laterOff (t))
+        {
+            bool named = false;
+            for (auto& kv : st) named = named || kv.first == d.first;
+            if (! named) st.push_back (d);
+        }
     return st;
 }
 

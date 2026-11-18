@@ -93,6 +93,7 @@ struct Ctx
     bool playing = false;
     double beatsPerBar = 4.0;
     int keyRoot = -1;             // SF CONTROL KEY: 0..11 = C..B, -1 = not set
+    float bend = 0.0f;            // (SF-000) what a pitch wheel adds to TUNE, in semitones (0: at rest)
     int64_t samplePos = 0;        // stream position of this chunk (chunks sit on a fixed 64-sample grid)
     double barPhase = 0.0;        // ppq of a bar line (Live's last bar start, mod the bar)
     bool recallWaiting = false;   // a song recall is waiting for its bar line in this plugin
@@ -173,6 +174,7 @@ public:
     virtual void paint (juce::Graphics&, juce::Rectangle<float>) {}
     virtual void displayMouse (juce::Point<float>, juce::Rectangle<float>, bool down) { juce::ignoreUnused (down); }
     virtual void displayMouseUp() {}
+    virtual void displayDouble (juce::Point<float>, juce::Rectangle<float>) {}      // (SF-000) a double-click on the display
 
     // Program list (only SF CONTROL uses it: songs).
     virtual int numPrograms() const                 { return 1; }

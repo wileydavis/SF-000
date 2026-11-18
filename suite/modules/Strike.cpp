@@ -46,13 +46,13 @@ class StrikeModule : public Module
 public:
     enum { POWER, DISTANCE, SIZE, MATERIAL, DECAY, DENS, FILT, LEVEL,
            MODEL, POSITION, SPREAD, TENSION, TUNE, KEYTRACK, RES, ESPACE, ESWING, VELSENS, ALLOCON, KEYFOLLOW,
-           SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, SBARS };      // (SF-000) the sample's: START, END, the fades, GAIN, NORMALISE, SLICE, CYCLE, LOOP
+           SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, SBARS, SCUTS };      // (SF-000) the sample's: START, END, the fades, GAIN, NORMALISE, SLICE, CYCLE, LOOP, MARKERS (and the 32 after it)
     std::string id() const override { return "STRIKE"; }
     bool instrument() const override { return true; }
     double tailSeconds() const override { return 12.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).prim().dir (1),
+        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).prim().dir (1),
                  pct ("distance", "DISTANCE", 0.3f).prim(),
                  pct ("size", "SIZE", 0.5f).prim(),
                  pct ("material", "MATERIAL", 0.5f).prim(),
@@ -71,7 +71,7 @@ public:
                  pct ("echo_swing", "ECHO SWING", 0.0f),
                  pct ("vel_sens", "VEL SENS", 0.5f),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }))));
+                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })))));
     }
     // (SF-000) SAMPLE's file
     bool acceptsFiles() const override { return true; }
@@ -205,20 +205,24 @@ public:
     int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
-        if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty() && sample.get() != nullptr) strip.mouse (p, SampleStrip::wave (st), down, *this, SSTART);
-        else if (down) strip.up();
+        if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
+        if (down) strip.up();
     }
     void displayMouseUp() override { strip.up(); }
+    void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
+    {
+        if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
+    }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
         if (auto smp = sample.get())
-            if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) strip.paint (g, st, *smp, *this, SSTART);
+            if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) strip.paint (g, st, *smp, *this, SSTART, SCUTS);
         r = r.withHeight ((float) kOwn);
         if (dispObject.load() == kStrikeSample)     // (SF-000) SAMPLE: no blast and no modes
         {
-            ui::frame (g, r, "SAMPLE");
+            ui::frame (g, r, "SAMPLE", ui::kWords);
             auto smp = sample.get();
-            ui::label (g, smp != nullptr ? smp->name.toUpperCase() : juce::String ("NO SAMPLE: LOAD ONE, OR DROP IT HERE"), r.reduced (10, 20), ui::kFaint, 11.0f, juce::Justification::centred);
+            ui::label (g, smp != nullptr ? smp->name.toUpperCase() : juce::String ("NO SAMPLE: LOAD ONE, OR DROP IT HERE"), r.reduced (10, 20), ui::kWords, 11.0f, juce::Justification::centred);
             return;
         }
         const float power = dispPower.load(), dist = dispDistance.load();
@@ -289,8 +293,9 @@ private:
         if (at == nullptr) { at = &shots[0]; for (auto& h : shots) if (h.fade < at->fade) at = &h; }
         *at = Shot();
         at->active = true; at->vel = vel;
-        at->step = semis (c.v (TUNE) + (c.b (KEYTRACK) ? (float) (ev.note - 60) : 0.0f));
-        at->reg = hitRegion (c, s, regionFrom (c, SSTART, s, SGAIN), SSLICE, sliceHits++, sliceRng.uni());
+        at->step = semis (c.v (TUNE) + c.bend + (c.b (KEYTRACK) ? (float) (ev.note - 60) : 0.0f));
+        const Cuts cuts = cutsFrom (c, SCUTS, s);
+        at->reg = hitRegion (c, s, regionFrom (c, SSTART, s, SGAIN), SSLICE, sliceHits++, sliceRng.uni(), &cuts);
         at->pos = at->reg.start;
         at->gate = sampleGateSeconds (c.v (DECAY), (float) (at->reg.length() / s.sr) / (float) at->step, ev.gen);
     }
@@ -336,7 +341,7 @@ private:
         v.blastT = T; v.blastAmp = amp * v.vel; v.lpA = std::exp (-kTwoPi * lp / (float) sr);
         v.fracture = power > kFracture ? (power - kFracture) / (1.0f - kFracture) : 0.0f;
         // Pitch: SIZE (bigger = lower), TUNE, KEY TRACK, KEY.
-        float st = c.v (TUNE) + (c.b (KEYTRACK) ? (float) (ev.note - 60) : 0.0f);
+        float st = c.v (TUNE) + c.bend + (c.b (KEYTRACK) ? (float) (ev.note - 60) : 0.0f);      // (SF-000: and the pitch wheel, as each hit starts)
         const float f0 = expMap (1.0f - c.v (SIZE), 45.0f, 1400.0f);
         if (c.b (KEYFOLLOW) && c.keyRoot >= 0) st += keySnap (f0 * o.pitchRatio, c.keyRoot);
         const float base = f0 * semis (st);

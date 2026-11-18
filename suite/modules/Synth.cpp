@@ -293,6 +293,7 @@ public:
            GRPOS, GRSCAN, GRSIZE, GRDENS, GRSPRAY, GRPITCH, GRSHAPE, GRREV, GRCLOCK, GRSPREAD, GRFOLLOW, GRSYNC,
            // (SF-000) SAMPLE's: what a note chooses, the loop, and where a note starts
            SNOTES, SLOOP, SXFADE, SVELSTART, SRANDSTART,
+           SCUTS, SCUTLAST = SCUTS + kCuts,      // (SF-000) MARKERS and the 32 slice markers
            kParams };
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
@@ -414,6 +415,7 @@ public:
         p.push_back (pct ("smp_xfade", "CROSSFADE", 0.25f).noPreset().sampleGroup());
         p.push_back (pct ("smp_vel", "VEL START", 0.0f).noPreset().sampleGroup());
         p.push_back (pct ("smp_rand", "RANDOM START", 0.0f).noPreset().sampleGroup());
+        p = withCuts (std::move (p));        // (SF-000) the slice markers
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -687,7 +689,7 @@ public:
         // WAVETABLE's frames from the sample, if TABLE says so and there are some.
         tableFrames = c.ci (TABLE) == 1 ? frames.audio() : nullptr;
         if (tableFrames != nullptr && tableFrames->f.size() < (size_t) kSampleFrames) tableFrames = nullptr;
-        pitchOffset = c.v (TUNE) + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);
+        pitchOffset = c.v (TUNE) + c.bend + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);      // (SF-000: and the pitch wheel)
         const int modelA = c.ci (MODEL), modelB = c.ci (LAYERMODEL);
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
         if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.engine == E_SAMPLE && ! ma.mono && c.v (SENV) > 0.5f) ensembleAmt = 0.3f;      // (SF-000) SPACE on a sample
@@ -826,7 +828,7 @@ public:
     {
         auto s = sample.get();
         const auto st = SampleStrip::frameIn (r, kOwn);
-        if (s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART);
+        if (s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART, SCUTS);
         r = r.withHeight ((float) kOwn);
         auto left = r.removeFromLeft (r.getWidth() * 0.4f);
         ui::frame (g, left, "VOICES");
@@ -841,10 +843,14 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool press) override
     {
-        if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty() && sample.get() != nullptr) strip.mouse (p, SampleStrip::wave (st), press, *this, SSTART);
-        else if (press) strip.up();
+        if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), press, *this, SSTART, SCUTS, *smp); return; } }
+        if (press) strip.up();
     }
     void displayMouseUp() override { strip.up(); }
+    void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
+    {
+        if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
+    }
 
 private:
     void noteOn (Ctx& c, int modelIdx, const NoteEvent& ev, float gain, int layerId, int autoOff, float relMul)
@@ -945,7 +951,8 @@ private:
             {
                 if (c.ci (SNOTES) == 1)
                 {
-                    v.reg = sliceRegion (*s, v.reg, ev.note - 60);
+                    const Cuts cuts = cutsFrom (c, SCUTS, *s);
+                    v.reg = sliceRegion (*s, v.reg, ev.note - 60, &cuts);
                     v.sliceHz = noteHz (ev.note);
                     v.freq = v.target;                  // a slice does not glide in from the note before
                 }

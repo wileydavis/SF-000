@@ -4961,8 +4961,75 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        of before are still playing: what is coming, not what is sounding. A step pressed during
        the wait takes over at once, as a step always has.
 
+## Slice markers by hand, a pitch wheel, and what made snapshot 122 quiet (Nov 18, 14:58): eighty-third build
+
+719. **You**, Nov 18, 14:58: "how do I adjust the sample slice points on voice?>"; 15:27: "and di
+     we add sliced samples with notes to the regular sampler?" (yes: NOTES at SLICES, the
+     seventy-ninth build); 15:28: "but yeas, the auto slicer doesn't always get it right on the
+     vocals. So the ability to add slice markers and adjust them would be useful."; 15:32: "make
+     sure any sampler has slice markers that can be added/deleted, and moved." **Slice markers**,
+     *mine, the particulars:*
+     - **Every lane that plays a file has them**: VOICE, the note lanes' SAMPLE, KICK, the hats,
+       the clap, PERC and RUMBLE. Up to 32, each a place in the whole file, so moving START or
+       END moves none of them.
+     - **On the sample's display**: drag a cut's line to move it; double-click to put a marker
+       in; double-click a marker to take it out. **The first time a hand does any of these, the
+       cuts that are there become the markers** (the file's own onsets, or VOICE's SLICE MODE as
+       it stands, the first 32) and **MARKERS**, a switch in CONFIG's SAMPLE box, goes on. From
+       then the slices are START, then each marker inside START..END, each to the next.
+       MARKERS off: the file's own cuts again, with the markers kept for when it is on.
+     - **A press in the open no longer moves START or END** (it took whichever was nearer to
+       where the press was): a press must be within ten pixels of one to take it. A
+       double-click would otherwise have moved one of them first.
+     - **A snapshot keeps them** (`smp_cuts`, `smp_cut01` ... `smp_cut32` in a lane's setup,
+       only those in use written). A snapshot that names none has none.
+     - The displays draw the file's own cuts faintly on every sample (up to 64), and the
+       markers bright with a tab at the foot of each.
+     - 16:03: "while you're in there, make the labels and wording in the sample waveform viewer
+       have more contrast. they're hard to read as is." The sample's name, its times, VOICE's
+       slice notes and PHRASE's and SAMPLE's titles are now near white (they were a dark grey
+       on black), and the slice notes a size larger.
+     - **Not in this:** naming a marker; snapping one to the nearest onset or to the beat;
+       more than 32; zooming the display, which a long file wants for fine work.
+720. **You**, 15:32: "I also feel like I lost the pitch/tune knobs on some modules (bass, for
+     isntance). How am I supposed to do pitch bends and whatnot? Am I misremembering having
+     those?" and 15:42: "tune in config is fine. foe some reason i couldn't find it there but now
+     i see it. Add midi pitch bend though." BASS, CHORD and PAD have never had TUNE on the panel
+     here: it is in CONFIG. **A pitch wheel on a lane's channel now bends that lane**: it adds to
+     the lane's TUNE, two semitones either way at its ends, over a few thousandths of a second.
+     The note lanes, RUMBLE and VOICE follow it while a note sounds; a drum takes it as each hit
+     starts. Not from the E16's port. *Mine:* the two semitones are fixed for now; a range to
+     choose is a small thing to add.
+721. **You**, 15:42: "Also, I think everything got quieter afetr we added the EQ. I have to turn
+     gail all the way up, even with bass and kick levele above 75% and limit all the way to get
+     anwhere c.ose to 09 luffs. could we have intrioduced unintended quietness with some opf the
+     recent changeds?"; 15:45: "snapshot 122 is the most recent of the snapshots and it seems
+     quiter than usual"; 15:52: "it's on the library website", and the session file. **Looked
+     for, and not found, in the build.** Your arrangement of Nov 16, printed by that day's build
+     and by this one: the set -10.0 LUFS both, the mix before the master -16.0 then and -15.8
+     now, every stem the same or a little louder. (I had first blamed the new pocket. Wrong.)
+     **Found in the snapshot.** SNAP 122 rendered here is 14.6 dB under SNAP 101, and put back
+     one setting at a time:
+     - **the bass's CUTOFF at nought** (since SNAP 108): at 43 % the bass is 21 dB up and the
+       whole mix 13;
+     - **the kick on KICK FORGE with BODY at 17 %, IMPACT at 12 %, DECAY at 13 %**: at their
+       middles the kick is 10 dB up and the mix 9;
+     - **the LOW, MID and HIGH bands dragged to the floor on five lanes** (since SNAP 108, the
+       first taken on the EQ build): flat, the mix is 4 dB up, RUMBLE 9 and LEAD 10.
+     Nothing was changed for this. What it shows: a band's point dragged to the floor is 24 dB,
+     kept in every snapshot after; and LIMIT cannot lift a mix that far under its figure.
+
 ## Not verified
 
+- **Slice markers, the pitch wheel and the viewer's wording (719, 720) are checked, not used.**
+  Markers: a marker cuts VOICE, LEAD's SLICES and a hat's SLICE where it is put, moved and
+  taken out, by the display's own double-click and drag, on this machine's blind presses; a
+  snapshot keeps them. How taking hold of a line feels under a mouse, whether five pixels is
+  the right reach, and how thirty-two lines read on a short display are yours to say. A long
+  file's cuts are close together on a display this wide. The wheel: the bass's held note
+  measured two semitones up, one down, and back; no wheel has been turned on a keyboard into
+  it, and the MIDI input's own path is three lines untested by a check. The wording: seen in
+  one picture here.
 - **GAIN and the notes at a glide's end (717, 718) are measured, not heard.** GAIN: a set put
   6 dB under where LIMIT lifts (-15.7 LUFS) comes back to -9.5 with GAIN up 14; a recall leaves
   it; the set keeps it. Its place on the panel has been seen in one picture here. How hard TAPE

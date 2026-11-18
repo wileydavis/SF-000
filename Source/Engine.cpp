@@ -1412,6 +1412,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
     auto groupOf = [&] (const sf::ParamSpec& s) -> juce::String
     {
         const juce::String id (s.id);
+        if (id.startsWith ("smp_cut") && id != "smp_cuts") return {};    // (a slice marker: the display's to move, not a knob's)
         if (t.kind == 3 && id.startsWith ("in_")) return "LANES";       // (which lanes play through the drum bus)
         if (id.startsWith ("fm_")) return plays ("FM 4-OP") ? "FM 4-OP" : juce::String();
         if (id == "table") return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
@@ -1684,9 +1685,15 @@ Engine::SetupState Engine::laterOff (Target t) const
     if (t.kind != 0) return st;
     const bool strike = juce::String (lanes()[(size_t) t.lane].module) == "STRIKE";
     if (auto* p = processorFor (t))
+    {
         for (const char* id : { "smp_bars", "smp_start", "smp_end", "smp_fade_in", "smp_fade_out", "smp_gain", "smp_norm", "smp_slice", "smp_cycle" })
             if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams() && (strike || juce::String (id) == "smp_bars"))
                 st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
+        // (the slice markers, and whether they are the hand's: none, and the file's own cuts)
+        const auto& specs = p->allSpecs();
+        for (int i = 0; i < p->numModuleParams(); ++i)
+            if (juce::String (specs[(size_t) i].id).startsWith ("smp_cut")) st.push_back ({ juce::String (specs[(size_t) i].id), 0.0f });
+    }
     return st;
 }
 
@@ -1758,7 +1765,11 @@ Engine::SetupState Engine::getSetup (Target t) const
         const auto& specs = p->allSpecs();
         for (int i = 0; i < p->numModuleParams(); ++i)
             if (std::find (bound.begin(), bound.end(), specs[(size_t) i].id) == bound.end())
+            {
+                // (a slice marker not in use is not written: a snapshot that does not name one has none there, laterOff)
+                if (specs[(size_t) i].hidden && p->param (i)->getValue() == 0.0f && juce::String (specs[(size_t) i].id).startsWith ("smp_cut")) continue;
                 st.push_back ({ specs[(size_t) i].id, p->param (i)->getValue() });
+            }
         // its MOTION with it
         {
             for (int i = p->numModuleParams(); i < (int) specs.size(); ++i)
@@ -2357,6 +2368,14 @@ void Engine::render (juce::AudioBuffer<float>& out)
         if (stopping || pan || starting || again) ln.player.stop (ln.midi, 0);
         auto* voice = ln.voice.load();
         auto* voiceOut = ln.voiceOut.load();
+        // the pitch wheel: the lane's pitch comes to where the wheel is over a few thousandths of a second
+        {
+            const float want = bendWant[(size_t) l].load() * kBendSemis;
+            float& now = bendNow[(size_t) l];
+            if (now != want) { now += (want - now) * (1.0f - std::exp (-(float) n / (0.004f * (float) sr))); if (std::abs (want - now) < 1.0e-4f) now = want; }
+            if (auto* v = ln.voice.load()) v->proc->bendSt = now;
+            if (voiceOut != nullptr) voiceOut->proc->bendSt = now;
+        }
         if (const auto moved = ln.knobsMoved.load (std::memory_order_relaxed); voice != ln.voiceSeen || moved != ln.knobsSeen)
         {
             // a voice that has just taken the lane, or whose model's knobs are others now: every knob as it stands (it

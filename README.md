@@ -453,6 +453,13 @@ between START and END.
   **RANDOM START**: each note starts somewhere else.
 - **SLICE** and **CYCLE** (KICK, the hats, CLAP, PERC, RUMBLE): SLICE is which slice a hit plays
   (all the way down: the whole, as before); CYCLE ROUND plays the next one each hit, RANDOM any.
+- **Slice markers** (every lane that plays a file; eighty-third build): on the sample's display,
+  drag a cut's line to move it, double-click to put a marker in, double-click a marker to take
+  it out. The first time, the cuts that are there (the file's own onsets, or VOICE's SLICE MODE)
+  become the markers and **MARKERS** in CONFIG's SAMPLE box goes on: the slices are then START
+  and each marker between START and END. Up to 32, each a place in the whole file. MARKERS off
+  gives the file's own cuts back and keeps the markers. A snapshot holds them. START and END are
+  taken by a press within ten pixels of them (a press anywhere used to move the nearer).
 - **LOOP** (the hats, CLAP, PERC; eighty-first build): a file on a drum lane is a hit, started
   again by every step and cut by DECAY. With LOOP on it is a loop: START..END is taken to be a
   number of bars (AUTO: the power of two it is nearest to at the tempo; or 1 to 32) and goes
@@ -599,6 +606,13 @@ brings its snapshot's notes, whatever the library's NOTES says.
 It goes into the mix before the master, so the master's limiter holds it, and has a stem and a
 recorded track of its own. What it plays is kept with the session, not in a snapshot; a file
 given to it is copied into the library, as a lane's sample is. Not on the E16 or a pad yet: the keys T and G, or the mouse.
+
+### A pitch wheel
+
+A pitch wheel on a lane's MIDI channel bends that lane (eighty-third build): it adds to the
+lane's TUNE, two semitones either way at its ends. BASS, LEAD, CHORD, PAD, RUMBLE and VOICE
+follow it while a note sounds; a drum takes it as each hit starts. The E16's port is not
+listened to for it.
 
 ### GAIN: the whole mix, into the master
 
@@ -1680,7 +1694,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

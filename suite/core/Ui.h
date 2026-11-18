@@ -18,6 +18,7 @@ const juce::Colour kGrid     { 0xff171717 };
 const juce::Colour kText     { 0xffe8e8e8 };
 const juce::Colour kDim      { 0xff8a8a8a };
 const juce::Colour kFaint    { 0xff4a4a4a };
+const juce::Colour kWords    { 0xffd0d0d0 };       // (SF-000) wording that is to be read at a glance: a sample's name, its times, its slices' notes
 const juce::Colour kTrack    { 0xff2e2e2e };
 const juce::Colour kAccent   { 0xff00c8ff };
 const juce::Colour kRed      { 0xffff3b30 };
@@ -47,11 +48,11 @@ inline void lines (juce::Graphics& g, const juce::String& s, juce::Rectangle<flo
     g.drawFittedText (s, r.toNearestInt(), j, maxLines, 0.85f);
 }
 
-inline void frame (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title = {})
+inline void frame (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& title = {}, juce::Colour words = kFaint)
 {
     g.setColour (kLine);
     g.drawRect (r, 1.0f);
-    if (title.isNotEmpty()) label (g, title, r.reduced (6, 2).removeFromTop (14), kFaint, 10.0f);
+    if (title.isNotEmpty()) label (g, title, r.reduced (6, 2).removeFromTop (14), words, 10.0f);
 }
 
 // Horizontal level bar, dB scale -60..+6. Amber above -6 dBFS, red above -0.3.

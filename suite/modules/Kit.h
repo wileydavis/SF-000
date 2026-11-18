@@ -65,6 +65,48 @@ inline SampleRegion regionFrom (const Ctx& c, int first, const SampleData& s, in
 // read: SampleData::onsets), or eight equal parts where there are fewer than two. START begins the first where the first
 // onset is not just after it. One recording is then a kit or a set of phrases: each hit or note plays one slice, from
 // its onset to the next. Nothing here allocates: it is called as a note starts.
+// (SF-000) Slice markers set by hand. A sample is cut where its own onsets are heard to be, and that is not always where
+// a voice's words are. MARKERS on: the slices are START, then every marker between START and END, each to the next. Up to
+// 32 markers, each a place in the whole file (0 to 1; 0: not used), so moving START or END moves none of them. They are
+// parameters like START and END, appended last: a snapshot holds them, and the display that shows the sample moves them.
+constexpr int kCuts = 32;
+struct Cuts { bool on = false; int n = 0; double at[kCuts] {}; };       // at: in the sample's samples, ascending
+inline std::vector<ParamSpec> withCuts (std::vector<ParamSpec> v)
+{
+    v.push_back (toggle ("smp_cuts", "MARKERS", false).noPreset().sampleGroup());
+    for (int k = 0; k < kCuts; ++k)
+    {
+        char id[16]; std::snprintf (id, sizeof id, "smp_cut%02d", k + 1);
+        v.push_back (pct (id, "MARKER", 0.0f).noPreset().sampleGroup().hide().noGlide());
+    }
+    return v;
+}
+template <typename Get> inline Cuts cutsWith (Get get, int first, const SampleData& s)
+{
+    Cuts c; c.on = get (first) > 0.5f;
+    if (! c.on) return c;
+    const double n = (double) s.length();
+    for (int k = 0; k < kCuts; ++k)
+        if (const float v = get (first + 1 + k); v > 0.0f)
+        {
+            const double p = (double) v * n;
+            int i = c.n++;
+            while (i > 0 && c.at[i - 1] > p) { c.at[i] = c.at[i - 1]; --i; }
+            c.at[i] = p;
+        }
+    return c;
+}
+inline Cuts cutsFrom (const Ctx& c, int first, const SampleData& s) { return cutsWith ([&c] (int i) { return c.v (i); }, first, s); }
+inline Cuts cutsOf (const Module& m, int first, const SampleData& s) { if (! m.getParam) return {}; return cutsWith ([&m] (int i) { return m.getParam (i); }, first, s); }
+// The slices' starts by hand: START, then the markers inside START..END (one within 4 ms of START is START; one within 10 ms
+// of END is left out). out: room for kCuts + 1.
+inline int handStarts (const SampleData& s, const SampleRegion& r, const Cuts& c, double* out)
+{
+    int n = 0;
+    out[n++] = r.start;
+    for (int k = 0; k < c.n; ++k) if (c.at[k] > r.start + 0.004 * s.sr && c.at[k] < r.end - 0.01 * s.sr) out[n++] = c.at[k];
+    return n;
+}
 struct SliceSpan { int i0 = 0, i1 = 0; bool lead = true; int count = 8; bool own = false; };
 inline SliceSpan sliceSpan (const SampleData& s, const SampleRegion& r)
 {
@@ -79,15 +121,35 @@ inline SliceSpan sliceSpan (const SampleData& s, const SampleRegion& r)
     o.count = o.own ? n : 8;
     return o;
 }
-inline int sliceCount (const SampleData& s, const SampleRegion& r) { return sliceSpan (s, r).count; }
-// The slice of that number (from 0; past the last, round again), as a region of its own: faded a thousandth of a second
-// in and two out where it was cut from its neighbours, and at the sample's level.
-inline SampleRegion sliceRegion (const SampleData& s, const SampleRegion& r, int index)
+inline int sliceCount (const SampleData& s, const SampleRegion& r, const Cuts* cuts = nullptr)
+{
+    if (cuts != nullptr && cuts->on) { double o[kCuts + 1]; return handStarts (s, r, *cuts, o); }
+    return sliceSpan (s, r).count;
+}
+// The starts of the slices as the file's own onsets give them (or eight equal parts), the first max of them: what a
+// display draws, and what the markers begin as when a hand first moves one.
+inline int autoStarts (const SampleData& s, const SampleRegion& r, double* out, int max)
 {
     const auto o = sliceSpan (s, r);
-    index = ((index % o.count) + o.count) % o.count;
+    int n = 0;
+    if (! o.own) { for (int k = 0; k < 8 && n < max; ++k) out[n++] = r.start + (r.end - r.start) * (double) k / 8.0; return n; }
+    if (o.lead && n < max) out[n++] = r.start;
+    for (int k = o.i0; k < o.i1 && n < max; ++k) out[n++] = (double) s.onsets[(size_t) k];
+    return n;
+}
+// The slice of that number (from 0; past the last, round again), as a region of its own: faded a thousandth of a second
+// in and two out where it was cut from its neighbours, and at the sample's level.
+inline SampleRegion sliceRegion (const SampleData& s, const SampleRegion& r, int index, const Cuts* cuts = nullptr)
+{
+    const bool hand = cuts != nullptr && cuts->on;
+    double hs[kCuts + 1];
+    const int hn = hand ? handStarts (s, r, *cuts, hs) : 0;
+    const auto o = hand ? SliceSpan() : sliceSpan (s, r);
+    const int count = hand ? hn : o.count;
+    index = ((index % count) + count) % count;
     double a = r.start, b = r.end;
-    if (o.own)
+    if (hand) { a = hs[index]; if (index + 1 < hn) b = hs[index + 1]; }
+    else if (o.own)
     {
         const int k = o.i0 + index - (o.lead ? 1 : 0);            // (the onset it starts on; before the first: START)
         if (k >= o.i0) a = (double) s.onsets[(size_t) k];
@@ -228,15 +290,15 @@ struct SampleLoop
 };
 // The region a hit plays: the whole of it, or the slice SLICE and CYCLE say (hits: how many this drum has played, counted
 // by its module; chance: 0 to 1, drawn for this hit).
-inline SampleRegion hitRegion (const Ctx& c, const SampleData& s, const SampleRegion& whole, int sliceAt, int hits, float chance)
+inline SampleRegion hitRegion (const Ctx& c, const SampleData& s, const SampleRegion& whole, int sliceAt, int hits, float chance, const Cuts* cuts = nullptr)
 {
     const float sl = c.v (sliceAt);
     const int cycle = c.ci (sliceAt + 1);
     if (sl <= 0.001f && cycle == 0) return whole;
-    const int n = sliceCount (s, whole);
+    const int n = sliceCount (s, whole, cuts);
     int index = sl > 0.001f ? std::min (n - 1, (int) (sl * (float) n * 0.9999f)) : 0;
     if (cycle == 1) index += hits; else if (cycle == 2) index += (int) (chance * (float) n);
-    return sliceRegion (s, whole, index);
+    return sliceRegion (s, whole, index, cuts);
 }
 
 // DRY: off on a return track (wet only), on as an insert. Routing, so songs and presets leave it alone.
@@ -427,7 +489,49 @@ inline float keySnap (float hz, int keyRoot)
 struct SampleStrip
 {
     static constexpr int kHeight = 50;              // with a 4 px gap above its frame
-    int dragging = -1;                              // 0: START, 1: END (between a press and its release)
+    int dragging = -1;                              // 0: START, 1: END, 2 and over: a slice marker (between a press and its release)
+
+    // (SF-000) The slice markers (cutsAt: MARKERS' parameter, the 32 after it; under 0: this sample has none).
+    static bool cutsOn (const Module& m, int cutsAt) { return cutsAt >= 0 && m.getParam && m.getParam (cutsAt) > 0.5f; }
+    // the marker nearest a place in the file (0 to 1), within tol of it; -1: none
+    static int cutNear (const Module& m, int cutsAt, float frac, float tol)
+    {
+        int best = -1; float d = tol;
+        for (int k = 0; k < kCuts; ++k) if (const float v = m.getParam (cutsAt + 1 + k); v > 0.0f && std::abs (v - frac) <= d) { d = std::abs (v - frac); best = k; }
+        return best;
+    }
+    // The markers become the cuts that are there (starts: the slices' starts as they stand, the first of them START and
+    // not a marker), and MARKERS is on: from here they are the hand's.
+    static void cutsSeed (Module& m, int cutsAt, const SampleData& s, const double* starts, int n)
+    {
+        const double len = (double) std::max (1, s.length());
+        int k = 0;
+        for (int i = 1; i < n && k < kCuts; ++i) m.setParam (cutsAt + 1 + k++, (float) juce::jlimit (0.001, 0.999, starts[i] / len));
+        for (; k < kCuts; ++k) if (m.getParam (cutsAt + 1 + k) != 0.0f) m.setParam (cutsAt + 1 + k, 0.0f);
+        m.setParam (cutsAt, 1.0f);
+    }
+    // The cuts' lines over a waveform: the hand's markers bright, each with a tab at its foot to take hold of; the file's
+    // own (starts, n) faint.
+    static void drawCuts (juce::Graphics& g, juce::Rectangle<float> w, const SampleData& s, const Module& m, int cutsAt, const double* starts, int n)
+    {
+        if (cutsAt < 0 || ! m.getParam || w.getWidth() <= 1.0f) return;
+        if (cutsOn (m, cutsAt))
+        {
+            g.setColour (ui::kText);
+            for (int k = 0; k < kCuts; ++k)
+                if (const float v = m.getParam (cutsAt + 1 + k); v > 0.0f)
+                {
+                    const float x = w.getX() + v * w.getWidth();
+                    g.drawVerticalLine ((int) x, w.getY(), w.getBottom());
+                    g.fillRect (x - 2.0f, w.getBottom() - 1.0f, 5.0f, 4.0f);
+                }
+            return;
+        }
+        if (n > 64) return;
+        g.setColour (ui::kDim);
+        const double len = (double) std::max (1, s.length());
+        for (int i = 1; i < n; ++i) g.drawVerticalLine ((int) (w.getX() + (float) (starts[i] / len) * w.getWidth()), w.getY() + 2.0f, w.getBottom());
+    }
 
     static juce::Rectangle<float> frameIn (juce::Rectangle<float> display, int own)
     {
@@ -473,16 +577,20 @@ struct SampleStrip
             g.fillRect (x - 2.0f, w.getY() - 4.0f, 4.0f, 4.0f);
         }
     }
-    void paint (juce::Graphics& g, juce::Rectangle<float> frame, const SampleData& s, const Module& m, int first) const
+    void paint (juce::Graphics& g, juce::Rectangle<float> frame, const SampleData& s, const Module& m, int first, int cutsAt = -1) const
     {
         if (frame.isEmpty()) return;
         const auto reg = regionOf (s, m, first);
-        ui::frame (g, frame, "SAMPLE " + s.name.toUpperCase());
-        ui::label (g, times (s, reg), frame.reduced (8.0f, 2.0f).removeFromTop (14.0f), ui::kFaint, 10.0f, juce::Justification::centredRight);
+        ui::frame (g, frame, "SAMPLE " + s.name.toUpperCase(), ui::kWords);        // (SF-000) its wording bright enough to read
+        ui::label (g, times (s, reg), frame.reduced (8.0f, 2.0f).removeFromTop (14.0f), ui::kWords, 10.0f, juce::Justification::centredRight);
         drawRegion (g, wave (frame), s, reg);
+        if (cutsAt >= 0) { double a[65]; const int n = cutsOn (m, cutsAt) ? 0 : autoStarts (s, reg, a, 65); drawCuts (g, wave (frame), s, m, cutsAt, a, n); }
     }
-    // A press (down) or a drag at p, over the waveform w. True if it took the event.
-    bool mouse (juce::Point<float> p, juce::Rectangle<float> w, bool down, Module& m, int first)
+    // A press (down) or a drag at p, over the waveform w. True if it took the event. With markers (cutsAt, s; starts and n:
+    // the slices' starts as they stand, for a press): a press on a cut's line takes hold of that marker (the file's own
+    // cuts become the hand's markers at that moment), START and END before it where they are as near.
+    bool mouse (juce::Point<float> p, juce::Rectangle<float> w, bool down, Module& m, int first, int cutsAt = -1, const SampleData* s = nullptr,
+                const double* starts = nullptr, int n = 0)
     {
         if (down) dragging = -1;
         if (! m.getParam || ! m.setParam || w.getWidth() <= 1.0f) return false;
@@ -491,15 +599,59 @@ struct SampleStrip
         {
             if (! w.expanded (4.0f, 6.0f).contains (p)) return false;
             const float xa = w.getX() + a * w.getWidth(), xb = w.getX() + b * w.getWidth();
-            dragging = std::abs (p.x - xa) <= std::abs (p.x - xb) ? 0 : 1;
+            const float frac = juce::jlimit (0.0f, 1.0f, (p.x - w.getX()) / w.getWidth()), tol = 5.0f / w.getWidth();
+            if (cutsAt >= 0 && s != nullptr && std::abs (p.x - xa) > 4.0f && std::abs (p.x - xb) > 4.0f)
+            {
+                if (! cutsOn (m, cutsAt))
+                {
+                    // (the file's own cut under the hand: all of them are markers from now, and this one is held)
+                    bool on = false;
+                    const double len = (double) std::max (1, s->length());
+                    for (int i = 1; i < n; ++i) on = on || std::abs ((float) (starts[i] / len) - frac) <= tol;
+                    if (on) cutsSeed (m, cutsAt, *s, starts, n);
+                }
+                if (cutsOn (m, cutsAt)) if (const int k = cutNear (m, cutsAt, frac, tol); k >= 0) dragging = 2 + k;
+            }
+            // (START or END: whichever is nearer. Where there are markers a press must be near one of the two to take it,
+            // or a double-click that puts a marker in would first have moved START or END to where it was made.)
+            if (dragging < 0 && (cutsAt < 0 || std::min (std::abs (p.x - xa), std::abs (p.x - xb)) <= 10.0f)) dragging = std::abs (p.x - xa) <= std::abs (p.x - xb) ? 0 : 1;
         }
         if (dragging < 0) return false;
+        if (dragging >= 2)
+        {
+            if (cutsAt >= 0) m.setParam (cutsAt + 1 + (dragging - 2), juce::jlimit (0.001f, 0.999f, (p.x - w.getX()) / w.getWidth()));
+            return true;
+        }
         float f = juce::jlimit (0.0f, 1.0f, (p.x - w.getX()) / w.getWidth());
         if (f < 0.004f) f = 0.0f;
         if (f > 0.996f) f = 1.0f;
         f = dragging == 0 ? std::min (f, b - 0.002f) : std::max (f, a + 0.002f);
         m.setParam (first + dragging, juce::jlimit (0.0f, 1.0f, f));
         return true;
+    }
+    // (SF-000) A double-click over the waveform: on a marker, it is taken out; anywhere else, one is put there. (The file's
+    // own cuts become the hand's markers first, if they are not yet.) True if it took the event.
+    static bool doubleClick (juce::Point<float> p, juce::Rectangle<float> w, Module& m, int cutsAt, const SampleData& s, const double* starts, int n)
+    {
+        if (cutsAt < 0 || ! m.getParam || ! m.setParam || w.getWidth() <= 1.0f || ! w.expanded (4.0f, 6.0f).contains (p)) return false;
+        if (! cutsOn (m, cutsAt)) cutsSeed (m, cutsAt, s, starts, n);
+        const float frac = juce::jlimit (0.001f, 0.999f, (p.x - w.getX()) / w.getWidth()), tol = 5.0f / w.getWidth();
+        if (const int k = cutNear (m, cutsAt, frac, tol); k >= 0) { m.setParam (cutsAt + 1 + k, 0.0f); return true; }
+        for (int k = 0; k < kCuts; ++k) if (m.getParam (cutsAt + 1 + k) <= 0.0f) { m.setParam (cutsAt + 1 + k, frac); return true; }
+        return true;        // (all 32 are in use)
+    }
+    // The same two for a sample cut as Kit.h cuts it (the drums, the note lanes): the file's own cuts are autoStarts'.
+    bool mouseKit (juce::Point<float> p, juce::Rectangle<float> w, bool down, Module& m, int first, int cutsAt, const SampleData& s)
+    {
+        double a[65]; int n = 0;
+        if (down && cutsAt >= 0 && ! cutsOn (m, cutsAt)) n = autoStarts (s, regionOf (s, m, first), a, 65);
+        return mouse (p, w, down, m, first, cutsAt, &s, a, n);
+    }
+    static bool doubleKit (juce::Point<float> p, juce::Rectangle<float> w, Module& m, int first, int cutsAt, const SampleData& s)
+    {
+        double a[65]; int n = 0;
+        if (cutsAt >= 0 && ! cutsOn (m, cutsAt)) n = autoStarts (s, regionOf (s, m, first), a, 65);
+        return doubleClick (p, w, m, cutsAt, s, a, n);
     }
     void up() { dragging = -1; }
 };
