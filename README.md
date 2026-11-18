@@ -313,6 +313,15 @@ not a job for afterwards.
 (POCKET DEPTH and POCKET SHAPE, on a lane, are something else and were there before: the kick's
 pocket in **time**, a duck round each kick. POCKETS is each lane's place in **frequency**.)
 
+**The kick's hole in a lane is drawn, not compressed.** A lane's POCKET takes what the kick says
+of each hit (when it lands, how hard, how its pitch falls, how long it lasts) and draws the
+lane's level from it. POCKET DEPTH is how deep (PUMP on RUMBLE), POCKET SHAPE what is turned
+down (a cut that follows the kick's pitch, the lows, or the whole lane), and **POCKET CURVE**, in
+CONFIG (seventy-ninth build), the shape in time: all the way down, deepest on the hit and back
+along the kick's decay, as it always was; all the way up, held down while the kick sounds and up
+late, at full as the kick is over, like a fade-in drawn under the kick (its length the kick's
+own, never more than nine tenths of a beat).
+
 **P** on the keyboard, or the POCKETS key on the master, opens its page: a row for each lane and
 the two returns, each with a map of the spectrum from 31 Hz to 16 kHz. On a map the yellow shape
 is the lane's pocket, as tall as it is firmly held; the pale bars are what the lane is playing,
@@ -503,7 +512,9 @@ dark red plate on the dark instrument. None of it has been heard: see Not verifi
 
 **Every knob is heard, on every model.** `--audit` (see Checks) turns each of a lane's twelve
 knobs down and up and measures what the lane's sound does, for every model the lane has (85
-lane-and-model pairs). Every knob moves the sound on every one, with one exception that is the
+lane-and-model pairs, and the seventy-ninth build's four more, each audited by itself: KICK
+FORGE, and GRANULAR on BASS, LEAD and CHORD). Every knob moves the sound on every one, with one
+exception that is the
 music's and not the knob's: GLIDE on BASS while its steps are all one note (it slides between
 two). Where a model had nothing for a knob to do, the knob was given something that suits it:
 a filter for the models that had none, the ensemble for SPACE, a second voice a few cents off
@@ -1606,7 +1617,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, c POCKET CURVE, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

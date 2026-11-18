@@ -25,6 +25,11 @@ public:
     // Takes part in SF BUILD's drop duck. Off on a TAP or STRIP whose ROLE is KICK, PERC or DECK:
     // like SF KICK, PERC, STRIKE and DECK, which have no Pocket, they never duck under the kick.
     bool dropDuck = true;
+    // (SF-000) POCKET CURVE, 0 to 1, set by the module before process. 0: the hole is deepest on the hit and comes back
+    // along the kick's decay (fastest straight after the hit). 1: it is held while the kick sounds and comes up late, at
+    // full as the kick is over: a fade-in drawn under the kick, the kick's own length long (to where its decay has it
+    // 24 dB down, and never past nine tenths of a beat). Between: a mix of the two.
+    float curve = 0.0f;
 
     void prepare (double rate, int maxBlock)
     {
@@ -130,7 +135,15 @@ public:
                     const float dutyScale = clamp01 (1.0f - (duty - 0.55f) * 2.5f);
                     const float dec = std::max (0.02f, std::min (hits[h].decay * (1.0f + 1.5f * s), (float) secPerBeat * (0.3f + 0.45f * s)) * std::max (0.15f, dutyScale));
                     const float att = std::min (1.0f, dt / 0.001f);
-                    const float e = hits[h].vel * att * std::exp (-dt / dec);
+                    float fall = std::exp (-dt / dec);
+                    if (curve > 0.001f)
+                    {
+                        const float len = std::max (0.03f, std::min (2.76f * hits[h].decay, 0.9f * (float) secPerBeat) * std::max (0.15f, dutyScale));
+                        const float x = dt / len;
+                        const float late = x >= 1.0f ? 0.0f : 1.0f - (std::exp (4.0f * x) - 1.0f) * (1.0f / 53.59815f);
+                        fall += std::min (1.0f, curve) * (late - fall);
+                    }
+                    const float e = hits[h].vel * att * fall;
                     env = std::max (env, e);
                     if (dropDb > 0.0f && hits[h].ppq >= dropAt - dropEarly)
                     {

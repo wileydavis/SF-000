@@ -1221,9 +1221,10 @@ static bool grainCheck (juce::String& said)
         };
         const bool set = choose ("model", "GRANULAR") && choose ("chord", "NONE");
         e.setSetup (t, "layer", 0.0f); e.setSetup (t, "drive", 0.0f); e.setSetup (t, "drift", 0.0f);
+        e.setSetup (t, "detune", 0.0f); e.setSetup (t, "res", 0.0f); e.setSetup (t, "pocket_depth", 0.0f);     // (in CONFIG while GRANULAR has the lane's knobs)
         const bool loaded = e.loadFile (lane, file);
-        // DETUNE 0 (every grain at the note's own pitch), RES 0, no pocket, CUTOFF open, SPACE 0, the lane's FILTER in the middle
-        for (auto kv : { std::pair<int, float> { 0, 0.0f }, { 2, 0.0f }, { 3, 0.0f }, { 6, 1.0f }, { 7, 0.0f }, { 10, 0.5f } }) ses.userSet (cx::lane (lane, kv.first), kv.second);
+        // SPRAY and PITCH 0 (every grain from one place, at the note's own pitch: what DETUNE at nought was), CUTOFF open, SPACE 0, the lane's FILTER in the middle
+        for (auto kv : { std::pair<int, float> { 4, 0.0f }, { 5, 0.0f }, { 6, 1.0f }, { 7, 0.0f }, { 10, 0.5f } }) ses.userSet (cx::lane (lane, kv.first), kv.second);
         for (int l = 0; l < kLanes; ++l) if (l != lane) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
         e.set (cx::lane (lane, cx::kSeqMute), 1.0f, 0.0);
         juce::AudioBuffer<float> b (2, 256);
@@ -1907,6 +1908,71 @@ static void forgeTest (int& bad)
                  "with no step and within 1.5 dB of one loudness; its body is the same hit after hit; GROUND is heard between the kicks and not on them; POSITION is where in the lane's file the impact is from; all of it up is finite\n", ok ? "ok" : "FAIL");
 }
 
+static void pocketCurveTest (int& bad)
+{
+    using namespace sf0;
+    // POCKET CURVE (the suite's Pocket.h): the hole the kick makes in a lane, drawn from what the kick says of itself.
+    // At nought it is as it was, deepest on the hit and back along the kick's decay; at full it is held down while the
+    // kick sounds and is back as the kick is over. The pad's own chord (held, nothing drifting) under a kick on every beat, the pad alone heard, against the same with no pocket.
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i) { buf.clear(); e.render (buf); if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n))); }
+        e.tidy();
+    };
+    int bass = -1, kick = -1;
+    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "pad") bass = l; else if (sl == "kick") kick = l; }
+    const Engine::Target t { 0, bass, 0 };
+    bool has = false;
+    for (auto& sp : e.setupParams (t))
+    {
+        if (sp.id == "pocket_curve") has = sp.def == 0.0f;
+    }
+    // (the pad's own part, the same every bar, under a kick on every beat)
+    Pattern four; for (int b = 0; b < 4; ++b) { four.steps[(size_t) (b * 4)].on = true; four.steps[(size_t) (b * 4)].vel = 1.0f; }
+    e.setPattern (kick, four);
+    e.solo = bass;
+    ses.userSet (cx::kGlide, 0.0f);
+    e.setSetup (t, "layer", 0.0f); e.setSetup (t, "drift", 0.0f); e.setSetup (t, "pocket_shape", 1.0f);       // (the whole lane turned down: the plainest to measure)
+    ses.userSet (cx::lane (bass, cx::kSendA), 0.0f); ses.userSet (cx::lane (bass, cx::kSendB), 0.0f);
+    const double beatN = 60.0 / e.tempo() * 48000.0;
+    auto bar = [&] (float depth, float curve)
+    {
+        ses.userSet (cx::lane (bass, 3), depth);                // (POCKET DEPTH)
+        e.setSetup (t, "pocket_curve", curve);
+        e.setRunning (false); run (4.0); heard.clear(); e.setRunning (true); run (4.0); run (4.0, true); e.setRunning (false);
+        return heard;
+    };
+    auto rms = [&] (const std::vector<float>& x, double from, double to)
+    {
+        // (over the bar's second and third beats)
+        double s2 = 0; size_t n = 0;
+        for (int b = 1; b <= 2; ++b) for (size_t i = (size_t) ((b + from) * beatN); i < (size_t) ((b + to) * beatN) && i < x.size(); ++i) { s2 += (double) x[i] * x[i]; ++n; }
+        return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, n) + 1e-12);
+    };
+    const auto open = bar (0.0f, 0.0f), was = bar (1.0f, 0.0f), late = bar (1.0f, 1.0f);
+    const double ref = rms (open, 0.1, 0.25), early0 = rms (was, 0.1, 0.25) - ref, early1 = rms (late, 0.1, 0.25) - ref;
+    const double mid0 = rms (was, 0.3, 0.45) - rms (open, 0.3, 0.45), mid1 = rms (late, 0.3, 0.45) - rms (open, 0.3, 0.45);
+    const double end1 = rms (late, 0.93, 0.99) - rms (open, 0.93, 0.99);
+    const bool ok = has && ref > -60.0 && early0 < -3.0 && early1 < early0 - 6.0 && mid1 < mid0 - 3.0 && end1 > -2.0;
+    if (! ok) ++bad;
+    std::printf ("  %s: POCKET CURVE: at nought the pocket is as it was (the pad %.1f dB down just after the kick, %.1f dB a third of the way through the beat); at full it is held under the kick and comes up late "
+                 "(%.1f dB, %.1f dB) and is back as the kick is over (%.1f dB against no pocket, before the next)\n", ok ? "ok" : "FAIL", early0, mid0, early1, mid1, end1);
+    if (! ok) std::printf ("    (the lane has it, at nought: %d; the pad with no pocket %.1f dB)\n", (int) has, ref);
+    if (! ok || std::getenv ("SF000_POCKET_DEBUG") != nullptr)
+    {
+        std::printf ("    (through the beat, in tenths, dB against no pocket. at nought:");
+        for (int k = 0; k < 10; ++k) std::printf (" %.1f", rms (was, k * 0.1, k * 0.1 + 0.1) - rms (open, k * 0.1, k * 0.1 + 0.1));
+        std::printf ("; at full:");
+        for (int k = 0; k < 10; ++k) std::printf (" %.1f", rms (late, k * 0.1, k * 0.1 + 0.1) - rms (open, k * 0.1, k * 0.1 + 0.1));
+        std::printf (")\n");
+    }
+}
+
 static void granularTest (int& bad)
 {
     using namespace sf0;
@@ -2077,7 +2143,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -3488,28 +3554,42 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 Session ses (e, false);
                 auto sp = [&] (int l, const char* id) { for (auto& x : e.setupParams ({ 0, l, 0 })) if (x.id == id) return x; return Engine::SetupParam(); };
                 auto name = [&] (int l, const char* id) { const auto x = sp (l, id); return x.choices[(int) std::lround (x.value * (float) (x.choices.size() - 1))].toUpperCase(); };
-                auto old = [&] (int l, const char* id, int i, int was) { e.applySetup ({ 0, l, 0 }, { { juce::String (id), (float) i / (float) (was - 1) } }); return name (l, id); };
-                const bool lists = sp (5, "model").choices.size() == 10 && sp (7, "model").choices.size() == 12 && sp (8, "model").choices.size() == 12
-                                   && sp (5, "model").choices[8] == "WAVETABLE" && sp (7, "model").choices[10] == "WAVETABLE";
+                // (a place from before is a snapshot's from before: one with no `lists`, read as the file is. The seventy-ninth
+                // build put GRANULAR last on these lists and reads a snapshot's places by the lists it was taken on.)
+                int oldN = 0;
+                juce::AudioBuffer<float> ob (2, 256);
+                auto old = [&] (int l, const char* id, int i, int was)
+                {
+                    juce::var v = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (ses.take())), true));
+                    if (auto* o = v.getDynamicObject())
+                    {
+                        o->removeProperty ("lists"); o->setProperty ("uid", "sf0testlists-" + juce::String (++oldN)); o->setProperty ("id", 0);
+                        if (auto* ls = v["setup"]["lanes"][l].getDynamicObject()) ls->setProperty (id, (double) i / (double) (was - 1));
+                    }
+                    ses.recall (ses.takeFromLibrary (v, "OLD " + juce::String (oldN), juce::var()));
+                    for (int k = 0; k < 120; ++k) e.render (ob);
+                    e.tidy();
+                    return name (l, id);
+                };
+                const bool lists = sp (5, "model").choices.size() == 11 && sp (7, "model").choices.size() == 13 && sp (8, "model").choices.size() == 13
+                                   && sp (5, "model").choices[8] == "WAVETABLE" && sp (7, "model").choices[10] == "WAVETABLE" && sp (5, "model").choices[10] == "GRANULAR" && sp (7, "model").choices[12] == "GRANULAR";
+                // the lists of nine and eleven (before WAVETABLE), and of ten and twelve (before GRANULAR)
                 const bool bassOld = old (5, "model", 0, 9) == "BASS LADDER" && old (5, "model", 1, 9) == "MONO 101-TYPE" && old (5, "model", 5, 9) == "SINE SUB" && old (5, "model", 7, 9) == "SAMPLE"
-                                     && old (5, "model", 8, 9) == "FM 4-OP" && old (5, "layer_model", 5, 9) == "SINE SUB";
-                const bool leadOld = old (7, "model", 3, 11) == "STAB DUB" && old (7, "model", 9, 11) == "SAMPLE" && old (7, "model", 10, 11) == "FM 4-OP" && old (8, "model", 4, 11) == "STAB DETROIT";
+                                     && old (5, "model", 8, 9) == "FM 4-OP" && old (5, "layer_model", 5, 9) == "SINE SUB"
+                                     && old (5, "model", 8, 10) == "WAVETABLE" && old (5, "model", 9, 10) == "FM 4-OP" && old (5, "model", 7, 10) == "SAMPLE";
+                const bool leadOld = old (7, "model", 3, 11) == "STAB DUB" && old (7, "model", 9, 11) == "SAMPLE" && old (7, "model", 10, 11) == "FM 4-OP" && old (8, "model", 4, 11) == "STAB DETROIT"
+                                     && old (7, "model", 10, 12) == "WAVETABLE" && old (7, "model", 11, 12) == "FM 4-OP" && old (8, "model", 9, 12) == "SAMPLE";
                 bool nowOk = true;
-                for (int i = 0; i < 10; ++i) { e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), (float) i / 9.0f } }); nowOk = nowOk && (int) std::lround (sp (5, "model").value * 9.0f) == i; }
-                for (int i = 0; i < 12; ++i) { e.applySetup ({ 0, 7, 0 }, { { juce::String ("model"), (float) i / 11.0f } }); nowOk = nowOk && (int) std::lround (sp (7, "model").value * 11.0f) == i; }
-                // a snapshot from before: its bass says 5 of 8 (SINE SUB then), and the bass now plays something else
-                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 0.0f } });
-                const auto snapId = ses.take();
-                for (auto& snap : ses.library) if (snap.id == snapId) for (auto& kv : snap.setup[5]) if (kv.first == "model") kv.second = 5.0f / 8.0f;
-                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 2.0f / 9.0f } });
-                juce::AudioBuffer<float> b (2, 256);
-                ses.recall (snapId); for (int i = 0; i < 400; ++i) e.render (b);
-                const bool bySnap = name (5, "model") == "SINE SUB";
+                for (int i = 0; i < 11; ++i) { e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), (float) i / 10.0f } }); nowOk = nowOk && (int) std::lround (sp (5, "model").value * 10.0f) == i; }
+                for (int i = 0; i < 13; ++i) { e.applySetup ({ 0, 7, 0 }, { { juce::String ("model"), (float) i / 12.0f } }); nowOk = nowOk && (int) std::lround (sp (7, "model").value * 12.0f) == i; }
+                // a snapshot from before, recalled over a bass playing something else: its bass says 5 of 8 (SINE SUB then)
+                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 2.0f / 10.0f } });
+                const bool bySnap = old (5, "model", 5, 9) == "SINE SUB";
                 // it sounds: the bass lane's own pattern, with the built-in waves and with the sample's
                 auto plays = [&] (bool fromSample)
                 {
                     Engine e2; e2.prepare (SR2, 256);
-                    e2.setSetup ({ 0, 5, 0 }, "model", 8.0f / 9.0f);
+                    e2.setSetup ({ 0, 5, 0 }, "model", 8.0f / 10.0f);
                     e2.loadFile (5, wavFile);
                     e2.setSetup ({ 0, 5, 0 }, "table", fromSample ? 1.0f : 0.0f);
                     e2.solo = 5; e2.setRunning (true);
@@ -3524,7 +3604,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 wavesOk = lists && bassOld && leadOld && nowOk && bySnap && wtBuilt > -40.0 && wtDiffers > -30.0;
                 if (! wavesOk) std::printf ("    (lists %d bass %d lead %d now %d by a snapshot %d)\n", (int) lists, (int) bassOld, (int) leadOld, (int) nowOk, (int) bySnap);
             }
-            std::printf ("  %s: WAVETABLE is a model of BASS, LEAD and CHORD, second to last; a model's place kept from before is the same model (set, and recalled from a snapshot), and one kept now is itself; "
+            std::printf ("  %s: WAVETABLE is a model of BASS, LEAD and CHORD, before FM 4-OP, and GRANULAR is last; a model's place in a snapshot from before either was there is the same model, and one kept now is itself; "
                          "the bass plays it at %.1f dB, and with the sample's waves it is another sound (%.1f dB apart)\n", wavesOk ? "ok  " : "FAIL", wtBuilt, wtDiffers);
             if (! wavesOk) ++bad;
             const bool gainOk = std::abs ((louder.early - base.early) - 6.0) < 0.2 && std::abs ((normal.early - base.early) + peakDb) < 0.2 && peakDb < -1.0;
@@ -4490,6 +4570,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     granularTest (bad);
     samplerTest (bad);
     forgeTest (bad);
+    pocketCurveTest (bad);
     arrsKeptTest (bad);
 
     {
@@ -10798,11 +10879,15 @@ static int midiTest()
         {
             in (13, e16::cfgCc (knobAt), 90);
             const int n = list[(size_t) listAt].choices.size();
-            in (13, e16::cfgCc (listAt), 127);                          // a list: the top of the knob is its last choice
+            // a list: the top of the knob is its last choice. (MODEL's last has sound knobs of its own, GRANULAR, and choosing
+            // it changes what CONFIG lists: its last but one, here, so the list stays as it was looked at)
+            const bool isModel = list[(size_t) listAt].id == "model";
+            const int pick = isModel ? n - 2 : n - 1;
+            in (13, e16::cfgCc (listAt), isModel ? (pick * 128 + 64) / n : 127);
             ticks (1);
             juce::Thread::sleep (170); ticks (7);
             const auto now = ses.configList();
-            turned = std::abs (now[(size_t) knobAt].value - 90.0f / 127.0f) < 1.0e-3f && std::abs (now[(size_t) listAt].value - 1.0f) < 1.0e-6f
+            turned = std::abs (now[(size_t) knobAt].value - 90.0f / 127.0f) < 1.0e-3f && std::abs (now[(size_t) listAt].value - (float) pick / (float) (n - 1)) < 1.0e-6f
                   && ccOut (13, e16::cfgCc (knobAt)) < 0 && ccOut (13, e16::cfgCc (listAt)) < 0;        // (neither is sent back: each is where the hand put it)
             // and one set on the screen is sent, to the middle of its share
             e.setSetup (ses.cfg, list[(size_t) listAt].id, 0.0f);

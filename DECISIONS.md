@@ -4717,8 +4717,29 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        is unchanged.
      - The name is mine. Say another and it is that.
 
+711. **You**, Nov 18, 00:49, with a picture (a kick, and under it a sub faded in on a curve that
+     stays low while the kick is loud and is up as it ends): "for kick ducking, are we doing that
+     with audio levels (not compression)? And can we shape the curve of the audio face to be the
+     inverse of the kick decay (see screenshot)." It is levels: a lane's POCKET draws its gain
+     from what the kick says of each hit (when, how hard, how its pitch falls, how long it lasts);
+     nothing listens and nothing compresses. But its curve was the other way up from the
+     picture's: deepest on the hit and back along the kick's decay, so quickest straight after
+     the hit. So **POCKET CURVE**, in the CONFIG of every lane with a pocket (BASS, LEAD, CHORD,
+     PAD, VOICE, and RUMBLE, where the depth is PUMP). *Mine, the particulars:* at nought it is
+     the pocket as it was, and that is where it starts, so nothing kept changes. At full the
+     hole is held while the kick sounds and comes up late on the picture's curve, at full as the
+     kick is over; its length is the kick's own, to where the kick's decay has it 24 dB down,
+     and never past nine tenths of a beat. Between the two it is a mix of them. With a long kick
+     on every beat the picture's curve leaves the lane little time at full: that is the
+     technique's own trade, and the kick's DECAY is what sets it. The picture is not kept in the
+     repository.
+
 ## Not verified
 
+- **POCKET CURVE (711) has not been heard.** Measured on a held bass note under the rig's kick
+  (how far down just after the hit, two thirds through the beat, and before the next). Whether
+  it is the picture's curve to your ear, and whether its length should follow the kick more or
+  less closely, are yours to say: both are one line each in `suite/core/Pocket.h`.
 - **The seventy-ninth build has not been heard by anyone (707 to 710).** All of it is checked by
   measurement: GRANULAR's knobs each do what they say on a pad's own source; a sample's slices,
   loop and starts on a file of four tones; KICK FORGE's loudness along CHARACTER, its body the

@@ -272,6 +272,7 @@ public:
            GRPOS, GRSCAN, GRSIZE, GRDENS, GRSPRAY, GRPITCH, GRSHAPE, GRREV, GRCLOCK, GRSPREAD, GRFOLLOW, GRSYNC,
            // (SF-000) SAMPLE's: what a note chooses, the loop, and where a note starts
            SNOTES, SLOOP, SXFADE, SVELSTART, SRANDSTART,
+           PCURVE,                          // (SF-000) the pocket's curve (Pocket.h)
            kParams };
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
@@ -393,6 +394,9 @@ public:
         p.push_back (pct ("smp_xfade", "CROSSFADE", 0.25f).noPreset().sampleGroup());
         p.push_back (pct ("smp_vel", "VEL START", 0.0f).noPreset().sampleGroup());
         p.push_back (pct ("smp_rand", "RANDOM START", 0.0f).noPreset().sampleGroup());
+        // (SF-000) POCKET CURVE (Pocket.h): nought, the pocket as it was (back along the kick's decay); full, held under the
+        // kick and up as it ends.
+        p.push_back (pct ("pocket_curve", "POCKET CURVE", 0.0f));
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -793,6 +797,7 @@ public:
         ens.process (L, R, c.n, ensembleAmt * c.v (SPACE) * 2.0f);
         split.monoLows (L, R, c.n, k0, k1);
         driftClock += (double) c.n / sr;
+        out.pocket.curve = c.v (PCURVE);        // (SF-000)
         out.process (c, io, FILT, -1, c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
         int act = 0; for (auto& v : voices) act += v.active ? 1 : 0;
         activeVoices = act;
