@@ -721,6 +721,15 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             below = true;
             break;
         }
+        case hEq: case hEqBand: case hEqType: case hEqLane:
+            t.title = "THE LANE'S EQ";
+            body = "EIGHT BANDS. THE YELLOW LINE IS WHAT THE EQ DOES; THE WHITE SHAPE IS WHAT THIS LANE IS PLAYING, AND THE COLOURED SHAPES ARE WHAT EVERY OTHER LANE IS PLAYING: WHERE THEY LIE ON TOP OF EACH OTHER IS WHERE THEY FIGHT. "
+                   "THE KEYS DOWN THE LEFT, A LANE EACH IN ITS OWN COLOUR, SHOW OR HIDE THAT LANE'S SHAPE; OTHERS SHOWS OR HIDES THEM ALL (WITH OTHERS OFF, A LANE'S KEY SHOWS THAT LANE ALONE). "
+                   "DRAG A BAND'S POINT LEFT AND RIGHT FOR ITS FREQUENCY, UP AND DOWN FOR ITS GAIN (A CUT'S OR A NOTCH'S WIDTH); THE WHEEL IS ITS WIDTH; DOUBLE-CLICK A POINT TO PUT IT BACK, OR THE GRAPH TO PUT A FREE BAND THERE. "
+                   "THE NUMBERED KEYS CHOOSE A BAND AND THE KEYS BESIDE THEM SAY WHAT IT IS: OFF, A BELL, A LOW OR HIGH SHELF, A LOW OR HIGH CUT (TWO ON ONE PLACE FOR A STEEPER ONE), A NOTCH. BANDS 1, 4 AND 7 ARE THE PANEL'S LOW, MID AND HIGH KNOBS. "
+                   "A SNAPSHOT KEEPS ALL OF IT, AND THE E16 HAS IT ON THE LAST PAGES OF CONFIG.";
+            below = true;
+            break;
         case hPocket:
             t.title = String (h.a + 1) + " " + lanes()[(size_t) h.a].name + ": ITS POCKET";
             body = "THE YELLOW SHAPE IS THE PART OF THE SPECTRUM THAT IS THIS LANE'S OWN: AS TALL AS ITS HOLD. DRAG IT LEFT AND RIGHT TO MOVE IT (HOME), UP AND DOWN TO WIDEN IT (WIDTH); DOUBLE-CLICK: BACK TO WHERE IT STARTS. "
@@ -1418,10 +1427,15 @@ void Screen::drawConfig (G& g, R r)
     // on. Under each twelve stands the E16's bottom row there: SEL (the wheel), PAGE -, PAGE +, SHUT. What the hand
     // learns on one is where it is on the other. A box with its name still says what a run of controls belongs
     // to: it stops at a row's end and carries on in the next.
-    const int cols = 4, perPage = e16::kCfgPer, rowsPer = perPage / cols, total = (int) cfgParams.size();
+    // (a lane's EQ is listed last, for the E16: here it is its graph, at the foot of the panel, and not knobs)
+    int total = (int) cfgParams.size();
+    const float eqH = cfg.kind == 0 ? 286.0f : 0.0f;
+    if (cfg.kind == 0) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
+    const int cols = 4, perPage = e16::kCfgPer, rowsPer = perPage / cols;
     const float cellW = 136.0f, rowH = 126.0f, titleH = 17.0f, stripH = 22.0f;
     const int pages = std::max (1, (total + perPage - 1) / perPage);
-    const float pageH = (float) rowsPer * rowH + stripH, floorY = r.getBottom() - 6;
+    const float pageH = (float) rowsPer * rowH + stripH, floorY = r.getBottom() - 6 - eqH;
+    if (cfg.kind == 0) drawEq (g, R (x0, floorY + 4, 544, eqH - 4)); else { eqRect = {}; eqGraph = {}; }
     cfgScroll = juce::jlimit (0, pages - 1, cfgScroll);                // (scrolled a page at a time: the page at the top is whole)
     int lastShown = -1;
     for (int pg = cfgScroll; pg < pages; ++pg)
@@ -1504,7 +1518,170 @@ void Screen::drawConfig (G& g, R r)
     if (cfgScroll > 0 || lastShown < pages - 1)
     {
         const String more = "PAGE " + String (cfgScroll + 1) + " OF " + String (pages) + ": SCROLL";
-        plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, more)) + 12), r.getBottom() - 27, more, fNote, 6, col::white, col::black, 22);
+        plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, more)) + 12), floorY - 21, more, fNote, 6, col::white, col::black, 22);
+    }
+}
+
+// The lane EQ (Engine.h, eqBand): what it does to the lane, drawn over what the lane is playing, with what every other
+// lane is playing behind that, each in a colour of its own: where two of them are on top of each other is seen, and a
+// band is dragged to it. Left and right is a band's frequency, up and down its gain (the width of a cut or a notch);
+// the wheel is its width; a double-click on it puts it back, and on the graph puts a free band there.
+void Screen::drawEq (G& g, R r)
+{
+    eqRect = r;
+    const int l = cfg.lane;
+    eqSel = juce::jlimit (0, Engine::kEqBands - 1, eqSel);
+    const auto sel = eng.eqBand (l, eqSel);
+    // its name, and the band chosen in words
+    float x = r.getX() + plate (g, r.getX(), r.getY(), "EQ", fLegend, 8, col::white, col::black) + 4;
+    {
+        const int knob = Engine::eqKnobOf (eqSel);
+        String says = "BAND " + String (eqSel + 1) + (knob == 0 ? " (LOW)" : knob == 1 ? " (MID)" : knob == 2 ? " (HIGH)" : "") + "   " + Engine::eqTypeName (sel.type);
+        if (sel.type != Engine::eqOff)
+        {
+            says << "   " << (sel.hz >= 1000.0f ? String (sel.hz / 1000.0f, 2) + " KHZ" : String ((int) std::lround (sel.hz)) + " HZ");
+            if (Engine::eqHasGain (sel.type)) says << "   " << (sel.db > 0.0f ? "+" : "") << String (sel.db, 1) << " DB";
+            says << "   Q " << String (sel.q, 2);
+        }
+        plate (g, x, r.getY(), says, fNote, 6, col::white, col::black);
+    }
+    {
+        // OTHERS: the other lanes' spectra behind this one's, shown or hidden
+        const R kr (r.getRight() - 74, r.getY() + 1, 72, 24);
+        key (g, kr, eqOthers ? col::yellow : col::white, eqOthers ? 6.0f : 2.0f);
+        text (g, "OTHERS", kr, fLbl, col::black);
+        hit (kr.expanded (1), hEqLane, -1, 0);
+    }
+    // down the left of the graph, a key a lane, in the colour its shape is drawn in: pressed, that lane's shape is put out,
+    // or back (this lane's own is white, and always there)
+    auto colourOf = [] (int lane) { return Colour::fromHSV ((float) lane / (float) kLanes, 0.60f, 1.0f, 1.0f); };
+    const R gr (r.getX() + 32, r.getY() + 32, r.getWidth() - 34, r.getHeight() - 32 - 30);
+    {
+        const float kh = gr.getHeight() / (float) kLanes;
+        for (int q = 0; q < kLanes; ++q)
+        {
+            const R kr (r.getX() + 1, gr.getY() + (float) q * kh, 28, kh - 2.0f);
+            const bool out = q != l && (! eqOthers || (eqHidden & (1u << q)) != 0);
+            if (vis (g, kr))
+            {
+                g.setColour (q == l ? juce::Colours::white : out ? Colour (0xff2a2b2a) : colourOf (q));
+                g.fillRoundedRectangle (kr, 3.0f);
+                g.setColour (out ? colourOf (q).withAlpha (0.8f) : juce::Colours::black); g.setFont (fLbl);
+                g.drawText (String (q + 1), kr, juce::Justification::centred, false);
+            }
+            if (q != l) hit (kr, hEqLane, q, 0);
+        }
+    }
+    eqGraph = gr;
+    eng.pocketsSeen (pkSeen);           // (what the lanes are playing, as of now)
+    hit (gr, hEq, -1, 0);
+    if (vis (g, r))
+    {
+        const juce::Graphics::ScopedSaveState state (g);
+        g.setColour (Colour (0xff0b0c0b)); g.fillRoundedRectangle (gr, 3.0f);
+        g.reduceClipRegion (gr.getSmallestIntegerContainer());
+        // the grid: decades and their 2s and 5s, and every 6 dB (12 dB lines named)
+        g.setFont (fLbl);
+        for (float hz : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
+        {
+            const float gx = eqX (hz);
+            g.setColour (juce::Colours::white.withAlpha (hz == 100.0f || hz == 1000.0f || hz == 10000.0f ? 0.16f : 0.08f));
+            g.fillRect (R (gx, gr.getY(), 1.0f, gr.getHeight()));
+            g.setColour (juce::Colours::white.withAlpha (0.40f));
+            g.drawText (hz >= 1000.0f ? String ((int) (hz / 1000.0f)) + "K" : String ((int) hz), R (gx + 3, gr.getBottom() - 14, 40, 12), juce::Justification::centredLeft, false);
+        }
+        for (int db = 12; db >= -24; db -= 6)
+        {
+            const float gy = eqY ((float) db);
+            g.setColour (juce::Colours::white.withAlpha (db == 0 ? 0.30f : 0.08f));
+            g.fillRect (R (gr.getX(), gy, gr.getWidth(), 1.0f));
+            if (db % 12 == 0 && db != 0) { g.setColour (juce::Colours::white.withAlpha (0.40f)); g.drawText ((db > 0 ? "+" : "") + String (db), R (gr.getX() + 3, gy - 12, 30, 12), juce::Justification::centredLeft, false); }
+        }
+        // what the lanes are playing, a third of an octave a step: the others as lines, each its own colour, this one filled
+        auto levelY = [&] (float db) { return gr.getBottom() - gr.getHeight() * 0.92f * juce::jlimit (0.0f, 1.0f, (db + 84.0f) / 60.0f); };      // (-84 to -24 dB, as POCKETS draws them)
+        auto bandX = [&] (int b) { return eqX (31.25f * std::pow (2.0f, (float) b / 3.0f)); };
+        if (pkSeen.live)
+            for (int pass = 0; pass < 2; ++pass)
+                for (int q = 0; q < kLanes; ++q)
+                {
+                    if ((pass == 1) != (q == l)) continue;
+                    if (q != l && (! eqOthers || (eqHidden & (1u << q)) != 0)) continue;
+                    juce::Path p;
+                    bool any = false;
+                    for (int b = 0; b < Pockets::kBands; ++b)
+                    {
+                        const float lev = pkSeen.level[(size_t) q][(size_t) b];
+                        any = any || lev > -83.0f;
+                        if (b == 0) p.startNewSubPath (bandX (b), levelY (lev)); else p.lineTo (bandX (b), levelY (lev));
+                    }
+                    if (! any) continue;
+                    // (filled under, so the space a lane takes is seen: its own colour, thin enough that ten of them can lie over each other)
+                    juce::Path fill (p);
+                    fill.lineTo (bandX (Pockets::kBands - 1), gr.getBottom()); fill.lineTo (bandX (0), gr.getBottom()); fill.closeSubPath();
+                    if (q == l)
+                    {
+                        g.setColour (juce::Colours::white.withAlpha (0.20f)); g.fillPath (fill);
+                        g.setColour (juce::Colours::white.withAlpha (0.85f)); g.strokePath (p, juce::PathStrokeType (1.5f));
+                    }
+                    else
+                    {
+                        g.setColour (colourOf (q).withAlpha (0.13f)); g.fillPath (fill);
+                        g.setColour (colourOf (q).withAlpha (0.70f)); g.strokePath (p, juce::PathStrokeType (1.1f));
+                    }
+                }
+        // the EQ's own curve, and the band chosen's alone under it
+        auto curve = [&] (int band)
+        {
+            juce::Path p;
+            for (float px = 0.0f; px <= gr.getWidth(); px += 3.0f)
+            {
+                const float hz = Engine::eqHzOf (px / gr.getWidth()), y = eqY (eng.eqResponse (l, hz, band));
+                if (px == 0.0f) p.startNewSubPath (gr.getX() + px, y); else p.lineTo (gr.getX() + px, y);
+            }
+            return p;
+        };
+        if (sel.type != Engine::eqOff)
+        {
+            juce::Path one = curve (eqSel);
+            one.lineTo (gr.getRight(), eqY (0.0f)); one.lineTo (gr.getX(), eqY (0.0f)); one.closeSubPath();
+            g.setColour (Colour (0xffe8c547).withAlpha (0.22f)); g.fillPath (one);
+        }
+        g.setColour (Colour (0xffe8c547)); g.strokePath (curve (-1), juce::PathStrokeType (2.0f));
+    }
+    // a point a band that is on: where it is, and as high as its gain (a cut or a notch sits on the middle line)
+    for (int b = 0; b < Engine::kEqBands; ++b)
+    {
+        const auto band = eng.eqBand (l, b);
+        if (band.type == Engine::eqOff) continue;
+        const float px = eqX (band.hz), py = eqY (Engine::eqHasGain (band.type) ? band.db : 0.0f);
+        const R dot (px - 9, py - 9, 18, 18);
+        if (vis (g, dot.expanded (3)))
+        {
+            g.setColour (b == eqSel ? Colour (0xffe8c547) : juce::Colours::white.withAlpha (0.85f)); g.fillEllipse (dot);
+            if (b == eqSel) { g.setColour (juce::Colours::white); g.drawEllipse (dot.expanded (2.0f), 1.5f); }
+            g.setColour (juce::Colours::black); g.setFont (fLbl);
+            g.drawText (String (b + 1), dot, juce::Justification::centred, false);
+        }
+        hit (dot.expanded (3), hEq, b, 0);
+    }
+    // under it: a key a band (lit: on; the one chosen marked), then a key a kind for the band chosen
+    const float ky = r.getBottom() - 25;
+    for (int b = 0; b < Engine::kEqBands; ++b)
+    {
+        const R kr (r.getX() + (float) b * 23.0f, ky, 21, 22);
+        const bool on = eng.eqBand (l, b).type != Engine::eqOff;
+        key (g, kr, b == eqSel ? col::yellow : on ? col::white : col::putty, b == eqSel ? 6.0f : 2.0f);
+        text (g, String (b + 1), kr, fLbl, col::black);
+        hit (kr.expanded (1), hEqBand, b, 0);
+    }
+    static const char* const kinds[Engine::kEqTypes] = { "OFF", "BELL", "LO SH", "HI SH", "LO CUT", "HI CUT", "NOTCH" };
+    const float kx0 = r.getX() + 8.0f * 23.0f + 8.0f, kw = (r.getRight() - kx0) / (float) Engine::kEqTypes;
+    for (int k = 0; k < Engine::kEqTypes; ++k)
+    {
+        const R kr (kx0 + (float) k * kw, ky, kw - 3, 22);
+        key (g, kr, sel.type == k ? col::yellow : col::white, sel.type == k ? 6.0f : 2.0f);
+        text (g, kinds[k], kr, fLbl, col::black);
+        hit (kr.expanded (1), hEqType, k, 0);
     }
 }
 
@@ -4260,6 +4437,35 @@ void Screen::downOn (Hit on, juce::Point<float> p)
     {
         case hKnob: case hRead: drag.v0 = ses.value (h->a); break;
         case hPocket:   drag.v0 = ses.value (cx::pk (h->a, 0)); drag.g0 = ses.value (cx::pk (h->a, 1)); break;
+        case hEq:
+            if (cfgOpen && cfg.kind == 0 && h->a >= 0 && h->a < Engine::kEqBands)
+            {
+                eqSel = h->a;
+                const auto band = eng.eqBand (cfg.lane, eqSel);
+                drag.v0 = Engine::eqHzPlace (band.hz);
+                drag.g0 = Engine::eqHasGain (band.type) ? band.db : Engine::eqQPlace (band.q);
+                dirty (eqRect);
+            }
+            break;
+        case hEqBand:
+            if (cfgOpen && cfg.kind == 0) { eqSel = juce::jlimit (0, Engine::kEqBands - 1, h->a); dirty (eqRect); }
+            break;
+        case hEqLane:
+            // OTHERS: all the other lanes' shapes, shown or hidden. A lane's number: that one's (and shown again, they all can be)
+            if (h->a < 0) { eqOthers = ! eqOthers; if (eqOthers) eqHidden = 0; }
+            else if (h->a < kLanes) { if (! eqOthers) { eqOthers = true; eqHidden = ~(1u << h->a); } else eqHidden ^= 1u << h->a; }
+            dirty (eqRect);
+            break;
+        case hEqType:
+            if (cfgOpen && cfg.kind == 0)
+            {
+                // the band chosen is that kind (a band of the kind it already is: nothing)
+                auto band = eng.eqBand (cfg.lane, eqSel);
+                band.type = juce::jlimit (0, (int) Engine::kEqTypes - 1, h->a);
+                eng.setEqBand (cfg.lane, eqSel, band);
+                cfgStale = true; ses.touch(); dirty (eqRect);
+            }
+            break;
         case hSnapKnob: drag.v0 = ses.value (cx::kSnap + h->a); if (page == pMacros) { selKnob = h->a; nameIs (2, 0, h->a); } break;
         case hDepth:    drag.v0 = ses.knobs[(size_t) h->a].depth; selKnob = h->a; break;
         case hLen:      drag.v0 = (float) ses.pattern (ses.activeLane).length; break;
@@ -4500,6 +4706,25 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             if (drag.kind == hSnapKnob || ctl >= cx::kTempo) repaint();
             break;
         }
+        case hEq:
+        {
+            // a band follows the hand: along the graph its frequency, up and down its gain (a cut's or a notch's width)
+            if (! cfgOpen || cfg.kind != 0 || drag.a < 0 || drag.a >= Engine::kEqBands || eqGraph.getWidth() < 2.0f) break;
+            if (! drag.moved && std::max (std::abs (dx), std::abs (dy)) < 3.0f) break;
+            drag.moved = true;
+            auto band = eng.eqBand (cfg.lane, drag.a);
+            band.hz = Engine::eqHzOf (drag.v0 + dx / eqGraph.getWidth());
+            if (Engine::eqHasGain (band.type))
+            {
+                const float db = drag.g0 + dy * kEqSpan / eqGraph.getHeight();
+                if (const int knob = Engine::eqKnobOf (drag.a); knob >= 0) ses.userSet (cx::lane (cfg.lane, cx::kEqLow + knob), Engine::eqKnobPlace (db));     // (LOW, MID or HIGH: its knob)
+                else band.db = db;
+            }
+            else band.q = Engine::eqQOf (drag.g0 + dy / 220.0f);
+            eng.setEqBand (cfg.lane, drag.a, band);
+            cfgStale = true; ses.touch(); dirty (eqRect);
+            break;
+        }
         case hPocket:
         {
             // the pocket follows the hand along the map (its HOME), and widens as the hand goes up (its WIDTH)
@@ -4682,6 +4907,32 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
     {
         if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
+        else if (h->kind == hEq && cfgOpen && cfg.kind == 0)
+        {
+            if (h->a >= 0 && h->a < Engine::kEqBands)
+            {
+                // on a band: as it starts (a free one off; LOW, MID and HIGH flat, where they always were)
+                eng.setEqBand (cfg.lane, h->a, Engine::eqDefault (h->a));
+                if (const int knob = Engine::eqKnobOf (h->a); knob >= 0) ses.userSet (cx::lane (cfg.lane, cx::kEqLow + knob), 0.5f);
+            }
+            else if (eqGraph.getWidth() > 2.0f)
+            {
+                // on the graph: the first band that is off is a bell there, as high as the hand
+                const auto at = where (e);
+                for (int b = 0; b < Engine::kEqBands; ++b)
+                    if (eng.eqBand (cfg.lane, b).type == Engine::eqOff)
+                    {
+                        Engine::EqBand band;
+                        band.type = Engine::eqBell; band.q = 1.0f;
+                        band.hz = Engine::eqHzOf ((at.x - eqGraph.getX()) / eqGraph.getWidth());
+                        band.db = juce::jlimit (-18.0f, 18.0f, kEqTop - kEqSpan * (at.y - eqGraph.getY()) / eqGraph.getHeight());
+                        eng.setEqBand (cfg.lane, b, band);
+                        eqSel = b;
+                        break;
+                    }
+            }
+            cfgStale = true; ses.touch(); dirty (eqRect);
+        }
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
         else if (recallHit (*h)) {}                                         // (a chip: two quick presses take it to the set)
@@ -4731,6 +4982,20 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
     }
     if (page == pLibrary || page == pMacros || page == pArrange) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
+    if (cfgOpen && cfg.kind == 0 && ! eqRect.isEmpty() && eqRect.contains (where (e)))
+    {
+        // over the EQ: the width of the band chosen (the one under the hand, if one is)
+        if (const auto* at = hitAt (where (e)); at != nullptr && at->kind == hEq && at->a >= 0) eqSel = at->a;
+        auto band = eng.eqBand (cfg.lane, eqSel);
+        if (band.type != Engine::eqOff && w.deltaY != 0.0f)
+        {
+            band.q = Engine::eqQOf (Engine::eqQPlace (band.q) + (w.deltaY > 0 ? 0.04f : -0.04f));
+            eng.setEqBand (cfg.lane, eqSel, band);
+            cfgStale = true; ses.touch();
+        }
+        dirty (eqRect);
+        return;
+    }
     if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     const auto* h = hitAt (where (e));
     if (three && ! eyeLocked && stage != nullptr && (h == nullptr || ! (h->kind == hKnob || h->kind == hSnapKnob || h->kind == hRead)))
@@ -5826,6 +6091,12 @@ void Screen::timerCallback()
     if (page == pArrange && arrangeSig() != arrSig) repaint();      // the part playing, the beat it is on, what the print last said
     if (page == pMain && ses.arrPlaying() != arrLit) { arrLit = ses.arrPlaying(); repaint(); }
     if (page == pMacros && motionSig() != motSig) repaint();       // MOTION turned from a controller: its words, and the marks on the knobs' cards
+    // (the lane EQ's graph: POCKETS looks at the lanes while it is up, and it is drawn again as they play)
+    {
+        const bool eqUp = page == pMain && cfgOpen && cfg.kind == 0 && ! eqRect.isEmpty();
+        if (eng.pocketsWatched() != (page == pPockets || eqUp)) eng.watchPockets (page == pPockets || eqUp);
+        if (eqUp) { eng.pocketsSeen (pkSeen); dirty (eqRect); }
+    }
     if (page == pPockets)
     {
         // each row's map is drawn again when a bar of it has moved by a pixel, or its pocket has

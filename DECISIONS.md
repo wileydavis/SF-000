@@ -4794,8 +4794,62 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        SF-000's own library, under `samples`, named RESAMPLE and the date and time, where a file
        you LOAD is copied to, and is loaded into the lane.
 
+713. **You**, Nov 18, 08:53, on KICK FORGE: "Was just checking soI understand. for the most part
+     forge sounds great, but wanted to correct the ineffective knob issue." So it stays what it
+     is, with its knobs made to matter (712).
+714. **You**, 09:07: "Also, I think the three EQ knobs arenn't cutting it. And pockets is a bit
+     tedious to get right. I think what I actually need is just a really amazing and powerful EC
+     on each lane (maybe as part of every config panel at the bottom) that lets me do complicated
+     EQ (hi/low pass, notch filters, etc.) in a highly visual way. Ideally that lets me see the
+     overlapping frequencies from each lane (lanes hold their own eq paramaters but seing what
+     each lane is doing while adjusting a given lane would be helpful). Look to tools like
+     fab-filter pro 4 for inspiration. Needs to be very visual. And the snapshots of course would
+     need to capture the eq settings." **The lane EQ**, eightieth build. *Mine, the particulars,
+     each said to you before it was built:*
+     - **Eight bands on every lane**, after its inserts. A band is OFF, a BELL, a LOW or HIGH
+       SHELF, a LOW or HIGH CUT (12 dB an octave: two on one place for 24) or a NOTCH, at a
+       frequency (20 Hz to 20 kHz), with a gain (bell and shelves, to 18 dB either way) and a
+       width (Q, 0.3 to 12).
+     - **The three knobs stay, as three of the bands** (1, 4 and 7: LOW a shelf at 200 Hz, MID a
+       wide bell at 700, HIGH a shelf at 2.5 kHz, with the reach they always had, 24 dB down and
+       9 up). Their gain is the knob; their kind, place and width can now be moved. Nothing kept
+       sounds different: the rig's opening bars are the same to the sample.
+     - **The graph**, at the foot of every lane's CONFIG: what the EQ does (the yellow line, and
+       the chosen band's own share filled under it), over what the lane is playing (white,
+       filled), over what every other lane is playing, a shape each in a colour of its own. A band's point is dragged, left and
+       right its frequency, up and down its gain (a cut's or a notch's width); the wheel is its
+       width; a double-click on a point puts the band back, and on the graph makes a free band
+       a bell there. Under it a key a band, and a key a kind for the band chosen.
+     - 09:25: "can the q of the curve be adjusted?" It can: the wheel over a band, a cut's or a
+       notch's drag, WIDTH on the E16. 09:26: "give the ability to hide/show the other lanes
+       frequency overlay. fill in under the curves with semitransparent colors so it's easir to
+       see the spaces they occupy." 09:28: "maybe a vertical column of buttons for each lane to
+       turn its freq on/off along the left side?" So: every lane's shape is filled in its own
+       colour, thin enough that ten can lie over each other; **down the left of the graph a key a
+       lane**, in that colour, shows or hides its shape (this lane's own is white, and stays);
+       and **OTHERS**, above the graph, shows or hides them all (with OTHERS off, a lane's key
+       shows that lane alone). Which are shown is the screen's, not a snapshot's.
+     - **The spectra are POCKETS' own looking** (a third of an octave a step, 31 Hz to 16 kHz),
+       switched on while the graph is up whatever POCKETS' AMOUNT is. Coarser than an analyser's
+       line; enough to see who is where.
+     - **Snapshots hold it** (in a lane's setup, `eq1_type` ... `eq8_q`, written only where a
+       lane's EQ is not as it starts; a snapshot that says nothing of it puts it back as it
+       starts). **A stack knob sweeps it**: a band's frequency, gain and width travel, and what
+       kind it is changes half way. **The E16 has it** as the last pages of CONFIG, a row a band
+       (KIND, FREQ, GAIN, WIDTH), where a knob band's GAIN is its knob.
+     - **POCKETS is left as it is.** Yours to say if it should go.
+     - **Not in this:** a band that moves with the sound (Pro-Q's dynamic bands), its matching
+       and its spectral tools, mid/side, and a finer analyser. A second step, if the plain one
+       is right.
+
 ## Not verified
 
+- **The lane EQ (714) has been seen in one picture and not used by a hand.** Its arithmetic is
+  checked (a bell, a notch, a cut, a knob's shelf), a cut is heard, a snapshot keeps it and the
+  graph draws. Dragging, the wheel and the double-clicks have only the checks' blind presses
+  behind them, on this machine's drawing: how it feels under a mouse on the Mac is untried. A
+  band's kind changing while it sounds is not smoothed and may tick. On the E16 the bands are on
+  CONFIG's later pages: reached by PAGE +, not tried on the device.
 - **The pocket as the wrap (711) has not been heard.** It is measured against the kick's own
   decay on a pad. Whether it is your picture to your ear, whether the square or the straight
   inverse is right, whether a quarter to the whole of the kick is the right travel for SHAPE,

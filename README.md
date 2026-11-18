@@ -486,6 +486,24 @@ is where the song is in them: a recorded loop holds the tempo with its pitch unc
 starts where GRANULAR was before these, so a snapshot that played it sounds as it did (a PAD
 from before has its COLOR and DETUNE turned into the SIZE, SPRAY and PITCH they were).
 
+**The lane EQ** (eightieth build), at the foot of every lane's CONFIG: eight bands, on a graph.
+
+- A band is OFF, a BELL, a LOW or HIGH SHELF, a LOW or HIGH CUT (two on one place for a steeper
+  one) or a NOTCH, at a frequency, with a gain and a width.
+- **The yellow line** is what the EQ does. **The white shape** is what this lane is playing.
+  **The coloured shapes** are what every other lane is playing: where they lie on top of each
+  other is where they fight. **The keys down the left**, a lane each in its shape's colour, show
+  or hide that lane's; **OTHERS** shows or hides them all (with OTHERS off, a lane's key shows
+  that lane alone).
+- **Drag a band's point**: left and right its frequency, up and down its gain (the width of a
+  cut or a notch). **The wheel** is its width. **Double-click** a point to put it back, or the
+  graph to make a free band a bell there. The numbered keys choose a band; the keys beside them
+  say what kind it is.
+- **Bands 1, 4 and 7 are the panel's LOW, MID and HIGH knobs.** Turn the knob and the point
+  moves; drag the point and the knob follows. As they start they are the three-knob EQ exactly.
+- A snapshot keeps all of it, a stack knob sweeps it (frequency, gain and width travel; a band's
+  kind changes half way), and the E16 has it on the last pages of CONFIG, a row a band.
+
 **Everything in CONFIG keeps its place.** The boxes that are always there come first, in one
 order on every lane, with MODEL the first control of all; MOTION follows them; the boxes that
 come and go with a model (its own controls, SAMPLE's, and USUAL KNOBS: the knobs a model's own
@@ -1623,7 +1641,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

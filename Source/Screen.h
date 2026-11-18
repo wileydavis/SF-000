@@ -270,6 +270,11 @@ private:
     enum HitKind { hKnob = 1, hToggle, hHold, hLane, hInsHead, hStep, hPageSel, hAct, hSnapKnob, hRead, hCard, hSlot, hKnobCard, hPick, hLanePanel, hLen, hDepth, hConfig, hSetup, hDisplay, hBlock, hDropFx, hFile, hScope,
                    hFront,          // a module's own plate, off its controls: a press brings it to the front (a: which kind of module, b: its slot)
                    hPocket,         // POCKETS: a lane's pocket on the map (a: the lane): dragged, left and right its HOME, up and down its WIDTH
+                   // the lane EQ's graph, in CONFIG. hEq: a band's point (a: which; -1: the graph itself), dragged left and
+                   // right its frequency, up and down its gain (a cut's or a notch's width). hEqBand: a band's key (a: which).
+                   // hEqType: a kind's key (a: which kind), for the band chosen
+                   // hEqLane: another lane's number on the graph (a: the lane), its line shown or hidden; a -1: OTHERS, all of them
+                   hEq, hEqBand, hEqType, hEqLane,
                    hArrPart, hArrBars, hArrMorph,       // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
                    // the column (the chosen stack knob's stack, in the designer). a: which of its snapshots
                    hColCard,        // the card itself: heard in the headphones, with the parts of the rig it takes
@@ -546,6 +551,14 @@ private:
     void drawPockets (G&);
     void drawPocketMap (G&, int part, R);       // one row's map: the lane's pocket, what it is playing, what is taken from it
     void drawConfig (G&, R);
+    void drawEq (G&, R);                // the lane EQ: its graph, the lanes' spectra behind it, a key a band and a key a kind
+    R eqRect, eqGraph;                  // where it was drawn, and the graph in it
+    int eqSel = 0;                      // the band chosen
+    bool eqOthers = true;               // the other lanes' spectra are drawn behind this lane's
+    juce::uint32 eqHidden = 0;          // and those of them put out one by one (a bit a lane)
+    static constexpr float kEqTop = 18.0f, kEqSpan = 48.0f;        // the graph's height: +18 dB at its top, 48 dB down it
+    float eqX (float hz) const          { return eqGraph.getX() + eqGraph.getWidth() * Engine::eqHzPlace (hz); }
+    float eqY (float db) const          { return eqGraph.getY() + eqGraph.getHeight() * juce::jlimit (0.0f, 1.0f, (kEqTop - db) / kEqSpan); }
     void openConfig (Engine::Target);
     void drawSnapCard (G&, const Snapshot&, int index, R, bool selected, int hitKind);
 

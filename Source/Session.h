@@ -839,6 +839,10 @@ private:
     static SlotSide slotBetween (const SlotSide& a, const SlotSide& b, float f);
     void slotTo (int lane, int slot, const SlotSide&, double glideBeats);
     void sweepSlots (const Held& toward, float f, float g0, float g1);
+    // The lanes' EQs with a knob's turn: a band's frequency, gain and width go that much of the way; what kind it is, is
+    // the snapshot's from half way on.
+    void sweepEq (const Held& toward, float f, float g0, float g1);
+    static std::array<Engine::EqBand, Engine::kEqBands> eqOf (const Snapshot&, int lane);      // a lane's EQ as a snapshot has it (as it starts, where it says nothing)
     // ---- a lane's instrument between two snapshots (a stack knob turned toward one whose M is lit, with CUE out)
     // What of a lane's instrument cannot travel on a knob: its sample, its CONFIG (its model among it), a menu or a switch.
     bool instrumentDiffers (const Snapshot&, int lane) const;               // from the one the lane has now

@@ -701,6 +701,7 @@ void Session::sweepKnob (int k, float from, float to)
             const float g0 = whole > 1.0e-6f ? juce::jlimit (0.0f, 1.0f, std::abs (at - behind) / whole) : 1.0f;
             const float g1 = whole > 1.0e-6f ? juce::jlimit (0.0f, 1.0f, std::abs (at + dir * step - behind) / whole) : 1.0f;
             sweepSlots (h[(size_t) next], f, g0, g1);
+            sweepEq (h[(size_t) next], f, g0, g1);
             // and the lanes' own instruments, toward one whose M is lit (or back from one, to where the knob came from)
             const int bi = next - (int) dir;
             sweepInstruments (h[(size_t) next], bi >= 0 && bi < n ? h[(size_t) bi].id : 0, g1, step >= span);
@@ -2330,6 +2331,49 @@ void Session::slotTo (int l, int k, const SlotSide& to, double glide)
 // the way too. f: how much of what was left of the way this turn covered (as for the sound knobs). g0, g1: how far
 // between the place behind the knob and the one ahead it stood, and stands now. Worked out from what is in the rack,
 // so there is nothing to jump from.
+std::array<Engine::EqBand, Engine::kEqBands> Session::eqOf (const Snapshot& s, int lane)
+{
+    std::array<Engine::EqBand, Engine::kEqBands> out;
+    for (int b = 0; b < Engine::kEqBands; ++b) out[(size_t) b] = Engine::eqDefault (b);
+    if (lane >= 0 && lane < kLanes && s.hasSetup)
+        for (auto& kv : s.setup[(size_t) lane])
+        {
+            int b = 0, w = 0;
+            if (! Engine::eqId (kv.first, b, w)) continue;
+            auto& band = out[(size_t) b];
+            if (w == 0) band.type = (int) std::lround (juce::jlimit (0.0f, 1.0f, kv.second) * (float) (Engine::kEqTypes - 1));
+            else if (w == 1) band.hz = Engine::eqHzOf (kv.second);
+            else if (w == 2) band.db = Engine::eqDbOf (kv.second);
+            else band.q = Engine::eqQOf (kv.second);
+        }
+    return out;
+}
+
+void Session::sweepEq (const Held& toward, float f, float g0, float g1)
+{
+    if (toward.s == nullptr || ! toward.s->hasSetup) return;
+    const auto sc = scopeOf (toward.lanes);
+    const bool arrived = f >= 1.0f - 1.0e-6f, crossed = g0 < 0.5f && g1 >= 0.5f;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        if (! sc.lane[(size_t) l]) continue;
+        const auto there = eqOf (*toward.s, l);
+        for (int b = 0; b < Engine::kEqBands; ++b)
+        {
+            auto here = engine.eqBand (l, b);
+            const auto& t = there[(size_t) b];
+            const auto was = here;
+            // (a band that is off on both sides has nothing to travel)
+            if (here.type == Engine::eqOff && t.type == Engine::eqOff && ! arrived) continue;
+            here.hz = arrived ? t.hz : here.hz * std::pow (t.hz / std::max (1.0f, here.hz), f);
+            here.q = arrived ? t.q : here.q + f * (t.q - here.q);
+            if (Engine::eqKnobOf (b) < 0) here.db = arrived ? t.db : here.db + f * (t.db - here.db);       // (LOW, MID and HIGH: their knobs travel as knobs)
+            if (crossed || arrived || g1 >= 0.5f) here.type = t.type; else if (g1 < 0.5f && g0 >= 0.5f) {}
+            if (here.type != was.type || std::abs (here.hz - was.hz) > 1.0e-3f || std::abs (here.q - was.q) > 1.0e-5f || std::abs (here.db - was.db) > 1.0e-5f) engine.setEqBand (l, b, here);
+        }
+    }
+}
+
 void Session::sweepSlots (const Held& toward, float f, float g0, float g1)
 {
     const auto sc = scopeOf (toward.lanes);

@@ -9646,6 +9646,20 @@ static int shot (const juce::StringArray& args)
         sc.testTick();
     }
     const auto cfg = arg ("--cfg", "");
+    if (args.contains ("--eqdemo"))
+    {
+        // (--eqdemo: the rig played for four seconds with POCKETS looking, and the active lane's EQ given a low cut, a
+        // dip and a lift, so that the EQ's graph has something to show)
+        e.watchPockets (true);
+        e.setRunning (true);
+        juce::AudioBuffer<float> b (2, 256);
+        for (int i = 0; i < 750; ++i) { b.clear(); e.render (b); }
+        Engine::EqBand x;
+        x.type = Engine::eqLowCut; x.hz = 90.0f; x.q = 0.70710678f; e.setEqBand (ses.activeLane, 1, x);
+        x.type = Engine::eqBell; x.hz = 420.0f; x.db = -7.0f; x.q = 2.2f; e.setEqBand (ses.activeLane, 2, x);
+        x.type = Engine::eqBell; x.hz = 3200.0f; x.db = 5.0f; x.q = 1.2f; e.setEqBand (ses.activeLane, 4, x);
+        ses.userSet (cx::lane (ses.activeLane, cx::kEqHigh), 0.35f);
+    }
     if (arg ("--model", "").isNotEmpty())
     {
         // (--model NAME: the active lane's MODEL chosen, as by hand)

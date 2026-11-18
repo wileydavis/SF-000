@@ -159,6 +159,14 @@ this build does not have is written back as it was read.
   The lane's definition (`defs`) says which models these are, in `own`: `[ { "model", "knobs":
   [ 8, each under the id of the place it takes ], "with"?: { param: place } } ]`: a model's own
   knobs, and what choosing it by hand also set.
+- **A lane's EQ** (eightieth build) is in its `setup`: `eq1_type`, `eq1_hz`, `eq1_gain`, `eq1_q` ...
+  `eq8_q`, each a place from 0 to 1. `type`: OFF, BELL, LOW SHELF, HIGH SHELF, LOW CUT, HIGH
+  CUT, NOTCH along 0 to 1 (sixths). `hz`: 20 Hz · 1000^v. `gain`: -18 dB + 36 v. `q`:
+  0.3 · 40^v. Bands 1, 4 and 7 have no `gain` here: theirs is the lane's `.eq_low`, `.eq_mid`
+  and `.eq_high` in `values`, as it always was (centre flat, down to -24 dB, up to +9). The
+  whole of it is written only where a lane's EQ is not as it starts, and **a lane's setup that
+  says nothing of it means the EQ as it starts**: band 1 a low shelf at 200 Hz, band 4 a bell at
+  700 Hz (Q 0.6), band 7 a high shelf at 2.5 kHz, the rest off.
 - **`values`**: every stored control by id. A lane's knob is `<slot>.<param>`; an insert's cell
   is `<slot>.i<insert>.c<cell>` (by place: what the place is depends on the effect in `inserts`);
   the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on (`.gen_seed` has 128
