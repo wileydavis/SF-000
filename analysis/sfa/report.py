@@ -423,7 +423,7 @@ document.getElementById('combo').onclick = async e => {
 // ---------------------------------------------------------------- MORPH: the way between two snapshots
 // SF-000 itself renders it, as a stack knob holding the two would play it. The scan is kept beside the page
 // (morph/<id>/scan.json) and read from there while it is made.
-let M = { a: '', b: '', notes: 'a', blend: false, scan: null, sel: null, lead: [], count: 3, said: '', shape: null, timer: null };
+let M = { a: '', b: '', notes: 'a', n: false, blend: false, scan: null, sel: null, lead: [], count: 3, said: '', shape: null, timer: null };
 try { Object.assign(M, JSON.parse(sessionStorage.getItem('sf000morph') || '{}'), { timer: null }); } catch (e) {}
 const keepM = () => { try { sessionStorage.setItem('sf000morph', JSON.stringify({ ...M, timer: null })); } catch (e) {} };
 async function post(path, body) {
@@ -467,12 +467,13 @@ function shapeView(sc, sh) {
     <div class="mrow"><input id="sname" placeholder="name of the stack" maxlength="20" value="${esc(M.sname ?? ((D.names[sc.a] || '').replace(/^SNAP /, '') + ' > ' + (D.names[sc.b] || '').replace(/^SNAP /, '')))}"><button class="act go" id="smake">MAKE STACK</button><span class="dim">${esc(M.ssaid || '')}</span></div>`;
 }
 function drawMorph(q) {
-  const sc = M.scan && M.scan.a === M.a && M.scan.b === M.b && M.scan.notes === M.notes && !!M.scan.blend === !!M.blend ? M.scan : null;
+  M.notes = 'a';                    // (the knob turns from FROM to TO: SWAP turns it the other way)
+  const sc = M.scan && M.scan.a === M.a && M.scan.b === M.b && M.scan.notes === 'a' && !!M.scan.blend === !!M.blend && !!M.scan.n === !!M.n ? M.scan : null;
   const there = end => M[end] && D.found[M[end]] && D.found[M[end]].energy !== undefined;
   if (M.arm === undefined) M.arm = !there('a') ? 'a' : !there('b') ? 'b' : null;
   const slot = (end, word) => `<b>${word}</b>${there(end) ? chip(M[end], Math.round(D.found[M[end]].energy * 100), { big: true }) : '<span class="dim">none yet</span>'}<button class="act${M.arm === end ? ' on' : ''}" data-arm="${end}">${M.arm === end ? 'CHOOSING' : 'CHOOSE'}</button>`;
   let h = `<p class="note">The way between two snapshots, as a stack knob holding both plays it: the sound goes from one to the other, with the notes of the one it set out from. SF-000 itself renders it (close SF-000 first), eleven points along the turn, about a minute. Then: what is worth hearing between them, and the morph reshaped into a stack. The two chips here play the two ends.</p>
-    <div class="mrow">${slot('a', 'FROM')}<span style="width:14px"></span>${slot('b', 'TO')}</div>`;
+    <div class="mrow">${slot('a', 'FROM')}<span style="width:14px"></span>${slot('b', 'TO')}<span style="width:14px"></span><button class="act" id="mswap" title="the other way: FROM and TO change places"${there('a') || there('b') ? '' : ' disabled'}>SWAP</button></div>`;
   if (M.arm) {
     const other = M.arm === 'a' ? M.b : M.a;
     const all = Object.entries(D.found).filter(([u, f]) => f.energy !== undefined && u !== other).sort((x, y) => y[1].energy - x[1].energy);
@@ -480,14 +481,22 @@ function drawMorph(q) {
     h += `<p class="note">Press one and it plays, and it is the ${M.arm === 'a' ? 'FROM' : 'TO'}: press through them until it is the one you want. Pressed again, it stops. Most energy first; the number is its energy, of 100.${q ? '' : ' The box at the top finds by name.'}</p>
       <div class="chips" style="padding:6px 0 4px">${shown.map(([u, f]) => chip(u, Math.round(f.energy * 100), { act: 'choose', cls: u === M[M.arm] ? 'picked' : '' })).join('') || '<span class="dim">None by that name.</span>'}</div>`;
   }
-  h += `<div class="mrow"><span class="dim">notes of</span><button class="act${M.notes === 'a' ? ' on' : ''}" data-notes="a">FROM</button><button class="act${M.notes === 'b' ? ' on' : ''}" data-notes="b">TO</button>
-      <span style="width:14px"></span><span class="dim">models and samples</span><button class="act${!M.blend ? ' on' : ''}" data-blend="0" title="each lane keeps the model and sample of the snapshot the knob set out from: the M keys out">STAY</button><button class="act${M.blend ? ' on' : ''}" data-blend="1" title="each lane blends from one snapshot's model and sample to the other's as the knob turns, both sounding between: the M keys lit">BLEND</button>
+  // The two keys each chip has on a stack knob in SF-000, set here as they would be set there: what is scanned is that knob.
+  h += `<div class="mrow"><span class="dim">the chips' keys, as on the stack knob:</span>
+      <b>N</b><button class="act${!M.n ? ' on' : ''}" data-n="0" title="N out: the notes stay FROM's all the way">OUT</button><button class="act${M.n ? ' on' : ''}" data-n="1" title="N lit: the knob come to TO brings TO's notes, on the next bar line">LIT</button>
+      <span style="width:10px"></span><b>M</b><button class="act${!M.blend ? ' on' : ''}" data-blend="0" title="M out: each lane keeps FROM's model and sample all the way">OUT</button><button class="act${M.blend ? ' on' : ''}" data-blend="1" title="M lit: each lane blends from FROM's model and sample to TO's as the knob turns, both sounding between">LIT</button>
+      <span style="width:10px"></span>
       <button class="act go" id="mscan"${there('a') && there('b') && M.a !== M.b ? '' : ' disabled'}>SCAN</button><span class="dim">${esc(M.said)}</span></div>`;
   if (!sc) return h;
   if (sc.status === 'rendering' || sc.status === 'measuring') return h + `<p class="dim">${sc.status === 'measuring' ? 'Measuring...' : `SF-000 is rendering: ${sc.done} of ${sc.of}.`}</p>`;
   if (sc.status === 'failed') return h + `<p class="dim">${esc(sc.error || 'It could not be scanned.')}</p>`;
   const nEnd = sc.notes === 'b' ? 1 : 0, kk = sc.keys;
-  if (kk) h += `<p class="note">Every point plays the notes of ${sc.notes === 'b' ? 'TO' : 'FROM'}, in its key (${esc(kk[nEnd])}${kk[0] !== kk[1] ? `; ${sc.notes === 'b' ? 'FROM' : 'TO'} is in ${esc(kk[1 - nEnd])}, so the far end is not that snapshot as you know it` : ''}). Everything else goes over as the knob takes it, TUNE with it (a lane tuned differently in the two bends from one to the other). ${sc.blend ? `Each lane's model and sample blend from one snapshot's to the other's with the turn, both sounding between: the stack knob with the M keys lit.` : `Each lane keeps the model and sample of ${sc.notes === 'b' ? 'TO' : 'FROM'}: the stack knob with the M keys out. BLEND, beside SCAN, crosses them over with the turn.`}</p>`;
+  if (kk) h += `<p class="note">This is the stack knob in SF-000 holding the two, turned from FROM to TO and held at each of eleven places, with the chips' N ${sc.n ? 'lit' : 'out'} and M ${sc.blend ? 'lit' : 'out'}${sc.tempo ? `, at ${Number(sc.tempo).toFixed(1)} BPM (the tempo FROM was taken at)` : ''}. ` +
+    (sc.n ? `The notes are FROM's until the knob is at TO: there TO's come, on the next bar line. ` : `The notes are FROM's all the way. `) +
+    `The key is FROM's (${esc(kk[0])}${kk[0] !== kk[1] ? `; TO was taken in ${esc(kk[1])}` : ''}). ` +
+    (sc.blend ? `Each lane's model and sample blend from FROM's to TO's with the turn, both sounding between. ` : `Each lane keeps FROM's model and sample all the way, so at 100% you hear TO's knobs on FROM's sounds. `) +
+    `The sound knobs, TUNE among them, and the effects in the racks go over as the knob takes them.` +
+    (sc.tempo === undefined ? ` <span style="color:var(--hot)">Scanned before a scan ran at the snapshots' own tempo: SCAN again and it is the knob to the beat.</span>` : sc.tempo === null ? ` <span style="color:var(--hot)">At SF-000's own 132 BPM, not the snapshots': the SF-000 built in this folder is older than this page (./build.sh).</span>` : sc.tempo === false ? ` At SF-000's own 132 BPM: the library has no tempo for FROM.` : '') + `</p>`;
   if ((sc.held || []).length) h += `<p class="note" style="color:var(--hot)">This was scanned with TUNE held still on ${sc.held.map(l => LN[l]).join(', ')}. That is undone: SCAN again and TUNE bends across the turn, as the stack knob plays it.</p>`;
   if ((sc.missing || []).length) {
     const fname = r => esc(String(r).split('/').pop()), files = sc.missing.map(r => fname(r) + (sc.why && sc.why[r] ? ` (${esc(sc.why[r])})` : '')).join(', ');
@@ -532,7 +541,8 @@ document.getElementById('list').addEventListener('click', async e => {
     M[M.arm] = u; M.said = ''; keepM(); draw();
     return playSnap(u, [...document.querySelectorAll('.chip[data-act="choose"]')].find(c => c.dataset.u === u) || document.body);
   }
-  if (t.dataset.notes) { M.notes = t.dataset.notes; keepM(); return draw(); }
+  if (t.dataset.n !== undefined) { M.n = t.dataset.n === '1'; keepM(); return draw(); }
+  if (t.id === 'mswap') { [M.a, M.b] = [M.b, M.a]; M.arm = null; M.said = ''; keepM(); return draw(); }
   if (t.dataset.blend !== undefined) { M.blend = t.dataset.blend === '1'; keepM(); return draw(); }
   if (t.dataset.count) { M.count = Number(t.dataset.count); keepM(); return draw(); }
   if (t.dataset.lead) { const l = t.dataset.lead; M.lead = M.lead.includes(l) ? M.lead.filter(x => x !== l) : [...M.lead, l]; keepM(); return draw(); }
@@ -543,7 +553,7 @@ document.getElementById('list').addEventListener('click', async e => {
   }
   if (t.id === 'mscan') {
     stop(); M.said = 'Asking SF-000...'; M.sel = null; M.shape = null; M.arm = null; draw();
-    const a = await post('/scan', { a: M.a, b: M.b, notes: M.notes, blend: !!M.blend });
+    const a = await post('/scan', { a: M.a, b: M.b, notes: 'a', blend: !!M.blend, n: !!M.n });
     if (a.error) { M.said = a.error; return draw(); }
     M.said = ''; M.scan = a; keepM(); return readScan();
   }

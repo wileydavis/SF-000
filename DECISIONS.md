@@ -4597,6 +4597,22 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      from the parts, being switches and not parts. They are wherever a stack's chips are laid
      out with their keys: the knob's column in MACROS, and a stack's row in the LIBRARY once its
      pocket is opened. Not in THE BIN, where a chip is in no stack and has no keys.
+702. **You**, 21:04: "how do i select to keep notes on the morph scan?" "and modules/samples".
+     21:06: "it should sound the same as a stack knob would with the same settinbgs." It was the
+     stack knob already (the scan turns SF-000's own), but not with the knob's own settings to
+     set, and not at the tempo. So:
+     - **The page has the chips' two keys, N and M, OUT or LIT**, in place of "notes of FROM / TO"
+       and "STAY / BLEND". N lit was not there at all: now the knob come to TO brings TO's notes
+       (`--render` takes `"n"` on a point). **SWAP** turns the knob the other way, which is all
+       "notes of TO" was.
+     - **It runs at the tempo FROM was taken at** (`--render` takes `"tempo"`): the fresh rig has
+       132 and your snapshots were taken at 131.1, and the delays and the motion run by it.
+     - **The line above the points says exactly what was played**: the keys, the tempo, whose
+       notes, which key, whose models and samples. A scan from before says it should be made
+       again; an SF-000 too old to be told the tempo or N is said to be.
+     *Mine:* what still is not the knob in your hands, and the README says: each point is the knob
+     held at that place after the sound has settled (not a turn in motion), on a fresh rig with
+     everything else at rest; and a lane left out for want of its file.
 
 ## Not verified
 

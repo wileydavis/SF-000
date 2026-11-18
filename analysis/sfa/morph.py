@@ -231,7 +231,7 @@ class Renderer:
             out.update(got.get("defs") or {})
         return out
 
-    def render(self, work: Path, snaps: list[dict], defs: dict, points: list[dict], progress=None, stop=None) -> dict:
+    def render(self, work: Path, snaps: list[dict], defs: dict, points: list[dict], progress=None, stop=None, tempo: float | None = None) -> dict:
         """Runs the instrument on the job. Returns what was done without: {"missing": the sound files that could not
         be had, "left": the lanes left out for want of theirs, "named": other lanes that name one}. Raises Trouble."""
         if self.sf000 is None:
@@ -248,7 +248,10 @@ class Renderer:
             left = [l for l in LANES if any(l in q[1] for q in quiet)]
             named = [l for l in LANES if any(l in q[2] for q in quiet)]
         job = work / "job.json"
-        job.write_text(json.dumps({"dir": str(scratch), "out": str(out), "defs": defs, "snapshots": snaps, "points": points}))
+        asked = {"dir": str(scratch), "out": str(out), "defs": defs, "snapshots": snaps, "points": points}
+        if tempo:
+            asked["tempo"] = float(tempo)       # (the tempo the snapshots were played at: the fresh rig has its own)
+        job.write_text(json.dumps(asked))
         cmd = [str(self.sf000), "--render", str(job)]
         env = dict(os.environ)
         if platform.system() != "Darwin" and not env.get("DISPLAY") and shutil.which("xvfb-run"):
@@ -257,14 +260,14 @@ class Renderer:
         env["XDG_CONFIG_HOME"] = str(scratch / ".config")
         self.child = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
         done, failed, knows = 0, [], 1
-        needs = 2 if any(p.get("blend") for p in points) else 1
+        needs = 3 if any(p.get("n") for p in points) else 2 if any(p.get("blend") for p in points) else 1
         try:
             for line in self.child.stdout:
                 if line.startswith("render "):
                     knows = int(line.split()[1]) if line.split()[1].isdigit() else 1
                 elif line.startswith("done ") and knows < needs:
                     self.child.terminate()
-                    raise Trouble("The SF-000 built in this folder is older than this page: it does not know how to blend models and samples. Build it (./build.sh) and scan again.")
+                    raise Trouble("The SF-000 built in this folder is older than this page: it does not know these keys (N, M) in a render. Build it (./build.sh) and scan again.")
                 if line.startswith("done "):
                     done += 1
                     if progress:
@@ -281,7 +284,8 @@ class Renderer:
             self.child = None
         if code != 0 or failed or done < len(points):
             raise Trouble("SF-000 could not render it" + (f" ({failed[0]})" if failed else f" (it stopped after {done} of {len(points)})"))
-        return {"missing": missing, "left": left, "named": named, "why": {r: self.from_where.get(r, "") for r in missing}}
+        return {"missing": missing, "left": left, "named": named, "why": {r: self.from_where.get(r, "") for r in missing},
+                "tempo": (float(tempo) if knows >= 3 else None) if tempo else False}       # (False: the library has none for it. None: this SF-000 is too old to be told)
 
 
 # ------------------------------------------------------------------------------------------------- reading a render
@@ -477,6 +481,11 @@ class Morphs:
         d.mkdir(parents=True, exist_ok=True)
         self.a.store._write(d / "scan.json", json.dumps(scan))
 
+    def _bpm(self, uid: str) -> float | None:
+        """The tempo that snapshot was taken at, as the library has it."""
+        v = (self.a.store.snapshot(uid) or {}).get("bpm")
+        return float(v) if isinstance(v, (int, float)) and 60 <= v <= 200 else None
+
     def _snap(self, uid: str) -> dict:
         s = (self.a.store.snapshot(uid) or {}).get("snapshot")
         if not s:
@@ -524,32 +533,36 @@ class Morphs:
         return not self.a.anyway and instrument_running()
 
     # ---- a scan
-    def scan(self, a: str, b: str, notes: str = "a", blend: bool = False) -> dict:
-        """blend: the two snapshots' M keys lit on the stack knob, so that each lane's model and sample blend from the one
+    def scan(self, a: str, b: str, notes: str = "a", blend: bool = False, n: bool = False) -> dict:
+        """The morph as a stack knob holding the two plays it, with the chips' keys as given: n, their N (the knob come
+        to a chip brings its notes; out, the notes stay those it set out with); blend, their M. And at the tempo the
+        snapshot it sets out from was taken at.
+
+        blend: the two snapshots' M keys lit on the stack knob, so that each lane's model and sample blend from the one
         to the other with the turn (both sounding between). Out: the lanes keep the models and samples of the snapshot
         the knob set out from, and the sound knobs alone go over."""
         if a == b:
             raise Trouble("two different snapshots")
         self._guard()
         notes = "b" if notes == "b" else "a"
-        blend = bool(blend)
-        sid = f"{self.a.store.safe(a)[-10:]}_{self.a.store.safe(b)[-10:]}_{notes}" + ("_m" if blend else "")
-        scan = {"id": sid, "a": a, "b": b, "notes": notes, "blend": blend, "status": "rendering", "done": 0, "of": STEPS + 1, "started": int(time.time() * 1000), "shapes": {}}
+        blend, n = bool(blend), bool(n)
+        sid = f"{self.a.store.safe(a)[-10:]}_{self.a.store.safe(b)[-10:]}_{notes}" + ("_n" if n else "") + ("_m" if blend else "")
+        scan = {"id": sid, "a": a, "b": b, "notes": notes, "blend": blend, "n": n, "v": 3, "status": "rendering", "done": 0, "of": STEPS + 1, "started": int(time.time() * 1000), "shapes": {}}
         self._put(scan)
 
         def work():
             sa, sb = self._snap(a), self._snap(b)
             scan["keys"] = [key_of(sa), key_of(sb)]
             fs = [round(i / (STEPS - 1), 4) for i in range(STEPS)]
-            points = [{"key": f"p{i:02d}", "morph": [0, 1, f], "notes": notes, "blend": blend} for i, f in enumerate(fs)]
-            points.append({"key": "twin", "morph": [0, 1, 0.0], "notes": notes, "blend": blend})        # (the first again: how alike two renders of the same are)
+            points = [{"key": f"p{i:02d}", "morph": [0, 1, f], "notes": notes, "blend": blend, "n": n} for i, f in enumerate(fs)]
+            points.append({"key": "twin", "morph": [0, 1, 0.0], "notes": notes, "blend": blend, "n": n})        # (the first again: how alike two renders of the same are)
             wd = self.root / sid
 
             def progress(done, of):
                 scan["done"] = done
                 self._put(scan)
-            got = self.r.render(wd, [sa, sb], self.r.defs_for([a, b]), points, progress, self._stop)
-            scan["missing"], scan["left"], scan["named"], scan["why"] = got["missing"], got["left"], got["named"], got["why"]
+            got = self.r.render(wd, [sa, sb], self.r.defs_for([a, b]), points, progress, self._stop, tempo=self._bpm(b if notes == "b" else a))
+            scan["missing"], scan["left"], scan["named"], scan["why"], scan["tempo"] = got["missing"], got["left"], got["named"], got["why"], got["tempo"]
             scan["status"] = "measuring"
             self._put(scan)
             measured = []
@@ -604,7 +617,7 @@ class Morphs:
             shape_id = f"even_{count}"
             places = even_places([p["f"] for p in scan["points"]], scan["steps"], count)
             snaps = [sa, sb]
-            points = [{"key": f"{shape_id}_{i}", "morph": [0, 1, f], "notes": notes} for i, f in enumerate(places)]
+            points = [{"key": f"{shape_id}_{i}", "morph": [0, 1, f], "notes": notes, "n": bool(scan.get("n"))} for i, f in enumerate(places)]
             how = [{"a": a, "b": b, "f": f, "notes": notes} for f in places]
         shape = {"id": shape_id, "kind": kind, "status": "rendering", "lanes": lanes if kind == "lead" else None}
         scan["shapes"][shape_id] = shape
@@ -612,7 +625,7 @@ class Morphs:
 
         def work():
             try:
-                self.r.render(wd, snaps, self.r.defs_for([a, b]), points, None, self._stop)
+                self.r.render(wd, snaps, self.r.defs_for([a, b]), points, None, self._stop, tempo=scan.get("tempo"))
                 ends = [json.loads((wd / f"{k}.measured.json").read_text()) for k in ("p00", f"p{STEPS - 1:02d}")]
                 between = []
                 for p in points:

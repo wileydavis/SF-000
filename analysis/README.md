@@ -81,15 +81,27 @@ play a stand-in for its missing file is **left out of every point**, with no not
 phrase does not fall silent, it sings its notes with a choir of its own, which is in neither snapshot and the
 same in every morph. Another lane that names a missing file is named too, since it may not sound as you know it.
 
-**MODELS AND SAMPLES: STAY or BLEND**, beside SCAN, is the stack chips' **M** key (SF-000's README, the
-column of a stack knob). STAY: every point is on the models and samples of the snapshot the knob set out
-from, as a stack knob plays with M out, so the far end is the other snapshot's knobs on this one's
-sounds. BLEND: each lane whose model or sample is another in the other snapshot is held between the two,
-both sounding, mixed by where the knob is, and the far end is the other snapshot's whole sound (on this
-one's notes and key). A point of a blended morph is a place of the knob and not a chip (two instruments
-on a lane; a chip holds one), so nothing is made from it here: to play it, put the two chips on a stack
-knob, light the M of the one the knob goes toward, and turn to that place. It needs SF-000 of the
-seventy-eighth build or later built in this folder (`./build.sh`); with an older one the page says so.
+**It is the stack knob, with the keys you would set on it.** Beside SCAN are the two keys each chip has on a
+stack knob in SF-000 (its README, the column of a stack knob), and what is scanned is that knob with them set
+so, turned from FROM to TO and held at each of eleven places:
+
+- **N** out: the notes are FROM's all the way. Lit: they are FROM's until the knob is at TO, where TO's come,
+  on the next bar line. (The key stays FROM's either way: a knob does not bring a key.)
+- **M** out: every lane keeps FROM's model and sample all the way, so the far end is TO's knobs on FROM's
+  sounds. Lit: each lane whose model or sample is another in TO is held between the two, both sounding, mixed
+  by where the knob is, and the far end is TO's whole sound.
+- **SWAP** turns the knob the other way: FROM and TO change places.
+
+It runs at **the tempo FROM was taken at** (a snapshot holds no tempo, and the delays and the motion run by
+it); the line above the points says which. So a point is what you would hear in SF-000 with those two chips
+on a stack knob, the keys so, the knob at that place, after the sound has settled. What can differ, the page
+says when it does: a lane left out for want of its sound file, and everything else on the rig at rest (the
+macro knobs, the other stack knobs, MOTION), since the render starts from a fresh rig.
+
+A point of a morph with M lit is a place of the knob and not a chip (two instruments on a lane; a chip holds
+one), so nothing is made from it here: to play it, set the same keys on the two chips in SF-000 and turn to
+that place. N, M and the tempo need SF-000 of the seventy-eighth build as it now stands, built in this folder
+(`./build.sh`); with an older one the page says so.
 
 **TUNE goes over with the rest of the sound**, as the stack knob takes it: a lane tuned differently in the two
 snapshots bends from one tuning to the other across the turn, and a point part of the way holds the bend where

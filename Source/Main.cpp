@@ -4604,7 +4604,7 @@ static int checkMade (const juce::StringArray& args)
 //   { "dir": a folder to work in (its samples/ already there), "out": where the results go, "defs": { print: definition },
 //     "snapshots": [ snapshot, ... ],
 //     "points": [ { "key": "p00", "recall": i }                               that snapshot, whole, with its notes
-//               | { "key": "p03", "morph": [i, j, f], "notes": "a" | "b", "blend": true } ] }  a stack knob holding i and j, turned to f of the
+//               | { "key": "p03", "morph": [i, j, f], "notes": "a" | "b", "blend": true, "n": true } ], "tempo": 131.1 }  a stack knob holding i and j, turned to f of the
 //                                                                               way from i to j: from i ("a") or from j ("b"),
 //                                                                               whose notes it therefore has
 // Every point is rendered from the same beginning, so that two can be compared and one asked for twice is the same
@@ -4634,8 +4634,10 @@ static int renderJob (const juce::StringArray& args)
     if (auto* snaps = job["snapshots"].getArray())
         for (auto& sn : *snaps) ids.push_back (ses.takeFromLibrary (sn, sn["name"].toString(), job["defs"]));
     const int knob = 4;                     // (the first stack knob)
-    std::printf ("render 2\n");             // (what this build's --render knows: 2, a point's "blend")
+    std::printf ("render 3\n");             // (what this build's --render knows: 2, a point's "blend"; 3, a point's "n" and the job's "tempo")
     std::fflush (stdout);
+    // (the tempo the snapshots were played at: a snapshot does not hold one, and the delays and the motion run by it)
+    if (job.hasProperty ("tempo")) if (const double bpm = (double) job["tempo"]; bpm >= 60.0 && bpm <= 200.0) ses.userSet (cx::kTempo, tempoToValue (bpm));
     std::pair<juce::int64, juce::int64> on { 0, 0 };
     Session::Scope whole;                   // (every part, and its notes)
     int bad = 0;
@@ -4666,7 +4668,8 @@ static int renderJob (const juce::StringArray& args)
                 }
                 const bool fromB = p["notes"].toString() == "b";
                 // ("blend": the two snapshots' M keys lit, so each lane's model and sample blend with the turn; else out, and the lanes keep theirs)
-                const juce::uint32 keys = Session::kAllLanes | ((bool) p.getProperty ("blend", false) ? Session::kBlendKey : 0u);
+                // ("n": their N keys lit too, so the knob come to one brings its notes; else out, and the notes stay those it set out with)
+                const juce::uint32 keys = Session::kAllLanes | ((bool) p.getProperty ("blend", false) ? Session::kBlendKey : 0u) | ((bool) p.getProperty ("n", false) ? Session::kNotesKey : 0u);
                 ses.stackLanes (knob, 0, keys); ses.stackLanes (knob, 1, keys);
                 ses.recall (fromB ? z : a, whole);
                 e.set (cx::kSnap + knob, fromB ? 1.0f : 0.0f);       // (the knob stands on the one just recalled)
