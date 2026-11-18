@@ -309,6 +309,7 @@ page 2: FIND, on channel 14: 1 RECENT, 2 FITS NOW, 3 MORE, 4 LESS; 16 GLIDE
 | STEP pressed; HITS pressed (RANDOM), ROTATE pressed (EUCLID); the nudges | 13 | CC 33; CC 34, 35; CC 36, 37 (127 down, 0 up) |
 | the active lane's three inserts' MUTE, as keys (INS 1-3's knob 4 pressed); its own sequencer's (SEQ's knob 4) | 13 | CC 2, 3, 4; CC 5 |
 | CONFIG's control n (1-36) | 13 | CC 75 + n (76-95), then CC 81 + n (102-117) |
+| CONFIG's controls past 36 (a lane's EQ bands are its last) | 13 | PAGE + past CFG 3: page 4 and on stand on CFG 3's twelve knobs (the same CCs as controls 25-36), eight pages in all |
 | **to the E16**: a page of the scene it is in | 12 | Program Change = the page less one, by itself |
 | **to the E16**: a page of the other scene | 12 | CC 0 = 0 and CC 32 = the scene's slot less one, then Program Change = the page less one; the Program Change again when the scene says it is up |
 

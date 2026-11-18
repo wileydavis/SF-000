@@ -1554,7 +1554,13 @@ void Midi::motionPressed()
     if (ses.showing != 2) ses.wantShowing = 2;
 }
 
-int Midi::cfgPagesNow() { return juce::jlimit (1, (int) e16::kCfgPages + (ses.pocketsUp() ? 1 : 0), ((int) cfgCache.size() + e16::kCfgPer - 1) / e16::kCfgPer); }
+// (A lane's or an effect's CONFIG can run past the E16's three pages: the lane EQ's bands are its last. The pages past
+// the third stand on the third page's knobs, as POCKETS' fourth does, and PAGE + goes on to them: up to eight in all.)
+int Midi::cfgPagesNow()
+{
+    const int most = ses.pocketsUp() ? (int) e16::kCfgPages + 1 : ses.macrosUp() ? (int) e16::kCfgPages : 8;
+    return juce::jlimit (1, most, ((int) cfgCache.size() + e16::kCfgPer - 1) / e16::kCfgPer);
+}
 
 // ------------------------------------------------------------------------- the pointer's wheel
 void Midi::wheelStart (juce::uint32 now)
@@ -1806,7 +1812,7 @@ void Midi::sayNames()
             const int fx = t.kind == 1 ? engine.insertType (t.lane, t.slot) : -1;
             title = t.kind == 0 ? String (e16::laneCodes[t.lane]) : t.kind == 1 ? String (e16::laneCodes[t.lane]) + " " + (fx >= 0 ? effects()[(size_t) fx].name : "EMPTY")
                   : t.kind == 3 ? String ("DRM BUS") : String (t.slot == 0 ? "DUB" : "SPACE");
-            title = title.substring (0, pages > 1 ? 7 : 11) + " CFG" + (pages > 1 ? " " + String (c + 1) + "/" + String (pages) : String());
+            title = title.substring (0, pages > 1 ? 7 : 11) + " CFG" + (pages > 1 ? " " + String (cfgFirst (c) / e16::kCfgPer + 1) + "/" + String (pages) : String());       // (the page its knobs are on now)
         }
         for (int i = 0; i < e16::kCfgPer; ++i)
         {

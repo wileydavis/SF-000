@@ -717,7 +717,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             midi = sp.kind == Kind::Hold ? String ("KEPT IN SNAPSHOTS. A KEY THAT IS HELD: NOT ON THE E16.")
                  : h.a < e16::kCfgPer * e16::kCfgPages ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE CFG " + String (h.a / e16::kCfgPer + 1) + ", KNOB " + String (h.a % e16::kCfgPer + 1)
                                                              + " (CHANNEL " + String ((int) e16::kFxChannel) + ", CC " + String (e16::cfgCc (h.a)) + ")."
-                                                       : String ("KEPT IN SNAPSHOTS. NOT ON THE E16: ITS THREE CONFIG PAGES HOLD THE FIRST 36.");
+                                                       : h.a < e16::kCfgPer * 8 ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE + PAST CFG 3, TO PAGE " + String (h.a / e16::kCfgPer + 1) + ", WHICH STANDS ON CFG 3'S KNOBS: KNOB " + String (h.a % e16::kCfgPer + 1) + "."
+                                                       : String ("KEPT IN SNAPSHOTS. NOT ON THE E16: ITS CONFIG HOLDS THE FIRST 96.");
             below = true;
             break;
         }

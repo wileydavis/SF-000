@@ -4836,7 +4836,10 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        lane's EQ is not as it starts; a snapshot that says nothing of it puts it back as it
        starts). **A stack knob sweeps it**: a band's frequency, gain and width travel, and what
        kind it is changes half way. **The E16 has it** as the last pages of CONFIG, a row a band
-       (KIND, FREQ, GAIN, WIDTH), where a knob band's GAIN is its knob.
+       (KIND, FREQ, GAIN, WIDTH), where a knob band's GAIN is its knob. For that the E16's CONFIG
+       now runs past its three pages: PAGE + goes on, to eight in all, and the pages past the
+       third stand on the third page's knobs, as POCKETS' fourth always has (it had stopped at
+       36 controls, and a lane's are 58 and more with the EQ).
      - **POCKETS is left as it is.** Yours to say if it should go.
      - **Not in this:** a band that moves with the sound (Pro-Q's dynamic bands), its matching
        and its spectral tools, mid/side, and a finer analyser. A second step, if the plain one

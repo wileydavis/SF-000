@@ -1608,7 +1608,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
   and the nudges: see `controllers/e16/README.md`), CONFIG (CFG 1 to
   3: its controls in the order its panel has them, twelve to a page (the panel is laid out as the
   E16 is: four across, each twelve the three top rows of a page, with SEL, PAGE -, PAGE + and SHUT
-  under them, and it goes to the page the E16 is on); with POCKETS up, every
+  under them, and it goes to the page the E16 is on; a CONFIG longer than three pages, as a
+  lane's is with its EQ's bands last, goes on with PAGE +, to eight pages in all, the pages past
+  the third standing on CFG 3's knobs); with POCKETS up, every
   lane's pocket), and the library's two pages.
   Its page 12 is the snapshot knobs again, as the first scene's page 12: they are on the same page
   whichever scene the E16 is in, and choosing them never loads a scene.
