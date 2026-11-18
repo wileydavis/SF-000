@@ -40,6 +40,7 @@ struct SampleData
     float rootNote = 60.0f;         // MIDI note (from rootHz), 60 if unpitched
     float decaySec = 0.5f;          // time to fall 40 dB from the peak
     std::vector<int> slices;        // onset positions (samples), first = first onset
+    std::vector<int> onsets;        // (SF-000) every onset found (slices keeps the first 32, for VOICE): what a lane's slices are cut at (Kit.h)
     juce::MemoryBlock flac;         // embedded copy for the Live set
     float flacGain = 1.0f;          // the copy is scaled to fit FLAC's range: multiply back by this
     float peak = 1.0f;

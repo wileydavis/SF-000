@@ -1980,7 +1980,10 @@ Session::SampleSays Session::sampleSays (int lane) const
     SampleSays out;
     if (lane < 0 || lane >= kLanes || engine.laneFile (lane).isEmpty()) return out;
     // (the sample as the lane's module holds it: read once, and shared)
-    if (const auto smp = sf::loadSampleFile (juce::File (engine.laneFile (lane)), engine.sampleRate()))
+    // (as much of it as the lane's module reads: the drums a minute, the others five)
+    const juce::String module (lanes()[(size_t) lane].module);
+    const double most = module == "KICK" || module == "PERC" || module == "RUMBLE" ? 60.0 : 300.0;
+    if (const auto smp = sf::loadSampleFile (juce::File (engine.laneFile (lane)), engine.sampleRate(), most))
     {
         out.has = true;
         out.pitched = smp->rootHz > 0.0f;
@@ -1989,6 +1992,55 @@ Session::SampleSays Session::sampleSays (int lane) const
         out.peakDb = juce::Decibels::gainToDecibels (smp->chanPeak, -100.0f);
     }
     return out;
+}
+
+juce::String Session::resampleInto (int lane, const juce::File* from)
+{
+    if (lane < 0 || lane >= kLanes) return {};
+    const Snapshot* snap = findSnap (baseId);
+    if (snap == nullptr) return "RESAMPLE TAKES THE BARS OF THE SNAPSHOT LAST TAKEN OR RECALLED: THERE IS NONE YET";
+    juce::AudioBuffer<float> bars;
+    double rate = 0.0;
+    if (Lossless kept; readLossless (from != nullptr ? *from : losslessFile (baseId), kept))
+    {
+        for (auto& p : kept.parts) if (p.first == "mix") { bars = p.second; rate = kept.rate; }
+    }
+    if (bars.getNumSamples() < 2)
+    {
+        // (a snapshot from before its bars were kept without loss: the compressed clip of them)
+        juce::OggVorbisAudioFormat ogg;
+        if (const auto f = clipFile (baseId); f.existsAsFile())
+            if (std::unique_ptr<juce::AudioFormatReader> r { ogg.createReaderFor (f.createInputStream().release(), true) }; r != nullptr && r->lengthInSamples > 1 && r->lengthInSamples < 48000 * 240)
+            {
+                bars.setSize (2, (int) r->lengthInSamples);
+                bars.clear();
+                r->read (&bars, 0, (int) r->lengthInSamples, 0, true, true);
+                rate = r->sampleRate;
+            }
+    }
+    if (bars.getNumSamples() < 2 || rate <= 0.0) return "THE BARS OF " + snap->name.toUpperCase() + " ARE NOT ON THE DISK (IF IT WAS JUST TAKEN THEY ARE STILL BEING WRITTEN: PRESS AGAIN)";
+    // (a file holds no more than full scale: bars that ran over it are written that much quieter)
+    if (const float peak = bars.getMagnitude (0, bars.getNumSamples()); peak > 0.98f) bars.applyGain (0.98f / peak);
+    juce::String name = juce::File::createLegalFileName (snap->name.trim());
+    if (name.isEmpty()) name = "SNAPSHOT";
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("SF-000 resample");
+    dir.createDirectory();
+    const auto file = dir.getChildFile (name + " BARS.wav");
+    file.deleteFile();
+    {
+        juce::WavAudioFormat wav;
+        auto out = file.createOutputStream();
+        if (out == nullptr) return "COULD NOT WRITE THE BARS AS A FILE";
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (out.get(), rate, 2, 24, {}, 0) };
+        if (w == nullptr) return "COULD NOT WRITE THE BARS AS A FILE";
+        out.release();
+        w->writeFromAudioSampleBuffer (bars, 0, bars.getNumSamples());
+    }
+    const juce::String kept = keepSample (file.getFullPathName());
+    if (! engine.loadFile (lane, juce::File (kept))) return "COULD NOT READ THE BARS BACK";
+    if (kept != file.getFullPathName()) file.deleteFile();          // (the library has its copy)
+    touch();
+    return "THE BARS OF " + snap->name.toUpperCase() + " ARE THIS LANE'S SAMPLE";
 }
 
 juce::String Session::samplePlain (int lane)
@@ -4556,6 +4608,14 @@ static void fromListsBefore (Snapshot& s, const Engine& e)
     {
         const juce::String module (lanes()[(size_t) l].module);
         const int before = module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
+        // (what this build added, where it changes nothing: the lane is not left with what the snapshot before it set)
+        if (s.hasSetup)
+            for (auto& d : e.newerOff ({ 0, l, 0 }))
+            {
+                bool named = false;
+                for (auto& kv : s.setup[(size_t) l]) named = named || kv.first == d.first;
+                if (! named) s.setup[(size_t) l].push_back (d);
+            }
         if (before == 0) continue;
         int model = -1;
         for (auto& kv : s.setup[(size_t) l])

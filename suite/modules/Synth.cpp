@@ -270,6 +270,8 @@ public:
            SGAIN, SNORM, SPLAY, SENV,       // (SF-000) the sample's own: its gain, NORMALISE, PLAY (held or through), ENVELOPE
            // (SF-000) GRANULAR's own (see E_GRAIN)
            GRPOS, GRSCAN, GRSIZE, GRDENS, GRSPRAY, GRPITCH, GRSHAPE, GRREV, GRCLOCK, GRSPREAD, GRFOLLOW, GRSYNC,
+           // (SF-000) SAMPLE's: what a note chooses, the loop, and where a note starts
+           SNOTES, SLOOP, SXFADE, SVELSTART, SRANDSTART,
            kParams };
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
@@ -378,6 +380,19 @@ public:
         p.push_back (choice ("gr_spread", "SPREAD", { "FINE", "OCTAVES", "FIFTHS AND OCTAVES" }, 0).engineGroup());
         p.push_back (choice ("gr_follow", "FOLLOW", { "NOTES", "FIXED" }, 0).engineGroup());
         p.push_back (choice ("gr_sync", "SYNC", { "OFF", "1 BEAT", "2 BEATS", "1 BAR", "2 BARS", "4 BARS", "8 BARS" }, 0).engineGroup());
+        // (SF-000) SAMPLE's own, with PLAY and KNOBS.
+        //   NOTES       PITCH: a note plays the sample at its pitch. SLICES: a note chooses a slice of it (the parts its own
+        //               onsets cut START..END into, or eight equal parts where it has none): C3 the first, each key above
+        //               it the next, round again past the last. A slice plays at the pitch it was recorded at; TUNE shifts it
+        //   LOOP        PLAY HELD: what plays (START..END, or the slice) goes round for as long as the note is held
+        //   CROSSFADE   how much of the loop's end fades into its start: none (a hard join) to half of it
+        //   VEL START   a soft note starts further in: at full, the softest half way through. A hard note from the start
+        //   RANDOM START  each note starts somewhere else: none, to almost anywhere in what plays
+        p.push_back (choice ("smp_notes", "NOTES", { "PITCH", "SLICES" }, 0).noPreset().sampleGroup());
+        p.push_back (toggle ("smp_loop", "LOOP", false).noPreset().sampleGroup());
+        p.push_back (pct ("smp_xfade", "CROSSFADE", 0.25f).noPreset().sampleGroup());
+        p.push_back (pct ("smp_vel", "VEL START", 0.0f).noPreset().sampleGroup());
+        p.push_back (pct ("smp_rand", "RANDOM START", 0.0f).noPreset().sampleGroup());
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -388,7 +403,7 @@ public:
         const bool grains = std::any_of (models.begin(), models.end(), [] (const SynthModel& m) { return m.engine == E_GRAIN; });
         return grains ? "DROP SAMPLE (MODEL OR LAYER MODEL: SAMPLE, GRANULAR; WAVETABLE ON TABLE SAMPLE)" : "DROP SAMPLE (MODEL OR LAYER MODEL: SAMPLE)";
     }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr)); buildFrames(); } }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); buildFrames(); } }      // (SF-000) five minutes of a file, as VOICE has (it was one): a field recording to cut slices and grains from
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
     void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); buildFrames(); }
     bool hasWavetable() const { return std::any_of (models.begin(), models.end(), [] (const SynthModel& m) { return m.engine == E_WAVETABLE; }); }
@@ -565,6 +580,9 @@ public:
         bool through = false;             // (SF-000) SAMPLE, PLAY THROUGH: letting the note go does not end it
         bool shaped = false;              // (SF-000) SAMPLE, KNOBS on: the lane's knobs act on it
         double spos2 = 0.0, cutPos = 0.0; // (SF-000) the second, detuned reading's place; THROUGH: where GATE ends it (0: at its END)
+        float sliceHz = 0.0f;             // (SF-000) SAMPLE, NOTES SLICES: the note's own pitch, which the rate is taken against (0: the sample's root)
+        double loopX = 0.0;               // (SF-000) SAMPLE, LOOP: the length of the crossfade at the loop's end (0: no loop)
+        bool looped = false;              // (SF-000) and it has gone round once (its START's fade is behind it)
         float tilt[2] {};                 // (SF-000) COLOR's tilt on a sample: the low part of each side
         float vel = 1.0f, gain = 1.0f, freq = 110.0f, target = 110.0f, glideCoef = 0.0f, accent = 0.0f;
         float vel0 = 1.0f;                // the note's own velocity (0..1), to play it again on a MODEL change
@@ -898,6 +916,35 @@ private:
         // ENV AMT sweeps its filter (updateControls). PLAY THROUGH: the note's end does not end it.
         v.shaped = m.engine == E_SAMPLE && c.v (SENV) > 0.5f;
         v.through = m.engine == E_SAMPLE && c.ci (SPLAY) == 1;
+        // (SF-000) SAMPLE: the slice its note chooses, where in it this note starts, and the loop. Only as a note starts
+        // from START (a legato slide plays on where it is).
+        if (m.engine == E_SAMPLE && (retrigger || ! wasActive))
+            if (const SampleData* s = sample.audio(); s != nullptr && v.reg.end > v.reg.start)
+            {
+                if (c.ci (SNOTES) == 1)
+                {
+                    v.reg = sliceRegion (*s, v.reg, ev.note - 60);
+                    v.sliceHz = noteHz (ev.note);
+                    v.freq = v.target;                  // a slice does not glide in from the note before
+                }
+                const double len = v.reg.end - v.reg.start;
+                const float rnd = c.v (SRANDSTART), soft = c.v (SVELSTART) * (1.0f - clamp01 (ev.vel));
+                double in = 0.0;
+                if (soft > 0.001f) in += 0.5 * (double) soft * len;
+                if (rnd > 0.001f) in += (double) (rnd * rnd * 0.9f * smpRng.uni()) * (len - in);
+                if (in > 1.0)
+                {
+                    v.reg.start += std::min (in, len - 64.0);
+                    v.reg.fadeIn = std::min (std::max (v.reg.fadeIn, 0.002 * s->sr), 0.5 * (v.reg.end - v.reg.start));
+                    if (v.reg.fadeIn + v.reg.fadeOut > v.reg.end - v.reg.start) v.reg.fadeOut = v.reg.end - v.reg.start - v.reg.fadeIn;
+                }
+                v.spos = v.reg.start;
+                if (c.b (SLOOP) && ! v.through && v.reg.end - v.reg.start > 256.0)
+                {
+                    v.loopX = std::max (16.0, 0.5 * (double) c.v (SXFADE) * (v.reg.end - v.reg.start));
+                    v.reg.fadeOut = 0.0;                // it does not reach its END: it goes round before it
+                }
+            }
         // (SF-000) an echo of a slow model comes up in a third of the time: a pad's own attack is as long as the gap between
         // echoes, and DENSITY was all but unheard on it
         const float echoAtt = ev.gen > 0 && m.att >= 0.2f ? 0.3f : 1.0f;
@@ -1480,11 +1527,26 @@ private:
                     if (smp == nullptr) { v.active = false; return; }
                     const int len = v.reg.end > 0.0 ? std::min (smp->length(), v.reg.last()) : smp->length();
                     if ((int) v.spos + 2 >= len) { v.active = false; return; }
-                    const double rate = (double) f / (double) noteHz (smp->rootNote) / v.os;
+                    const double rate = (double) f / (double) (v.sliceHz > 0.0f ? v.sliceHz : noteHz (smp->rootNote)) / v.os;      // (SF-000) a slice: against its own note
                     const float rg = v.reg.gain (v.spos);
                     xl = smp->read (0, v.spos, rate) * rg;
                     xr = smp->read (1, v.spos, rate) * rg;
                     stereo = true;
+                    // (SF-000) LOOP: over the last loopX of what plays, its end fades out as its start (from as far before
+                    // START + loopX) fades in, at equal power; then the place is back at START + loopX, and on it goes
+                    if (v.loopX > 0.0)
+                    {
+                        const double end = std::min ((double) len - 3.0, v.reg.end), turn = end - v.reg.start - v.loopX;
+                        if (turn > 32.0 && v.spos >= end - v.loopX)
+                        {
+                            const float t = clamp01 ((float) ((v.spos - (end - v.loopX)) / v.loopX));
+                            const float a = std::cos (0.5f * kPi * t), b = std::sin (0.5f * kPi * t) * v.reg.level;
+                            const double from = v.spos - turn;
+                            xl = xl * a + smp->read (0, from, rate) * b;
+                            xr = xr * a + smp->read (1, from, rate) * b;
+                            if (v.spos + rate >= end) { v.spos -= turn; v.spos2 -= turn; v.looped = true; v.reg.fadeIn = 0.0; }
+                        }
+                    }
                     v.spos += rate;
                     if (v.shaped)
                     {
@@ -1600,6 +1662,7 @@ private:
     SampleSlot sample;
     Noise rng;
     Noise warpRng { 0x2545F491u };
+    Noise smpRng { 0x7F4A7C15u };      // (SF-000) SAMPLE's RANDOM START: its own, so nothing else's chances move
     float ensembleAmt = 0.0f, pitchOffset = 0.0f;
     int lastModel = -1;
     double osr = 96000.0;

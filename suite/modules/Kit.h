@@ -61,6 +61,68 @@ inline SampleRegion regionFrom (const Ctx& c, int first, const SampleData& s, in
     return r;
 }
 
+// (SF-000) Slices: the parts of a sample's START..END that its own onsets cut it into (every one found as the file was
+// read: SampleData::onsets), or eight equal parts where there are fewer than two. START begins the first where the first
+// onset is not just after it. One recording is then a kit or a set of phrases: each hit or note plays one slice, from
+// its onset to the next. Nothing here allocates: it is called as a note starts.
+struct SliceSpan { int i0 = 0, i1 = 0; bool lead = true; int count = 8; bool own = false; };
+inline SliceSpan sliceSpan (const SampleData& s, const SampleRegion& r)
+{
+    const auto b = s.onsets.begin(), e = s.onsets.end();
+    auto below = [] (int a, double v) { return (double) a < v; };
+    SliceSpan o;
+    o.i0 = (int) (std::lower_bound (b, e, r.start, below) - b);
+    o.i1 = std::max (o.i0, (int) (std::lower_bound (b, e, r.end - 0.01 * s.sr, below) - b));
+    o.lead = o.i1 == o.i0 || (double) s.onsets[(size_t) o.i0] > r.start + 0.04 * s.sr;
+    const int n = o.i1 - o.i0 + (o.lead ? 1 : 0);
+    o.own = n >= 2;
+    o.count = o.own ? n : 8;
+    return o;
+}
+inline int sliceCount (const SampleData& s, const SampleRegion& r) { return sliceSpan (s, r).count; }
+// The slice of that number (from 0; past the last, round again), as a region of its own: faded a thousandth of a second
+// in and two out where it was cut from its neighbours, and at the sample's level.
+inline SampleRegion sliceRegion (const SampleData& s, const SampleRegion& r, int index)
+{
+    const auto o = sliceSpan (s, r);
+    index = ((index % o.count) + o.count) % o.count;
+    double a = r.start, b = r.end;
+    if (o.own)
+    {
+        const int k = o.i0 + index - (o.lead ? 1 : 0);            // (the onset it starts on; before the first: START)
+        if (k >= o.i0) a = (double) s.onsets[(size_t) k];
+        if (k + 1 < o.i1) b = (double) s.onsets[(size_t) (k + 1)];
+    }
+    else { const double len = (r.end - r.start) / 8.0; a = r.start + len * (double) index; b = a + len; }
+    const double one = 0.001 * s.sr;
+    SampleRegion out = r;
+    out.start = a; out.end = std::max (a + 4.0 * one, std::min (b, r.end));
+    out.fadeIn = a > r.start + 0.5 ? one : r.fadeIn;
+    out.fadeOut = out.end < r.end - 0.5 ? 2.0 * one : r.fadeOut;
+    if (const double len = out.end - out.start, both = out.fadeIn + out.fadeOut; both > len && both > 0.0) { out.fadeIn *= len / both; out.fadeOut *= len / both; }
+    return out;
+}
+// A drum's two: SLICE, which slice a hit plays (all the way down: the whole of START..END, as before), and CYCLE, whether
+// each hit moves on from it (ROUND: the next one each time. RANDOM: any). Appended last, after GAIN and NORMALISE.
+inline std::vector<ParamSpec> withSlices (std::vector<ParamSpec> v)
+{
+    v.push_back (pct ("smp_slice", "SLICE", 0.0f).noPreset().sampleGroup());
+    v.push_back (choice ("smp_cycle", "CYCLE", { "OFF", "ROUND", "RANDOM" }, 0).noPreset().sampleGroup());
+    return v;
+}
+// The region a hit plays: the whole of it, or the slice SLICE and CYCLE say (hits: how many this drum has played, counted
+// by its module; chance: 0 to 1, drawn for this hit).
+inline SampleRegion hitRegion (const Ctx& c, const SampleData& s, const SampleRegion& whole, int sliceAt, int hits, float chance)
+{
+    const float sl = c.v (sliceAt);
+    const int cycle = c.ci (sliceAt + 1);
+    if (sl <= 0.001f && cycle == 0) return whole;
+    const int n = sliceCount (s, whole);
+    int index = sl > 0.001f ? std::min (n - 1, (int) (sl * (float) n * 0.9999f)) : 0;
+    if (cycle == 1) index += hits; else if (cycle == 2) index += (int) (chance * (float) n);
+    return sliceRegion (s, whole, index);
+}
+
 // DRY: off on a return track (wet only), on as an insert. Routing, so songs and presets leave it alone.
 inline ParamSpec dryParam() { auto p = toggle ("dry", "DRY", true).noPreset().forget(); p.song = false; return p; }
 // DRY on / off: a 5 ms ramp counted in samples, so it is the same however the chunks fall.

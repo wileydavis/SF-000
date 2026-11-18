@@ -59,6 +59,7 @@ static void analyse (SampleData& s)
         }
     }
     if (s.slices.empty() || s.slices.front() > hop * 4) s.slices.insert (s.slices.begin(), 0);
+    s.onsets = s.slices;            // (SF-000) all of them, for the lanes' slices
     if (s.slices.size() > 32) s.slices.resize (32);
 
     // Pitch: normalised autocorrelation on a window after the attack (YIN-lite).

@@ -1515,6 +1515,180 @@ static void stackBlendTest (int& bad)
                            (int) further, (int) isB, (int) keeps, (int) toFirst, (int) less, (int) back, (int) down, (int) settled, (int) jump, (int) filed, (int) sound, (double) model(), (double) mA, (double) mB, (double) e.fadeShown (kick, st), e.leaving(), (double) peak);
 }
 
+static void samplerTest (int& bad)
+{
+    using namespace sf0;
+    // A sample's slices, loop and starts (the suite's Kit.h, Synth's SAMPLE, the drums' SAMPLE), and RESAMPLE. The file: four
+    // struck tones a quarter of a second apart, 200, 800, 3200 and 400 Hz, each dying away before the next: four slices.
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-samplertest");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto file = dir.getChildFile ("four.wav");
+    {
+        juce::AudioBuffer<float> b (2, 48000);
+        const double hz[4] = { 200.0, 800.0, 3200.0, 400.0 };
+        for (int n = 0; n < 48000; ++n)
+        {
+            const int k = n / 12000, i = n % 12000;
+            const float v = (float) (0.7 * std::sin (2.0 * juce::MathConstants<double>::pi * hz[k] * i / 48000.0) * std::exp (-(double) i / 2400.0) * std::min (1.0, i / 24.0));
+            b.setSample (0, n, v); b.setSample (1, n, v);
+        }
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (file), 48000.0, 2, 24, {}, 0) };
+        if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, 48000);
+    }
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    std::vector<float> heard;
+    auto run = [&] (double beats, bool keep = false)
+    {
+        const int blocks = (int) (beats * 60.0 / e.tempo() * 48000.0 / 256.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            buf.clear(); e.render (buf);
+            if (keep) for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n)));
+        }
+        e.tidy();
+    };
+    int lead = -1, kick = -1, hat = -1, rumble = -1;
+    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug), mo (lanes()[(size_t) l].module); if (sl == "lead") lead = l; else if (sl == "kick") kick = l; else if (mo == "PERC" && hat < 0) hat = l; else if (mo == "RUMBLE") rumble = l; }
+    auto choose = [&] (int l, const char* id, const char* name)
+    {
+        for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup ({ 0, l, 0 }, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+        return false;
+    };
+    auto has = [&] (int l, const char* id) { for (auto& kv : e.getSetup ({ 0, l, 0 })) if (kv.first == id) return true; return false; };
+    // the tone a stretch of sound is: which of the four (by a two-pole filter on each), or -1 for next to nothing
+    auto tone = [] (const std::vector<float>& x, size_t from, size_t to)
+    {
+        const double hz[4] = { 200.0, 800.0, 3200.0, 400.0 };
+        double best = 0, all = 0; int at = -1;
+        to = std::min (to, x.size());
+        for (size_t n = from; n < to; ++n) all += (double) x[n] * x[n];
+        if (to <= from || all / (double) (to - from) < 1.0e-7) return -1;
+        for (int k = 0; k < 4; ++k)
+        {
+            const double w = 2.0 * juce::MathConstants<double>::pi * hz[k] / 48000.0, r = 0.99;
+            double y1 = 0, y2 = 0, sum = 0;
+            for (size_t n = from; n < to; ++n) { const double y = (double) x[n] * (1.0 - r) + 2.0 * r * std::cos (w) * y1 - r * r * y2; y2 = y1; y1 = y; sum += y * y; }
+            // (the filter rings far louder at a low tone than a high one: each is weighed by what it does to its own)
+            sum *= 1.0 - 2.0 * r * std::cos (2.0 * w) + r * r;
+            if (sum > best) { best = sum; at = k; }
+        }
+        return at;
+    };
+    auto level = [] (const std::vector<float>& x, size_t from, size_t to) { double s2 = 0; to = std::min (to, x.size()); for (size_t n = from; n < to; ++n) s2 += (double) x[n] * x[n]; return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, to - from) + 1e-12); };
+    for (int l = 0; l < kLanes; ++l) { Pattern none; e.setPattern (l, none); }
+    ses.userSet (cx::kGlide, 0.0f);
+    const double beatN = 60.0 / e.tempo() * 48000.0;
+    // one bar played from the top, heard: steps on the beats
+    auto bar = [&] (int l, const Pattern& p)
+    {
+        e.setPattern (l, p);
+        e.setRunning (false); run (2.0); heard.clear(); e.setRunning (true); run (4.0, true); e.setRunning (false);
+        return heard;
+    };
+    auto beatTone = [&] (const std::vector<float>& x, int beat) { return tone (x, (size_t) (beat * beatN + 0.01 * 48000.0), (size_t) (beat * beatN + 0.12 * 48000.0)); };
+
+    // ---- LEAD on SAMPLE, PLAIN: NOTES SLICES, each key the next slice at its own pitch
+    const bool loaded = e.loadFile (lead, file) && choose (lead, "model", "SAMPLE");
+    ses.samplePlain (lead);
+    ses.userSet (cx::lane (lead, cx::kSendA), 0.0f); ses.userSet (cx::lane (lead, cx::kSendB), 0.0f);
+    const bool listed = has (lead, "smp_notes") && has (lead, "smp_loop") && has (lead, "smp_xfade") && has (lead, "smp_vel") && has (lead, "smp_rand");
+    choose (lead, "smp_notes", "SLICES"); choose (lead, "smp_play", "HELD");
+    Pattern four;
+    for (int b = 0; b < 4; ++b) { auto& st = four.steps[(size_t) (b * 4)]; st.on = true; st.gate = 2.0f; st.octave = 3; st.note = b; }      // C3, C#3, D3, D#3
+    const auto sl = bar (lead, four);
+    const int t0 = beatTone (sl, 0), t1 = beatTone (sl, 1), t2 = beatTone (sl, 2), t3 = beatTone (sl, 3);
+    const bool slices = loaded && t0 == 0 && t1 == 1 && t2 == 2 && t3 == 3;
+    if (! slices) std::printf ("    (slices: loaded %d, the four beats play tones %d %d %d %d, wanted 0 1 2 3)\n", (int) loaded, t0, t1, t2, t3);
+    // ---- LOOP: one slice held for the bar goes round (sound in the fourth beat); without it, silence there
+    Pattern held; held.steps[0].on = true; held.steps[0].gate = 16.0f; held.steps[0].octave = 3; held.steps[0].note = 1;
+    const auto once = bar (lead, held);
+    const double onceLate = level (once, (size_t) (3.0 * beatN), (size_t) (3.9 * beatN));
+    e.setSetup ({ 0, lead, 0 }, "smp_loop", 1.0f);
+    const auto round = bar (lead, held);
+    const double roundLate = level (round, (size_t) (3.0 * beatN), (size_t) (3.9 * beatN));
+    // (and no click at the join: the loudest step from one sample to the next is no more than the tone's own)
+    float jump = 0.0f, peak = 0.0f;
+    for (size_t n = (size_t) beatN; n + 1 < round.size(); ++n) { jump = std::max (jump, std::abs (round[n + 1] - round[n])); peak = std::max (peak, std::abs (round[n])); }
+    const bool loop = onceLate < -70.0 && roundLate > -45.0 && tone (round, (size_t) (3.0 * beatN), (size_t) (3.9 * beatN)) == 1 && jump < 0.35f * std::max (peak, 1.0e-4f);
+    if (! loop) std::printf ("    (loop: late in the bar %.1f dB without it and %.1f dB with it; step %.4f of peak %.4f)\n", onceLate, roundLate, jump, peak);
+    e.setSetup ({ 0, lead, 0 }, "smp_loop", 0.0f);
+    // ---- VEL START: a soft note starts further in (quieter at once: the slice has died away some); RANDOM START: two bars differ
+    choose (lead, "smp_notes", "PITCH");
+    Pattern soft; soft.steps[0].on = true; soft.steps[0].gate = 2.0f; soft.steps[0].octave = 3; soft.steps[0].note = 0; soft.steps[0].vel = 0.2f;
+    if (const auto says = ses.sampleSays (lead); says.has) { soft.steps[0].octave = says.rootNote / 12 - 2; soft.steps[0].note = says.rootNote % 12; }
+    e.setSetup ({ 0, lead, 0 }, "smp_start", 0.0f); e.setSetup ({ 0, lead, 0 }, "smp_end", 0.25f);        // (the first tone alone)
+    const auto v0 = bar (lead, soft);
+    e.setSetup ({ 0, lead, 0 }, "smp_vel", 1.0f);
+    const auto v1 = bar (lead, soft);
+    const double head0 = level (v0, 0, 2400), head1 = level (v1, 0, 2400);
+    const bool velStart = head0 - head1 > 3.0 && head1 > -80.0;
+    if (! velStart) std::printf ("    (vel start: the first 50 ms %.1f dB from the start, %.1f dB with VEL START full)\n", head0, head1);
+    e.setSetup ({ 0, lead, 0 }, "smp_vel", 0.0f); e.setSetup ({ 0, lead, 0 }, "smp_rand", 1.0f);
+    e.setSetup ({ 0, lead, 0 }, "smp_end", 1.0f);
+    Pattern hits; for (int b = 0; b < 4; ++b) { auto& st = hits.steps[(size_t) (b * 4)]; st = soft.steps[0]; st.vel = 1.0f; }
+    const auto r1 = bar (lead, hits);
+    std::array<double, 4> heads {};
+    for (int b = 0; b < 4; ++b) heads[(size_t) b] = level (r1, (size_t) (b * beatN), (size_t) (b * beatN + 2400));
+    const bool randStart = *std::max_element (heads.begin(), heads.end()) - *std::min_element (heads.begin(), heads.end()) > 2.0;
+    if (! randStart) std::printf ("    (random start: the four notes' first 50 ms %.1f %.1f %.1f %.1f dB)\n", heads[0], heads[1], heads[2], heads[3]);
+    e.setSetup ({ 0, lead, 0 }, "smp_rand", 0.0f);
+    { Pattern none; e.setPattern (lead, none); }
+
+    // ---- the drums: SLICE chooses, CYCLE ROUND moves on a slice a hit. KICK, a PERC lane and RUMBLE have both
+    bool drumsHave = true;
+    for (int l : { kick, hat, rumble }) drumsHave = drumsHave && l >= 0 && e.loadFile (l, file) && choose (l, "model", "SAMPLE") && has (l, "smp_slice") && has (l, "smp_cycle");
+    auto drum = [&] (int l)
+    {
+        ses.samplePlain (l);
+        ses.userSet (cx::lane (l, cx::kSendA), 0.0f); ses.userSet (cx::lane (l, cx::kSendB), 0.0f);
+        Pattern p; for (int b = 0; b < 4; ++b) { auto& st = p.steps[(size_t) (b * 4)]; st.on = true; st.vel = 1.0f; }
+        e.setSetup ({ 0, l, 0 }, "smp_slice", 0.0f); choose (l, "smp_cycle", "OFF");
+        const auto whole = bar (l, p);
+        const int w0 = beatTone (whole, 0), w1 = beatTone (whole, 1);
+        e.setSetup ({ 0, l, 0 }, "smp_slice", 0.6f);              // (the third of four)
+        const auto third = bar (l, p);
+        const int s0 = beatTone (third, 0), s1 = beatTone (third, 1);
+        e.setSetup ({ 0, l, 0 }, "smp_slice", 0.0f); choose (l, "smp_cycle", "ROUND");
+        const auto cyc = bar (l, p);
+        int c[4]; for (int b = 0; b < 4; ++b) c[b] = beatTone (cyc, b);
+        const bool moves = c[0] >= 0 && c[1] == (c[0] + 1) % 4 && c[2] == (c[0] + 2) % 4 && c[3] == (c[0] + 3) % 4;
+        choose (l, "smp_cycle", "OFF");
+        { Pattern none; e.setPattern (l, none); }
+        const bool ok = w0 == 0 && w1 == 0 && s0 == 2 && s1 == 2 && moves;
+        if (! ok) std::printf ("    (%s: whole %d %d, SLICE at the third %d %d, ROUND %d %d %d %d)\n", lanes()[(size_t) l].slug, w0, w1, s0, s1, c[0], c[1], c[2], c[3]);
+        return ok;
+    };
+    const bool kickOk = drumsHave && drum (kick), hatOk = drumsHave && drum (hat);
+
+    // ---- RESAMPLE: a snapshot's bars are a lane's sample
+    const juce::String told = ses.resampleInto (lead);        // (its bars are not kept: it says so, and the lane's file is as it was)
+    bool resampleSays = told.contains ("NOT ON THE DISK") && e.laneFile (lead) == file.getFullPathName();
+    {
+        // bars kept (two seconds of the 800 Hz tone, over full scale): they are the lane's sample, heard, and not clipped
+        juce::AudioBuffer<float> mix (2, 96000);
+        for (int n = 0; n < 96000; ++n) { const float v = (float) (1.6 * std::sin (2.0 * juce::MathConstants<double>::pi * 800.0 * n / 48000.0)); mix.setSample (0, n, v); mix.setSample (1, n, v); }
+        const auto kept = dir.getChildFile ("bars.lossless");
+        Session::writeLossless (kept, mix, nullptr, 48000.0, 4);
+        const juce::String did = ses.resampleInto (lead, &kept);
+        const juce::File now (e.laneFile (lead));
+        choose (lead, "smp_notes", "SLICES"); choose (lead, "smp_play", "HELD");
+        Pattern p; p.steps[0].on = true; p.steps[0].gate = 4.0f; p.steps[0].octave = 3;
+        const auto x = bar (lead, p);
+        resampleSays = resampleSays && did.contains ("ARE THIS LANE'S SAMPLE") && now.getFileName().endsWith (" BARS.wav") && now.existsAsFile() && tone (x, 2400, 9600) == 1;
+        if (! resampleSays) std::printf ("    (resample: \"%s\", file %s, tone %d)\n", did.toRawUTF8(), now.getFullPathName().toRawUTF8(), tone (x, 2400, 9600));
+        now.deleteFile();
+    }
+    dir.deleteRecursively();
+    const bool ok = listed && slices && loop && velStart && randStart && drumsHave && kickOk && hatOk && resampleSays;
+    if (! ok) ++bad;
+    std::printf ("  %s: a sample's slices, loop and starts: NOTES SLICES plays the next slice a key at its own pitch, LOOP goes round without a click, VEL START and RANDOM START move where a note starts; "
+                 "the drums' SLICE chooses one and CYCLE ROUND moves on a hit; RESAMPLE makes a snapshot's kept bars the lane's sample, and with none kept says so and leaves its file\n", ok ? "ok" : "FAIL");
+    if (! (listed && drumsHave && resampleSays)) std::printf ("    (listed %d, the drums have them %d, resample says %d: \"%s\", the lane's file %s)\n", (int) listed, (int) drumsHave, (int) resampleSays, told.toRawUTF8(), e.laneFile (lead).toRawUTF8());
+}
+
 static void granularTest (int& bad)
 {
     using namespace sf0;
@@ -1673,7 +1847,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -4084,6 +4258,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     stackNotesTest (bad);
     stackBlendTest (bad);
     granularTest (bad);
+    samplerTest (bad);
     arrsKeptTest (bad);
 
     {

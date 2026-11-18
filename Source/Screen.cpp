@@ -898,6 +898,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER BESIDE IT IS AMOUNT." },
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
+                { aResample, "RESAMPLE", "THE BARS OF THE SNAPSHOT LAST TAKEN OR RECALLED BECOME THIS LANE'S SAMPLE: ITS WHOLE OUTPUT, AS IT WAS KEPT, WRITTEN INTO THE LIBRARY'S SAMPLES AND LOADED AS LOAD WOULD. WHAT THE RIG JUST PLAYED IS THEN SOMETHING TO SLICE (SAMPLE, NOTES: SLICES), LOOP, OR MAKE GRAINS OF (GRANULAR; SYNC 4 BARS HOLDS IT TO THE TEMPO). THE LANE'S MODEL IS LEFT AS IT IS." },
                 { aSamplePlain, "PLAIN", "SETS THIS LANE TO PLAY ITS SAMPLE AS IT WAS RECORDED: THE FILTER OPEN, NO LAYER AND NO CROSSOVER (SPLIT TAKES THE SAMPLE'S OWN LOWS OUT), THE WHOLE NOTE, NO DRIVE, THE LANE'S EQ FLAT. WHERE THE NOTE IS THE PITCH (BASS, LEAD, CHORD, PAD), TUNE IS SET SO THAT THE FIRST LIT STEP PLAYS IT AT ITS OWN. LEVEL, THE SENDS AND THE LANE'S INSERTS ARE LEFT AS THEY ARE. A SAMPLE IS AS LOUD AS ITS FILE: PEAK, HERE, SAYS HOW LOUD THAT IS." },
                 { aTransFire, "FIRE", "TRANSITION (T). SETS OFF A LEAD-IN THAT ENDS ON THE NEXT BAR LINE AND A HIT THAT LANDS ON IT, WHENEVER IT IS PRESSED: THE MACHINE KEEPS THE TIME. LINES ARE EVERY 4, 8 OR 16 BARS; UNDER A BEAT FROM ONE, IT IS THE ONE AFTER. WHILE IT IS ON ITS WAY THE KEY IS LIT AND SAYS THE BARS LEFT. WITH THE CLOCK STOPPED THE HIT PLAYS AT ONCE." },
                 { aTransArm, "ARM", "TRANSITION (G). LIT: THE NEXT RECALL, MUTE OR SOLO DOES NOT HAPPEN AT ONCE. IT SETS THE TRANSITION OFF AND HAPPENS ON THE LINE THE TRANSITION LANDS ON, WITH WHATEVER ELSE IS ASKED FOR MEANWHILE (THE NUMBER WAITING IS SHOWN). ARM THEN GOES OUT. PUT OUT BY HAND, WHAT WAITS HAPPENS AT ONCE." },
@@ -1377,7 +1378,8 @@ void Screen::drawConfig (G& g, R r)
         status = status.toUpperCase();
         if (status.isNotEmpty())
         {
-            const R sr (x0, y, std::min (plain ? 392.0f : takesFile ? 468.0f : 544.0f, std::ceil (tw (fNote, status)) + 12.0f), 22);
+            const bool resample = takesFile && cfg.kind == 0;         // (RESAMPLE: a lane only)
+            const R sr (x0, y, std::min ((plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f), std::ceil (tw (fNote, status)) + 12.0f), 22);
             window (g, sr, col::white);
             g.setColour (tone (col::black)); g.setFont (fNote);
             g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
@@ -1389,6 +1391,14 @@ void Screen::drawConfig (G& g, R r)
             key (g, lr, loadOpen ? col::green : col::yellow, pressed (aLoad) ? 6.0f : 2.0f, loadOpen);
             text (g, "LOAD", lr, fLbl, col::black);
             hit (lr.expanded (2), hAct, aLoad, 0);
+            if (cfg.kind == 0)
+            {
+                // RESAMPLE: the bars of the snapshot last taken or recalled become this lane's sample
+                const R rr (x0 + (plain ? 302.0f : 378.0f), y - 1, 90, 24);
+                key (g, rr, col::white, pressed (aResample) ? 6.0f : 2.0f);
+                text (g, "RESAMPLE", rr, fLbl, col::black);
+                hit (rr.expanded (2), hAct, aResample, 0);
+            }
             if (plain)
             {
                 // PLAIN: the lane set to play its sample as it was recorded
@@ -3989,6 +3999,15 @@ void Screen::act (int a)
             {
                 const auto told = ses.samplePlain (cfg.lane);
                 if (told.isNotEmpty()) { cfgNote = told; recNote = told; recNoteAt = juce::Time::getMillisecondCounter(); cfgStale = true; }
+            }
+            repaint();
+            break;
+        case aResample:
+            if (cfgOpen && cfg.kind == 0)
+            {
+                const auto told = ses.resampleInto (cfg.lane);
+                if (told.isNotEmpty()) { cfgNote = told; recNote = told; recNoteAt = juce::Time::getMillisecondCounter(); cfgStale = true; loadOpen = false; }
+                if (onLook) onLook();
             }
             repaint();
             break;

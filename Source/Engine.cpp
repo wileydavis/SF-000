@@ -1591,6 +1591,17 @@ Engine::SetupState Engine::sampleOwnOff (Target t) const
     return st;
 }
 
+Engine::SetupState Engine::newerOff (Target t) const
+{
+    SetupState st;
+    if (auto* p = processorFor (t))
+        for (const char* id : { "gr_pos", "gr_scan", "gr_size", "gr_dens", "gr_spray", "gr_pitch", "gr_shape", "gr_rev", "gr_clock", "gr_spread", "gr_follow", "gr_sync",
+                                "smp_notes", "smp_loop", "smp_xfade", "smp_vel", "smp_rand", "smp_slice", "smp_cycle" })
+            if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams())
+                st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
+    return st;
+}
+
 bool Engine::laneFollowsKey (int lane) const
 {
     if (auto* p = processorFor ({ 0, lane, 0 }))

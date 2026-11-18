@@ -290,7 +290,7 @@ private:
                    hArrTrans,       // a part's TRANSITION plate (a: the part)
                    hTie };          // a tie of the open macro knob, in the library (a: which): chosen; dragged up or down, how far it takes its knob
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
-               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aClipReset, aRec, aRecallCue, aSamplePlain,
+               aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aClipReset, aRec, aRecallCue, aSamplePlain, aResample,
                aTransFire, aTransArm, aTransBars, aTransLevel, aTransLead, aTransHit, aTransDub, aTransSpace,
                aFinish,
                aOnline, aOnlineSetup, aPhones, aLoad, aLoadUp, aNotes,

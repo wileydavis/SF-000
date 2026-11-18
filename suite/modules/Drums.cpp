@@ -47,7 +47,7 @@ public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams); then
     // SPLIT and SPLIT HZ [Nov 10] (ids are appended, never moved).
     enum { TUNE, DECAY, PUNCH, CLICK, DRIVE, FILT, DENS, LEVEL, MODEL, LAYERMODEL, LAYER, PTIME, VELSENS, ESPACE, ESWING, KEYTRACK, RES, ALLOCON, KEYFOLLOW, SSTART,
-           SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM };       // (SF-000) the sample's own GAIN and NORMALISE, last
+           SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM, SSLICE, SCYCLE };       // (SF-000) the sample's own GAIN and NORMALISE, then SLICE and CYCLE, last
     std::string id() const override { return "KICK"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
@@ -74,7 +74,7 @@ public:
         // LAYER SPLIT (Kit.h): one kick's lows, the other's punch and click.
         p.push_back (knob ("split", "SPLIT", 0.0f, 1.0f, 0.5f, "SPLIT").layerGroup());
         p.push_back (knob ("split_hz", "SPLIT HZ", 50.0f, 800.0f, 150.0f, "Hz", 200.0f).layerGroup());
-        p = withSampleGain (std::move (p));                 // (SF-000)
+        p = withSlices (withSampleGain (std::move (p)));    // (SF-000)
         jassert ((int) p.size() == SNORM + 1);
         return p;
     }
@@ -200,7 +200,7 @@ public:
             if (auto s = smp)
             {
                 // From START; DECAY's gate measures the part that plays.
-                v.reg = regionFrom (c, SSTART, *s, SGAIN);
+                v.reg = hitRegion (c, *s, regionFrom (c, SSTART, *s, SGAIN), SSLICE, sliceHits++, sliceRng.uni());       // (SF-000) the whole of it, or a slice
                 v.phase = v.reg.start;
                 v.gate = sampleGateSeconds (c.v (DECAY), (float) (v.reg.length() / s->sr) / v.srate, gen);
             }
@@ -434,6 +434,7 @@ private:
     RoleOutput out;
     SampleSlot sample;
     Noise rng;
+    int sliceHits = 0; Noise sliceRng;      // (SF-000) slices: hits counted for CYCLE, and its own chance (the drum's is not disturbed)
     float lastHit = 0;
     DecimHist hist;
 };
@@ -471,12 +472,12 @@ class PercModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { TUNE, DECAY, TONE, DENS, FILT, ACCENT, DRIVE, LEVEL, MODEL, ESPACE, ESWING, EPROB, CHOKE, SPREAD, RES, ALLOCON, SSTART, SGAIN = SSTART + 4, SNORM };     // (SF-000) GAIN, NORMALISE
+    enum { TUNE, DECAY, TONE, DENS, FILT, ACCENT, DRIVE, LEVEL, MODEL, ESPACE, ESWING, EPROB, CHOKE, SPREAD, RES, ALLOCON, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE };     // (SF-000) GAIN, NORM, SLICE, CYCLEALISE
     std::string id() const override { return "PERC"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        return withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
+        return withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
                  pct ("decay", "DECAY", 0.5f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
@@ -491,7 +492,7 @@ public:
                  toggle ("choke", "CHOKE", true),
                  pct ("spread", "SPREAD", 0.3f).slow(),
                  pct ("res", "FILTER RES", 0.1f),
-                 toggle ("alloc", "ALLOC", true).noPreset().forget() }));
+                 toggle ("alloc", "ALLOC", true).noPreset().forget() })));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL: SAMPLE)"; }
@@ -617,7 +618,7 @@ public:
                 // From START; DECAY's gate measures the part that plays.
                 if (auto* s = sample.audio())
                 {
-                    v.reg = regionFrom (c, SSTART, *s, SGAIN);
+                    v.reg = hitRegion (c, *s, regionFrom (c, SSTART, *s, SGAIN), SSLICE, sliceHits++, sliceRng.uni());       // (SF-000) the whole of it, or a slice
                     v.spos = v.reg.start;
                     v.gate = sampleGateSeconds (c.v (DECAY), (float) (v.reg.length() / s->sr) / v.tune, ev.gen);
                 }
@@ -844,6 +845,7 @@ private:
     RoleOutput out;
     SampleSlot sample;
     Noise rng;
+    int sliceHits = 0; Noise sliceRng;      // (SF-000) slices
 };
 ModulePtr makePERC() { return std::make_unique<PercModule>(); }
 
@@ -855,14 +857,14 @@ class RumbleModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM };     // (SF-000) GAIN, NORMALISE
+    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE };     // (SF-000) GAIN, NORMALISE
     std::string id() const override { return "RUMBLE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
+        return withSlices (withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
                  pct ("dark", "DARK", 0.6f).prim(),
                  pct ("grit", "GRIT", 0.3f).prim().dir (1),
                  pct ("pump", "PUMP", 0.7f).prim(),
@@ -878,7 +880,7 @@ public:
                  pct ("pocket_shape", "POCKET SHAPE", 0.5f).slow(),
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }));
+                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })));
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP RUMBLE ONE-SHOT (MODEL: SAMPLE)"; }
@@ -945,6 +947,7 @@ public:
         const double space = echoSpaceBeats (c.ci (ESPACE));
         const SampleData* smp = sample.audio();
         nextReg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();     // a thump from here on plays this part
+        sliceSmp = smp; sliceAt = c.v (SSLICE); sliceCycle = c.ci (SCYCLE);                 // (SF-000) or the slice of it SLICE and CYCLE say
         const float modelCal = cal::at (cal::rumble, model);
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
         float gates[Oversampler::kBlock];
@@ -1071,10 +1074,19 @@ private:
     static constexpr int kOwn = 80;     // the pocket
     SampleStrip strip;
     SampleRegion nextReg, sReg;         // SAMPLE: the part the next thump plays; the part this one plays
+    const SampleData* sliceSmp = nullptr; float sliceAt = 0.0f; int sliceCycle = 0, sliceHits = 0; Noise sliceRng;      // (SF-000) slices
     void fire (float f0, float f1, float tau, float vel, float tune, double tq, float dens, double space)
     {
         thF0 = f0 * tune; thF1 = std::max (25.0f, f1 * tune); thTau = std::max (0.002f, tau);
         sReg = nextReg;
+        if (sliceSmp != nullptr && (sliceAt > 0.001f || sliceCycle != 0))      // (SF-000) hitRegion's rule, with what the block read
+        {
+            const int n = sliceCount (*sliceSmp, nextReg);
+            int index = sliceAt > 0.001f ? std::min (n - 1, (int) (sliceAt * (float) n * 0.9999f)) : 0;
+            if (sliceCycle == 1) index += sliceHits; else if (sliceCycle == 2) index += (int) (sliceRng.uni() * (float) n);
+            sReg = sliceRegion (*sliceSmp, nextReg, index);
+        }
+        ++sliceHits;
         thumpT = 0.0f; thumpVel = vel; thPh = 0.0f; sPos = sReg.start; sinceTrig = 0;
         lastF0 = f0; lastF1 = f1; lastTau = tau;
         if (tq > 0.0 && dens > 0.001f && extras.size() < 240)
