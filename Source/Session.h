@@ -915,6 +915,8 @@ private:
     juce::String idInFile;
     std::array<Engine::SetupState, 2> retInit;
     Engine::SetupState busInit;
+    Engine::SetupState masterCompInit;      // the master's compressor as it opens (its CONFIG is kept with the set, not with a snapshot)
+    void compStart (Engine::Target t, int which);      // a compressor's START FROM chosen by hand: its times, ratio, knee and filter go there
     double glideBeats() const;
 
     std::vector<float> base, offset;

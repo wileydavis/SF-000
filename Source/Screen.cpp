@@ -731,7 +731,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             const auto& sp = cfgParams[(size_t) h.a];
             const char* module = cfg.kind == 0 ? lanes()[(size_t) cfg.lane].module
                                : cfg.kind == 1 ? (eng.insertType (cfg.lane, cfg.slot) >= 0 ? effects()[(size_t) eng.insertType (cfg.lane, cfg.slot)].module : nullptr)
-                               : cfg.kind == 3 ? drumBus().module
+                               : cfg.kind == 3 ? drumBus().module : cfg.kind == 4 ? "GLUE"
                                : (cfg.slot == 0 ? returnA() : returnB (eng.spaceModel())).module;
             t.title = (sp.group.isNotEmpty() && sp.group != "SOUND" && sp.group != "EFFECT" ? sp.group + ": " : String()) + sp.name;
             if (const char* what = module != nullptr ? help::param (module, sp.id.toRawUTF8()) : nullptr) body = what;
@@ -1263,7 +1263,7 @@ float Screen::slideGoal() const
 {
     // the column of the panel CONFIG is open on goes to the third column, the one beside CONFIG
     if (! cfgOpen || page != pMain) return 0.0f;
-    const int col = cfg.kind == 0 ? (cfg.lane < 5 ? cfg.lane : cfg.lane - 5) : cfg.kind == 1 ? cfg.slot : cfg.kind == 3 ? 4 : 3;
+    const int col = cfg.kind == 0 ? (cfg.lane < 5 ? cfg.lane : cfg.lane - 5) : cfg.kind == 1 ? cfg.slot : cfg.kind >= 3 ? 4 : 3;
     return (float) (2 - col) * 282.0f;
 }
 
@@ -1346,6 +1346,7 @@ void Screen::drawConfig (G& g, R r)
         name = t >= 0 ? String (effects()[(size_t) t].name) : String ("EMPTY");
     }
     else if (cfg.kind == 3) { tag = "M"; name = "DRUM BUS"; }
+    else if (cfg.kind == 4) { tag = "M"; name = "COMPRESSOR"; }
     else { tag = cfg.slot == 0 ? "A" : "B"; name = cfg.slot == 0 ? "DUB" : "SPACE"; }
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, tag)) + 10.0f);
     this->tag (g, R (x0, y0, wTag, 26), tag);
@@ -2152,6 +2153,13 @@ void Screen::drawMaster (G& g, R r)
     const float wTitle = title (g, x0, y0, "MASTER", ses.front.kind == Session::fMaster);
     const float wChan = chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
+    // COMP's C: the rest of the master's compressor (its times, ratio, knee, make-up) and its display, in CONFIG
+    {
+        const R kr (x0 + 66 + 49, body - 7, 16, 16);
+        const bool open = cfgOpen && cfg.kind == 4;
+        if (vis (g, kr)) { key (g, kr, open ? col::black : col::white, 2.0f, open); textRaw (g, "C", kr, fLbl, inkOn (cap (open ? col::black : col::white), open ? col::lit : col::black)); }
+        hit (kr.expanded (1), hConfig, 4, 0);
+    }
     // GAIN, under TAPE: the whole mix's level into the three above it (FAULT, which was here, is beside the title).
     // CLIP, under COMP: how hard the limiter's clipper takes the peaks before the limiter has to.
     control (g, cx::kGain, x0, body + 77, 64, col::lit);

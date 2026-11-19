@@ -5390,8 +5390,69 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      note. **A double-click on a step's switch clears it**: the step forgets all it learnt, its
      switch is OFF, and its note is left. *Mine.* INFO on the switch says so.
 
+## The compressor made again (Nov 19, 07:25): ninetieth build
+
+742. **You**, Nov 19, 07:25, with a written brief ("SF-000 COMPRESSOR UPGRADE"; not in the repo):
+     "I will test. in the meantime, here's the spec ideas for compressor work:". The brief
+     asks for a compressor that shapes strike, body and tail: attack to 200 ms and release to
+     3 s, an explicit threshold, ratio to 20:1, a knee, a detector filter that can be truly off,
+     make-up by hand from nought, a compressor that is out until asked, AUTO's stale state
+     mended, a display of real reduction against time with the beat marked, the master's
+     compressor reachable, three places to start from, the drum bus's switch smoothed, and
+     FINISH, LIMIT, ducking and the order of the chain left alone. **Built as asked, but for
+     what follows.**
+     - *Mine:* **one THRESHOLD knob in dB, and no PUSH that changes its meaning with a mode.**
+       With make-up no longer tied to it, the brief's PUSH is a threshold knob with a shorter
+       travel and a name that changes. THRESHOLD is 0 to -60 dB on an insert and 0 to -30 on
+       the master's COMP, turned up for more, and at rest the compressor is out: the
+       reduction and the make-up come in together over the first 1.5 dB.
+     - *Mine:* **RATIO is eight steps** (1, 1.5, 2, 3, 4, 6, 10, 20), so 2, 4 and 10 are a
+       click apart, and **AUTO RELEASE is a switch in CONFIG** beside KNEE and START FROM.
+     - *Mine:* SC HPF at the bottom of its travel (20 Hz) is out of the path: there is no
+       separate OFF.
+     - **Not in it: colour.** The brief rules out analog models. What you asked on the 18th
+       (734) was for coloration and musicality: this is precise and clean, and characters
+       would be a build on top of it.
+743. **You**, Nov 19, 07:30, to my plan of keeping the old compressor beside the new for old
+     snapshots: "I'm okay for now with allowing old snapshots to change and would rather not
+     build workarounds to preserve them." **So there is one compressor, written in place**, with
+     no old version, no version switch and no UPGRADE key. A snapshot from before reads its
+     compressor's knobs on the new scales, unconverted: its first knob was PUSH (threshold
+     and make-up together) and is now THRESHOLD alone, so a compressor that was working is
+     quieter; its ATTACK and RELEASE were lists and are now times. What such a snapshot does
+     not name (KNEE, AUTO RELEASE, START FROM) it gets as they open, never the last
+     compressor's. The master's COMP in an old set is read the same way.
+744. *Mine, with it:* the master's compressor has a CONFIG (the C by COMP), kept with the set
+     (`masterComp`) and not with a snapshot, as COMP itself is. A new set opens with COMP at
+     rest, where it opened at a quarter. The drum bus's COMP switch is crossed over 20 ms and
+     its envelope runs while it is off; left on or off it is what it was.
+745. *Mine, found by the checks:* **the cue's rig now holds the set's limiter trim.** The
+     second rig, which plays a cued snapshot into the headphones, learnt its own trim from
+     nought each time, so the headphones were under the set by whatever the set's limiter had
+     learnt. While both rigs' compressors added the same make-up that stayed inside the
+     check's 2.5 dB; with the compressor at rest it measured 3.3. The second rig is now given
+     the first rig's trim as it stands and holds it: the cue is 0.2 dB from what the set then
+     plays. Three checks' figures moved with the master's make-up gone and were mended where
+     they stood: this one (by the above), GRANULAR's same-place-twice (the limiter's trim is
+     held for it, as it is about the grains), and the stereo check's "is there at all" level
+     for the rumble's 2 kHz (-71 dB against a line at -70: the line is at -75). The
+     arrangement's reference render is made again, as the master is not what it was.
+
 ## Not verified
 
+- **The ninetieth build (742 to 744) is measured, and not heard.** Measured: the static curve
+  and the knee's edges, MIX and MAKEUP, the times at 44.1, 48 and 96 kHz (0.632 and 0.368 at
+  each), the same output to the sample in blocks of 32, 64, 480 and 512, one gain for both
+  channels, silence after sound, AUTO switched on without a step, and the harmonics it adds
+  to a 50 Hz sine 12 dB over at 4:1: 7.85 % with ATTACK 0.1 ms and RELEASE 10 ms, 0.33 % with
+  30 and 250, so fast is not cleaner on a low note. **Not done from the brief**: listening
+  comparisons on a kick, a bass, a resonant synth and a drum loop (I cannot hear; the display
+  is there for you to do it by eye and ear); the callback's cost with the 3D view running (measured without it, here, on
+  one Linux core: a compressor at work is 0.16 % of the core, 33 of them 5.3 %; the master
+  chain is 5.8 % at blocks of 128 where the eighty-fourth build's was 5.5, with the meters
+  added since in that too; the old compressor alone was not timed, its build not being kept); the display
+  seen in two pictures and not in 3D. **Yours to say**: whether THRESHOLD in place of PUSH is
+  right on the master, where it is a performance knob; and whether you want the characters.
 - **The eighty-eighth build (738, 739) is checked by what the knob sounds at, block by block,
   and on drawn screens; none of it is heard.** Measured on the bass's CUTOFF at 120: a locked
   step of half a gate has the knob at its setting from the step's start to the gate's end and

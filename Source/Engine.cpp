@@ -1439,7 +1439,14 @@ SFProcessor* Engine::processorFor (Target t) const
     if (t.kind == 0) return lane[(size_t) t.lane].voice.load()->proc.get();
     if (t.kind == 1) { auto* in = lane[(size_t) t.lane].ins[t.slot].load(); return in != nullptr ? in->proc.get() : nullptr; }
     if (t.kind == 3) return busProc.get();
+    if (t.kind == 4) { for (auto& m : master) if (m->getName() == "SF GLUE") return m.get(); return nullptr; }
     return t.slot == 0 ? retA.get() : space[(size_t) spaceWant.load()].get();
+}
+
+const KnobDef* Engine::masterCompKnob()
+{
+    for (auto& st : masterChain()) if (juce::String (st.module) == "GLUE") return &st.knob;
+    return nullptr;
 }
 
 std::vector<std::string> Engine::boundIds (Target t) const
@@ -1449,6 +1456,7 @@ std::vector<std::string> Engine::boundIds (Target t) const
     if (t.kind == 0) { for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = laneKnob (t.lane, k); kd.param != nullptr) ids.push_back (kd.param); }
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) add (effects()[(size_t) ty].cells, kCells); }
     else if (t.kind == 3) add (drumBus().cells, kCells);
+    else if (t.kind == 4) { if (auto* k = masterCompKnob()) add (k, 1); }
     else add ((t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells, kCells);
     return ids;
 }
@@ -1534,7 +1542,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
     // hand finds them in one place: the model before what only that model has (and the control of its own that says
     // how the rest are read first of those); on an effect THROW, FREEZE and MIX first, and LO CUT and what ducks it
     // (INPUT, DUCK, DUCK SHAPE, DUCK FOR) last; on a drum VEL SENS last.
-    const bool effect = t.kind == 1 || t.kind == 2;
+    const bool effect = t.kind == 1 || t.kind == 2 || t.kind == 4;
     auto rank = [effect] (const juce::String& id)
     {
         if (id == "model" || id == "layer_model") return 0;
@@ -1664,6 +1672,7 @@ std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArra
     if (t.kind == 0) { for (int k = 0; k < kLaneKnobs; ++k) laneNow[k] = laneKnob (t.lane, k); defs = laneNow; count = kLaneKnobs; }
     else if (t.kind == 1) { const int ty = insType[(size_t) t.lane][(size_t) t.slot]; if (ty >= 0) { defs = effects()[(size_t) ty].cells; count = kCells; } }
     else if (t.kind == 3) { defs = drumBus().cells; count = kCells; }
+    else if (t.kind == 4) { defs = masterCompKnob(); count = defs != nullptr ? 1 : 0; }
     else { defs = (t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells; count = kCells; }
     std::vector<int> order;
     auto add = [&] (int choice, const juce::String& name) { if (std::find (order.begin(), order.end(), choice) == order.end()) { order.push_back (choice); if (names != nullptr) names->add (name); } };
@@ -1894,6 +1903,14 @@ Engine::SetupState Engine::newerOff (Target t) const
 // LOOP on a drum's sample, and the PERC lane's sample (its START, END, fades, GAIN, NORMALISE, SLICE, CYCLE): a snapshot
 // from before them does not name them, and is not left with what the one before it set.
 float Engine::moduleSays (Target t, int what) const { auto* p = processorFor (t); return p != nullptr ? p->mod().meter (what) : 0.0f; }
+bool Engine::isCompressor (Target t) const { auto* p = processorFor (t); return p != nullptr && p->getName() == "SF GLUE"; }
+float Engine::plainPlace (Target t, const juce::String& id, float plain) const
+{
+    auto* p = processorFor (t);
+    if (p == nullptr) return -1.0f;
+    const int i = p->paramIndex (id.toStdString());
+    return i >= 0 && i < p->numModuleParams() ? juce::jlimit (0.0f, 1.0f, p->param (i)->convertTo0to1 (plain)) : -1.0f;
+}
 
 bool Engine::setupPlays (Target t, const SetupState& st, const juce::String& model) const
 {
@@ -1920,6 +1937,10 @@ Engine::SetupState Engine::laterOff (Target t) const
     {
         // (an effect's, a return's: what a reverb's DUCK makes room for, the kick and the source as it always was)
         if (auto* p = processorFor (t)) if (const int i = p->paramIndex ("duck_for"); i >= 0 && i < p->numModuleParams()) st.push_back ({ "duck_for", 0.0f });
+        // (a compressor's, since the ninetieth build: its KNEE, AUTO RELEASE and START FROM as they open. A snapshot from
+        // before names none of them, and must not be left with the last compressor's.)
+        if (auto* p = processorFor (t); p != nullptr && p->getName() == "SF GLUE")
+            for (const char* id : { "knee", "auto", "start" }) if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams()) st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
         return st;
     }
     const bool strike = juce::String (lanes()[(size_t) t.lane].module) == "STRIKE";

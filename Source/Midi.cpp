@@ -1819,7 +1819,7 @@ void Midi::sayNames()
             const auto& t = ses.cfg;
             const int fx = t.kind == 1 ? engine.insertType (t.lane, t.slot) : -1;
             title = t.kind == 0 ? String (e16::laneCodes[t.lane]) : t.kind == 1 ? String (e16::laneCodes[t.lane]) + " " + (fx >= 0 ? effects()[(size_t) fx].name : "EMPTY")
-                  : t.kind == 3 ? String ("DRM BUS") : String (t.slot == 0 ? "DUB" : "SPACE");
+                  : t.kind == 3 ? String ("DRM BUS") : t.kind == 4 ? String ("MST CMP") : String (t.slot == 0 ? "DUB" : "SPACE");
             title = title.substring (0, pages > 1 ? 7 : 11) + " CFG" + (pages > 1 ? " " + String (cfgFirst (c) / e16::kCfgPer + 1) + "/" + String (pages) : String());       // (the page its knobs are on now)
         }
         for (int i = 0; i < e16::kCfgPer; ++i)

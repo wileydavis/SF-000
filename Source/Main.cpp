@@ -1638,7 +1638,7 @@ static void stereoLoopTest (int& bad)
         e.solo = -1;
         { Pattern none; e.setPattern (l, none); e.setPattern (kick, none); }
         h.l5 = at (hl, 500.0, 0, hl.size()); h.r5 = at (hr, 500.0, 0, hr.size()); h.l2 = at (hl, 2000.0, 0, hl.size()); h.r2 = at (hr, 2000.0, 0, hr.size());
-        h.ok = h.l5 > -70.0 && h.r2 > -70.0 && h.l5 - h.r5 > need && h.r2 - h.l2 > need;
+        h.ok = h.l5 > -75.0 && h.r2 > -75.0 && h.l5 - h.r5 > need && h.r2 - h.l2 > need;      // (there at all: the rumble's 2 kHz is at -71 since the master's compressor stopped adding its make-up, the ninetieth build)
         widths << name << " " << juce::String ((int) std::lround (h.l5 - h.r5)) << "/" << juce::String ((int) std::lround (h.r2 - h.l2)) << " ";
         return h;
     };
@@ -2512,6 +2512,192 @@ static void wavetableTest (int& bad)
                                f0.top, fMid.top, f1.top, (int) notOne, (int) smp, (int) e.fault.load());
         if (! ok) std::printf ("    (region %d by hand %d: table %s)\n", (int) region, (int) byHand, text (e, bass, "table").toRawUTF8());
     }
+}
+
+// The compressor (the ninetieth build): what it does to a level, how fast, the same whatever the block, to both channels as
+// one; and where its settings are kept.
+static void compressorTest (int& bad)
+{
+    using namespace sf0;
+    auto set = [] (SFProcessor& q, const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+    using Setup = std::function<void (SFProcessor&)>;
+    // a signal through it at a rate, in blocks of a size; halfway (where asked) something is changed
+    auto run = [&] (double rate, int block, const juce::AudioBuffer<float>& in, const Setup& setup, const Setup& halfway = {})
+    {
+        SFProcessor p (sf::makeModule ("GLUE"));
+        setup (p);
+        p.setRateAndBufferSizeDetails (rate, block); p.prepareToPlay (rate, block);
+        juce::AudioBuffer<float> out; out.makeCopyOf (in);
+        juce::MidiBuffer midi;
+        const int n = in.getNumSamples();
+        bool changed = false;
+        for (int i = 0; i < n; i += block)
+        {
+            if (halfway && ! changed && i >= n / 2) { halfway (p); changed = true; }
+            juce::AudioBuffer<float> b (out.getArrayOfWritePointers(), 2, i, std::min (block, n - i));
+            p.processBlock (b, midi);
+        }
+        return out;
+    };
+    auto level = [] (double rate, double seconds, std::function<float (double)> at, float right = 1.0f)
+    {
+        juce::AudioBuffer<float> b (2, (int) (rate * seconds));
+        for (int i = 0; i < b.getNumSamples(); ++i) { const float v = at ((double) i / rate); b.setSample (0, i, v); b.setSample (1, i, v * right); }
+        return b;
+    };
+    auto db = [] (float g) { return 20.0f * std::log10 (std::max (1.0e-9f, std::abs (g))); };
+    auto worst = [] (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b) { float w = 0.0f; for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < a.getNumSamples(); ++i) w = std::max (w, std::abs (a.getSample (ch, i) - b.getSample (ch, i))); return w; };
+    juce::Random rnd (90);
+    // (something like music for it: a decaying thump every 0.3 s with noise on it, the two channels not alike)
+    auto music = [&] (double rate, double seconds)
+    {
+        juce::AudioBuffer<float> b (2, (int) (rate * seconds));
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const double t = (double) i / rate, ph = std::fmod (t, 0.3);
+            const float thump = (float) (0.8 * std::exp (-ph * 14.0) * std::sin (6.2832 * 60.0 * t));
+            b.setSample (0, i, thump + 0.08f * (rnd.nextFloat() - 0.5f)); b.setSample (1, i, 0.7f * thump + 0.08f * (rnd.nextFloat() - 0.5f));
+        }
+        return b;
+    };
+
+    // 1. at rest it is not there; and at 1:1 it takes nothing off
+    const auto song = music (48000.0, 2.0);
+    const float rest = worst (song, run (48000.0, 512, song, [] (SFProcessor&) {}));
+    const float oneToOne = worst (song, run (48000.0, 512, song, [&] (SFProcessor& q) { set (q, "threshold", -30.0f); set (q, "ratio", 0.0f); }));
+    // 2. what comes out for what goes in, held steady: over the threshold by 10 dB at 4:1 is over by 2.5; under it, as it went in;
+    // and the knee joins the two without a step (at its lower edge nothing, at its upper edge all of the ratio)
+    auto held = [&] (float inDb, float thr, float ratioAt, float knee, float mix = 1.0f, float makeup = 0.0f)
+    {
+        const float a = std::pow (10.0f, inDb / 20.0f);
+        const auto out = run (48000.0, 512, level (48000.0, 1.5, [a] (double) { return a; }), [&] (SFProcessor& q) { set (q, "threshold", thr); set (q, "ratio", ratioAt); set (q, "knee", knee); set (q, "attack", 1.0f); set (q, "mix", mix); set (q, "makeup", makeup); });
+        return db (out.getSample (0, out.getNumSamples() - 1));
+    };
+    const float over10 = held (-10.0f, -20.0f, 4.0f, 0.0f), under = held (-30.0f, -20.0f, 4.0f, 0.0f);
+    const float kneeLow = held (-23.0f, -20.0f, 4.0f, 6.0f), kneeMid = held (-20.0f, -20.0f, 4.0f, 6.0f), kneeHigh = held (-17.0f, -20.0f, 4.0f, 6.0f), kneeJust = held (-16.9f, -20.0f, 4.0f, 6.0f);
+    const bool curve = std::abs (over10 + 17.5f) < 0.02f && std::abs (under + 30.0f) < 0.001f && std::abs (kneeLow + 23.0f) < 0.005f && std::abs (kneeMid - (-20.0f - 0.75f * 0.75f)) < 0.01f
+                    && std::abs (kneeHigh - (-17.0f - 2.25f)) < 0.01f && std::abs (kneeJust - kneeHigh - 0.025f) < 0.01f;
+    // MIX is dry against compressed, in step; MAKEUP is on the compressed
+    const float half = held (-10.0f, -20.0f, 4.0f, 0.0f, 0.5f), made = held (-10.0f, -20.0f, 4.0f, 0.0f, 1.0f, 6.0f);
+    const bool mixed = std::abs (std::pow (10.0f, half / 20.0f) - 0.5f * (std::pow (10.0f, -10.0f / 20.0f) + std::pow (10.0f, -17.5f / 20.0f))) < 1.0e-4f && std::abs (made + 11.5f) < 0.02f;
+    // 3. its times, at three rates: a level that steps up over the threshold is 63 % reduced after one ATTACK; stepped back
+    // down, 37 % of the reduction is left after one RELEASE
+    bool timed = true; float seenAtt[3] = { 0, 0, 0 }, seenRel[3] = { 0, 0, 0 }; int ri = 0;
+    for (double rate : { 44100.0, 48000.0, 96000.0 })
+    {
+        const float lo = std::pow (10.0f, -40.0f / 20.0f), hi = std::pow (10.0f, -8.0f / 20.0f);      // (12 dB over a threshold of -20: 9 dB to take off at 4:1)
+        const auto out = run (rate, 512, level (rate, 2.0, [&] (double t) { return t >= 0.5 && t < 1.2 ? hi : lo; }), [&] (SFProcessor& q) { set (q, "threshold", -20.0f); set (q, "ratio", 4.0f); set (q, "knee", 0.0f); set (q, "attack", 30.0f); set (q, "release", 100.0f); });
+        const float atAttack = db (hi) - db (out.getSample (0, (int) (rate * 0.53))), full = db (hi) - db (out.getSample (0, (int) (rate * 1.19)));
+        const float atRelease = db (lo) - db (out.getSample (0, (int) (rate * 1.30)));
+        seenAtt[ri] = atAttack / 9.0f; seenRel[ri] = atRelease / full; ++ri;
+        timed = timed && std::abs (atAttack / 9.0f - 0.632f) < 0.01f && std::abs (full - 9.0f) < 0.02f && std::abs (atRelease / full - 0.368f) < 0.01f;
+    }
+    // 4. the same whatever the block: 32, 64, 480 and 512 samples at a time
+    const Setup busy = [&] (SFProcessor& q) { set (q, "threshold", -24.0f); set (q, "ratio", 4.0f); set (q, "attack", 12.0f); set (q, "release", 140.0f); set (q, "sc_hpf", 120.0f); set (q, "makeup", 4.0f); set (q, "mix", 0.8f); };
+    const auto by512 = run (48000.0, 512, song, busy);
+    float blocks = 0.0f;
+    for (int bs : { 32, 64, 480 }) blocks = std::max (blocks, worst (by512, run (48000.0, bs, song, busy)));
+    float most = 0.0f; for (int i = 0; i < by512.getNumSamples(); ++i) most = std::max (most, std::abs (song.getSample (0, i) - by512.getSample (0, i)));     // (and it is doing something)
+    // 5. both channels get one gain: the left alone, the right at half, the right upside down
+    const Setup firm = [&] (SFProcessor& q) { set (q, "threshold", -24.0f); set (q, "ratio", 6.0f); set (q, "attack", 5.0f); set (q, "release", 120.0f); };
+    const auto tone = level (48000.0, 1.0, [] (double t) { return (float) (0.5 * std::sin (6.2832 * 220.0 * t) * (0.4 + 0.6 * std::fabs (std::sin (6.2832 * 3.0 * t)))); });
+    const auto mono = run (48000.0, 512, tone, firm);
+    auto halfR = tone; halfR.applyGain (1, 0, halfR.getNumSamples(), 0.5f);
+    auto flip = tone; flip.applyGain (1, 0, flip.getNumSamples(), -1.0f);
+    auto leftOnly = tone; leftOnly.clear (1, 0, leftOnly.getNumSamples());
+    const auto outHalf = run (48000.0, 512, halfR, firm), outFlip = run (48000.0, 512, flip, firm), outLeft = run (48000.0, 512, leftOnly, firm);
+    float image = 0.0f, rightQuiet = 0.0f;
+    for (int i = 0; i < mono.getNumSamples(); ++i)
+    {
+        image = std::max ({ image, std::abs (outHalf.getSample (1, i) - 0.5f * outHalf.getSample (0, i)), std::abs (outHalf.getSample (0, i) - mono.getSample (0, i)),
+                            std::abs (outFlip.getSample (0, i) - mono.getSample (0, i)), std::abs (outFlip.getSample (1, i) + mono.getSample (0, i)), std::abs (outLeft.getSample (0, i) - mono.getSample (0, i)) });
+        rightQuiet = std::max (rightQuiet, std::abs (outLeft.getSample (1, i)));
+    }
+    // 6. silence after sound: nothing comes out, and nothing that is not a number
+    const auto tail = run (48000.0, 512, level (48000.0, 6.0, [] (double t) { return t < 0.5 ? (float) (0.9 * std::sin (6.2832 * 80.0 * t)) : 0.0f; }), firm);
+    bool finite = true; float after = 0.0f;
+    for (int i = 0; i < tail.getNumSamples(); ++i) { finite = finite && std::isfinite (tail.getSample (0, i)); if (i > 48000) after = std::max (after, std::abs (tail.getSample (0, i))); }
+    // 7. AUTO RELEASE switched on after a quiet spell does not start from an old state: the gain does not step
+    const auto sw = run (48000.0, 512, level (48000.0, 4.0, [] (double t) { return t < 1.0 ? 0.6f : 0.02f; }), [&] (SFProcessor& q) { set (q, "threshold", -24.0f); set (q, "ratio", 4.0f); set (q, "release", 50.0f); },
+                         [&] (SFProcessor& q) { set (q, "auto", 1.0f); });
+    float step = 0.0f; for (int i = 96000 - 600; i < 96000 + 4000; ++i) step = std::max (step, std::abs (db (sw.getSample (0, i + 1)) - db (sw.getSample (0, i))));
+    // 8. what it does to a low note, a 50 Hz sine 12 dB over the threshold at 4:1: the harmonics it adds, fast and at a musical setting
+    auto thd = [&] (float attack, float release)
+    {
+        const auto out = run (48000.0, 512, level (48000.0, 3.0, [] (double t) { return (float) (0.5 * std::sin (6.2832 * 50.0 * t)); }), [&] (SFProcessor& q) { set (q, "threshold", -18.0f); set (q, "ratio", 4.0f); set (q, "attack", attack); set (q, "release", release); });
+        double f = 0.0, h = 0.0;
+        for (int k = 1; k <= 12; ++k)
+        {
+            double re = 0.0, im = 0.0;
+            for (int i = 96000; i < 144000; ++i) { const double ph = 6.2832 * 50.0 * k * (double) i / 48000.0; re += out.getSample (0, i) * std::cos (ph); im += out.getSample (0, i) * std::sin (ph); }
+            (k == 1 ? f : h) += re * re + im * im;
+        }
+        return (float) (100.0 * std::sqrt (h / std::max (1.0e-30, f)));
+    };
+    const float thdFast = thd (0.1f, 10.0f), thdMusic = thd (30.0f, 250.0f);
+
+    // 9. where it is kept. An insert: its knob at rest is out, and turned up is a threshold in dB; START FROM sets how it moves and
+    // leaves THRESHOLD; a snapshot that names no KNEE gets the knee it opens with, not the last one. The master's: COMP at rest
+    // is out, its CONFIG lists the rest, and it is written with the set and read, a file without it opening as new.
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> buf (2, 256);
+    auto audio = [&] (int blocks) { for (int i = 0; i < blocks; ++i) { buf.clear(); e.render (buf); } };
+    int comp = -1; for (int t = 0; t < (int) effects().size(); ++t) if (juce::String (effects()[(size_t) t].name) == "COMPRESSOR") comp = t;
+    const int bass = 5;
+    const Engine::Target ins { 1, bass, 0 }, mst { 4, 0, 0 };
+    e.setInsertType (bass, 0, comp); audio (20);
+    auto textOf = [&] (Engine::Target t, const char* id) { for (auto& sp : e.setupParams (t)) if (sp.id == id) return sp.text; return juce::String ("?"); };
+    const bool restIns = std::abs (e.target (cx::ins (bass, 0, 0))) < 1.0e-4f && std::abs (e.moduleSays (ins, 21)) < 0.01f;
+    ses.userSet (cx::ins (bass, 0, 0), 0.5f); audio (200);
+    const bool thrIns = std::abs (e.moduleSays (ins, 21) + 30.0f) < 0.1f;
+    ses.setupByHand (ins, "start", 2.0f / 3.0f); audio (20);
+    const bool started = std::abs (e.target (cx::ins (bass, 0, 1)) - e.plainPlace (ins, "attack", 80.0f)) < 1.0e-4f && std::abs (e.target (cx::ins (bass, 0, 2)) - e.plainPlace (ins, "release", 200.0f)) < 1.0e-4f
+                      && std::abs (e.target (cx::ins (bass, 0, 3)) - 3.0f / 7.0f) < 1.0e-4f && textOf (ins, "knee").startsWith ("6.0") && std::abs (e.target (cx::ins (bass, 0, 0)) - 0.5f) < 1.0e-4f;
+    const auto snapId = ses.take();
+    juce::String snapName; for (auto& sn : ses.library) if (sn.id == snapId) snapName = sn.name;
+    const juce::var withSnap = ses.stateVar();
+    if (auto* lib = withSnap.getProperty ("library", juce::var()).getArray())
+        for (auto& sn : *lib) if (sn.getProperty ("name", "").toString() == snapName)
+            if (auto* o = sn.getProperty ("setup", juce::var()).getProperty ("inserts", juce::var())[bass][0].getDynamicObject()) { o->removeProperty ("knee"); o->removeProperty ("auto"); o->removeProperty ("start"); }
+    Engine e2; e2.prepare (48000.0, 256);
+    Session s2 (e2, false);
+    s2.takeState (withSnap);
+    e2.setInsertType (bass, 0, comp); e2.setSetup (ins, "knee", 1.0f); e2.setSetup (ins, "auto", 1.0f);         // (another compressor's, standing there)
+    for (auto& sn : s2.library) if (sn.name == snapName) s2.recall (sn.id);
+    for (int i = 0; i < 200; ++i) { buf.clear(); e2.render (buf); }
+    juce::String kneeBack = "?", autoBack = "?"; for (auto& sp : e2.setupParams (ins)) { if (sp.id == "knee") kneeBack = sp.text; if (sp.id == "auto") autoBack = juce::String (sp.value, 1); }
+    const bool fresh = kneeBack.startsWith ("6.0") && autoBack == "0.0";
+    // the master's
+    juce::StringArray listed; for (auto& sp : e.setupParams (mst)) if (! sp.group.startsWith ("MOTION")) listed.add (sp.name);
+    const bool masterRest = std::abs (e.target (cx::kMaster + 1)) < 1.0e-4f && std::abs (e.moduleSays (mst, 21)) < 0.01f && listed.contains ("ATTACK") && listed.contains ("MAKEUP") && listed.contains ("START FROM") && ! listed.contains ("THRESHOLD");
+    ses.userSet (cx::kMaster + 1, 1.0f); e.setSetup (mst, "knee", 0.25f); e.setSetup (mst, "makeup", 0.5f); audio (200);
+    const bool masterThr = std::abs (e.moduleSays (mst, 21) + 30.0f) < 0.1f;
+    const juce::var kept = ses.stateVar();
+    Engine e3; e3.prepare (48000.0, 256);
+    Session s3 (e3, false);
+    s3.takeState (kept);
+    juce::String knee3 = "?", make3 = "?"; for (auto& sp : e3.setupParams (mst)) { if (sp.id == "knee") knee3 = sp.text; if (sp.id == "makeup") make3 = sp.text; }
+    kept.getDynamicObject()->removeProperty ("masterComp");
+    s3.takeState (kept);
+    juce::String knee4 = "?"; for (auto& sp : e3.setupParams (mst)) if (sp.id == "knee") knee4 = sp.text;
+    const bool masterKept = knee3.startsWith ("3.0") && make3.startsWith ("9.0") && knee4.startsWith ("6.0");
+
+    const bool ok = rest == 0.0f && oneToOne < 1.0e-6f && curve && mixed && timed && blocks == 0.0f && most > 0.05f && image < 1.0e-6f && rightQuiet == 0.0f && finite && after == 0.0f && step < 0.02f
+                 && thdMusic < thdFast && thdMusic < 1.0f && comp >= 0 && restIns && thrIns && started && fresh && masterRest && masterThr && masterKept && ! e.fault.load();
+    if (! ok) ++bad;
+    std::printf ("  %s: the compressor. At rest it is not there (the sound differs by %g), and at 1:1 it takes nothing off. Held 10 dB over a threshold of -20 at 4:1, %.2f dB comes out; under it, as it went in; across a 6 dB knee %.2f, %.2f and %.2f "
+                 "with no step at its edge; MIX at half is half of each, and MAKEUP is on the compressed. One ATTACK after a step up the reduction is %.3f, %.3f and %.3f of the way there at 44.1, 48 and 96 kHz, and one RELEASE after a step down "
+                 "%.3f, %.3f and %.3f of it is left. In blocks of 32, 64, 480 or 512 the sound is the same to the sample (it differs by %g, while moving the sound by %.2f). Both channels get one gain: the right at half, upside down or silent "
+                 "leaves the picture where it was (%g). Silence after sound is silence. AUTO RELEASE switched on after a quiet spell moves the gain by no more than %.4f dB a sample. A 50 Hz sine 12 dB over at 4:1 has %.2f %% of harmonics with "
+                 "ATTACK 0.1 ms and RELEASE 10 ms, and %.3f %% with 30 and 250. An insert's THRESHOLD at rest is out and at half is -30 dB; START FROM sets its times and ratio and leaves THRESHOLD; a snapshot that names no KNEE gets 6. The "
+                 "master's COMP at rest is out, its CONFIG has the rest, and it is written with the set and read, a set without it opening as new\n",
+                 ok ? "ok  " : "FAIL", (double) rest, (double) over10, (double) kneeLow, (double) kneeMid, (double) kneeHigh, (double) seenAtt[0], (double) seenAtt[1], (double) seenAtt[2], (double) seenRel[0], (double) seenRel[1], (double) seenRel[2],
+                 (double) blocks, (double) most, (double) image, (double) step, (double) thdFast, (double) thdMusic);
+    if (! ok) std::printf ("    (rest %g 1:1 %g curve %d [%.3f %.3f %.3f %.3f %.3f %.3f] mixed %d [%.3f %.3f] timed %d blocks %g most %g image %g right %g finite %d after %g step %g thd %g %g comp %d restIns %d thrIns %d [%.2f] started %d fresh %d [%s %s] masterRest %d masterThr %d [%.2f] masterKept %d [%s %s %s])\n",
+                           (double) rest, (double) oneToOne, (int) curve, (double) over10, (double) under, (double) kneeLow, (double) kneeMid, (double) kneeHigh, (double) kneeJust, (int) mixed, (double) half, (double) made, (int) timed, (double) blocks, (double) most,
+                           (double) image, (double) rightQuiet, (int) finite, (double) after, (double) step, (double) thdFast, (double) thdMusic, comp, (int) restIns, (int) thrIns, (double) e.moduleSays (ins, 21), (int) started, (int) fresh,
+                           kneeBack.toRawUTF8(), autoBack.toRawUTF8(), (int) masterRest, (int) masterThr, (double) e.moduleSays (mst, 21), (int) masterKept, knee3.toRawUTF8(), make3.toRawUTF8(), knee4.toRawUTF8());
 }
 
 // A step's LOCK (the eighty-eighth build): what a step learnt, played on that step alone.
@@ -3560,6 +3746,8 @@ static void granularTest (int& bad)
     auto apart = [] (const std::array<double, 8>& a, const std::array<double, 8>& b) { double d = 0; for (int i = 0; i < 8; ++i) d += (a[(size_t) i] - b[(size_t) i]) * (a[(size_t) i] - b[(size_t) i]); return std::sqrt (d / 8.0); };
     auto level = [] (const std::vector<float>& x) { double s2 = 0; for (float v : x) s2 += (double) v * v; return 10.0 * std::log10 (s2 / (double) std::max<size_t> (1, x.size()) + 1e-12); };
     // SCAN stopped: the same place twice over sounds the same; another POSITION is another sound
+    // (the limiter's trim held at nought for it: left to learn, it lifts the second take over the first, and this is about the grains)
+    e.setHold (true, 0.0f);
     set (1, 0.5f); set (0, 0.2f);
     const auto a1 = bands (take (8.0)), a2 = bands (take (8.0));
     set (0, 0.7f);
@@ -3656,7 +3844,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -6093,6 +6281,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     seeingTest (bad);
     wavetableTest (bad);
     stepLockTest (bad);
+    compressorTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -11280,6 +11469,14 @@ static int shot (const juce::StringArray& args)
     else if (cfg == "return") sc.showConfig ({ 2, 0, 0 });
     else if (cfg == "space") sc.showConfig ({ 2, 0, 1 });
     else if (cfg == "master") sc.showConfig ({ 3, 0, 0 });
+    else if (cfg == "comp")
+    {
+        // (--cfg comp: the active lane's first insert a COMPRESSOR, at work; --cfg mastercomp: the master's, at work)
+        for (int t = 0; t < (int) effects().size(); ++t) if (juce::String (effects()[(size_t) t].name) == "COMPRESSOR") e.setInsertType (ses.activeLane, 0, t);
+        ses.userSet (cx::ins (ses.activeLane, 0, 0), 0.45f); ses.setupByHand ({ 1, ses.activeLane, 0 }, "start", 1.0f / 3.0f);
+        sc.showConfig ({ 1, ses.activeLane, 0 });
+    }
+    else if (cfg == "mastercomp") { ses.userSet (cx::kMaster + 1, 0.6f); sc.showConfig ({ 4, 0, 0 }); }
     else if (cfg == "bands")
     {
         // a convolution in the active lane's first slot, with BANDS lit: the low and the top from place 2
@@ -15822,6 +16019,31 @@ public:
         if (args.contains ("--miditest")) { setApplicationReturnValue (midiTest()); quit(); return; }
         if (args.contains ("--profiles")) { setApplicationReturnValue (profiles()); quit(); return; }
         if (args.contains ("--perf")) { setApplicationReturnValue (perf()); quit(); return; }
+        if (args.contains ("--compcost"))
+        {
+            // (--compcost: what thirty-three compressors cost, one in every insert of every lane, each at work: the inserts'
+            // share of one core with them and without)
+            using namespace sf0;
+            double with = 0.0, without = 0.0;
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                Engine e; e.prepare (48000.0, 128);
+                Session ses (e, false);
+                if (pass == 1)
+                    for (int t = 0; t < (int) effects().size(); ++t) if (juce::String (effects()[(size_t) t].name) == "COMPRESSOR")
+                        for (int l = 0; l < kLanes; ++l) for (int sl = 0; sl < kSlots; ++sl) { e.setInsertType (l, sl, t); ses.userSet (cx::ins (l, sl, 0), 0.6f); ses.userSet (cx::ins (l, sl, 4), 0.5f); }
+                e.setRunning (true);
+                juce::AudioBuffer<float> b (2, 128);
+                for (int i = 0; i < 48000 * 2 / 128; ++i) e.render (b);
+                e.profile = true;
+                const double secs = 16.0;
+                for (int i = 0; i < (int) (48000.0 * secs / 128); ++i) e.render (b);
+                double insSum = 0.0; for (int l = 0; l < kLanes; ++l) insSum += e.profIns[(size_t) l];
+                (pass == 0 ? without : with) = 100.0 * insSum / secs;
+            }
+            std::printf ("inserts: %.2f %% of one core with none, %.2f %% with 33 compressors at work: %.3f %% each\n", without, with, (with - without) / 33.0);
+            setApplicationReturnValue (0); quit(); return;
+        }
         if (args.contains ("--e16")) { const int i = args.indexOf ("--e16"); setApplicationReturnValue (writeScene (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("SF-000.oxie16"))); quit(); return; }
 
         sf0::Session::settlePlaces();        // where the library is this time (a folder chosen in SETUP is taken up here)

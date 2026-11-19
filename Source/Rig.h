@@ -192,8 +192,10 @@ inline const std::vector<FxDef>& effects()
           { { "DRIVE", "drive", 'u' }, { "CHARACTER", "character", 'u' }, { "TONE", "tone", 'b' }, { "LOW KEEP", "low_keep", 'u' },
             { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' }, { "AUTO GAIN", "auto_gain", 't' }, { nullptr, nullptr, 'u' } } },
         { "COMPRESSOR", "GLUE", {},
-          { { "PUSH", "push", 'u' }, { "ATTACK", "attack", 'm' }, { "RELEASE", "release", 'm' }, { "RATIO", "ratio", 'm' },
-            { "SC HPF", "sc_hpf", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' }, { nullptr, nullptr, 'u' } } },
+          // (the ninetieth build: the compressor made again. THRESHOLD turns up for more, from out at 0 dB down to -60; the
+          // knobs are where the old one's were, with MAKEUP in the place that was empty)
+          { { "THRESHOLD", "threshold", 'u', 1.0f, 0.0f }, { "ATTACK", "attack", 'u' }, { "RELEASE", "release", 'u' }, { "RATIO", "ratio", 'm' },
+            { "SC HPF", "sc_hpf", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' }, { "MAKEUP", "makeup", 'u' } } },
         { "RADIO", "RADIO", {},
           { { "SIGNAL", "signal", 'u' }, { "BAND", "band", 'u' }, { "WIDTH", "width", 'u' }, { "NOISE", "noise", 'u' },
             { "DROPOUT", "dropout", 'u' }, { "SQUELCH", "squelch", 'u' }, { "RING", "ring", 'u' }, { "MIX", "mix", 'u' } } },
@@ -272,7 +274,9 @@ inline const std::vector<MasterStage>& masterChain()
     static const std::vector<MasterStage> M = {
         { "LOWEND", { { "mono_freq", 150 }, { "rumble_cut", 25 } }, { nullptr, nullptr, 'u' } },
         { "DRIVE",  { { "character", 0.0f }, { "low_keep", 120 }, { "auto_gain", 1 }, { "drive", 0.12f } }, { "TAPE", "drive", 'u', 0.0f, 0.6f } },
-        { "GLUE",   { { "attack", 4 }, { "release", 4 }, { "ratio", 0 }, { "sc_hpf", 110 }, { "push", 0.25f } }, { "COMP", "push", 'u', 0.0f, 0.8f } },
+        // (COMP is its THRESHOLD, from out at 0 dB down to -30: at rest the master is not compressed. The rest of it is in
+        // its CONFIG, the C by the knob: Engine::Target kind 4.)
+        { "GLUE",   { { "attack", 10.0f }, { "auto", 1 }, { "ratio", 2 }, { "sc_hpf", 110 }, { "knee", 6.0f }, { "threshold", 0.0f } }, { "COMP", "threshold", 'u', 1.0f, 0.5f } },
         // FINISH (SF-000's own, Finish.cpp): three bands held, a little harmonic, the sides opened. At nought, as it opens, it is
         // not there. It finds its own input (AUTO); INPUT is where that starts from: where the limiter's own does, less 3 dB.
         { "FINISH", { { "amount", 0.0f }, { "input", 2.0f }, { "auto", 1 } }, { nullptr, nullptr, 'u' } },

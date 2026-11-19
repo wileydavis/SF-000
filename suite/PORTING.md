@@ -102,6 +102,13 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   first (`Source/CueRig.h`): on the shared block it ducked under the first rig's kick, and
   would have written its key and its lanes' energies where the first reads them. The suite
   has no such process and nothing there changes. See DECISIONS 598.
+- **Ninetieth build, marked `(SF-000)`. None of it is in the suite.** `modules/Master.cpp`:
+  `GlueModule` is written again in place, with the suite's id (GLUE) and other controls
+  (threshold, attack and release as continuous times, eight ratios, makeup, knee, auto, start):
+  it is not the suite's GLUE and a preset or a state of the suite's does not fit it.
+  `modules/Presets.cpp`: `glue()` is its three places to start. `modules/FxDrums.cpp`: COMP is
+  crossed over 20 ms and its envelope kept going while off; held on or off it is sample for
+  sample what it was. See DECISIONS 742 to 744.
 - **Eighty-seventh build, all marked `(SF-000)`. None of it is in the suite.** One wavetable:
   `core/Wavetable.h`: `WavetableSet` has twelve tables, CLASSIC the first (the four waves of
   `WaveSet::frame`, as 64 frames at the levels they had). `modules/Synth.cpp`: the oscillator

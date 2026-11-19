@@ -368,11 +368,12 @@ std::vector<Preset> build()
 
 std::vector<Preset> glue()
 {
+    // (SF-000, the ninetieth build: the compressor's own controls. Places to start from; THRESHOLD and MAKEUP are left
+    // where they are out, to be set by ear for the sound in hand.)
     return {
-        { "BUS/GENTLE",           { { "push", 0.25f }, { "attack", 3 }, { "release", 4 }, { "ratio", 0 } } },
-        { "BUS/PUNCH",            { { "push", 0.35f }, { "attack", 4 }, { "release", 1 }, { "ratio", 1 } } },
-        { "DRUMS/SMASH",          { { "push", 0.6f }, { "attack", 1 }, { "release", 1 }, { "ratio", 2 }, { "mix", 0.5f } } },
-        { "MASTER/GLUE",          { { "push", 0.2f }, { "attack", 4 }, { "release", 4 }, { "ratio", 0 }, { "sc_hpf", 120.0f } } },
+        { "TRANSIENT SHAPE",      { { "attack", 25.0f }, { "release", 120.0f }, { "ratio", 4 }, { "knee", 3.0f } } },
+        { "BASS ARTICULATION",    { { "attack", 80.0f }, { "release", 200.0f }, { "ratio", 3 }, { "knee", 6.0f } } },
+        { "BUS GLUE",             { { "attack", 20.0f }, { "auto", 1 }, { "ratio", 2 }, { "knee", 9.0f }, { "sc_hpf", 90.0f } } },
     };
 }
 

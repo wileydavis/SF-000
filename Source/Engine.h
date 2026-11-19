@@ -381,7 +381,8 @@ public:
     int leaving() const;                        // instruments and effects still on their way out (or waiting to be let go)
 
     // ---- what a CONFIG panel, a dropped file or a setup change is aimed at
-    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1), 3 the master's drum bus
+    struct Target { int kind = 0, lane = 0, slot = 0; };    // kind 0 a lane's instrument, 1 one of its inserts, 2 return A (slot 0) or B (slot 1), 3 the master's drum bus, 4 the master's compressor
+    static const KnobDef* masterCompKnob();                // (the master's COMP: the one knob of its compressor that is on the panel)
     // ---- the drum bus (in the master): the lanes its CONFIG names play through it together
     bool laneOnBus (int lane) const             { return busIn[(size_t) lane] != nullptr && busIn[(size_t) lane]->load() > 0.5f; }
 
@@ -458,6 +459,8 @@ public:
     // Whether a lane's state has it on that model (its MODEL or its LAYER MODEL; where the state names neither, the lane as it stands)
     bool setupPlays (Target, const SetupState&, const juce::String& model) const;
     float moduleSays (Target, int what) const;      // a figure the module there reports (sf::Module::meter); 0 where there is none
+    bool isCompressor (Target) const;               // the module there is the compressor (an insert's, or the master's)
+    float plainPlace (Target, const juce::String& id, float plain) const;  // a control of the module there: the place (0 to 1) of a value in its own units, or -1
     // A menu that has grown by one (BASS's and LEAD's MODEL and LAYER MODEL: WAVETABLE, second to last). A setup keeps a
     // menu's place as how far down the list it is; one kept from before the list grew is told by where it falls, and is
     // given as the same entry of the list as it is now.

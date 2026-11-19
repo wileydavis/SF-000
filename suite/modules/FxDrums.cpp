@@ -179,6 +179,8 @@ public:
         for (auto& s : drive) s.set (type);
         for (auto& s : fold) s.set (Shaper::sine);
         const bool comp = c.b (COMP);
+        if (compIn < 0.0f) compIn = comp ? 1.0f : 0.0f;        // (SF-000: as it opens, it is where the switch is)
+        compStep = 1.0f - std::exp (-1.0f / (0.02f * (float) sr));
         // DRIVE: up to +24 dB into the shaper, against a signal whose peaks stand at one. What
         // comes out is scaled so a full-scale peak comes out a full-scale peak: denser, no hotter.
         auto driveGain = [] (float d) { return dbToGain (24.0f * d); };
@@ -214,17 +216,20 @@ public:
 
             // COMP: 3:1 from 6 dB under the bus's peaks, slow enough on the way in to let the hit
             // through. It comes in with the first third of DRIVE: glue and heat on one knob.
+            // (SF-000, the ninetieth build: the switch is crossed over 20 ms, where it cut in and out, and its envelope is
+            // kept going while it is off, so that switched on it is where the drums are and not at nought. On, or off,
+            // and left there, it is sample for sample what it was.)
             float cg = 1.0f;
-            if (comp)
+            compIn += ((comp ? 1.0f : 0.0f) - compIn) * compStep;
+            if (compIn > 0.999999f) compIn = 1.0f; else if (compIn < 0.000001f) compIn = 0.0f;
             {
                 const float over = gainToDb (d * inv) + 6.0f;
                 const float want = over <= -3.0f ? 0.0f : over >= 3.0f ? over * 0.6667f : 0.6667f * (over + 3.0f) * (over + 3.0f) / 12.0f;
                 gr = want > gr ? want + compAtt * (gr - want) : want + compRel * (gr - want);
-                const float amt = smoothstep (0.0f, 0.33f, dr);
+                const float amt = smoothstep (0.0f, 0.33f, dr) * compIn;
                 grMax = std::max (grMax, gr * amt);
-                cg = dbToGain (amt * (2.0f - gr));
+                if (compIn > 0.0f) cg = dbToGain (amt * (2.0f - gr));
             }
-            else gr = 0.0f;
 
             const float g = g0 + (g1 - g0) * t, mk = m0 + (m1 - m0) * t;
             const float cr = cr0 + (cr1 - cr0) * t, bm = bm0 + (bm1 - bm0) * t;
@@ -330,6 +335,7 @@ private:
     }
 
     double sr = 48000.0;
+    float compIn = -1.0f, compStep = 0.001f;      // (SF-000) how far in COMP is, and its 20 ms
     float ref = kRefStart, gr = 0.0f, eng = 0.0f, engStep = 0.002f, pg = 1.0f, gUp = 0.05f, gDown = 0.005f;
     bool wasStill = true;
     float attRef = 0.0f, relRef = 0.0f, compAtt = 0.0f, compRel = 0.0f;

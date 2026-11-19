@@ -703,6 +703,44 @@ lane's TUNE, two semitones either way at its ends. BASS, LEAD, CHORD, PAD, RUMBL
 follow it while a note sounds; a drum takes it as each hit starts. The E16's port is not
 listened to for it.
 
+### The compressor
+
+One compressor, as an insert (COMPRESSOR) and on the master (COMP), made again in the ninetieth
+build. It is set by what it does to a sound's shape in time: its strike, its body, its tail.
+
+| | |
+|---|---|
+| **THRESHOLD** | the level above which it turns the sound down: 0 dB at rest, where the compressor is out altogether (the reduction and MAKEUP come in together over the first 1.5 dB of the knob), down to -60. Turn it up for more |
+| **ATTACK** | how fast it comes down on a sound over the threshold, 0.1 to 200 ms. Under a millisecond takes the strike off; 20 to 30 ms lets a drum's strike through and holds its body; 70 to 90 ms leaves a bass note its front |
+| **RELEASE** | how fast it lets go, 10 ms to 3 s. Short brings up what is between the hits, and pumps; long holds the level evenly |
+| **RATIO** | 1:1, 1.5, 2, 3, 4, 6, 10, 20:1 |
+| **SC HPF** | a high-pass on what it listens to (not on the sound), 20 to 300 Hz, so the lows do not drive it. At 20 it is out of the path |
+| **MIX**, **LEVEL** | dry against compressed, in step; the output after that |
+| **MAKEUP** | 0 to 18 dB on the compressed sound. Nothing is made up for you: set it by ear, against the sound with THRESHOLD at rest |
+| in CONFIG: **KNEE** | 0 to 12 dB wide, half either side of the threshold |
+| **AUTO RELEASE** | two releases at once (100 ms and 1.5 s), in place of the knob: single hits let go quickly, a busy passage is held |
+| **START FROM** | three places to start: TRANSIENT SHAPE (attack 25 ms, release 120, 4:1), BASS ARTICULATION (80, 200, 3:1), BUS GLUE (20, auto, 2:1, a wide knee, the lows kept out of what it listens to). Choosing one sets how it moves; THRESHOLD and MAKEUP are left to you |
+
+- **A time is a time constant**: one ATTACK after a sound goes over, the reduction is 63 % of
+  the way to where it is headed; one RELEASE after it drops, 37 % of it is left. It is a speed,
+  not a wait, and a release is not a promise to be back by the next beat.
+- **Its CONFIG shows what it is doing**: the last two seconds, the sound going in (dim) and
+  coming out (bright) with the threshold as a line across them, and the reduction hanging from
+  the top in red, in dB. The marks along the foot are beats at the tempo, and a beat is said in
+  milliseconds beside them.
+- **On the master, COMP is its THRESHOLD**, from out at rest down to -30 dB, and the C beside
+  the knob opens the rest of it. It is kept with the set, as TAPE and LIMIT are. A new set
+  opens with it out.
+- Both channels get one gain, from the louder of the two, so the picture does not move. No
+  lookahead, and nothing is delayed.
+- **Snapshots from before the ninetieth build** read their compressor knobs on these scales
+  (the first knob was PUSH, with make-up built in; ATTACK and RELEASE were short lists), so a
+  compressor in one of them is not what it was, and is quieter where it was working. That was
+  your call (DECISIONS 743).
+- The drum bus's own COMP switch is crossed over 20 ms where it cut in and out.
+- A cued snapshot is now heard at the level the set will play it at: the cue's rig is given
+  the set's limiter trim (it learnt its own from nothing, and was quieter by that much).
+
 ### GAIN: the whole mix, into the master
 
 A knob on the MASTER panel, under TAPE (eighty-second build). It turns the whole mix up or down

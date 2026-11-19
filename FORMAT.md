@@ -51,6 +51,7 @@ The uid comes back the same (see below); `made` does not.
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
   "transition": { "bars": 8, "level": 3, "dub": 0, "space": 2, "lead": 1, "hit": 1, "leadFile", "hitFile" },   TRANSITION (fifty-ninth build on; absent: as it opens). "bars": 4, 8 or 16; "level", "dub", "space": a place of six, 0 to 5; "lead", "hit": 0 off, 1 the built-in, 2 the file; the files as "files" are written
   "finish":    0,                             FINISH on the master: how much of it, in hundredths (0, 25, 50, 75, 100; another number is read as the nearest; absent: 0, off) (sixty-fourth build on)
+  "masterComp": { "attack": 0.31, "knee": 0.5, ... },   the master's compressor but for COMP, each control's place from 0 to 1 (ninetieth build on; absent, or a control not named: as it opens)
   "hold":      1.5,                           the limiter's trim held at that many dB (eighty-fourth build on; absent: it follows the set). "controls" has "mst.clip" from then too (the limiter's clipper, 0 to 1; absent: 0.3)
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
@@ -184,6 +185,13 @@ this build does not have is written back as it was read.
   RUMBLE 15, 16, 17; VOICE 16, 17; PERC 15, then 21; CONVOLUTION 9, then 20. Which, is told
   by the snapshot's `time` and `lists` and by which length its place falls on a whole step of.
   Builds 79 to 84 read every place on the list as it had become, which was wrong for these.
+- **The compressor** (ninetieth build). An insert named COMPRESSOR has, in its eight places: THRESHOLD
+  (0 at rest, out; 1 is -60 dB), ATTACK (0.1 to 200 ms), RELEASE (10 ms to 3 s), RATIO (eight
+  steps, 1:1 to 20:1), SC HPF, MIX, LEVEL, MAKEUP (0 to 18 dB); and in its `setup` `knee`, `auto`
+  and `start`, which a snapshot that does not name them gets as they open. Before that build the
+  places were PUSH, ATTACK (six steps), RELEASE (five), RATIO (three), SC HPF, MIX, LEVEL and
+  nothing: a value from then is read on the new scale, and is not converted. `mst.comp` in
+  `controls` is the master's THRESHOLD, 0 out and 1 at -30 dB (it was PUSH).
 - **Step locks** (eighty-eighth build), in a pattern, here and in the session's own: `locks`,
   what steps have learnt, one entry a knob on a step: the step (from 0), the control's place in
   its lane (0 to 11 the lane's twelve knobs in the panel's order, 12 SEND A, 13 SEND B, 14 to 16

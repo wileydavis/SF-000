@@ -24,6 +24,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
     for (int i = 0; i < cx::kCount; ++i) base[(size_t) i] = engine.target (i);
     for (int r = 0; r < 2; ++r) retInit[(size_t) r] = engine.getSetup ({ 2, 0, r });
     busInit = engine.getSetup ({ 3, 0, 0 });
+    masterCompInit = engine.getSetup ({ 4, 0, 0 });
     if (useDisk) engine.keepFile = [this] (const juce::String& path) { return keepSample (path); };       // every audio file the rig is given: the library's own copy of it
     if (! (useDisk && load())) { makeFactory(); dirty = true; }
     ensureCleanSlate();
@@ -544,12 +545,40 @@ void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
     bool loopWas = false;
     if (loopOn) for (auto& sp : engine.setupParams (t)) if (sp.id == id) loopWas = sp.value > 0.0f;
     engine.setSetup (t, id, v);
+    // (a compressor's START FROM: one of its three places to start from)
+    if (id == "start" && (t.kind == 1 || t.kind == 4)) if (engine.isCompressor (t)) compStart (t, (int) std::lround (v * 3.0f));
     // (LOOP turned on: DECAY goes right up, so that the loop plays through; turned down from there, the steps chop it)
     if (loopOn && ! loopWas)
         for (int k = 0; k < kLaneKnobs; ++k)
             if (const auto& kd = engine.laneKnob (t.lane, k); kd.param != nullptr && juce::String (kd.param) == "decay") userSet (cx::lane (t.lane, k), 1.0f);
     // (another model, with sound knobs of its own: the places it renamed start where those start, and that is where they stand)
     if (t.kind == 0 && id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (t.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
+}
+
+// A compressor's three places to start from (Presets.cpp has the same three for the suite's own use). What they set is
+// how it moves: ATTACK, RELEASE or AUTO, RATIO, KNEE, SC HPF. THRESHOLD and MAKEUP are left: they are set by ear and by
+// the meter, for the sound that is going through it.
+void Session::compStart (Engine::Target t, int which)
+{
+    struct Start { float attack, release; int ratio; float knee, hpf; bool autoRel; };
+    static const Start starts[3] = { { 25.0f, 120.0f, 4, 3.0f, 20.0f, false },         // TRANSIENT SHAPE: the strike through, the body held
+                                     { 80.0f, 200.0f, 3, 6.0f, 20.0f, false },         // BASS ARTICULATION: slow enough to leave each note its front
+                                     { 20.0f, 250.0f, 2, 9.0f, 90.0f, true } };        // BUS GLUE: gentle, wide knee, the lows not driving it
+    if (which < 1 || which > 3) return;
+    const Start& st = starts[which - 1];
+    // (each by its plain value: a knob on the panel through that knob, the rest through CONFIG)
+    auto put = [&] (const char* id, float plain)
+    {
+        const float place = engine.plainPlace (t, id, plain);
+        if (place < 0.0f) return;
+        const KnobDef* cells = t.kind == 1 && engine.insertType (t.lane, t.slot) >= 0 ? effects()[(size_t) engine.insertType (t.lane, t.slot)].cells : nullptr;
+        if (cells != nullptr)
+            for (int c = 0; c < kCells; ++c)
+                if (cells[c].param != nullptr && juce::String (cells[c].param) == id)
+                { userSet (cx::ins (t.lane, t.slot, c), juce::jlimit (0.0f, 1.0f, (place - cells[c].lo) / (cells[c].hi - cells[c].lo))); return; }
+        engine.setSetup (t, id, place);
+    };
+    put ("attack", st.attack); put ("release", st.release); put ("ratio", (float) st.ratio); put ("knee", st.knee); put ("sc_hpf", st.hpf); put ("auto", st.autoRel ? 1.0f : 0.0f);
 }
 
 // ---- a step's LOCK
@@ -2001,6 +2030,9 @@ juce::var Session::cueState (juce::int64 target)
     auto* o = new juce::DynamicObject();
     if (auto* w = whole.getDynamicObject())
         for (auto& p : w->getProperties()) if (p.name != juce::Identifier ("library")) o->setProperty (p.name, p.value);
+    // (the limiter's trim: the second rig holds what the first rig's is at now, so the headphones are at the level the set will
+    // be at when the snapshot is recalled. Left to learn its own from nought, it was under the set by what the set's had learnt.)
+    if (! engine.hold()) o->setProperty ("hold", (double) engine.autoTrim.load());
     // the rig as it stands, with what every lane is playing that its steps do not say (as a snapshot taken now would hold it)
     Snapshot nowIs = capture();
     pullHeard();
@@ -5076,6 +5108,7 @@ var Session::stateVar (bool withChips)
     root->setProperty ("transition", transToVar());
     root->setProperty ("finish", finishPct());
     if (engine.hold()) root->setProperty ("hold", engine.heldDb());          // (the limiter's trim, held: at what. Not there: it follows the set)
+    root->setProperty ("masterComp", setupToVar (engine.getSetup ({ 4, 0, 0 })));     // (the master's compressor, but for COMP, which is a control: kept with the set as TAPE, COMP and LIMIT are)
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
     root->setProperty ("files", fl);
@@ -5370,7 +5403,7 @@ void Session::takeState (const var& root)
 {
     settleHolds();                  // (a lane held between two instruments by a knob: the file says which one it has)
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "hold", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "hold", "masterComp", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -5504,6 +5537,8 @@ void Session::takeState (const var& root)
     finishAt = juce::jlimit (0, 4, (int) std::lround ((double) root.getProperty ("finish", 0) / 25.0));
     finishApply();
     // (the limiter's trim: held at a figure, or following the set, as a set from before it could be held does)
+    // (the master's compressor: as the file has it, and what the file does not name as it opens)
+    { auto st = masterCompInit; if (const var mc = root.getProperty ("masterComp", var()); mc.isObject()) for (auto& kv : setupFromVar (mc)) { bool found = false; for (auto& d : st) if (d.first == kv.first) { d.second = kv.second; found = true; } if (! found) st.push_back (kv); } engine.applySetup ({ 4, 0, 0 }, st); }
     if (root.hasProperty ("hold")) engine.setHold (true, juce::jlimit (-12.0f, 12.0f, (float) (double) root.getProperty ("hold", 0.0))); else engine.setHold (false);
     // The samples. What is written is turned into a path to read: a copy in the library by where
     // the library is now; a file written whole (by a build from before copies were kept) is

@@ -339,89 +339,153 @@ private:
 ModulePtr makeBUILD() { return std::make_unique<BuildModule>(); }
 
 // =====================================================================================  GLUE
+// (SF-000, the ninetieth build) The compressor made again, in place: the suite's GLUE had PUSH (threshold and make-up on
+// one knob, never out), six attacks to 30 ms, four releases and three ratios. This one is set by what it does to a
+// sound's shape in time: its strike, its body, its tail.
+//   THRESHOLD   0 to -60 dB. At 0 it is out: the reduction and the make-up come in together over the first 1.5 dB of
+//               the knob, so a compressor at rest is not there
+//   ATTACK      0.1 to 200 ms; RELEASE 10 ms to 3 s, or AUTO (two releases at once, 100 ms and 1.5 s, six parts to four)
+//   RATIO       1:1 to 20:1; KNEE 0 to 12 dB, the whole width of it, half either side of the threshold
+//   SC HPF      a high-pass on what it listens to, 20 to 300 Hz: at 20 it is out of the path
+//   MAKEUP      0 to 18 dB on the compressed sound, set by ear: nothing is made up for you
+//   MIX         dry against compressed, sample for sample; LEVEL after it
+// What it listens to is each channel high-passed, then the louder of the two: both channels get one gain, so the
+// picture does not move. No lookahead and no delay.
+// A time here is a time constant: the reduction goes 63 % of the way to where it is headed in one ATTACK (rising) or
+// one RELEASE (falling), and is not all the way back after one release. The knobs' own smoothing (20 ms) is apart from
+// that. Both kinds of release run all the time, so AUTO switched on does not start from an old state.
 class GlueModule : public Module
 {
 public:
-    enum { PUSH, ATTACK, RELEASE, RATIO, SCHPF, MIX, LEVEL };
+    enum { THRESH, ATTACK, RELEASE, RATIO, SCHPF, MIX, LEVEL, MAKEUP, KNEE, AUTO, START };
+    static constexpr int kRatios = 8;
+    static float ratioOf (int i) { static const float r[kRatios] = { 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, 10.0f, 20.0f }; return r[juce::jlimit (0, kRatios - 1, i)]; }
+    // What comes out for what goes in, in dB over the threshold: the reduction (never negative).
+    static float reductionFor (float over, float ratio, float knee)
+    {
+        const float slope = 1.0f - 1.0f / ratio;
+        if (knee < 0.01f) return over > 0.0f ? over * slope : 0.0f;
+        return over <= -knee * 0.5f ? 0.0f : over >= knee * 0.5f ? over * slope : slope * (over + knee * 0.5f) * (over + knee * 0.5f) / (2.0f * knee);
+    }
+    // How far in it is, for a threshold: out at 0 dB, all in by 1.5 dB under.
+    static float engaged (float thr) { const float t = juce::jlimit (0.0f, 1.0f, -thr / 1.5f); return t * t * (3.0f - 2.0f * t); }
     std::string id() const override { return "GLUE"; }
     std::vector<ParamSpec> params() const override
     {
-        return { pct ("push", "PUSH", 0.3f).prim().dir (1),
-                 choice ("attack", "ATTACK", { "0.1 ms", "0.3 ms", "1 ms", "3 ms", "10 ms", "30 ms" }, 3).prim(),
-                 choice ("release", "RELEASE", { "0.1 s", "0.3 s", "0.6 s", "1.2 s", "AUTO" }, 4).prim(),
-                 choice ("ratio", "RATIO", { "2:1", "4:1", "10:1" }, 0).prim(),
-                 knob ("sc_hpf", "SC HPF", 20.0f, 300.0f, 90.0f, "Hz", 90.0f).prim(),
+        return { knob ("threshold", "THRESHOLD", -60.0f, 0.0f, 0.0f, "dB").prim().dir (-1),
+                 knob ("attack", "ATTACK", 0.1f, 200.0f, 10.0f, "ms", 4.5f).prim(),
+                 knob ("release", "RELEASE", 10.0f, 3000.0f, 250.0f, "ms", 173.0f).prim(),
+                 choice ("ratio", "RATIO", { "1:1", "1.5:1", "2:1", "3:1", "4:1", "6:1", "10:1", "20:1" }, 4).prim(),
+                 knob ("sc_hpf", "SC HPF", 20.0f, 300.0f, 20.0f, "Hz", 77.0f).prim(),
                  pct ("mix", "MIX", 1.0f).prim(),
-                 levelParam().prim() };
+                 levelParam().prim(),
+                 knob ("makeup", "MAKEUP", 0.0f, 18.0f, 0.0f, "dB").prim(),
+                 knob ("knee", "KNEE", 0.0f, 12.0f, 6.0f, "dB"),
+                 toggle ("auto", "AUTO RELEASE", false),
+                 // (three places to start from: chosen by hand, the instrument sets ATTACK, RELEASE, RATIO, KNEE and SC HPF
+                 // to them, and leaves THRESHOLD and MAKEUP, which are set by ear for the sound in hand. Session.cpp)
+                 choice ("start", "START FROM", { "AS SET", "TRANSIENT SHAPE", "BASS ARTICULATION", "BUS GLUE" }, 0).noPreset() };
     }
     void prepare (double rate, int) override { sr = rate; reset(); }
-    void reset() override { for (auto& f : sc) f.reset(); env = 0; slow = 0; }
+    void reset() override
+    {
+        for (auto& f : sc) f.reset();
+        env = fast = slow = 0.0f; primed = false; hpIn = 0.0f; seenIn = seenOut = seenGr = 0.0f; seenN = 0;
+    }
     void process (Ctx& c, juce::AudioBuffer<float>& io, juce::AudioBuffer<float>*, juce::AudioBuffer<float>*, juce::MidiBuffer&) override
     {
-        static const float atk[] = { 0.0001f, 0.0003f, 0.001f, 0.003f, 0.01f, 0.03f };
-        static const float rel[] = { 0.1f, 0.3f, 0.6f, 1.2f };
-        static const float ratios[] = { 2.0f, 4.0f, 10.0f };
-        const float push = c.v (PUSH);
-        const float thr = -4.0f - push * 26.0f;
-        const float ratio = ratios[juce::jlimit (0, 2, c.ci (RATIO))];
-        const float makeup = -thr * (1.0f - 1.0f / ratio) * 0.45f;
-        const float aC = std::exp (-1.0f / (atk[juce::jlimit (0, 5, c.ci (ATTACK))] * (float) sr));
-        const bool autoRel = c.ci (RELEASE) == 4;
-        const float rC = std::exp (-1.0f / (rel[std::min (3, c.ci (RELEASE))] * (float) sr));
-        const float rFast = std::exp (-1.0f / (0.1f * (float) sr)), rSlow = std::exp (-1.0f / (1.5f * (float) sr));
-        for (auto& f : sc) f.set (c.v (SCHPF), 0.7071f, sr);
-        const float mix = c.v (MIX);
+        const float fs = (float) sr;
+        const float ratio = ratioOf (c.ci (RATIO)), knee = c.v (KNEE);
+        const float aC = std::exp (-1.0f / (c.v (ATTACK) * 0.001f * fs)), rC = std::exp (-1.0f / (c.v (RELEASE) * 0.001f * fs));
+        const float rFast = std::exp (-1.0f / (0.1f * fs)), rSlow = std::exp (-1.0f / (1.5f * fs));
+        const float smooth = std::exp (-1.0f / (0.02f * fs));           // the knobs' own smoothing: 20 ms
+        const float hz = c.v (SCHPF);
+        const bool hpOn = hz > 20.5f;
+        for (auto& f : sc) f.set (std::max (20.0f, hz), 0.7071f, sr);
+        const float thrTo = c.v (THRESH), mkTo = c.v (MAKEUP), mixTo = c.v (MIX), autoTo = c.ci (AUTO) != 0 ? 1.0f : 0.0f, hpTo = hpOn ? 1.0f : 0.0f;
+        if (! primed) { thr = thrTo; mk = mkTo; mix = mixTo; autoIn = autoTo; hpIn = hpTo; primed = true; }
+        const int every = std::max (1, (int) std::lround (sr * kWindow / (double) kCols));     // a column of the display: a fixed time, whatever the block is
         float maxGr = 0.0f;
         for (int i = 0; i < c.n; ++i)
         {
+            thr = thrTo + smooth * (thr - thrTo); mk = mkTo + smooth * (mk - mkTo); mix = mixTo + smooth * (mix - mixTo);
+            autoIn = autoTo + smooth * (autoIn - autoTo); hpIn = hpTo + smooth * (hpIn - hpTo);
             const float l = io.getSample (0, i), r = io.getSample (1, i);
-            const float d = std::max (std::fabs (sc[0].tickHP (l)), std::fabs (sc[1].tickHP (r)));
-            const float db = gainToDb (d);
-            // 6 dB soft knee: the ratio fades in over threshold +-3 dB.
-            const float over = db - thr;
-            const float slope = 1.0f - 1.0f / ratio;
-            const float gr = over <= -kKnee * 0.5f ? 0.0f
-                           : over >= kKnee * 0.5f ? over * slope
-                           : slope * (over + kKnee * 0.5f) * (over + kKnee * 0.5f) / (2.0f * kKnee);
-            if (autoRel)
-            {
-                env = gr > env ? gr + aC * (env - gr) : gr + rFast * (env - gr);
-                slow = gr > slow ? gr + aC * (slow - gr) : gr + rSlow * (slow - gr);
-            }
-            else env = gr > env ? gr + aC * (env - gr) : gr + rC * (env - gr);
-            const float total = autoRel ? 0.6f * env + 0.4f * slow : env;
+            // what it listens to: each channel high-passed (or not: the two crossed over while the filter comes in), then the louder
+            const float hl = sc[0].tickHP (l), hr = sc[1].tickHP (r);
+            const float d = std::max (std::fabs (l + hpIn * (hl - l)), std::fabs (r + hpIn * (hr - r)));
+            const float gr = reductionFor (gainToDb (d) - thr, ratio, knee);
+            // (both kinds of release are kept going, whichever is heard)
+            env  = gr > env  ? gr + aC * (env - gr)   : gr + rC * (env - gr);
+            fast = gr > fast ? gr + aC * (fast - gr)  : gr + rFast * (fast - gr);
+            slow = gr > slow ? gr + aC * (slow - gr)  : gr + rSlow * (slow - gr);
+            if (env < 1.0e-6f) env = 0.0f;
+            if (fast < 1.0e-6f) fast = 0.0f;
+            if (slow < 1.0e-6f) slow = 0.0f;
+            const float in = engaged (thr);
+            const float total = (env + autoIn * (0.6f * fast + 0.4f * slow - env)) * in;
             maxGr = std::max (maxGr, total);
-            const float g = dbToGain (makeup - total);
-            io.setSample (0, i, l * (1.0f - mix) + l * g * mix);
-            io.setSample (1, i, r * (1.0f - mix) + r * g * mix);
+            const float g = dbToGain (mk * in - total);
+            const float ol = l + mix * (l * g - l), orr = r + mix * (r * g - r);
+            io.setSample (0, i, ol);
+            io.setSample (1, i, orr);
+            // for the display: the loudest of what went in and what came out, and the most reduction, in each column's time
+            seenIn = std::max (seenIn, std::max (std::fabs (l), std::fabs (r))); seenOut = std::max (seenOut, std::max (std::fabs (ol), std::fabs (orr))); seenGr = std::max (seenGr, total);
+            if (++seenN >= every) { inHist.push (seenIn); outHist.push (seenOut); grHist.push (seenGr); seenIn = seenOut = seenGr = 0.0f; seenN = 0; }
         }
         float g0; const float g1 = levelDb (c, LEVEL, g0);
         applyGain (io, g0, g1);
-        grHist.push (clamp01 (maxGr / 12.0f));
-        grNow = maxGr;
+        grNow = maxGr; thrNow = thr; bpmNow = (float) c.bpm;
     }
-    int displayHeight() const override { return 80; }
+    // (SF-000) 20: the reduction now, in dB (what the gain is brought down by, before MAKEUP)
+    // 21: its threshold now, in dB
+    float meter (int k) const override { return k == 20 ? grNow.load() : k == 21 ? thrNow.load() : 0.0f; }
+    int displayHeight() const override { return 150; }
+    // The last two seconds, oldest at the left: what went in (dim) and what came out (bright), in dB up to 0 at the top
+    // of their part, with the threshold as a line across; and under the top edge, hanging down, the reduction in dB.
+    // The marks along the foot are beats at the tempo now, and the scale is said in milliseconds.
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        ui::frame (g, r, "GAIN REDUCTION");
-        auto in = r.reduced (8, 18);
-        juce::Path p;
-        for (int i = 0; i < 128; ++i)
+        ui::frame (g, r, "IN, OUT AND REDUCTION: " + juce::String (kWindow, 0) + " S", ui::kWords);
+        const auto in = r.reduced (8.0f, 4.0f).withTrimmedTop (14.0f).withTrimmedBottom (12.0f);
+        const float colW = in.getWidth() / (float) (kCols - 1);
+        auto yOfDb = [&] (float db) { return in.getY() + in.getHeight() * juce::jlimit (0.0f, 1.0f, -db / 60.0f); };          // (levels: 0 dB at the top, -60 at the foot)
+        auto yOfGr = [&] (float db) { return in.getY() + in.getHeight() * juce::jlimit (0.0f, 1.0f, db / 24.0f); };           // (reduction: 0 at the top, 24 dB at the foot)
+        // beats, and the scale
+        const float beat = 60.0f / std::max (30.0f, bpmNow.load());
+        g.setColour (ui::kWords.withAlpha (0.7f));
+        for (float t = 0.0f; t < (float) kWindow; t += beat) { const float x = in.getRight() - in.getWidth() * t / (float) kWindow; g.drawVerticalLine ((int) x, in.getBottom() - 7.0f, in.getBottom()); }
+        ui::label (g, "A BEAT " + juce::String ((int) std::lround (beat * 1000.0f)) + " MS", r.reduced (8, 1).removeFromBottom (12), ui::kWords, 10.0f, juce::Justification::centredLeft);
+        ui::label (g, "0 TO -60 DB; REDUCTION TO 24 DB", r.reduced (8, 1).removeFromBottom (12), ui::kWords, 10.0f, juce::Justification::centredRight);
+        // the threshold
+        const float thr = thrNow.load();
+        g.setColour (ui::kText.withAlpha (0.35f)); g.drawHorizontalLine ((int) yOfDb (thr), in.getX(), in.getRight());
+        juce::Path pin, pout, pgr;
+        for (int i = 0; i < kCols; ++i)
         {
-            const float v = grHist.v[(grHist.w + i) % 128].load();
-            const float x = in.getX() + in.getWidth() * (float) i / 127.0f, y = in.getY() + v * in.getHeight();
-            if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
+            const int at = (inHist.w + i) % kCols;
+            const float x = in.getX() + colW * (float) i;
+            const float yi = yOfDb (gainToDb (inHist.v[at].load())), yo = yOfDb (gainToDb (outHist.v[at].load())), yg = yOfGr (grHist.v[(grHist.w + i) % kCols].load());
+            if (i == 0) { pin.startNewSubPath (x, yi); pout.startNewSubPath (x, yo); pgr.startNewSubPath (x, in.getY()); pgr.lineTo (x, yg); }
+            else { pin.lineTo (x, yi); pout.lineTo (x, yo); pgr.lineTo (x, yg); }
         }
-        g.setColour (ui::kText); g.strokePath (p, juce::PathStrokeType (1.2f));
-        ui::label (g, juce::String (-grNow.load(), 1) + " dB", r.reduced (8, 2).removeFromBottom (14), ui::kText, 11.0f, juce::Justification::centredRight);
+        pgr.lineTo (in.getRight(), in.getY()); pgr.closeSubPath();
+        g.setColour (ui::kWords.withAlpha (0.55f)); g.strokePath (pin, juce::PathStrokeType (1.0f));
+        g.setColour (ui::kText); g.strokePath (pout, juce::PathStrokeType (1.3f));
+        g.setColour (juce::Colour (0xffE4483C).withAlpha (0.55f)); g.fillPath (pgr);
+        ui::label (g, "THRESHOLD " + juce::String (thr, 1) + " DB   REDUCING " + juce::String (grNow.load(), 1) + " DB", r.reduced (8, 2).removeFromTop (14), ui::kText, 11.0f, juce::Justification::centredRight);
     }
 private:
-    static constexpr float kKnee = 6.0f;
+    static constexpr int kCols = 128;
+    static constexpr double kWindow = 2.0;      // seconds across the display
     double sr = 48000.0;
     Svf sc[2];
-    float env = 0, slow = 0;
-    History<128> grHist;
-    std::atomic<float> grNow { 0 };
+    float env = 0, fast = 0, slow = 0;
+    float thr = 0, mk = 0, mix = 1, autoIn = 0, hpIn = 0;
+    bool primed = false;
+    float seenIn = 0, seenOut = 0, seenGr = 0; int seenN = 0;
+    History<128> inHist, outHist, grHist;
+    std::atomic<float> grNow { 0 }, thrNow { 0 }, bpmNow { 120 };
 };
 ModulePtr makeGLUE() { return std::make_unique<GlueModule>(); }
 
