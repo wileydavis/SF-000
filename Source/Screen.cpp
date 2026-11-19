@@ -491,7 +491,7 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
         {
             knobCtl = ctl; knobLight = litCol;
             // (at LEARN, a knob the step holds a difference on is lit yellow, and the lane's own setting is marked on it)
-            if (ses.lockTeaches (ctl) && std::abs (ses.lockDiff[(size_t) (ctl % cx::kPerLane)]) > 0.0f) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::yellow, eng.target (ctl));
+            if (eng.teachHolds (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::yellow, eng.target (ctl));
             else if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
             else knob (g, cxm, cym, size, v, c.kind, c.steps(), litCol);
             knobCtl = -1;
@@ -787,7 +787,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
         }
         case hLock:
             t.title = "LOCK, STEP " + String (h.a + 1);
-            body = "WHAT THIS STEP PLAYS DIFFERENTLY FROM THE LANE. LEFT, LEARN (YELLOW): THE LANE GOES ON PLAYING AS IT IS SET, AND ITS KNOBS NOW SHOW AND SET THIS STEP: TURN ONE AND THE STEP KEEPS THE DIFFERENCE, HEARD WHEN THE STEP PLAYS. A DOUBLE-CLICK ON A KNOB MAKES THE STEP FORGET IT. RIGHT, LOCKED (GREEN): THE KNOBS ARE THE LANE'S AGAIN AND THE STEP PLAYS WHAT IT LEARNT, FOR ITS GATE; WHERE THE NOTE BEFORE RUNS INTO IT, THE KNOBS SLIDE THERE OVER THE FIRST HALF OF THE STEP. MIDDLE, OFF: THE STEP PLAYS AS THE LANE IS SET, AND KEEPS WHAT IT LEARNT FOR LATER. THE KNOBS THAT CAN BE LEARNT ARE THE LANE'S TWELVE, ITS SENDS, LOW MID HIGH AND ITS INSERTS' KNOBS. ONE STEP IS AT LEARN AT A TIME. A STEP PUT OUT FORGETS IT ALL.";
+            body = "WHAT THIS STEP PLAYS DIFFERENTLY FROM THE LANE. LEFT, LEARN (YELLOW): THE LANE GOES ON PLAYING AS IT IS SET, AND ITS KNOBS NOW SHOW AND SET THIS STEP: TURN ONE AND THE STEP KEEPS THE DIFFERENCE, HEARD WHEN THE STEP PLAYS. A DOUBLE-CLICK ON A KNOB MAKES THE STEP FORGET IT. RIGHT, LOCKED (GREEN): THE KNOBS ARE THE LANE'S AGAIN AND THE STEP PLAYS WHAT IT LEARNT, FOR ITS GATE; WHERE THE NOTE BEFORE RUNS INTO IT, THE KNOBS SLIDE THERE OVER THE FIRST HALF OF THE STEP. MIDDLE, OFF: THE STEP PLAYS AS THE LANE IS SET, AND KEEPS WHAT IT LEARNT FOR LATER. A DOUBLE-CLICK ON THE SWITCH CLEARS IT: THE STEP FORGETS ALL IT LEARNT AND KEEPS ITS NOTE. THE KNOBS THAT CAN BE LEARNT ARE THE LANE'S TWELVE, ITS SENDS, LOW MID HIGH AND ITS INSERTS' KNOBS. ONE STEP IS AT LEARN AT A TIME. A STEP PUT OUT FORGETS IT ALL.";
             break;
         case hStep:
             t.title = "STEP " + String (h.a + 1);
@@ -5199,7 +5199,8 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
     {
         // (a display's own: a sample's slice markers, put in and taken out)
         if (h->kind == hDisplay) { if (auto* pr = eng.processorFor (cfg)) pr->mod().displayDouble (where (e), cfgDisplay); ses.touch(); cfgStale = true; repaint(); return; }
-        if (h->kind == hKnob && ses.lockTeaches (h->a)) { ses.lockForget (h->a); repaint(); }      // (a step at LEARN: it forgets that knob, which is the lane's again)
+        if (h->kind == hLock) { ses.lockClear (ses.activeLane, h->a); repaint(); }      // (a step's LOCK double-clicked: it forgets all it learnt, and is OFF)
+        else if (h->kind == hKnob && ses.lockTeaches (h->a)) { ses.lockForget (h->a); repaint(); }      // (a step at LEARN: it forgets that knob, which is the lane's again)
         else if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
         else if (h->kind == hEq && cfgOpen && cfg.kind == 0)

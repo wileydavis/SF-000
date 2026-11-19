@@ -742,7 +742,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     bool dark = false, shadowStale = true, sceneStale = true, haveFinal = false, needBuild = false;
     bool gotSheet = false, looked = false, blankForTest = false; int lookedBad = 0;
     juce::uint64 shapeWas = 0;
-    struct Live { float v = -2.0f, target = -2.0f; bool gliding = false; };
+    struct Live { float v = -2.0f, target = -2.0f; bool gliding = false, taught = false; };
     std::vector<Live> liveWas;
     // The keys travel. Each stands at a height of its own, on its way to where its state says it
     // should be: up, low (latched on) or all the way in (under a finger). A key that changes between
@@ -1287,12 +1287,14 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         {
             const auto& k = parts.knobs[i];
             Live now;
-            if (k.ctl >= 0 && k.ctl < cx::kCount) { now.v = eng.shown (k.ctl); now.gliding = eng.isGliding (k.ctl); now.target = now.gliding ? eng.target (k.ctl) : -1.0f; }
-            if (i < liveWas.size() && (now.v != liveWas[i].v || now.gliding != liveWas[i].gliding || now.target != liveWas[i].target)) { changed = true; liveWas[i] = now; }
+            // (a knob of the lane whose step is at LEARN stands where the step has it; one the step holds a difference on
+            // is yellow, with the lane's own setting marked: Engine::handShown)
+            if (k.ctl >= 0 && k.ctl < cx::kCount) { now.v = eng.handShown (k.ctl); now.taught = eng.teachHolds (k.ctl); now.gliding = ! now.taught && eng.isGliding (k.ctl); now.target = now.taught || now.gliding ? eng.target (k.ctl) : -1.0f; }
+            if (i < liveWas.size() && (now.v != liveWas[i].v || now.gliding != liveWas[i].gliding || now.taught != liveWas[i].taught || now.target != liveWas[i].target)) { changed = true; liveWas[i] = now; }
         }
         if (! changed) return false;
         const Look l = look();
-        const Rgb white = glowOf (juce::Colour (0xffE9E6E2)), green = glowOf (juce::Colour (0xff428F47));
+        const Rgb white = glowOf (juce::Colour (0xffE9E6E2)), green = glowOf (juce::Colour (0xff428F47)), yellow = glowOf (juce::Colour (0xffD7C352));
         segBig.data.clear(); segSmall.data.clear();
         for (size_t i = 0; i < parts.knobs.size(); ++i)
         {
@@ -1310,8 +1312,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
                     a = (float) m * per; b = a + per;
                 }
                 else { a = 0.0f; b = v; }
-                mark = liveWas[i].gliding ? juce::jlimit (0.0f, 0.9999f, liveWas[i].target) : -1.0f;
+                mark = liveWas[i].gliding || liveWas[i].taught ? juce::jlimit (0.0f, 0.9999f, liveWas[i].target) : -1.0f;
                 if (liveWas[i].gliding) on = green;         // (on its way somewhere: its lights are green while it travels)
+                if (liveWas[i].taught) on = yellow;         // (a step at LEARN holds a difference on it: yellow, and the mark is the lane's own setting)
             }
             auto& batch = k.big ? segBig : segSmall;
             for (int s = 0; s < 16; ++s)

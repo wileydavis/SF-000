@@ -5374,6 +5374,22 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        the switch itself is not on the E16, so LEARN is entered on the screen. For when the
        E16 is gone through (16:31).
 
+## A step at LEARN is seen in 3D, and a step's lock can be cleared (Nov 19, 06:49): eighty-ninth build
+
+740. **You**, Nov 19, 06:49: "when in learn moe, I can make adjustments but the knobs don't move or
+     light yellow, so it's hard to now what i'm adjusting." **A fault of mine in the 3D view,
+     and one I had written down as not looked at.** The flat screen drew a learning step's
+     knobs where the step had them, in yellow. The 3D stage lights its knobs on its own
+     thread, straight from the engine, and the engine had not been told a step was being
+     taught: the session alone knew. The engine now keeps it (the lane at LEARN and what the
+     step adds to each knob), and the flat screen, the stage and the MIDI thread all read it
+     there. In 3D a knob of that lane stands where the step has it, and one the step holds a
+     difference on is yellow with the lane's own setting marked on its ring.
+741. **You**, Nov 19, 06:51: "and how do I clear a step lock?" There was no one way: a knob
+     double-clicked at LEARN forgot that knob, and a step put out forgot everything with its
+     note. **A double-click on a step's switch clears it**: the step forgets all it learnt, its
+     switch is OFF, and its note is left. *Mine.* INFO on the switch says so.
+
 ## Not verified
 
 - **The eighty-eighth build (738, 739) is checked by what the knob sounds at, block by block,
@@ -5385,9 +5401,11 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
   slide's half step is the feel you meant by "obey the steps gate and tie type"; whether a
   step put out should forget its lock (it does, as it forgets its note). Not tried: a lock
   on an insert's knob by ear, a lock and a MOTION on one knob together, many locks while a
-  snapshot glides. The switch is seen in two pictures (dark and light, in its three places)
-  and not in 3D, where its floor is recorded as a key held in and its cap as a small key:
-  that was not looked at. The E16's side is by reading the code, not on an E16.
+  snapshot glides. The switch is seen in two pictures (dark and light, in its three places),
+  and since the eighty-ninth build in one of the 3D view from above with a step at LEARN:
+  the switches in their colours with their caps in place, and the bass's CUTOFF and RES in
+  yellow where the step has them. Not seen: the 3D view from the player's angle, and a knob
+  being turned there. The E16's side is by reading the code, not on an E16.
 - **The eighty-seventh build (735 to 737) is checked on drawn screens and by measurement.**
   CONFIG's order and places: by the check over 134 panels, and by eye in eight pictures (the
   perc, the bass on three models, the pad with a sample, the kick in the light instrument,

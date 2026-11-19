@@ -44,7 +44,7 @@ First run:
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
 | Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note) |
-| A step's **LOCK** switch, over its key | what that step plays differently from the lane (eighty-eighth build). Three places. **LEARN**, left, yellow: the lane goes on playing as it is set, and its knobs now show and set this step. Turn one and the step keeps the difference, heard when the step plays; a double-click on a knob makes the step forget it. **LOCKED**, right, green: the knobs are the lane's again and the step plays what it learnt, for its gate. **OFF**, middle: the step plays as the lane is set and keeps what it learnt for later. See "Step locks" below |
+| A step's **LOCK** switch, over its key | what that step plays differently from the lane (eighty-eighth build). Three places. **LEARN**, left, yellow: the lane goes on playing as it is set, and its knobs now show and set this step. Turn one and the step keeps the difference, heard when the step plays; a double-click on a knob makes the step forget it. A double-click on the switch itself clears the step: it forgets all it learnt and keeps its note. **LOCKED**, right, green: the knobs are the lane's again and the step plays what it learnt, for its gate. **OFF**, middle: the step plays as the lane is set and keeps what it learnt for later. See "Step locks" below |
 | RATCHET, NOTE, OCTAVE | change the selected step (NOTE and OCTAVE on lanes that take notes). A step says the note that sounds: with KEY set, a new step is the key's own note, and NOTE goes up from there |
 | < NUDGE, NUDGE > | move the whole pattern one step |
 | Drag the LENGTH knob | 1 to 128 steps. Click a page above the steps to see its 16 |
@@ -605,7 +605,8 @@ the lane has them, for that step only.
   the first half of the step. A step need not be lit to hold a lock: under a long note it
   moves the sound and plays nothing.
 - **At LEARN** the lane's knobs stand where the step has them, the ones it holds a difference
-  on lit yellow with the lane's own setting marked on them, and the strip says STEP 3 LEARN.
+  on lit yellow with the lane's own setting marked on them (in 3D too), and the strip says
+  STEP 3 LEARN.
   One step is at LEARN at a time: it ends, and the step is LOCKED, when another step is put
   there, a snapshot is recalled, another lane is chosen or the pattern is nudged. On the E16
   the lane's knobs teach the step too, and their rings show it.

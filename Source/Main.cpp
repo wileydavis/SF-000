@@ -2555,13 +2555,16 @@ static void stepLockTest (int& bad)
     ses.userSet (ctl, 0.7f);
     ses.userSet (other, 0.33f);                                 // (another lane's knob is that lane's, as ever)
     const bool learnt = std::abs (e.target (ctl) - 0.4f) < 1.0e-4f && std::abs (lockOff (e.pattern (bass), 4, k) - 0.3f) < 1.0e-4f && std::abs (ses.handValue (ctl) - 0.7f) < 1.0e-4f
-                     && ses.stepLock (bass, 4) == Session::lkLearn && std::abs (e.target (other) - 0.33f) < 1.0e-4f && e.pattern (bass).steps[4].lock;
+                     && ses.stepLock (bass, 4) == Session::lkLearn && std::abs (e.target (other) - 0.33f) < 1.0e-4f && e.pattern (bass).steps[4].lock
+                     // (and what draws a knob, on the flat screen or the stage's own thread, is told: the knob stands where the step has it,
+                     // and is one the step holds a difference on; a knob it holds none on is not)
+                     && std::abs (e.handShown (ctl) - 0.7f) < 1.0e-4f && e.teachHolds (ctl) && e.teaches (cx::lane (bass, 0)) && ! e.teachHolds (cx::lane (bass, 0)) && ! e.teaches (other);
     play();
     // (step 5 is the second beat: 1.0 to 1.25. Its gate is half of it; then 15 ms back, which is 0.03 of a beat here)
     const bool heardLearn = about (0.05, 0.98, 0.4f) && about (1.0, 1.12, 0.7f) && about (1.17, 2.2, 0.4f);
     // LOCKED: the knob is the lane's again, and the step plays as it learnt
     ses.setStepLock (bass, 4, Session::lkLocked);
-    const bool locked = ses.stepLock (bass, 4) == Session::lkLocked && std::abs (ses.handValue (ctl) - 0.4f) < 1.0e-4f && ses.lockLane.load() < 0;
+    const bool locked = ses.stepLock (bass, 4) == Session::lkLocked && std::abs (ses.handValue (ctl) - 0.4f) < 1.0e-4f && ses.lockLane.load() < 0 && ! e.teachHolds (ctl) && e.handShown (ctl) == e.shown (ctl);
     ses.userSet (ctl, 0.5f);                                    // (the lane's own knob moved: the step rides on it)
     play();
     const bool rides = about (0.05, 0.98, 0.5f) && about (1.0, 1.12, 0.8f) && about (1.17, 2.2, 0.5f);
@@ -2612,18 +2615,22 @@ static void stepLockTest (int& bad)
     ses.setStepLock (bass, 10, Session::lkLearn);
     ses.lockForget (ctl);
     const bool forgets = locksOf (e.pattern (bass), 10) == 0 && std::abs (ses.handValue (ctl) - e.target (ctl)) < 1.0e-4f;
+    // a step cleared: all it learnt is gone and its switch is OFF, and its note is left (step 15 is lit and locked by now)
+    ses.setStepLock (bass, 14, Session::lkLearn);
+    ses.lockClear (bass, 14);
+    const bool cleared = locksOf (e.pattern (bass), 14) == 0 && ! e.pattern (bass).steps[14].lock && e.pattern (bass).steps[14].on && ses.lockLane.load() < 0 && ses.stepLock (bass, 14) == Session::lkOff;
     bool full = true;
     { Pattern many = e.pattern (bass); int n = 0; for (int st = 20; st < 60 && n < kMaxLocks + 4; ++st) for (int c = 0; c < 4; ++c, ++n) full = setLockOff (many, st, c, 0.1f) == (locksOf (many, st) == c + 1) && full; int held = 0; for (auto& x : many.locks) if (x.step != 255) ++held; full = full && held == kMaxLocks; }
-    const bool ok = k >= 0 && learnt && heardLearn && locked && rides && off && one && slides && muted && kept && recalled && nudged && forgot && keeps && forgets && full && ! e.fault.load();
+    const bool ok = k >= 0 && learnt && heardLearn && locked && rides && off && one && slides && muted && kept && recalled && nudged && forgot && keeps && forgets && cleared && full && ! e.fault.load();
     if (! ok) ++bad;
     std::printf ("  %s: a step's LOCK. At LEARN a knob of its lane turned is the step's: the lane's stays at 0.40, the step holds +0.30 and the hand finds the knob at 0.70; another lane's knob is its own. Played, the knob sounds at 0.70 for that step's "
                  "half gate and at 0.40 before and after. LOCKED, the knob is the lane's again and the step still plays; the lane's knob moved to 0.50, the step rides on it at 0.80. OFF, the bar is at 0.40 and what it learnt is kept. A step the "
                  "note before runs into is slid to over half the step and holds there; a step that is not lit holds one for the step; one step is at LEARN at a time; the sequencer muted pushes nothing. It is written to the session and read, comes back with a "
-                 "snapshot's notes (which ends LEARN), goes with NUDGE, is forgotten by a step put out and kept by a step lit, a knob can be forgotten alone, and a pattern holds %d and no more\n", ok ? "ok  " : "FAIL", kMaxLocks);
+                 "snapshot's notes (which ends LEARN), goes with NUDGE, is forgotten by a step put out and kept by a step lit, a knob can be forgotten alone and a step cleared of all of it with its note left, and a pattern holds %d and no more\n", ok ? "ok  " : "FAIL", kMaxLocks);
     if (! ok)
     {
         std::printf ("    (k %d learnt %d heard %d locked %d rides %d off %d one %d slides %d muted %d kept %d recalled %d nudged %d forgot %d keeps %d forgets %d full %d)\n", k, (int) learnt, (int) heardLearn, (int) locked, (int) rides, (int) off,
-                     (int) one, (int) slides, (int) muted, (int) kept, (int) recalled, (int) nudged, (int) forgot, (int) keeps, (int) forgets, (int) full);
+                     (int) one, (int) slides, (int) muted, (int) kept, (int) recalled, (int) nudged, (int) forgot, (int) keeps, (int) (forgets && cleared), (int) full);
         for (auto& r : slid) if (r.first > 0.95 && (std::fmod (r.first, 0.0625) < 0.0054 || (r.first > 2.2 && r.first < 2.6))) std::printf ("      %.3f %.3f\n", r.first, (double) r.second);      // (the bar with the slide in it)
     }
 }
@@ -8028,11 +8035,12 @@ static int uiTest()
         const bool lanes = e.target (cx::lane (5, 6)) < 0.39f && std::abs (lockOff (e.pattern (5), 2, 6) - held) < 1.0e-4f;       // (LOCKED: the knob is the lane's again)
         click (third.getCentre()); draw();
         const bool off = ses.stepLock (5, 2) == Session::lkOff && std::abs (lockOff (e.pattern (5), 2, 6) - held) < 1.0e-4f;
-        { Pattern p = ses.pattern (5); clearLocks (p, 2); p.steps[2].lock = false; ses.setPattern (5, p); }
+        click ({ third.getX() + third.getWidth() * 0.85f, third.getCentreY() }); { const juce::Point<float> at (third.getX() + third.getWidth() * 0.85f, third.getCentreY()); sc.mouseDoubleClick (ev (at, at, false)); } draw();
+        const bool cleared = ses.stepLock (5, 2) == Session::lkOff && locksOf (e.pattern (5), 2) == 0;       // (double-clicked: it forgets all it learnt)
         ses.recall (kInitId); audio (20); draw();
-        check (switches == 16 && knob && learn && taught && locked && lanes && off && tip.contains ("LEARN"),
+        check (switches == 16 && knob && learn && taught && locked && lanes && off && cleared && tip.contains ("LEARN"),
                ("every step key has its LOCK switch over it (" + juce::String (switches) + "): pressed on its left third the step is at LEARN, and the bass's CUTOFF dragged on the screen leaves the lane's where it was and gives the step +"
-                + juce::String (held, 2) + "; on its right third it is LOCKED and the knob is the lane's again; in the middle, OFF, with what it learnt kept; INFO says what it is").toRawUTF8());
+                + juce::String (held, 2) + "; on its right third it is LOCKED and the knob is the lane's again; in the middle, OFF, with what it learnt kept; double-clicked, it forgets it all; INFO says what it is").toRawUTF8());
     }
 
     // 2b. GLIDE set on the screen, then a snapshot knob turned on the screen: the pushed knobs travel
@@ -11356,6 +11364,13 @@ static int shot (const juce::StringArray& args)
                 return h.r.getCentre();
         return juce::Point<float> (-1.0f, -1.0f);
     };
+    if (args.contains ("--lockdemo"))
+    {
+        // (--lockdemo: the active lane's steps 3, 6 and 8 with something learnt: 6 LOCKED, 8 OFF and keeping it, 3 at LEARN)
+        const int l = ses.activeLane;
+        for (int st : { 5, 7, 2 }) { ses.setStepLock (l, st, Session::lkLearn); ses.userSet (cx::lane (l, 6), 0.8f); ses.userSet (cx::lane (l, 2), 0.1f); }
+        ses.setStepLock (l, 7, Session::lkOff); ses.setStepLock (l, 5, Session::lkLocked); ses.setStepLock (l, 2, Session::lkLearn);
+    }
     if (args.contains ("--3d"))
     {
         // The 3D stage, as drawn: --view top|player|hero (or --turn and --tilt degrees, --away units),
@@ -11425,13 +11440,6 @@ static int shot (const juce::StringArray& args)
         }
         if (args.contains ("--lowend")) sc.testLowView (true);      // (the EQ's graph giving its place to LOW END)
         if (args.contains ("--cfgpage")) sc.testCfgScroll (arg ("--cfgpage", "1").getIntValue() - 1);      // (CONFIG scrolled to that row)
-        if (args.contains ("--lockdemo"))
-        {
-            // (--lockdemo: the active lane's steps 3, 6 and 8 with something learnt: 6 LOCKED, 8 OFF and keeping it, 3 at LEARN)
-            const int l = ses.activeLane;
-            for (int st : { 5, 7, 2 }) { ses.setStepLock (l, st, Session::lkLearn); ses.userSet (cx::lane (l, 6), 0.8f); ses.userSet (cx::lane (l, 2), 0.1f); }
-            ses.setStepLock (l, 7, Session::lkOff); ses.setStepLock (l, 5, Session::lkLocked); ses.setStepLock (l, 2, Session::lkLearn);
-        }
         if (args.contains ("--e16cfg")) ses.cfgE16Page = arg ("--e16cfg", "1").getIntValue() - 1;           // (as while the E16 is on that page of CONFIG: its twelve numbered)
         if (const double secs = arg ("--play", "0").getDoubleValue(); secs > 0.0)
         {

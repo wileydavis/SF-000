@@ -104,6 +104,14 @@ public:
     int find (const juce::String& id) const;
     float shown (int i) const                   { return shownV[(size_t) i].load(); }     // what sounds now
     float target (int i) const                  { return targetV[(size_t) i].load(); }    // where it is going
+    // A step at LEARN (Session, a step's LOCK), for whatever draws a knob, on whatever thread: the lane whose knobs are
+    // that step's just now (or -1), and what the step adds to each of them. The session writes these; the flat screen
+    // and the stage's own thread read them, so a knob is drawn where the step has it on both.
+    std::atomic<int> teachLane { -1 };
+    std::array<std::atomic<float>, cx::kGen> teachDiff {};
+    bool teaches (int i) const                  { const int l = teachLane.load(); return l >= 0 && i >= 0 && i < cx::kRet && i / cx::kPerLane == l && i % cx::kPerLane < cx::kGen && controls[(size_t) i].used && controls[(size_t) i].glides; }
+    bool teachHolds (int i) const               { return teaches (i) && teachDiff[(size_t) (i % cx::kPerLane)].load() != 0.0f; }      // the step holds a difference on it
+    float handShown (int i) const               { return teaches (i) ? juce::jlimit (0.0f, 1.0f, target (i) + teachDiff[(size_t) (i % cx::kPerLane)].load()) : shown (i); }     // where a knob is drawn
     float stands (int i) const                  { return baseV[(size_t) i].load(); }      // where it stands or has travelled to: what sounds, less MOTION's push
     void set (int i, float v, double glideBeats = 0.0);
     juce::String valueText (int i) const;

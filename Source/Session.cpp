@@ -553,18 +553,9 @@ void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
 }
 
 // ---- a step's LOCK
-bool Session::lockTeaches (int i) const
-{
-    const int l = lockLane.load();
-    if (l < 0 || i < 0 || i >= cx::kRet || i / cx::kPerLane != l || i % cx::kPerLane >= cx::kGen) return false;
-    const auto& c = engine.control (i);
-    return c.used && c.glides;
-}
+bool Session::lockTeaches (int i) const { return engine.teaches (i); }
 
-float Session::lockShown (int i) const
-{
-    return lockTeaches (i) ? juce::jlimit (0.0f, 1.0f, engine.target (i) + lockDiff[(size_t) (i % cx::kPerLane)]) : -1.0f;
-}
+float Session::lockShown (int i) const { return engine.teaches (i) ? engine.handShown (i) : -1.0f; }
 
 int Session::stepLock (int l, int step) const
 {
@@ -587,6 +578,19 @@ void Session::setStepLock (int l, int step, int state)
         if (l == activeLane) selStep = step;
         lockLane = l;
     }
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::lockClear (int l, int step)
+{
+    if (l < 0 || l >= kLanes || step < 0 || step >= kMaxSteps) return;
+    if (lockLane.load() == l && lockStep == step) lockLane = -1;
+    Pattern p = engine.pattern (l);
+    clearLocks (p, step);
+    p.steps[(size_t) step].lock = false;
+    engine.setPattern (l, p);
+    lockFull = false;
     touch();
     if (onChange) onChange();
 }
