@@ -446,6 +446,7 @@ public:
     SetupState laterOff (Target) const;     // what came after that: the same, for any snapshot that does not name them
     // Whether a lane's state has it on that model (its MODEL or its LAYER MODEL; where the state names neither, the lane as it stands)
     bool setupPlays (Target, const SetupState&, const juce::String& model) const;
+    float moduleSays (Target, int what) const;      // a figure the module there reports (sf::Module::meter); 0 where there is none
     // A menu that has grown by one (BASS's and LEAD's MODEL and LAYER MODEL: WAVETABLE, second to last). A setup keeps a
     // menu's place as how far down the list it is; one kept from before the list grew is told by where it falls, and is
     // given as the same entry of the list as it is now.

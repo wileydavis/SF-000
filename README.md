@@ -473,6 +473,10 @@ place along it: the oscillator reads between the two frames there, at any pitch,
   then has WANDER at 30 and sounds as it did.)
 - **FROM SAMPLE**: TABLE SAMPLE's frames. 8, each brought to one loudness, as it always was;
   64; or 64 WITH LEVEL, as loud at each place as the recording was there.
+- **A file loaded or dropped on the lane while its MODEL is WAVETABLE becomes its table**
+  (eighty-sixth build): TABLE goes to FILE for a wavetable file, else to SAMPLE with 64
+  frames. CLASSIC and the eleven take no notice of a file. With 64 frames, **POSITION travels
+  the part of the recording between its START and END** (the marks on the sample's display).
 - **The display** shows the table, its frames one behind another, with the place lit.
 - A snapshot from before this build that has a lane on WAVETABLE is read so that it sounds as
   it did: your SNAP 087, 088, 092 and 101 render sample for sample the same with their

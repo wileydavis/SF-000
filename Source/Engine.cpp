@@ -1859,6 +1859,8 @@ Engine::SetupState Engine::newerOff (Target t) const
 
 // LOOP on a drum's sample, and the PERC lane's sample (its START, END, fades, GAIN, NORMALISE, SLICE, CYCLE): a snapshot
 // from before them does not name them, and is not left with what the one before it set.
+float Engine::moduleSays (Target t, int what) const { auto* p = processorFor (t); return p != nullptr ? p->mod().meter (what) : 0.0f; }
+
 bool Engine::setupPlays (Target t, const SetupState& st, const juce::String& model) const
 {
     auto* p = processorFor (t);

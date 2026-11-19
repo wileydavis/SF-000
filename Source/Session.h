@@ -548,6 +548,7 @@ public:
     // the set. finishHeld: the most any of its bands is being held, dB (for the screen).
     int finishAt = 0;
     void finishStep();
+    void loadedByHand (Engine::Target);     // a file put on a lane by hand: a lane on WAVETABLE takes it as its table
     void trimHold (bool on, float db = 1000.0f);        // the limiter's trim learnt and held (at what the last minute asks for, or that figure), or let go
     void finishSet (int place);
     int finishPct() const;

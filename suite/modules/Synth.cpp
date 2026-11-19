@@ -628,8 +628,9 @@ public:
     // sample as it was brought to the rig's rate. A file of 4096 samples or fewer that is not a whole number of frames is
     // one cycle; a file whose length is a multiple of 1024 and not of 2048 has 1024 a frame. The frames keep their levels
     // against each other. What it made of the file, or why it could not, is `says`.
-    static std::shared_ptr<const Wavetable> fileFrom (const SampleData& s, double voiceRate, juce::String& says)
+    static std::shared_ptr<const Wavetable> fileFrom (const SampleData& s, double voiceRate, juce::String& says, bool& whole)
     {
+        whole = false;
         juce::AudioBuffer<float> raw;
         if (s.flac.getSize() > 0)
         {
@@ -659,6 +660,7 @@ public:
             else if (n % 1024 == 0) { size = 1024; count = n / 1024; }
         }
         if (count < 1) { one = true; count = 1; }
+        whole = one ? n <= 4096 : n % size == 0;        // (a whole number of frames, or one short cycle: a file made as a wavetable)
         const int H = std::min ((int) Wavetable::kMaxHarm, size / 2 - 1);
         std::vector<std::vector<float>> amps ((size_t) count), phs ((size_t) count);
         std::vector<double> cyc ((size_t) size);
@@ -691,7 +693,7 @@ public:
     }
     // What WAVETABLE can make of the loaded sample: the eight frames, the sixty-four, and the file read as a wavetable.
     // Made once for a sample and a rate, and shared by every lane and voice that holds that sample.
-    struct SampleTables { std::shared_ptr<const SampleFrames> legacy; std::shared_ptr<const Wavetable> fine, file; juce::String fileSays; };
+    struct SampleTables { std::shared_ptr<const SampleFrames> legacy; std::shared_ptr<const Wavetable> fine, file; juce::String fileSays; bool fileWhole = false; };
     static std::shared_ptr<const SampleTables> tablesFrom (const SamplePtr& s, double voiceRate)
     {
         struct Kept { std::weak_ptr<const SampleData> of; double rate = 0.0; std::weak_ptr<const SampleTables> made; };
@@ -705,7 +707,7 @@ public:
         auto t = std::make_shared<SampleTables>();
         t->legacy = framesFrom (*s, voiceRate);
         t->fine = fineFrom (*s, voiceRate);
-        t->file = fileFrom (*s, voiceRate, t->fileSays);
+        t->file = fileFrom (*s, voiceRate, t->fileSays, t->fileWhole);
         const std::lock_guard<std::mutex> g (lock);
         kept.push_back ({ s, voiceRate, t });
         return t;
@@ -874,7 +876,7 @@ public:
         // WAVETABLE's frames from the sample, if TABLE says so and there are some.
         // (SF-000) and which table: the four waves, one that came with the instrument, the file read as one, or the
         // recording's frames (eight as it always was, or sixty-four). What cannot be had plays the four waves.
-        tableFrames = nullptr; wtTab = nullptr; wtLevel = false;
+        tableFrames = nullptr; wtTab = nullptr; wtLevel = false; wtLo = 0.0f; wtSpan = 1.0f;
         if (hasWavetable())
         {
             const int tab = c.ci (TABLE);
@@ -885,7 +887,12 @@ public:
             {
                 const int from = c.ci (WTFROM);
                 if (from == 0) tableFrames = st->legacy.get();
-                else { wtTab = st->fine.get(); wtLevel = from == 2; }
+                else
+                {
+                    // (the sixty-four are along the whole recording: POSITION travels the part of them between its START and END)
+                    wtTab = st->fine.get(); wtLevel = from == 2;
+                    if (smp != nullptr && smp->length() > 0) { wtLo = clamp01 ((float) (blockReg.start / (double) smp->length())); wtSpan = clamp01 ((float) (blockReg.end / (double) smp->length())) - wtLo; }
+                }
             }
             if (tableFrames != nullptr && tableFrames->f.size() < (size_t) kSampleFrames) tableFrames = nullptr;
             if (wtTab != nullptr && wtTab->frames() < 1) wtTab = nullptr;
@@ -1094,9 +1101,20 @@ public:
             return p;
         };
         for (int j = 8; j >= 0; --j) { g.setColour (ui::kDim.withAlpha (0.30f + 0.45f * (1.0f - (float) j / 8.0f))); g.strokePath (line ((float) j / 8.0f), juce::PathStrokeType (1.0f)); }
-        g.setColour (ui::kText); g.strokePath (line (clamp01 (getParam (COLOR))), juce::PathStrokeType (1.8f));
+        float lo = 0.0f, span = 1.0f;
+        if (called == "SAMPLE" && wt != nullptr) { lo = clamp01 (getParam (SSTART)); span = clamp01 (getParam (SSTART + 1)) - lo; }
+        g.setColour (ui::kText); g.strokePath (line (clamp01 (lo + span * clamp01 (getParam (COLOR)))), juce::PathStrokeType (1.8f));
         const int nv = activeVoices.load();
         ui::label (g, juce::String (nv) + (nv <= kPlayVoices ? " / " + juce::String (kPlayVoices) : juce::String()), r.reduced (6, 2).removeFromBottom (12), ui::kFaint, 10.0f, juce::Justification::centredRight);
+    }
+    // (SF-000) 10: the file on the lane was made as a wavetable (a whole number of frames, or one short cycle): 1, or 0.
+    // 11: there is a file on the lane that WAVETABLE can make a table of: 1, or 0
+    float meter (int k) const override
+    {
+        const SampleTables* st = frames.audio();
+        if (k == 10) return st != nullptr && st->file != nullptr && st->fileWhole ? 1.0f : 0.0f;
+        if (k == 11) return st != nullptr && (st->fine != nullptr || st->file != nullptr || st->legacy != nullptr) ? 1.0f : 0.0f;
+        return 0.0f;
     }
     // What TABLE FILE or TABLE SAMPLE made of what is loaded, or why the four waves are playing in its place.
     juce::String statusLine() const override
@@ -1708,7 +1726,7 @@ private:
                     // one reading of the table there: a table of many frames, or TABLE SAMPLE's eight, or the four waves
                     auto read = [&] (double ph, int oct) -> float
                     {
-                        if (wtTab != nullptr) return wtTab->at (scan, oct, ph);
+                        if (wtTab != nullptr) return wtTab->at (wtLo + wtSpan * scan, oct, ph);
                         if (tableFrames != nullptr)
                         {
                             const float pos = scan * (float) (kSampleFrames - 1);
@@ -1755,7 +1773,7 @@ private:
                         x = (x + wave (v.ph[1])) * 0.7071f;
                         v.ph[1] += inc * wtDet; wrap01 (v.ph[1]);
                     }
-                    if (wtLevel && wtTab != nullptr) x *= wtTab->levelAt (scan);        // (SF-000) the level the recording had there
+                    if (wtLevel && wtTab != nullptr) x *= wtTab->levelAt (wtLo + wtSpan * scan);        // (SF-000) the level the recording had there
                     break;
                 }
                 case E_GRAIN:
@@ -2036,6 +2054,7 @@ private:
     const SampleFrames* tableFrames = nullptr;         // this block's (processVoices): TABLE SAMPLE's eight, or
     const Wavetable* wtTab = nullptr;                  // (SF-000) a table of many frames, or neither: the four waves
     bool wtLevel = false;
+    float wtLo = 0.0f, wtSpan = 1.0f;                  // (SF-000) the part of the table POSITION travels (a recording's START..END; else all of it)
     float wtTwist = 0.0f, wtEnv = 0.0f, wtWander = 0.0f; int wtTwistAs = 0;
     std::shared_ptr<const WavetableSet> tables;        // (SF-000) the tables that come with the instrument, at this rate
     // DRIFT: each voice slot's tuning and cutoff (-1..1), its drift's phase and pace; the drift's clock (s).

@@ -2451,17 +2451,39 @@ static void wavetableTest (int& bad)
             drop[q++] = a.db - b.db;
         }
         smp = smp && std::abs (drop[0]) < 3.0 && std::abs (drop[1]) < 3.0 && drop[2] > 15.0 && drop[2] < 25.0;
+        // the sixty-four are along the whole recording, and POSITION travels what is between START and END: with START
+        // half way, the same place on the knob is in the quiet half
+        const Is whole = at (0.15f);
+        put ("smp_start", 0.5f);
+        const Is half = at (0.15f);
+        put ("smp_start", 0.0f);
+        const bool region = whole.db - half.db > 15.0;
+        // a file put on the lane by hand becomes its table: a recording, TABLE SAMPLE with sixty-four frames; a file made as a wavetable, TABLE FILE
+        choose ("table", "CLASSIC"); choose ("wt_from", "8 FRAMES");
+        bool byHand = e.loadFile (bass, twoLevels);
+        ses.loadedByHand ({ 0, bass, 0 });
+        byHand = byHand && text (e, bass, "table") == "SAMPLE" && text (e, bass, "wt_from") == "64 FRAMES";
+        const bool reload = e.loadFile (bass, tableFile);
+        ses.loadedByHand ({ 0, bass, 0 });
+        byHand = byHand && reload && text (e, bass, "table") == "FILE";
+        // (and with the lane's LAYER playing the file as a sample, the file is the layer's: TABLE is left)
+        choose ("table", "HARMONIC"); choose ("layer_model", "SAMPLE"); put ("layer", 0.5f);
+        for (int i = 0; i < 20; ++i) { buf.clear(); e.render (buf); }
+        ses.loadedByHand ({ 0, bass, 0 });
+        byHand = byHand && text (e, bass, "table") == "HARMONIC";
+        put ("layer", 0.0f);
         dir.deleteRecursively();
-        const bool ok = every && finite && opens && exact && twisted && env && fileOk && notOne && smp && ! e.fault.load();
+        const bool ok = every && finite && opens && exact && twisted && env && fileOk && notOne && smp && region && byHand && ! e.fault.load();
         if (! ok) ++bad;
         std::printf ("  %s: WAVETABLE: POSITION moves through each of the eleven tables (where the spectrum's middle is, in Hz, at the first frame, the middle and the last, and how unlike the first and last are from 0 to 1: %s). On HARMONIC the sound opens the whole way (%d, %d, %d, %d, %d Hz). "
                      "With no WANDER the tone stands still (%.3f of an octave between the second bar and the seventh) and with it right up it drifts %.1f octaves. TWIST at nought changes nothing and each kind adds to a sine (%s). "
                      "POS ENV right up carries a note %.1f octaves up the table at its start (%.2f with none). A file of four frames of 2048 is read as a wavetable (%s: the note, its octave a third of the way, its fourth harmonic at "
-                     "the end), and a recording is refused and says so. TABLE SAMPLE on a recording 20 dB down in its second half: %.1f dB between the two with 8 FRAMES, %.1f with 64, %.1f with 64 WITH LEVEL\n",
+                     "the end), and a recording is refused and says so. TABLE SAMPLE on a recording 20 dB down in its second half: %.1f dB between the two with 8 FRAMES, %.1f with 64, %.1f with 64 WITH LEVEL; with START half way the knob's same place is %.1f dB down, in the quiet half. A file loaded by hand onto the lane becomes its table (a recording: SAMPLE, 64 FRAMES; a wavetable file: FILE; not when the LAYER plays it)\n",
                      ok ? "ok  " : "FAIL", tables.trim().toRawUTF8(), (int) h0.centre, (int) h1.centre, (int) h2.centre, (int) h3.centre, (int) h4.centre, still, std::log2 (hi / lo), twists.trim().toRawUTF8(), swept, flat,
-                     fileSays.toRawUTF8(), drop[0], drop[1], drop[2]);
+                     fileSays.toRawUTF8(), drop[0], drop[1], drop[2], whole.db - half.db);
         if (! ok) std::printf ("    (every %d finite %d opens %d exact %d twisted %d env %d file %d (%.1f %.1f %.1f) not one %d sample %d fault %d)\n", (int) every, (int) finite, (int) opens, (int) exact, (int) twisted, (int) env, (int) fileOk,
                                f0.top, fMid.top, f1.top, (int) notOne, (int) smp, (int) e.fault.load());
+        if (! ok) std::printf ("    (region %d by hand %d: table %s)\n", (int) region, (int) byHand, text (e, bass, "table").toRawUTF8());
     }
 }
 
@@ -10934,6 +10956,8 @@ static int shot (const juce::StringArray& args)
         const Engine::Target t { 0, ses.activeLane, 0 };
         for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int at = sp.choices.indexOf (arg ("--model", "")); at >= 0) ses.setupByHand (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1));
     }
+    // (--file FILE: that file put on the active lane as by hand, its MODEL left as it is)
+    if (const auto ff = arg ("--file", ""); ff.isNotEmpty()) if (e.loadFile (ses.activeLane, juce::File (ff))) ses.loadedByHand ({ 0, ses.activeLane, 0 });
     if (const auto ch = arg ("--choose", ""); ch.containsChar ('='))
     {
         // (--choose id=NAME[,id=NAME]: a menu of the active lane's CONFIG put there, as by hand; a number is a knob's place)
@@ -11116,6 +11140,7 @@ static int shot (const juce::StringArray& args)
             }
         }
         if (args.contains ("--lowend")) sc.testLowView (true);      // (the EQ's graph giving its place to LOW END)
+        if (args.contains ("--cfgpage")) sc.testCfgScroll (arg ("--cfgpage", "1").getIntValue() - 1);      // (CONFIG scrolled to that page)
         if (const double secs = arg ("--play", "0").getDoubleValue(); secs > 0.0)
         {
             // (--play N: the rig played for N seconds with the screen as it stands, its timer run before and after:

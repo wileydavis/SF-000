@@ -178,6 +178,7 @@ public:
     int testLibStack() const { return inAt(); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     void testLowView (bool on) { lowView = on; }                // LOW END up in the EQ's place
+    void testCfgScroll (int page) { cfgScroll = std::max (0, page); }
     bool testLowIsUp() const { return lowView; }
     void testPointAt (juce::Point<float> p) { point (p); }      // the mouse resting there (screen units)
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says

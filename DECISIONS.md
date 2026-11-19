@@ -5186,8 +5186,38 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      this build on does not need it). `--choose id=NAME` on `--shot`. A MOTION's free wave no
      longer starts again at a recall that sets the same target it already has.
 
+## A loaded file becomes the wavetable; CONFIG's page plate out of the way (Nov 18, 21:14): eighty-sixth build
+
+732. **You**, Nov 18, 21:14, with a picture of the PAD's CONFIG: "fixe: overlapping text in
+     config panel. Also, the wavetable sounds don't change when I load in a different sample".
+     - **The overlap**: PAGE 3 OF 3: SCROLL sat at the foot of the controls, on the right, and
+       on a page short enough the E16's row of names (SEL, PAGE -, PAGE +, SHUT) lands in the
+       same place: SHUT was under it. **The page plate is now in the title row**, after
+       CONFIG, in as long a form as there is room for beside the control last touched (PAGE 3
+       OF 3: SCROLL, PAGE 3 OF 3, or 3 OF 3). Nothing else is drawn where it was.
+     - **The sample**: your PAD was on TABLE CLASSIC, which is the four waves and takes no
+       notice of a file. Nothing said so. *Mine:* **a file loaded or dropped on a lane whose
+       MODEL is WAVETABLE now becomes its table**: TABLE goes to FILE where the file was made
+       as a wavetable (a whole number of frames, or one short cycle), else to SAMPLE, and FROM
+       SAMPLE to 64 FRAMES where the lane was not on a sample's table already. Not where the
+       lane's LAYER is playing the file as a sample or as grains (it is the layer's), not
+       where the file could not be read, and not on a recall, whose table is the snapshot's.
+     - *Mine, with it:* **with 64 frames, POSITION travels the part of the recording between
+       its START and END**, the two marks on the sample's display (in your picture they were
+       set to a quarter of a second, and did nothing for the table). The frames are 64 along
+       the whole file, so a narrow part of a long file has few of them: a quarter second of
+       four is four frames. 8 FRAMES is as it was, the whole file, for the snapshots that
+       have it. *Not done:* cutting the 64 from the part itself, which wants the table made
+       again whenever a mark moves.
+
 ## Not verified
 
+- **The eighty-sixth build (732)**: the page plate's new place is seen in two pictures here
+  (the PAD's third and fourth pages, with and without a file); a long lane name beside a long
+  control name was not drawn. A file becoming the table is checked for a recording, for a
+  wavetable file and for a layer's sample, by the function the two ways of loading call, not
+  by a drop or a press on LOAD. Your HANDSUP3.MP3 could not be read on this machine (no MP3
+  reader in this build of it), so that very file was not tried: a WAV from your set was.
 - **The eighty-fifth build (727 to 731) is measured, and compared with your own snapshots; none
   of it is heard.** Measured: each of the eleven tables is three different sounds at its
   first frame, middle and last, all near one level; HARMONIC opens from 143 Hz to over 2.8 kHz

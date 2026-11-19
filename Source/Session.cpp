@@ -512,6 +512,32 @@ void Session::setConfig (int index, int v7)
     if (onChange) onChange();
 }
 
+// A file put on a lane by hand (LOAD, or dropped on it). A lane whose MODEL is WAVETABLE takes it as its table: FILE
+// where it was made as a wavetable, else SAMPLE with sixty-four frames; a lane already on FILE or SAMPLE is left as it is
+// set but for which of the two. (Its LAYER playing the file as a sample or as grains: the file is the layer's, and TABLE
+// is left alone.) A recall does not come here: a snapshot's table is the snapshot's.
+void Session::loadedByHand (Engine::Target t)
+{
+    if (t.kind != 0) return;
+    juce::String model, layerModel, table; float layer = 0.0f; juce::StringArray tables, froms;
+    for (auto& sp : engine.setupParams (t))
+    {
+        if (sp.id == "model") model = sp.text; else if (sp.id == "layer_model") layerModel = sp.text;
+        else if (sp.id == "table") { table = sp.text; tables = sp.choices; } else if (sp.id == "wt_from") froms = sp.choices;
+        else if (sp.id == "layer") layer = sp.value;
+    }
+    for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = engine.laneKnob (t.lane, k); kd.param != nullptr && juce::String (kd.param) == "layer") layer = engine.target (cx::lane (t.lane, k));
+    if (! model.equalsIgnoreCase ("WAVETABLE") || tables.size() < 2) return;
+    if (layer > 0.001f && (layerModel.equalsIgnoreCase ("SAMPLE") || layerModel.equalsIgnoreCase ("GRANULAR"))) return;
+    if (engine.moduleSays (t, 11) < 0.5f) return;       // (nothing it could read, or too short to cut a frame from)
+    const juce::String want = engine.moduleSays (t, 10) > 0.5f ? "FILE" : "SAMPLE";
+    const bool was = table.equalsIgnoreCase ("FILE") || table.equalsIgnoreCase ("SAMPLE");
+    if (const int at = tables.indexOf (want); at >= 0 && ! table.equalsIgnoreCase (want)) setupByHand (t, "table", (float) at / (float) (tables.size() - 1));
+    if (! was && want == "SAMPLE") if (const int at = froms.indexOf ("64 FRAMES"); at >= 0) setupByHand (t, "wt_from", (float) at / (float) std::max (1, froms.size() - 1));
+    touch();
+    if (onChange) onChange();
+}
+
 void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
 {
     // (the gain of an EQ band that is the panel's LOW, MID or HIGH is that knob)

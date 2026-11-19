@@ -1324,8 +1324,10 @@ void Screen::drawConfig (G& g, R r)
     this->tag (g, R (x0, y0, wTag, 26), tag);
     float x = x0 + wTag;
     x += plate (g, x, y0, name, fLegend, 8, col::white, col::black) + 2;
-    plate (g, x, y0, "CONFIG", fNote, 6, col::white, col::black);
+    x += plate (g, x, y0, "CONFIG", fNote, 6, col::white, col::black) + 6;
+    const float headLeft = x;               // (the title row from here to what is at its right: which page of several, below)
     const R cr (r.getRight() - 27, y0 + 2, 22, 22);
+    float headRight = cr.getX() - 8;
     key (g, cr, col::white);
     text (g, "X", cr, fLbl, col::black);
     hit (cr.expanded (2), hAct, aCfgClose, 0);
@@ -1336,7 +1338,9 @@ void Screen::drawConfig (G& g, R r)
         if (sp.id == cfgName)
         {
             const String v = (sp.group.startsWith ("MOTION") ? sp.group + " " : String()) + sp.name + "   " + sp.text.toUpperCase();
-            plate (g, cr.getX() - 8 - (std::ceil (tw (fNote, v)) + 12), y0, v, fNote, 6, col::white, col::black);
+            headRight = cr.getX() - 8 - (std::ceil (tw (fNote, v)) + 12);
+            plate (g, headRight, y0, v, fNote, 6, col::white, col::black);
+            headRight -= 6;
             break;
         }
 
@@ -1531,8 +1535,11 @@ void Screen::drawConfig (G& g, R r)
     }
     if (cfgScroll > 0 || lastShown < pages - 1)
     {
-        const String more = "PAGE " + String (cfgScroll + 1) + " OF " + String (pages) + ": SCROLL";
-        plate (g, r.getRight() - 5 - (std::ceil (tw (fNote, more)) + 12), floorY - 21, more, fNote, 6, col::white, col::black, 22);
+        // which page of several, in the title row (it was over the foot of the last page, where a page's E16 row can be):
+        // as much of it as there is room for beside the control last touched
+        const String of = String (cfgScroll + 1) + " OF " + String (pages);
+        for (const String& more : { "PAGE " + of + ": SCROLL", "PAGE " + of, of })
+            if (headLeft + std::ceil (tw (fNote, more)) + 12 <= headRight) { plate (g, headLeft, y0, more, fNote, 6, col::white, col::black); break; }
     }
 }
 
@@ -1847,6 +1854,7 @@ void Screen::pickLoad (int i)
     const bool ok = eng.loadFiles (cfg, juce::StringArray (f.getFullPathName()));
     if (ok)
     {
+        ses.loadedByHand (cfg);
         (cfg.kind != 0 ? loadFxDir : loadLaneDir) = loadDir;        // (next time it opens where this one was)
         loadOpen = false; cfgNote = {}; cfgStale = true;
         ses.touch();
@@ -5664,7 +5672,7 @@ void Screen::filesDropped (const juce::StringArray& files, int x, int y)
     const bool ok = takes && eng.loadFiles (t, t.kind == 0 ? juce::StringArray (files[0]) : files);
     cfgOpen = false;
     openConfig (t);
-    if (ok) cfgNote = {};
+    if (ok) { ses.loadedByHand (t); cfgNote = {}; cfgStale = true; }
     else if (! takes) cfgNote = t.kind == 0 ? "THIS LANE'S MODULE TAKES NO AUDIO FILE." : "THIS EFFECT TAKES NO AUDIO FILE.";
     else cfgNote = "COULD NOT READ " + juce::File (files[0]).getFileName().toUpperCase() + ". IF MACOS ASKED FOR ACCESS TO THE FOLDER, ALLOW IT AND DROP THE FILE AGAIN.";
     if (ok) ses.touch();
