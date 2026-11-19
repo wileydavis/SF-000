@@ -112,6 +112,12 @@ const Screen::Hit* Screen::hitAt (juce::Point<float> p) const
 // ---------------------------------------------------------------------------------- drawing kit
 void Screen::text (G& g, const String& s, R r, const juce::Font& f, Colour c, juce::Justification j)
 {
+    // Print on a key just drawn is the ink that reads on that key's cap: black on a yellow or a lit one, in the dark
+    // instrument too, where print anywhere else is light. (Asked for one key at a time this was forgotten on each new
+    // key; here it cannot be.)
+    if (c == col::black && night())
+        for (int k = 0; k < kKeysKept; ++k)
+            if (const auto& kd = capsDrawn[(size_t) k]; ! kd.r.isEmpty() && kd.r.expanded (3.0f).contains (r)) { textRaw (g, s, r, f, inkOn (kd.cap, c), j); return; }
     textRaw (g, s, r, f, c == col::black ? tone (c) : c, j);
 }
 
@@ -197,6 +203,8 @@ float Screen::holdFill (int a) const
 void Screen::textRaw (G& g, const String& s, R r, const juce::Font& f, Colour c, juce::Justification j)
 {
     if (recording) return;          // (the record is of solid things; print is the sheet's)
+    // (for the checks, while they watch: print that is light on a bright key, anywhere in this paint)
+    if (inkWatch && night()) for (auto& kd : inkCaps) if (kd.r.expanded (3.0f).contains (r) && kd.cap.getPerceivedBrightness() > 0.40f && c.getPerceivedBrightness() > 0.45f) { ++inkFaults; if (inkFirst.isEmpty()) inkFirst = s; break; }
     g.setColour (c); g.setFont (f);
     g.drawText (s, r, j, false);
 }
@@ -369,6 +377,9 @@ void Screen::key (G& g, R r, Colour fill, float border, bool on)
     const bool held = border > 2.5f || (mouseIsDown && drag.kind != 0 && drag.page == (int) page && r.translated (shift, 0.0f).contains (drag.start));
     if (lit) skin.key (g, r, cap (fill), held ? Parts::kHeld : on ? Parts::kOn : Parts::kUp);
     else flatKey (g, r, fill, border);
+    capsDrawn[(size_t) keysAt] = { r, lit ? cap (fill) : fill == col::white ? tone (fill) : fill };      // (for what is printed on it: text)
+    keysAt = (keysAt + 1) % kKeysKept;
+    if (inkWatch) inkCaps.push_back ({ r, lit ? cap (fill) : fill == col::white ? tone (fill) : fill });
 }
 
 // An action's key is down while the hand is on it, and for a moment after the action is done from
@@ -1067,6 +1078,8 @@ void Screen::paint (G& g)
 
 void Screen::drawAll (G& g)
 {
+    for (auto& k : capsDrawn) k = {};
+    inkCaps.clear();
     if (collect) { hits.clear(); namesAt.clear(); for (auto& r : stopRects) r = {}; kbStale = false; }
     if (lit) { skin.begin (g); if (vis (g, R (0, 0, kW, kH))) skin.body (g, kW, kH); }
     else if (vis (g, R (0, 0, kW, kH)))
@@ -1440,107 +1453,143 @@ void Screen::drawConfig (G& g, R r)
     if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
     loadOpen = false;
 
-    // The controls, four across, in the order the E16's CONFIG pages hold them: the first twelve are its first page's
-    // knobs 1 to 12, place for place (the top three rows of its sixteen), the next twelve its second page's, and so
-    // on. Under each twelve stands the E16's bottom row there: SEL (the wheel), PAGE -, PAGE +, SHUT. What the hand
-    // learns on one is where it is on the other. A box with its name still says what a run of controls belongs
-    // to: it stops at a row's end and carries on in the next.
+    // The controls, eight across at the pitch the modules' own knobs stand at, in boxes that say what a run of them
+    // belongs to. First what the sound is: MODEL with what only that model has beside it, the LAYER, the knobs the model
+    // put away. Then, from a new row, what is always there. Then, from a new row, what comes and goes with a setting (a
+    // sample's controls). So turning a control never moves another: what it brings stands after everything that stays,
+    // and a box is not split across rows unless it is wider than one. Scrolled a row at a time.
+    // (The E16 holds them in this order, twelve to a page of its CONFIG: while it is on one, its twelve are numbered here.)
     // (a lane's EQ is listed last, for the E16: here it is its graph, at the foot of the panel, and not knobs)
     int total = (int) cfgParams.size();
     const float eqH = cfg.kind == 0 ? 286.0f : 0.0f;
     if (cfg.kind == 0) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
-    const int cols = 4, perPage = e16::kCfgPer, rowsPer = perPage / cols;
-    const float cellW = 136.0f, rowH = 126.0f, titleH = 17.0f, stripH = 22.0f;
-    const int pages = std::max (1, (total + perPage - 1) / perPage);
-    const float pageH = (float) rowsPer * rowH + stripH, floorY = r.getBottom() - 6 - eqH;
+    const float cellW = kCfgCell, rowH = 110.0f, gx = x0 + (544.0f - (float) kCfgCols * cellW) * 0.5f;
+    const float floorY = r.getBottom() - 6 - eqH;
     if (cfg.kind == 0) drawEq (g, R (x0, floorY + 4, 544, eqH - 4)); else { eqRect = {}; eqGraph = {}; }
-    cfgScroll = juce::jlimit (0, pages - 1, cfgScroll);                // (scrolled a page at a time: the page at the top is whole)
-    int lastShown = -1;
-    for (int pg = cfgScroll; pg < pages; ++pg)
+    layoutConfig (total);
+    const int fits = std::max (1, (int) std::floor ((floorY - y) / rowH));
+    if (cfgSeek >= 0) { if (cfgSeek < total) cfgScroll = cfgAt[(size_t) cfgSeek].row; cfgSeek = -1; }
+    cfgScroll = juce::jlimit (0, std::max (0, cfgRows - fits), cfgScroll);
+    const int lastRow = std::min (cfgRows, cfgScroll + fits) - 1;
+    auto rowY = [&] (int row) { return y + (float) (row - cfgScroll) * rowH; };
+    for (const auto& bx : cfgBoxes)
     {
-        const float top = y + (float) (pg - cfgScroll) * pageH;
-        if (top + rowH > floorY) break;
-        for (int rr = 0; rr < rowsPer; ++rr)
+        if (bx.row < cfgScroll || bx.row > lastRow || bx.title.isEmpty()) continue;
+        const float by = rowY (bx.row), left = gx + (float) bx.col * cellW;
+        const R box (left + 2, by + 6, (float) bx.cells * cellW - 4, 100.0f);
+        if (! vis (g, box.expanded (2, 8))) continue;
+        // (its name on the box's upper edge where the run begins; the line stops either side of the name)
+        const R chip (left + 8, by, std::ceil (tw (fLbl, bx.title)) + 10.0f, 15.0f);
         {
-            const float by = top + (float) rr * rowH;
-            if (by + rowH > floorY) break;
-            const int first = pg * perPage + rr * cols;
-            if (first >= total) break;
-            // the boxes of this row: each run of controls that belong together
-            for (int c = 0; c < cols && first + c < total;)
-            {
-                const String title = cfgParams[(size_t) (first + c)].group;
-                int n = 1;
-                while (c + n < cols && first + c + n < total && cfgParams[(size_t) (first + c + n)].group == title) ++n;
-                const float bx = x0 + (float) c * cellW;
-                const R box (bx + 4, by + 7, (float) n * cellW - 8, 106.0f);
-                if (title.isNotEmpty() && vis (g, box.expanded (2, 8)))
-                {
-                    // (its name on the box's upper edge where the run begins; the line stops either side of the name)
-                    const bool head = first + c == 0 || cfgParams[(size_t) (first + c - 1)].group != title;
-                    const R chip (bx + 12, by, std::ceil (tw (fLbl, title)) + 10.0f, 15.0f);
-                    {
-                        const juce::Graphics::ScopedSaveState state (g);
-                        if (head) g.excludeClipRegion (chip.expanded (5.0f, 3.0f).getSmallestIntegerContainer());
-                        g.setColour (tone (col::black).withAlpha (0.30f));
-                        g.drawRoundedRectangle (box, 5.0f, 1.0f);
-                    }
-                    if (head) plate (g, chip.getX(), chip.getY(), title, fLbl, 5, col::black, col::white, 15);
-                }
-                c += n;
-            }
-            for (int c = 0; c < cols && first + c < total; ++c)
-            {
-                const int i = first + c;
-                const auto& sp = cfgParams[(size_t) i];
-                const float cxm = x0 + (float) c * cellW + cellW * 0.5f, cy = by + titleH + 3;
-                const R kr (cxm - 20, cy, 40, 40);
-                if (vis (g, R (cxm - 61, cy, 122, rowH - titleH)))
-                {
-                    if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
-                    else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
-                    else knob (g, cxm, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
-                    legend (g, cxm, cy + 43, sp.name);
-                    // INFO: its number while CONFIG is open
-                    if (info && sp.kind != Kind::Hold && i < e16::kCfgPer * e16::kCfgPages)
-                        textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxm - 14, cy + 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
-                    if (sp.kind == Kind::List)
-                    {
-                        const R vr (cxm - 50, cy + 73, 100, 16);
-                        if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
-                        g.setColour (tone (col::black)); g.setFont (fLbl);
-                        g.drawFittedText (sp.text.toUpperCase(), vr.reduced (2, 0).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.72f);
-                    }
-                }
-                hit (kr.expanded (4, 2), hSetup, i, 0);
-            }
-            lastShown = pg;
+            const juce::Graphics::ScopedSaveState state (g);
+            if (bx.head) g.excludeClipRegion (chip.expanded (4.0f, 3.0f).getSmallestIntegerContainer());
+            g.setColour (tone (col::black).withAlpha (0.30f));
+            g.drawRoundedRectangle (box, 5.0f, 1.0f);
         }
-        // the E16's bottom row on this page of its CONFIG, under the twelve: which page it is (lit while the E16 is on it),
-        // and its four corners' and keys' names in their places
-        const float sy = top + (float) rowsPer * rowH + 1;
-        if (pg < e16::kCfgPages && sy + 18 <= floorY && vis (g, R (x0, sy - 2, 544, stripH)))
-        {
-            const bool here = ses.cfgE16Page == pg;
-            const String num (pg + 1);
-            const float wTag2 = std::max (22.0f, std::ceil (tw (fLbl, num)) + 10.0f);
-            if (here) plate (g, x0 + 2, sy, num, fLbl, 5, col::lit, col::black, 16); else this->tag (g, R (x0 + 2, sy, wTag2, 16), num);
-            static const char* const corner[4] = { "SEL", "PAGE -", "PAGE +", "SHUT" };
-            for (int c = 0; c < cols; ++c)
-            {
-                const float w = std::ceil (tw (fLbl, corner[c])) + 10.0f;
-                plate (g, x0 + (float) c * cellW + cellW * 0.5f - w * 0.5f, sy, corner[c], fLbl, 5, col::white, col::black, 16);
-            }
-        }
+        if (bx.head) plate (g, chip.getX(), chip.getY(), bx.title, fLbl, 5, col::black, col::white, 15);
     }
-    if (cfgScroll > 0 || lastShown < pages - 1)
+    for (int i = 0; i < total; ++i)
     {
-        // which page of several, in the title row (it was over the foot of the last page, where a page's E16 row can be):
-        // as much of it as there is room for beside the control last touched
-        const String of = String (cfgScroll + 1) + " OF " + String (pages);
-        for (const String& more : { "PAGE " + of + ": SCROLL", "PAGE " + of, of })
+        const auto at = cfgAt[(size_t) i];
+        if (at.row < cfgScroll || at.row > lastRow) continue;
+        const auto& sp = cfgParams[(size_t) i];
+        const float by = rowY (at.row), left = gx + (float) at.col * cellW, w = (float) at.span * cellW;
+        const float cxm = left + w * 0.5f, cy = by + 16;
+        const R kr (cxm - 20, cy, 40, 40);
+        if (vis (g, R (left, cy, w, rowH - 16)))
+        {
+            if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
+            else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
+            else knob (g, cxm, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
+            // its name, on two lines where it is two words too wide for one, drawn narrower where a word is wider than its place
+            {
+                const int gap = sp.name.indexOfChar (' ');
+                const bool two = gap > 0 && tw (fLbl, sp.name) > w - 8;       // (and a gap is left between it and its neighbour's)
+                auto line = [&] (const String& word, float ly)
+                {
+                    const R lr (left + 4, ly, w - 8, 13);
+                    const float ww = std::min (tw (fLbl, word), lr.getWidth());
+                    if (tw (fLbl, word) <= lr.getWidth()) text (g, word, lr, fLbl, col::black);
+                    else if (! recording) { g.setColour (tone (col::black)); g.setFont (fLbl); g.drawFittedText (word, lr.getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.6f); }
+                    // (for the checks, as legend does: where its letters are, to be held against the plate it is printed on)
+                    if (recording) if (const R at = R (cxm - ww * 0.5f, ly + 1.0f, ww, 12.0f).translated (shift, 0.0f); skin.clipNow().has (at.getCentreX(), at.getY() + 3.0f)) legendRects.push_back (at);
+                };
+                if (two) { line (sp.name.substring (0, gap), cy + 42); line (sp.name.substring (gap + 1), cy + 55); }
+                else line (sp.name, cy + 42);
+            }
+            // INFO: its number while CONFIG is open
+            if (info && sp.kind != Kind::Hold && i < e16::kCfgPer * e16::kCfgPages)
+                textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxm - 14, cy + 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
+            if (sp.kind == Kind::List)
+            {
+                const R vr (left + 3, cy + 70, w - 6, 15);
+                if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
+                g.setColour (tone (col::black)); g.setFont (fLbl);
+                g.drawFittedText (sp.text.toUpperCase(), vr.reduced (2, 0).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.55f);
+            }
+            // while the E16 is on a page of CONFIG: which of its twelve knobs this is
+            if (ses.cfgE16Page >= 0 && i / e16::kCfgPer == ses.cfgE16Page)
+                plate (g, left + 3, cy - 2, String (i % e16::kCfgPer + 1), fLbl, 3, col::lit, col::black, 13);
+        }
+        hit (kr.expanded (4, 2), hSetup, i, 0);
+    }
+    if (cfgRows > fits)
+    {
+        // which rows of how many, in the title row: as much of it as there is room for beside the control last touched
+        const String of = String (cfgScroll + 1) + "-" + String (lastRow + 1) + " OF " + String (cfgRows);
+        for (const String& more : { "ROWS " + of + ": SCROLL", "ROWS " + of, of })
             if (headLeft + std::ceil (tw (fNote, more)) + 12 <= headRight) { plate (g, headLeft, y0, more, fNote, 6, col::white, col::black); break; }
     }
+}
+
+// Where each of CONFIG's controls stands (cfgAt: row, column, how many columns wide) and its boxes (cfgBoxes), from
+// the list as the engine orders it (Engine::setupParams): see drawConfig. A control is as wide as one of the modules'
+// knobs; a list whose choices are long names (MODEL, TABLE) is two.
+void Screen::layoutConfig (int total)
+{
+    cfgAt.assign ((size_t) total, {}); cfgBoxes.clear(); cfgRows = 0;
+    auto spanOf = [&] (const Engine::SetupParam& sp)
+    {
+        if (sp.kind != Kind::List || sp.group.startsWith ("MOTION")) return 1;
+        if (sp.id == "model" || sp.id == "layer_model" || sp.id == "__model" || sp.id == "table") return 2;
+        float widest = 0.0f;
+        for (auto& c : sp.choices) widest = std::max (widest, tw (fLbl, c.toUpperCase()));
+        return widest > (kCfgCell - 10.0f) / 0.7f ? 2 : 1;
+    };
+    int row = 0, col = 0;
+    for (int i = 0; i < total;)
+    {
+        const auto& first = cfgParams[(size_t) i];
+        int n = 1, cells = 0;
+        while (i + n < total && cfgParams[(size_t) (i + n)].group == first.group && cfgParams[(size_t) (i + n)].section == first.section && ! cfgParams[(size_t) (i + n)].ownRow) ++n;
+        for (int k = 0; k < n; ++k) cells += spanOf (cfgParams[(size_t) (i + k)]);
+        // (a box is at least wide enough for its name)
+        const int named = first.group.isEmpty() ? 1 : (int) std::ceil ((tw (fLbl, first.group) + 30.0f) / kCfgCell);
+        const int wide = std::max (cells, named);
+        const bool turns = i > 0 && cfgParams[(size_t) i - 1].section != first.section;
+        if (col > 0 && (turns || first.ownRow || wide > kCfgCols || col + wide > kCfgCols)) { ++row; col = 0; }
+        if (wide <= kCfgCols)
+        {
+            cfgBoxes.push_back ({ row, col, wide, first.group, true });
+            int c = col;
+            for (int k = 0; k < n; ++k) { const int sp = spanOf (cfgParams[(size_t) (i + k)]); cfgAt[(size_t) (i + k)] = { row, c, sp }; c += sp; }
+            col += wide;
+        }
+        else
+        {
+            int from = 0;       // (wider than a row: it carries on in the next, its name on the first)
+            for (int k = 0; k < n; ++k)
+            {
+                const int sp = spanOf (cfgParams[(size_t) (i + k)]);
+                if (col + sp > kCfgCols) { cfgBoxes.push_back ({ row, from, col - from, first.group, cfgBoxes.empty() || cfgBoxes.back().title != first.group }); ++row; col = 0; from = 0; }
+                cfgAt[(size_t) (i + k)] = { row, col, sp }; col += sp;
+            }
+            cfgBoxes.push_back ({ row, from, col - from, first.group, cells <= kCfgCols });
+        }
+        if (col >= kCfgCols) { ++row; col = 0; }
+        i += n;
+    }
+    for (auto& at : cfgAt) cfgRows = std::max (cfgRows, at.row + 1);
 }
 
 // The lane EQ (Engine.h, eqBand): what it does to the lane, drawn over what the lane is playing, with what every other
@@ -6244,7 +6293,7 @@ void Screen::timerCallback()
     if (ses.cfgE16Page != cfgE16Was)
     {
         cfgE16Was = ses.cfgE16Page;
-        if (cfgOpen) { if (cfgE16Was >= 0) cfgScroll = cfgE16Was; dirty (cfgRect); }
+        if (cfgOpen) { if (cfgE16Was >= 0) cfgSeek = cfgE16Was * e16::kCfgPer; dirty (cfgRect); }      // (the row its first knob is on comes to the top)
     }
     // A snapshot taken, by whatever hand (the SNAPSHOT key, S, the E16's 13 and 16 together): said on the top bar with
     // its name, for a few seconds. (The E16's own display says it only on firmware that shows the names it is sent.)

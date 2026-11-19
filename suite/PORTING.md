@@ -102,6 +102,13 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   first (`Source/CueRig.h`): on the shared block it ducked under the first rig's kick, and
   would have written its key and its lanes' energies where the first reads them. The suite
   has no such process and nothing there changes. See DECISIONS 598.
+- **Eighty-seventh build, all marked `(SF-000)`. None of it is in the suite.** One wavetable:
+  `core/Wavetable.h`: `WavetableSet` has twelve tables, CLASSIC the first (the four waves of
+  `WaveSet::frame`, as 64 frames at the levels they had). `modules/Synth.cpp`: the oscillator
+  reads `wtTab` and nothing else (the four-wave reading and TABLE SAMPLE's eight `Mipmap`
+  frames, `framesFrom`, are out); TABLE opens on BASIC; `wt_from` is LEVELS, two choices; what
+  cannot be had plays BASIC. `WaveSet::frame` is still built (the suite's file is not edited
+  for it) and `frame[0]` is still the sine FM reads. See DECISIONS 737.
 - **Eighty-fifth build, all marked `(SF-000)`. None of it is in the suite.** `core/Wavetable.h`,
   new: `Wavetable` (many frames, each band-limited a level an octave as `Mipmap` is, a level
   only as long as its harmonics need) and `WavetableSet` (eleven tables of 64 frames, made

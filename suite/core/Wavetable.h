@@ -142,11 +142,11 @@ private:
 // The tables that come with the instrument. Sixty-four frames each, 512 harmonics where a frame has them.
 struct WavetableSet
 {
-    static constexpr int kTables = 11, kFrames = 64, kH = Wavetable::kMaxHarm;
+    static constexpr int kTables = 12, kFrames = 64, kH = Wavetable::kMaxHarm;
     Wavetable t[kTables];
     static const char* nameOf (int k)
     {
-        static const char* const names[kTables] = { "BASIC", "HARMONIC", "PWM", "SYNC", "FORMANT", "FM", "FOLD", "DIGITAL", "ORGAN", "BASS", "COMB" };
+        static const char* const names[kTables] = { "CLASSIC", "BASIC", "HARMONIC", "PWM", "SYNC", "FORMANT", "FM", "FOLD", "DIGITAL", "ORGAN", "BASS", "COMB" };
         return names[std::max (0, std::min (kTables - 1, k))];
     }
     static std::shared_ptr<const WavetableSet> get (double osr)
@@ -185,8 +185,23 @@ private:
                 const double u = (double) f / (double) (kFrames - 1);
                 auto& a = amp[(size_t) f]; auto& p = ph[(size_t) f];
                 a.assign ((size_t) kH, 0.0f); p.assign ((size_t) kH, 0.0f);
-                switch (k)
+                switch (k - 1)
                 {
+                    case -1:    // CLASSIC: the four waves WAVETABLE had before it had tables (a sine, a saw and a square of 32
+                    {           // harmonics, a vowel), each crossing into the next; at the levels they had, which toRms leaves alone below
+                        const double at = u * 3.0; const int i0 = std::min (2, (int) at); const double fr = at - i0;
+                        auto wave = [] (int which, int h) -> double
+                        {
+                            if (h > 32) return 0.0;
+                            if (which == 0) return h == 1 ? 1.0 : 0.0;
+                            if (which == 1) return 0.55 / h;
+                            if (which == 2) return (h & 1) ? 0.9 / h : 0.0;
+                            const double hz = h * 130.0;
+                            return (std::exp (-std::pow ((hz - 700.0) / 300.0, 2.0)) + 0.6 * std::exp (-std::pow ((hz - 1200.0) / 300.0, 2.0)) + 0.05 / h) * 0.5;
+                        };
+                        for (int h = 1; h <= kH; ++h) a[(size_t) h - 1] = (float) (wave (i0, h) * (1.0 - fr) + wave (i0 + 1, h) * fr);
+                        break;
+                    }
                     case 0:     // BASIC: a sine, a triangle, a saw, a square, a narrow pulse, each crossing into the next
                     {
                         const double at = u * 4.0; const int i0 = std::min (3, (int) at); const double fr = at - i0;
@@ -279,7 +294,7 @@ private:
                         break;
                     }
                 }
-                Wavetable::toRms (a);
+                if (k > 0) Wavetable::toRms (a);
             }
             t[k].build (amp, ph, osr);
             t[k].name = nameOf (k);

@@ -513,17 +513,16 @@ void Session::setConfig (int index, int v7)
 }
 
 // A file put on a lane by hand (LOAD, or dropped on it). A lane whose MODEL is WAVETABLE takes it as its table: FILE
-// where it was made as a wavetable, else SAMPLE with sixty-four frames; a lane already on FILE or SAMPLE is left as it is
-// set but for which of the two. (Its LAYER playing the file as a sample or as grains: the file is the layer's, and TABLE
+// where it was made as a wavetable, else SAMPLE. (Its LAYER playing the file as a sample or as grains: the file is the layer's, and TABLE
 // is left alone.) A recall does not come here: a snapshot's table is the snapshot's.
 void Session::loadedByHand (Engine::Target t)
 {
     if (t.kind != 0) return;
-    juce::String model, layerModel, table; float layer = 0.0f; juce::StringArray tables, froms;
+    juce::String model, layerModel, table; float layer = 0.0f; juce::StringArray tables;
     for (auto& sp : engine.setupParams (t))
     {
         if (sp.id == "model") model = sp.text; else if (sp.id == "layer_model") layerModel = sp.text;
-        else if (sp.id == "table") { table = sp.text; tables = sp.choices; } else if (sp.id == "wt_from") froms = sp.choices;
+        else if (sp.id == "table") { table = sp.text; tables = sp.choices; }
         else if (sp.id == "layer") layer = sp.value;
     }
     for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = engine.laneKnob (t.lane, k); kd.param != nullptr && juce::String (kd.param) == "layer") layer = engine.target (cx::lane (t.lane, k));
@@ -531,9 +530,7 @@ void Session::loadedByHand (Engine::Target t)
     if (layer > 0.001f && (layerModel.equalsIgnoreCase ("SAMPLE") || layerModel.equalsIgnoreCase ("GRANULAR"))) return;
     if (engine.moduleSays (t, 11) < 0.5f) return;       // (nothing it could read, or too short to cut a frame from)
     const juce::String want = engine.moduleSays (t, 10) > 0.5f ? "FILE" : "SAMPLE";
-    const bool was = table.equalsIgnoreCase ("FILE") || table.equalsIgnoreCase ("SAMPLE");
     if (const int at = tables.indexOf (want); at >= 0 && ! table.equalsIgnoreCase (want)) setupByHand (t, "table", (float) at / (float) (tables.size() - 1));
-    if (! was && want == "SAMPLE") if (const int at = froms.indexOf ("64 FRAMES"); at >= 0) setupByHand (t, "wt_from", (float) at / (float) std::max (1, froms.size() - 1));
     touch();
     if (onChange) onChange();
 }
@@ -4776,11 +4773,32 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
             at (5) = 0.5f * det;                                                        // PITCH: a hundredth either way at DETUNE's top
         }
         }
+        // (lists 5, the eighty-seventh build: TABLE SAMPLE has sixty-four frames and no other number, and LEVELS says
+        // whether they keep the level the recording had: EVEN, AS RECORDED. Before, FROM SAMPLE had three: 8 FRAMES,
+        // 64 FRAMES, 64 WITH LEVEL. The first two are EVEN.)
+        // (and where such a lane was on TABLE SAMPLE with the eight frames it then had, they were along the whole file and
+        // START and END did nothing for them: the sixty-four are read between START and END, so those are put at the
+        // file's ends and POSITION is the place in the file it was. Not where the lane's LAYER is up, which may be playing
+        // the part between them.)
+        if (s.hasSetup && wtAt[(size_t) l] >= 0)
+        {
+            float mv = -1.0f, table = 0.0f, from = 0.0f, layer = 0.0f;
+            for (auto& kv : s.setup[(size_t) l]) { if (kv.first == "model") mv = kv.second; else if (kv.first == "table") table = kv.second; else if (kv.first == "wt_from") from = kv.second; else if (kv.first == "layer") layer = kv.second; }
+            // (on BASS a snapshot from before lists 4 has LAYER in the lane's second place still: it is moved to CONFIG below)
+            if (taken[(size_t) l] < 4 && juce::String (lanes()[(size_t) l].slug) == "bass") layer = std::max (0.0f, s.values[(size_t) cx::lane (l, 1)]);
+            if (mv >= 0.0f && (int) std::lround (mv * (float) std::max (1, counts[(size_t) l] - 1)) == wtAt[(size_t) l] && table > 0.96f && from < 0.25f && layer < 0.001f)
+            {
+                auto put = [&] (const char* id, float v) { for (auto& kv : s.setup[(size_t) l]) if (kv.first == id) { kv.second = v; return; } s.setup[(size_t) l].push_back ({ id, v }); };
+                put ("smp_start", 0.0f); put ("smp_end", 1.0f);
+            }
+        }
+        if (taken[(size_t) l] == 4)
+            for (auto& kv : s.setup[(size_t) l]) if (kv.first == "wt_from") kv.second = kv.second < 0.75f ? 0.0f : 1.0f;
         // (lists 4, the eighty-fifth build: WAVETABLE has two knobs of its own on BASS, LEAD, CHORD and PAD, POSITION
         // and TWIST, in the lane's first two places. A snapshot from before whose lane is on WAVETABLE: what those two
         // places held goes to CONFIG under its own name, POSITION is where COLOR was, and TWIST is at nought. On LEAD
         // the fourth place was COLOR and is POS ENV, in the middle. So it sounds as it did.)
-        if (s.hasSetup && (module == "BASS" || module == "LEAD" || module == "PAD") && wtAt[(size_t) l] >= 0)
+        if (taken[(size_t) l] < 4 && s.hasSetup && (module == "BASS" || module == "LEAD" || module == "PAD") && wtAt[(size_t) l] >= 0)
         {
             float mv = -1.0f;
             for (auto& kv : s.setup[(size_t) l]) if (kv.first == "model") mv = kv.second;
@@ -4811,9 +4829,9 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
 }
 
 // What has come since a snapshot was taken, where it names none of it: each where it changes nothing (Engine::laterOff).
-// WAVETABLE's WANDER and its frames from a sample are as they were before the eighty-fifth build (15 %, eight) where the
-// state's lane is on WAVETABLE, which is what it then sounded like; on any other lane they are as they now open (none,
-// sixty-four), so that choosing WAVETABLE there afterwards is the wavetable of now.
+// WAVETABLE's WANDER is as it was before the eighty-fifth build (15 %) where the state's lane is on WAVETABLE, which is
+// what it then sounded like; on any other lane it is as it now opens (none), so that choosing WAVETABLE there afterwards
+// is the wavetable of now.
 static void fillLater (const Engine& engine, Engine::Target t, Engine::SetupState& st)
 {
     const bool onTable = t.kind == 0 && engine.setupPlays (t, st, "WAVETABLE");
@@ -4823,7 +4841,6 @@ static void fillLater (const Engine& engine, Engine::Target t, Engine::SetupStat
         for (auto& kv : st) named = named || kv.first == d.first;
         if (named) continue;
         if (! onTable && d.first == "wt_wander") d.second = 0.0f;
-        if (! onTable && d.first == "wt_from") d.second = 0.5f;
         st.push_back (d);
     }
 }

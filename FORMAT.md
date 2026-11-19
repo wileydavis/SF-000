@@ -186,9 +186,16 @@ this build does not have is written back as it was read.
 - **WAVETABLE** (eighty-fifth build), in a lane's `setup`: `table` is a place on a longer list
   (CLASSIC, eleven tables, FILE, SAMPLE: 0 is still the first and 1 still the last, which were
   the list before); `wt_twist`, `wt_twist_as` (BEND, SYNC, FOLD, PULSE), `wt_env` (0.5: none),
-  `wt_wander`, `wt_from` (8 FRAMES, 64 FRAMES, 64 WITH LEVEL). A setup that names none of
+  `wt_wander`, `wt_from` (LEVELS: 0 EVEN, 1 AS RECORDED). A setup that names none of
   them is read with no twist and no envelope, and, where its lane is on WAVETABLE, with
-  `wt_wander` 0.3 and `wt_from` 0, as WAVETABLE was. **`lists` 4**: WAVETABLE has POSITION
+  `wt_wander` 0.3, as WAVETABLE was. **`lists` 5** (eighty-seventh build): `table`'s list is
+  twelve tables (CLASSIC the first), FILE, SAMPLE, the same length as before with CLASSIC now
+  one of the tables, so no place on it moved; and `wt_from` has two choices where it had three
+  (8 FRAMES, 64 FRAMES, 64 WITH LEVEL): a snapshot of `lists` 4 with it under 0.75 is read as
+  EVEN, else AS RECORDED. A snapshot under 5 whose lane is on WAVETABLE with `table` at SAMPLE
+  and the eight frames of then (`wt_from` absent or 0), and no `layer`, is read with
+  `smp_start` 0 and `smp_end` 1: the eight were cut along the whole file, and the sixty-four
+  are read between the two. **`lists` 4**: WAVETABLE has POSITION
   (`color`) and TWIST in the lane's first two knob places. A snapshot with a lower figure
   whose lane is on WAVETABLE has the lane's usual knobs there: read, their values go to
   `setup` under their own names and POSITION takes `color`'s.

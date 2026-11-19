@@ -216,10 +216,14 @@ back at the other. The sequencer stays where it is.
   parameters. At the top is the module's own display: the waveform with its in and out points, and
   on VOICE the phrase with its cue points. The display takes the mouse.
 - **An insert's or a return's CONFIG** holds that effect's remaining parameters and its display.
-- **The controls stand in boxes by what they belong to**: SOUND (MODEL first), LAYER, SAMPLE,
-  ECHO, POCKET, RIG, and on an instrument MOTION 1 and MOTION 2. A model's own controls (FM 4-OP's
-  operators, WAVETABLE's table) and a sample's are there only while that model plays, as the
-  lane's model or its layer's: what is on the panel does something. More rows than fit: scroll.
+- **The controls stand in boxes by what they belong to**, eight across at the spacing of the
+  modules' own knobs (eighty-seventh build). First what the sound is: **MODEL, with what only
+  that model has in the same box** (WAVETABLE's TABLE beside it, FM 4-OP's operators), LAYER,
+  and USUAL KNOBS. Then, from a new row, what is always there: SOUND, POCKET, ECHO, RIG, and
+  MOTION 1 and MOTION 2 side by side. Then, from a new row, what a setting brings: a sample's
+  controls where a layer or a wavetable plays the file. A model's own controls and a sample's
+  are there only while they do something. More rows than fit: scroll, a row at a time; the
+  title row says which rows of how many.
 - **MOTION** moves one of the instrument's knobs by itself (an effect's and a return's CONFIG has
   the same two, moving that effect's knobs, with INPUT, the level coming in, in place of NOTES).
   Each lane has two: WAVE (sine,
@@ -452,14 +456,14 @@ place along it: the oscillator reads between the two frames there, at any pitch,
 - **POSITION and TWIST are the lane's first two knobs** while the model is WAVETABLE, on every
   lane that has it. The rest of the panel is as the lane has it (on LEAD the fourth knob is
   POS ENV); what the two knobs took the places of is in CONFIG, under USUAL KNOBS.
-- **TABLE**, in CONFIG's WAVETABLE box. **CLASSIC**: the four waves it always had (a sine, a
-  saw, a square, a vowel). Then eleven tables of 64 frames: **BASIC** (sine, triangle, saw,
-  square, pulse), **HARMONIC** (a saw opening from its fundamental to all of it, with a peak
+- **TABLE**, in CONFIG beside MODEL. Twelve tables of 64 frames come with the instrument:
+  **CLASSIC** (a sine, a saw, a square, a vowel: what WAVETABLE was before it had tables),
+  **BASIC** (sine, triangle, saw, square, pulse: what a lane put on WAVETABLE opens on), **HARMONIC** (a saw opening from its fundamental to all of it, with a peak
   where it is cut: a filter sweep in the oscillator), **PWM**, **SYNC** (the hard-sync sweep),
   **FORMANT** (OO, OH, AH, EH, EE), **FM**, **FOLD**, **DIGITAL**, **ORGAN** (the drawbars
   coming out), **BASS** (a sub driven square), **COMB**. **FILE**: the file on the lane is a
   wavetable, 2048 samples a frame, up to 256 frames, as Serum, Vital and Phase Plant write
-  them (a short file that is not a whole number of frames is one cycle). **SAMPLE**: frames
+  them (a short file that is not a whole number of frames is one cycle). **SAMPLE**: 64 frames
   cut along a recording on the lane.
 - **TWIST** bends the cycle as it is read, the way **TWIST AS** says: **BEND** (the wave
   squeezed towards the end of its cycle), **SYNC** (read faster than the note and restarted
@@ -469,18 +473,19 @@ place along it: the oscillator reads between the two frames there, at any pitch,
   starts and lets it back as it falls (left of the middle: the other way). DECAY sets how
   long. A MOTION aimed at POSITION sweeps it on a wave.
 - **WANDER**: each note drifts slowly about its place. It opens at nought, where POSITION is
-  exactly where the knob is. (It always drifted, by 15 %, until this build: a snapshot from
-  then has WANDER at 30 and sounds as it did.)
-- **FROM SAMPLE**: TABLE SAMPLE's frames. 8, each brought to one loudness, as it always was;
-  64; or 64 WITH LEVEL, as loud at each place as the recording was there.
+  exactly where the knob is. (A snapshot from before the eighty-fifth build, when it always
+  drifted, has WANDER at 30 and drifts as it did.)
+- **LEVELS**: TABLE SAMPLE's frames. EVEN: each brought to one loudness. AS RECORDED: as loud
+  at each place as the recording was there. (Until the eighty-seventh build this was FROM
+  SAMPLE, with a choice of eight frames as well: there is one wavetable now, of 64.)
 - **A file loaded or dropped on the lane while its MODEL is WAVETABLE becomes its table**
-  (eighty-sixth build): TABLE goes to FILE for a wavetable file, else to SAMPLE with 64
-  frames. CLASSIC and the eleven take no notice of a file. With 64 frames, **POSITION travels
-  the part of the recording between its START and END** (the marks on the sample's display).
+  (eighty-sixth build): TABLE goes to FILE for a wavetable file, else to SAMPLE. The twelve
+  take no notice of a file. On TABLE SAMPLE, **POSITION travels the part of the recording
+  between its START and END** (the marks on the sample's display).
 - **The display** shows the table, its frames one behind another, with the place lit.
-- A snapshot from before this build that has a lane on WAVETABLE is read so that it sounds as
-  it did: your SNAP 087, 088, 092 and 101 render sample for sample the same with their
-  MOTIONs off.
+- A snapshot from before the eighty-fifth build with a lane on WAVETABLE keeps its knobs'
+  meanings and its table: on CLASSIC it sounds as it did; on TABLE SAMPLE it has 64 frames
+  where it had 8 (DECISIONS 737).
 
 **GRANULAR** (below) plays grains of a sample.
 
@@ -585,10 +590,12 @@ from before has its COLOR and DETUNE turned into the SIZE, SPRAY and PITCH they 
 - A snapshot keeps all of it, a stack knob sweeps it (frequency, gain and width travel; a band's
   kind changes half way), and the E16 has it on the last pages of CONFIG, a row a band.
 
-**Everything in CONFIG keeps its place.** The boxes that are always there come first, in one
-order on every lane, with MODEL the first control of all; MOTION follows them; the boxes that
-come and go with a model (its own controls, SAMPLE's, and USUAL KNOBS: the knobs a model's own
-took the places of) come after. Choosing a model moves nothing that was there before it.
+**Nothing in CONFIG moves under the hand** (eighty-seventh build). Turning any control but
+MODEL and LAYER MODEL moves no other control: what a setting brings is listed after everything
+that stays. MODEL and LAYER MODEL change the first rows only (the model's own controls stand
+beside it), and what follows starts on a new row, so it goes up or down by whole rows and never
+sideways. The controls every panel shares are in one order everywhere: on an effect THROW,
+FREEZE and MIX first, and LO CUT, INPUT, DUCK, DUCK SHAPE and DUCK FOR last.
 
 **A model with knobs of its own** is the rule GRANULAR and KICK FORGE share: the lane's first
 eight knobs are the model's while it is on, a snapshot holds them, and a stack knob or a recall
@@ -1732,9 +1739,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
   POCKETS' four), the sequencer strip (SEQ: LENGTH, the step under the hand as six knobs, STEP
   to go through the pattern and that step's VEL, GATE, RATCH, NOTE and OCT, the generator's four,
   and the nudges: see `controllers/e16/README.md`), CONFIG (CFG 1 to
-  3: its controls in the order its panel has them, twelve to a page (the panel is laid out as the
-  E16 is: four across, each twelve the three top rows of a page, with SEL, PAGE -, PAGE + and SHUT
-  under them, and it goes to the page the E16 is on; a CONFIG longer than three pages, as a
+  3: its controls in the order its panel has them, twelve to a page (the panel is eight across,
+  in boxes: while the E16 is on a page of CONFIG its twelve are numbered 1 to 12 there, and the
+  panel brings the first of them into view; a CONFIG longer than three pages, as a
   lane's is with its EQ's bands last, goes on with PAGE +, to eight pages in all, the pages past
   the third standing on CFG 3's knobs); with POCKETS up, every
   lane's pocket), and the library's two pages.

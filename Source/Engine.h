@@ -419,7 +419,10 @@ public:
 
     // ---- setup: every parameter of a hosted module that the performance screen does not show
     // group: the box it is drawn in (controls of one group follow one another). ownRow: its box starts a row of its own.
-    struct SetupParam { juce::String id, name, text, group; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; bool ownRow = false; };
+    // section: 0 what the sound is (MODEL and what only that model has, LAYER, the knobs a model's own put away), which
+    // changes with the model and is given rows of its own; 1 what is always there; 2 what comes and goes at the foot
+    // (a sample's controls, a convolution's bands). A control that brings others or takes them away is before them.
+    struct SetupParam { juce::String id, name, text, group; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; bool ownRow = false; int section = 1; };
     // MOTION: the two modulators every instrument has (the suite's own): a wave, a speed, one of
     // the instrument's knobs to move, and how far. Set in a lane's CONFIG, kept in snapshots.
     static bool isMotionId (const juce::String& id);

@@ -298,10 +298,11 @@ public:
            PPOST,                                // (SF-000) the pocket left to the host, to make after the lane's effects
            WTTWIST, WTTWISTAS, WTENV, WTWANDER, WTFROM,     // (SF-000) WAVETABLE's own (see E_WAVETABLE)
            kParams };
-    // (SF-000) TABLE's list: CLASSIC (the four waves it always had), the tables that come with the instrument, FILE
-    // (the loaded file is a wavetable: 2048 samples a frame), SAMPLE (frames found along a recording). CLASSIC stays
-    // first and SAMPLE last: a menu's place is kept as how far down the list it is, and those two were the list.
-    static constexpr int kTabFile = WavetableSet::kTables + 1, kTabSample = WavetableSet::kTables + 2;
+    // (SF-000) TABLE's list: the twelve tables that come with the instrument (CLASSIC, the four waves WAVETABLE had before
+    // it had tables, is the first), FILE (the loaded file is a wavetable: 2048 samples a frame), SAMPLE (frames found along
+    // a recording). CLASSIC stays first and SAMPLE last: a menu's place is kept as how far down the list it is, and those
+    // two were the list.
+    static constexpr int kTabFile = WavetableSet::kTables, kTabSample = WavetableSet::kTables + 1;
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
         : name (idName), roleId (role), models (std::move (m)), dCut (cutDef), dRes (resDef), dEnv (envDef), dGate (gateDef), dPocket (pDepth) {}
@@ -349,10 +350,10 @@ public:
         p.push_back (pct ("drift", "DRIFT", 0.0f).slow());
         // WAVETABLE's frames: the built-in four, or eight from the loaded sample (hidden where no
         // model is WAVETABLE).
-        std::vector<std::string> tn { "CLASSIC" };
+        std::vector<std::string> tn;
         for (int k = 0; k < WavetableSet::kTables; ++k) tn.push_back (WavetableSet::nameOf (k));
         tn.push_back ("FILE"); tn.push_back ("SAMPLE");
-        auto table = choice ("table", "TABLE", tn, 0).engineGroup();
+        auto table = choice ("table", "TABLE", tn, 1).engineGroup();       // (it opens on BASIC)
         if (! hasWavetable()) table.hide();
         p.push_back (table);
         // FM 4-OP's operators [Nov 10]: the algorithm, each operator's RATIO (to the note), LEVEL
@@ -434,17 +435,16 @@ public:
         //   TWIST AS    BEND: the wave squeezed towards its end. SYNC: read faster than the note and restarted by it, up to
         //               eight times. FOLD: driven into a folder. PULSE: the whole wave squeezed into the front of the cycle
         //   POS ENV     the note's filter envelope moves the place: right, on along the table and back as it falls; left, back
-        //   WANDER      each note drifts about the place, slowly: none, to half the table either way. (Before these it
-        //               always did, by 15 %: a snapshot from then has it at 30.)
-        //   FROM SAMPLE TABLE SAMPLE's frames: 8 found evenly along the recording, each brought to one loudness (as it always
-        //               was), or 64, or 64 that keep the level the recording had there
+        //   WANDER      each note drifts about the place, slowly: none, to half the table either way
+        //   LEVELS      TABLE SAMPLE's sixty-four frames: EVEN, each brought to one loudness; AS RECORDED, each as loud as the
+        //               recording was there
         {
             auto own = [this, &p] (ParamSpec s) { s.engineGroup(); if (! hasWavetable()) s.hide(); p.push_back (s); };
             own (pct ("wt_twist", "TWIST", 0.0f).slow());
             own (choice ("wt_twist_as", "TWIST AS", { "BEND", "SYNC", "FOLD", "PULSE" }, 0));
             own (knob ("wt_env", "POS ENV", -1.0f, 1.0f, 0.0f, "BIP").slow());
             own (pct ("wt_wander", "WANDER", 0.0f).slow());
-            own (choice ("wt_from", "FROM SAMPLE", { "8 FRAMES", "64 FRAMES", "64 WITH LEVEL" }, 1));
+            own (choice ("wt_from", "LEVELS", { "EVEN", "AS RECORDED" }, 0));
         }
         jassert ((int) p.size() == kParams);
         return p;
@@ -470,8 +470,6 @@ public:
     // turned so every frame's fundamental starts at the same phase (frames blend without
     // cancelling), brought to one loudness; a frame 40 dB under the loudest (silence at an end)
     // takes its neighbour's.
-    struct SampleFrames { std::vector<Mipmap> f; };
-    static constexpr int kSampleFrames = 8;
     static double periodAt (const std::vector<float>& x, int t0, int w, double sr)
     {
         int n = 1; while (n < 2 * w) n <<= 1;
@@ -501,64 +499,9 @@ public:
             }
         return 0.0;
     }
-    static std::shared_ptr<const SampleFrames> framesFrom (const SampleData& s, double voiceRate)
-    {
-        const int len = s.length(), chans = std::max (1, s.buf.getNumChannels());
-        constexpr int kN = 2048, kCycles = 4;
-        const double fallback = s.rootHz > 20.0f ? s.sr / (double) s.rootHz : 1024.0 * s.sr / 48000.0;
-        const int win = (int) (0.085 * s.sr);
-        if (len < (int) (fallback * kCycles) + win + 8) return nullptr;
-        std::vector<float> mono ((size_t) len);
-        for (int i = 0; i < len; ++i) { float v = 0.0f; for (int ch = 0; ch < chans; ++ch) v += s.buf.getSample (ch, i); mono[(size_t) i] = v / (float) chans; }
-        auto at = [&mono, len] (double t)
-        {
-            const int i = juce::jlimit (1, len - 3, (int) t);
-            const float fr = (float) (t - i), xm1 = mono[(size_t) i - 1], x0 = mono[(size_t) i], x1 = mono[(size_t) i + 1], x2 = mono[(size_t) i + 2];
-            const float c1 = 0.5f * (x1 - xm1), c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2, c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
-            return (double) (((c3 * fr + c2) * fr + c1) * fr + x0);
-        };
-        std::vector<std::vector<float>> amps ((size_t) kSampleFrames), phs ((size_t) kSampleFrames);
-        std::vector<double> rms ((size_t) kSampleFrames, 0.0);
-        std::vector<double> x ((size_t) (kN * kCycles));
-        const double usable = (double) len - 8.0 - win - fallback * kCycles;
-        for (int f = 0; f < kSampleFrames; ++f)
-        {
-            const double t0 = 2.0 + std::max (0.0, usable) * f / (kSampleFrames - 1);
-            double per = periodAt (mono, (int) t0, win, s.sr);
-            if (per <= 0.0) per = fallback;
-            per = std::min (per, ((double) len - 8.0 - t0) / kCycles);
-            for (size_t i = 0; i < x.size(); ++i) x[i] = at (t0 + ((double) i + 0.5) * per / kN);
-            auto& amp = amps[(size_t) f]; auto& ph = phs[(size_t) f];
-            Mipmap::harmonicsOfCycles (x, kCycles, Mipmap::kSize / 4, amp, ph);
-            double e = 0.0;
-            for (auto a : amp) e += 0.5 * (double) a * a;
-            rms[(size_t) f] = std::sqrt (e);
-            const float p1 = ph[0];
-            for (size_t h = 0; h < ph.size(); ++h) ph[h] -= (float) (h + 1) * p1;
-        }
-        const double loud = *std::max_element (rms.begin(), rms.end());
-        if (loud < 1.0e-6) return nullptr;
-        // Silent frames take a neighbour's (the nearest loud one before, else after).
-        for (int f = 0; f < kSampleFrames; ++f)
-            if (rms[(size_t) f] < 0.01 * loud)
-                for (int d = 1; d < kSampleFrames; ++d)
-                {
-                    const int k = f - d >= 0 && rms[(size_t) (f - d)] >= 0.01 * loud ? f - d : f + d < kSampleFrames && rms[(size_t) (f + d)] >= 0.01 * loud ? f + d : -1;
-                    if (k >= 0) { amps[(size_t) f] = amps[(size_t) k]; phs[(size_t) f] = phs[(size_t) k]; rms[(size_t) f] = rms[(size_t) k]; break; }
-                }
-        auto out = std::make_shared<SampleFrames>();
-        out->f.resize ((size_t) kSampleFrames);
-        for (int f = 0; f < kSampleFrames; ++f)
-        {
-            const float g = (float) (0.45 / rms[(size_t) f]);
-            for (auto& a : amps[(size_t) f]) a *= g;
-            out->f[(size_t) f].build (amps[(size_t) f], phs[(size_t) f], voiceRate);
-        }
-        return out;
-    }
-    // (SF-000) Sixty-four frames from a recording, where TABLE SAMPLE had eight: the same reading (four periods where it
-    // is cut, windowed, read as harmonics, every frame's fundamental at one phase, each brought to one loudness), at
-    // sixty-four places evenly along it, and how loud the recording was at each kept beside them (FROM SAMPLE: 64 WITH LEVEL).
+    // (SF-000) Sixty-four frames from a recording (TABLE SAMPLE had eight until the eighty-seventh build): each four periods
+    // of the sound where it is cut, windowed, read as harmonics, every frame's fundamental at one phase, each brought to
+    // one loudness; at sixty-four places evenly along it, and how loud the recording was at each kept beside them (LEVELS).
     static std::shared_ptr<const Wavetable> fineFrom (const SampleData& s, double voiceRate)
     {
         const int len = s.length(), chans = std::max (1, s.buf.getNumChannels());
@@ -691,9 +634,9 @@ public:
                    : juce::String (count) + (count == 1 ? " FRAME OF " : " FRAMES OF ") + juce::String (size) + (n % size != 0 ? " (" + juce::String (n % size) + " SAMPLES OVER, LEFT OUT)" : juce::String());
         return out;
     }
-    // What WAVETABLE can make of the loaded sample: the eight frames, the sixty-four, and the file read as a wavetable.
+    // What WAVETABLE can make of the loaded sample: its sixty-four frames, and the file read as a wavetable.
     // Made once for a sample and a rate, and shared by every lane and voice that holds that sample.
-    struct SampleTables { std::shared_ptr<const SampleFrames> legacy; std::shared_ptr<const Wavetable> fine, file; juce::String fileSays; bool fileWhole = false; };
+    struct SampleTables { std::shared_ptr<const Wavetable> fine, file; juce::String fileSays; bool fileWhole = false; };
     static std::shared_ptr<const SampleTables> tablesFrom (const SamplePtr& s, double voiceRate)
     {
         struct Kept { std::weak_ptr<const SampleData> of; double rate = 0.0; std::weak_ptr<const SampleTables> made; };
@@ -705,7 +648,6 @@ public:
             for (auto& k : kept) if (k.rate == voiceRate && k.of.lock() == s) if (auto m = k.made.lock()) return m;
         }
         auto t = std::make_shared<SampleTables>();
-        t->legacy = framesFrom (*s, voiceRate);
         t->fine = fineFrom (*s, voiceRate);
         t->file = fileFrom (*s, voiceRate, t->fileSays, t->fileWhole);
         const std::lock_guard<std::mutex> g (lock);
@@ -874,28 +816,22 @@ public:
         blockReg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();
         for (auto& v : voices) if (v.active) v.reg.level = blockReg.level;        // (SF-000) GAIN reaches a note that is sounding
         // WAVETABLE's frames from the sample, if TABLE says so and there are some.
-        // (SF-000) and which table: the four waves, one that came with the instrument, the file read as one, or the
-        // recording's frames (eight as it always was, or sixty-four). What cannot be had plays the four waves.
-        tableFrames = nullptr; wtTab = nullptr; wtLevel = false; wtLo = 0.0f; wtSpan = 1.0f;
-        if (hasWavetable())
+        // (SF-000) and which table: one that came with the instrument, the file read as one, or the recording's frames.
+        // What cannot be had (no file, a file that is not a wavetable) plays BASIC.
+        wtTab = nullptr; wtLevel = false; wtLo = 0.0f; wtSpan = 1.0f;
+        if (hasWavetable() && tables != nullptr)
         {
             const int tab = c.ci (TABLE);
             const SampleTables* st = frames.audio();
-            if (tab >= 1 && tab <= WavetableSet::kTables) wtTab = tables != nullptr ? &tables->t[tab - 1] : nullptr;
+            if (tab < WavetableSet::kTables) wtTab = &tables->t[std::max (0, tab)];
             else if (tab == kTabFile) wtTab = st != nullptr ? st->file.get() : nullptr;
-            else if (tab == kTabSample && st != nullptr)
+            else if (st != nullptr && st->fine != nullptr)
             {
-                const int from = c.ci (WTFROM);
-                if (from == 0) tableFrames = st->legacy.get();
-                else
-                {
-                    // (the sixty-four are along the whole recording: POSITION travels the part of them between its START and END)
-                    wtTab = st->fine.get(); wtLevel = from == 2;
-                    if (smp != nullptr && smp->length() > 0) { wtLo = clamp01 ((float) (blockReg.start / (double) smp->length())); wtSpan = clamp01 ((float) (blockReg.end / (double) smp->length())) - wtLo; }
-                }
+                // (the sixty-four are along the whole recording: POSITION travels the part of them between its START and END)
+                wtTab = st->fine.get(); wtLevel = c.ci (WTFROM) == 1;
+                if (smp != nullptr && smp->length() > 0) { wtLo = clamp01 ((float) (blockReg.start / (double) smp->length())); wtSpan = clamp01 ((float) (blockReg.end / (double) smp->length())) - wtLo; }
             }
-            if (tableFrames != nullptr && tableFrames->f.size() < (size_t) kSampleFrames) tableFrames = nullptr;
-            if (wtTab != nullptr && wtTab->frames() < 1) wtTab = nullptr;
+            if (wtTab == nullptr || wtTab->frames() < 1) { wtTab = &tables->t[1]; wtLevel = false; wtLo = 0.0f; wtSpan = 1.0f; }     // (BASIC)
             wtTwist = c.v (WTTWIST); wtTwistAs = c.ci (WTTWISTAS); wtEnv = c.v (WTENV); wtWander = c.v (WTWANDER);
         }
         pitchOffset = c.v (TUNE) + c.bend + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);      // (SF-000: and the pitch wheel)
@@ -1058,35 +994,24 @@ public:
         const int mi = (int) std::lround (getParam (MODEL));
         return mi >= 0 && mi < (int) models.size() && models[(size_t) mi].engine == E_WAVETABLE;
     }
-    // The table as the knobs choose it: one of many frames, or TABLE SAMPLE's eight, or (neither) the four waves.
-    void tableNow (const Wavetable*& wt, const SampleFrames*& eight, juce::String& called) const
+    // The table as the knobs choose it, and what it is called.
+    const Wavetable* tableNow (juce::String& called) const
     {
-        wt = nullptr; eight = nullptr; called = "CLASSIC";
+        if (tables == nullptr) return nullptr;
         const int tab = (int) std::lround (getParam (TABLE));
         const SampleTables* st = frames.audio();
-        if (tab >= 1 && tab <= WavetableSet::kTables) { if (tables != nullptr) { wt = &tables->t[tab - 1]; called = WavetableSet::nameOf (tab - 1); } }
-        else if (tab == kTabFile) { if (st != nullptr && st->file != nullptr) { wt = st->file.get(); called = "FILE"; } }
-        else if (tab == kTabSample && st != nullptr)
-        {
-            if ((int) std::lround (getParam (WTFROM)) == 0) { if (st->legacy != nullptr && st->legacy->f.size() >= (size_t) kSampleFrames) { eight = st->legacy.get(); called = "SAMPLE"; } }
-            else if (st->fine != nullptr) { wt = st->fine.get(); called = "SAMPLE"; }
-        }
+        if (tab >= 0 && tab < WavetableSet::kTables) { called = WavetableSet::nameOf (tab); return &tables->t[tab]; }
+        if (tab == kTabFile && st != nullptr && st->file != nullptr) { called = "FILE"; return st->file.get(); }
+        if (tab == kTabSample && st != nullptr && st->fine != nullptr) { called = "SAMPLE"; return st->fine.get(); }
+        called = "BASIC"; return &tables->t[1];
     }
     // Its frames one behind another, from the first at the front to the last at the back, and the place the knob is at lit.
     void paintTable (juce::Graphics& g, juce::Rectangle<float> r)
     {
-        const Wavetable* wt; const SampleFrames* eight; juce::String called;
-        tableNow (wt, eight, called);
+        juce::String called;
+        const Wavetable* wt = tableNow (called);
         ui::frame (g, r, "TABLE " + called + (wt != nullptr ? "  " + juce::String (wt->frames()) : juce::String()), ui::kWords);
-        auto W = waves;
-        if (wt == nullptr && eight == nullptr && W == nullptr) return;
-        auto shape = [&] (float place, double ph) -> float
-        {
-            if (wt != nullptr) return wt->at (place, 4, ph);
-            if (eight != nullptr) { const float pos = place * (float) (kSampleFrames - 1); const int t0 = std::min (kSampleFrames - 2, (int) pos); return lerp (eight->f[(size_t) t0].read (4, ph), eight->f[(size_t) t0 + 1].read (4, ph), pos - (float) t0); }
-            const float pos = place * 3.0f; const int t0 = std::min (2, (int) pos);
-            return lerp (W->frame[t0].read (4, ph), W->frame[t0 + 1].read (4, ph), pos - (float) t0);
-        };
+        if (wt == nullptr) return;
         const auto in = r.reduced (8.0f, 4.0f).withTrimmedTop (13.0f);
         const float w = in.getWidth() * 0.72f, back = in.getWidth() - w, rise = in.getHeight() * 0.38f, amp = in.getHeight() * 0.30f;
         auto line = [&] (float place)
@@ -1095,14 +1020,14 @@ public:
             const float x0 = in.getX() + back * place, y0 = in.getBottom() - amp - 1.0f - rise * place;
             for (int i = 0; i <= 56; ++i)
             {
-                const float y = y0 - amp * juce::jlimit (-1.0f, 1.0f, 0.7f * shape (place, (double) i / 56.0 * 0.9999));
+                const float y = y0 - amp * juce::jlimit (-1.0f, 1.0f, 0.7f * wt->at (place, 4, (double) i / 56.0 * 0.9999));
                 if (i == 0) p.startNewSubPath (x0, y); else p.lineTo (x0 + w * (float) i / 56.0f, y);
             }
             return p;
         };
         for (int j = 8; j >= 0; --j) { g.setColour (ui::kDim.withAlpha (0.30f + 0.45f * (1.0f - (float) j / 8.0f))); g.strokePath (line ((float) j / 8.0f), juce::PathStrokeType (1.0f)); }
         float lo = 0.0f, span = 1.0f;
-        if (called == "SAMPLE" && wt != nullptr) { lo = clamp01 (getParam (SSTART)); span = clamp01 (getParam (SSTART + 1)) - lo; }
+        if (called == "SAMPLE") { lo = clamp01 (getParam (SSTART)); span = clamp01 (getParam (SSTART + 1)) - lo; }
         g.setColour (ui::kText); g.strokePath (line (clamp01 (lo + span * clamp01 (getParam (COLOR)))), juce::PathStrokeType (1.8f));
         const int nv = activeVoices.load();
         ui::label (g, juce::String (nv) + (nv <= kPlayVoices ? " / " + juce::String (kPlayVoices) : juce::String()), r.reduced (6, 2).removeFromBottom (12), ui::kFaint, 10.0f, juce::Justification::centredRight);
@@ -1113,25 +1038,22 @@ public:
     {
         const SampleTables* st = frames.audio();
         if (k == 10) return st != nullptr && st->file != nullptr && st->fileWhole ? 1.0f : 0.0f;
-        if (k == 11) return st != nullptr && (st->fine != nullptr || st->file != nullptr || st->legacy != nullptr) ? 1.0f : 0.0f;
+        if (k == 11) return st != nullptr && (st->fine != nullptr || st->file != nullptr) ? 1.0f : 0.0f;
         return 0.0f;
     }
-    // What TABLE FILE or TABLE SAMPLE made of what is loaded, or why the four waves are playing in its place.
+    // What TABLE FILE or TABLE SAMPLE made of what is loaded, or why BASIC is playing in its place.
     juce::String statusLine() const override
     {
         if (! playsTable()) return {};
         const int tab = (int) std::lround (getParam (TABLE));
         const SampleTables* st = frames.audio();
         if (tab == kTabFile)
-            return st == nullptr ? juce::String ("TABLE FILE: NO FILE ON THIS LANE. THE CLASSIC TABLE PLAYS")
-                 : st->file != nullptr ? "TABLE FILE: " + st->fileSays : "TABLE FILE: " + st->fileSays + ". THE CLASSIC TABLE PLAYS";
+            return st == nullptr ? juce::String ("TABLE FILE: NO FILE ON THIS LANE. BASIC PLAYS")
+                 : st->file != nullptr ? "TABLE FILE: " + st->fileSays : "TABLE FILE: " + st->fileSays + ". BASIC PLAYS";
         if (tab == kTabSample)
-        {
-            const bool eight = (int) std::lround (getParam (WTFROM)) == 0;
-            if (st == nullptr) return "TABLE SAMPLE: NO SAMPLE ON THIS LANE. THE CLASSIC TABLE PLAYS";
-            if (eight ? st->legacy == nullptr : st->fine == nullptr) return "TABLE SAMPLE: THE SAMPLE IS TOO SHORT TO CUT FRAMES FROM. THE CLASSIC TABLE PLAYS";
-            return juce::String ("TABLE SAMPLE: ") + (eight ? "8" : "64") + " FRAMES ALONG THE RECORDING";
-        }
+            return st == nullptr ? juce::String ("TABLE SAMPLE: NO SAMPLE ON THIS LANE. BASIC PLAYS")
+                 : st->fine == nullptr ? juce::String ("TABLE SAMPLE: THE SAMPLE IS TOO SHORT TO CUT FRAMES FROM. BASIC PLAYS")
+                 : juce::String ("TABLE SAMPLE: 64 FRAMES ALONG THE RECORDING, POSITION BETWEEN ITS START AND END");
         return {};
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool press) override
@@ -1539,7 +1461,7 @@ private:
         const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, gainAll = k.gainAll, subMul = k.subMul;
         const double wtDet = m.detune > 0.0f ? (double) semis (k.detCents / 100.0f) : 1.0;      // (SF-000) WAVETABLE's second reading
         // (SF-000) WAVETABLE's WANDER and TWIST, worked out once for the block
-        const float wtWanderAmp = std::abs (wtWander - 0.3f) < 1.0e-4f ? 0.15f : wtWander * 0.5f;
+        const float wtWanderAmp = wtWander * 0.5f;
         const bool wtTwisted = m.engine == E_WAVETABLE && wtTwist > 0.001f;
         // (how far each kind squeezes the wave at its most: BEND 1 to 9 times, SYNC 1 to 8, FOLD's drive 1 to 6, PULSE 1 to 10)
         const float wtK = wtTwistAs == 0 ? 1.0f + 8.0f * wtTwist : wtTwistAs == 1 ? 1.0f + 7.0f * wtTwist : wtTwistAs == 2 ? 1.0f + 5.0f * wtTwist : 1.0f / (1.0f - 0.9f * wtTwist);
@@ -1719,26 +1641,10 @@ private:
                 case E_WAVETABLE:
                 {
                     // The place in the table: COLOR, each note's own slow WANDER about it, and the filter envelope by POS ENV.
-                    // (SF-000: the wander was always 15 %, which is WANDER at 30; with no POS ENV this is what it always was.)
                     float scan = wtWanderAmp > 0.0f ? color + wtWanderAmp * std::sin (kTwoPi * v.t * 0.13f) : color;
                     if (wtEnv != 0.0f) scan += wtEnv * v.fenv.v;
                     scan = clamp01 (scan);
-                    // one reading of the table there: a table of many frames, or TABLE SAMPLE's eight, or the four waves
-                    auto read = [&] (double ph, int oct) -> float
-                    {
-                        if (wtTab != nullptr) return wtTab->at (wtLo + wtSpan * scan, oct, ph);
-                        if (tableFrames != nullptr)
-                        {
-                            const float pos = scan * (float) (kSampleFrames - 1);
-                            const int t0 = std::min (kSampleFrames - 2, (int) pos);
-                            const float fr = pos - (float) t0;
-                            return lerp (tableFrames->f[(size_t) t0].read (oct, ph), tableFrames->f[(size_t) t0 + 1].read (oct, ph), fr);
-                        }
-                        const float pos = scan * 3.0f;
-                        const int t0 = std::min (2, (int) pos);
-                        const float fr = pos - (float) t0;
-                        return lerp (W.frame[t0].read (oct, ph), W.frame[t0 + 1].read (oct, ph), fr);
-                    };
+                    auto read = [&] (double ph, int oct) -> float { return wtTab != nullptr ? wtTab->at (wtLo + wtSpan * scan, oct, ph) : 0.0f; };
                     // TWIST: the cycle bent as it is read. Whatever squeezes the wave reads a level with that many fewer
                     // harmonics (wtOct), so what it adds stays under the fold.
                     auto wave = [&] (double ph) -> float
@@ -2051,8 +1957,7 @@ private:
     int bLive = 0;
     LayerSplit split;
     SharedSlot<SampleTables> frames;                   // what WAVETABLE can make of the sample (buildFrames)
-    const SampleFrames* tableFrames = nullptr;         // this block's (processVoices): TABLE SAMPLE's eight, or
-    const Wavetable* wtTab = nullptr;                  // (SF-000) a table of many frames, or neither: the four waves
+    const Wavetable* wtTab = nullptr;                  // (SF-000) this block's table (processVoices)
     bool wtLevel = false;
     float wtLo = 0.0f, wtSpan = 1.0f;                  // (SF-000) the part of the table POSITION travels (a recording's START..END; else all of it)
     float wtTwist = 0.0f, wtEnv = 0.0f, wtWander = 0.0f; int wtTwistAs = 0;

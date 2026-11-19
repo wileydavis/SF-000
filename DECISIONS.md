@@ -5210,8 +5210,120 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        have it. *Not done:* cutting the 64 from the part itself, which wants the table made
        again whenever a mark moves.
 
+## CONFIG laid out again so that nothing moves under the hand; black print on every bright key; one wavetable (Nov 18, 22:00): eighty-seventh build
+
+733. **You**, Nov 18, 21:05: "does it make sense to allow a sequencer step to change paramaters?
+     Like select a step, and selct a group of knobs and values to morph to (could be absolute or
+     modulat). Thogughts?" **Not built: you asked what I thought.** *Mine, the answer I gave:*
+     yes, it is what a step sequencer is for after notes (Elektron's parameter locks). I would
+     build it on the lane's own panel knobs first, as an amount added to where the knob stands
+     (so a snapshot, a macro and a MOTION still move the knob under it), and leave absolute
+     values and a slide from step to step for after that is played. Waiting for your word.
+734. **You**, Nov 18, 21:07: "how good is our compressor? It has to be amazing and have a good
+     coloration and musicality that works well with ambient/hypnotic/ and harstyle techno."
+     **Not built: asked, and answered.** *Mine, the answer:* it is clean and it works, and it is
+     not yet that. What I proposed: characters to choose from (CLEAN, GLUE, WARM, SMASH), the
+     gain stage oversampled, and the colour tied to how much it is reducing, so that it colours
+     most where it works hardest. Waiting for your word on which of 733 and 734 is first.
+735. **You**, Nov 18, 21:54: "there was no other wavetable option in the model selector for the new
+     wavetable we built". 22:00: "part of the issue is that controls are moving around again as i
+     turn knobs. Turn a knob to a new table and it changes the knobs shown and they move
+     underneath. [...] Better weould be an audit of all the config interfaces and trying to make
+     everything functionally logical and as consistent as possible. Like I'd put model-related
+     parameters (like model and table knobs) in the sdame grouping. Etc." 22:03: "And everything
+     can be more tightly packed to make fewer pages on the config panels." 22:03: "can use same
+     spacing as on the main modules."
+     - **What you found, as it was.** MODEL was the first control of CONFIG and TABLE was on its
+       third page, in a box at the end; nothing beside MODEL said a wavetable had tables. And
+       SAMPLE's box was listed ahead of WAVETABLE's, so turning TABLE to SAMPLE or FILE brought
+       a sample's fourteen controls in before the knob under your hand, and it went.
+     - **The audit**: every panel's list was printed whole and read (each lane on each of its
+       models, each insert, both returns, the drum bus: 134 panels), and one order made for all:
+       1. **What the sound is.** MODEL, and in MODEL's own box what only that model has: on
+          WAVETABLE, TABLE beside it, then TWIST AS, POS ENV, WANDER, LEVELS; on FM 4-OP,
+          ALGORITHM and FEEDBACK, then the ratios, the levels, the decays; GRANULAR's; KICK
+          FORGE's. Then LAYER (LAYER MODEL, SPLIT, SPLIT HZ, and a model's own where only the
+          layer plays it), then USUAL KNOBS (the lane's knobs a model's own took the places
+          of), then SAMPLE's box where the MODEL is what plays the sample.
+       2. **What is always there**, from a new row, in one order on every panel: SOUND (an
+          effect: EFFECT), POCKET, ECHO, RIG, and MOTION 1 and MOTION 2 side by side on a row
+          of their own.
+       3. **What a setting brings**, from a new row, at the foot: SAMPLE's box where a LAYER or
+          WAVETABLE's TABLE is what plays the file, a convolution's BANDS.
+     - **The rule it keeps**: a control is never listed after something it brings, so **turning
+       any control but MODEL and LAYER MODEL moves no other control**. MODEL and LAYER MODEL
+       change the first part only, and what follows starts on a new row: it goes up or down by
+       whole rows and never sideways. This **takes back part of the seventy-ninth build's
+       rule** ("choosing a model moves nothing that was there before it", by putting a model's
+       own controls last): you asked for them beside MODEL, and they cannot be both.
+     - **The same control in the same order everywhere**: on every effect THROW, FREEZE and MIX
+       are first and LO CUT, INPUT, DUCK, DUCK SHAPE, DUCK FOR last (the delay and the reverbs
+       had them in different orders); on the drums VEL SENS is last (KICK had it first and PERC
+       last).
+     - **Packed**: eight across at the pitch of the modules' own knobs (66), rows of 110, where
+       it was four across in rows of 126 with the E16's row of names under every three. MODEL,
+       LAYER MODEL and TABLE are two wide so their names fit; a name is on one line where it
+       fits and two where it does not. A box is not split across rows unless it is wider than
+       one. The KICK's whole panel is three rows (it was two pages), a bass's on a plain model
+       four (three pages), and the longest the check met, a lane on WAVETABLE with TABLE at
+       SAMPLE, seven. On a lane four rows show above the EQ where the display is short, three
+       under a sample's waveform; an effect's panel has no EQ and shows it all.
+       Scrolling is a row at a time, and the title row says ROWS 1-4 OF 6.
+     - **The E16** holds CONFIG in this same order, twelve to a page, as before; so what is on
+       each of its pages has changed with the order. The panel no longer mirrors its pages
+       (SEL, PAGE -, PAGE +, SHUT are gone from it): while the E16 is on a page of CONFIG, its
+       twelve are numbered 1 to 12 on the panel, and the panel brings the row of the first into
+       view. *Mine, and yours to change* when the E16 is gone through (16:31).
+     - **TABLE is not on the lane's panel.** I asked at 21:54 which knob it should take the
+       place of and you answered with this, so it is in CONFIG, beside MODEL. A lane put on
+       WAVETABLE now opens on BASIC (it opened on CLASSIC).
+     - **Checked**: on all 134 panels no two controls share a place, and every switch and menu
+       but the two turned through everything it has (19181 settings) moves nothing else. The
+       check is in the UI's suite, and `--cfgcheck` runs it alone.
+736. **You**, Nov 18, 22:00: "Also, more yellow buttons with white text that should be black."
+     - **Why it keeps happening**: print asked for in black is light on the dark instrument,
+       which is right on a plate and wrong on a key that stays bright (a yellow one, a lit
+       one). Each key had to ask for its own ink, and each new key forgot: LOAD and LOW END
+       (lit) this time.
+     - **It is now the drawing kit's**: print put on a key just drawn takes the ink that reads
+       on that key's cap, whoever asks. *Mine:* a check with it: on the dark instrument, every
+       page and CONFIG with each of its keys lit in turn, and no print light on a bright key.
+       With the fix switched off the same scan finds LOAD and LOW END, so it sees the fault.
+737. **You**, Nov 18, 22:01: "also, I'm okay with replaving the old wavetable altogether to
+     maintain simplicity. not many snapshots will be affected."
+     - **One wavetable.** CLASSIC is a table like the others (the same four waves, as 64
+       frames: twelve tables now, CLASSIC still the first on the list). TABLE SAMPLE is always
+       64 frames along the recording, POSITION between its START and END: 8 FRAMES is gone, and
+       FROM SAMPLE's three choices are **LEVELS: EVEN or AS RECORDED**. The oscillator reads
+       one kind of table one way; the two older ways of reading are out of the code.
+     - **Your snapshots**: ten have the bass on WAVETABLE, and nothing else does. Seven are on
+       CLASSIC (SNAP 088 to 093 among them) and keep their sound: the same waves, and the
+       drift they had (WANDER 30). SNAP 088 and 092, rendered with their MOTIONs off, have a
+       bass that differs from the eighty-fourth build's by a part in 118 dB. Three are on
+       TABLE SAMPLE (SNAP 087, 101, 101 + 097), with START and END narrowed to an eighth of
+       the file, which the eight frames took no notice of. *Mine:* **such a snapshot is read
+       with START and END at the file's ends**, so POSITION is the place in the file it was
+       (left alone, it would have been a place inside that eighth). What is left is eight
+       frames against sixty-four: SNAP 087's bass is 0.7 dB louder with its spectrum's middle
+       at 304 Hz where it was 321, SNAP 101's 0.9 dB louder at 628 Hz where it was 717; some
+       bands differ by as much as 11 dB. Close, and not the same: listen to those three.
+     - `lists` is 5. A snapshot of builds 85 and 86 has 8 FRAMES and 64 FRAMES read as EVEN and
+       64 WITH LEVEL as AS RECORDED.
+
 ## Not verified
 
+- **The eighty-seventh build (735 to 737) is checked on drawn screens and by measurement.**
+  CONFIG's order and places: by the check over 134 panels, and by eye in eight pictures (the
+  perc, the bass on three models, the pad with a sample, the kick in the light instrument,
+  WAVETABLE with TABLE at SAMPLE scrolled, the E16's numbering). Not seen by me: every insert's panel,
+  the drum bus's, a long lane name beside the ROWS plate. **Yours to say: whether the order
+  is the logical one**, whether names drawn narrower to fit (NORMALISE, CROSSFADE,
+  ALGORITHM) are still easy to read, and whether a panel that scrolls should rather give up
+  the EQ's height. Print on bright keys: scanned on every page I could bring up; a key that
+  only shows in a state I did not make (a cue playing, a take running) was not scanned,
+  though the fix does not depend on which key it is. The E16's twelve numbered on the panel
+  is seen in one picture and not on an E16. The wavetable: measured as before, and your
+  three TABLE SAMPLE snapshots are close and not the same (737).
 - **The eighty-sixth build (732)**: the page plate's new place is seen in two pictures here
   (the PAD's third and fourth pages, with and without a file); a long lane name beside a long
   control name was not drawn. A file becoming the table is checked for a recording, for a

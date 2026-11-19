@@ -1505,10 +1505,11 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         const juce::String id (s.id);
         if (id.startsWith ("smp_cut") && id != "smp_cuts") return {};    // (a slice marker: the display's to move, not a knob's)
         if (t.kind == 3 && id.startsWith ("in_")) return "LANES";       // (which lanes play through the drum bus)
-        if (id.startsWith ("fm_")) return plays ("FM 4-OP") ? "FM 4-OP" : juce::String();
-        if (id == "table" || id.startsWith ("wt_")) return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
-        if (id.startsWith ("gr_")) return plays ("GRANULAR") ? "GRANULAR" : juce::String();      // (those of them that are not its knobs)
-        if (id.startsWith ("fg_")) return plays ("KICK FORGE") ? "KICK FORGE" : juce::String();
+        // (what only one model has is in MODEL's own box while that is the lane's model, beside the knob that chose it;
+        // in LAYER's while only the layer plays it; and nowhere else)
+        if (const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : id.startsWith ("gr_") ? "GRANULAR" : id.startsWith ("fg_") ? "KICK FORGE" : nullptr)
+            return model == fam ? "MODEL" : layerModel == fam ? "LAYER" : juce::String();
+        if (id == "model") return "MODEL";
         if (usual (id)) return "USUAL KNOBS";               // (put away by a model's own knobs: a box of their own, last)
         if (s.inEngine) return "ENGINE";
         if (s.inSample) return phraseIsTheSource || ! sampleIsAModel || plays ("SAMPLE") || tableFromSample ? "SAMPLE" : juce::String();
@@ -1522,22 +1523,46 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         if (s.setup) return "RIG";
         return plain;
     };
-    for (auto& sp : out) sp.group = plain;                  // (SPACE's MODEL, put in above)
-    // Everything keeps its place. The boxes that are always there come first, in one order on every lane, with MODEL the
-    // first control of all; the boxes that come and go with a model (its own controls, a sample's, the knobs its own
-    // took the places of) come after them, so that choosing a model moves nothing that was there before it.
-    // (MOTION is always there too: it follows the first of them, before anything that comes and goes.)
-    auto boxes = [&] (std::initializer_list<const char*> groups)
+    for (auto& sp : out) sp.group = "MODEL";                // (SPACE's MODEL, put in above)
+    // The order, the same on every panel (the eighty-seventh build). First what the sound is: MODEL with what only that
+    // model has beside it, LAYER, and the knobs a model's own took the places of. Then what is always there, in one
+    // order. Then, at the foot, what comes and goes with a setting (a sample's controls, a convolution's bands).
+    // Nothing is listed ahead of the control that brings it, so turning a knob never moves that knob or anything
+    // before it; and only MODEL and LAYER MODEL change the first part, which the screen gives rows of its own.
+    // (In a box: the menu that chooses first, then FM's ALGORITHM and FEEDBACK and WAVETABLE's TABLE, then the rest.)
+    // Within a box: the order the module lists its controls in, but for the few every panel has in one order, so the
+    // hand finds them in one place: the model before what only that model has (and the control of its own that says
+    // how the rest are read first of those); on an effect THROW, FREEZE and MIX first, and LO CUT and what ducks it
+    // (INPUT, DUCK, DUCK SHAPE, DUCK FOR) last; on a drum VEL SENS last.
+    const bool effect = t.kind == 1 || t.kind == 2;
+    auto rank = [effect] (const juce::String& id)
+    {
+        if (id == "model" || id == "layer_model") return 0;
+        if (id == "table" || id == "fm_algo" || id == "fm_feedback") return 1;
+        if (effect)
+        {
+            static const char* const first[] = { "throw", "freeze", "mix" };
+            static const char* const last[] = { "lo_cut", "input", "duck", "duck_shape", "duck_for" };
+            for (int k = 0; k < 3; ++k) if (id == first[k]) return 2 + k;
+            for (int k = 0; k < 5; ++k) if (id == last[k]) return 6 + k;
+        }
+        return id == "vel_sens" ? 11 : 5;
+    };
+    auto boxes = [&] (std::initializer_list<const char*> groups, int section)
     {
      for (const char* g : groups)
-      for (int pass = 0; pass < 2; ++pass)
+     {
+        std::vector<int> in;
         for (int i = 0; i < p->numModuleParams(); ++i)
         {
             const auto& s = specs[(size_t) i];
-            if ((pass == 0) != (juce::String (s.id) == "model")) continue;       // (MODEL first)
-            if (std::find (bound.begin(), bound.end(), s.id) != bound.end() || groupOf (s) != g) continue;
+            if (std::find (bound.begin(), bound.end(), s.id) == bound.end() && groupOf (s) == g) in.push_back (i);
+        }
+        std::stable_sort (in.begin(), in.end(), [&] (int a, int b) { return rank (specs[(size_t) a].id) < rank (specs[(size_t) b].id); });
+        for (int i : in)
+        {
             auto sp = made (i);
-            sp.group = g;
+            sp.group = g; sp.section = section;
             if (t.kind == 3 && sp.group == "EFFECT") sp.group = "DRUM BUS";
             if (sp.group == "LANES")
             {
@@ -1548,8 +1573,16 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
             }
             out.push_back (sp);
         }
+     }
     };
-    boxes ({ "SOUND", "EFFECT", "LAYER", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" });
+    // (a module whose first part is only ever MODEL itself, a hat's or the rumble's, has no rows kept for it: it goes on with the rest)
+    const bool varies = t.kind == 0 && (p->paramIndex ("layer_model") >= 0 || ! lanes()[(size_t) t.lane].own.empty());
+    // (a sample's controls: with the model where the model is what plays it, so nothing else brings or removes them; at the
+    // foot where a layer or WAVETABLE's TABLE does)
+    const bool sampleStays = phraseIsTheSource || ! sampleIsAModel || model == "SAMPLE";
+    boxes ({ "MODEL", "LAYER", "USUAL KNOBS" }, varies ? 0 : 1);
+    if (sampleStays) boxes ({ "SAMPLE" }, varies ? 0 : 1);
+    boxes ({ "SOUND", "EFFECT", "ENGINE", "POCKET", "ECHO", "LANES", "RIG" }, 1);
     // MOTION, on an instrument, an effect or a return: two rows of their own, after everything that is always there
     {
         for (int k = 1; k <= SFProcessor::kMotions; ++k)
@@ -1561,7 +1594,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
                 const int i = p->paramIndex ("m" + std::to_string (k) + tail[j]);
                 if (i < 0) continue;
                 auto sp = made (i);
-                sp.name = names[j]; sp.group = "MOTION " + juce::String (k); sp.ownRow = j == 0;
+                sp.name = names[j]; sp.group = "MOTION " + juce::String (k); sp.ownRow = j == 0 && k == 1; sp.section = 1;        // (the two side by side, on a row of their own)
                 if (j == 2)
                 {
                     // what it moves: the lane's own knobs first, as the panel has them, then the rest of the instrument's
@@ -1577,7 +1610,8 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
             }
         }
     }
-    boxes ({ "BANDS", "LOW BAND", "MID BAND", "HIGH BAND", "SAMPLE", "WAVETABLE", "FM 4-OP", "GRANULAR", "KICK FORGE", "USUAL KNOBS" });
+    boxes ({ "BANDS", "LOW BAND", "MID BAND", "HIGH BAND" }, 2);
+    if (! sampleStays) boxes ({ "SAMPLE" }, 2);
     // the lane's EQ, a row a band (the screen draws them as a graph, and the E16 has them as its last pages)
     if (t.kind == 0)
         for (int b = 0; b < kEqBands; ++b)

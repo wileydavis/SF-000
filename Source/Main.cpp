@@ -2244,7 +2244,7 @@ static void wavetableTest (int& bad)
         for (int i = 0; i < 20; ++i) { buf.clear(); e.render (buf); }
         const bool own = juce::String (e.laneKnob (bass, 0).label) == "POSITION" && juce::String (e.laneKnob (bass, 0).param) == "color" && juce::String (e.laneKnob (bass, 1).label) == "TWIST"
                       && juce::String (e.laneKnob (bass, 2).label) == "RES" && juce::String (e.laneKnob (bass, 6).label) == "CUTOFF";
-        const bool opens = std::abs (plain (e, bass, "wt_wander")) < 1.0e-5f && text (e, bass, "wt_from") == "64 FRAMES" && text (e, bass, "table") == "CLASSIC";
+        const bool opens = std::abs (plain (e, bass, "wt_wander")) < 1.0e-5f && text (e, bass, "wt_from") == "EVEN" && text (e, bass, "table") == "BASIC";
         const auto id = ses.take();
         const juce::String name = ses.findSnap (id)->name;
         const juce::var state = ses.stateVar();
@@ -2279,10 +2279,37 @@ static void wavetableTest (int& bad)
         for (int i = 0; i < 400; ++i) { b2.clear(); e2.render (b2); }
         const bool means = made && text (e2, bass, "model") == "WAVETABLE" && std::abs (plain (e2, bass, "glide") - 0.9f) < 0.01f && std::abs (plain (e2, bass, "layer") - 0.3f) < 0.01f
                         && std::abs (plain (e2, bass, "wt_env")) < 1.0e-4f
-                        && std::abs (plain (e2, bass, "wt_wander") - 0.3f) < 1.0e-4f && text (e2, bass, "wt_from") == "8 FRAMES"
+                        && std::abs (plain (e2, bass, "wt_wander") - 0.3f) < 1.0e-4f && text (e2, bass, "wt_from") == "EVEN" && text (e2, bass, "table") == "CLASSIC"
                         && std::abs (e2.target (cx::lane (bass, 0)) - 0.62f) < 0.01f && e2.target (cx::lane (bass, 1)) < 1.0e-4f;
         // a lane that is not on WAVETABLE in it: the wavetable of now, for when it is chosen there
-        const bool elsewhere = std::abs (plain (e2, lead, "wt_wander")) < 1.0e-4f && std::abs (plain (e2, lead, "wt_from") - 1.0f) < 1.0e-4f;
+        const bool elsewhere = std::abs (plain (e2, lead, "wt_wander")) < 1.0e-4f && std::abs (plain (e2, lead, "wt_from")) < 1.0e-4f;
+        // (a snapshot of the two builds before this one, lists 4, where FROM SAMPLE had three choices: 8 FRAMES and 64 FRAMES
+        // are LEVELS EVEN, 64 WITH LEVEL is AS RECORDED; and its WAVETABLE knobs are not moved a second time)
+        bool three = false;
+        {
+            const juce::var st4 = ses.stateVar();
+            if (auto* lib = st4.getProperty ("library", juce::var()).getArray())
+                for (auto& sn : *lib)
+                    if (sn.getProperty ("name", "").toString() == name)
+                    {
+                        sn.getDynamicObject()->setProperty ("lists", 4); sn.getDynamicObject()->removeProperty ("listsBy");
+                        sn.getProperty ("values", juce::var()).getDynamicObject()->setProperty ("bass.glide", 0.37);       // (the lane's first place: POSITION, by its usual knob's name)
+                        // (the bass on TABLE SAMPLE with 8 FRAMES, START and END narrowed, no LAYER; the chord's FROM SAMPLE at 64 FRAMES; the lead's at 64 WITH LEVEL)
+                        auto* bs = sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[bass].getDynamicObject();
+                        bs->setProperty ("wt_from", 0.0); bs->setProperty ("table", 1.0); bs->setProperty ("smp_start", 0.2); bs->setProperty ("smp_end", 0.4); bs->setProperty ("layer", 0.0);
+                        sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[laneOf ("chord")].getDynamicObject()->setProperty ("wt_from", 0.5);
+                        sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[lead].getDynamicObject()->setProperty ("wt_from", 1.0);
+                    }
+            Engine e5; e5.prepare (48000.0, 256);
+            Session s5 (e5, false);
+            s5.takeState (st4);
+            for (auto& sn : s5.library) if (sn.name == name) s5.recall (sn.id);
+            juce::AudioBuffer<float> b5 (2, 256);
+            for (int i = 0; i < 200; ++i) { b5.clear(); e5.render (b5); }
+            three = text (e5, bass, "wt_from") == "EVEN" && plain (e5, lead, "wt_from") > 0.99f && plain (e5, laneOf ("chord"), "wt_from") < 0.01f
+                 && text (e5, bass, "table") == "SAMPLE" && plain (e5, bass, "smp_start") < 0.001f && plain (e5, bass, "smp_end") > 0.999f && text (e5, bass, "model") == "WAVETABLE" && std::abs (e5.target (cx::lane (bass, 0)) - 0.37f) < 0.01f;
+            if (! three) std::printf ("    (lists 4: bass %s, lead %.2f, model %s, place0 %.3f)\n", text (e5, bass, "wt_from").toRawUTF8(), (double) plain (e5, lead, "wt_from"), text (e5, bass, "model").toRawUTF8(), (double) e5.target (cx::lane (bass, 0)));
+        }
         // (and a snapshot of the builds just before this one, lists 3, keeps the PERC lane's SAMPLE: that list had already grown)
         bool percKept = false;
         {
@@ -2302,11 +2329,11 @@ static void wavetableTest (int& bad)
             for (auto& sn : s4.library) if (sn.name == name3) s4.recall (sn.id);
             percKept = text (e4, perc, "model") == "SAMPLE";
         }
-        const bool ok = own && opens && means && elsewhere && percKept;
+        const bool ok = own && opens && means && elsewhere && percKept && three;
         if (! ok) ++bad;
-        std::printf ("  %s: WAVETABLE has POSITION and TWIST in the bass's first two places (RES, CUTOFF and the rest where they were), and chosen by hand it opens with no WANDER, on the CLASSIC table. A snapshot from before, with "
-                     "GLIDE and LAYER in those places and COLOR in CONFIG, means what it meant: GLIDE %.2f and LAYER %.2f (now in CONFIG), POSITION where COLOR was (%.2f), no TWIST, WANDER at %.2f and TABLE SAMPLE's frames %s, as it "
-                     "sounded; its lead, on another model, has the wavetable of now waiting\n", ok ? "ok  " : "FAIL", (double) plain (e2, bass, "glide"), (double) plain (e2, bass, "layer"), (double) e2.target (cx::lane (bass, 0)),
+        std::printf ("  %s: WAVETABLE has POSITION and TWIST in the bass's first two places (RES, CUTOFF and the rest where they were), and chosen by hand it opens with no WANDER, on the BASIC table. A snapshot from before, with "
+                     "GLIDE and LAYER in those places and COLOR in CONFIG, means what it meant: GLIDE %.2f and LAYER %.2f (now in CONFIG), POSITION where COLOR was (%.2f), no TWIST, WANDER at %.2f, on the CLASSIC table with LEVELS %s; "
+                     "its lead, on another model, has the wavetable of now waiting. A snapshot of the two builds before this one has its three FROM SAMPLE choices as the two of LEVELS, its knobs where they were, and, on TABLE SAMPLE with the eight frames of then, START and END at the file's ends, where those frames were cut\n", ok ? "ok  " : "FAIL", (double) plain (e2, bass, "glide"), (double) plain (e2, bass, "layer"), (double) e2.target (cx::lane (bass, 0)),
                      (double) plain (e2, bass, "wt_wander"), text (e2, bass, "wt_from").toRawUTF8());
         if (! ok) std::printf ("    (perc kept %d)\n", (int) percKept);
         if (! ok) std::printf ("    (own %d opens %d means %d elsewhere %d; model %s, twist %.3f, env %.3f, place0 %.3f)\n", (int) own, (int) opens, (int) means, (int) elsewhere, text (e2, bass, "model").toRawUTF8(),
@@ -2372,7 +2399,7 @@ static void wavetableTest (int& bad)
         // the tables that come with it: POSITION moves through each, and on HARMONIC the sound opens all the way along
         juce::String tables;
         bool every = set, finite = true;
-        for (const char* t : { "BASIC", "HARMONIC", "PWM", "SYNC", "FORMANT", "FM", "FOLD", "DIGITAL", "ORGAN", "BASS", "COMB" })
+        for (const char* t : { "CLASSIC", "BASIC", "HARMONIC", "PWM", "SYNC", "FORMANT", "FM", "FOLD", "DIGITAL", "ORGAN", "BASS", "COMB" })
         {
             { const bool did = choose ("table", t); every = every && did; }
             const Is a = at (0.0f), b = at (0.5f), c = at (1.0f);
@@ -2435,22 +2462,22 @@ static void wavetableTest (int& bad)
         const Is f0 = at (0.0f), f1 = at (1.0f), fMid = at (1.0f / 3.0f);
         const juce::String fileSays = e.processorFor ({ 0, bass, 0 })->mod().statusLine();
         fileOk = fileOk && fileSays.contains ("4 FRAMES OF 2048") && f0.top > 40.0 && std::abs (f1.top / f0.top - 4.0) < 0.05 && std::abs (fMid.top / f0.top - 2.0) < 0.05;
-        // (a recording is not one: it says so, and the CLASSIC table plays)
+        // (a recording is not one: it says so, and the BASIC table plays)
         const auto recording = wav ("long.wav", 48000 * 12 + 77, [] (int i) { return 0.4f * std::sin (6.2831853f * 220.0f * (float) i / 48000.0f); }, 48000.0);
         const bool notOne = e.loadFile (bass, recording) && choose ("model", "WAVETABLE") && choose ("table", "FILE") && e.processorFor ({ 0, bass, 0 })->mod().statusLine().contains ("NOT A WAVETABLE FILE") && at (0.0f).db > -40.0;
-        // TABLE SAMPLE: a recording loud in its first half and 20 dB down in its second. Eight frames or sixty-four, each
-        // brought to one loudness; sixty-four with the level it had
+        // TABLE SAMPLE: a recording loud in its first half and 20 dB down in its second. LEVELS EVEN: each frame brought to
+        // one loudness; AS RECORDED: with the level it had
         const auto twoLevels = wav ("levels.wav", 48000 * 4, [] (int i) { double x = 0.0; for (int h = 1; h <= 12; ++h) x += std::sin (6.2831853 * 110.0 * h * i / 48000.0) / h; return (float) (x * (i < 96000 ? 0.4 : 0.04)); }, 48000.0);
         bool smp = e.loadFile (bass, twoLevels) && choose ("model", "WAVETABLE") && choose ("table", "SAMPLE");
-        double drop[3] = { 0, 0, 0 };
+        double drop[2] = { 0, 0 };
         int q = 0;
-        for (const char* from : { "8 FRAMES", "64 FRAMES", "64 WITH LEVEL" })
+        for (const char* from : { "EVEN", "AS RECORDED" })
         {
             smp = smp && choose ("wt_from", from);
             const Is a = at (0.15f), b = at (0.85f);
             drop[q++] = a.db - b.db;
         }
-        smp = smp && std::abs (drop[0]) < 3.0 && std::abs (drop[1]) < 3.0 && drop[2] > 15.0 && drop[2] < 25.0;
+        smp = smp && std::abs (drop[0]) < 3.0 && drop[1] > 15.0 && drop[1] < 25.0;
         // the sixty-four are along the whole recording, and POSITION travels what is between START and END: with START
         // half way, the same place on the knob is in the quiet half
         const Is whole = at (0.15f);
@@ -2458,11 +2485,11 @@ static void wavetableTest (int& bad)
         const Is half = at (0.15f);
         put ("smp_start", 0.0f);
         const bool region = whole.db - half.db > 15.0;
-        // a file put on the lane by hand becomes its table: a recording, TABLE SAMPLE with sixty-four frames; a file made as a wavetable, TABLE FILE
-        choose ("table", "CLASSIC"); choose ("wt_from", "8 FRAMES");
+        // a file put on the lane by hand becomes its table: a recording, TABLE SAMPLE; a file made as a wavetable, TABLE FILE
+        choose ("table", "CLASSIC");
         bool byHand = e.loadFile (bass, twoLevels);
         ses.loadedByHand ({ 0, bass, 0 });
-        byHand = byHand && text (e, bass, "table") == "SAMPLE" && text (e, bass, "wt_from") == "64 FRAMES";
+        byHand = byHand && text (e, bass, "table") == "SAMPLE";
         const bool reload = e.loadFile (bass, tableFile);
         ses.loadedByHand ({ 0, bass, 0 });
         byHand = byHand && reload && text (e, bass, "table") == "FILE";
@@ -2475,12 +2502,12 @@ static void wavetableTest (int& bad)
         dir.deleteRecursively();
         const bool ok = every && finite && opens && exact && twisted && env && fileOk && notOne && smp && region && byHand && ! e.fault.load();
         if (! ok) ++bad;
-        std::printf ("  %s: WAVETABLE: POSITION moves through each of the eleven tables (where the spectrum's middle is, in Hz, at the first frame, the middle and the last, and how unlike the first and last are from 0 to 1: %s). On HARMONIC the sound opens the whole way (%d, %d, %d, %d, %d Hz). "
+        std::printf ("  %s: WAVETABLE: POSITION moves through each of the twelve tables (where the spectrum's middle is, in Hz, at the first frame, the middle and the last, and how unlike the first and last are from 0 to 1: %s). On HARMONIC the sound opens the whole way (%d, %d, %d, %d, %d Hz). "
                      "With no WANDER the tone stands still (%.3f of an octave between the second bar and the seventh) and with it right up it drifts %.1f octaves. TWIST at nought changes nothing and each kind adds to a sine (%s). "
                      "POS ENV right up carries a note %.1f octaves up the table at its start (%.2f with none). A file of four frames of 2048 is read as a wavetable (%s: the note, its octave a third of the way, its fourth harmonic at "
-                     "the end), and a recording is refused and says so. TABLE SAMPLE on a recording 20 dB down in its second half: %.1f dB between the two with 8 FRAMES, %.1f with 64, %.1f with 64 WITH LEVEL; with START half way the knob's same place is %.1f dB down, in the quiet half. A file loaded by hand onto the lane becomes its table (a recording: SAMPLE, 64 FRAMES; a wavetable file: FILE; not when the LAYER plays it)\n",
+                     "the end), and a recording is refused and says so. TABLE SAMPLE on a recording 20 dB down in its second half: %.1f dB between the two with LEVELS EVEN, %.1f AS RECORDED; with START half way the knob's same place is %.1f dB down, in the quiet half. A file loaded by hand onto the lane becomes its table (a recording: SAMPLE; a wavetable file: FILE; not when the LAYER plays it)\n",
                      ok ? "ok  " : "FAIL", tables.trim().toRawUTF8(), (int) h0.centre, (int) h1.centre, (int) h2.centre, (int) h3.centre, (int) h4.centre, still, std::log2 (hi / lo), twists.trim().toRawUTF8(), swept, flat,
-                     fileSays.toRawUTF8(), drop[0], drop[1], drop[2], whole.db - half.db);
+                     fileSays.toRawUTF8(), drop[0], drop[1], whole.db - half.db);
         if (! ok) std::printf ("    (every %d finite %d opens %d exact %d twisted %d env %d file %d (%.1f %.1f %.1f) not one %d sample %d fault %d)\n", (int) every, (int) finite, (int) opens, (int) exact, (int) twisted, (int) env, (int) fileOk,
                                f0.top, fMid.top, f1.top, (int) notOne, (int) smp, (int) e.fault.load());
         if (! ok) std::printf ("    (region %d by hand %d: table %s)\n", (int) region, (int) byHand, text (e, bass, "table").toRawUTF8());
@@ -7128,6 +7155,87 @@ static juce::KeyPress keyNamed (const juce::String& n)
     return juce::KeyPress ((int) c, none, c);
 }
 
+// CONFIG, on every lane with every model, each kind of insert, both returns and the drum bus: nothing shares a place
+// or stands past the eighth column; and turning any switch or menu but MODEL and LAYER MODEL through all it has moves
+// no other control that is still there (what it brings stands after what stays). On a rig of its own.
+static bool configStays (juce::String& says)
+{
+        using namespace sf0;
+        Engine e; e.prepare (48000.0, 512);
+        Session ses (e, false);
+        Screen sc (ses);
+        sc.setSize ((int) Screen::kW, (int) Screen::kH);
+        juce::AudioBuffer<float> buf (2, 512);
+        auto audio = [&] (int blocks) { for (int i = 0; i < blocks; ++i) e.render (buf); };
+        audio (20);
+        int panels = 0, turned = 0, moved = 0, clash = 0, mostRows = 0;
+        juce::String firstMoved, firstClash;
+        auto sound = [&] (const std::vector<std::pair<juce::String, juce::String>>& at, const juce::String& what)
+        {
+            std::set<int> taken;
+            int rows = 0;
+            for (auto& a : at)
+            {
+                const auto part = juce::StringArray::fromTokens (a.second, ".", "");
+                const int row = part[0].getIntValue(), col = part[1].getIntValue(), span = part[2].getIntValue();
+                rows = std::max (rows, row + 1);
+                bool bad = col + span > 8;
+                for (int k = 0; k < span; ++k) bad = ! taken.insert (row * 16 + col + k).second || bad;
+                if (bad) { ++clash; if (firstClash.isEmpty()) firstClash = what + ": " + a.first + " at " + a.second; }
+            }
+            mostRows = std::max (mostRows, rows);
+        };
+        auto sweep = [&] (Engine::Target t, const juce::String& what)
+        {
+            sc.showConfig (t);
+            ++panels;
+            sound (sc.testCfgLayout(), what);
+            for (auto& sp : e.setupParams (t))
+            {
+                if (sp.group.startsWith ("EQ ") || sp.id == "model" || sp.id == "layer_model" || sp.id == "__model") continue;
+                if (sp.kind != Kind::List && sp.kind != Kind::Toggle) continue;
+                const int n = sp.kind == Kind::Toggle ? 2 : sp.choices.size();
+                const auto before = sc.testCfgLayout();
+                for (int k = 0; k < n; ++k)
+                {
+                    e.setSetup (t, sp.id, n > 1 ? (float) k / (float) (n - 1) : 0.0f); audio (1);
+                    const auto now = sc.testCfgLayout();
+                    ++turned;
+                    sound (now, what + " with " + sp.name + " at " + juce::String (k));
+                    for (auto& b : before) for (auto& a : now)
+                        if (a.first == b.first && a.second != b.second) { ++moved; if (firstMoved.isEmpty()) firstMoved = what + ": " + sp.name + " at " + juce::String (k) + " moves " + a.first + " from " + b.second + " to " + a.second; }
+                }
+                e.setSetup (t, sp.id, sp.value); audio (1);
+            }
+        };
+        for (int l = 0; l < kLanes; ++l)
+        {
+            juce::StringArray models;
+            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") models = sp.choices;
+            for (int m = 0; m < std::max (1, models.size()); ++m)
+            {
+                if (models.size() > 1) { ses.setupByHand ({ 0, l, 0 }, "model", (float) m / (float) (models.size() - 1)); audio (2); }
+                sweep ({ 0, l, 0 }, juce::String (lanes()[(size_t) l].name) + " on " + (models.isEmpty() ? juce::String ("its one model") : models[m]));
+            }
+        }
+        for (int type = 0; type < (int) effects().size(); ++type) { e.setInsertType (5, 0, type); audio (2); sweep ({ 1, 5, 0 }, juce::String ("the insert ") + effects()[(size_t) type].name); }
+        sweep ({ 2, 0, 0 }, "DUB");
+        {
+            juce::StringArray models;
+            for (auto& sp : e.setupParams ({ 2, 0, 1 })) if (sp.id == "__model") models = sp.choices;
+            for (int m = 0; m < std::max (1, models.size()); ++m)
+            {
+                if (models.size() > 1) { e.setSetup ({ 2, 0, 1 }, "__model", (float) m / (float) (models.size() - 1)); audio (2); }
+                sweep ({ 2, 0, 1 }, "SPACE on " + (models.isEmpty() ? juce::String ("its one model") : models[m]));
+            }
+        }
+        sweep ({ 3, 0, 0 }, "the DRUM BUS");
+        says = "CONFIG, on " + juce::String (panels) + " panels (every lane on every model, every insert, the returns, the drum bus): no two controls share a place; and every switch and menu but MODEL and LAYER MODEL turned through all it has ("
+                + juce::String (turned) + " settings) moves no other control" + (moved > 0 ? " (FAILS " + juce::String (moved) + " times, first: " + firstMoved + ")" : juce::String())
+                + (clash > 0 ? " (" + juce::String (clash) + " share a place or stand past the edge, first: " + firstClash + ")" : juce::String()) + "; the tallest is " + juce::String (mostRows) + " rows";
+        return panels > 80 && turned > 1000 && moved == 0 && clash == 0;
+}
+
 static int uiTest()
 {
     using namespace sf0;
@@ -7705,8 +7813,11 @@ static int uiTest()
         // (on the rig as it comes up: every panel's controls have been clicked and dragged by now, and what that leaves
         // playing depends on which of them a panel shows. INIT is the same rig every time.)
         ses.recall (kInitId); audio (200);
-        ses.userSet (cx::kPkG, 1.0f); audio (300);
-        float cut = 0.0f; for (int q = 0; q < Pockets::kParts; ++q) for (int k = 0; k < Pockets::kBands; ++k) cut = std::max (cut, e.pocketsForTests().cutNow (q, k));
+        // (the most it cuts anywhere over six seconds, which is more than a bar at any tempo the clicking left: where in the
+        // bar the rig is by now depends on how many controls were clicked before this, and one moment of it may be a hat alone)
+        ses.userSet (cx::kPkG, 1.0f);
+        float cut = 0.0f;
+        for (int n = 0; n < 60; ++n) { audio (10); for (int q = 0; q < Pockets::kParts; ++q) for (int k = 0; k < Pockets::kBands; ++k) cut = std::max (cut, e.pocketsForTests().cutNow (q, k)); }
         ses.userSet (cx::kPkG, 0.0f); audio (300);
         check (cut > 2.0f && ! e.pocketsForTests().working(), ("with AMOUNT at full the playing rig is carved (up to " + juce::String (cut, 1) + " dB in a band); back at nought, once the last bell has let go, POCKETS is doing nothing again").toRawUTF8());
     }
@@ -7749,6 +7860,37 @@ static int uiTest()
                && after && before && lowTip.contains ("THE LOW END") && back == 1 && down && e.eqWatched() < 0,
                ("in the bass's CONFIG, LOW END puts the bar's low end in the EQ's place (and only then is it looked at): dragged up a quarter of the graph its pocket is that much shallower (" + juce::String (d0, 2) + " to " + juce::String (d1, 2)
                 + "), down and to the right deeper and longer (" + juce::String (d2, 2) + ", its shape " + juce::String (s1, 2) + " to " + juce::String (s2, 2) + "); AFTER FX switches where it is made; LOW END again, and the EQ is back").toRawUTF8());
+    }
+
+    // 2a''. CONFIG: nothing shares a place, and nothing moves under the hand (configStays, above)
+    { juce::String says; const bool stays = configStays (says); check (stays, says.toRawUTF8()); }
+
+    // 2a3. The dark instrument: on no page is print light on a bright key (a yellow one, a lit one).
+    {
+        sc.setDark (true); sc.testInkWatch (true);
+        int looked = 0;
+        auto look = [&] { draw(); sc.testTick(); draw(); ++looked; };
+        sc.hideConfig();
+        for (auto pg : { Screen::pMain, Screen::pLibrary, Screen::pMacros, Screen::pPockets, Screen::pArrange }) { sc.setPage (pg); look(); }
+        sc.setPage (Screen::pMain);
+        for (int l : { 0, 1, 5, 9, 10 })
+        {
+            sc.showConfig ({ 0, l, 0 }); look();
+            // (its EQ's keys each lit in turn, LOW END up with AFTER FX on, and LOAD's list open)
+            std::vector<juce::Point<float>> keys; juce::Point<float> lowKey, loadKey; bool hasLoad = false;
+            for (auto& h : sc.testHits()) { if (Screen::testIsEqBandKey (h) || Screen::testIsEqKey (h, -1)) keys.push_back (h.r.getCentre()); if (Screen::testIsEqKey (h, -2)) lowKey = h.r.getCentre(); if (Screen::testIsLoadKey (h)) { loadKey = h.r.getCentre(); hasLoad = true; } }
+            for (auto& k : keys) { click (k); look(); }
+            click (lowKey); look();
+            for (auto& h : sc.testHits()) if (Screen::testIsEqKey (h, -3)) { const auto at = h.r.getCentre(); click (at); look(); click (at); look(); break; }
+            click (lowKey); look();
+            if (hasLoad) { click (loadKey); look(); click (loadKey); look(); }
+        }
+        sc.showConfig ({ 1, 5, 0 }); look(); sc.showConfig ({ 2, 0, 0 }); look(); sc.showConfig ({ 2, 0, 1 }); look(); sc.showConfig ({ 3, 0, 0 }); look();
+        sc.hideConfig(); sc.testTick(); draw();
+        const int faults = sc.testInkFaults(); const auto first = sc.testInkFirst();
+        sc.testInkWatch (false); sc.setDark (false); sc.testLowView (false); ses.recall (kInitId); audio (20); draw();
+        check (looked > 30 && faults == 0, ("on the dark instrument, over " + juce::String (looked) + " pictures of every page and of CONFIG with its keys lit in turn, no print is light on a bright key"
+                                            + (faults > 0 ? " (FAILS " + juce::String (faults) + " times, first: " + first + ")" : juce::String())).toRawUTF8());
     }
 
     // 2b. GLIDE set on the screen, then a snapshot knob turned on the screen: the pushed knobs travel
@@ -11140,7 +11282,8 @@ static int shot (const juce::StringArray& args)
             }
         }
         if (args.contains ("--lowend")) sc.testLowView (true);      // (the EQ's graph giving its place to LOW END)
-        if (args.contains ("--cfgpage")) sc.testCfgScroll (arg ("--cfgpage", "1").getIntValue() - 1);      // (CONFIG scrolled to that page)
+        if (args.contains ("--cfgpage")) sc.testCfgScroll (arg ("--cfgpage", "1").getIntValue() - 1);      // (CONFIG scrolled to that row)
+        if (args.contains ("--e16cfg")) ses.cfgE16Page = arg ("--e16cfg", "1").getIntValue() - 1;           // (as while the E16 is on that page of CONFIG: its twelve numbered)
         if (const double secs = arg ("--play", "0").getDoubleValue(); secs > 0.0)
         {
             // (--play N: the rig played for N seconds with the screen as it stands, its timer run before and after:
@@ -15431,6 +15574,50 @@ public:
         if (args.contains ("--cuetest")) { setApplicationReturnValue (cueTest()); quit(); return; }
         if (args.contains ("--livesession")) { setApplicationReturnValue (liveSession (args)); quit(); return; }
         if (args.contains ("--graincheck")) { juce::String said; const bool ok = grainCheck (said); std::printf ("%s: %s\n", ok ? "ok" : "FAIL", said.toRawUTF8()); setApplicationReturnValue (ok ? 0 : 1); quit(); return; }
+        if (args.contains ("--configdump"))
+        {
+            // (--configdump: what every CONFIG lists, in its order: each lane on each of its models, each effect, the returns,
+            // the drum bus. In the E16's order: a line is four of its knobs, a page its twelve (the screen lays the same list out
+            // eight across, in boxes: Screen::layoutConfig). A tool for looking at the whole of it at once.)
+            using namespace sf0;
+            Engine e; e.prepare (48000.0, 256);
+            Session ses (e, false);
+            auto dump = [&] (Engine::Target t, const juce::String& title)
+            {
+                const auto list = e.setupParams (t);
+                int n = 0; for (auto& sp : list) if (! sp.group.startsWith ("EQ ")) ++n;
+                std::printf ("\n== %s  (%d controls, %d pages of the E16)\n", title.toRawUTF8(), n, (n + 11) / 12);
+                juce::String row; int at = 0;
+                for (auto& sp : list)
+                {
+                    if (sp.group.startsWith ("EQ ")) continue;
+                    row << (sp.id.isEmpty() ? juce::String ("  .") : "  [" + sp.group + "] " + sp.name + (sp.kind == Kind::List ? "=" + sp.text.toUpperCase() : sp.kind == Kind::Toggle ? juce::String ("(sw)") : juce::String()));
+                    if (++at % 4 == 0) { std::printf ("  %d.%d%s\n", (at - 1) / 12 + 1, ((at - 1) / 4) % 3 + 1, row.toRawUTF8()); row.clear(); }
+                }
+                if (row.isNotEmpty()) std::printf ("  %d.%d%s\n", at / 12 + 1, (at / 4) % 3 + 1, row.toRawUTF8());
+            };
+            const juce::String only = args.indexOf ("--configdump") + 1 < args.size() ? args[args.indexOf ("--configdump") + 1] : juce::String();
+            for (int l = 0; l < kLanes; ++l)
+            {
+                if (only.isNotEmpty() && ! only.startsWith ("--") && only != lanes()[(size_t) l].slug) continue;
+                juce::StringArray models;
+                for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") models = sp.choices;
+                for (int m = 0; m < std::max (1, models.size()); ++m)
+                {
+                    if (models.size() > 1) ses.setupByHand ({ 0, l, 0 }, "model", (float) m / (float) (models.size() - 1));
+                    dump ({ 0, l, 0 }, juce::String (lanes()[(size_t) l].name) + " on " + (m < models.size() ? models[m] : juce::String ("(its one model)")));
+                }
+                if (models.size() > 1) ses.setupByHand ({ 0, l, 0 }, "model", 0.0f);
+            }
+            if (only.isEmpty() || only == "fx")
+            {
+                for (int ty = 0; ty < (int) effects().size(); ++ty) { e.setInsertType (0, 0, ty); dump ({ 1, 0, 0 }, juce::String ("insert ") + effects()[(size_t) ty].name); }
+                dump ({ 2, 0, 0 }, "return A, DUB"); dump ({ 2, 0, 1 }, "return B, SPACE (reverb)");
+                e.setSpaceModel (1); dump ({ 2, 0, 1 }, "return B, SPACE (convolution)");
+                dump ({ 3, 0, 0 }, "DRUM BUS");
+            }
+            quit(); return;
+        }
         if (args.contains ("--targets"))
         {
             // (--targets: each module's parameters a MOTION can move, in the order TARGET counts them. A tool: when a
@@ -15467,6 +15654,7 @@ public:
             quit(); return;
         }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
+        if (args.contains ("--cfgcheck")) { juce::String says; const bool ok = configStays (says); std::printf ("%s %s\n", ok ? "  ok  " : "  FAIL", says.toRawUTF8()); setApplicationReturnValue (ok ? 0 : 1); quit(); return; }
         if (args.contains ("--stagetest")) { setApplicationReturnValue (stageTest()); quit(); return; }
         if (args.contains ("--onlinetest"))
         {

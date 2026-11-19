@@ -178,7 +178,32 @@ public:
     int testLibStack() const { return inAt(); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     void testLowView (bool on) { lowView = on; }                // LOW END up in the EQ's place
-    void testCfgScroll (int page) { cfgScroll = std::max (0, page); }
+    void testCfgScroll (int row) { cfgScroll = std::max (0, row); }
+    // (for the checks: where a control of the open CONFIG stands, as "row.col", or nothing where it is not listed)
+    juce::String testCfgPlace (const juce::String& id, const juce::String& group = {}) const
+    {
+        for (size_t i = 0; i < cfgAt.size() && i < cfgParams.size(); ++i)
+            if (cfgParams[i].id == id && (group.isEmpty() || cfgParams[i].group == group)) return juce::String (cfgAt[i].row) + "." + juce::String (cfgAt[i].col);
+        return {};
+    }
+    int testCfgRows() const { return cfgRows; }
+    // (for the checks: while watched, every paint counts the print that is light on a bright key; the count, and the first of it)
+    void testInkWatch (bool on) { inkWatch = on; inkFaults = 0; inkFirst = {}; }
+    int testInkFaults() const { return inkFaults; }
+    juce::String testInkFirst() const { return inkFirst; }
+    static bool testIsEqBandKey (const TestHit& h) { return h.kind == hEqBand || h.kind == hEqType; }      // (the EQ's band keys and its kinds of band)
+    // (the open CONFIG's list read again and laid out, without a paint: every control as its box and name, and "row.col.span")
+    std::vector<std::pair<juce::String, juce::String>> testCfgLayout()
+    {
+        cfgParams = eng.setupParams (cfg);
+        int total = (int) cfgParams.size();
+        if (cfg.kind == 0) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
+        layoutConfig (total);
+        std::vector<std::pair<juce::String, juce::String>> out;
+        for (int i = 0; i < total; ++i)
+            out.push_back ({ cfgParams[(size_t) i].group + "/" + cfgParams[(size_t) i].id, juce::String (cfgAt[(size_t) i].row) + "." + juce::String (cfgAt[(size_t) i].col) + "." + juce::String (cfgAt[(size_t) i].span) });
+        return out;
+    }
     bool testLowIsUp() const { return lowView; }
     void testPointAt (juce::Point<float> p) { point (p); }      // the mouse resting there (screen units)
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
@@ -700,7 +725,21 @@ private:
     juce::uint32 knobAt = 0;            // when a knob under a hand (or a snapshot's sweep) last had the eye
     bool knobHas = false;
     float cfgT = 0.0f;
-    int cfgScroll = 0, cfgAge = 0;
+    int cfgScroll = 0, cfgAge = 0;               // (cfgScroll: the row at the top)
+    static constexpr int kCfgCols = 8;
+    static constexpr float kCfgCell = 66.0f;
+    struct CfgCell { int row = 0, col = 0, span = 1; };
+    struct CfgBox { int row = 0, col = 0, cells = 1; juce::String title; bool head = true; };
+    std::vector<CfgCell> cfgAt;                 // where each of CONFIG's controls stands (layoutConfig)
+    std::vector<CfgBox> cfgBoxes;
+    int cfgRows = 0, cfgSeek = -1;              // (cfgSeek: a control whose row is to come to the top at the next paint)
+    void layoutConfig (int total);
+    static constexpr int kKeysKept = 4;
+    struct KeyDrawn { R r; juce::Colour cap; };
+    std::array<KeyDrawn, kKeysKept> capsDrawn {};      // the keys last drawn in this paint, for the print on them (text)
+    int keysAt = 0;
+    bool inkWatch = false; int inkFaults = 0; juce::String inkFirst;       // (for the checks: light print on a bright key, counted while watched)
+    std::vector<KeyDrawn> inkCaps;
     std::vector<Engine::SetupParam> cfgParams;
     // LOAD: a list of folders and sound files in CONFIG's own panel, for a lane, an effect or a
     // return that takes a file. No window of the system's is opened, so nothing leaves full screen.
