@@ -1573,7 +1573,7 @@ juce::var Session::madeNow (const Snapshot& s) const
             if (const int t = s.inserts[(size_t) l][(size_t) k]; t >= 0 && t < (int) d.fx.size()) fx->setProperty (d.fx[(size_t) t].first, d.fx[(size_t) t].second);
     o->setProperty ("fx", var (fx));
     auto* rt = new juce::DynamicObject();
-    rt->setProperty ("dub", d.dub); rt->setProperty ("space", d.space); rt->setProperty ("conv", d.conv);
+    rt->setProperty ("dub", d.dub); rt->setProperty ("space", d.space); rt->setProperty ("conv", d.conv); rt->setProperty ("galaxy", d.galaxy);
     o->setProperty ("returns", var (rt));
     if (s.hasBus) o->setProperty ("bus", d.bus);
     if ((int) s.values.size() > cx::kPkG && s.values[(size_t) cx::kPkG] >= 0.0f) o->setProperty ("pockets", d.pockets);
@@ -2994,6 +2994,14 @@ void Session::stepInsert (int l, int slot)
 {
     int t = engine.insertType (l, slot) + 1;
     if (t >= (int) effects().size()) t = -1;
+    setInsert (l, slot, t);
+}
+
+void Session::setInsert (int l, int slot, int t)
+{
+    if (l < 0 || l >= kLanes || slot < 0 || slot >= kSlots) return;
+    t = juce::jlimit (-1, (int) effects().size() - 1, t);
+    if (t == engine.insertType (l, slot)) return;
     engine.setInsertType (l, slot, t, true);
     for (int c = 0; c < kCells; ++c) base[(size_t) cx::ins (l, slot, c)] = engine.target (cx::ins (l, slot, c));
     touch();
@@ -3357,7 +3365,13 @@ static Engine::SetupState setupFromVar (const var& v)
 {
     Engine::SetupState st;
     if (auto* o = v.getDynamicObject())
-        for (auto& p : o->getProperties()) st.push_back ({ p.name.toString(), juce::jlimit (0.0f, 1.0f, (float) p.value) });
+        for (auto& p : o->getProperties())
+        {
+            // (every value is a place, 0 to 1, but one: which reverb SPACE's setup was read from, which is its number.
+            // With two reverbs the number was 0 or 1 and nobody could tell; GALAXY is 2, the ninety-first build.)
+            const bool model = p.name.toString() == "__model";
+            st.push_back ({ p.name.toString(), juce::jlimit (0.0f, model ? (float) (kSpaceModels - 1) : 1.0f, (float) p.value) });
+        }
     return st;
 }
 

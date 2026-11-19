@@ -199,6 +199,28 @@ inline const std::vector<FxDef>& effects()
         { "RADIO", "RADIO", {},
           { { "SIGNAL", "signal", 'u' }, { "BAND", "band", 'u' }, { "WIDTH", "width", 'u' }, { "NOISE", "noise", 'u' },
             { "DROPOUT", "dropout", 'u' }, { "SQUELCH", "squelch", 'u' }, { "RING", "ring", 'u' }, { "MIX", "mix", 'u' } } },
+        // (the ninety-first build) Six of Airwindows' (suite/modules/Airwindows.cpp). On all six the last three places
+        // are the same three: OUTPUT (the effect's own, before MIX: how loud the effect is against the sound as it
+        // came in; CLIP has none, and the place is empty on it), MIX and LEVEL. A file names an insert by its name,
+        // so these are added at the end.
+        { "WEAVE", "AIRWEAVE", {},
+          { { "DRIVE", "drive", 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' },
+            { nullptr, nullptr, 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        { "DEREZ", "AIRDEREZ", {},
+          { { "RATE", "rate", 'u' }, { "SQUARE", "square", 'u' }, { "TRIM", "trim", 'u' }, { "BRIGHT", "bright", 'u' },
+            { "BASSIS", "bassis", 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        { "FILTER", "AIRFILTER", {},
+          { { "FREQ", "freq", 'u' }, { "RESO", "reso", 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' },
+            { nullptr, nullptr, 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        { "ENSEMBLE", "AIRENSEMBLE", {},
+          { { "SPEED", "speed", 'u' }, { "DEPTH", "depth", 'u' }, { "BUFFER", "buffer", 'u' }, { "REGEN", "regen", 'u' },
+            { "DEREZ", "derez", 'b' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        { "TAPE", "AIRTAPE", {},
+          { { "INPUT", "input", 'b' }, { "TILT", "tilt", 'b' }, { "SHAPE", "shape", 'b' }, { "FLUTTER", "flutter", 'u' },
+            { "HEAD BUMP", "head_bump", 'u' }, { "OUTPUT", "output", 'b' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        { "CLIP", "AIRCLIP", {},
+          { { "BOOST", "boost", 'u' }, { "CEILING", "ceiling", 'u' }, { "NOISE", "noise", 'u' }, { nullptr, nullptr, 'u' },
+            { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
     };
     return F;
 }
@@ -211,10 +233,14 @@ inline const FxDef& returnA()
           { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } };
     return d;
 }
-// B is one of two reverbs, chosen in its CONFIG: 0 the suite's REVERB, 1 its convolution reverb
-// (TERROIR: a place, from an impulse response dropped on it). Each has its own four knobs.
-constexpr int kSpaceModels = 2;
-inline const char* spaceModelName (int model) { return model == 1 ? "CONVOLUTION" : "REVERB"; }
+// B is one of three reverbs, chosen in its CONFIG: 0 the suite's REVERB, 1 its convolution reverb
+// (TERROIR: a place, from an impulse response dropped on it), 2 GALAXY (the ninety-first build: Airwindows'
+// Galactic3, suite/modules/Airwindows.cpp). Each has its own four knobs, and the like ones are in the same
+// places on all three: DECAY second, DARK third, DUCK fourth.
+constexpr int kSpaceModels = 3;
+inline const char* spaceModelName (int model) { return model == 2 ? "GALAXY" : model == 1 ? "CONVOLUTION" : "REVERB"; }
+// (what a model's four controls are called in a file: "ret.<this>_<param>")
+inline const char* spaceModelSlug (int model) { return model == 2 ? "galaxy" : model == 1 ? "conv" : "space"; }
 inline const FxDef& returnB (int model = 0)
 {
     static const FxDef d[kSpaceModels] = {
@@ -224,8 +250,13 @@ inline const FxDef& returnB (int model = 0)
         // the place as it was captured (SIZE and DECAY at 100 %), ducked and cut like the reverb it stands in for
         { "SPACE", "TERROIR", { { "mix", 1.0f }, { "dry", 0 }, { "duck", 0.4f }, { "lo_cut", 220 } },
           { { "SPACE SIZE", "size", 'u' }, { "SPACE DECAY", "decay", 'u' }, { "SPACE DARK", "dark", 'u' }, { "SPACE DUCK", "duck", 'u' },
+            { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } },
+        // GALAXY: ducked and cut like the other two. Its size (BIGNESS) is in CONFIG, as it cannot move while it sounds;
+        // DETUNE, the drift that is its own, is where the others have SIZE
+        { "SPACE", "AIRGALAXY", { { "mix", 1.0f }, { "duck", 0.4f }, { "lo_cut", 220 } },
+          { { "SPACE DETUNE", "detune", 'u' }, { "SPACE DECAY", "decay", 'u' }, { "SPACE DARK", "dark", 'u' }, { "SPACE DUCK", "duck", 'u' },
             { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' } } } };
-    return d[model == 1 ? 1 : 0];
+    return d[model < 0 || model >= kSpaceModels ? 0 : model];
 }
 
 // The drum bus, in the master: the lanes its CONFIG names (the five drums, to begin with) play

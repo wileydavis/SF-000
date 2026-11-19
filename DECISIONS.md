@@ -5438,7 +5438,119 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      for the rumble's 2 kHz (-71 dB against a line at -70: the line is at -75). The
      arrangement's reference render is made again, as the master is not what it was.
 
+## Seven of Airwindows' effects, and a list to choose a slot's effect from (Nov 19, 08:48): ninety-first build
+
+746. **You**, Nov 19, 08:48, with a written list of recommendations (not in the repo): "when the
+     compressor work is done, take a look at this recommended list of implementations and make
+     a plan to implememnt in one go." The list recommends Chris Johnson's Airwindows effects
+     (open source, MIT): Weave, DeRez5, TakeCare, Galactic3 and Dattorro first, ToTape9 and
+     ADClip9 next. To my plan for them, 09:15: "do all 7". **Built, all seven in this one
+     build: WEAVE, DEREZ, FILTER, ENSEMBLE, TAPE and CLIP for a lane's insert slots, and GALAXY
+     as a third reverb SPACE can be.**
+     - **His code is in the repo as he wrote it** (`suite/airwindows`, from his repository at
+       `143a86d`, Nov 14, 2026, with his licence beside it), and nothing in it is edited. One
+       file of SF-000's compiles all seven, and one adapter makes SF-000 modules of them, so
+       the next Airwindows effect is a row in a table (`suite/PORTING.md` says how).
+     - **MIX and LEVEL are SF-000's on every one, not the effect's**: one straight crossfade
+       for all of them, and at nought the effect is out of the sound to the last bit. Where
+       Airwindows has a dry/wet of its own it is held at wet.
+     - **What an effect cannot change while it sounds is a list in CONFIG**, so it cannot be
+       morphed, swept by MOTION or learnt by a step: a change is made at the bottom of a 20 ms
+       dip, and the effect starts again there, empty. That turned out to be one control:
+       GALAXY's BIGNESS.
+747. *Mine:* **how each is laid out and where it starts.** The names are Airwindows' unless said.
+     - **The last three places of all six inserts are OUTPUT, MIX, LEVEL** (yours: "on all
+       knob pages try to keep similar function knobs in consistent positions."). OUTPUT is
+       Airwindows' own, before MIX: the effect's level against the dry sound. CLIP has no
+       OUTPUT of its own, and that place is empty on it.
+     - **Each starts about as loud as what went in**, measured on a bass note with a thump:
+       WEAVE +0.4 dB (its OUTPUT starts at 30 %, with DRIVE a quarter up), DEREZ 0.0, FILTER
+       -1.0 (RESO starts at 30 % and LEVEL 2 dB up: Dattorro turns down what passes under the
+       cutoff as RESO rises, 6 dB half way, where Airwindows starts it), ENSEMBLE -1.2 (LEVEL
+       starts 4 dB up), TAPE +2.2 (as Airwindows starts it), CLIP 0.0. **CLIP starts doing
+       nothing**, as the COMPRESSOR does, until BOOST is turned.
+     - **WEAVE's DRIVE is from unity up** (Airwindows' input is a tenth at unity and ten times
+       at full: nothing useful is below unity). **DEREZ's RATE is its first control the other
+       way up**, so up is more, as every other knob here is.
+     - **ENSEMBLE is not as the plan had it, and not as Airwindows starts it.** The plan made
+       BUFFER a list in CONFIG, thinking it could not move as it sounds. It can: TakeCare
+       slides its nine lines to the length asked, a sample a sample, bending the pitch as a
+       tape echo does. So BUFFER is a knob on the panel, and RANDO went to CONFIG to make the
+       room. And BUFFER is the effect's time, measured at 48 kHz with DEPTH half way: 25 ms at
+       nought, 50 ms a fifth of the way up, 110 ms at three tenths, 0.4 s half way, 3 s at
+       full. Airwindows starts it half way and all wet, which in a lane's slot is the lane
+       played 0.4 s late and nothing else. It starts here as the chorus it is named for:
+       BUFFER at 15 %, MIX half.
+     - **Four knobs stop short of Airwindows' ends**, where the effect stops being one. TAPE's
+       SHAPE: the last twentieth either way is 8 and 12 dB louder. TAPE's BIAS: silence at
+       its top, 17 dB down a twentieth below that. ENSEMBLE's DEREZ: silent at both ends (a
+       two-thousandth of the rate), so it stops a tenth short of each: a fifth of the rate to
+       the left, in the whole steps Airwindows gives it (at 48 kHz the first, a half, is a
+       quarter turn left of the middle, and nothing changes between there and the middle).
+       GALAXY's DEREZ: a tenth of the rate is as far as it goes.
+     - CLIP's MODE is Airwindows' three (BOOST, MATCH, CLIP ONLY), a list in CONFIG with
+       MATCH's own knob beside it. A change of it is made in the same 20 ms dip.
+748. *Mine:* **GALAXY's four knobs are DETUNE, DECAY, DARK, DUCK, not the plan's REPLACE,
+     BRIGHT, DETUNE, DEREZ.** Two things of yours decided it. The like knobs of SPACE's three
+     reverbs should be in the same places (the rule above): the REVERB and the CONVOLUTION have
+     SIZE, DECAY, DARK, DUCK, so on GALAXY the second is DECAY and the third DARK, which are
+     Galactic's Replace and Brightness the other way up; with Airwindows' names and directions
+     the third knob would darken two reverbs and brighten the third. And the duck: "I really
+     like how the new duck that matches the kick decay inverse shape sounds. It really creates a
+     nice hole. So make sure we keep that concept." A SPACE that lost it on one of its reverbs
+     would not be keeping it, so GALAXY's tail goes through the same pocket, with DUCK fourth
+     and DUCK SHAPE and LO CUT in CONFIG as the others have them. DEREZ went to CONFIG to make
+     the room. DECAY at full takes nothing in and holds what it has: a freeze, which fades
+     about a dB every two seconds (measured: 2.7 dB in four seconds). GALAXY is lifted 3 dB so
+     that SPACE as it starts out is as loud on it as on the REVERB (-43.7 dB against -43.5 on
+     the B return, the rig playing as it opens).
+749. *Mine:* **an insert slot's name puts up a list.** A click on the name went to the next
+     effect, which was fine with six; with twelve, the one wanted could be eleven clicks
+     away, each of them a different effect cut into the lane on the way. A click on the name
+     now puts EMPTY and the twelve effects up in place of the slot's eight knobs, each a key
+     on the slot's own plate, the one it is lit and down; a key makes the slot that effect
+     and the knobs come back; the name again puts the list away; another lane chosen, it is
+     gone. No floating menu: it is the slot's own face.
+750. *Mine, found by the checks:*
+     - **SPACE's setup would have been dropped for GALAXY every time the app opened.** Every
+       value in a setup is a place from 0 to 1 and is read as one, but which reverb the setup
+       was read from is a number. With two reverbs it was 0 or 1 and nobody could tell. GALAXY
+       is 2, was read back as 1, and its setup was then left out as another reverb's. It is
+       read as the number it is now. (A snapshot's recall was right all along; only a file
+       read back was wrong.)
+     - **A kernel just made takes its controls from where Airwindows starts them to where
+       they are set over the first block it is given**, however long that is, so the first
+       moments depended on the audio device's buffer. Each is now taken there before it makes
+       a sound (two blocks of no length), and the output is the same to the sample in blocks
+       of 32, 64, 480 and 512.
+     - **Each kernel seeds its own noise from the C library's rand when it is made**, so two
+       runs were not the same run. Here that is a small generator of SF-000's own, started
+       from the same place each time: a render made twice is the same file.
+     - DEREZ is a sample earlier with its first control exactly at clean than anywhere else on
+       it. RATE's nought is a hair under that (0.999), where it is the sound as it came in
+       one sample late to the last bit, so the one sample is the same over the whole knob.
+     - Measured, here: every corner of every knob of all seven with full-scale noise in is a
+       number (the loudest, FILTER at +12 dB). PANIC leaves each under -134 dB. A knob swept
+       end to end in half a second adds nothing above 6 kHz that holding it does not (the
+       most, CLIP's BOOST: +0.9 dB). The rig's own delay is what it was with any of them in
+       all three slots of a lane. Cost, one in each of the 33 slots, per cent of a core each:
+       CLIP 0.09, DEREZ 0.23, FILTER 0.28, WEAVE 0.39, ENSEMBLE 0.80, TAPE 1.14 (COMPRESSOR
+       0.13, DISTORTION 0.83, DELAY 2.5, REVERB 3.2). ENSEMBLE holds 4.5 MiB each, GALAXY 1 MiB.
+
 ## Not verified
+
+- **The ninety-first build (746 to 750) is measured, and not heard.** I cannot hear, so what
+  each effect is said to sound like in INFO and the README is read from Airwindows' code and
+  from measurements, not from listening: whether WEAVE is a saturation you want on the kick,
+  whether the starting places are good ones, whether DECAY and DARK the other way up on GALAXY
+  read right under the hand, are yours to say. **Not built on a Mac.** Airwindows' code
+  compiles here with clang as well as gcc and gives the same figures, but Apple's compiler and
+  its C++ library have not seen it; if `./build.sh` stops in `AirKernels.cpp`, send me the
+  first error. **PANIC with one of these in a slot allocates a few short strings on the audio
+  thread** (Airwindows' constructor does, and the kernel is made new there): at a PANIC, I
+  judged that acceptable; say if not. On the E16 a slot's effect is still not chosen (it never
+  was): the list is on the screen. The E16's page for a slot shows the new knobs by short
+  names I made up (OUT, DRZ, BUF, BUMP and so on).
 
 - **The ninetieth build (742 to 744) is measured, and not heard.** Measured: the static curve
   and the knee's edges, MIX and MAKEUP, the times at 44.1, 48 and 96 kHz (0.632 and 0.368 at

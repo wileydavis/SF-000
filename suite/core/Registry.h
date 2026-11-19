@@ -26,4 +26,7 @@ ModulePtr makeKICK();    ModulePtr makePERC();    ModulePtr makeRUMBLE();  Modul
 ModulePtr makeLEAD();    ModulePtr makePAD();     ModulePtr makeVOICE();   ModulePtr makeDECK();
 ModulePtr makeTONE();    ModulePtr makeSTRIKE();  ModulePtr makeTERROIR(); ModulePtr makeCAPTURE();
 ModulePtr makeRESONATOR();
+// (SF-000, the ninety-first build) Airwindows' (modules/Airwindows.cpp)
+ModulePtr makeAIRWEAVE();  ModulePtr makeAIRDEREZ(); ModulePtr makeAIRFILTER(); ModulePtr makeAIRENSEMBLE();
+ModulePtr makeAIRTAPE();   ModulePtr makeAIRCLIP();  ModulePtr makeAIRGALAXY();
 } // namespace sf

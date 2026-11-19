@@ -89,7 +89,7 @@ public:
         juce::StringArray slots;                                    // the lanes' slugs, in order
         std::array<juce::String, kLanes> lane;                      // each lane's print
         std::vector<std::pair<juce::String, juce::String>> fx;      // each effect: its name, its print
-        juce::String dub, space, conv, bus, pockets, chassis;
+        juce::String dub, space, conv, galaxy, bus, pockets, chassis;
         std::vector<std::pair<juce::String, juce::var>> all;        // every definition by its print (the sound engines' too)
     };
     const Defs& defs() const;

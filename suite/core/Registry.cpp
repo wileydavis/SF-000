@@ -14,7 +14,9 @@ static const std::vector<std::pair<std::string, ModulePtr (*)()>>& table()
         { "GLUE", makeGLUE }, { "TONE", makeTONE }, { "LOWEND", makeLOWEND }, { "LIMIT", makeLIMIT }, { "ROOMEQ", makeROOMEQ },
         { "ALLOC", makeALLOC }, { "TAP", makeTAP }, { "STRIP", makeSTRIP }, { "TERROIR", makeTERROIR }, { "CAPTURE", makeCAPTURE },
         { "RESONATOR", makeRESONATOR },
-        { "DRUMBUS", makeDRUMBUS }, { "FINISH", makeFINISH } };        // (SF-000)
+        { "DRUMBUS", makeDRUMBUS }, { "FINISH", makeFINISH },          // (SF-000)
+        { "AIRWEAVE", makeAIRWEAVE }, { "AIRDEREZ", makeAIRDEREZ }, { "AIRFILTER", makeAIRFILTER }, { "AIRENSEMBLE", makeAIRENSEMBLE },
+        { "AIRTAPE", makeAIRTAPE }, { "AIRCLIP", makeAIRCLIP }, { "AIRGALAXY", makeAIRGALAXY } };      // (SF-000: Airwindows')
     return t;
 }
 

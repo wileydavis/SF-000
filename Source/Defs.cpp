@@ -166,6 +166,7 @@ const Engine::Defs& Engine::defs() const
     d->dub = ret (returnA(), "ret.dub_");
     d->space = ret (returnB (0), "ret.space_");
     d->conv = ret (returnB (1), "ret.conv_");
+    d->galaxy = ret (returnB (2), "ret.galaxy_");       // (the ninety-first build)
     // the drum bus: as a return, with its four knobs by full id (the rest of it is in setup.bus)
     {
         const auto& fd = drumBus();

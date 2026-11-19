@@ -181,3 +181,23 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   kick's). The suite's is as it was: a notch at the kick's pitch, through the lows, to a pump,
   on a decay held to a part of a beat and shortened when kicks come thick. The crossover and
   the bell are still in the file and do nothing here. See DECISIONS 711.
+
+- **Airwindows** (the ninety-first build), which is not the suite's. `suite/airwindows/` holds
+  seven effects from [airwindows/airwindows](https://github.com/airwindows/airwindows) at
+  `143a86d` (Nov 14, 2026): `plugins/LinuxVST/src/<Name>/<Name>.h`, `<Name>.cpp` and
+  `<Name>Proc.cpp` for Weave, DeRez5, Dattorro, TakeCare, ToTape9, ADClip9 and Galactic3, **not
+  edited**, and his `LICENSE` (MIT, Copyright (c) 2018 Chris Johnson), which goes wherever they
+  go. `suite/airwindows/audioeffectx.h` is SF-000's: a stand-in for the VST 2 header those
+  files include, with just enough of `AudioEffectX` for a kernel to be made, told its rate,
+  given its controls and run. Nothing of Steinberg's is in the repo.
+  `suite/modules/AirKernels.cpp` is the one file that compiles them, each inside a namespace
+  of its own (every one declares the same names at file scope), with `rand` given as a small
+  generator of that file's own so that a kernel made twice is the same twice.
+  `suite/modules/AirKernels.h` is the interface (`fresh`, `set`, `run`), and
+  `suite/modules/Airwindows.cpp` the adapter that makes seven SF-000 modules of them
+  (`AIRWEAVE`, `AIRDEREZ`, `AIRFILTER`, `AIRENSEMBLE`, `AIRTAPE`, `AIRCLIP`, `AIRGALAXY`), with
+  their lines in `core/Registry.h` and `core/Registry.cpp` marked `(SF-000)`. To take a newer
+  Airwindows file: copy it over the old one; if its controls have changed, the table at the top
+  of `Airwindows.cpp` is where they are named. To add another: its three files, a namespace
+  block and a `Kind` in `AirKernels.*`, a row in that table, a `make`, the two Registry lines,
+  an `FxDef` in `Source/Rig.h`, and its lines in `Source/Help.h`. See DECISIONS 746 to 750.

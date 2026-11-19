@@ -224,7 +224,12 @@ public:
     static bool testIsNotesKey (const TestHit& h) { return h.kind == hAct && h.a == aNotes; }      // NOTES: whether a recall brings a snapshot's notes
     // the kinds of thing that say what they are when pointed at with INFO on
     static bool testAnswers (const TestHit& h) { return h.kind == hKnob || h.kind == hToggle || h.kind == hHold || h.kind == hRead || h.kind == hSnapKnob || h.kind == hLane || h.kind == hConfig
-                                                     || h.kind == hInsHead || h.kind == hStep || h.kind == hPageSel || h.kind == hLen || h.kind == hAct || h.kind == hPocket; }
+                                                     || h.kind == hInsHead || h.kind == hInsPick || h.kind == hStep || h.kind == hPageSel || h.kind == hLen || h.kind == hAct || h.kind == hPocket; }
+    static bool testIsInsPanel (const TestHit& h, int slot) { return h.kind == hDropFx && h.a == 1 && h.b == slot; }      // (an insert slot's whole plate)
+    static bool testIsInsHead (const TestHit& h, int slot) { return h.kind == hInsHead && h.a == slot; }
+    static bool testIsInsPick (const TestHit& h, int slot, int place) { return h.kind == hInsPick && h.a == slot && (place < 0 || h.b == place); }     // (a key of a slot's list: place 0 is EMPTY)
+    int testInsPick() const { return insPick; }
+    void testOpenInsPick (int slot) { insPick = slot; insPickLane = ses.shownLane(); }
     static bool testIsSnapKnob (const TestHit& h, int k) { return h.kind == hSnapKnob && h.a == k; }
     // the performance panel a CONFIG target belongs to: a lane's, an insert's, the returns'
     static bool testIsPanelOf (const TestHit& h, Engine::Target t) { return t.kind == 0 ? h.kind == hLanePanel && h.a == t.lane : h.kind == hDropFx && h.a == t.kind && (t.kind == 2 || h.b == t.slot); }
@@ -308,6 +313,7 @@ private:
                    // hEqType: a kind's key (a: which kind), for the band chosen
                    // hEqLane: another lane's number on the graph (a: the lane), its line shown or hidden; a -1: OTHERS, all of them
                    hEq, hEqBand, hEqType, hEqLane,      // (hEqLane a -2: LOW END, the graph's other face; a -3: AFTER FX, there)
+                   hInsPick,        // (the ninety-first build) a key of an insert slot's list of effects (a: the slot, b: 0 EMPTY, then the effects in their order)
                    hLock,           // a step's LOCK switch, over its key (a: the step): pressed or dragged, the third of it under the hand is its place
                    hArrPart, hArrBars, hArrMorph,       // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
                    // the column (the chosen stack knob's stack, in the designer). a: which of its snapshots
@@ -730,6 +736,7 @@ private:
     juce::uint32 knobAt = 0;            // when a knob under a hand (or a snapshot's sweep) last had the eye
     bool knobHas = false;
     float cfgT = 0.0f;
+    int insPick = -1, insPickLane = -1;         // (the ninety-first build) the insert slot whose list of effects is up in place of its knobs, and the lane it is
     int cfgScroll = 0, cfgAge = 0;               // (cfgScroll: the row at the top)
     static constexpr int kCfgCols = 8;
     static constexpr float kCfgCell = 66.0f;

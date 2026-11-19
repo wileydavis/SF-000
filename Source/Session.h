@@ -777,6 +777,7 @@ public:
     juce::String stepSays() const;                      // the chosen step in a few letters: "7 D#3", "12", or nothing
     void nudgeLane (int lane, int dir);
     void stepInsert (int lane, int slot);
+    void setInsert (int lane, int slot, int type);         // (the ninety-first build) the slot made that effect outright (-1: empty)
 
     // ---- disk (the file's layout and the rules it keeps to: FORMAT.md)
     static constexpr int kFormat = 1;   // rises only for a change an older build could not read past

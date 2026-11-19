@@ -2516,6 +2516,349 @@ static void wavetableTest (int& bad)
 
 // The compressor (the ninetieth build): what it does to a level, how fast, the same whatever the block, to both channels as
 // one; and where its settings are kept.
+// (the ninety-first build) Airwindows' seven, each through SF-000's own processor as a lane's insert has it (GALAXY as
+// SPACE has it): out at MIX nought to the sample; every knob heard; a number at every corner; the same at three rates,
+// in any block and twice running; quiet after PANIC; a list changed as it sounds without a click; a knob swept
+// without steps; and what it reports for its delay is its delay.
+static void airwindowsTest (int& bad)
+{
+    using namespace sf0;
+    auto set = [] (SFProcessor& q, const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+    using Setup = std::function<void (SFProcessor&)>;
+    using During = std::function<void (SFProcessor&, int at, int n)>;
+    auto run = [&] (const char* module, double rate, int block, const juce::AudioBuffer<float>& in, const Setup& setup, const During& during = {}, int* lat = nullptr)
+    {
+        SFProcessor p (sf::makeModule (module));
+        setup (p);
+        p.setRateAndBufferSizeDetails (rate, block); p.prepareToPlay (rate, block);
+        if (lat != nullptr) *lat = p.mod().latency();
+        juce::AudioBuffer<float> out; out.makeCopyOf (in);
+        juce::MidiBuffer midi;
+        const int n = in.getNumSamples();
+        for (int i = 0; i < n; i += block)
+        {
+            if (during) during (p, i, n);
+            juce::AudioBuffer<float> b (out.getArrayOfWritePointers(), 2, i, std::min (block, n - i));
+            p.processBlock (b, midi);
+        }
+        return out;
+    };
+    auto db = [] (double g) { return 20.0 * std::log10 (std::max (1.0e-12, std::abs (g))); };
+    auto rmsOf = [] (const juce::AudioBuffer<float>& a, int from = 0) { double s = 0.0; for (int ch = 0; ch < 2; ++ch) for (int i = from; i < a.getNumSamples(); ++i) s += (double) a.getSample (ch, i) * a.getSample (ch, i); return std::sqrt (s / (2.0 * std::max (1, a.getNumSamples() - from))); };
+    // how far b is from a, a taken `late` samples late (the worst sample)
+    auto apart = [] (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int late = 0)
+    {
+        float w = 0.0f;
+        for (int ch = 0; ch < 2; ++ch) for (int i = late; i < a.getNumSamples(); ++i) w = std::max (w, std::abs (b.getSample (ch, i) - a.getSample (ch, i - late)));
+        return w;
+    };
+    auto diffRms = [] (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int from) { double s = 0.0; for (int ch = 0; ch < 2; ++ch) for (int i = from; i < a.getNumSamples(); ++i) { const double d = (double) a.getSample (ch, i) - b.getSample (ch, i); s += d * d; } return std::sqrt (s / (2.0 * std::max (1, a.getNumSamples() - from))); };
+    auto finite = [] (const juce::AudioBuffer<float>& a, float& peak) { bool ok = true; peak = 0.0f; for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < a.getNumSamples(); ++i) { const float v = a.getSample (ch, i); if (! std::isfinite (v)) ok = false; else peak = std::max (peak, std::abs (v)); } return ok; };
+    // (something like music for them: a saw bass note with a thump every 0.3 s and a little noise, the two channels not alike; peak about 0.6)
+    auto music = [] (double rate, double seconds, int seed = 91)
+    {
+        juce::Random rnd (seed);
+        juce::AudioBuffer<float> b (2, (int) (rate * seconds));
+        double ph = 0.0;
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const double t = (double) i / rate, at = std::fmod (t, 0.3);
+            ph += 110.0 / rate; ph -= std::floor (ph);
+            const float saw = (float) ((ph * 2.0 - 1.0) * 0.22 * (0.4 + 0.6 * std::exp (-at * 6.0)));
+            const float thump = (float) (0.35 * std::exp (-at * 14.0) * std::sin (6.2832 * 60.0 * t));
+            b.setSample (0, i, saw + thump + 0.03f * (rnd.nextFloat() - 0.5f)); b.setSample (1, i, 0.8f * saw + thump + 0.03f * (rnd.nextFloat() - 0.5f));
+        }
+        return b;
+    };
+    auto noise = [] (double rate, double seconds, float amp, int seed)
+    {
+        juce::Random rnd (seed);
+        juce::AudioBuffer<float> b (2, (int) (rate * seconds));
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (ch, i, amp * (rnd.nextFloat() * 2.0f - 1.0f));
+        return b;
+    };
+
+    struct Fx
+    {
+        const char* name; const char* module;
+        std::vector<const char*> knobs;                         // every knob of its own (0..1)
+        std::vector<std::pair<const char*, float>> busy;        // where it is plainly at work, for hearing the others
+        std::vector<std::pair<const char*, int>> lists;         // its lists, and how many steps each has
+        const char* swept;                                      // the knob a hand sweeps
+        int late;                                               // its delay, in samples
+    };
+    const std::vector<Fx> fxs = {
+        { "WEAVE", "AIRWEAVE", { "drive", "output" }, { { "drive", 0.6f } }, {}, "drive", 0 },
+        { "DEREZ", "AIRDEREZ", { "rate", "square", "trim", "bright", "bassis", "output" }, { { "rate", 0.6f }, { "bright", 0.9f } }, {}, "rate", 1 },
+        { "FILTER", "AIRFILTER", { "freq", "reso", "output" }, {}, {}, "freq", 0 },
+        { "ENSEMBLE", "AIRENSEMBLE", { "speed", "depth", "buffer", "regen", "derez", "output", "rando" }, { { "speed", 0.5f } }, {}, "buffer", 0 },
+        { "TAPE", "AIRTAPE", { "input", "tilt", "shape", "flutter", "head_bump", "output", "flutter_speed", "bias", "head_freq" }, { { "input", 0.7f }, { "flutter", 0.6f }, { "head_bump", 0.7f } }, {}, "input", 1 },
+        { "CLIP", "AIRCLIP", { "boost", "ceiling", "noise", "match" }, { { "boost", 0.6f } }, { { "mode", 3 } }, "boost", 1 },
+    };
+
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    // the biggest step from one sample to the next in a stretch of a sound
+    auto jump = [] (const juce::AudioBuffer<float>& a, int from, int to) { float w = 0.0f; for (int i = std::max (1, from); i < std::min (to, a.getNumSamples()); ++i) w = std::max (w, std::abs (a.getSample (0, i) - a.getSample (0, i - 1))); return w; };
+    auto part = [] (const juce::AudioBuffer<float>& a, int from, int n) { juce::AudioBuffer<float> o (2, n); for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < n; ++i) o.setSample (ch, i, a.getSample (ch, from + i)); return o; };
+
+    const auto song = music (48000.0, 3.0);
+    for (auto& fx : fxs)
+    {
+        const Setup busy = [&] (SFProcessor& q) { for (auto& kv : fx.busy) set (q, kv.first, kv.second); };
+        // 1. MIX at nought: the sound as it came in, as late as it says it is, to the sample. At three rates. (From a
+        // quarter of a second in: the processor brings a control set before it starts to its place over its first moments.)
+        float out0 = 0.0f; int lat = -1; bool latSame = true;
+        for (double rate : { 44100.0, 48000.0, 96000.0 })
+        {
+            const auto in = music (rate, 1.0);
+            int l = 0;
+            const auto o = run (fx.module, rate, 512, in, [&] (SFProcessor& q) { busy (q); set (q, "mix", 0.0f); set (q, "level", 0.0f); }, {}, &l);
+            for (int ch = 0; ch < 2; ++ch) for (int i = (int) rate / 4; i < in.getNumSamples(); ++i) out0 = std::max (out0, std::abs (o.getSample (ch, i) - in.getSample (ch, i - l)));
+            if (lat < 0) lat = l; else latSame = latSame && l == lat;
+        }
+        // 2. at work it is heard, and so is each knob of its own, end to end; and as it starts out it is about as loud as
+        // the sound that went in
+        const auto asStarts = run (fx.module, 48000.0, 512, song, [] (SFProcessor&) {});
+        const auto atWork = run (fx.module, 48000.0, 512, song, busy);
+        const auto dryLate = run (fx.module, 48000.0, 512, song, [&] (SFProcessor& q) { set (q, "mix", 0.0f); });
+        const double ref = rmsOf (song, 24000);
+        const double work = db (diffRms (atWork, dryLate, 24000) / ref), loudAtStart = db (rmsOf (asStarts, 24000) / ref);
+        juce::String heard; double least = 100.0; juce::String leastKnob;
+        for (auto* k : fx.knobs)
+        {
+            auto with = [&] (float v) { return run (fx.module, 48000.0, 512, song, [&] (SFProcessor& q) { busy (q); if (std::strcmp (fx.name, "CLIP") == 0 && std::strcmp (k, "match") == 0) set (q, "mode", 1.0f); set (q, k, v); }); };
+            const double d = db (diffRms (with (0.0f), with (1.0f), 24000) / ref);
+            if (d < least) { least = d; leastKnob = k; }
+        }
+        // 3. every corner of its knobs with loud noise in: a number, and how loud at most
+        bool allFinite = true; float peak = 0.0f;
+        {
+            const auto loud = noise (48000.0, 0.25, 1.0f, 7);
+            const int nk = (int) fx.knobs.size();
+            for (int corner = 0; corner < (1 << nk); ++corner)
+            {
+                float pk = 0.0f;
+                const auto o = run (fx.module, 48000.0, 512, loud, [&] (SFProcessor& q) { for (int i = 0; i < nk; ++i) set (q, fx.knobs[(size_t) i], (corner >> i) & 1 ? 1.0f : 0.0f); });
+                allFinite = allFinite && finite (o, pk); peak = std::max (peak, pk);
+            }
+        }
+        // 4. the same in any block, and the same twice
+        float blocks = 0.0f;
+        for (int bs : { 32, 64, 480 }) blocks = std::max (blocks, apart (atWork, run (fx.module, 48000.0, bs, song, busy)));
+        const float twice = apart (atWork, run (fx.module, 48000.0, 512, song, busy));
+        // 5. after PANIC, with nothing going in, nothing comes out
+        double afterPanic = 0.0;
+        {
+            juce::AudioBuffer<float> in (2, 48000 * 2); in.clear();
+            for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 48000; ++i) in.setSample (ch, i, song.getSample (ch, i));
+            bool done = false;
+            const auto o = run (fx.module, 48000.0, 512, in, busy, [&] (SFProcessor& q, int at, int) { if (! done && at >= 48000) { q.mod().reset(); done = true; } });
+            afterPanic = db (rmsOf (part (o, 48000 + 1024, 24000)));
+        }
+        // 6. a list changed as it sounds: no step in the sound where it changes (the biggest step from one sample to the
+        // next round the change against the biggest anywhere before it)
+        double listJump = -100.0;
+        for (auto& li : fx.lists)
+            for (int to = 0; to < li.second; ++to)
+            {
+                const auto o = run (fx.module, 48000.0, 512, song, busy, [&] (SFProcessor& q, int at, int n) { if (at >= n / 2 && at < n / 2 + 512) set (q, li.first, (float) to); });
+                const int mid = o.getNumSamples() / 2;
+                listJump = std::max (listJump, db (jump (o, mid, mid + 4800) / std::max (1.0e-9f, jump (o, 4800, mid))));
+            }
+        // 7. its sweep knob turned end to end in half a second over a steady low note: what there is above 6 kHz while it
+        // moves against the most there is with it held anywhere (steps in a control are clicks, up there)
+        double zipper = 0.0;
+        {
+            juce::AudioBuffer<float> tone (2, 48000);
+            for (int i = 0; i < 48000; ++i) { const float v = 0.3f * (float) std::sin (6.2832 * 82.0 * (double) i / 48000.0); tone.setSample (0, i, v); tone.setSample (1, i, v); }
+            auto highs = [] (const juce::AudioBuffer<float>& a)
+            {
+                double z1 = 0.0, z2 = 0.0, pk = 0.0; const double k = std::exp (-6.2832 * 6000.0 / 48000.0);
+                for (int i = 12000; i < 40000; ++i) { const double x = a.getSample (0, i); z1 = x + k * (z1 - x); z2 = z1 + k * (z2 - z1); const double h = x - 2.0 * z1 + z2; pk = std::max (pk, std::abs (h)); }
+                return pk;
+            };
+            double held = 0.0;
+            for (float v : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) held = std::max (held, highs (run (fx.module, 48000.0, 128, tone, [&] (SFProcessor& q) { busy (q); set (q, fx.swept, v); })));
+            const double moving = highs (run (fx.module, 48000.0, 128, tone, [&] (SFProcessor& q) { busy (q); set (q, fx.swept, 0.0f); },
+                                              [&] (SFProcessor& q, int at, int) { set (q, fx.swept, juce::jlimit (0.0f, 1.0f, (float) (at - 12000) / 24000.0f)); }));
+            zipper = db (moving / std::max (1.0e-9, held));
+        }
+        const bool ok = out0 == 0.0f && latSame && lat == fx.late && work > -40.0 && least > -40.0 && std::abs (loudAtStart) < 3.5 && allFinite && peak < 8.0f
+                     && blocks == 0.0f && twice == 0.0f && afterPanic < -120.0 && listJump < 1.0 && zipper < 3.0;
+        check (ok, juce::String (fx.name) + ": at MIX nought it is the sound as it came in, " + juce::String (lat) + " sample" + (lat == 1 ? "" : "s") + " late, to the last bit, at 44.1, 48 and 96 kHz (the most it differs: " + juce::String (out0) + "). At work it is "
+                   + juce::String (juce::roundToInt (work)) + " dB against the sound, and its " + juce::String ((int) fx.knobs.size()) + " knobs are each heard end to end (the least, " + leastKnob.toUpperCase() + ": " + juce::String (juce::roundToInt (least)) + " dB). As it starts out it is "
+                   + juce::String (loudAtStart, 1) + " dB against what went in. Every corner of its knobs with full-scale noise in is a number (" + juce::String (1 << (int) fx.knobs.size()) + " corners, the loudest " + juce::String (db (peak), 1)
+                   + " dB). The same in blocks of 32, 64, 480 and 512 and the same twice running (" + juce::String (blocks) + ", " + juce::String (twice) + "). After PANIC, " + juce::String (juce::roundToInt (afterPanic)) + " dB. Its sweep knob turned end to end in half a second: "
+                   + juce::String (zipper, 1) + " dB above 6 kHz against it held" + (fx.lists.empty() ? juce::String() : "; its list changed as it sounds: the biggest step " + juce::String (listJump, 1) + " dB against the biggest before") + ".");
+    }
+
+    // WEAVE's SMOOTH is heard only as DRIVE moves: DRIVE jumped half way through, with SMOOTH at its two ends
+    {
+        auto with = [&] (float smooth) { return run ("AIRWEAVE", 48000.0, 512, song, [&] (SFProcessor& q) { set (q, "smooth", smooth); set (q, "drive", 0.0f); }, [&] (SFProcessor& q, int at, int n) { if (at >= n / 2) set (q, "drive", 1.0f); }); };
+        const auto fast = with (0.0f), slow = with (1.0f);
+        const int mid = song.getNumSamples() / 2;
+        const double d = db (diffRms (part (fast, mid, 24000), part (slow, mid, 24000), 0) / rmsOf (song, 24000));
+        check (d > -30.0, "WEAVE's SMOOTH, with DRIVE thrown from nought to full: the half second after differs by " + juce::String (juce::roundToInt (d)) + " dB between SMOOTH at nought and at full");
+    }
+    // where the kernel is late by a fixed count, the dry sound waits it: with the kernel doing nothing to the sound, MIX
+    // half way is the sound, not a comb of it (CLIP under its ceiling; DEREZ with RATE at nought)
+    {
+        const auto in = music (48000.0, 1.0);
+        const auto clip = run ("AIRCLIP", 48000.0, 512, in, [&] (SFProcessor& q) { set (q, "mix", 0.5f); set (q, "ceiling", 1.0f); set (q, "noise", 1.0f); });
+        const auto derez = run ("AIRDEREZ", 48000.0, 512, in, [&] (SFProcessor& q) { set (q, "mix", 0.5f); set (q, "rate", 0.0f); });
+        float c = 0.0f, d = 0.0f;
+        for (int i = 12000; i < in.getNumSamples(); ++i) { c = std::max (c, std::abs (clip.getSample (0, i) - in.getSample (0, i - 1))); d = std::max (d, std::abs (derez.getSample (0, i) - in.getSample (0, i - 1))); }
+        check (c < 1.0e-6f && d == 0.0f, "CLIP under its ceiling and DEREZ with RATE at nought, at MIX half way: the sound as it came in, one sample late (they differ from it by " + juce::String (c) + " and " + juce::String (d) + ")");
+    }
+
+    // GALAXY, as SPACE has it (all wet)
+    {
+        const char* gx = "AIRGALAXY";
+        const Setup wet = [&] (SFProcessor& q) { set (q, "mix", 1.0f); set (q, "duck", 0.0f); };
+        // a second of the song, then nothing: how the tail goes by DECAY
+        juce::AudioBuffer<float> in (2, 48000 * 8); in.clear();
+        for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 48000; ++i) in.setSample (ch, i, song.getSample (ch, i));
+        auto tailAt = [&] (const juce::AudioBuffer<float>& o, double sec) { return db (rmsOf (part (o, (int) (sec * 48000.0), 12000))); };
+        const auto shortTail = run (gx, 48000.0, 512, in, [&] (SFProcessor& q) { wet (q); set (q, "decay", 0.0f); });
+        const auto midTail = run (gx, 48000.0, 512, in, wet);
+        const auto longTail = run (gx, 48000.0, 512, in, [&] (SFProcessor& q) { wet (q); set (q, "decay", 0.9f); });
+        // DECAY to full once the sound is in: it holds it
+        const auto frozen = run (gx, 48000.0, 512, in, wet, [&] (SFProcessor& q, int at, int) { if (at >= 48000 && at < 48512) set (q, "decay", 1.0f); });
+        const double s2 = tailAt (shortTail, 2.0), s6 = tailAt (shortTail, 6.0), m2 = tailAt (midTail, 2.0), m6 = tailAt (midTail, 6.0), l2 = tailAt (longTail, 2.0), l6 = tailAt (longTail, 6.0), f3 = tailAt (frozen, 3.0), f7 = tailAt (frozen, 7.0);
+        // (how far the tail falls in four seconds: less the higher DECAY is; and held at full, next to nothing)
+        const bool decays = (s2 - s6) > (m2 - m6) + 6.0 && (m2 - m6) > (l2 - l6) + 3.0 && (f3 - f7) < 4.0 && (f3 - f7) < (l2 - l6) && f7 > -60.0;
+        // its other knobs, each heard end to end on the song
+        const double ref = rmsOf (song, 24000);
+        juce::String heard; double least = 100.0; juce::String leastKnob;
+        for (auto* k : { "detune", "dark", "derez", "lo_cut" })
+        {
+            auto with = [&] (float v) { return run (gx, 48000.0, 512, song, [&] (SFProcessor& q) { wet (q); set (q, k, std::strcmp (k, "lo_cut") == 0 ? 20.0f + 780.0f * v : v); }); };
+            const double d = db (diffRms (with (0.0f), with (1.0f), 24000) / ref);
+            if (d < least) { least = d; leastKnob = k; }
+        }
+        // BIGNESS changed as it sounds: no step, and it sounds again after; each size is another space
+        double listJump = -100.0, after = 0.0, sizes = 100.0;
+        juce::AudioBuffer<float> last;
+        for (int to = 0; to < 4; ++to)
+        {
+            const auto o = run (gx, 48000.0, 512, song, [&] (SFProcessor& q) { wet (q); set (q, "bigness", to == 3 ? 0.0f : 3.0f); }, [&] (SFProcessor& q, int at, int n) { if (at >= n / 2 && at < n / 2 + 512) set (q, "bigness", (float) to); });
+            const int mid = o.getNumSamples() / 2;
+            listJump = std::max (listJump, db (jump (o, mid, mid + 4800) / std::max (1.0e-9f, jump (o, 4800, mid))));
+            after = std::min (after, db (rmsOf (part (o, o.getNumSamples() - 24000, 24000)) / ref));
+            if (last.getNumSamples() > 0) sizes = std::min (sizes, db (diffRms (part (o, o.getNumSamples() - 24000, 24000), part (last, last.getNumSamples() - 24000, 24000), 0) / ref));
+            last = o;
+        }
+        bool allFinite = true; float peak = 0.0f;
+        {
+            const auto loud = noise (48000.0, 0.5, 1.0f, 9);
+            for (int corner = 0; corner < 16; ++corner)
+            {
+                float pk = 0.0f;
+                const auto o = run (gx, 48000.0, 512, loud, [&] (SFProcessor& q) { wet (q); set (q, "detune", (corner & 1) ? 1.0f : 0.0f); set (q, "decay", (corner & 2) ? 1.0f : 0.0f); set (q, "dark", (corner & 4) ? 1.0f : 0.0f); set (q, "derez", (corner & 8) ? 1.0f : 0.0f); });
+                allFinite = allFinite && finite (o, pk); peak = std::max (peak, pk);
+            }
+        }
+        // (as it starts out: a control set before the processor starts is brought to its place over its first moments, in
+        // steps of the block, and a reverb remembers that)
+        const Setup asIs = [] (SFProcessor&) {};
+        const auto once = run (gx, 48000.0, 512, song, asIs);
+        float blocks = 0.0f;
+        for (int bs : { 32, 64, 480 }) blocks = std::max (blocks, apart (once, run (gx, 48000.0, bs, song, asIs)));
+        const float twice = apart (once, run (gx, 48000.0, 512, song, asIs));
+        bool done = false;
+        const auto panicked = run (gx, 48000.0, 512, in, wet, [&] (SFProcessor& q, int at, int) { if (! done && at >= 72000) { q.mod().reset(); done = true; } });
+        const double afterPanic = tailAt (panicked, 1.6);
+        int lat = 0; run (gx, 48000.0, 512, part (song, 0, 4800), wet, {}, &lat);
+        const bool ok = decays && least > -40.0 && listJump < 1.0 && after > -40.0 && sizes > -30.0 && allFinite && peak < 8.0f && blocks == 0.0f && twice == 0.0f && afterPanic < -110.0 && lat == sf::makeModule ("REVERB")->latency();
+        check (ok, "GALAXY. A second of sound, then none: from one second on to five seconds on, the tail falls " + juce::String (s2 - s6, 1) + " dB with DECAY at nought, " + juce::String (m2 - m6, 1) + " half way, " + juce::String (l2 - l6, 1) + " at 90 %; DECAY thrown to full once the sound is in holds it ("
+                   + juce::String (f3, 1) + " dB two seconds on, " + juce::String (f7, 1) + " six seconds on). DETUNE, DARK, DEREZ and LO CUT are each heard end to end (the least, " + leastKnob.toUpperCase() + ": " + juce::String (juce::roundToInt (least))
+                   + " dB). BIGNESS changed as it sounds: the biggest step " + juce::String (listJump, 1) + " dB against the biggest before, it sounds again after (" + juce::String (juce::roundToInt (after)) + " dB against what goes in), and each size is another space (the nearest two "
+                   + juce::String (juce::roundToInt (sizes)) + " dB apart). Every corner with full-scale noise in is a number (the loudest " + juce::String (db (peak), 1) + " dB). The same in any block and twice (" + juce::String (blocks) + ", " + juce::String (twice)
+                   + "). After PANIC " + juce::String (juce::roundToInt (afterPanic)) + " dB. As late as the other two reverbs (" + juce::String (lat) + " samples).");
+    }
+    // In the rig. SPACE as GALAXY: it sounds on the B return about as loud as the REVERB does; its DUCK makes room for the
+    // kick; SPACE goes between its three reverbs as it plays; and the session file and a snapshot bring the new effects back.
+    {
+        juce::AudioBuffer<float> b (2, 512);
+        auto heardB = [&] (Engine& en)
+        {
+            en.set (en.find ("ret.space_solo"), 1.0f);
+            en.setRunning (true);
+            std::vector<float> out;
+            for (int i = 0; i < 420; ++i) { en.render (b); if (i >= 120) for (int k = 0; k < 512; ++k) out.push_back (b.getSample (0, k)); }
+            return out;
+        };
+        auto level = [] (const std::vector<float>& v) { double q = 0.0; for (auto x : v) q += (double) x * x; return 10.0 * std::log10 (q / (double) std::max<size_t> (1, v.size()) + 1e-15); };
+        Engine eR; eR.prepare (48000.0, 512);
+        const double rev = level (heardB (eR));
+        Engine eG; eG.prepare (48000.0, 512); eG.setSpaceModel (2);
+        const double gal = level (heardB (eG));
+        Engine eD; eD.prepare (48000.0, 512); eD.setSpaceModel (2); eD.set (cx::space (2, 3), 1.0f);
+        const double ducked = level (heardB (eD));
+        Engine eN; eN.prepare (48000.0, 512); eN.setSpaceModel (2); eN.set (cx::space (2, 3), 0.0f);
+        const double open = level (heardB (eN));
+        bool clean = true;
+        for (int k = 0; k < 9; ++k)
+        {
+            eG.setSpaceModel ((k + 1) % 3);
+            for (int i = 0; i < 30; ++i) { eG.render (b); for (int n = 0; n < 512; ++n) clean = clean && std::isfinite (b.getSample (0, n)) && std::abs (b.getSample (0, n)) < 4.0f; }
+        }
+        check (gal > -70.0 && std::abs (gal - rev) < 3.0 && ducked < open - 1.0 && clean && ! eG.fault.load() && ! eR.fault.load(),
+               "SPACE as GALAXY sounds on the B return at " + juce::String (gal, 1) + " dB, where the REVERB is at " + juce::String (rev, 1) + "; its DUCK at full takes it to " + juce::String (ducked, 1) + " from " + juce::String (open, 1)
+               + " with DUCK at nought; SPACE goes round its three reverbs three times as it plays with nothing but finite samples and no fault");
+
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_air_test");
+        tmp.deleteRecursively();
+        Session::stateFileForTests = tmp.getChildFile ("session.json");
+        auto typeOf = [] (const char* name) { for (int t = 0; t < (int) effects().size(); ++t) if (juce::String (effects()[(size_t) t].name) == name) return t; return -1; };
+        auto setupOf = [] (Engine& en, Engine::Target t, const char* id) { for (auto& sp : en.setupParams (t)) if (sp.id == id) return sp.value; return -1.0f; };
+        const int weave = typeOf ("WEAVE"), clip = typeOf ("CLIP"), ens = typeOf ("ENSEMBLE");
+        const Engine::Target space { 2, 0, 1 };
+        bool recalled = false, kept = false;
+        {
+            Engine e1; e1.prepare (48000.0, 512);
+            Session s1 (e1, true);
+            s1.setInsert (5, 0, weave); s1.setInsert (5, 1, clip); s1.setInsert (8, 2, ens);
+            for (int i = 0; i < 4; ++i) e1.render (b);
+            s1.userSet (cx::ins (5, 0, 0), 0.8f);
+            s1.userSet (cx::ins (8, 2, 2), 0.35f);
+            s1.setupByHand ({ 1, 5, 0 }, "smooth", 0.2f);
+            s1.setupByHand ({ 1, 5, 1 }, "mode", 0.5f);
+            e1.setSpaceModel (2);
+            for (int i = 0; i < 4; ++i) e1.render (b);
+            s1.setupByHand (space, "bigness", 1.0f / 3.0f);
+            s1.userSet (cx::space (2, 1), 0.7f);
+            const auto snap = s1.take(); s1.finishTakes (true);
+            // moved away, then the snapshot called back
+            s1.userSet (cx::ins (5, 0, 0), 0.1f); s1.setInsert (5, 1, -1); s1.setInsert (8, 2, weave); s1.setupByHand ({ 1, 5, 0 }, "smooth", 0.9f);
+            s1.userSet (cx::kGlide, 0.0f);
+            s1.recall (snap);
+            for (int i = 0; i < 40; ++i) e1.render (b);
+            recalled = e1.insertType (5, 0) == weave && e1.insertType (5, 1) == clip && e1.insertType (8, 2) == ens && std::abs (e1.target (cx::ins (5, 0, 0)) - 0.8f) < 1.0e-4f && std::abs (e1.target (cx::ins (8, 2, 2)) - 0.35f) < 1.0e-4f
+                    && std::abs (setupOf (e1, { 1, 5, 0 }, "smooth") - 0.2f) < 1.0e-3f && std::abs (setupOf (e1, { 1, 5, 1 }, "mode") - 0.5f) < 1.0e-3f && e1.spaceModel() == 2;
+            if (! recalled) std::printf ("    (after the recall: inserts %d %d %d, drive %.3f buffer %.3f smooth %.3f mode %.3f space %d)\n", e1.insertType (5, 0), e1.insertType (5, 1), e1.insertType (8, 2), (double) e1.target (cx::ins (5, 0, 0)),
+                                         (double) e1.target (cx::ins (8, 2, 2)), (double) setupOf (e1, { 1, 5, 0 }, "smooth"), (double) setupOf (e1, { 1, 5, 1 }, "mode"), e1.spaceModel());
+            s1.touch(); s1.save();
+        }
+        {
+            // as the app does it: the session is read before the audio device starts
+            Engine e2;
+            Session s2 (e2, true);
+            e2.prepare (48000.0, 512);
+            for (int i = 0; i < 8; ++i) e2.render (b);
+            kept = e2.insertType (5, 0) == weave && e2.insertType (5, 1) == clip && e2.insertType (8, 2) == ens && std::abs (e2.target (cx::ins (5, 0, 0)) - 0.8f) < 1.0e-4f && std::abs (e2.target (cx::ins (8, 2, 2)) - 0.35f) < 1.0e-4f
+                && std::abs (setupOf (e2, { 1, 5, 0 }, "smooth") - 0.2f) < 1.0e-3f && std::abs (setupOf (e2, { 1, 5, 1 }, "mode") - 0.5f) < 1.0e-3f
+                && e2.spaceModel() == 2 && std::abs (setupOf (e2, space, "bigness") - 1.0f / 3.0f) < 1.0e-3f && std::abs (e2.target (cx::space (2, 1)) - 0.7f) < 1.0e-4f;
+            if (! kept) std::printf ("    (opened again: inserts %d %d %d, drive %.3f buffer %.3f smooth %.3f mode %.3f space %d bigness %.3f decay %.3f)\n", e2.insertType (5, 0), e2.insertType (5, 1), e2.insertType (8, 2), (double) e2.target (cx::ins (5, 0, 0)),
+                                      (double) e2.target (cx::ins (8, 2, 2)), (double) setupOf (e2, { 1, 5, 0 }, "smooth"), (double) setupOf (e2, { 1, 5, 1 }, "mode"), e2.spaceModel(), (double) setupOf (e2, space, "bigness"), (double) e2.target (cx::space (2, 1)));
+        }
+        Session::stateFileForTests.deleteFile();
+        Session::stateFileForTests = juce::File();
+        tmp.deleteRecursively();
+        check (recalled && kept, "WEAVE, CLIP and ENSEMBLE in a lane's slots and SPACE a GALAXY: a snapshot brings the slots, their knobs and their CONFIG back after they are changed, and the app opening again finds them, GALAXY's BIGNESS and DECAY too");
+    }
+}
+
 static void compressorTest (int& bad)
 {
     using namespace sf0;
@@ -3844,7 +4187,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -6282,6 +6625,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     wavetableTest (bad);
     stepLockTest (bad);
     compressorTest (bad);
+    airwindowsTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -8232,6 +8576,42 @@ static int uiTest()
                 + juce::String (held, 2) + "; on its right third it is LOCKED and the knob is the lane's again; in the middle, OFF, with what it learnt kept; double-clicked, it forgets it all; INFO says what it is").toRawUTF8());
     }
 
+
+    // 2a5. (the ninety-first build) An insert slot's name: the list of what the slot can be, up in place of its eight knobs,
+    // every key of it on the slot's own plate; a key makes the slot that effect and puts the list away; the name again does too.
+    {
+        sc.setPage (Screen::pMain); sc.hideConfig(); ses.activeLane = 5; for (int k = 0; k < kSlots; ++k) ses.setInsert (5, k, -1); audio (4); draw();
+        auto headOf = [&] (int slot) { for (auto& h : sc.testHits()) if (Screen::testIsInsHead (h, slot)) return h.r.getCentre(); return juce::Point<float>(); };
+        auto knobs = [&] (int slot) { int n = 0; for (auto& h : sc.testHits()) for (int c = 0; c < kCells; ++c) if (Screen::testIsControl (h, cx::ins (5, slot, c))) ++n; return n; };
+        int tapeAt = -1; for (int t = 0; t < (int) effects().size(); ++t) if (juce::String (effects()[(size_t) t].name) == "TAPE") tapeAt = t;
+        click (headOf (1)); draw();
+        int keys = 0, onPlate = 0; juce::Point<float> tape, empty; juce::Rectangle<float> plate;
+        for (auto& h : sc.testHits()) if (Screen::testIsInsPanel (h, 1)) plate = h.r;
+        for (auto& h : sc.testHits())
+        {
+            if (! Screen::testIsInsPick (h, 1, -1)) continue;
+            ++keys; if (plate.contains (h.r)) ++onPlate;
+            if (Screen::testIsInsPick (h, 1, tapeAt + 1)) tape = h.r.getCentre();
+            if (Screen::testIsInsPick (h, 1, 0)) empty = h.r.getCentre();
+        }
+        const bool listed = sc.testInsPick() == 1 && keys == (int) effects().size() + 1 && onPlate == keys && knobs (1) == 0 && e.insertType (5, 1) == -1;
+        click (tape); audio (4); draw();
+        const bool made = tapeAt >= 0 && e.insertType (5, 1) == tapeAt && sc.testInsPick() == -1 && knobs (1) == 8;
+        click (headOf (1)); draw();
+        const bool open = sc.testInsPick() == 1;
+        click (headOf (1)); draw();
+        const bool shut = sc.testInsPick() == -1 && e.insertType (5, 1) == tapeAt;
+        click (headOf (1)); draw(); click (empty); audio (4); draw();
+        const bool emptied = e.insertType (5, 1) == -1 && sc.testInsPick() == -1;
+        // another lane chosen while a list is up: the list is not that lane's
+        click (headOf (2)); draw(); ses.activeLane = 6; draw();
+        const bool lanes = sc.testInsPick() == -1;
+        ses.activeLane = 5; draw();
+        check (listed && made && open && shut && emptied && lanes, (juce::String ("an insert slot's name puts up the list of what it can be in place of its knobs: ") + juce::String (keys) + " keys (EMPTY and the " + juce::String ((int) effects().size())
+               + " effects), all on the slot's own plate; a key makes the slot that effect and puts the list away; the name again puts it away; another lane chosen, it is gone").toRawUTF8());
+        if (! (listed && made && open && shut && emptied && lanes)) std::printf ("    (listed %d [pick %d keys %d on plate %d knobs %d] made %d open %d shut %d emptied %d lanes %d)\n", (int) listed, sc.testInsPick(), keys, onPlate, knobs (1), (int) made, (int) open, (int) shut, (int) emptied, (int) lanes);
+    }
+
     // 2b. GLIDE set on the screen, then a snapshot knob turned on the screen: the pushed knobs travel
     {
         Engine eg; eg.prepare (48000.0, 512);
@@ -8313,7 +8693,7 @@ static int uiTest()
         int lines = 0, missing = 0;
         for (auto& ln : lanes()) for (auto& k : ln.knobs) { ++lines; if (help::param (ln.module, k.param) == nullptr) ++missing; }
         for (auto& fx : effects()) for (auto& c : fx.cells) if (c.param != nullptr) { ++lines; if (help::param (fx.module, c.param) == nullptr) ++missing; }
-        for (auto* fx : { &returnA(), &returnB (0), &returnB (1) }) for (auto& c : fx->cells) if (c.param != nullptr) { ++lines; if (help::param (fx->module, c.param) == nullptr) ++missing; }
+        for (auto* fx : { &returnA(), &returnB (0), &returnB (1), &returnB (2) }) for (auto& c : fx->cells) if (c.param != nullptr) { ++lines; if (help::param (fx->module, c.param) == nullptr) ++missing; }
         // CONFIG's controls too: everything an instrument, an effect or a return has that is not on its panel
         int cfgLines = 0, cfgMissing = 0;
         {
@@ -11305,8 +11685,17 @@ static int shot (const juce::StringArray& args)
         for (int i = 0; i < 220; ++i) e.render (b);
     }
     if (arg ("--space", "") == "conv") e.setSpaceModel (1);
+    if (arg ("--space", "") == "galaxy") e.setSpaceModel (2);
+    if (const auto fx = juce::StringArray::fromTokens (arg ("--fx", ""), ",", ""); ! fx.isEmpty())
+    {
+        // (--fx NAME[,NAME[,NAME]]: the active lane's insert slots made those effects)
+        for (int k = 0; k < std::min (kSlots, fx.size()); ++k)
+            for (int t = 0; t < (int) effects().size(); ++t) if (fx[k].equalsIgnoreCase (effects()[(size_t) t].name)) ses.setInsert (ses.activeLane, k, t);
+        for (int i = 0; i < 8; ++i) e.render (b);
+    }
     if (args.contains ("--seqmute")) { ses.userSet (cx::lane (ses.activeLane, cx::kSeqMute), 1.0f); for (int i = 0; i < 8; ++i) e.render (b); }
     Screen sc (ses);
+    if (arg ("--pick", "").isNotEmpty()) sc.testOpenInsPick (arg ("--pick", "0").getIntValue());       // (--pick N: slot N's list of effects up)
     if (arg ("--tag", "").isNotEmpty())
     {
         // --tag V [--tagdown]: the tag of the first stack knob (TOUR) turned to V (0 to 1; --tagdown: reached from above), its
@@ -12313,7 +12702,7 @@ static int midiTest()
                 const bool gen = ctl < cx::kRet && ctl % cx::kPerLane >= cx::kGen && ctl % cx::kPerLane < cx::kGen + 4;      // (a generator's knob: the active lane's, on channel 13)
                 right = right && (gen ? ch == e16::kFxChannel && num == e16::kGenCc + (ctl % cx::kPerLane - cx::kGen)
                                 : slot >= 0 ? e16::controlFor (slot) == ctl
-                                : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl)
+                                : extra >= 0 ? (ccx::controlFor (extra, 0) == ctl || ccx::controlFor (extra, 1) == ctl || ccx::controlFor (extra, 2) == ctl)      // (SPACE's four, whichever of its three reverbs it is)
                                 : (ctl == cx::kGlide && ch == 16 && num == e16::kGlideCc));
             }
             const int expected = kLanes * (kLaneKnobs + 5 + kSlots * kCells + 4 + 3 + kPkLane) + 4 + 4 * kSpaceModels + 3 + kBusKnobs + kPkGlobals + 1 + cx::kMotUnits * cx::kMotKnobs + 16;
@@ -16042,6 +16431,49 @@ public:
                 (pass == 0 ? without : with) = 100.0 * insSum / secs;
             }
             std::printf ("inserts: %.2f %% of one core with none, %.2f %% with 33 compressors at work: %.3f %% each\n", without, with, (with - without) / 33.0);
+            setApplicationReturnValue (0); quit(); return;
+        }
+        if (args.contains ("--fxcost"))
+        {
+            // (--fxcost: what each effect costs as an insert, thirty-three of it at work at once, one in every insert of
+            // every lane; what an Airwindows one holds; and what the rig costs with SPACE each of its reverbs)
+            using namespace sf0;
+            auto inserts = [] (int type)
+            {
+                Engine e; e.prepare (48000.0, 128);
+                Session ses (e, false);
+                if (type >= 0) for (int l = 0; l < kLanes; ++l) for (int sl = 0; sl < kSlots; ++sl) { e.setInsertType (l, sl, type); ses.userSet (cx::ins (l, sl, 0), 0.6f); }
+                e.setRunning (true);
+                juce::AudioBuffer<float> b (2, 128);
+                for (int i = 0; i < 48000 * 2 / 128; ++i) e.render (b);
+                e.profile = true;
+                const double secs = 12.0;
+                for (int i = 0; i < (int) (48000.0 * secs / 128); ++i) e.render (b);
+                double insSum = 0.0; for (int l = 0; l < kLanes; ++l) insSum += e.profIns[(size_t) l];
+                float holds = 0.0f; if (type >= 0) if (auto* p = e.processorFor ({ 1, 0, 0 })) holds = p->mod().meter (30);
+                return std::make_pair (100.0 * insSum / secs, (double) holds);
+            };
+            const double none = inserts (-1).first;
+            std::printf ("inserts: %.2f %% of one core with none\n", none);
+            for (int t = 0; t < (int) effects().size(); ++t)
+            {
+                const auto got = inserts (t);
+                std::printf ("  %-12s %.3f %% of one core each (33 at work: %.2f %%)%s\n", effects()[(size_t) t].name, (got.first - none) / 33.0, got.first,
+                             got.second > 0.0 ? (juce::String (", its kernel holds ") + juce::String (got.second / 1048576.0, 2) + " MiB").toRawUTF8() : "");
+            }
+            for (int m = 0; m < kSpaceModels; ++m)
+            {
+                Engine e; e.prepare (48000.0, 128);
+                Session ses (e, false);
+                e.setSpaceModel (m);
+                e.setRunning (true);
+                juce::AudioBuffer<float> b (2, 128);
+                for (int i = 0; i < 48000 * 2 / 128; ++i) e.render (b);
+                const double secs = 16.0;
+                const auto t0 = juce::Time::getHighResolutionTicks();
+                for (int i = 0; i < (int) (48000.0 * secs / 128); ++i) e.render (b);
+                std::printf ("the rig with SPACE the %s: %.2f %% of one core\n", spaceModelName (m), 100.0 * juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) / secs);
+            }
             setApplicationReturnValue (0); quit(); return;
         }
         if (args.contains ("--e16")) { const int i = args.indexOf ("--e16"); setApplicationReturnValue (writeScene (i + 1 < args.size() ? args[i + 1].unquoted() : juce::String ("SF-000.oxie16"))); quit(); return; }

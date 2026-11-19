@@ -781,10 +781,14 @@ Screen::Tip Screen::tipFor (const Hit& h) const
         {
             const int type = eng.insertType (l, h.a);
             t.title = "INSERT " + String (h.a + 1) + " OF " + String (l + 1) + " " + lanes()[(size_t) l].name + ": " + (type >= 0 ? effects()[(size_t) type].name : "EMPTY");
-            body = (type >= 0 ? String (help::effect (effects()[(size_t) type].name)) + " " : String()) + "CLICK THE NAME TO STEP THE SLOT THROUGH DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO AND EMPTY.";
+            body = (type >= 0 ? String (help::effect (effects()[(size_t) type].name)) + " " : String()) + "CLICK THE NAME FOR THE LIST OF WHAT THE SLOT CAN BE, UP IN PLACE OF ITS KNOBS, THEN THE ONE YOU WANT. THE NAME AGAIN PUTS THE LIST AWAY.";
             midi = "MIDI: CHANNEL " + String (l + 1) + ", CC " + String (ccx::kIns + h.a * kCells) + " TO " + String (ccx::kIns + h.a * kCells + kCells - 1) + ": ITS EIGHT PLACES, WHATEVER EFFECT IS IN IT.";
             break;
         }
+        case hInsPick:
+            t.title = "INSERT " + String (h.a + 1) + " OF " + String (l + 1) + " " + lanes()[(size_t) l].name + ": " + (h.b > 0 ? effects()[(size_t) (h.b - 1)].name : "EMPTY");
+            body = h.b > 0 ? String (help::effect (effects()[(size_t) (h.b - 1)].name)) + " CLICK TO PUT IT IN THE SLOT, AS IT STARTS OUT." : String ("CLICK TO EMPTY THE SLOT.");
+            break;
         case hLock:
             t.title = "LOCK, STEP " + String (h.a + 1);
             body = "WHAT THIS STEP PLAYS DIFFERENTLY FROM THE LANE. LEFT, LEARN (YELLOW): THE LANE GOES ON PLAYING AS IT IS SET, AND ITS KNOBS NOW SHOW AND SET THIS STEP: TURN ONE AND THE STEP KEEPS THE DIFFERENCE, HEARD WHEN THE STEP PLAYS. A DOUBLE-CLICK ON A KNOB MAKES THE STEP FORGET IT. RIGHT, LOCKED (GREEN): THE KNOBS ARE THE LANE'S AGAIN AND THE STEP PLAYS WHAT IT LEARNT, FOR ITS GATE; WHERE THE NOTE BEFORE RUNS INTO IT, THE KNOBS SLIDE THERE OVER THE FIRST HALF OF THE STEP. MIDDLE, OFF: THE STEP PLAYS AS THE LANE IS SET, AND KEEPS WHAT IT LEARNT FOR LATER. A DOUBLE-CLICK ON THE SWITCH CLEARS IT: THE STEP FORGETS ALL IT LEARNT AND KEEPS ITS NOTE. THE KNOBS THAT CAN BE LEARNT ARE THE LANE'S TWELVE, ITS SENDS, LOW MID HIGH AND ITS INSERTS' KNOBS. ONE STEP IS AT LEARN AT A TIME. A STEP PUT OUT FORGETS IT ALL.";
@@ -2115,6 +2119,24 @@ void Screen::drawInsert (G& g, int slot, R r)
     hit (R (x0, y0, w, 26), hInsHead, slot, 0);
     if (t >= 0 && w + 54 < 190) chan (g, x0 + w + 2, y0, l + 1);
     if (t >= 0) headKeys (g, r.getRight() - 5, y0 + 2, 1, l, slot, cx::insMute (l, slot), cx::insSolo (l, slot));
+    if (insPick == slot && insPickLane != l) insPick = -1;      // (the list was another lane's slot's)
+    if (insPick == slot)
+    {
+        // (the ninety-first build) The list of what the slot can be, up in place of its eight knobs: EMPTY, then every
+        // effect, each a key, the one it is now down and lit. One press makes the slot that. (There were six effects
+        // and a press on the name went to the next; with twelve the one wanted could be eleven presses off.)
+        const int count = (int) effects().size() + 1, cols = 3, rows = (count + cols - 1) / cols;
+        const float kw = 87.0f, kh = std::min (36.0f, std::floor (152.0f / (float) rows) - 2.0f);
+        for (int i = 0; i < count; ++i)
+        {
+            const R kr (x0 + (float) (i % cols) * (kw + 1.5f), body + (float) (i / cols) * (kh + 2.0f), kw, kh);
+            const bool is = i - 1 == t;
+            key (g, kr, is ? col::green : col::white, 2.0f, is);
+            text (g, i == 0 ? String ("EMPTY") : String (effects()[(size_t) (i - 1)].name), kr, fNote, col::black);
+            hit (kr, hInsPick, slot, i);
+        }
+        return;
+    }
     for (int c = 0; c < kCells; ++c) control (g, cx::ins (l, slot, c), x0 + (float) (c % 4) * 66, body + (float) (c / 4) * 77, 64, col::lit);
 }
 
@@ -4774,7 +4796,15 @@ void Screen::downOn (Hit on, juce::Point<float> p)
             if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouse (p, cfgDisplay, true);
             ses.touch();
             break;
-        case hInsHead:  ses.stepInsert (ses.shownLane(), h->a); cfgStale = true; break;
+        case hInsHead:      // (the name: the list of effects up in the knobs' place, or put away again)
+            if (insPick == h->a && insPickLane == ses.shownLane()) insPick = -1;
+            else { insPick = h->a; insPickLane = ses.shownLane(); }
+            break;
+        case hInsPick:
+            ses.setInsert (ses.shownLane(), h->a, h->b - 1);
+            insPick = -1;
+            cfgStale = true;
+            break;
         case hPageSel:  ses.page = h->a; break;
         case hStep:
         {

@@ -40,7 +40,7 @@ First run:
 | Click an insert's plate, the returns', the master's, the snapshot knobs', the sequencer strip's, off the controls | bring that module to the front: its name lights up, and the E16 turns to its page (see MIDI and the E16) |
 | **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it. It also shuts when another lane comes to the front (by any hand), or another module by a key or a controller: CONFIG is one module's, and the E16 is then on the page that was asked for |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
-| Click an insert's name | step that slot through DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, EMPTY |
+| Click an insert's name | the list of what the slot can be, up in place of its knobs: EMPTY, DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, and Airwindows' WEAVE, DEREZ, FILTER, ENSEMBLE, TAPE, CLIP. Click one. The name again puts the list away |
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
 | Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note) |
@@ -740,6 +740,60 @@ build. It is set by what it does to a sound's shape in time: its strike, its bod
 - The drum bus's own COMP switch is crossed over 20 ms where it cut in and out.
 - A cued snapshot is now heard at the level the set will play it at: the cue's rig is given
   the set's limiter trim (it learnt its own from nothing, and was quieter by that much).
+
+### Airwindows' effects
+
+Seven of Chris Johnson's [Airwindows](https://github.com/airwindows/airwindows) effects, in the
+ninety-first build: six for a lane's insert slots and one more reverb for SPACE. His code is in
+`suite/airwindows`, as it is in his repository, under his MIT licence (`suite/airwindows/LICENSE`).
+
+| Effect | Airwindows' | Its knobs | In CONFIG |
+|---|---|---|---|
+| **WEAVE** | Weave | DRIVE (from as it came in to 20 dB hotter), OUTPUT, MIX, LEVEL | SMOOTH |
+| **DEREZ** | DeRez5 | RATE (nought: untouched; up: coarser), SQUARE, TRIM, BRIGHT, BASSIS, OUTPUT, MIX, LEVEL | |
+| **FILTER** | Dattorro | FREQ, RESO, OUTPUT, MIX, LEVEL | |
+| **ENSEMBLE** | TakeCare | SPEED, DEPTH, BUFFER, REGEN, DEREZ, OUTPUT, MIX, LEVEL | RANDO |
+| **TAPE** | ToTape9 | INPUT, TILT, SHAPE, FLUTTER, HEAD BUMP, OUTPUT, MIX, LEVEL | FLUTTER SPEED, BIAS, HEAD FREQ |
+| **CLIP** | ADClip9 | BOOST, CEILING, NOISE, MIX, LEVEL | MATCH, MODE (BOOST, MATCH, CLIP ONLY) |
+| **GALAXY** (SPACE's MODEL) | Galactic3 | SPACE DETUNE, SPACE DECAY, SPACE DARK, SPACE DUCK | DEREZ, BIGNESS, LO CUT, DUCK SHAPE |
+
+- **OUTPUT, MIX and LEVEL are in the last three places of all six** (CLIP has no OUTPUT of
+  its own: that place is empty on it). OUTPUT is the effect's own level before MIX: how loud
+  the effect is against the sound as it came in. MIX and LEVEL are SF-000's, not the effect's: MIX is one straight crossfade, the same
+  for all six, and **at nought the effect is not in the sound at all** (the sound as it came in,
+  to the last bit, at 44.1, 48 and 96 kHz).
+- **Each starts about as loud as the sound that went in** (within 2.5 dB on the check's bass and
+  thump), so choosing one does not jump. CLIP starts doing nothing, as the COMPRESSOR does: turn
+  BOOST.
+- **ENSEMBLE starts as a chorus, not as Airwindows starts it.** BUFFER is the length of its nine
+  lines, which is its time: 25 to 50 ms low on the knob, 110 ms at three tenths, 0.4 s half
+  way, seconds at the top. It slides to where it is set and bends the pitch on the way, as a
+  tape echo does. Airwindows opens it half way and all wet, which in a lane's slot is the lane
+  0.4 s late; here it opens short, with MIX half.
+- **GALAXY's knobs are where the other two reverbs have theirs**: DECAY second, DARK third, DUCK
+  fourth. DECAY is Galactic's Replace the other way up: higher holds longer and lets less new
+  sound in, and at full it takes nothing in and holds what it has (a freeze that fades about
+  a dB every two seconds). DARK is its Brightness the other way up. DUCK is the kick's pocket in
+  the tail, the same one the REVERB has. DETUNE, the drift that is Galactic's own, is where the
+  others have SIZE; its size, BIGNESS, is a list in CONFIG because it cannot change as it
+  sounds (a change empties the space, in a 20 ms dip).
+- **Three are a sample late** (DEREZ, TAPE, CLIP). The dry sound waits that sample, so MIX part
+  way is not a comb, and the rig's own delay is what it was (the lanes were already waiting for
+  slower effects).
+- Some knobs stop short of Airwindows' ends, where the effect stops being one: TAPE's SHAPE (the
+  last twentieth either way is 8 to 12 dB louder) and BIAS (silence at its top), ENSEMBLE's
+  DEREZ (silent at both ends: it stops a tenth short of each), GALAXY's DEREZ (a tenth of the
+  rate is as far as it goes).
+- What each costs, measured here with one in all 33 slots at work, in per cent of one core each:
+  CLIP 0.09, DEREZ 0.23, FILTER 0.28, WEAVE 0.39, ENSEMBLE 0.80, TAPE 1.14 (the COMPRESSOR is
+  0.13, DISTORTION 0.83, DELAY 2.5, REVERB 3.2). ENSEMBLE holds 4.5 MiB each and GALAXY 1 MiB;
+  the rest, next to nothing. SPACE as GALAXY costs no more than as the REVERB.
+- `build/.../SF-000 --fxcost` measures all of that again on the machine it is run on.
+
+**An insert slot's name now puts up a list.** With six effects a click on the name went to the
+next one; with twelve, the one wanted could be eleven clicks away. A click on the name puts
+EMPTY and the twelve effects up in place of the slot's knobs, each a key, the one it is lit;
+a key makes the slot that effect and the knobs come back. The name again puts the list away.
 
 ### GAIN: the whole mix, into the master
 
@@ -1840,7 +1894,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
@@ -1939,6 +1993,7 @@ plays both for its length.
 | `Source/CueRig.*`, `Source/CueShared.h` | a cue that is the rig: the second process, what the two say to each other, the memory they share |
 | `Source/Main.cpp` | the app, the audio device, the command-line tools |
 | `suite/` | SF Live Suite's sound code, copied (see `suite/PORTING.md`). `suite/modules/FxDrums.cpp`, the drum bus, and `suite/modules/Finish.cpp`, FINISH, are SF-000's own |
+| `suite/airwindows/` | seven Airwindows effects' sources, unedited, with their MIT licence; `suite/modules/AirKernels.*` compiles them and `suite/modules/Airwindows.cpp` makes SF-000's modules of them |
 | `tools/master_probe.py` | the test signal FINISH was fitted with |
 
 ## Where everything is kept

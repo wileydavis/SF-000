@@ -221,7 +221,7 @@ void naming (const KnobDef& k, String& name, String& abbr)
 {
     static const std::map<std::string, const char*> shortName = {
         { "pitch_time", "PITCH T" }, { "echo_space", "ECHO SPC" }, { "echo_swing", "ECHO SWG" }, { "echo_prob", "ECHO PRB" },
-        { "pocket_depth", "PCKT DEP" }, { "pocket_shape", "PCKT SHP" }, { "echo_time", "ECHO TME" }, { "echo_fb", "ECHO FBK" } };
+        { "pocket_depth", "PCKT DEP" }, { "pocket_shape", "PCKT SHP" }, { "echo_time", "ECHO TME" }, { "echo_fb", "ECHO FBK" }, { "head_bump", "HD BUMP" } };
     static const std::map<std::string, const char*> shortest = {
         { "cutoff", "CUT" }, { "res", "RES" }, { "env_amt", "ENV" }, { "gate", "GATE" }, { "density", "DENS" }, { "filter", "FILT" },
         { "drive", "DRV" }, { "level", "LVL" }, { "tune", "TUNE" }, { "decay", "DCY" }, { "punch", "PNCH" }, { "click", "CLCK" },
@@ -232,7 +232,11 @@ void naming (const KnobDef& k, String& name, String& abbr)
         { "position", "POS" }, { "tension", "TENS" }, { "pocket_depth", "PCKT" }, { "pocket_shape", "PSHP" }, { "predelay", "PRE" },
         { "width", "WIDE" }, { "echo_time", "ETIM" }, { "echo_fb", "EFBK" },
         { "feedback", "FDBK" }, { "throw", "THRW" }, { "freeze", "FRZ" }, { "release", "REL" }, { "squelch", "SQLC" }, { "noise", "NOIS" },
-        { "crunch", "CRNC" }, { "damp", "DAMP" }, { "boom", "BOOM" }, { "boom_tune", "BTUN" }, { "boom_decay", "BDCY" } };
+        { "crunch", "CRNC" }, { "damp", "DAMP" }, { "boom", "BOOM" }, { "boom_tune", "BTUN" }, { "boom_decay", "BDCY" },
+        // (the ninety-first build: the Airwindows effects' knobs)
+        { "output", "OUT" }, { "square", "SQR" }, { "bright", "BRT" }, { "bassis", "BSIS" }, { "speed", "SPD" }, { "depth", "DPTH" },
+        { "buffer", "BUF" }, { "regen", "RGEN" }, { "derez", "DRZ" }, { "input", "IN" }, { "shape", "SHP" }, { "flutter", "FLUT" },
+        { "head_bump", "BUMP" }, { "boost", "BST" }, { "ceiling", "CEIL" } };
     const std::string id (k.param != nullptr ? k.param : "");
     const String label (k.label != nullptr ? k.label : "-");
     const auto sn = shortName.find (id);

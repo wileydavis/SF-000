@@ -386,7 +386,7 @@ Engine::Engine()
         {
             auto& b = controls[(size_t) cx::space (m, k)];
             bind[(size_t) cx::space (m, k)] = makeBind (*space[(size_t) m], returnB (m).cells[k], &b);
-            b.id = juce::String (m == 0 ? "ret.space_" : "ret.conv_") + returnB (m).cells[k].param; b.snapshot = true;
+            b.id = juce::String ("ret.") + spaceModelSlug (m) + "_" + returnB (m).cells[k].param; b.snapshot = true;
         }
     }
     // the drum bus: its four knobs are a snapshot's, travel on a recall, and a snapshot knob can reach them

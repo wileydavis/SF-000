@@ -130,7 +130,7 @@ this build does not have is written back as it was read.
   "values":  { "kick.tune": 0.4583, "lead.i1.c2": 0.55, ... },
   "patterns": [ { "len": 16, "steps": [ [step, velocity, gate, ratchet, note, octave], ... ],
                   "locks": [ [step, control, difference], ... ], "locked": [step, ...] } per lane ],
-  "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],
+  "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],          by name: DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO; from the ninety-first build also WEAVE, DEREZ, FILTER, ENSEMBLE, TAPE, CLIP. A name a build does not know is an empty slot there
   "gen":      [ armed generator per lane, -1 none ],
   "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ], "bus": {..} },
   "insertFiles": [ { "lane", "slot", "files": [ { "place", "type", "files": [paths] } ] } ],
@@ -192,6 +192,21 @@ this build does not have is written back as it was read.
   places were PUSH, ATTACK (six steps), RELEASE (five), RATIO (three), SC HPF, MIX, LEVEL and
   nothing: a value from then is read on the new scale, and is not converted. `mst.comp` in
   `controls` is the master's THRESHOLD, 0 out and 1 at -30 dB (it was PUSH).
+- **Airwindows' effects** (ninety-first build). Six more names in `inserts`, each with its eight
+  places in the order of its panel: WEAVE (DRIVE, four empty, OUTPUT, MIX, LEVEL),
+  DEREZ (RATE, SQUARE, TRIM, BRIGHT, BASSIS, OUTPUT, MIX, LEVEL), FILTER (FREQ, RESO, three
+  empty, OUTPUT, MIX, LEVEL), ENSEMBLE (SPEED, DEPTH, BUFFER, REGEN, DEREZ, OUTPUT, MIX, LEVEL),
+  TAPE (INPUT, TILT, SHAPE, FLUTTER, HEAD BUMP, OUTPUT, MIX, LEVEL), CLIP (BOOST, CEILING,
+  NOISE, three empty, MIX, LEVEL). On all six the seventh place is MIX and the eighth LEVEL.
+  What is not on the panel is in the insert's `setup` by name (`smooth`; `rando`;
+  `flutter_speed`, `bias`, `head_freq`; `match`, `mode`). **SPACE has a third reverb**: the
+  session's `"space": { "model" }` is 0 REVERB, 1 CONVOLUTION, 2 GALAXY, and so is `__model` in
+  a snapshot's `setup.returns[1]`, which says the reverb that setup was read from and is the
+  one value in a setup that is a number and not a place from 0 to 1. GALAXY's four knobs are
+  `ret.galaxy_detune`, `_decay`, `_dark`, `_duck` in `values`, and its `setup` has `derez`,
+  `bigness` (a place of four: SMALL, MEDIUM, LARGE, HUGE), `lo_cut` and `duck_shape`. A build
+  from before reads a slot with one of the six names as empty, and SPACE as GALAXY as the
+  CONVOLUTION.
 - **Step locks** (eighty-eighth build), in a pattern, here and in the session's own: `locks`,
   what steps have learnt, one entry a knob on a step: the step (from 0), the control's place in
   its lane (0 to 11 the lane's twelve knobs in the panel's order, 12 SEND A, 13 SEND B, 14 to 16
@@ -230,7 +245,7 @@ this build does not have is written back as it was read.
   is `<slot>.i<insert>.c<cell>` (by place: what the place is depends on the effect in `inserts`);
   the lane strip's own are `<slot>.send_a`, `.eq_low`, `.gen_hits` and so on (`.gen_seed` has 128
   places from the thirty-seventh build on; the sixteen it had, at fifteenths, write what they wrote); the returns are
-  `ret.dub_*`, `ret.space_*`, `ret.conv_*`; the drum bus's four are `bus.drive`, `bus.crunch`,
+  `ret.dub_*`, `ret.space_*`, `ret.conv_*`, and from the ninety-first build `ret.galaxy_*` (SPACE as GALAXY: `detune`, `decay`, `dark`, `duck`); the drum bus's four are `bus.drive`, `bus.crunch`,
   `bus.punch`, `bus.boom`; POCKETS' are `<slot>.pk_home`, `.pk_width`, `.pk_hold`, `.pk_yield`
   on every lane and `pk.amount`, `pk.clear`, `pk.speed`, `pk.returns` for the rig (thirty-first
   build on; what a value of each means is in the `pockets` definition). A control missing from a
@@ -286,7 +301,7 @@ this build does not have is written back as it was read.
   "slots":   [ "kick", "closed_hat", ... ],                    the order of every per-lane list here
   "lanes":   { "kick": "<print>", ... },                       each lane's definition
   "fx":      { "DELAY": "<print>", "RADIO": "<print>" },       each effect this snapshot has in an insert
-  "returns": { "dub": "<print>", "space": "<print>", "conv": "<print>" },
+  "returns": { "dub": "<print>", "space": "<print>", "conv": "<print>", "galaxy": "<print>" },     ("galaxy": ninety-first build on)
   "bus":     "<print>",                                         the drum bus (absent before there was one)
   "pockets": "<print>",                                         POCKETS (absent on a snapshot that holds no pocket values)
   "chassis": "<print>"
