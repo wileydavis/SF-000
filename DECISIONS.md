@@ -5019,8 +5019,100 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      Nothing was changed for this. What it shows: a band's point dragged to the floor is 24 dB,
      kept in every snapshot after; and LIMIT cannot lift a mix that far under its figure.
 
+## Seeing where the level goes, and the pocket after the effects (Nov 18, 16:31): eighty-fourth build
+
+722. **You**, Nov 18, 16:31, with ChatGPT's list of where the mix could be better: "I think the
+     open items are all good as they stand. Once we finalize the interface, we'll work on
+     perfecting e16 control (not everything needs e16 control, but the performance and some
+     worlfow things do. i will refine this list in testing.) Now, here's what chatgpt had to
+     offer when asked where we could make improvementsw. I want your thoughts:" My thoughts came
+     to five things worth building, in an order: 1. the limiter's real figures, clip and trim
+     readouts, and the trim learnt and held; 2. each lane's loudness and what its EQ costs;
+     3. the pocket before or after the inserts; 4. the master's clip amount, and the return's
+     DUCK split; 5. the low end across the bar. 16:39: "build 1-5. Long build but i like testing
+     whole assemblies." So the open items stay as they stand (LIMIT's lift, the arrangement's
+     note timing, GAIN on the E16, the bend's range), and nothing here is on the E16 yet.
+723. **You**, 16:43: "Also for your info, I really like how the new duck that matches the kick
+     decay inverse shape sounds. It really creates a nice hole. So make sure we keep that
+     concept." **Kept, and nothing in it touched**: `suite/core/Pocket.h` is as the
+     seventy-ninth build left it but for one line that lets the host ask whether it is idle.
+     The checks' reference render of the rig comes out sample for sample as it did before this
+     build. What is new beside it (725) is the same pocket, with the same curve, made in
+     another place.
+724. **The master says what it is doing.** *Mine, the particulars:*
+     - **The figures are the limiter's own now.** GR was a guess: the output's peak against the
+       input's, with the clipper, the automatic trim and the limiter's delay all in it. The
+       limiter now reports what it takes off (**LIMIT**), what its clipper takes off the loudest
+       sample (**CLIP**), its trim, and the true peak.
+     - **They are on the meter's display**, over the bars, with **LUFS**: the two readout boxes
+       are gone and the bars are 16 pixels shorter.
+     - **CLIP is a knob, under COMP** (`mst.clip`): the limiter's clipper, which was fixed at
+       30 %. It rounds the peaks off from 6 dB x CLIP under the ceiling, before the limiter has
+       to pull the whole mix down for them. At nought it is out. Kept with the set, not in a
+       snapshot, not on the E16.
+     - **TRIM is a plate, under LIMIT**: it says the limiter's automatic trim, now. **Pressed,
+       it is learnt and held**: the trim goes to what the loudest three seconds of the last
+       minute ask for (6 dB a second at most) and stays there, amber, HELD. A breakdown is not
+       lifted and a drop is not pulled down. Pressed again, it follows the set. Kept with the
+       set (`hold` in the session: the figure; not there: not held).
+     - **While it is held, LIMIT's knob moves nothing, and a louder mix comes out louder.** That
+       is what holding means, and it is the thing to know before a gig: the rig as it opens, held
+       at +1.5 dB, with the mix then turned 8 dB up, read -4.6 LUFS where LIMIT's figure was -9.
+       The ceiling still holds (-1 dB true peak).
+     - **POCKETS' key moved** to make room: under TRIM, with AMOUNT's number on the key.
+725. **Each lane says how loud it is, and its EQ what it costs.** *Mine:*
+     - **A lane's title has a small dark window beside its name: its short-term loudness in
+       LUFS** (three seconds, a whole number), as the lane reaches the mix: after its effects,
+       its EQ, its pocket, its MUTE and POCKETS. "--" when it is silent. With INFO on, the
+       lane's channel is there instead, as it was.
+     - **The EQ's graph says COSTS 3.2 DB or ADDS 1.0 DB** beside the band's name: the lane's
+       level after the EQ against before it, over the last second or two, while it plays. Amber
+       past 3 dB. This is what would have shown snapshot 122's bands on the floor (721).
+     - **AFTER FX** (`pocket_post`), a switch in CONFIG's POCKET box on BASS, LEAD, CHORD, PAD,
+       VOICE and RUMBLE, and a key under LOW END: **the lane's pocket made after its insert
+       effects and its EQ**, where it was made in the instrument, before them. The same pocket
+       (723), the same DEPTH and SHAPE knobs. Off, a reverb's or a delay's tail on the lane
+       rings on through the kick; on, the tail is held out of it too. A snapshot keeps it; one
+       from before means off. Not in this: a place between two inserts.
+     - **DUCK FOR**, in a REVERB's or a CONVOLUTION's CONFIG (an insert, or SPACE): what its
+       DUCK makes room for. **KICK AND SOURCE**, as it always was; **KICK**: under the kick
+       only, so the tail stays up under what feeds it; **SOURCE**: while what is sent plays
+       only, and the kick makes no hole. A snapshot from before means the first.
+726. **LOW END**, a key beside OTHERS on a lane's EQ. *Mine:* **the graph gives its place to
+     one bar, left to right, and what is under 200 Hz of the kick, the bass, the rumble and
+     this lane** (white) as each reaches the mix, after everything. I had called it a
+     one-beat view; a bar is shown, four beats with their sixteenths, so that an off-beat bass
+     and a long kick are seen against each other.
+     - **This lane's pocket hangs from the top in yellow**: how far down it takes the lane, and
+       for how long, on the same scale as the levels (36 dB top to bottom). It is measured, not
+       drawn from the knobs: the same pocket run on a steady level.
+     - **Drag on the bar: down, a deeper pocket; right, a longer one.** That turns the lane's
+       own DEPTH (POCKET DEPTH, or RUMBLE's PUMP) and SHAPE: its panel knob where it has one.
+     - The keys down the left show or hide a lane, as on the EQ. AFTER FX is under the graph.
+     - Nothing is measured for it until it is up. A lane with no pocket (the drums) shows the
+       levels alone.
+     - Also put right while there: the help for a reverb's DUCK SHAPE still described the
+       pocket of before the seventy-ninth build.
+
 ## Not verified
 
+- **The eighty-fourth build (722 to 726) is measured and seen in pictures, not heard or used.**
+  Measured here: the limiter's figures with the rig playing (up to 0.7 dB, the true peak at
+  -1.1); CLIP at nought taking nothing and, right up with the mix 8 dB hot, 3.9 dB, the limiter
+  then 0.4 where it took 4.1; TRIM held through a mix 8 dB hotter and let go again; the kick's
+  lane at -23 LUFS and -34 with its LEVEL down; the bass's EQ costing 9.3 dB with its lows cut
+  and nothing flat. The pocket made after the effects is as deep as the one in the instrument
+  (12.7 dB against 12.8 on the bass alone), and with a long reverb on the lane, all wet, it
+  holds the tail 14.9 dB out of the kick where the other is rung through (2.8). DUCK FOR on
+  SPACE: for the KICK the return is 24.7 dB down after a hit and 7 dB louder between; for the
+  SOURCE the kick makes no hole. **Not known:** how CLIP sounds turned up on your sets; whether
+  holding the trim is what you want on a night, since everything played louder then comes out
+  louder; how AFTER FX sounds on a delay's repeats (they are cut on the kick, where before they
+  rang over it); CONVOLUTION's DUCK FOR, which is the reverb's three lines again and was not
+  measured; an insert that reports a delay of its own under AFTER FX (allowed for, not tried).
+  LOW END's drag, the TRIM plate and the new places on the master have the checks' blind presses
+  behind them and three pictures on this machine. Eleven loudness meters now run all the time, a
+  lane each: small arithmetic, not timed on the Mac.
 - **Slice markers, the pitch wheel and the viewer's wording (719, 720) are checked, not used.**
   Markers: a marker cuts VOICE, LEAD's SLICES and a hat's SLICE where it is put, moved and
   taken out, by the display's own double-click and drag, on this machine's blind presses; a

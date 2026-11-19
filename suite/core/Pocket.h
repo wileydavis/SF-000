@@ -210,6 +210,7 @@ public:
         sourceIsSide = useSide;
     }
 
+    bool idle() const { return act <= 0.0f; }       // (SF-000) it is doing nothing, and with no depth asked of it need not be run
     void paint (juce::Graphics& g, juce::Rectangle<float> r) const;
 
     std::atomic<float> trace[kTrace] {};

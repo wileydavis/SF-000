@@ -1217,14 +1217,14 @@ class RumbleModule : public Module
 {
 public:
     // SSTART: the sample's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, SCUTS };     // (SF-000) GAIN, NORMALISE, SLICE, CYCLE, MARKERS (and the 32 after it)
+    enum { SIZE, DARK, GRIT, PUMP, GATE, DENS, FILT, LEVEL, MODEL, TUNE, SOURCE, PREDELAY, WIDTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SSLICE, SCYCLE, SCUTS, PPOST = SCUTS + kCuts + 1 };     // (SF-000) GAIN, NORMALISE, SLICE, CYCLE, MARKERS (and the 32 after it), POCKET AFTER FX
     std::string id() const override { return "RUMBLE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withCuts (withSlices (withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
+        auto p = withCuts (withSlices (withSampleGain (withRegion ({ pct ("size", "SIZE", 0.6f).prim().dir (1),
                  pct ("dark", "DARK", 0.6f).prim(),
                  pct ("grit", "GRIT", 0.3f).prim().dir (1),
                  pct ("pump", "PUMP", 0.7f).prim(),
@@ -1241,6 +1241,8 @@ public:
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }))));
+        p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
+        return p;
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP RUMBLE ONE-SHOT (MODEL: SAMPLE)"; }
@@ -1425,7 +1427,7 @@ public:
             L[i] = (m + s) * gates[i] * modelCal;
             R[i] = (m - s) * gates[i] * modelCal;
         }
-        out.process (c, io, FILT, -1, c.v (PUMP), c.v (PSHAPE), c.b (ALLOCON), LEVEL, false);
+        out.process (c, io, FILT, -1, c.b (PPOST) ? 0.0f : c.v (PUMP), c.v (PSHAPE), c.b (ALLOCON), LEVEL, false);
     }
     // The pocket; under it, with a sample loaded, the sample (its START and END to drag).
     int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }

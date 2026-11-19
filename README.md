@@ -323,6 +323,13 @@ still the kick's shape. The kick's own DECAY sets what "all of it" is. (Before t
 went from a notch at the kick's pitch to a pump of the whole lane, on a decay of its own: every
 snapshot's ducking sounds different from here on, by the DEPTH and SHAPE it already had.)
 
+**AFTER FX** (eighty-fourth build), a switch in the POCKET box of a lane's CONFIG and a key in
+LOW END: the lane's pocket is made after its insert effects and its EQ, where it is otherwise
+made in the instrument, before them. It is the same pocket. On, a reverb's or a delay's tail on
+the lane is held out of the kick with the lane; off, the tail rings on through it. A snapshot
+keeps it. **DUCK FOR**, in the CONFIG of a REVERB or a CONVOLUTION (an insert, or SPACE), says
+what its DUCK makes room for: KICK AND SOURCE (as it was), KICK, or SOURCE.
+
 **P** on the keyboard, or the POCKETS key on the master, opens its page: a row for each lane and
 the two returns, each with a map of the spectrum from 31 Hz to 16 kHz. On a map the yellow shape
 is the lane's pocket, as tall as it is firmly held; the pale bars are what the lane is playing,
@@ -526,6 +533,16 @@ from before has its COLOR and DETUNE turned into the SIZE, SPRAY and PITCH they 
   say what kind it is.
 - **Bands 1, 4 and 7 are the panel's LOW, MID and HIGH knobs.** Turn the knob and the point
   moves; drag the point and the knob follows. As they start they are the three-knob EQ exactly.
+- **COSTS 3.2 DB**, or ADDS, beside the band's name (eighty-fourth build): the lane's level
+  after the EQ against before it, as it plays. Amber past 3 dB.
+- **LOW END**, beside OTHERS (eighty-fourth build): the graph gives its place to **one bar, and
+  what is under 200 Hz of the kick, the bass, the rumble and this lane** (white) as each reaches
+  the mix. Where two shapes stand on the same part of the bar they share the subs there. **This
+  lane's pocket hangs from the top in yellow**, on the same scale: drag on the bar, **down for
+  a deeper pocket, right for a longer one** (its DEPTH and SHAPE). The keys down the left show
+  or hide a lane. **AFTER FX**, under it, makes the pocket after the lane's insert effects and
+  EQ, so that a reverb's or a delay's tail is held out of the kick too; off, it is made in the
+  instrument and the effects ring on through it. LOW END again: the EQ.
 - A snapshot keeps all of it, a stack knob sweeps it (frequency, gain and width travel; a band's
   kind changes half way), and the E16 has it on the last pages of CONFIG, a row a band.
 
@@ -624,6 +641,25 @@ under LIMIT on the LUFS readout is brought up here until it is within reach, and
 rest. What comes out is a little under LIMIT's figure, more the harder it is pushed (the rig as
 it opens: -9.6 LUFS at -9, -8.3 at -7.5, -7.1 at -6). Kept with the set, as TAPE, COMP and LIMIT
 are, and not in a snapshot. Not on the E16.
+
+### What the master says, CLIP, and TRIM held
+
+Eighty-fourth build. **The meter's display has the figures over its bars**: the set's **LUFS**,
+and what the limiter (**LIMIT**) and its clipper (**CLIP**) are each taking off, in dB. They are
+the limiter's own figures.
+
+- **CLIP**, a knob under COMP: the limiter's clipper. It rounds the tops of the peaks off before
+  the limiter has to pull the whole mix down for them. Up: more of the peaks taken by it, a
+  louder and harder set. Down: the limiter does it all. At nought it is out; it opens at 30 %,
+  where it always was. Kept with the set, not in a snapshot.
+- **TRIM**, a plate under LIMIT: it says the limiter's own trim, which follows the loudest of
+  the last minute towards LIMIT's figure. **Pressed, the trim is learnt and held** (HELD,
+  amber): it stays where the last minute's loudest put it, so a breakdown is not lifted and a
+  drop is not pulled down. **From then LIMIT's knob moves nothing and what is played louder
+  comes out louder**, up to the ceiling. Pressed again, it follows the set. Kept with the set.
+- **Each lane's title has its loudness beside its name**: short-term LUFS as the lane reaches
+  the mix, "--" when it is silent. (INFO shows the lane's channel there.)
+- POCKETS' key is under TRIM, with AMOUNT's number on it.
 
 ### FINISH: the master's last stage before its limiter
 

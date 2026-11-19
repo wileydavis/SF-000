@@ -467,7 +467,7 @@ ModulePtr makeDELAY() { return std::make_unique<DelayModule>(); }
 class ReverbModule : public Module
 {
 public:
-    enum { SIZE, DECAY, DARK, PREDELAY, DUCK, FREEZE, THROW, MIX, MOD, WIDTH, GATED, GATETIME, LOCUT, DUCKSHAPE, INPUT, DRYON };
+    enum { SIZE, DECAY, DARK, PREDELAY, DUCK, FREEZE, THROW, MIX, MOD, WIDTH, GATED, GATETIME, LOCUT, DUCKSHAPE, INPUT, DRYON, DUCKFOR };     // (SF-000) DUCK FOR
     std::string id() const override { return "REVERB"; }
     std::vector<ParamSpec> params() const override
     {
@@ -486,7 +486,10 @@ public:
                  knob ("lo_cut", "LO CUT", 20.0f, 800.0f, 120.0f, "Hz", 160.0f),
                  pct ("duck_shape", "DUCK SHAPE", 0.5f),
                  choice ("input", "INPUT", { "ALWAYS", "THROW ONLY" }, 0),
-                 dryParam() };
+                 dryParam(),
+                 // (SF-000) what DUCK makes room for: the kick (its pocket in the tail) and what is being sent in (the
+                 // tail under its own source, coming up in the gaps), as it always was; or one of the two alone
+                 choice ("duck_for", "DUCK FOR", { "KICK AND SOURCE", "KICK", "SOURCE" }, 0) };
     }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 30.0; }
@@ -547,8 +550,9 @@ public:
             wl[i] = mid + side; wr[i] = mid - side;
         }
         // Duck: kick pocket + dry-follow (tails bloom in the gaps).
-        const float duck = c.v (DUCK);
-        pocket.process (c, wet.getArrayOfWritePointers(), 2, n, duck, c.v (DUCKSHAPE), nullptr, duck > 0.001f);
+        const int duckFor = c.ci (DUCKFOR);
+        const float duckKick = duckFor == 2 ? 0.0f : c.v (DUCK), duck = duckFor == 1 ? 0.0f : c.v (DUCK);     // (SF-000) the kick's share, the source's
+        pocket.process (c, wet.getArrayOfWritePointers(), 2, n, duckKick, c.v (DUCKSHAPE), nullptr, duckKick > 0.001f);
         const float mix = c.v (MIX);
         const float dryT = c.b (DRYON) ? 1.0f : 0.0f;
         for (int i = 0; i < n; ++i)

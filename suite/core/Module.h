@@ -175,6 +175,9 @@ public:
     virtual void displayMouse (juce::Point<float>, juce::Rectangle<float>, bool down) { juce::ignoreUnused (down); }
     virtual void displayMouseUp() {}
     virtual void displayDouble (juce::Point<float>, juce::Rectangle<float>) {}      // (SF-000) a double-click on the display
+    // (SF-000) A reading of the module's own for the host to show (LIMIT: 0 the limiter's gain reduction, 1 the clipper's,
+    // 2 the automatic trim as it stands, 3 the output's true peak, 4 the trim the last minute's loudest asks for; all dB). Any thread.
+    virtual float meter (int) const { return 0.0f; }
 
     // Program list (only SF CONTROL uses it: songs).
     virtual int numPrograms() const                 { return 1; }

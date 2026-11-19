@@ -51,6 +51,7 @@ The uid comes back the same (see below); `made` does not.
   "recallNotes": true,                        NOTES: whether a recall brings a snapshot's notes (absent: true)
   "transition": { "bars": 8, "level": 3, "dub": 0, "space": 2, "lead": 1, "hit": 1, "leadFile", "hitFile" },   TRANSITION (fifty-ninth build on; absent: as it opens). "bars": 4, 8 or 16; "level", "dub", "space": a place of six, 0 to 5; "lead", "hit": 0 off, 1 the built-in, 2 the file; the files as "files" are written
   "finish":    0,                             FINISH on the master: how much of it, in hundredths (0, 25, 50, 75, 100; another number is read as the nearest; absent: 0, off) (sixty-fourth build on)
+  "hold":      1.5,                           the limiter's trim held at that many dB (eighty-fourth build on; absent: it follows the set). "controls" has "mst.clip" from then too (the limiter's clipper, 0 to 1; absent: 0.3)
   "samples":   [ { "file", "from", "sha256", "bytes" } ],   the copies of audio files this library has made
   "library":   [ snapshot, ... ],
   "knobs":     [ { "name", "depth", "snaps": [ids], "lanes"?: [masks], "links": [ { "c": id, "d": amount } ], "at"? } x 16 ],   "lanes": for a stack knob, what each snapshot takes, a bit each: the eleven lanes, then the returns, the drum bus, the key; and bit 14, N: it brings its notes (absent, as in every file before the sixty-eighth build: it does not); and bit 15, M: a knob turned toward it blends each lane's model and sample to its own (absent, as in every file before the seventy-eighth build: the lanes keep theirs). The same in "stacks" and in a kept knob. A build from before reads the parts and drops what it does not know (N, M). Neither N nor M is said to the web library: they are kept here, on the snapshots still on the knob.
@@ -168,6 +169,10 @@ this build does not have is written back as it was read.
   sample's ids from this build on (`smp_start`, `smp_end`, `smp_fade_in`, `smp_fade_out`,
   `smp_gain`, `smp_norm`, `smp_slice`, `smp_cycle`). A snapshot that names none of these is read
   with each where it starts (LOOP off, the whole file).
+- **The pocket's place and a reverb's DUCK FOR** (eighty-fourth build): `pocket_post` in a
+  lane's `setup` (0: the pocket is made in the instrument; 1: after the lane's inserts and EQ),
+  and `duck_for` in a REVERB's or CONVOLUTION's setup, an insert's or SPACE's (0 KICK AND SOURCE,
+  0.5 KICK, 1 SOURCE). A setup that names neither is read with each at 0.
 - **Slice markers** (eighty-third build) are in a lane's `setup`: `smp_cuts` (0 or 1: the slices
   are the file's own, or the markers') and `smp_cut01` ... `smp_cut32`, each a place in the whole
   file (0 to 1). Only the markers in use are written; a setup that names none has none.

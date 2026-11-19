@@ -51,8 +51,8 @@ namespace cx
     constexpr int kPkG = kBus + kBusKnobs;                  // POCKETS, for the whole rig: AMOUNT, CLEAR, SPEED, RETURNS
     constexpr int kRetMS = kPkG + kPkGlobals;               // A MUTE, A SOLO, B MUTE, B SOLO
     constexpr int kMaster = kRetMS + 4;                     // TAPE, COMP, LIMIT, and GAIN: the whole mix's level into them
-    constexpr int kGain = kMaster + 3;
-    constexpr int kTempo = kMaster + 4, kKey = kTempo + 1, kGlide = kKey + 1;
+    constexpr int kGain = kMaster + 3, kClip = kMaster + 4;     // (CLIP: how hard the limiter's clipper takes the peaks before it)
+    constexpr int kTempo = kMaster + 5, kKey = kTempo + 1, kGlide = kKey + 1;
     // MOTION on the snapshot knobs: three of them, each a WAVE, a SPEED, the KNOB it is on and an AMOUNT
     constexpr int kMotUnits = 3, kMotKnobs = 4;
     constexpr int kMot = kGlide + 1;
@@ -126,6 +126,31 @@ public:
     static constexpr float kBendSemis = 2.0f;
     void bendIn (int lane, float v)             { if (lane >= 0 && lane < kLanes) bendWant[(size_t) lane] = juce::jlimit (-1.0f, 1.0f, v); }
     float bend (int lane) const                 { return lane >= 0 && lane < kLanes ? bendWant[(size_t) lane].load() : 0.0f; }
+    // ---- what the master is doing, as its limiter itself says it (dB; a reduction is a positive figure)
+    std::atomic<float> limGr { 0.0f }, clipGr { 0.0f }, autoTrim { 0.0f }, trimWanted { 0.0f }, truePeak { -100.0f };
+    // HOLD: the limiter's automatic trim put where the last minute's loudest asks for it (or at db, if given) and held
+    // there; off, it rides again from where it was held. Kept with the set by the session. Message thread.
+    void setHold (bool on, float db = 1000.0f);
+    bool hold() const;
+    float heldDb() const;
+    // ---- each lane's short-term loudness as it reaches the mix (LUFS; -70: silent)
+    std::array<std::atomic<float>, kLanes> laneLufs;
+    // ---- what a lane's EQ costs: its level after the EQ against before it, over the last seconds (dB), for the lane
+    // being watched (-1: none, and nothing is measured)
+    void watchEq (int lane)                     { eqWatch = lane; }
+    float eqCost() const                        { return eqCostDb.load(); }
+    int eqWatched() const                       { return eqWatch.load(); }
+    int lowWatched() const                      { return lowWatch.load(); }
+    // a lane's pocket as it is set: 0 its depth, 1 its shape, 2 whether it is made after the lane's effects (0: no pocket there)
+    float pocketNow (int lane, int which) const;
+    // ---- the low end across the bar: each lane's level under 200 Hz as it reaches the mix, kLowBins to the bar, and the
+    // pocket the watched lane is given (its gain, 1: untouched). Measured only while a lane is being watched (-1: none).
+    static constexpr int kLowBins = 192;
+    void watchLow (int lane)                    { lowWatch = lane; }
+    float lowSeen (int lane, int bin) const     { return lowBins[(size_t) lane][(size_t) bin].load (std::memory_order_relaxed); }
+    float lowPocket (int bin) const             { return lowPk[(size_t) bin].load (std::memory_order_relaxed); }
+    // Whether a lane has a pocket, and its two: the ids of its DEPTH and SHAPE (nullptr: none)
+    static const char* pocketDepthId (int lane);
     // GAIN: what the whole mix is turned by on its way into the master chain (dB, 24 either way; 0 in the middle)
     static float gainDb (float v)               { return (juce::jlimit (0.0f, 1.0f, v) - 0.5f) * 48.0f; }
     static Pattern defaultPattern (int lane);
@@ -542,6 +567,8 @@ private:
         std::vector<std::array<Bind, kLaneKnobs>> maps;
         std::atomic<int> map { 0 };
         const Bind& bind (int k) const          { return maps[(size_t) map.load (std::memory_order_relaxed)][(size_t) k]; }
+        // its pocket's switch (made after the lane's effects), depth and shape, where the instrument has a pocket
+        std::atomic<float>* pkPost = nullptr; std::atomic<float>* pkDepth = nullptr; std::atomic<float>* pkShape = nullptr;
         Voice();
         ~Voice();
     };
@@ -590,6 +617,9 @@ private:
         Pattern shared;                         // under patLock
         std::atomic<bool> patDirty { true }, patWait { false };    // patWait: taken up at the next bar line
         std::atomic<float> patAfter { 0.0f }; std::atomic<bool> patFresh { false }; double patDue = -1.0e18;      // (not before this bar line: setPattern's afterBeats)
+        int insLat = 0;                         // what its inserts delay it by
+        float lowZ[2] = { 0.0f, 0.0f }, lowAcc = 0.0f; int lowBin = -1;      // the low end across the bar: its low-pass, and the bin being filled
+        float lowEnv = 0.0f;
         Lane();
         ~Lane();
     };
@@ -674,6 +704,13 @@ private:
     std::vector<int> motionOrder (Target, SFProcessor&, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
     float mixGainWas = 1.0f;            // GAIN, at the last block's end
+    std::atomic<int> eqWatch { -1 }, lowWatch { -1 };
+    std::atomic<float> eqCostDb { 0.0f };
+    int eqCostLane = -1; double eqPre = 0.0, eqPost = 0.0;
+    std::array<std::array<std::atomic<float>, kLowBins>, kLanes> lowBins {};
+    std::array<std::atomic<float>, kLowBins> lowPk {};
+    int lowPkBin = -1; float lowPkMin = 1.0f;
+    void postPocket (int l, juce::AudioBuffer<float>& b2, int n, bool probe);
     std::array<std::atomic<float>, kLanes> bendWant {}; std::array<float, kLanes> bendNow {};      // the pitch wheels: where each is, and where its lane's pitch has come to
     juce::MidiBuffer noMidi;
 

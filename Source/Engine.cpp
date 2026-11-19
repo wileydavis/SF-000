@@ -4,6 +4,7 @@
 #include "core/Registry.h"
 #include "core/Bus.h"
 #include "core/Loudness.h"
+#include "core/Pocket.h"
 #include "core/Motion.h"
 #include <map>
 #include <mutex>
@@ -33,7 +34,9 @@ static const float kSendDefaults[kLanes][2] = {
 
 static const char* const kModelId = "__model";       // SPACE's reverb, among its setup
 
-struct Engine::Loud { sf::LoudnessMeter m; };
+// (and with the master's loudness: each lane's, the pocket each lane may have after its effects, and one run on nothing
+// but a level of 1, to see the shape of the watched lane's)
+struct Engine::Loud { sf::LoudnessMeter m; sf::LoudnessMeter lane[kLanes]; sf::Pocket post[kLanes]; sf::Pocket probe; };
 Engine::InsertInst::InsertInst() = default;
 Engine::InsertInst::~InsertInst() = default;
 Engine::Voice::Voice() = default;
@@ -178,6 +181,81 @@ void Engine::bindVoice (int l, Voice& v)
         for (int k = 0; k < kLaneKnobs; ++k)
             v.maps[m][(size_t) k] = makeBind (*v.proc, m > 0 && k < kSoundKnobs ? d.own[m - 1].knobs[k] : d.knobs[k], nullptr);
     v.map.store (mapOf (l, *v.proc));
+    // its pocket, if it has one: the switch that leaves it to be made after the lane's effects, its depth, its shape
+    auto raw = [&v] (const char* id) -> std::atomic<float>* { return id != nullptr && v.proc->paramIndex (id) >= 0 ? v.proc->apvts.getRawParameterValue (id) : nullptr; };
+    v.pkPost = raw ("pocket_post"); v.pkDepth = v.pkPost != nullptr ? raw (pocketDepthId (l)) : nullptr; v.pkShape = raw ("pocket_shape");
+}
+
+const char* Engine::pocketDepthId (int l)
+{
+    const juce::String m (lanes()[(size_t) l].module);
+    return m == "RUMBLE" ? "pump" : m == "BASS" || m == "LEAD" || m == "PAD" || m == "VOICE" ? "pocket_depth" : nullptr;
+}
+
+float Engine::pocketNow (int l, int which) const
+{
+    auto* v = lane[(size_t) l].voice.load();
+    if (v == nullptr || v->pkDepth == nullptr) return 0.0f;
+    auto* p = which == 0 ? v->pkDepth : which == 1 ? v->pkShape : v->pkPost;
+    return p != nullptr ? p->load (std::memory_order_relaxed) : 0.0f;
+}
+
+void Engine::setHold (bool on, float db)
+{
+    auto* lim = masterStage ("LIMIT");
+    if (lim == nullptr) return;
+    const int ih = lim->paramIndex ("hold"), id = lim->paramIndex ("held");
+    if (ih < 0 || id < 0) return;
+    if (on) lim->param (id)->setValueNotifyingHost (lim->param (id)->convertTo0to1 (juce::jlimit (-12.0f, 12.0f, db > 999.0f ? trimWanted.load() : db)));
+    lim->param (ih)->setValueNotifyingHost (on ? 1.0f : 0.0f);
+}
+
+bool Engine::hold() const
+{
+    for (auto& m : master) if (m->getName() == "SF LIMIT") if (const int i = m->paramIndex ("hold"); i >= 0) return m->param (i)->getValue() > 0.5f;
+    return false;
+}
+
+float Engine::heldDb() const
+{
+    for (auto& m : master) if (m->getName() == "SF LIMIT") if (const int i = m->paramIndex ("held"); i >= 0) return m->param (i)->convertFrom0to1 (m->param (i)->getValue());
+    return 0.0f;
+}
+
+// The pocket, where a lane has it after its effects (the instrument then leaves it alone): the same one, made here from
+// the instrument's own DEPTH and SHAPE. And, for the lane being watched, the shape of its pocket wherever it is made.
+void Engine::postPocket (int l, juce::AudioBuffer<float>& b2, int n, bool)
+{
+    auto& ln = lane[(size_t) l];
+    auto* v = ln.voice.load();
+    const bool watched = lowWatch.load (std::memory_order_relaxed) == l;
+    const bool has = v != nullptr && v->pkDepth != nullptr;
+    if (! has && ! watched) return;
+    const bool post = has && v->pkPost != nullptr && v->pkPost->load (std::memory_order_relaxed) > 0.5f;
+    const float depth = has ? v->pkDepth->load (std::memory_order_relaxed) : 0.0f, shape = has && v->pkShape != nullptr ? v->pkShape->load (std::memory_order_relaxed) : 0.5f;
+    sf::Ctx c;
+    const double bps = blockBpm / 60.0 / sr;
+    c.sr = sr; c.n = n; c.bpm = blockBpm; c.ppq = ppq - (double) ln.insLat * bps; c.playing = wasRunning; c.beatsPerBar = 4.0; c.bus = &sf::Bus::get(); c.samplePos = samplesDone;
+    if (has && (post || ! loud->post[l].idle()))
+    {
+        float* ch[2] = { b2.getWritePointer (0), b2.getWritePointer (1) };
+        loud->post[l].process (c, ch, 2, n, post ? depth : 0.0f, shape, nullptr, post && depth > 0.001f, false, false);
+    }
+    if (watched)
+    {
+        float g[2048];
+        const int m = std::min (n, 2048);
+        for (int i = 0; i < m; ++i) g[i] = 1.0f;
+        if (has) { float* ch[1] = { g }; c.n = m; loud->probe.process (c, ch, 1, m, depth, shape, nullptr, depth > 0.001f, false, false); }
+        const double t0 = ppq - (double) maxLat.load() * bps;
+        for (int i = 0; i < m; ++i)
+        {
+            const double q = (t0 + (double) i * bps) * 0.25;
+            const int bin = juce::jlimit (0, kLowBins - 1, (int) ((q - std::floor (q)) * (double) kLowBins));
+            if (bin != lowPkBin) { if (lowPkBin >= 0) lowPk[(size_t) lowPkBin] = lowPkMin; lowPkBin = bin; lowPkMin = 1.0f; }
+            lowPkMin = std::min (lowPkMin, g[i]);
+        }
+    }
 }
 
 bool Engine::remapLane (int l, bool fresh)
@@ -346,6 +424,13 @@ Engine::Engine()
 
     // GAIN: the whole mix into the master chain, 24 dB either way. Kept with the set, as TAPE, COMP and LIMIT are.
     named (cx::kGain, "mst.gain", "GAIN", Kind::Bipolar, 0.5f, false, false);
+    // CLIP: how hard the limiter's own clipper takes the peaks before the limiter has to. Kept with the set too.
+    if (auto* lim = masterStage ("LIMIT"))
+    {
+        auto& c = controls[(size_t) cx::kClip];
+        bind[(size_t) cx::kClip] = makeBind (*lim, KnobDef { "CLIP", "clip", 'u' }, &c);
+        c.id = "mst.clip"; c.snapshot = false; c.morph = false; c.glides = false;
+    }
     named (cx::kTempo, "g.tempo", "TEMPO", Kind::Knob, tempoToValue (132.0), false, false);
     auto& key = named (cx::kKey, "g.key", "KEY", Kind::List, 0.0f, true, false);
     for (auto* n : kKeyNames) key.choices.add (n);
@@ -373,6 +458,9 @@ Engine::Engine()
     }
     loud = std::make_unique<Loud>();
     for (auto& p : laneDb) p = -100.0f;
+    for (auto& p : laneLufs) p = -70.0f;
+    for (auto& row : lowBins) for (auto& b : row) b = 0.0f;
+    for (auto& b : lowPk) b = 1.0f;
     for (int l = 0; l < kLanes; ++l) initSetup[(size_t) l] = getSetup ({ 0, l, 0 });
 
     // To begin with the lead has a delay and a radio on it, as the design shows.
@@ -1214,7 +1302,10 @@ void Engine::updateLatency()
     for (int l = 0; l < kLanes; ++l)
     {
         lat[l] = lane[(size_t) l].voice.load()->proc->getLatencySamples();
-        for (auto& i : lane[(size_t) l].ins) if (auto* in = i.load()) lat[l] += in->proc->getLatencySamples();
+        int ins = 0;
+        for (auto& i : lane[(size_t) l].ins) if (auto* in = i.load()) ins += in->proc->getLatencySamples();
+        lane[(size_t) l].insLat = ins;
+        lat[l] += ins;
         mx = std::max (mx, lat[l]);
     }
     // Every lane is given the longest wait any lane could need, always (holdLat), so the rig's
@@ -1682,13 +1773,20 @@ Engine::SetupState Engine::newerOff (Target t) const
 Engine::SetupState Engine::laterOff (Target t) const
 {
     SetupState st;
-    if (t.kind != 0) return st;
+    if (t.kind != 0)
+    {
+        // (an effect's, a return's: what a reverb's DUCK makes room for, the kick and the source as it always was)
+        if (auto* p = processorFor (t)) if (const int i = p->paramIndex ("duck_for"); i >= 0 && i < p->numModuleParams()) st.push_back ({ "duck_for", 0.0f });
+        return st;
+    }
     const bool strike = juce::String (lanes()[(size_t) t.lane].module) == "STRIKE";
     if (auto* p = processorFor (t))
     {
         for (const char* id : { "smp_bars", "smp_start", "smp_end", "smp_fade_in", "smp_fade_out", "smp_gain", "smp_norm", "smp_slice", "smp_cycle" })
             if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams() && (strike || juce::String (id) == "smp_bars"))
                 st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
+        // (the pocket made after the lane's effects: before them, as it always was)
+        if (const int i = p->paramIndex ("pocket_post"); i >= 0 && i < p->numModuleParams()) st.push_back ({ "pocket_post", 0.0f });
         // (the slice markers, and whether they are the hand's: none, and the file's own cuts)
         const auto& specs = p->allSpecs();
         for (int i = 0; i < p->numModuleParams(); ++i)
@@ -1923,6 +2021,9 @@ void Engine::prepare (double rate, int block)
     ghostMidi.ensureSize (4096);            // (a voice leaving is given its lane's notes: room for them before the audio starts)
     fol = Follow();
     loud->m.prepare (sr);
+    for (auto& m : loud->lane) m.prepare (sr);
+    for (auto& p : loud->post) { p.prepare (sr, 2048); p.dropDuck = false; }        // (the drop's duck is the instrument's own pocket's still)
+    loud->probe.prepare (sr, 2048); loud->probe.dropDuck = false;
     prepared = true;
     updateLatency();
 }
@@ -2533,10 +2634,29 @@ void Engine::render (juce::AudioBuffer<float>& out)
             eqOn = eqOn || live;
         }
         const int dly = ln.delay.load();
+        // (what the EQ costs, for the lane being watched: its level after against before, over the last seconds)
+        const bool costs = eqWatch.load (std::memory_order_relaxed) == l;
+        double sqPre = 0.0, sqPost = 0.0;
+        if (costs) for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); for (int i = 0; i < n; ++i) sqPre += (double) x[i] * x[i]; }
+        if (eqOn)
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                float* x = b2.getWritePointer (ch);
+                for (int e = 0; e < kEqBands; ++e) if (ln.eqLive[e]) for (int i = 0; i < n; ++i) x[i] = ln.eq[e].tick (x[i], ch);
+            }
+        if (costs)
+        {
+            for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); for (int i = 0; i < n; ++i) sqPost += (double) x[i] * x[i]; }
+            if (eqCostLane != l) { eqCostLane = l; eqPre = eqPost = 0.0; }
+            const double a = std::exp (-(double) n / (1.5 * sr));
+            eqPre = a * eqPre + (1.0 - a) * sqPre / (double) n; eqPost = a * eqPost + (1.0 - a) * sqPost / (double) n;
+            eqCostDb = eqPre > 1.0e-10 ? (float) (10.0 * std::log10 ((eqPost + 1.0e-20) / eqPre)) : 0.0f;
+        }
+        // the pocket, where the lane has it after its effects (and its shape, for the lane being watched)
+        postPocket (l, b2, n, false);
         for (int ch = 0; ch < 2; ++ch)
         {
             float* x = b2.getWritePointer (ch);
-            if (eqOn) for (int e = 0; e < kEqBands; ++e) if (ln.eqLive[e]) for (int i = 0; i < n; ++i) x[i] = ln.eq[e].tick (x[i], ch);
             // delay compensation: every lane leaves as late as the latest one
             auto& d = ln.dl[ch];
             int pos = ln.dlPos;
@@ -2575,6 +2695,28 @@ void Engine::render (juce::AudioBuffer<float>& out)
         ln.hold = std::max (juce::Decibels::gainToDecibels (lp, -100.0f), ln.hold - fall);
         laneDb[(size_t) l] = ln.hold;
         laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
+        {
+            // its loudness as it reaches the mix; and, while a lane's low end is being watched, every lane's level under
+            // 200 Hz across the bar
+            const float* a = b2.getReadPointer (0); const float* b = b2.getReadPointer (1);
+            auto& m = loud->lane[l];
+            for (int i = 0; i < n; ++i) m.push (a[i], b[i]);
+            laneLufs[(size_t) l] = m.shortTerm;
+            if (lowWatch.load (std::memory_order_relaxed) >= 0)
+            {
+                const double bps = blockBpm / 60.0 / sr, t0 = ppq - (double) maxLat.load() * bps;
+                const float k = 1.0f - std::exp (-6.2831853f * 200.0f / (float) sr), rel = std::exp (-1.0f / (0.03f * (float) sr));       // (its level: the peaks, let go over 30 ms)
+                for (int i = 0; i < n; ++i)
+                {
+                    ln.lowZ[0] += k * (0.5f * (a[i] + b[i]) - ln.lowZ[0]); ln.lowZ[1] += k * (ln.lowZ[0] - ln.lowZ[1]);
+                    const double q = (t0 + (double) i * bps) * 0.25;
+                    const int bin = juce::jlimit (0, kLowBins - 1, (int) ((q - std::floor (q)) * (double) kLowBins));
+                    if (bin != ln.lowBin) { if (ln.lowBin >= 0) lowBins[(size_t) l][(size_t) ln.lowBin] = ln.lowAcc; ln.lowBin = bin; ln.lowAcc = 0.0f; }
+                    ln.lowEnv = std::max (std::abs (ln.lowZ[1]), ln.lowEnv * rel);
+                    ln.lowAcc = std::max (ln.lowAcc, ln.lowEnv);
+                }
+            }
+        }
         for (int ch = 0; ch < 2; ++ch) { const float* x = b2.getReadPointer (ch); double q = 0.0; for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; laneSq[(size_t) l] += q; }
 
         {
@@ -2726,7 +2868,15 @@ void Engine::render (juce::AudioBuffer<float>& out)
     lufs = loud->m.shortTerm;
     const float outPk = std::max (pk[0], pk[1]);
     const float gr = inPk > 1e-4f && outPk > 1e-5f ? juce::jlimit (-24.0f, 0.0f, juce::Decibels::gainToDecibels (outPk / inPk)) : 0.0f;
-    gainRed = gainRed.load() + 0.2f * (gr - gainRed.load());
+    juce::ignoreUnused (gr);
+    // what the limiter itself says it is doing (the figure here was the output's peak against the input's, which the
+    // clipper, the automatic trim and the limiter's own delay were all in)
+    if (! master.empty())
+    {
+        const auto& lm = master.back()->mod();
+        limGr = lm.meter (0); clipGr = lm.meter (1); autoTrim = lm.meter (2); truePeak = lm.meter (3); trimWanted = lm.meter (4);
+    }
+    gainRed = gainRed.load() + 0.2f * (-limGr.load() - gainRed.load());
 
     for (int ch = 0; ch < 2; ++ch)
     {

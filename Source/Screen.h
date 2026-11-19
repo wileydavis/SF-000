@@ -177,11 +177,17 @@ public:
     static bool testIsFetchKey (const TestHit& h) { return h.kind == hAct && h.a == aFetch; }
     int testLibStack() const { return inAt(); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
+    void testLowView (bool on) { lowView = on; }                // LOW END up in the EQ's place
+    bool testLowIsUp() const { return lowView; }
     void testPointAt (juce::Point<float> p) { point (p); }      // the mouse resting there (screen units)
     juce::String testTip() const { return hovering ? tip.title + "\n" + tip.body.joinIntoString ("\n") + "\n" + tip.midi.joinIntoString ("\n") : juce::String(); }     // what the box says
     juce::Rectangle<int> testTipRect() const { return hovering ? tipRect.getSmallestIntegerContainer() : juce::Rectangle<int>(); }
     static bool testIsPhones (const TestHit& h) { return h.kind == hAct && h.a == aPhones; }
     static bool testIsTrans (const TestHit& h, int which) { return h.kind == hAct && h.a == aTransFire + which; }     // (0 FIRE, 1 ARM, 2 BARS, 3 LEVEL, 4 IN, 5 HIT, 6 DUB, 7 SPACE)
+    static bool testIsTrim (const TestHit& h) { return h.kind == hAct && h.a == aTrimHold; }           // (the master's TRIM plate)
+    static bool testIsLow (const TestHit& h) { return h.kind == hLow; }                                // (LOW END's graph, in a lane's CONFIG)
+    static bool testIsEqKey (const TestHit& h, int which) { return h.kind == hEqLane && h.a == which; }       // (-1 OTHERS, -2 LOW END, -3 AFTER FX; from 0: a lane's key)
+    static bool testIsEqGraph (const TestHit& h) { return h.kind == hEq && h.a == -1; }
     static bool testIsFinish (const TestHit& h) { return h.kind == hAct && h.a == aFinish; }           // (the master's FINISH plate)
     static bool testIsPlain (const TestHit& h) { return h.kind == hAct && h.a == aSamplePlain; }       // (CONFIG, a lane playing a sample: PLAIN)
     juce::String testCfgNote() const { return cfgNote; }
@@ -274,7 +280,7 @@ private:
                    // right its frequency, up and down its gain (a cut's or a notch's width). hEqBand: a band's key (a: which).
                    // hEqType: a kind's key (a: which kind), for the band chosen
                    // hEqLane: another lane's number on the graph (a: the lane), its line shown or hidden; a -1: OTHERS, all of them
-                   hEq, hEqBand, hEqType, hEqLane,
+                   hEq, hEqBand, hEqType, hEqLane,      // (hEqLane a -2: LOW END, the graph's other face; a -3: AFTER FX, there)
                    hArrPart, hArrBars, hArrMorph,       // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
                    // the column (the chosen stack knob's stack, in the designer). a: which of its snapshots
                    hColCard,        // the card itself: heard in the headphones, with the parts of the rig it takes
@@ -293,7 +299,8 @@ private:
                    hBenchChip,      // a chip seen in what is open (a kept knob's, a module's knob's, an arrangement's part; a: its place in the library, b: the parts it takes there): heard
                    hModKnob,        // a knob of the open module (a: which of the sixteen): its pile, or what it is tied to, under the row
                    hArrTrans,       // a part's TRANSITION plate (a: the part)
-                   hTie };          // a tie of the open macro knob, in the library (a: which): chosen; dragged up or down, how far it takes its knob
+                   hTie,
+                   hLow };          // the low end's graph (a: the lane): dragged, down its pocket's DEPTH, right its SHAPE          // a tie of the open macro knob, in the library (a: which): chosen; dragged up or down, how far it takes its knob
     enum Act { aRun, aPanic, aAudio, aSnapshot, aLibrary, aMacros, aMain, aNudgeL, aNudgeR, aRatchet, aNote, aOctave, aGen0, aGen1,
                aRename, aDelete, aRenameKnob, aClearKnob, aLearn, aLearnKeep, aLearnDrop, aFull, aCfgClose, aNewTrack, aModules, aClipReset, aRec, aRecallCue, aSamplePlain, aResample,
                aTransFire, aTransArm, aTransBars, aTransLevel, aTransLead, aTransHit, aTransDub, aTransSpace,
@@ -305,7 +312,8 @@ private:
                aFetch,
                aStackCue,
                // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself
-               aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete };
+               aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete,
+               aTrimHold };     // the master's TRIM plate: the limiter's trim learnt and held, or let go
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -553,6 +561,15 @@ private:
     void drawConfig (G&, R);
     void drawEq (G&, R);                // the lane EQ: its graph, the lanes' spectra behind it, a key a band and a key a kind
     R eqRect, eqGraph;                  // where it was drawn, and the graph in it
+    void drawLow (G&, R);               // in its place, LOW END: the bar's low end (kick, bass, rumble, this lane), this lane's pocket over it
+    bool lowView = false;               // LOW END is up, and not the EQ
+    juce::uint32 lowShown = 0;          // the lanes drawn there (a bit a lane; none yet: the kick, the bass and the rumble)
+    R lowGraph;
+    std::array<std::array<float, Engine::kLowBins>, kLanes> lowSeen {};        // as last looked at
+    std::array<float, Engine::kLowBins> lowPkSeen {};
+    float eqCostShown = 0.0f;           // what the EQ costs the lane (dB), as last looked at
+    std::array<int, kLanes> laneLu {};  // each lane's loudness as its title shows it (whole LUFS; -70: none)
+    std::array<R, kLanes> laneLuRect {};
     int eqSel = 0;                      // the band chosen
     bool eqOthers = true;               // the other lanes' spectra are drawn behind this lane's
     juce::uint32 eqHidden = 0;          // and those of them put out one by one (a bit a lane)

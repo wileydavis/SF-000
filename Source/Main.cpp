@@ -1924,6 +1924,248 @@ static void gainAndGlideNotesTest (int& bad)
     }
 }
 
+// The eighty-fourth build: what the master and a lane say about their level (the limiter's own figures, its trim held,
+// CLIP, each lane's loudness, what an EQ costs), the pocket made after a lane's effects, what a reverb's DUCK makes room
+// for, and the bar's low end.
+static void seeingTest (int& bad)
+{
+    using namespace sf0;
+    auto laneOf = [] (const char* slug) { for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == slug) return l; return -1; };
+    const int kick = laneOf ("kick"), bass = laneOf ("bass");
+    // ---- the master: the limiter's figures, CLIP, the trim held; each lane's loudness; an EQ's cost
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> buf (2, 256);
+        struct Seen { float gr = 0, clip = 0, tp = -100, lufs = -100; };
+        auto play = [&] (double seconds)
+        {
+            Seen s;
+            const int blocks = (int) (seconds * 187.5);
+            for (int i = 0; i < blocks; ++i)
+            {
+                buf.clear(); e.render (buf);
+                if (i > blocks / 3) { s.gr = std::max (s.gr, e.limGr.load()); s.clip = std::max (s.clip, e.clipGr.load()); s.tp = std::max (s.tp, e.truePeak.load()); s.lufs = std::max (s.lufs, e.lufs.load()); }
+            }
+            return s;
+        };
+        auto knobOf = [&] (int l, const char* id) { for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = e.laneKnob (l, k); kd.param != nullptr && juce::String (kd.param) == id) return k; return -1; };
+        e.setRunning (true);
+        const auto open = play (24.0);
+        const auto& cc = e.control (cx::kClip);
+        const bool clipIs = cc.used && cc.id == "mst.clip" && ! cc.snapshot && std::abs (e.target (cx::kClip) - 0.3f) < 1.0e-4f;
+        // each lane's loudness: a figure for a lane that plays, and it follows the lane's LEVEL
+        const float kickLu = e.laneLufs[(size_t) kick].load();
+        const int kl = knobOf (kick, "level");
+        const float kickLevel = e.target (cx::lane (kick, kl));
+        ses.userSet (cx::lane (kick, kl), kickLevel * 0.55f);
+        play (8.0);
+        const float kickDown = e.laneLufs[(size_t) kick].load();
+        ses.userSet (cx::lane (kick, kl), kickLevel);
+        // what an EQ costs: nothing while it is flat, a good deal with the bass's lows cut, nothing again with the band off
+        e.watchEq (bass);
+        play (6.0);
+        const float flat = e.eqCost();
+        Engine::EqBand cut; cut.type = Engine::eqLowCut; cut.hz = 400.0f; cut.q = 0.70710678f;
+        const auto was = e.eqBand (bass, 1);
+        e.setEqBand (bass, 1, cut);
+        play (6.0);
+        const float costs = e.eqCost();
+        e.setEqBand (bass, 1, was);
+        play (6.0);
+        const float back = e.eqCost();
+        e.watchEq (-1);
+        // the trim, learnt and held: it goes to what the last minute asks for and stays there with the mix 8 dB hotter
+        // (the limiter takes that up); let go, it comes down after the set again
+        const float wanted = e.trimWanted.load();
+        ses.trimHold (true);
+        const float held = e.heldDb();
+        ses.userSet (cx::kGain, 0.5f + 8.0f / 48.0f);
+        const auto hot = play (20.0);
+        const float trimHeld = e.autoTrim.load();
+        Engine e2; e2.prepare (48000.0, 256);
+        Session s2 (e2, false);
+        ses.userSet (cx::kClip, 0.45f);
+        s2.takeState (ses.stateVar());
+        const bool kept = e2.hold() && std::abs (e2.heldDb() - held) < 0.01f && std::abs (e2.target (cx::kClip) - 0.45f) < 1.0e-4f;
+        ses.userSet (cx::kClip, 0.3f);
+        ses.trimHold (false);
+        play (30.0);
+        const float trimFree = e.autoTrim.load();
+        ses.userSet (cx::kGain, 0.5f);
+        Engine e3; e3.prepare (48000.0, 256);
+        Session s3 (e3, false);
+        s3.takeState (ses.stateVar());
+        const bool letGo = ! e.hold() && ! e3.hold();
+        // CLIP: at nought the clipper takes nothing; right up, with the mix 8 dB hot, it takes a good deal off the peaks
+        // (the trim has come down for the hot mix by now: the limiter is given what it aims for, and the clipper its peaks)
+        ses.userSet (cx::kGain, 0.5f + 8.0f / 48.0f);
+        ses.userSet (cx::kClip, 0.0f);
+        const auto noClip = play (10.0);
+        ses.userSet (cx::kClip, 1.0f);
+        const auto allClip = play (10.0);
+        ses.userSet (cx::kClip, 0.3f); ses.userSet (cx::kGain, 0.5f);
+        const bool figures = open.gr >= 0.0f && open.gr < 12.0f && open.tp < -0.8f && open.tp > -3.0f && open.lufs > -11.5f;
+        const bool lanesOk = kickLu > -40.0f && kickLu < -3.0f && kickDown < kickLu - 3.0f;
+        const bool eqOk = std::abs (flat) < 0.2f && costs < -3.0f && std::abs (back) < 0.3f;
+        const bool clipOk = clipIs && noClip.clip < 0.001f && allClip.clip > 1.0f && allClip.gr < noClip.gr;
+        const bool holdOk = std::abs (held - wanted) < 0.01f && std::abs (trimHeld - held) < 0.05f && hot.lufs > open.lufs + 1.0f && trimFree < held - 3.0f && kept && letGo;
+        const bool ok = figures && lanesOk && eqOk && clipOk && holdOk;
+        if (! ok) ++bad;
+        std::printf ("  %s: the master says what its limiter is doing, from the limiter: with the rig playing it takes up to %.1f dB off, the true peak stays at %.1f, and the set is at %.1f LUFS. CLIP at nought takes nothing off the peaks, and right up "
+                     "with the mix 8 dB hot takes %.1f dB (the limiter then %.1f where it took %.1f). TRIM pressed holds the trim at what the last minute asks for (%+.1f dB): 8 dB hotter it stays there (%+.1f) and the set is louder (%.1f LUFS); "
+                     "let go, it comes down after the set (%+.1f). Held or not, and CLIP, are kept with the set. The kick's lane says %.0f LUFS, and %.0f with its LEVEL down. The bass's EQ costs %.1f dB flat, %.1f with its lows cut, %.1f with the band off again\n",
+                     ok ? "ok  " : "FAIL", (double) open.gr, (double) open.tp, (double) open.lufs, (double) allClip.clip, (double) allClip.gr, (double) noClip.gr, (double) held, (double) trimHeld, (double) hot.lufs, (double) trimFree,
+                     (double) kickLu, (double) kickDown, (double) flat, (double) costs, (double) back);
+        if (! ok) std::printf ("    (figures %d lanes %d eq %d clip %d (is %d, none %.3f) hold %d (wanted %.2f kept %d let go %d))\n", (int) figures, (int) lanesOk, (int) eqOk, (int) clipOk, (int) clipIs, (double) noClip.clip, (int) holdOk, (double) wanted, (int) kept, (int) letGo);
+    }
+    // ---- the pocket after the effects, a return's DUCK FOR, the bar's low end. The kick on every beat (its lane muted:
+    // it is still the kick the pockets follow), the bass on every sixteenth.
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> buf (2, 256);
+        auto knobOf = [&] (int l, const char* id) { for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = e.laneKnob (l, k); kd.param != nullptr && juce::String (kd.param) == id) return k; return -1; };
+        auto put = [&] (int l, const char* id, float v) { if (const int k = knobOf (l, id); k >= 0) ses.userSet (cx::lane (l, k), v); else ses.setupByHand ({ 0, l, 0 }, id, v); };
+        for (int l = 0; l < kLanes; ++l)
+        {
+            Pattern none; ses.setPattern (l, none);
+            ses.userSet (cx::lane (l, cx::kSendA), 0.0f); ses.userSet (cx::lane (l, cx::kSendB), 0.0f);
+            for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (l, sl, -1);
+        }
+        ses.userSet (cx::kTempo, tempoToValue (120.0));
+        ses.userSet (cx::kGlide, 0.0f);
+        Pattern pk, pb;
+        for (int s = 0; s < 16; s += 4) { pk.steps[s].on = true; pk.steps[s].vel = 1.0f; }
+        for (int s = 0; s < 16; ++s) { pb.steps[s].on = true; pb.steps[s].vel = 0.8f; }
+        ses.setPattern (kick, pk); ses.setPattern (bass, pb);
+        ses.userSet (cx::lane (kick, cx::kMute), 1.0f);
+        const double beatN = 24000.0;
+        // eight bars from the top; over the last six, how far down the level is just after a kick against late in the beat (dB)
+        auto dip = [&] ()
+        {
+            e.setRunning (false);
+            for (int i = 0; i < 600; ++i) { buf.clear(); e.render (buf); }
+            std::vector<float> heard;
+            e.setRunning (true);
+            while (heard.size() < (size_t) (32.5 * beatN)) { buf.clear(); e.render (buf); for (int n = 0; n < 256; ++n) heard.push_back (0.5f * (buf.getSample (0, n) + buf.getSample (1, n))); }
+            double after = 0.0, late = 0.0;
+            for (int beat = 8; beat < 32; ++beat)
+            {
+                const size_t a = (size_t) (beat * beatN) + 720, b = (size_t) ((beat + 0.75) * beatN) + 720;
+                for (size_t n = 0; n < 2400; ++n) { after += (double) heard[a + n] * heard[a + n]; late += (double) heard[b + n] * heard[b + n]; }
+            }
+            return std::pair<double, double> (10.0 * std::log10 ((after + 1.0e-12) / (late + 1.0e-12)), 10.0 * std::log10 (late / (24.0 * 2400.0) + 1.0e-12));
+        };
+        put (bass, "pocket_shape", 0.5f);
+        put (bass, Engine::pocketDepthId (bass), 0.0f);
+        const auto none = dip();
+        put (bass, Engine::pocketDepthId (bass), 0.9f);
+        const auto pre = dip();
+        const bool wasOff = e.pocketNow (bass, 2) < 0.5f;
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 1.0f);
+        const auto post = dip();
+        const bool isOn = e.pocketNow (bass, 2) > 0.5f && std::abs (e.pocketNow (bass, 0) - 0.9f) < 0.01f;
+        // a snapshot from before the switch means it off; one taken with it on brings it back
+        const auto withPost = ses.take();
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 0.0f);
+        bool names = false;
+        for (auto& kv : e.laterOff ({ 0, bass, 0 })) names = names || (kv.first == "pocket_post" && kv.second == 0.0f);
+        ses.recall (withPost);
+        for (int i = 0; i < 200; ++i) { buf.clear(); e.render (buf); }
+        const bool recalled = e.pocketNow (bass, 2) > 0.5f;
+        // a reverb on the bass, all wet and long: with the pocket made in the instrument its tail rings through the kick;
+        // made after the effects, the tail is held out of it too
+        e.setInsertType (bass, 0, 1);
+        for (int k = 0; k < kCells; ++k)
+            if (const char* id = effects()[1].cells[k].param; id != nullptr)
+            {
+                const juce::String s (id);
+                if (s == "mix") ses.userSet (cx::ins (bass, 0, k), 1.0f);
+                if (s == "decay") ses.userSet (cx::ins (bass, 0, k), 0.7f);
+            }
+        e.setSetup ({ 1, bass, 0 }, "duck", 0.0f);
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 0.0f);
+        const auto tailPre = dip();
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 1.0f);
+        const auto tailPost = dip();
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 0.0f);
+        e.setInsertType (bass, 0, -1);
+        const bool pocketOk = std::abs (none.first) < 1.5 && pre.first < -8.0 && std::abs (post.first - pre.first) < 1.5 && wasOff && isOn && names && recalled
+                           && tailPre.first > -4.0 && tailPost.first < tailPre.first - 5.0 && tailPost.first < -8.0;
+        if (! pocketOk) ++bad;
+        std::printf ("  %s: a lane's pocket made after its effects (AFTER FX) is the same pocket: on the bass alone the level just after a kick is %.1f dB under the level late in the beat made in the instrument and %.1f made after "
+                     "(%.1f with no pocket). With a long reverb on the lane, all wet, the pocket made in the instrument is rung through (%.1f dB) and the one made after the effects holds the tail out of the kick too (%.1f dB). "
+                     "A snapshot that does not name the switch means it off, and one taken with it on brings it back\n", pocketOk ? "ok  " : "FAIL", pre.first, post.first, none.first, tailPre.first, tailPost.first);
+        if (! pocketOk) std::printf ("    (was off %d is on %d names %d recalled %d)\n", (int) wasOff, (int) isOn, (int) names, (int) recalled);
+
+        // ---- the return's DUCK: for the kick and what is sent, for the kick alone, for what is sent alone. The bass
+        // (no pocket of its own) sent to SPACE, and SPACE alone heard.
+        put (bass, Engine::pocketDepthId (bass), 0.0f);
+        ses.userSet (cx::lane (bass, cx::kSendB), 1.0f);
+        ses.userSet (cx::kRetMS + 3, 1.0f);
+        ses.userSet (cx::space (0, 3), 1.0f);
+        const Engine::Target space { 2, 0, 1 };
+        bool has = false; juce::StringArray says;
+        for (auto& sp : e.setupParams (space)) if (sp.id == "duck_for") { has = true; says = sp.choices; }
+        const auto both = dip();
+        e.setSetup (space, "duck_for", 0.5f);
+        const auto forKick = dip();
+        e.setSetup (space, "duck_for", 1.0f);
+        const auto forSource = dip();
+        ses.userSet (cx::space (0, 3), 0.0f);
+        const auto noDuck = dip();
+        bool namesDuck = false;
+        for (auto& kv : e.laterOff (space)) namesDuck = namesDuck || (kv.first == "duck_for" && kv.second == 0.0f);
+        e.setSetup (space, "duck_for", 0.0f);
+        ses.userSet (cx::kRetMS + 3, 0.0f); ses.userSet (cx::lane (bass, cx::kSendB), 0.0f);
+        const bool duckOk = has && says.size() == 3 && says[1] == "KICK" && says[2] == "SOURCE" && namesDuck && noDuck.second > -70.0
+                         && forKick.first < -4.0 && both.first < -4.0 && forSource.first > forKick.first + 3.0 && std::abs (forSource.first - noDuck.first) < 2.0
+                         && forKick.second > both.second + 1.0 && forSource.second < forKick.second - 1.0;
+        if (! duckOk) ++bad;
+        std::printf ("  %s: SPACE's DUCK makes room for the kick and for what is sent to it, or (DUCK FOR, in its CONFIG) for one of them: for both, the return just after a kick is %.1f dB under where it is late in the beat; for the KICK alone %.1f, "
+                     "and late in the beat it is louder (%.1f dB against %.1f: what is sent no longer holds it down); for the SOURCE alone the kick makes no hole (%.1f, as with no DUCK at all: %.1f) and what is sent holds it down (%.1f dB). "
+                     "A snapshot that does not name DUCK FOR means both\n", duckOk ? "ok  " : "FAIL", both.first, forKick.first, forKick.second, both.second, forSource.first, noDuck.first, forSource.second);
+        if (! duckOk) std::printf ("    (has %d, %d choices, names %d, no duck level %.1f)\n", (int) has, says.size(), (int) namesDuck, noDuck.second);
+
+        // ---- the bar's low end: the kick's and the bass's level under 200 Hz across the bar, and the bass's pocket over it
+        ses.userSet (cx::lane (kick, cx::kMute), 0.0f);
+        put (bass, Engine::pocketDepthId (bass), 0.9f);
+        put (bass, "pocket_shape", 0.0f);
+        auto look = [&] ()
+        {
+            e.setRunning (false);
+            for (int i = 0; i < 600; ++i) { buf.clear(); e.render (buf); }
+            e.setRunning (true);
+            for (int i = 0; i < (int) (16.5 * beatN / 256.0); ++i) { buf.clear(); e.render (buf); }
+        };
+        auto mean = [&] (int lane, int from, int to) { float s = 0.0f; for (int beat = 0; beat < 4; ++beat) for (int b = from; b < to; ++b) s += lane < 0 ? e.lowPocket (beat * 48 + b) : e.lowSeen (lane, beat * 48 + b); return s / (float) (4 * (to - from)); };
+        look();
+        const bool unwatched = mean (kick, 0, 48) == 0.0f && mean (-1, 0, 48) == 1.0f;        // (nothing is looked at until it is asked for)
+        e.watchLow (bass);
+        look();
+        const float kickHit = mean (kick, 1, 5), kickLate = mean (kick, 40, 47), bassHit = mean (bass, 1, 4), bassLate = mean (bass, 36, 47), pkHit = mean (-1, 1, 3), pkLate = mean (-1, 40, 47);
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 1.0f);
+        look();
+        const float pkHitPost = mean (-1, 1, 3), bassHitPost = mean (bass, 1, 4);
+        ses.setupByHand ({ 0, bass, 0 }, "pocket_post", 0.0f);
+        put (bass, Engine::pocketDepthId (bass), 0.0f);
+        look();
+        const float pkNone = mean (-1, 0, 48);
+        e.watchLow (kick);
+        look();
+        const float pkKick = mean (-1, 0, 48);
+        e.watchLow (-1);
+        const bool lowOk = unwatched && kickHit > 0.05f && kickHit > kickLate * 1.3f && bassLate > 0.01f && bassHit < bassLate * 0.5f && pkHit < 0.3f && pkLate > 0.9f
+                        && pkHitPost < 0.3f && bassHitPost < bassLate * 0.5f && pkNone > 0.999f && pkKick > 0.999f;
+        if (! lowOk) ++bad;
+        std::printf ("  %s: LOW END: across the bar, the kick's level under 200 Hz is %.3f on its hits and %.3f late in the beat, the bass's %.3f on the kick's hits and %.3f late in the beat, and the bass's pocket takes it to %.2f of its level on "
+                     "a hit and leaves it at %.2f late in the beat (made after the effects: %.2f, the bass at %.3f); with no depth it is a flat line (%.3f), as it is for the kick, which has no pocket (%.3f). Nothing is looked at until the view is up\n",
+                     lowOk ? "ok  " : "FAIL", (double) kickHit, (double) kickLate, (double) bassHit, (double) bassLate, (double) pkHit, (double) pkLate, (double) pkHitPost, (double) bassHitPost, (double) pkNone, (double) pkKick);
+        if (! lowOk) std::printf ("    (unwatched %d)\n", (int) unwatched);
+    }
+}
+
 static void markersTest (int& bad)
 {
     using namespace sf0;
@@ -2945,7 +3187,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -5379,6 +5621,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     markersTest (bad);
     pitchBendTest (bad);
     arrsKeptTest (bad);
+    seeingTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -7144,6 +7387,46 @@ static int uiTest()
         float cut = 0.0f; for (int q = 0; q < Pockets::kParts; ++q) for (int k = 0; k < Pockets::kBands; ++k) cut = std::max (cut, e.pocketsForTests().cutNow (q, k));
         ses.userSet (cx::kPkG, 0.0f); audio (300);
         check (cut > 2.0f && ! e.pocketsForTests().working(), ("with AMOUNT at full the playing rig is carved (up to " + juce::String (cut, 1) + " dB in a band); back at nought, once the last bell has let go, POCKETS is doing nothing again").toRawUTF8());
+    }
+
+    // 2a'. The master's TRIM plate and CLIP knob; and, in a lane's CONFIG, LOW END in the EQ's place: the lane's pocket
+    // dragged there, and made after its effects.
+    {
+        sc.setPage (Screen::pMain); sc.hideConfig(); ses.trimHold (false); sc.testLowView (false); audio (4); draw();      // (every key has been pressed once by now)
+        juce::Point<float> trimAt; int trims = 0, clips = 0;
+        for (auto& h : sc.testHits()) { if (Screen::testIsTrim (h)) { ++trims; trimAt = h.r.getCentre(); } if (Screen::testIsControl (h, cx::kClip)) ++clips; }
+        click (trimAt); draw();
+        const bool heldNow = e.hold();
+        click (trimAt); draw();
+        check (trims == 1 && clips == 1 && heldNow && ! e.hold(), "the master has its CLIP knob and its TRIM plate: pressed, the limiter's trim is held; pressed again, let go");
+        sc.showConfig ({ 0, 5, 0 }); draw();
+        juce::Point<float> lowKey; int lowKeys = 0, graphs = 0;
+        for (auto& h : sc.testHits()) { if (Screen::testIsEqKey (h, -2)) { ++lowKeys; lowKey = h.r.getCentre(); } if (Screen::testIsEqGraph (h)) ++graphs; }
+        click (lowKey); draw(); sc.testTick(); draw();
+        const bool up = sc.testLowIsUp() && e.lowWatched() == 5 && e.eqWatched() < 0;
+        juce::Rectangle<float> low; juce::Point<float> afterKey; int lows = 0, afters = 0, eqLeft = 0;
+        for (auto& h : sc.testHits()) { if (Screen::testIsLow (h)) { ++lows; low = h.r; } if (Screen::testIsEqKey (h, -3)) { ++afters; afterKey = h.r.getCentre(); } if (Screen::testIsEqGraph (h)) ++eqLeft; }
+        const float d0 = e.pocketNow (5, 0), s0 = e.pocketNow (5, 1);
+        dragBy (low.getCentre(), 0.0f, -low.getHeight() * 0.25f); audio (4);
+        const float d1 = e.pocketNow (5, 0), s1 = e.pocketNow (5, 1);
+        dragBy (low.getCentre(), low.getWidth() * 0.25f, low.getHeight() * 0.125f); audio (4);
+        const float d2 = e.pocketNow (5, 0), s2 = e.pocketNow (5, 1);
+        click (afterKey); draw();
+        const bool after = e.pocketNow (5, 2) > 0.5f;
+        click (afterKey); draw();
+        const bool before = e.pocketNow (5, 2) < 0.5f;
+        sc.setInfo (true); draw(); sc.testPointAt (low.getCentre());
+        const auto lowTip = sc.testTip();
+        sc.setInfo (false); draw();
+        click (lowKey); draw(); sc.testTick(); draw();
+        int back = 0;
+        for (auto& h : sc.testHits()) if (Screen::testIsEqGraph (h)) ++back;
+        const bool down = ! sc.testLowIsUp() && e.lowWatched() < 0 && e.eqWatched() == 5;
+        sc.hideConfig(); sc.testTick(); draw();
+        check (lowKeys == 1 && graphs == 1 && up && lows == 1 && afters == 1 && eqLeft == 0 && std::abs (d1 - (d0 - 0.25f)) < 0.01f && std::abs (s1 - s0) < 1.0e-4f && std::abs (d2 - (d1 + 0.125f)) < 0.01f && std::abs (s2 - (s1 + 0.25f)) < 0.01f
+               && after && before && lowTip.contains ("THE LOW END") && back == 1 && down && e.eqWatched() < 0,
+               ("in the bass's CONFIG, LOW END puts the bar's low end in the EQ's place (and only then is it looked at): dragged up a quarter of the graph its pocket is that much shallower (" + juce::String (d0, 2) + " to " + juce::String (d1, 2)
+                + "), down and to the right deeper and longer (" + juce::String (d2, 2) + ", its shape " + juce::String (s1, 2) + " to " + juce::String (s2, 2) + "); AFTER FX switches where it is made; LOW END again, and the EQ is back").toRawUTF8());
     }
 
     // 2b. GLIDE set on the screen, then a snapshot knob turned on the screen: the pushed knobs travel
@@ -10515,6 +10798,18 @@ static int shot (const juce::StringArray& args)
                 juce::Thread::sleep (380);
                 sc.testTick();
             }
+        }
+        if (args.contains ("--lowend")) sc.testLowView (true);      // (the EQ's graph giving its place to LOW END)
+        if (const double secs = arg ("--play", "0").getDoubleValue(); secs > 0.0)
+        {
+            // (--play N: the rig played for N seconds with the screen as it stands, its timer run before and after:
+            // what the meters, the figures and the graphs show then)
+            (void) sc.createComponentSnapshot (sc.getLocalBounds(), false, 0.25f);
+            sc.testTick();
+            e.setRunning (true);
+            juce::AudioBuffer<float> pb (2, 256);
+            for (int i = 0; i < (int) (secs * 187.5); ++i) { pb.clear(); e.render (pb); }
+            sc.testTick();
         }
         img = sc.createComponentSnapshot (sc.getLocalBounds(), false, scale);
     }

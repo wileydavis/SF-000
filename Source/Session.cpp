@@ -81,6 +81,14 @@ void Session::finishSet (int place)
     if (onChange) onChange();
 }
 void Session::finishStep() { finishSet ((finishAt + 1) % 5); }
+
+// The limiter's trim, learnt and held (to what the last minute's loudest asks for, or to a figure), or let go again.
+void Session::trimHold (bool on, float db)
+{
+    engine.setHold (on, db);
+    touch();
+    if (onChange) onChange();
+}
 juce::String Session::finishSays() const { return finishAt == 0 ? juce::String ("FINISH OFF") : "FINISH " + juce::String (finishPct()); }
 
 // ------------------------------------------------------------------------------------ TRANSITION
@@ -2215,13 +2223,12 @@ static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, En
     if (! own) for (auto& kv : engine.sampleOwnOff (t)) st.push_back (kv);
     // (and what came later still, where the state does not name it: LOOP, PERC's sample, the slice markers. A marker
     // not in use is never written, so a state that names none has none: it is not left with the one before's.)
-    if (t.kind == 0)
-        for (auto& d : engine.laterOff (t))
-        {
-            bool named = false;
-            for (auto& kv : st) named = named || kv.first == d.first;
-            if (! named) st.push_back (d);
-        }
+    for (auto& d : engine.laterOff (t))
+    {
+        bool named = false;
+        for (auto& kv : st) named = named || kv.first == d.first;
+        if (! named) st.push_back (d);
+    }
     return st;
 }
 
@@ -4877,6 +4884,7 @@ var Session::stateVar (bool withChips)
     root->setProperty ("recallNotes", recallNotes);
     root->setProperty ("transition", transToVar());
     root->setProperty ("finish", finishPct());
+    if (engine.hold()) root->setProperty ("hold", engine.heldDb());          // (the limiter's trim, held: at what. Not there: it follows the set)
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
     root->setProperty ("files", fl);
@@ -5171,7 +5179,7 @@ void Session::takeState (const var& root)
 {
     settleHolds();                  // (a lane held between two instruments by a knob: the file says which one it has)
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "hold", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -5304,6 +5312,8 @@ void Session::takeState (const var& root)
     // (FINISH: how much of it, in hundredths; the place nearest that. A set from before it had one: off)
     finishAt = juce::jlimit (0, 4, (int) std::lround ((double) root.getProperty ("finish", 0) / 25.0));
     finishApply();
+    // (the limiter's trim: held at a figure, or following the set, as a set from before it could be held does)
+    if (root.hasProperty ("hold")) engine.setHold (true, juce::jlimit (-12.0f, 12.0f, (float) (double) root.getProperty ("hold", 0.0))); else engine.setHold (false);
     // The samples. What is written is turned into a path to read: a copy in the library by where
     // the library is now; a file written whole (by a build from before copies were kept) is
     // copied in now if it is still where it was, and read from its copy from here on.

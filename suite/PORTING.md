@@ -102,6 +102,16 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   first (`Source/CueRig.h`): on the shared block it ducked under the first rig's kick, and
   would have written its key and its lanes' energies where the first reads them. The suite
   has no such process and nothing there changes. See DECISIONS 598.
+- **Eighty-fourth build, all marked `(SF-000)`. None of it is in the suite.** `core/Module.h`:
+  `meter (int)`, a figure a module reports to its host. `modules/Master.cpp` (LIMIT): `meter`
+  (0 the limiter's gain reduction, 1 what the clipper takes off the block's loudest sample, 2
+  the automatic trim, 3 the true peak, 4 the trim the last minute's loudest asks for); `hold`
+  and `held`, appended: the trim held at a figure. `modules/FxTime.cpp` (REVERB) and
+  `modules/Terroir.cpp`: `duck_for`, appended: DUCK for the kick and the source, the kick, or
+  the source. `modules/Synth.cpp`, `Voice.cpp`, `Drums.cpp` (RUMBLE): `pocket_post`, appended:
+  the instrument leaves its pocket to the host (depth 0 given to `RoleOutput::process`), which
+  makes it after the lane's effects with the same `Pocket`. `core/Pocket.h`: `idle()`. The
+  pocket's own arithmetic is untouched. See DECISIONS 722 to 726.
 - **Seventy-ninth build, all marked `(SF-000)`. None of it is in the suite.**
   `modules/Synth.cpp`: GRANULAR's own parameters (`gr_pos` ... `gr_sync`, appended to the enum
   and the list) and its block rewritten around them (the same sound where they start; the

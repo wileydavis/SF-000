@@ -182,7 +182,8 @@ class TerroirModule : public Module, private juce::Thread
 public:
     enum { SIZE, DECAY, DARK, PREDELAY, DUCK, FREEZE, THROW, MIX, PLACE, LENGTH, REVERSE, START, WIDTH, LOCUT, DUCKSHAPE, INPUT, DRYON, IMPORT,
            // (SF-000) BANDS: three places across the spectrum, each with its own level, decay and size
-           BANDS, XLOW, XHIGH, B1PLACE, B1LEVEL, B1DECAY, B1SIZE, B2PLACE, B2LEVEL, B2DECAY, B2SIZE, B3PLACE, B3LEVEL, B3DECAY, B3SIZE };
+           BANDS, XLOW, XHIGH, B1PLACE, B1LEVEL, B1DECAY, B1SIZE, B2PLACE, B2LEVEL, B2DECAY, B2SIZE, B3PLACE, B3LEVEL, B3DECAY, B3SIZE,
+           DUCKFOR };       // (SF-000) what DUCK makes room for: the kick and the source, or one alone
     static constexpr int kBands = 3, kPerBand = 4;
     static constexpr int kSlots = 8;
     static constexpr double kMaxIrSec = 16.0;
@@ -238,7 +239,8 @@ public:
                  knob ("bx_high", "MID/HIGH", 1000.0f, 12000.0f, 2500.0f, "Hz", 3500.0f),
                  bandPlace ("b1_place"), knob ("b1_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b1_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b1_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f),
                  bandPlace ("b2_place"), knob ("b2_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b2_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b2_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f),
-                 bandPlace ("b3_place"), knob ("b3_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b3_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b3_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f) };
+                 bandPlace ("b3_place"), knob ("b3_level", "LEVEL", -24.0f, 12.0f, 0.0f, "dB"), knob ("b3_decay", "DECAY", 0.1f, 1.0f, 1.0f, "%"), knob ("b3_size", "SIZE", 0.5f, 2.0f, 1.0f, "%", 1.0f),
+                 choice ("duck_for", "DUCK FOR", { "KICK AND SOURCE", "KICK", "SOURCE" }, 0) };       // (SF-000)
     }
     static ParamSpec bandPlace (const char* id) { return choice (id, "PLACE", { "PLACE", "1", "2", "3", "4", "5", "6", "7", "8" }, 0); }
     // What a dropped or loaded file is (ir::Source): AUTO decides and says what it took it for; IR
@@ -441,8 +443,9 @@ public:
             wl[i] = mid + side; wr[i] = mid - side;
         }
         // The wet path is already Pocket::kLatency late: the pocket shapes it without delaying it.
-        const float duck = c.v (DUCK);
-        pocket.process (c, wet.getArrayOfWritePointers(), 2, n, duck, c.v (DUCKSHAPE), nullptr, duck > 0.001f, false, false);
+        const int duckFor = c.ci (DUCKFOR);
+        const float duckKick = duckFor == 2 ? 0.0f : c.v (DUCK), duck = duckFor == 1 ? 0.0f : c.v (DUCK);     // (SF-000) the kick's share, the source's
+        pocket.process (c, wet.getArrayOfWritePointers(), 2, n, duckKick, c.v (DUCKSHAPE), nullptr, duckKick > 0.001f, false, false);
         const float mix = c.v (MIX), dryT = c.b (DRYON) ? 1.0f : 0.0f;
         for (int i = 0; i < n; ++i)
         {

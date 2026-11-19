@@ -294,6 +294,7 @@ public:
            // (SF-000) SAMPLE's: what a note chooses, the loop, and where a note starts
            SNOTES, SLOOP, SXFADE, SVELSTART, SRANDSTART,
            SCUTS, SCUTLAST = SCUTS + kCuts,      // (SF-000) MARKERS and the 32 slice markers
+           PPOST,                                // (SF-000) the pocket left to the host, to make after the lane's effects
            kParams };
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
@@ -416,6 +417,9 @@ public:
         p.push_back (pct ("smp_vel", "VEL START", 0.0f).noPreset().sampleGroup());
         p.push_back (pct ("smp_rand", "RANDOM START", 0.0f).noPreset().sampleGroup());
         p = withCuts (std::move (p));        // (SF-000) the slice markers
+        // (SF-000) POCKET AFTER FX: the pocket is not made here. The host makes the same one after the lane's inserts and
+        // its EQ, from POCKET DEPTH and POCKET SHAPE, so that an effect's tail has the hole too.
+        p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -817,7 +821,7 @@ public:
         ens.process (L, R, c.n, ensembleAmt * c.v (SPACE) * 2.0f);
         split.monoLows (L, R, c.n, k0, k1);
         driftClock += (double) c.n / sr;
-        out.process (c, io, FILT, -1, c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
+        out.process (c, io, FILT, -1, c.b (PPOST) ? 0.0f : c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
         int act = 0; for (auto& v : voices) act += v.active ? 1 : 0;
         activeVoices = act;
     }

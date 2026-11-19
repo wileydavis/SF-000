@@ -606,7 +606,7 @@ ModulePtr makeLOWEND() { return std::make_unique<LowEndModule>(); }
 class LimitModule : public Module
 {
 public:
-    enum { TARGET, CEILING, CLIP, INPUT, RELEASE, AUTO, RESET, AUTOMODE };
+    enum { TARGET, CEILING, CLIP, INPUT, RELEASE, AUTO, RESET, AUTOMODE, HOLD, HELD };     // (SF-000) HOLD, HELD
     std::string id() const override { return "LIMIT"; }
     std::vector<ParamSpec> params() const override
     {
@@ -617,8 +617,14 @@ public:
                  knob ("release", "RELEASE", 20.0f, 500.0f, 120.0f, "ms", 120.0f).prim(),
                  toggle ("auto", "AUTO").prim(),
                  momentary ("reset", "RESET").prim(),
-                 choice ("auto_mode", "AUTO MODE", { "DOWN ONLY", "UP AND DOWN" }, 0) };
+                 choice ("auto_mode", "AUTO MODE", { "DOWN ONLY", "UP AND DOWN" }, 0),
+                 // (SF-000) Learn and hold. HOLD on: the automatic trim goes to HELD (6 dB a second at most) and stays
+                 // there, whatever plays: a breakdown is as quiet as it is, and the drop comes back where it was. The
+                 // host sets HELD to what the last minute's loudest asks for as it turns HOLD on (meter 4).
+                 toggle ("hold", "HOLD").noPreset(),
+                 knob ("held", "HELD TRIM", -12.0f, 12.0f, 0.0f, "dB").noPreset().noGlide() };
     }
+    float meter (int k) const override { return k == 0 ? dGr.load() : k == 1 ? dClip.load() : k == 2 ? dIn.load() : k == 3 ? dTp.load() : k == 4 ? dWant.load() : 0.0f; }
     int latency() const override { return (int) std::lround (os.latency() + TruePeak::kDelay + look - 1); }
     double tailSeconds() const override { return 0.1; }
     void prepare (double rate, int) override
@@ -685,7 +691,14 @@ public:
         float loud = fed >= whole ? secMax : rawSt;
         for (const float h : hist) loud = std::max (loud, h);
         const float inLufs = rawSt + c.v (INPUT), loudLufs = loud + c.v (INPUT);
-        if (c.b (AUTO) && inLufs > -40.0f)
+        // (SF-000) what the loudest of the last minute asks of the trim, whether or not it is being followed
+        if (loudLufs > -60.0f) { float w = juce::jlimit (-12.0f, 12.0f, c.v (TARGET) - loudLufs); if (c.ci (AUTOMODE) == 0) w = std::min (0.0f, w); dWant = w; }
+        if (c.b (HOLD))
+        {
+            const float step = c.v (HELD) - autoGainDb, most = 6.0f * (float) c.n / (float) sr;
+            autoGainDb += juce::jlimit (-most, most, step);
+        }
+        else if (c.b (AUTO) && inLufs > -40.0f)
         {
             float want = juce::jlimit (-12.0f, 12.0f, c.v (TARGET) - loudLufs);
             if (c.ci (AUTOMODE) == 0) want = std::min (0.0f, want);
@@ -697,12 +710,13 @@ public:
         const float g0 = gIn, g1 = dbToGain (c.v (INPUT) + (c.b (AUTO) ? autoGainDb : 0.0f));
         gIn = g1;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
-        float grMax = 0.0f;
+        float grMax = 0.0f, inMax = 0.0f;
         const int delayC = TruePeak::kDelay + look - 1;
         for (int i = 0; i < c.n; ++i)
         {
             const float ig = g0 + (g1 - g0) * (float) i / (float) c.n;
             preMeter.push (L[i], R[i]);
+            inMax = std::max (inMax, std::max (std::fabs (L[i]), std::fabs (R[i])) * ig);        // (SF-000) what the clipper is given
             const float cl = os.process (0, L[i] * ig, clipper);
             const float cr = os.process (1, R[i] * ig, clipper);
             // Gain needed for the true peak of the clipped signal (TruePeak::kDelay samples ago),
@@ -731,6 +745,8 @@ public:
             grMax = std::max (grMax, -gainToDb (ga));
         }
         dGr = grMax; dTp = gainToDb (tpMax); dIn = c.b (AUTO) ? autoGainDb : 0.0f;
+        // (SF-000) what the clipper takes off this block's loudest sample (its curve at that level)
+        dClip = clipOn && inMax > knee ? gainToDb (inMax / (knee + span * fastTanh ((inMax - knee) / span))) : 0.0f;
         dMom = outMeter.momentary; dShort = outMeter.shortTerm; dInt = outMeter.integrated;
     }
     int displayHeight() const override { return 100; }
@@ -778,6 +794,7 @@ private:
     int histPos = 0, secLeft = 48000, liftWait = 144000, fed = 0;       // (fed: SF-000)
     bool resetWas = false;
     std::atomic<float> dShort { -70 }, dInt { -70 }, dMom { -70 }, dTp { -70 }, dGr { 0 }, dIn { 0 };
+    std::atomic<float> dClip { 0 }, dWant { 0 };        // (SF-000)
 };
 ModulePtr makeLIMIT() { return std::make_unique<LimitModule>(); }
 

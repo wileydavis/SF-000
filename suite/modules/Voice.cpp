@@ -15,14 +15,14 @@ class VoiceModule : public Module
 {
 public:
     // SSTART: the phrase's START; END, FADE IN, FADE OUT follow (sampleRegionParams).
-    enum { SIGNAL, TONE, GATE, DENS, FILT, ECHO, DRIVE, LEVEL, MODEL, SLICEMODE, TUNE, ECHOTIME, ECHOFB, PDEPTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SCUTS };      // (SF-000) GAIN, NORMALISE, MARKERS (and the 32 after it)
+    enum { SIGNAL, TONE, GATE, DENS, FILT, ECHO, DRIVE, LEVEL, MODEL, SLICEMODE, TUNE, ECHOTIME, ECHOFB, PDEPTH, PSHAPE, ESPACE, ALLOCON, KEYFOLLOW, SSTART, SGAIN = SSTART + 4, SNORM, SCUTS, PPOST = SCUTS + kCuts + 1 };      // (SF-000) GAIN, NORMALISE, MARKERS (and the 32 after it), POCKET AFTER FX
     std::string id() const override { return "VOICE"; }
     bool instrument() const override { return true; }
     int latency() const override { return Pocket::kLatency; }
     double tailSeconds() const override { return 10.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withCuts (withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
+        auto p = withCuts (withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("gate", "GATE", 0.6f).prim(),
                  pct ("density", "DENSITY", 0.0f).prim().dir (1),
@@ -40,6 +40,8 @@ public:
                  choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })));
+        p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
+        return p;
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP PHRASE (C3 = SLICE 1)"; }
@@ -201,7 +203,7 @@ public:
             L[i] = xl + yl * 0.9f;
             R[i] = xr + yr * 0.9f;
         }
-        out.process (c, io, FILT, -1, c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
+        out.process (c, io, FILT, -1, c.b (PPOST) ? 0.0f : c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
         dispSlice = play.active ? play.slice : -1;
     }
 

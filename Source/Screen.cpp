@@ -57,11 +57,12 @@ Screen::Screen (Session& s)
     setOpaque (true);
     setWantsKeyboardFocus (true);
     lastShown.fill (-1.0f);
+    laneLu.fill (-70); lowPkSeen.fill (1.0f);
     ses.onChange = [this] { cfgStale = true; repaint(); };
     startTimerHz (30);
 }
 
-Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullptr; eng.watchPockets (false); }
+Screen::~Screen() { cancelPendingUpdate(); stage = nullptr; ses.onChange = nullptr; eng.watchPockets (false); eng.watchEq (-1); eng.watchLow (-1); }
 
 void Screen::setPage (Page p)
 {
@@ -583,8 +584,8 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
     }
     if (ctl >= cx::kMaster)
     {
-        static const char* const ids[4] = { "tape", "comp", "limit", "gain" };
-        where = "MASTER"; what = help::param ("MASTER", ids[juce::jlimit (0, 3, ctl - cx::kMaster)]);
+        static const char* const ids[5] = { "tape", "comp", "limit", "gain", "clip" };
+        where = "MASTER"; what = help::param ("MASTER", ids[juce::jlimit (0, 4, ctl - cx::kMaster)]);
         return true;
     }
     if (ctl >= cx::kRetMS) { where = ctl - cx::kRetMS < 2 ? "RETURN A, THE DUB DELAY" : "RETURN B, THE SPACE"; what = help::param ("LANE", (ctl - cx::kRetMS) % 2 == 0 ? "mute" : "solo"); return true; }
@@ -722,12 +723,21 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             below = true;
             break;
         }
-        case hEq: case hEqBand: case hEqType: case hEqLane:
+        case hLow: case hEq: case hEqBand: case hEqType: case hEqLane:
+            if (h.kind == hLow || (h.kind == hEqLane && lowView))
+            {
+                t.title = "THE LOW END";
+                body = "ONE BAR, LEFT TO RIGHT, AND WHAT IS UNDER 200 HZ OF THE KICK, THE BASS, THE RUMBLE AND THIS LANE (WHITE) AS EACH REACHES THE MIX: AFTER ITS EFFECTS, ITS EQ AND ITS POCKET. WHERE TWO SHAPES STAND ON THE SAME PART OF THE BAR, THEY SHARE THE SUBS THERE. "
+                       "THE YELLOW HANGING FROM THE TOP IS THIS LANE'S POCKET: HOW FAR THE KICK TAKES THE LANE DOWN, AND FOR HOW LONG (THE KICK'S OWN DECAY, TURNED OVER). DRAG ON THE BAR: DOWN, A DEEPER POCKET (ITS DEPTH); RIGHT, A LONGER ONE (ITS SHAPE). "
+                       "AFTER FX MAKES THE POCKET AFTER THE LANE'S INSERT EFFECTS AND EQ, SO THAT A REVERB'S OR A DELAY'S TAIL IS HELD OUT OF THE KICK TOO; OFF, IT IS MADE IN THE INSTRUMENT, AND THE EFFECTS RING ON THROUGH IT. THE KEYS DOWN THE LEFT SHOW OR HIDE A LANE. LOW END AGAIN: THE EQ.";
+                break;
+            }
             t.title = "THE LANE'S EQ";
             body = "EIGHT BANDS. THE YELLOW LINE IS WHAT THE EQ DOES; THE WHITE SHAPE IS WHAT THIS LANE IS PLAYING, AND THE COLOURED SHAPES ARE WHAT EVERY OTHER LANE IS PLAYING: WHERE THEY LIE ON TOP OF EACH OTHER IS WHERE THEY FIGHT. "
                    "THE KEYS DOWN THE LEFT, A LANE EACH IN ITS OWN COLOUR, SHOW OR HIDE THAT LANE'S SHAPE; OTHERS SHOWS OR HIDES THEM ALL (WITH OTHERS OFF, A LANE'S KEY SHOWS THAT LANE ALONE). "
                    "DRAG A BAND'S POINT LEFT AND RIGHT FOR ITS FREQUENCY, UP AND DOWN FOR ITS GAIN (A CUT'S OR A NOTCH'S WIDTH); THE WHEEL IS ITS WIDTH; DOUBLE-CLICK A POINT TO PUT IT BACK, OR THE GRAPH TO PUT A FREE BAND THERE. "
                    "THE NUMBERED KEYS CHOOSE A BAND AND THE KEYS BESIDE THEM SAY WHAT IT IS: OFF, A BELL, A LOW OR HIGH SHELF, A LOW OR HIGH CUT (TWO ON ONE PLACE FOR A STEEPER ONE), A NOTCH. BANDS 1, 4 AND 7 ARE THE PANEL'S LOW, MID AND HIGH KNOBS. "
+                   "BESIDE THE BAND'S NAME, WHAT THE EQ COSTS THE LANE OR ADDS TO IT: ITS LEVEL AFTER THE EQ AGAINST BEFORE IT, AS IT PLAYS. LOW END PUTS THE BAR'S LOW END, AND THIS LANE'S POCKET, IN THE GRAPH'S PLACE. "
                    "A SNAPSHOT KEEPS ALL OF IT, AND THE E16 HAS IT ON THE LAST PAGES OF CONFIG.";
             below = true;
             break;
@@ -905,7 +915,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aArrRemove, "REMOVE", "TAKES THE CHOSEN PART OUT OF THE ARRANGEMENT. ITS SNAPSHOT STAYS IN THE LIBRARY." },
                 { aArrClear, "CLEAR", "HELD UNTIL IT IS FULL OF LIGHT: TAKES EVERY PART OUT." },
                 { aArrPrint, "PRINT", "RENDERS THE ARRANGEMENT TO FILES, FASTER THAN IT PLAYS AND THE SAME EVERY TIME: THE TRACK (24-BIT, BAR 1 ON ITS FIRST SAMPLE, WHAT RINGS ON AFTER THE LAST BAR KEPT) AND EVERY LANE AND RETURN BESIDE IT, IN A FOLDER OF ITS OWN WHERE TAKES GO. IT IS MADE ON A RIG OF ITS OWN FROM THE SESSION AS IT STANDS, SO THIS ONE IS NOT TOUCHED; THE SOUND STOPS UNTIL IT IS DONE. EACH PART BRINGS ITS OWN NOTES; THE SNAPSHOT KNOBS STAND WHERE THEY ARE AND MOTION RUNS. PRESSED WHILE IT PRINTS: STOP." },
-                { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER BESIDE IT IS AMOUNT." },
+                { aPockets, "POCKETS", "THE MASTER'S PAGE FOR WHO HAS WHICH PART OF THE SPECTRUM: EVERY LANE'S POCKET ON A MAP OF THE MIX, WHAT EACH IS PLAYING AND WHAT IS BEING TAKEN FROM IT. P ON THE KEYBOARD TOO; ON THE E16, OPEN TWICE WITH THE MASTER IN FRONT (ITS CONFIG PAGES THEN HOLD EVERY LANE'S HOME, WIDTH, YIELD AND HOLD). THE NUMBER ON ITS KEY IS AMOUNT." },
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
                 { aResample, "RESAMPLE", "THE LAST FOUR BARS THE RIG PLAYED BECOME THIS LANE'S SAMPLE: THE WHOLE OUTPUT, FROM A BAR LINE, WRITTEN INTO THE LIBRARY'S SAMPLES AS \"RESAMPLE\" AND THE TIME, AND LOADED AS LOAD WOULD. WHAT THE RIG JUST PLAYED IS THEN SOMETHING TO SLICE (SAMPLE, NOTES: SLICES), LOOP, OR MAKE GRAINS OF (GRANULAR; SYNC 4 BARS HOLDS IT TO THE TEMPO). THE LANE'S MODEL IS LEFT AS IT IS." },
@@ -913,6 +923,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aTransFire, "FIRE", "TRANSITION (T). SETS OFF A LEAD-IN THAT ENDS ON THE NEXT BAR LINE AND A HIT THAT LANDS ON IT, WHENEVER IT IS PRESSED: THE MACHINE KEEPS THE TIME. LINES ARE EVERY 4, 8 OR 16 BARS; UNDER A BEAT FROM ONE, IT IS THE ONE AFTER. WHILE IT IS ON ITS WAY THE KEY IS LIT AND SAYS THE BARS LEFT. WITH THE CLOCK STOPPED THE HIT PLAYS AT ONCE." },
                 { aTransArm, "ARM", "TRANSITION (G). LIT: THE NEXT RECALL, MUTE OR SOLO DOES NOT HAPPEN AT ONCE. IT SETS THE TRANSITION OFF AND HAPPENS ON THE LINE THE TRANSITION LANDS ON, WITH WHATEVER ELSE IS ASKED FOR MEANWHILE (THE NUMBER WAITING IS SHOWN). ARM THEN GOES OUT. PUT OUT BY HAND, WHAT WAITS HAPPENS AT ONCE." },
                 { aTransBars, "BARS", "TRANSITION: HOW FAR APART ITS LINES ARE. 4, 8 OR 16 BARS." },
+                { aTrimHold, "TRIM", "THE LIMITER TRIMS ITS OWN INPUT, SLOWLY, TOWARDS WHAT LIMIT IS SET TO: THIS PLATE SAYS BY HOW MUCH, NOW. PRESSED, THAT IS LEARNT AND HELD: THE TRIM GOES TO WHAT THE LOUDEST OF THE LAST MINUTE ASKS FOR AND STAYS THERE (HELD, AMBER), SO A BREAKDOWN IS NOT LIFTED AND THE DROP AFTER IT NOT PULLED DOWN. PLAY THE LOUDEST PART OF THE SET, PRESS IT, AND THE LEVEL IS FIXED FOR THE NIGHT: FROM THEN WHAT IS PLAYED LOUDER COMES OUT LOUDER, UP TO WHAT THE LIMITER WILL TAKE, AND LIMIT'S KNOB MOVES NOTHING. PRESSED AGAIN: IT FOLLOWS THE SET AND LIMIT AGAIN. KEPT WITH THE SET." },
                 { aFinish, "FINISH", "THE MASTER'S LAST STAGE BEFORE ITS LIMITER, STEPPED BY A PRESS: OFF, 25, 50, 75, 100. IT HOLDS THE MIX IN THREE BANDS (THE MIDDLE ONE MOST, GENTLY AND FROM FAR DOWN; THE LOWS HARDLY; THE HIGHS ONLY WHEN THEY ARE LOUD), ADDS A LITTLE HARMONIC TO EACH, LIFTS THE MIDDLE OF THE SPECTRUM A DECIBEL AND EASES THE TOP, AND OPENS THE SIDES WHERE THEY ARE BRIGHT. IT FINDS ITS OWN LEVEL FROM THE LOUDEST OF THE LAST MINUTE, SO IT DOES THE SAME TO A QUIET SET AS TO A LOUD ONE. IT DOES NOT MAKE THE SET LOUDER: LIMIT DOES THAT. KEPT WITH THE SET, AND IN A PRINT." },
                 { aTransLevel, "LEVEL", "TRANSITION: HOW LOUD ITS LEAD-IN AND ITS HIT ARE, INTO THE MIX BEFORE THE MASTER." },
                 { aTransLead, "LEAD-IN", "TRANSITION: WHAT ENDS ON THE LINE. OFF, THE BUILT-IN RISER, OR A FILE DROPPED ON THIS PLATE (IT STARTS WHEN IT MUST TO END ON THE LINE; WITH LESS TIME THAN IT IS LONG, PART WAY IN)." },
@@ -1237,7 +1248,7 @@ void Screen::drawMain (G& g)
     const float left = cfgT > 0.001f ? std::max (9.0f, std::floor (cfgR.getRight())) : 9.0f;
     // (lit: the rows pass out of sight short of the case's rolled edge)
     rowsClip = lit ? R (std::max (left, 17.0f), 64, 1712.0f - std::max (left, 17.0f), 912) : R (left, 64, 1710.0f - left, 912);
-    if (collect) masterRect = {};
+    if (collect) { masterRect = {}; for (auto& lr : laneLuRect) lr = {}; }
     {
         const juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (rowsClip.getSmallestIntegerContainer());
@@ -1532,6 +1543,8 @@ void Screen::drawConfig (G& g, R r)
 void Screen::drawEq (G& g, R r)
 {
     eqRect = r;
+    if (lowView) { drawLow (g, r); return; }
+    lowGraph = {};
     const int l = cfg.lane;
     eqSel = juce::jlimit (0, Engine::kEqBands - 1, eqSel);
     const auto sel = eng.eqBand (l, eqSel);
@@ -1546,7 +1559,17 @@ void Screen::drawEq (G& g, R r)
             if (Engine::eqHasGain (sel.type)) says << "   " << (sel.db > 0.0f ? "+" : "") << String (sel.db, 1) << " DB";
             says << "   Q " << String (sel.q, 2);
         }
-        plate (g, x, r.getY(), says, fNote, 6, col::white, col::black);
+        x += plate (g, x, r.getY(), says, fNote, 6, col::white, col::black) + 4;
+        // what the EQ costs this lane, or adds: its level after the EQ against before it, over the last second or two
+        if (std::abs (eqCostShown) >= 0.05f && x + 100 < r.getRight() - 152)
+            plate (g, x, r.getY(), (eqCostShown < 0.0f ? "COSTS " : "ADDS ") + String (std::abs (eqCostShown), 1) + " DB", fNote, 6, eqCostShown < -3.0f ? col::amber : col::white, col::black);
+    }
+    {
+        // LOW END: the graph gives its place to the bar's low end, and this lane's pocket over it
+        const R kr (r.getRight() - 150, r.getY() + 1, 72, 24);
+        key (g, kr, col::white, 2.0f);
+        text (g, "LOW END", kr, fLbl, col::black);
+        hit (kr.expanded (1), hEqLane, -2, 0);
     }
     {
         // OTHERS: the other lanes' spectra behind this one's, shown or hidden
@@ -1688,6 +1711,112 @@ void Screen::drawEq (G& g, R r)
     }
 }
 
+// The low end, in the EQ's place: one bar from left to right, and what is under 200 Hz of the kick, the bass, the rumble
+// and this lane as each reaches the mix (after its effects, its EQ and its pocket). Over it, from the top, this lane's
+// pocket: how far down it takes the lane, and for how long. Dragged, that is its DEPTH and its SHAPE.
+void Screen::drawLow (G& g, R r)
+{
+    const int l = cfg.lane;
+    const bool has = Engine::pocketDepthId (l) != nullptr;
+    const float depth = eng.pocketNow (l, 0), shape = eng.pocketNow (l, 1);
+    const bool post = eng.pocketNow (l, 2) > 0.5f;
+    float x = r.getX() + plate (g, r.getX(), r.getY(), "LOW END", fLegend, 8, col::white, col::black) + 4;
+    plate (g, x, r.getY(), has ? "UNDER 200 HZ   DEPTH " + String ((int) std::lround (depth * 100.0f)) + "   SHAPE " + String ((int) std::lround (shape * 100.0f)) + (post ? "   AFTER FX" : "   BEFORE FX")
+                               : String ("UNDER 200 HZ   NO POCKET ON THIS LANE"), fNote, 6, col::white, col::black);
+    {
+        // (its key where it is on the EQ: pressed again, the EQ is back)
+        const R kr (r.getRight() - 150, r.getY() + 1, 72, 24);
+        key (g, kr, col::yellow, 6.0f);
+        text (g, "LOW END", kr, fLbl, col::black);
+        hit (kr.expanded (1), hEqLane, -2, 0);
+    }
+    if (lowShown == 0) for (int q = 0; q < kLanes; ++q) { const String m (lanes()[(size_t) q].module); if (m == "KICK" || m == "BASS" || m == "RUMBLE") lowShown |= 1u << q; }
+    auto colourOf = [] (int lane) { return Colour::fromHSV ((float) lane / (float) kLanes, 0.60f, 1.0f, 1.0f); };
+    const R gr (r.getX() + 32, r.getY() + 32, r.getWidth() - 34, r.getHeight() - 32 - 30);
+    {
+        const float kh = gr.getHeight() / (float) kLanes;
+        for (int q = 0; q < kLanes; ++q)
+        {
+            const R kr (r.getX() + 1, gr.getY() + (float) q * kh, 28, kh - 2.0f);
+            const bool out = q != l && (lowShown & (1u << q)) == 0;
+            if (vis (g, kr))
+            {
+                g.setColour (q == l ? juce::Colours::white : out ? Colour (0xff2a2b2a) : colourOf (q));
+                g.fillRoundedRectangle (kr, 3.0f);
+                g.setColour (out ? colourOf (q).withAlpha (0.8f) : juce::Colours::black); g.setFont (fLbl);
+                g.drawText (String (q + 1), kr, juce::Justification::centred, false);
+            }
+            if (q != l) hit (kr, hEqLane, q, 0);
+        }
+    }
+    eqGraph = {}; lowGraph = gr;
+    if (has) hit (gr, hLow, l, 0);
+    const float span = 36.0f;       // (decibels, top to bottom: the levels up from the bottom, the pocket down from the top)
+    if (vis (g, r))
+    {
+        const juce::Graphics::ScopedSaveState state (g);
+        g.setColour (Colour (0xff0b0c0b)); g.fillRoundedRectangle (gr, 3.0f);
+        g.reduceClipRegion (gr.getSmallestIntegerContainer());
+        g.setFont (fLbl);
+        for (int s = 0; s < 16; ++s)
+        {
+            const float gx = gr.getX() + gr.getWidth() * (float) s / 16.0f;
+            g.setColour (juce::Colours::white.withAlpha (s % 4 == 0 ? 0.22f : 0.07f));
+            g.fillRect (R (gx, gr.getY(), 1.0f, gr.getHeight()));
+            if (s % 4 == 0) { g.setColour (juce::Colours::white.withAlpha (0.45f)); g.drawText (String (s / 4 + 1), R (gx + 4, gr.getBottom() - 14, 20, 12), juce::Justification::centredLeft, false); }
+        }
+        for (int db = -12; db > -(int) span; db -= 12)
+        {
+            const float gy = gr.getY() - gr.getHeight() * (float) db / span;
+            g.setColour (juce::Colours::white.withAlpha (0.08f)); g.fillRect (R (gr.getX(), gy, gr.getWidth(), 1.0f));
+            g.setColour (juce::Colours::white.withAlpha (0.40f));
+            g.drawText (String (juce::CharPointer_UTF8 ("\xe2\x88\x92")) + String (-db), R (gr.getRight() - 34, gy - 13, 30, 12), juce::Justification::centredRight, false);
+        }
+        auto xOf = [&] (int b) { return gr.getX() + gr.getWidth() * ((float) b + 0.5f) / (float) Engine::kLowBins; };
+        auto yOf = [&] (float amp) { return gr.getBottom() - gr.getHeight() * juce::jlimit (0.0f, 1.0f, (juce::Decibels::gainToDecibels (amp, -100.0f) + span) / span); };
+        for (int pass = 0; pass < 2; ++pass)
+            for (int q = 0; q < kLanes; ++q)
+            {
+                if ((pass == 1) != (q == l)) continue;
+                if (q != l && (lowShown & (1u << q)) == 0) continue;
+                juce::Path p;
+                bool any = false;
+                p.startNewSubPath (gr.getX(), yOf (lowSeen[(size_t) q][0]));
+                for (int b = 0; b < Engine::kLowBins; ++b) { const float a = lowSeen[(size_t) q][(size_t) b]; any = any || a > 0.016f; p.lineTo (xOf (b), yOf (a)); }
+                p.lineTo (gr.getRight(), yOf (lowSeen[(size_t) q][(size_t) Engine::kLowBins - 1]));
+                if (! any) continue;
+                juce::Path fill (p);
+                fill.lineTo (gr.getRight(), gr.getBottom()); fill.lineTo (gr.getX(), gr.getBottom()); fill.closeSubPath();
+                const Colour c = q == l ? juce::Colours::white : colourOf (q);
+                g.setColour (c.withAlpha (q == l ? 0.22f : 0.16f)); g.fillPath (fill);
+                g.setColour (c.withAlpha (q == l ? 0.90f : 0.75f)); g.strokePath (p, juce::PathStrokeType (q == l ? 1.5f : 1.1f));
+            }
+        if (has)
+        {
+            // the pocket: the lane's level taken down by this much, here in the bar (the yellow hangs from the top)
+            auto yPk = [&] (float gain) { return gr.getY() + gr.getHeight() * juce::jlimit (0.0f, 1.0f, -juce::Decibels::gainToDecibels (gain, -100.0f) / span); };
+            juce::Path p;
+            p.startNewSubPath (gr.getX(), yPk (lowPkSeen[0]));
+            for (int b = 0; b < Engine::kLowBins; ++b) p.lineTo (xOf (b), yPk (lowPkSeen[(size_t) b]));
+            p.lineTo (gr.getRight(), yPk (lowPkSeen[(size_t) Engine::kLowBins - 1]));
+            juce::Path fill (p);
+            fill.lineTo (gr.getRight(), gr.getY()); fill.lineTo (gr.getX(), gr.getY()); fill.closeSubPath();
+            g.setColour (Colour (0xffe8c547).withAlpha (0.20f)); g.fillPath (fill);
+            g.setColour (Colour (0xffe8c547)); g.strokePath (p, juce::PathStrokeType (2.0f));
+        }
+    }
+    // under it: where this lane's pocket is made, and what the hand does on the graph
+    const float ky = r.getBottom() - 25;
+    if (has)
+    {
+        const R kr (r.getX(), ky, 86, 22);
+        key (g, kr, post ? col::yellow : col::white, post ? 6.0f : 2.0f);
+        text (g, "AFTER FX", kr, fLbl, col::black);
+        hit (kr.expanded (1), hEqLane, -3, 0);
+        text (g, "DRAG ON THE BAR: DOWN, A DEEPER POCKET; RIGHT, A LONGER ONE", R (r.getX() + 96, ky, r.getWidth() - 98, 22), fNote, col::black, juce::Justification::centredLeft);
+    }
+}
+
 // ---- LOAD: folders and sound files, in CONFIG's panel
 void Screen::openLoad()
 {
@@ -1791,6 +1920,18 @@ void Screen::drawLane (G& g, int l, R r)
         }
         hit (dr, hLane, l, 0);
         chan (g, x0 + 129, y0, l + 1);
+        if (! info)
+        {
+            // beside its name, how loud it is as it reaches the mix: short-term LUFS (INFO: its channel is here)
+            const R lr (x0 + 128, y0, 40, 26);
+            if (collect) if (const R sr = lr.translated (shift, 0.0f).getIntersection (rowsClip); ! sr.isEmpty()) laneLuRect[(size_t) l] = laneLuRect[(size_t) l].isEmpty() ? sr : laneLuRect[(size_t) l].getUnion (sr);
+            if (vis (g, lr))
+            {
+                window (g, lr, col::black);
+                const int lu = laneLu[(size_t) l];
+                textRaw (g, lu <= -60 ? String ("--") : String (lu).replaceCharacter ('-', (juce::juce_wchar) 0x2212), lr, fLbl, col::lit);
+            }
+        }
     }
     else
     {
@@ -1940,8 +2081,10 @@ void Screen::drawMaster (G& g, R r)
     const float wTitle = title (g, x0, y0, "MASTER", ses.front.kind == Session::fMaster);
     const float wChan = chan (g, x0 + wTitle + 2, y0, e16::kSnapChannel);
     for (int k = 0; k < 3; ++k) control (g, cx::kMaster + k, x0 + (float) k * 66, body, 64, col::lit);
-    // GAIN, under TAPE: the whole mix's level into the three above it (FAULT, which was here, is beside the title)
+    // GAIN, under TAPE: the whole mix's level into the three above it (FAULT, which was here, is beside the title).
+    // CLIP, under COMP: how hard the limiter's clipper takes the peaks before the limiter has to.
     control (g, cx::kGain, x0, body + 77, 64, col::lit);
+    control (g, cx::kClip, x0 + 66, body + 77, 64, col::lit);
     // FINISH, the stage before the limiter: a plate, stepped by a press (OFF, 25, 50, 75, 100); lit while it is in. It ends
     // where the drum bus begins (and gives way to the channel's plate while INFO shows that: only its number is left).
     {
@@ -1970,24 +2113,37 @@ void Screen::drawMaster (G& g, R r)
         for (int k = 0; k < kBusKnobs; ++k) control (g, cx::kBus + k, bx + (float) (k % 2) * 66, body + (float) (k / 2) * 77, 64, col::lit);
     }
     if (! vis (g, R (x0, body + 60, 544, 100))) return;
-    // gain reduction, loudness
     const float fy = body + 77;
-    readout (g, R (x0 + 66, fy, 64, 42), "GR", String (eng.gainRed.load(), 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
-    const float lu = eng.lufs.load();
-    readout (g, R (x0 + 132, fy, 64, 42), "LUFS", lu < -60.0f ? String ("--") : String (lu, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212));
-    // POCKETS: its page, and how much of it is on
+    auto dbSays = [] (float db, bool sign) { if (std::abs (db) < 0.05f) db = 0.0f; return ((sign && db > 0.0f ? "+" : "") + String (db, 1)).replaceCharacter ('-', (juce::juce_wchar) 0x2212); };
+    // under LIMIT, its trim: a plate that says what the limiter's own trim is at. Pressed, that is learnt and held: the
+    // trim goes to what the last minute's loudest asks for and stays there (amber, HELD) until it is pressed again.
     {
-        // (beside GAIN, under the two readouts)
-        const R kr (x0 + 70, fy + 49, 22, 22);
-        key (g, kr, eng.target (cx::kPkG) > 0.0f ? col::green : col::white, pressed (aPockets) ? 6.0f : 2.0f);
-        text (g, "POCKETS", R (x0 + 97, fy + 49, 60, 22), fLbl, col::black, juce::Justification::centredLeft);
-        text (g, eng.valueText (cx::kPkG), R (x0 + 158, fy + 49, 40, 22), fLbl, col::black, juce::Justification::centredLeft);
-        hit (R (x0 + 68, fy + 47, 130, 26), hAct, aPockets, 0);
+        const bool held = eng.hold();
+        const String says = (held ? "HELD " : "TRIM ") + dbSays (held ? eng.heldDb() : eng.autoTrim.load(), true);
+        const R pr (x0 + 132, fy + 6, 64, 20);
+        if (vis (g, pr)) { window (g, pr, held ? col::amber : col::putty); textRaw (g, says, pr, fLbl, inkOn (glass (held ? col::amber : col::putty), col::black)); }
+        hit (pr.expanded (1, 2), hAct, aTrimHold, 0);
     }
-    // meters: every lane as it reaches the mix, then the mix itself
+    // POCKETS: its page, and how much of it is on (the number on its key)
+    {
+        const R kr (x0 + 130, fy + 38, 22, 22);
+        const bool on = eng.target (cx::kPkG) > 0.0f;
+        key (g, kr, on ? col::green : col::white, pressed (aPockets) ? 6.0f : 2.0f);
+        if (on && vis (g, kr)) textRaw (g, eng.valueText (cx::kPkG).retainCharacters ("0123456789"), kr, fNote, inkOn (cap (col::green), col::black));
+        text (g, "POCKETS", R (x0 + 155, fy + 38, 56, 22), fLbl, col::black, juce::Justification::centredLeft);
+        hit (R (x0 + 128, fy + 36, 75, 26), hAct, aPockets, 0);
+    }
+    // meters: every lane as it reaches the mix, then the mix itself. Over them the figures: the set's loudness, and what
+    // the limiter and its clipper are each taking off (the limiter's own figures, not a guess from the levels)
     const R mp (x0 + 342, y0, 202, 180);
     window (g, mp, col::white);
-    const float top = mp.getY() + 26, H = 122.0f, bot = top + H;
+    {
+        const float lu = eng.lufs.load();
+        text (g, "LUFS", R (mp.getX() + 8, mp.getY() + 5, 30, 20), fNote, col::black, juce::Justification::centredLeft);
+        text (g, lu < -60.0f ? String ("--") : dbSays (lu, false), R (mp.getX() + 38, mp.getY() + 3, 70, 22), fRead, col::black, juce::Justification::centredLeft);
+        text (g, "LIMIT " + dbSays (-eng.limGr.load(), false) + "   CLIP " + dbSays (-eng.clipGr.load(), false), R (mp.getX() + 8, mp.getY() + 24, 134, 14), fNote, col::black, juce::Justification::centredLeft);
+    }
+    const float top = mp.getY() + 42, H = 106.0f, bot = top + H;
     auto yOf = [bot, H] (float db) { return bot - juce::jlimit (0.0f, H, (db + 60.0f) / 66.0f * H); };
     auto bar = [&] (float x, float w, float db)
     {
@@ -4211,6 +4367,7 @@ void Screen::act (int a)
         case aTransBars:  ses.transStep (Session::tBars); repaint(); break;
         case aTransLevel: ses.transStep (Session::tLevel); repaint(); break;
         case aFinish:     ses.finishStep(); repaint(); break;
+        case aTrimHold:   ses.trimHold (! eng.hold()); repaint(); break;
         case aTransLead:  ses.transStep (Session::tLead); repaint(); break;
         case aTransHit:   ses.transStep (Session::tHit); repaint(); break;
         case aTransDub:   ses.transStep (Session::tDub); repaint(); break;
@@ -4461,7 +4618,16 @@ void Screen::downOn (Hit on, juce::Point<float> p)
         case hEqBand:
             if (cfgOpen && cfg.kind == 0) { eqSel = juce::jlimit (0, Engine::kEqBands - 1, h->a); dirty (eqRect); }
             break;
+        case hLow:
+            // the low end's graph: this lane's pocket, as it is when the hand comes down
+            drag.v0 = eng.pocketNow (h->a, 0); drag.g0 = eng.pocketNow (h->a, 1);
+            break;
         case hEqLane:
+            // LOW END: the EQ's graph gives its place to the bar's low end, or takes it back
+            if (h->a == -2) { lowView = ! lowView; dirty (eqRect); break; }
+            // AFTER FX: this lane's pocket made after its effects and EQ, or in the instrument as it was
+            if (h->a == -3) { if (cfgOpen && cfg.kind == 0) { ses.setupByHand ({ 0, cfg.lane, 0 }, "pocket_post", eng.pocketNow (cfg.lane, 2) > 0.5f ? 0.0f : 1.0f); cfgStale = true; ses.touch(); } dirty (eqRect); break; }
+            if (lowView) { if (h->a >= 0 && h->a < kLanes) lowShown ^= 1u << h->a; dirty (eqRect); break; }
             // OTHERS: all the other lanes' shapes, shown or hidden. A lane's number: that one's (and shown again, they all can be)
             if (h->a < 0) { eqOthers = ! eqOthers; if (eqOthers) eqHidden = 0; }
             else if (h->a < kLanes) { if (! eqOthers) { eqOthers = true; eqHidden = ~(1u << h->a); } else eqHidden ^= 1u << h->a; }
@@ -4733,6 +4899,27 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             }
             else band.q = Engine::eqQOf (drag.g0 + dy / 220.0f);
             eng.setEqBand (cfg.lane, drag.a, band);
+            cfgStale = true; ses.touch(); dirty (eqRect);
+            break;
+        }
+        case hLow:
+        {
+            // this lane's pocket follows the hand: down, deeper (its DEPTH); right, longer (its SHAPE). Each is the lane's
+            // knob where it has one for it, and its CONFIG's otherwise.
+            if (! cfgOpen || cfg.kind != 0 || lowGraph.getWidth() < 2.0f) break;
+            if (! drag.moved && std::max (std::abs (dx), std::abs (dy)) < 3.0f) break;
+            drag.moved = true;
+            const int l = cfg.lane;
+            auto put = [&] (const char* id, float v)
+            {
+                if (id == nullptr) return;
+                v = juce::jlimit (0.0f, 1.0f, v);
+                for (int k = 0; k < kLaneKnobs; ++k)
+                    if (const auto& kd = eng.laneKnob (l, k); kd.param != nullptr && String (kd.param) == id) { ses.userSet (cx::lane (l, k), v); return; }
+                ses.setupByHand ({ 0, l, 0 }, id, v);
+            };
+            put (Engine::pocketDepthId (l), drag.v0 - dy / lowGraph.getHeight());
+            put ("pocket_shape", drag.g0 + dx / lowGraph.getWidth());
             cfgStale = true; ses.touch(); dirty (eqRect);
             break;
         }
@@ -5577,7 +5764,8 @@ juce::uint64 Screen::metersNow() const
     auto add = [&h] (float v, float steps) { h = (h ^ (juce::uint64) (juce::int64) std::lround (std::max (-61.0f, v) * steps)) * 1099511628211ull; };
     for (auto& d : eng.laneDb) add (d.load(), 4.0f);
     add (eng.peakL.load(), 4.0f); add (eng.peakR.load(), 4.0f);
-    add (eng.gainRed.load(), 10.0f); add (eng.lufs.load(), 10.0f);
+    add (eng.lufs.load(), 10.0f); add (eng.limGr.load(), 10.0f); add (eng.clipGr.load(), 10.0f);
+    add (eng.hold() ? 100.0f + eng.heldDb() : eng.autoTrim.load(), 10.0f);
     add (eng.fault.load() ? 1.0f : 0.0f, 1.0f); add (eng.clipL.load() ? 1.0f : 0.0f, 1.0f); add (eng.clipR.load() ? 1.0f : 0.0f, 1.0f);
     add ((float) ses.activeLane, 1.0f);
     return h;
@@ -6109,6 +6297,16 @@ void Screen::timerCallback()
         const bool eqUp = page == pMain && cfgOpen && cfg.kind == 0 && ! eqRect.isEmpty();
         if (eng.pocketsWatched() != (page == pPockets || eqUp)) eng.watchPockets (page == pPockets || eqUp);
         if (eqUp) { eng.pocketsSeen (pkSeen); dirty (eqRect); }
+        // (and what the EQ costs the lane; or, with LOW END up, the bar's low end and the lane's pocket over it)
+        const bool lowUp = eqUp && lowView;
+        if (eng.eqWatched() != (eqUp && ! lowView ? cfg.lane : -1)) eng.watchEq (eqUp && ! lowView ? cfg.lane : -1);
+        if (eng.lowWatched() != (lowUp ? cfg.lane : -1)) eng.watchLow (lowUp ? cfg.lane : -1);
+        eqCostShown = eqUp && ! lowView ? eng.eqCost() : 0.0f;
+        if (lowUp)
+        {
+            for (int q = 0; q < kLanes; ++q) for (int b = 0; b < Engine::kLowBins; ++b) lowSeen[(size_t) q][(size_t) b] = eng.lowSeen (q, b);
+            for (int b = 0; b < Engine::kLowBins; ++b) lowPkSeen[(size_t) b] = eng.lowPocket (b);
+        }
     }
     if (page == pPockets)
     {
@@ -6128,6 +6326,13 @@ void Screen::timerCallback()
             if (auto* pr = eng.processorFor (cfg))
                 if (const String st = pr->mod().statusLine(); st != cfgStatus) { cfgStatus = st; cfgStale = true; dirty (cfgRect); }     // an import finishing says so
         if (metersNow() != meterSig) dirty (masterRect);       // the meters, when a bar has moved by a pixel or a number has changed
+        // (each lane's loudness, in its title: a whole number, drawn again when it is another)
+        for (int l = 0; l < kLanes; ++l)
+        {
+            const float lu = eng.laneLufs[(size_t) l].load();
+            const int now = lu < -60.0f ? -70 : (int) std::lround (lu);
+            if (now != laneLu[(size_t) l]) { laneLu[(size_t) l] = now; if (! laneLuRect[(size_t) l].isEmpty()) dirty (laneLuRect[(size_t) l]); }
+        }
         const bool run = eng.isRunning();
         if (run || wasRunning)
         {
