@@ -148,6 +148,24 @@ public:
     // ---- what the screens show
     int activeLane = 7;
     int selStep = 6;                    // the selected step of the active lane; -1 none
+    // ---- a step's LOCK (Sequencer.h, StepLock; the eighty-eighth build). Every step has a switch of three places:
+    // OFF (the step plays at the lane's settings; what it learnt is kept), LEARN (the lane goes on playing as it is
+    // set, and its knobs show and set what this step plays: a knob turned is written to the step as its difference
+    // from where the lane's knob stands), LOCKED (the knobs are the lane's again, and the step plays what it learnt).
+    // One step is at LEARN at a time. It ends (the step is then LOCKED) when another step is put there, a snapshot is
+    // recalled, another lane is chosen or the pattern is nudged.
+    std::atomic<int> lockLane { -1 };  // (read by the MIDI thread too: a controller's knob on that lane is then the step's)
+    int lockStep = -1;
+    std::array<float, cx::kGen> lockDiff {};            // the step at LEARN's differences, as the screen shows them
+    bool lockFull = false;                              // the last knob turned at LEARN found the pattern holding all it can
+    enum { lkOff = 0, lkLearn = 1, lkLocked = 2 };
+    int stepLock (int lane, int step) const;
+    void setStepLock (int lane, int step, int state);
+    bool lockTeaches (int ctl) const;                        // a knob of the lane at LEARN, of the kind a step can hold
+    float lockShown (int ctl) const;                    // where such a knob stands for the step, or -1
+    float handValue (int ctl) const     { const float v = lockShown (ctl); return v >= 0.0f ? v : engine.target (ctl); }     // where a hand finds a knob
+    void lockForget (int ctl);                          // the step at LEARN forgets that knob
+    void lockDone()                     { if (lockLane.load() >= 0) { lockLane = -1; if (onChange) onChange(); } }
     int page = 0;                       // which 16 steps are shown
     std::array<int, kLanes> genType;    // the armed generator per lane; -1 none
 

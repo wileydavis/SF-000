@@ -25,16 +25,51 @@ struct Step
     int ratchet = 1;        // 1..4 hits in the step
     int note = 0;           // 0..11, C..B
     int octave = 3;         // C3 = MIDI 60, as the suite counts
+    bool lock = false;      // its LOCK is on: what the step learnt plays (Pattern::locks)
 };
 
 // A step put out forgets everything it held.
 inline void clearStep (Step& s, int octave) { s = Step(); s.octave = octave; }
 
+// A step's lock (the eighty-eighth build): what the step learnt, as differences from where the lane's knobs stand.
+// One entry is one knob on one step: ctl is the control's place in its lane (cx::lane (l, ctl): the twelve knobs, the
+// sends, LOW MID HIGH, the inserts' knobs), off what is added to it while the step plays. They play where the step's
+// own switch (Step::lock) is on, for the step's gate, and a step need not be lit to hold one. A pattern holds
+// kMaxLocks of them among all its steps.
+constexpr int kMaxLocks = 96;
+struct StepLock { uint8_t step = 255, ctl = 0; float off = 0.0f; };      // (step 255: a free place)
+
 struct Pattern
 {
     std::array<Step, kMaxSteps> steps {};
     int length = 16;
+    std::array<StepLock, kMaxLocks> locks {};
 };
+
+inline float lockOff (const Pattern& p, int step, int ctl)
+{
+    for (auto& k : p.locks) if (k.step == step && k.ctl == ctl) return k.off;
+    return 0.0f;
+}
+inline int locksOf (const Pattern& p, int step) { int n = 0; for (auto& k : p.locks) if (k.step == step) ++n; return n; }
+// A knob's difference on a step: set, or (next to nothing) taken away. False: the pattern holds as many as it can.
+inline bool setLockOff (Pattern& p, int step, int ctl, float off)
+{
+    if (step < 0 || step >= kMaxSteps || ctl < 0 || ctl > 254) return false;
+    StepLock* free = nullptr;
+    for (auto& k : p.locks)
+    {
+        if (k.step == step && k.ctl == ctl) { if (std::abs (off) < 0.002f) k = StepLock(); else k.off = off; return true; }
+        if (k.step == 255 && free == nullptr) free = &k;
+    }
+    if (std::abs (off) < 0.002f) return true;
+    if (free == nullptr) return false;
+    *free = { (uint8_t) step, (uint8_t) ctl, off };
+    return true;
+}
+inline void clearLocks (Pattern& p, int step) { for (auto& k : p.locks) if (k.step == step) k = StepLock(); }
+// A step put out by hand: its note, and what it learnt.
+inline void putOut (Pattern& p, int step, int octave) { clearStep (p.steps[(size_t) step], octave); clearLocks (p, step); }
 
 // ---------------------------------------------------------------------------------------------
 // Generators. Seeded: the same knobs always give the same pattern. Rhythm only: a step keeps the
@@ -116,6 +151,7 @@ inline void nudge (Pattern& p, int dir)
     const int len = juce::jlimit (1, kMaxSteps, p.length);
     std::array<Step, kMaxSteps> head = p.steps;
     for (int i = 0; i < len; ++i) p.steps[(size_t) ((((i + dir) % len) + len) % len)] = head[(size_t) i];
+    for (auto& k : p.locks) if (k.step < len) k.step = (uint8_t) ((((k.step + dir) % len) + len) % len);       // (what a step learnt goes with it)
 }
 
 // Steps from i to the next lit step, going round (the pattern's length if i is the only one).

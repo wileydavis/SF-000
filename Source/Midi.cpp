@@ -1124,7 +1124,9 @@ void Midi::incoming (const juce::MidiMessage& m, bool fromE16)
     // A lane's knob is taken up at once, from this thread (and travels over the GLIDE time, if one
     // is set). The session's record of it (the base scene under the snapshot knobs) follows on the
     // message thread, as does a snapshot knob's whole move.
-    if (ctl < cx::kSnap) engine.set (ctl, e16::from7 (engine.control (ctl), val), engine.control (ctl).glides ? glideBarsFor (engine.target (cx::kGlide)) * 4.0 : 0.0);
+    // (but not a knob of the lane whose step is at LEARN: that turn is the step's, and the lane's setting stays. The
+    // session writes it to the step: Session::userSet.)
+    if (ctl < cx::kSnap && ! ses.lockTeaches (ctl)) engine.set (ctl, e16::from7 (engine.control (ctl), val), engine.control (ctl).glides ? glideBarsFor (engine.target (cx::kGlide)) * 4.0 : 0.0);
     latest[(size_t) slot] = val;
 }
 
@@ -1303,7 +1305,7 @@ void Midi::service()
         const int slot = (from + k) % e16::kSlots;
         if (wheelOn && isKnob13 (slot)) continue;               // (the pointer's wheel for now: its number is the pointer's place)
         const int ctl = e16::controlFor (slot);
-        const int want = e16::to7 (engine.control (ctl), engine.target (ctl));
+        const int want = e16::to7 (engine.control (ctl), ses.handValue (ctl));       // (a step at LEARN: its knobs' rings are the step's)
         if (want == sent[(size_t) slot].load() || now - heardAt[(size_t) slot].load() < 150u) continue;
         int ch, num;
         e16::addressOf (slot, ch, num);
@@ -1716,7 +1718,7 @@ std::array<Midi::PageKnob, 16> Midi::pageKnobs (int page)
     auto control = [&] (int i, int channel, int number, int ctl)
     {
         const auto& c = engine.control (ctl);
-        k[(size_t) i] = { channel, number, c.used ? e16::to7 (c, engine.target (ctl)) : 0 };
+        k[(size_t) i] = { channel, number, c.used ? e16::to7 (c, ses.handValue (ctl)) : 0 };
     };
     if (page >= e16::pgIns && page < e16::pgIns + kSlots)
         for (int c = 0; c < kCells; ++c) control (c, e16::kFxChannel, e16::kInsCc + (page - e16::pgIns) * kCells + c, cx::ins (l, page - e16::pgIns, c));

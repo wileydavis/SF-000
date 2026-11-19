@@ -2229,11 +2229,80 @@ void Engine::knobMotion (double beats, int n)
     }
 }
 
+// What the lanes' locked steps add to their knobs in this block (stepPush), read at the block's end: a step's lock is in
+// place by the block its note strikes in, never after it.
+// A locked step's differences come on at its start and hold for its gate (a step that is not lit: for the step), then
+// ease back over 15 ms. Where a note is sounding into the step (the gate before it reaches it: a slide, a tie, a held
+// note), they are slid to over the first half of the step and not jumped to; and a lit step with no lock of its own,
+// reached that way, slides them back to nought.
+void Engine::stepLocks (double beats)
+{
+    lkOn = false;
+    const bool run = wasRunning && beats > 1.0e-9;
+    const double q0 = ppq, q1 = ppq + beats;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        auto& lp = lockPlay[(size_t) l];
+        const Pattern& pat = lane[(size_t) l].player.pat;
+        const int len = juce::jlimit (1, kMaxSteps, pat.length);
+        bool has = false;
+        if (run && cur[(size_t) cx::lane (l, cx::kSeqMute)] < 0.5f)
+            for (auto& k : pat.locks) if (k.step < len && pat.steps[(size_t) k.step].lock) { has = true; break; }
+        // (stopped, muted, or the song somewhere else than the last block left it: nothing is held over)
+        if (! run || std::abs (q0 - lp.lastEnd) > 1.0e-6 || (! has && ! lp.busy))
+        {
+            if (lp.busy) { lp.now.fill (0.0f); for (int c = 0; c < cx::kGen; ++c) stepPush[(size_t) cx::lane (l, c)] = 0.0f; lp.busy = false; }
+            lp.up = false; lp.len = 0.0; lp.from.fill (0.0f); lp.to.fill (0.0f);
+            lp.lastEnd = run ? q1 : -1.0;
+            if (! has) continue;
+        }
+        lp.lastEnd = q1;
+        auto at = [&lp] (double q, std::array<float, cx::kGen>& out)
+        {
+            const float t = lp.len > 1.0e-9 ? (float) juce::jlimit (0.0, 1.0, (q - lp.start) / lp.len) : 1.0f;
+            for (int c = 0; c < cx::kGen; ++c) out[(size_t) c] = lp.from[(size_t) c] + (lp.to[(size_t) c] - lp.from[(size_t) c]) * t;
+        };
+        auto go = [&] (const std::array<float, cx::kGen>& to, double from, double over) { std::array<float, cx::kGen> here; at (from, here); lp.from = here; lp.to = to; lp.start = from; lp.len = over; };
+        const auto first = (int64_t) std::ceil (q0 / kStepBeats - 1e-9);
+        for (int64_t k = first; (double) k * kStepBeats < q1 - 1e-12; ++k)
+        {
+            if (k < 0) continue;
+            const double tq = (double) k * kStepBeats;
+            const int i = (int) (k % len);
+            const Step& st = pat.steps[(size_t) i];
+            std::array<float, cx::kGen> d {};
+            bool locked = false;
+            if (st.lock) for (auto& e : pat.locks) if (e.step == i && e.ctl < cx::kGen && controls[(size_t) cx::lane (l, e.ctl)].glides) { d[(size_t) e.ctl] = e.off; locked = true; }      // (a knob that travels: never a menu or a switch)
+            if (! locked && ! (st.on && lp.up)) continue;
+            // is a note sounding into this step?
+            bool into = false;
+            for (int back = 1; back < len; ++back)
+                if (const Step& b = pat.steps[(size_t) (((i - back) % len + len) % len)]; b.on)
+                { into = b.ratchet == 1 && b.gate >= (float) back + (st.on ? kLegatoOver : 0.03f); break; }
+            go (d, tq, into ? kStepBeats * 0.5 : 0.0);        // (slid to over the first half of the step, and there for the rest of it)
+            lp.up = locked;
+            if (locked)
+            {
+                const int dist = stepsToNext (pat, i);
+                const double hold = ! st.on || st.ratchet > 1 ? 1.0 : st.gate >= (float) dist + kLegatoOver ? (double) dist : juce::jlimit (0.05, (double) dist, (double) st.gate);
+                lp.holdEnd = tq + hold * kStepBeats;
+            }
+        }
+        if (lp.up && q1 > lp.holdEnd + 1.0e-9) { go (std::array<float, cx::kGen> {}, std::max (q0, lp.holdEnd), 0.015 * blockBpm / 60.0); lp.up = false; }
+        at (q1, lp.now);
+        bool any = lp.up;
+        for (int c = 0; c < cx::kGen; ++c) { stepPush[(size_t) cx::lane (l, c)] = lp.now[(size_t) c]; any = any || std::abs (lp.now[(size_t) c]) > 1.0e-6f; }
+        lp.busy = any;
+        lkOn = lkOn || any;
+    }
+}
+
 void Engine::advanceControls (double beats, int n)
 {
     gClock += beats;
     glidingNow = false;
     knobMotion (beats, n);
+    stepLocks (beats);
     for (int i = 0; i < cx::kCount; ++i)
     {
         const auto s = (size_t) i;
@@ -2276,8 +2345,8 @@ void Engine::advanceControls (double beats, int n)
             else if (t > 0.0) cur[s] = gFrom[s] + (gTo[s] - gFrom[s]) * (float) t;
         }
         if (cur[s] != curSaid[s]) { curSaid[s] = cur[s]; baseV[s] = cur[s]; }
-        // what sounds: where it stands, and MOTION's push on it
-        const float out = mOn ? juce::jlimit (0.0f, 1.0f, cur[s] + mOff[s]) : cur[s];
+        // what sounds: where it stands, MOTION's push on it, and a locked step's
+        const float out = mOn || lkOn ? juce::jlimit (0.0f, 1.0f, cur[s] + (mOn ? mOff[s] : 0.0f) + (lkOn ? stepPush[s] : 0.0f)) : cur[s];
         snd[s] = out;
         if (out != applied[s])
         {

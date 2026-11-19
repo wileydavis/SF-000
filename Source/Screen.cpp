@@ -451,6 +451,14 @@ void Screen::lamp (G& g, float cx, float cy, Colour fill, float d)
     g.setColour (fill); g.fillEllipse (cx - d * 0.5f + 2, cy - d * 0.5f + 2, d - 4, d - 4);
 }
 
+void Screen::slide (G& g, R r, int place, Colour floor, bool on)
+{
+    if (lit) { skin.slide (g, r, floor, place, on); return; }
+    g.setColour (col::black); g.fillRoundedRectangle (r, 2.6f);
+    g.setColour (floor); g.fillRoundedRectangle (r.reduced (1.5f), 2.0f);
+    g.setColour (col::black); g.fillRoundedRectangle (Skin::slideCap (r, place), 2.2f);
+}
+
 void Screen::readout (G& g, R r, const String& label, const String& value)
 {
     if (! vis (g, r)) return;
@@ -473,7 +481,7 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
     const float cxm = cellX + cellW * 0.5f, cym = y + 20.0f;
     const R kr (cxm - 20, y, 40, 40);
     if (! c.used) { if (vis (g, kr)) hollow (g, cxm, cym, 40, true); return; }
-    const float v = eng.shown (ctl);
+    const float v = shownOf (ctl);          // (a knob of the lane whose step is at LEARN stands where that step has it)
     if (vis (g, R (cellX - 10, y, cellW + 20, 43 + legendH)))
     {
         if (seen (g, lit ? kr : R (cellX - 10, y, cellW + 20, 43 + legendH))) lastShown[(size_t) ctl] = v;        // (only what was drawn: a change that was not is still owed a repaint)
@@ -482,7 +490,9 @@ void Screen::control (G& g, int ctl, float cellX, float y, float cellW, Colour l
         else
         {
             knobCtl = ctl; knobLight = litCol;
-            if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
+            // (at LEARN, a knob the step holds a difference on is lit yellow, and the lane's own setting is marked on it)
+            if (ses.lockTeaches (ctl) && std::abs (ses.lockDiff[(size_t) (ctl % cx::kPerLane)]) > 0.0f) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::yellow, eng.target (ctl));
+            else if (eng.isGliding (ctl)) knob (g, cxm, cym, size, v, c.kind, c.steps(), col::green, eng.target (ctl));
             else knob (g, cxm, cym, size, v, c.kind, c.steps(), litCol);
             knobCtl = -1;
         }
@@ -775,6 +785,10 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             midi = "MIDI: CHANNEL " + String (l + 1) + ", CC " + String (ccx::kIns + h.a * kCells) + " TO " + String (ccx::kIns + h.a * kCells + kCells - 1) + ": ITS EIGHT PLACES, WHATEVER EFFECT IS IN IT.";
             break;
         }
+        case hLock:
+            t.title = "LOCK, STEP " + String (h.a + 1);
+            body = "WHAT THIS STEP PLAYS DIFFERENTLY FROM THE LANE. LEFT, LEARN (YELLOW): THE LANE GOES ON PLAYING AS IT IS SET, AND ITS KNOBS NOW SHOW AND SET THIS STEP: TURN ONE AND THE STEP KEEPS THE DIFFERENCE, HEARD WHEN THE STEP PLAYS. A DOUBLE-CLICK ON A KNOB MAKES THE STEP FORGET IT. RIGHT, LOCKED (GREEN): THE KNOBS ARE THE LANE'S AGAIN AND THE STEP PLAYS WHAT IT LEARNT, FOR ITS GATE; WHERE THE NOTE BEFORE RUNS INTO IT, THE KNOBS SLIDE THERE OVER THE FIRST HALF OF THE STEP. MIDDLE, OFF: THE STEP PLAYS AS THE LANE IS SET, AND KEEPS WHAT IT LEARNT FOR LATER. THE KNOBS THAT CAN BE LEARNT ARE THE LANE'S TWELVE, ITS SENDS, LOW MID HIGH AND ITS INSERTS' KNOBS. ONE STEP IS AT LEARN AT A TIME. A STEP PUT OUT FORGETS IT ALL.";
+            break;
         case hStep:
             t.title = "STEP " + String (h.a + 1);
             body = "CLICK: LIGHT AND SELECT IT; LIT AND SELECTED, PUT IT OUT. DRAG UP OR DOWN: VELOCITY. DRAG LEFT OR RIGHT: GATE (PAST THE STEP'S EDGE IT RUNS ON, AND TIES INTO THE NEXT LIT STEP).";
@@ -2270,8 +2284,10 @@ void Screen::drawSequencer (G& g, R r)
     }
     hit (mk.expanded (1), hToggle, muteCtl);
     const bool hasSel = ses.selStep >= 0 && ses.selStep < len;
-    const String st = hasSel ? "STEP " + String (ses.selStep + 1) : String ("NO STEP");
-    plate (g, x0 + 356 - (std::ceil (tw (fNote, st)) + 12), y0, st, fNote, 6, col::white, col::black);
+    // (a step at LEARN is said in its place, in the yellow of its switch: the lane's knobs are that step's until it is over)
+    const bool learning = ses.lockLane.load() == l;
+    const String st = learning ? (ses.lockFull ? "STEP " + String (ses.lockStep + 1) + " FULL" : "STEP " + String (ses.lockStep + 1) + " LEARN") : hasSel ? "STEP " + String (ses.selStep + 1) : String ("NO STEP");
+    plate (g, x0 + 356 - (std::ceil (tw (fNote, st)) + 12), y0, st, fNote, 6, learning ? col::yellow : col::white, col::black);
 
     // pattern keys, then step keys
     knob (g, x0 + 28, ky + 20, 40, (float) len / 128.0f, Kind::Knob, 0, col::lit);
@@ -2317,6 +2333,8 @@ void Screen::drawSequencer (G& g, R r)
         const float sx = x1 + (float) j * 45 + (float) (j / 4) * 7;
         const R kr (sx, ky, 40, 40), inner = kr.reduced (2);
         hit (kr, hStep, i, 0);
+        const R lk (sx, y0 + 22, 40, 14);            // its LOCK, where its lamp was
+        if (in) hit (lk.expanded (0, 2), hLock, i, 0);
         if (! vis (g, R (sx - 16, y0 + 20, 72, 82))) continue;
         // a gate over one step runs on: through unlit steps as a tie, into a lit one as legato
         int k = -1;
@@ -2329,11 +2347,20 @@ void Screen::drawSequencer (G& g, R r)
             if (on) bridge = end >= (float) i + kLegatoOver - 0.001f;
             else { carry = juce::jlimit (0.0f, 1.0f, end - (float) i); if (carry < 0.03f) carry = 0.0f; bridge = carry > 0.0f; }
         }
-        lamp (g, sx + 20, y0 + 30, i == playing ? col::green : col::putty);
-        if (lit) { if (in) key (g, kr, col::white); else hollow (g, sx + 20, ky + 20, 40, false); }
-        else if (in) { g.setColour (col::black); g.fillRect (kr); g.setColour (col::white); g.fillRect (inner); }
+        // LOCK: LEARN to the left (yellow), OFF in the middle, LOCKED to the right (green). OFF with something learnt
+        // and kept: its floor a shade apart from one that holds nothing.
+        const bool now = in && i == playing;        // (the step that is playing: its key is lit, where a lamp over it was)
+        if (in)
+        {
+            const int state = learning && ses.lockStep == i ? Session::lkLearn : x.lock ? Session::lkLocked : Session::lkOff;
+            const bool holds = state == Session::lkOff && locksOf (pat, i) > 0;
+            slide (g, lk, state == Session::lkLearn ? 0 : state == Session::lkLocked ? 2 : 1,
+                   state == Session::lkLearn ? col::yellow : state == Session::lkLocked ? col::green : holds ? tone (col::grey) : cap (col::putty), state != Session::lkOff);
+        }
+        if (lit) { if (in) key (g, kr, now ? col::green : col::white, 2.0f, now); else hollow (g, sx + 20, ky + 20, 40, false); }
+        else if (in) { g.setColour (col::black); g.fillRect (kr); g.setColour (now ? col::green : col::white); g.fillRect (inner); }
         else { g.setColour (col::sea); g.drawRect (kr.reduced (0.5f), 1.0f); }
-        g.setColour (seqOff ? (night() ? night::dim : col::grey) : tone (col::black));      // muted: the steps are there, in grey
+        g.setColour (seqOff ? (night() ? night::dim : col::grey) : now ? inkOn (cap (col::green), col::black) : tone (col::black));      // muted: the steps are there, in grey
         if (on)
         {
             const int rr = juce::jlimit (1, 4, x.ratchet);
@@ -4609,6 +4636,14 @@ void Screen::act (int a)
     repaint();
 }
 
+// A step's LOCK switch under the hand: the third of it the hand is on is where it goes (LEARN, OFF, LOCKED).
+void Screen::lockAt (int step, float x, R r)
+{
+    const float t = (x - r.getX()) / std::max (1.0f, r.getWidth());
+    const int want = t < 1.0f / 3.0f ? Session::lkLearn : t > 2.0f / 3.0f ? Session::lkLocked : Session::lkOff;
+    if (ses.stepLock (ses.activeLane, step) != want) { ses.setStepLock (ses.activeLane, step, want); repaint(); }
+}
+
 void Screen::stepTap (int i)
 {
     // An unlit step lights, at velocity 75, a whole step of gate and the key's note, and is selected. A lit step is
@@ -4620,7 +4655,7 @@ void Screen::stepTap (int i)
     const int oct = lanes()[(size_t) l].octave;
     if (! s.on) { ses.lightStep (l, s); ses.selStep = i; ses.setPattern (l, p); }
     else if (ses.selStep != i) ses.selStep = i;
-    else { clearStep (s, oct); ses.setPattern (l, p); }
+    else { putOut (p, i, oct); if (ses.lockLane.load() == l && ses.lockStep == i) ses.lockLane = -1; ses.setPattern (l, p); }      // (and what it learnt)
 }
 
 void Screen::mouseDown (const juce::MouseEvent& e)
@@ -4660,7 +4695,8 @@ void Screen::downOn (Hit on, juce::Point<float> p)
     drag.kind = h->kind; drag.a = h->a; drag.b = h->b; drag.page = (int) page; drag.start = p; drag.t0 = juce::Time::getMillisecondCounter();
     switch (h->kind)
     {
-        case hKnob: case hRead: drag.v0 = ses.value (h->a); break;
+        case hKnob: case hRead: drag.v0 = ses.handValue (h->a); break;        // (a step at LEARN: from where the step has the knob)
+        case hLock: drag.v0 = h->r.getX(); drag.g0 = h->r.getWidth(); lockAt (h->a, p.x, h->r); break;      // (and dragged along it: mouseDrag)
         case hPocket:   drag.v0 = ses.value (cx::pk (h->a, 0)); drag.g0 = ses.value (cx::pk (h->a, 1)); break;
         case hEq:
             if (cfgOpen && cfg.kind == 0 && h->a >= 0 && h->a < Engine::kEqBands)
@@ -4920,6 +4956,7 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
     const float dx = p.x - drag.start.x, dy = drag.start.y - p.y;
     switch (drag.kind)
     {
+        case hLock: lockAt (drag.a, p.x, R (drag.v0, 0.0f, drag.g0, 1.0f)); break;
         case hKnob: case hRead: case hSnapKnob:
         {
             const int ctl = drag.kind == hSnapKnob ? cx::kSnap + drag.a : drag.a;
@@ -5162,7 +5199,8 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
     {
         // (a display's own: a sample's slice markers, put in and taken out)
         if (h->kind == hDisplay) { if (auto* pr = eng.processorFor (cfg)) pr->mod().displayDouble (where (e), cfgDisplay); ses.touch(); cfgStale = true; repaint(); return; }
-        if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
+        if (h->kind == hKnob && ses.lockTeaches (h->a)) { ses.lockForget (h->a); repaint(); }      // (a step at LEARN: it forgets that knob, which is the lane's again)
+        else if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
         else if (h->kind == hEq && cfgOpen && cfg.kind == 0)
         {
@@ -6271,13 +6309,13 @@ void Screen::timerCallback()
         if (h.kind == hKnob || h.kind == hSnapKnob || h.kind == hToggle || h.kind == hHold)
         {
             const int ctl = h.kind == hSnapKnob ? cx::kSnap + h.a : h.a;
-            if (ctl >= 0 && ctl < cx::kCount && eng.shown (ctl) != lastShown[(size_t) ctl])
+            if (ctl >= 0 && ctl < cx::kCount && shownOf (ctl) != lastShown[(size_t) ctl])
             {
                 // (on the 3D stage a knob's lights are the drawing thread's own business, read from
                 // the engine: nothing of the sheet or the record changes when one travels, so none
                 // of either is made again. A snapshot gliding moves a hundred at once.)
                 // (GLIDE is the one knob whose value is printed beside it, on the sheet: that is printed again, here as on the flat screen)
-                if (three && h.kind == hKnob && ctl != cx::kGlide) { lastShown[(size_t) ctl] = eng.shown (ctl); ringsMoved = true; continue; }
+                if (three && h.kind == hKnob && ctl != cx::kGlide) { lastShown[(size_t) ctl] = shownOf (ctl); ringsMoved = true; continue; }
                 if (three && h.kind == hKnob) ringsMoved = true;
                 dirty (ctl == cx::lane (ses.activeLane, cx::kSeqMute) ? seqRect : h.r.expanded (14, 6));       // a sequencer's mute greys its steps
             }

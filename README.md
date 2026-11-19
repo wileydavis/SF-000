@@ -44,6 +44,7 @@ First run:
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
 | Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note) |
+| A step's **LOCK** switch, over its key | what that step plays differently from the lane (eighty-eighth build). Three places. **LEARN**, left, yellow: the lane goes on playing as it is set, and its knobs now show and set this step. Turn one and the step keeps the difference, heard when the step plays; a double-click on a knob makes the step forget it. **LOCKED**, right, green: the knobs are the lane's again and the step plays what it learnt, for its gate. **OFF**, middle: the step plays as the lane is set and keeps what it learnt for later. See "Step locks" below |
 | RATCHET, NOTE, OCTAVE | change the selected step (NOTE and OCTAVE on lanes that take notes). A step says the note that sounds: with KEY set, a new step is the key's own note, and NOTE goes up from there |
 | < NUDGE, NUDGE > | move the whole pattern one step |
 | Drag the LENGTH knob | 1 to 128 steps. Click a page above the steps to see its 16 |
@@ -589,6 +590,30 @@ from before has its COLOR and DETUNE turned into the SIZE, SPRAY and PITCH they 
   instrument and the effects ring on through it. LOW END again: the EQ.
 - A snapshot keeps all of it, a stack knob sweeps it (frequency, gain and width travel; a band's
   kind changes half way), and the E16 has it on the last pages of CONFIG, a row a band.
+
+**Step locks** (eighty-eighth build): any step can play the lane's knobs somewhere else than
+the lane has them, for that step only.
+
+- **What a step holds is differences.** At LEARN, CUTOFF turned from 40 to 70 is kept as +30.
+  The lane's own knob has not moved, and the step rides on it: move the lane's CUTOFF, recall a
+  snapshot, turn a macro, run a MOTION, and the step is still 30 above wherever that leaves it.
+- **What can be learnt**: the lane's twelve knobs, SEND A and SEND B (a send thrown on one hit),
+  LOW MID HIGH, and its inserts' knobs. Not menus, switches or MODEL: they cannot travel.
+- **How it plays**: the knobs go to the step's settings as it starts, stay for its gate (a
+  ratchet: the whole step; a step that is not lit: the step), and ease back over 15 ms. Where
+  the note before runs into the step (a slide, a tie, a held note), the knobs slide there over
+  the first half of the step. A step need not be lit to hold a lock: under a long note it
+  moves the sound and plays nothing.
+- **At LEARN** the lane's knobs stand where the step has them, the ones it holds a difference
+  on lit yellow with the lane's own setting marked on them, and the strip says STEP 3 LEARN.
+  One step is at LEARN at a time: it ends, and the step is LOCKED, when another step is put
+  there, a snapshot is recalled, another lane is chosen or the pattern is nudged. On the E16
+  the lane's knobs teach the step too, and their rings show it.
+- **It lives with the steps.** NUDGE takes it along, a snapshot keeps it with the lane's notes
+  (NOTES lit brings it back), a lit step put out forgets it, and a pattern holds 96 knob
+  differences among all its steps (the strip says FULL at the 97th).
+- **The step that is playing is its key, lit green.** The lamps that were over the keys are
+  the switches' places now.
 
 **Nothing in CONFIG moves under the hand** (eighty-seventh build). Turning any control but
 MODEL and LAYER MODEL moves no other control: what a setting brings is listed after everything

@@ -214,6 +214,7 @@ public:
     static bool testIsLow (const TestHit& h) { return h.kind == hLow; }                                // (LOW END's graph, in a lane's CONFIG)
     static bool testIsEqKey (const TestHit& h, int which) { return h.kind == hEqLane && h.a == which; }       // (-1 OTHERS, -2 LOW END, -3 AFTER FX; from 0: a lane's key)
     static bool testIsEqGraph (const TestHit& h) { return h.kind == hEq && h.a == -1; }
+    static bool testIsLock (const TestHit& h, int step) { return h.kind == hLock && (step < 0 || h.a == step); }     // (a step's LOCK switch)
     static bool testIsFinish (const TestHit& h) { return h.kind == hAct && h.a == aFinish; }           // (the master's FINISH plate)
     static bool testIsPlain (const TestHit& h) { return h.kind == hAct && h.a == aSamplePlain; }       // (CONFIG, a lane playing a sample: PLAIN)
     juce::String testCfgNote() const { return cfgNote; }
@@ -307,6 +308,7 @@ private:
                    // hEqType: a kind's key (a: which kind), for the band chosen
                    // hEqLane: another lane's number on the graph (a: the lane), its line shown or hidden; a -1: OTHERS, all of them
                    hEq, hEqBand, hEqType, hEqLane,      // (hEqLane a -2: LOW END, the graph's other face; a -3: AFTER FX, there)
+                   hLock,           // a step's LOCK switch, over its key (a: the step): pressed or dragged, the third of it under the hand is its place
                    hArrPart, hArrBars, hArrMorph,       // the arrangement: a part (a: which), chosen; its BARS and its MORPH, dragged
                    // the column (the chosen stack knob's stack, in the designer). a: which of its snapshots
                    hColCard,        // the card itself: heard in the headphones, with the parts of the rig it takes
@@ -436,6 +438,9 @@ private:
     void number (G&, int ctl, R on, juce::Colour ink);          // a control's CC number, on it
     float chan (G&, float x, float y, int channel);             // a panel's channel; the width it took (none with INFO off)
     void lamp (G&, float cx, float cy, juce::Colour fill, float d = 12.0f);
+    void slide (G&, R, int place, juce::Colour floor, bool on);        // a slide switch of three places (Skin::slide)
+    float shownOf (int ctl) const { const float v = ses.lockShown (ctl); return v >= 0.0f ? v : eng.shown (ctl); }      // where a knob is drawn: a step at LEARN's, or what sounds
+    void lockAt (int step, float x, R r);                              // a step's LOCK put where the hand is on it
     void readout (G&, R, const juce::String& label, const juce::String& value);
     void panel (G&, R, juce::Colour ground);
     void control (G&, int ctl, float cellX, float y, float cellW, juce::Colour lit, int size = 40, float legendH = 28.0f);

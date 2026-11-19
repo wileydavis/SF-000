@@ -5310,8 +5310,84 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - `lists` is 5. A snapshot of builds 85 and 86 has 8 FRAMES and 64 FRAMES read as EVEN and
        64 WITH LEVEL as AS RECORDED.
 
+## A step's LOCK: what a step learns, played on that step alone (Nov 18, 22:51): eighty-eighth build
+
+738. **You**, Nov 18, 22:51: "For step modulation, what if we just made a simple snapshot tool for
+     the sequencer. Basically any step can take a snapshot that only applies to that step and
+     morphs whatever is different. Maybe for the way the morph works it could just act like a
+     note does and obey the steps gate and tie type. The snapshot would probably just be a
+     snapshot used for the steps, not the regular snapshot, but maybe not. Thoughts?" I answered
+     with four things to pin down (the lane's knobs and not the rig; differences and not
+     values; the gate holds it and a tie slides it; its own thing, kept in the pattern), and
+     asked for your word on the second. 23:13: "agree. build it. difference, not absolute."
+     - **A step holds differences from where the lane's knobs stand**, one a knob: the lane's
+       twelve, its two sends, LOW MID HIGH, and its inserts' knobs. Never a menu, a switch or
+       MODEL. The lane's own setting, a snapshot, a macro and a MOTION all still move the knob,
+       and the step rides on it.
+     - **It plays as a note does.** On at the step's start, held for its gate (a ratchet or an
+       unlit step: the step), eased back over 15 ms. Where the note before runs into the step
+       (the gate reaches it: a slide, a tie, a held note) the knobs slide there, and a lit
+       step with no lock of its own reached that way slides them back. *Mine:* the slide takes
+       the first half of the step and holds for the rest. I first made it the whole step, as I
+       had said, and a tied step of one gate then reached its setting at the instant it ended.
+     - **It is the pattern's**, not the library's: NUDGE takes it along, a snapshot keeps it
+       with the lane's notes and NOTES decides whether a recall brings it, a lit step put out
+       forgets it, a step lit keeps what it held unlit. A pattern holds 96 knob differences
+       among all its steps. *Mine.*
+     - **It is put on in the block its note strikes in, never after**: the knobs move at the
+       start of that buffer, up to one buffer early.
+739. **You**, Nov 18, 23:22: "maybe this workflow would work. I have a sequencer running. i get a
+     sound i like. then on a step i toggle a lock switch to learn. that switch holds the current
+     lane settings as it plays but allwys me to adjust knobs on that lane that only play when
+     that step hits. once i get it where i like, i can set the lock switch to play and the lane
+     goes back to its original settings but plays the modulated settings on the step. this can
+     be done for every step.  turning the lock switch off goes back to playing that step at
+     whatever settings the lane has." 23:22: "so evey step just needs a 3 position toggle switch
+     above it". 23:23: "could be a thin slider above each step, the width of the step key."
+     23:25: "put it where nthe step led is and just have the step square pulse with light as it
+     plays to indicate the current step rather than the little green leds". 23:28, with a
+     sketch of pills over the keys: "rough concept". 23:29: "grey off, yellow learn, green param
+     locked". 23:30: "or maybe off is middle position, leqrn is left, locked is right?" 23:31:
+     "make sure the switch matches the style... the pills i drew were just a quick mockup."
+     23:31: "radius should match that of the step buttons themselves". 23:43: "finish build 87
+     then move on to build the step locks".
+     - **Built as you said it.** Over every step key, where its lamp was, a slide switch the
+       width of the key: **LEARN left (yellow), OFF in the middle (grey), LOCKED right
+       (green)**. Pressed, the third of it under the hand is where it goes, and it can be
+       dragged along. Off in the middle, as you asked at 23:30: it is how a centre-off toggle
+       is, and LEARN, the one place that changes what the knobs do, is never passed on the way
+       between the other two.
+     - **In the style**: it is made by what makes the keys. A slot cut in the plate with a
+       key's hole's corners (2.6), its floor the colour of the place and lit at LEARN and
+       LOCKED, and a small dark cap with a key cap's corners (2.2) standing as high as a
+       latched key. No pill.
+     - **At LEARN** the lane's knobs stand where the step has them; the ones it holds a
+       difference on are lit yellow with the lane's own setting marked; the strip says STEP 3
+       LEARN in yellow. A double-click on a knob makes the step forget that knob. *Mine:* one
+       step at LEARN at a time, ended (the step LOCKED) by another step put there, a recall,
+       another lane chosen, or NUDGE. OFF keeps what was learnt, and its floor is a shade
+       apart from a switch that holds nothing.
+     - **The step that is playing is its key**, lit green and sitting low, and the lamps are
+       gone.
+     - **The E16**: a knob of the lane at LEARN turned on the E16 is the step's, taken on the
+       MIDI thread as the lane's would be, and its ring is sent the step's place. *Not done:*
+       the switch itself is not on the E16, so LEARN is entered on the screen. For when the
+       E16 is gone through (16:31).
+
 ## Not verified
 
+- **The eighty-eighth build (738, 739) is checked by what the knob sounds at, block by block,
+  and on drawn screens; none of it is heard.** Measured on the bass's CUTOFF at 120: a locked
+  step of half a gate has the knob at its setting from the step's start to the gate's end and
+  back by 0.05 of a beat after it; a step the note before runs into gets there in half a step; an
+  unlit step holds one; the lane's knob moved under a lock moves the step with it. **Yours to
+  say**: whether 15 ms back is right or should follow the lane's own release; whether the
+  slide's half step is the feel you meant by "obey the steps gate and tie type"; whether a
+  step put out should forget its lock (it does, as it forgets its note). Not tried: a lock
+  on an insert's knob by ear, a lock and a MOTION on one knob together, many locks while a
+  snapshot glides. The switch is seen in two pictures (dark and light, in its three places)
+  and not in 3D, where its floor is recorded as a key held in and its cap as a small key:
+  that was not looked at. The E16's side is by reading the code, not on an E16.
 - **The eighty-seventh build (735 to 737) is checked on drawn screens and by measurement.**
   CONFIG's order and places: by the check over 134 panels, and by eye in eight pictures (the
   perc, the bass on three models, the pad with a sample, the kick in the light instrument,

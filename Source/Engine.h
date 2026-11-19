@@ -664,6 +664,14 @@ private:
     std::array<float, cx::kCount> cur {}, gFrom {}, gTo {}, applied {}, snd {}, mOff {}, curSaid {};
     bool mOn = false;
     double motPpq = 0.0;
+    // A step's lock (Sequencer.h), as it plays: what each lane's locked steps add to its knobs now (stepPush, by control;
+    // lkOn: any of it is not nought). Per lane: where the push is going from and to, since when and over how long (in
+    // beats of the song), and when the step that set it lets go.
+    struct LockPlay { std::array<float, cx::kGen> now {}, from {}, to {}; double start = 0.0, len = 0.0, holdEnd = 0.0, lastEnd = -1.0; bool up = false, busy = false; };
+    std::array<LockPlay, kLanes> lockPlay;
+    std::array<float, cx::kCount> stepPush {};
+    bool lkOn = false;
+    void stepLocks (double beats);
     struct MotState;
     std::unique_ptr<MotState> motState;
     std::atomic<KnobLaws*> knobLaws { nullptr };

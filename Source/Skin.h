@@ -80,6 +80,8 @@ public:
     void ringLit (G&, float cx, float cy, int size, float a, float b, juce::Colour);     // the ring's segments from a to b (turns from six o'clock)
     void key (G&, R, juce::Colour, int press);      // (Parts::kUp, kOn: latched and sitting low, kHeld: all the way in)
     void lamp (G&, float cx, float cy, juce::Colour, float d, bool on);
+    void slide (G&, R, juce::Colour floor, int place, bool on);     // a slide switch of three places (0 left, 1 middle, 2 right), cut and capped as a key is
+    static R slideCap (R r, int place);                              // where its cap stands
     void hollow (G&, float cx, float cy, float d, bool round);      // where a control could be and is not
     void well (G&, R);                                              // a pocket cut into the surface: what a pile of chips stands in
     void window (G&, R, juce::Colour glass);                        // a display: a pane set into the surface

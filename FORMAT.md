@@ -127,7 +127,8 @@ this build does not have is written back as it was read.
   "made":  { ... },                           what it was made with (below)
   "profile": { "v": 1, ... },                 what it sounded like (below); absent if nothing was playing
   "values":  { "kick.tune": 0.4583, "lead.i1.c2": 0.55, ... },
-  "patterns": [ { "len": 16, "steps": [ [step, velocity, gate, ratchet, note, octave], ... ] } per lane ],
+  "patterns": [ { "len": 16, "steps": [ [step, velocity, gate, ratchet, note, octave], ... ],
+                  "locks": [ [step, control, difference], ... ], "locked": [step, ...] } per lane ],
   "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],
   "gen":      [ armed generator per lane, -1 none ],
   "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ], "bus": {..} },
@@ -183,6 +184,13 @@ this build does not have is written back as it was read.
   RUMBLE 15, 16, 17; VOICE 16, 17; PERC 15, then 21; CONVOLUTION 9, then 20. Which, is told
   by the snapshot's `time` and `lists` and by which length its place falls on a whole step of.
   Builds 79 to 84 read every place on the list as it had become, which was wrong for these.
+- **Step locks** (eighty-eighth build), in a pattern, here and in the session's own: `locks`,
+  what steps have learnt, one entry a knob on a step: the step (from 0), the control's place in
+  its lane (0 to 11 the lane's twelve knobs in the panel's order, 12 SEND A, 13 SEND B, 14 to 16
+  LOW MID HIGH, 17 + 8 x insert + knob an insert's), and the difference added to that control
+  (-1 to 1 of its travel) while the step plays. `locked`: the steps whose switch is on. A step
+  in `locks` and not in `locked` is OFF and keeping what it learnt. Neither is written where
+  there is none, and a build from before reads the pattern without them.
 - **WAVETABLE** (eighty-fifth build), in a lane's `setup`: `table` is a place on a longer list
   (CLASSIC, eleven tables, FILE, SAMPLE: 0 is still the first and 1 still the last, which were
   the list before); `wt_twist`, `wt_twist_as` (BEND, SYNC, FOLD, PULSE), `wt_env` (0.5: none),

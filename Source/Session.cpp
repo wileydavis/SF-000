@@ -49,6 +49,7 @@ Session::~Session()
 void Session::timerCallback()
 {
     if (printRig) return;                           // (a print's own rig: the print does its looking)
+    if (const int ll = lockLane.load(); ll >= 0 && ll != activeLane) lockDone();      // (another lane chosen: its step's LEARN is over)
     // The arrangement, while it plays: looked at often, for the part that is next. The rest of
     // what this does is slower work, done about once a second meanwhile.
     const bool transWas = ! transPend.empty();
@@ -551,10 +552,71 @@ void Session::setupByHand (Engine::Target t, const juce::String& id, float v)
     if (t.kind == 0 && id == "model") for (int k = 0; k < kSoundKnobs; ++k) { const int i = cx::lane (t.lane, k); base[(size_t) i] = engine.target (i) - offset[(size_t) i]; }
 }
 
+// ---- a step's LOCK
+bool Session::lockTeaches (int i) const
+{
+    const int l = lockLane.load();
+    if (l < 0 || i < 0 || i >= cx::kRet || i / cx::kPerLane != l || i % cx::kPerLane >= cx::kGen) return false;
+    const auto& c = engine.control (i);
+    return c.used && c.glides;
+}
+
+float Session::lockShown (int i) const
+{
+    return lockTeaches (i) ? juce::jlimit (0.0f, 1.0f, engine.target (i) + lockDiff[(size_t) (i % cx::kPerLane)]) : -1.0f;
+}
+
+int Session::stepLock (int l, int step) const
+{
+    if (l < 0 || l >= kLanes || step < 0 || step >= kMaxSteps) return lkOff;
+    if (lockLane.load() == l && lockStep == step) return lkLearn;
+    return engine.pattern (l).steps[(size_t) step].lock ? lkLocked : lkOff;
+}
+
+void Session::setStepLock (int l, int step, int state)
+{
+    if (l < 0 || l >= kLanes || step < 0 || step >= kMaxSteps) return;
+    Pattern p = engine.pattern (l);
+    lockLane = -1;                                 // (whatever was at LEARN is LOCKED: its own switch is still on)
+    p.steps[(size_t) step].lock = state != lkOff;
+    engine.setPattern (l, p);
+    if (state == lkLearn)
+    {
+        for (int k = 0; k < cx::kGen; ++k) lockDiff[(size_t) k] = lockOff (p, step, k);
+        lockStep = step; lockFull = false;
+        if (l == activeLane) selStep = step;
+        lockLane = l;
+    }
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::lockForget (int i)
+{
+    if (! lockTeaches (i)) return;
+    const int l = lockLane.load(), k = i % cx::kPerLane;
+    Pattern p = engine.pattern (l);
+    setLockOff (p, lockStep, k, 0.0f);
+    lockDiff[(size_t) k] = 0.0f;
+    engine.setPattern (l, p);
+    touch();
+}
+
 void Session::userSet (int i, float v, bool sounding)
 {
     if (i < 0 || i >= cx::kCount) return;
     v = juce::jlimit (0.0f, 1.0f, v);
+    if (lockTeaches (i))
+    {
+        // A knob of the lane whose step is at LEARN: the lane's own setting stays, and the step takes the difference.
+        const int l = lockLane.load(), k = i % cx::kPerLane;
+        Pattern p = engine.pattern (l);
+        const float off = v - engine.target (i);
+        lockFull = ! setLockOff (p, lockStep, k, off);
+        if (! lockFull) { lockDiff[(size_t) k] = std::abs (off) < 0.002f ? 0.0f : off; engine.setPattern (l, p); }
+        touch();
+        return;
+    }
     if (transArmed && ! transDoing)
         for (int l = 0; l < kLanes; ++l)
             if (i == cx::lane (l, cx::kMute) || i == cx::lane (l, cx::kSolo))
@@ -2602,6 +2664,7 @@ void Session::recallWhole (juce::int64 id)
 
 void Session::recall (juce::int64 id, const Scope& scope)
 {
+    lockDone();                                 // (a step at LEARN: the knobs are the lanes' again before anything is recalled onto them)
     // (the log: a recall that a hand asked for, here or on a controller. Not the arrangement's own, which logs its parts)
     if (glideOver < 0.0 && findSnap (id) != nullptr)
     {
@@ -2800,7 +2863,7 @@ void Session::stepPress()
     if (selStep < 0 || selStep >= p.length) { selStep = 0; page = 0; }       // (none chosen: the first)
     auto& s = p.steps[(size_t) selStep];
     const int oct = lanes()[(size_t) l].octave;
-    if (! s.on) lightStep (l, s); else clearStep (s, oct);
+    if (! s.on) lightStep (l, s); else { putOut (p, selStep, oct); if (lockLane.load() == l && lockStep == selStep) lockLane = -1; }      // (put out: it forgets what it learnt too)
     setPattern (l, p);
     if (onChange) onChange();
 }
@@ -2820,8 +2883,9 @@ void Session::lightStep (int l, Step& s) const
     // not (KEY FOLLOW off in its CONFIG) is written at the key's note, the same one a lane that
     // follows would sound: nothing will move it there.
     const auto& d = lanes()[(size_t) l];
+    const bool locked = s.lock;         // (an unlit step may have learnt a lock: lit, it keeps it)
     clearStep (s, d.octave);
-    s.on = true;
+    s.on = true; s.lock = locked;
     if (const int k = keyRoot(); k >= 0 && d.pitched && ! engine.laneFollowsKey (l))
     {
         s.note = k;
@@ -2883,6 +2947,7 @@ void Session::nudgeLane (int l, int dir)
 {
     Pattern p = engine.pattern (l);
     nudge (p, dir);
+    if (lockLane.load() == l) lockDone();      // (the step at LEARN has moved: it is LOCKED where it now is)
     genType[(size_t) l] = -1;                   // (moved by hand: the generator lets go, as for any rhythm made by hand)
     engine.setPattern (l, p);
     if (l == activeLane && selStep >= 0 && selStep < p.length) selStep = (((selStep + dir) % p.length) + p.length) % p.length;
@@ -3179,6 +3244,13 @@ static var patternToVar (const Pattern& p)
         st.add (var (a));
     }
     o->setProperty ("steps", st);
+    // (what its steps have learnt: a step, a control's place in the lane, the difference; and the steps whose LOCK is on.
+    // Not written where there are none: a pattern without locks is the pattern it always was.)
+    juce::Array<var> lk, on;
+    for (auto& k : p.locks) if (k.step != 255) { juce::Array<var> a; a.add ((int) k.step); a.add ((int) k.ctl); a.add (k.off); lk.add (var (a)); }
+    for (int i = 0; i < kMaxSteps; ++i) if (p.steps[(size_t) i].lock) on.add (i);
+    if (! lk.isEmpty()) o->setProperty ("locks", lk);
+    if (! on.isEmpty()) o->setProperty ("locked", on);
     return var (o);
 }
 
@@ -3197,6 +3269,13 @@ static Pattern patternFromVar (const var& v, int octave)
                 s.on = true; s.vel = (float) (*a)[1]; s.gate = (float) (*a)[2];
                 s.ratchet = juce::jlimit (1, 4, (int) (*a)[3]); s.note = juce::jlimit (0, 11, (int) (*a)[4]); s.octave = juce::jlimit (0, 8, (int) (*a)[5]);
             }
+    if (auto* lk = v.getProperty ("locks", var()).getArray())
+        for (auto& e : *lk)
+            if (auto* a = e.getArray(); a != nullptr && a->size() >= 3)
+                if (const int step = (int) (*a)[0], ctl = (int) (*a)[1]; step >= 0 && step < kMaxSteps && ctl >= 0 && ctl < cx::kGen)
+                    setLockOff (p, step, ctl, juce::jlimit (-1.0f, 1.0f, (float) (*a)[2]));
+    if (auto* on = v.getProperty ("locked", var()).getArray())
+        for (auto& e : *on) if (const int i = (int) e; i >= 0 && i < kMaxSteps) p.steps[(size_t) i].lock = true;
     return p;
 }
 

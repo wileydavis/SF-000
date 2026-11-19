@@ -301,7 +301,7 @@ juce::Image Relief::picture (As as) const
 // ----------------------------------------------------------------------------------------- skin
 namespace
 {
-enum What { wPanel = 1, wKnob, wRing, wKey, wLamp, wHollow, wBadge, wWell };
+enum What { wPanel = 1, wKnob, wRing, wKey, wLamp, wHollow, wBadge, wWell, wSlide };
 const Colour kCase (0xffA4B1B7), kBlack (0xff2B2B28), kUnlit (0xff4D514E), kGreen (0xff428F47), kAmber (0xffC5843F);
 // the dark instrument's own colours: the case, a knob's base, its unlit lights, its cap, an unlit lamp, the name plate
 const Colour kNightCase (0xff24272A), kNightBase (0xff111211), kNightUnlit (0xff474B48), kNightCap (0xff232321), kNightLens (0xff3C403D), kNightBadge (0xff151615);
@@ -522,6 +522,40 @@ void Skin::key (G& g, R r, Colour c, int press)
         const bool on = emits (c);
         rf.slab (b, 2.6f, -3.0f, 0.0f, {}, true);                                                  // the hole it moves in
         rf.slab (b.reduced (0.7f), 2.2f, Parts::keyTop (press), std::min (1.4f, Parts::keyTop (press) * 0.6f), { on ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c, 0.32f, 0.03f, on ? 0.45f : 0.0f });
+        return from (rf);
+    });
+    g.setOpacity (1.0f);
+    put (g, p, r.getX(), r.getY());
+}
+
+// A slide switch of three places, made as the keys are: a slot cut in the plate with a key's corners, its floor the
+// colour of the place the cap stands at (on: lit), and a small dark cap with a key cap's corners that slides in it.
+Skin::R Skin::slideCap (R r, int place)
+{
+    const float w = std::floor (r.getWidth() / 3.0f);
+    return { r.getX() + (place <= 0 ? 1.0f : place >= 2 ? r.getWidth() - w - 1.0f : (r.getWidth() - w) * 0.5f), r.getY() + 1.0f, w, r.getHeight() - 2.0f };
+}
+
+void Skin::slide (G& g, R r, Colour c, int place, bool on)
+{
+    if (mode != Mode::pictures)
+    {
+        // (on the stage: its floor a key held in, of that colour, and its cap a small key standing in it)
+        if (rec != nullptr && mode == Mode::record)
+        {
+            rec->keys.push_back ({ r.translated (shift, 0.0f), c.getARGB(), Parts::kHeld, on, clip, 0.0f });
+            rec->keys.push_back ({ slideCap (r, place).translated (shift, 0.0f), kBlack.getARGB(), Parts::kOn, false, clip, 0.0f });
+        }
+        return;
+    }
+    const int w = juce::roundToInt (r.getWidth()), h = juce::roundToInt (r.getHeight());
+    const auto& p = pic (Key { wSlide, w, h, c.getARGB(), place + (on ? 4 : 0) }, [&]
+    {
+        Relief rf ((float) w, (float) h, scale, 8.0f, 2);
+        const R b (0.0f, 0.0f, (float) w, (float) h);
+        rf.slab (b, 2.6f, -3.0f, 0.0f, {}, true);                                                                                              // the slot, cut as a key's hole is
+        rf.slab (b.reduced (0.7f), 2.2f, Parts::kKeyDown, 0.3f, { on ? c.withMultipliedSaturation (1.1f).withMultipliedBrightness (1.25f) : c, 0.32f, 0.03f, on ? 0.45f : 0.0f });     // its floor, where a key held in would be
+        rf.slab (slideCap (b, place), 2.2f, Parts::kKeyOn, Parts::kKeyOn * 0.6f, { kBlack, 0.32f, 0.03f, 0.0f });                             // the cap, standing as high as a latched key
         return from (rf);
     });
     g.setOpacity (1.0f);
