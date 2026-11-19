@@ -228,6 +228,12 @@ back at the other. The sequencer stays where it is.
   as on its panel, then the rest of the instrument's) and AMOUNT (either way, up to the whole
   range). It adds to where the knob stands and to what a snapshot knob does. It is kept in
   snapshots; one taken before MOTION could be set means it off.
+  **What a MOTION moves is kept by the parameter** (eighty-fifth build). It was kept as a place
+  on the list of what the instrument's MOTION can move, and that list grows when an instrument
+  gains a knob: from the seventy-ninth build to the eighty-fourth, a MOTION in a snapshot taken
+  before them moved the wrong thing wherever its target was far enough down the list (a bass's
+  COLOR became POCKET SHAPE, a chord's FILTER its LEVEL). Those snapshots are read right
+  again, by when each was taken; nothing in them is rewritten.
 - **PLAIN**, beside LOAD in the CONFIG of a lane that is playing a sample, sets the lane to
   play it **as it was recorded** (see A sample as it was recorded, below). The line beside it
   says the file's loudest point (PEAK) and the note that plays it at its own pitch (ROOT).
@@ -439,11 +445,40 @@ louder than its LEVEL: after PLAIN at the LEVEL each lane opens with, a sample i
 under its file on BASS, the hats, the clap and VOICE, and 3 dB under on KICK, before the master
 (which adds about 7 dB as it opens).
 
-**A sample as a wave to play: WAVETABLE**, a MODEL of BASS, LEAD, CHORD and PAD. With TABLE
-(in CONFIG's WAVETABLE box) at SAMPLE it takes eight single waves from the loaded file and
-COLOR moves across them, at any pitch, for as long as a note is held; with TABLE at BUILT-IN it
-plays four waves of its own. Every knob of the lane acts on it as on any synth model. **GRANULAR**
-(below) plays grains of it.
+**WAVETABLE**, a MODEL of BASS, LEAD, CHORD and PAD (a wavetable in earnest from the
+eighty-fifth build). A table is many frames, each one cycle of a wave, and **POSITION** is the
+place along it: the oscillator reads between the two frames there, at any pitch, clean.
+
+- **POSITION and TWIST are the lane's first two knobs** while the model is WAVETABLE, on every
+  lane that has it. The rest of the panel is as the lane has it (on LEAD the fourth knob is
+  POS ENV); what the two knobs took the places of is in CONFIG, under USUAL KNOBS.
+- **TABLE**, in CONFIG's WAVETABLE box. **CLASSIC**: the four waves it always had (a sine, a
+  saw, a square, a vowel). Then eleven tables of 64 frames: **BASIC** (sine, triangle, saw,
+  square, pulse), **HARMONIC** (a saw opening from its fundamental to all of it, with a peak
+  where it is cut: a filter sweep in the oscillator), **PWM**, **SYNC** (the hard-sync sweep),
+  **FORMANT** (OO, OH, AH, EH, EE), **FM**, **FOLD**, **DIGITAL**, **ORGAN** (the drawbars
+  coming out), **BASS** (a sub driven square), **COMB**. **FILE**: the file on the lane is a
+  wavetable, 2048 samples a frame, up to 256 frames, as Serum, Vital and Phase Plant write
+  them (a short file that is not a whole number of frames is one cycle). **SAMPLE**: frames
+  cut along a recording on the lane.
+- **TWIST** bends the cycle as it is read, the way **TWIST AS** says: **BEND** (the wave
+  squeezed towards the end of its cycle), **SYNC** (read faster than the note and restarted
+  by it, up to eight times), **FOLD** (driven into a folder), **PULSE** (the whole wave
+  squeezed into the front of the cycle). At nought, the table as it is.
+- **POS ENV**: the note's filter envelope carries the place along the table as the note
+  starts and lets it back as it falls (left of the middle: the other way). DECAY sets how
+  long. A MOTION aimed at POSITION sweeps it on a wave.
+- **WANDER**: each note drifts slowly about its place. It opens at nought, where POSITION is
+  exactly where the knob is. (It always drifted, by 15 %, until this build: a snapshot from
+  then has WANDER at 30 and sounds as it did.)
+- **FROM SAMPLE**: TABLE SAMPLE's frames. 8, each brought to one loudness, as it always was;
+  64; or 64 WITH LEVEL, as loud at each place as the recording was there.
+- **The display** shows the table, its frames one behind another, with the place lit.
+- A snapshot from before this build that has a lane on WAVETABLE is read so that it sounds as
+  it did: your SNAP 087, 088, 092 and 101 render sample for sample the same with their
+  MOTIONs off.
+
+**GRANULAR** (below) plays grains of a sample.
 
 **Slices, loops and starts** (seventy-ninth build), in the same SAMPLE box. A file's own onsets
 cut it into slices, every one found, or eight equal parts where there are fewer than two

@@ -428,10 +428,24 @@ public:
     // wave when it is recalled, after a voice has crossed over, and after the app has been shut.
     static juce::uint32 motionSeedFor (Target t)    { return 1u | (0x9E3779B1u * (juce::uint32) (17 + t.kind * 1000 + t.lane * 10 + t.slot)); }
     SetupState motionOff (Target) const;        // the two of them as they are when never set: a snapshot from before they could be set means this
+    // MOTION's TARGET through the builds. A state holds it as a place along the list of what the module's MOTION can move,
+    // and that list grows when a module gains a knob: a place kept on a shorter list then falls on something else. So a
+    // snapshot is written with the parameter itself beside the place (`m1_to`: its number in the module, less one, over
+    // 1024; 0: OFF), which is what is read; and one from before that is told by when it was taken and by which of the
+    // lengths the list has had its place falls on. (Before the eighty-fifth build a place was read on whatever the list
+    // had become: from the seventy-ninth on, most targets of older snapshots were one to five parameters out.)
+    static const std::vector<int>& motionParamsOf (const juce::String& module);
+    static float motionTo (const juce::String& module, float place);                            // what is kept beside a place of now
+    static float motionPlaceOfTo (const juce::String& module, float to);                        // and its place now
+    static float motionPlaceFrom (const juce::String& module, float place, juce::int64 takenMs, int lists); // a place kept with no `to`, as a place of now (lists: the snapshot's own mark of which build's lists it was taken on)
+    static void motionWrite (SetupState&, const juce::String& module);                          // a state as it is written: `to` beside each TARGET
+    static void motionRead (SetupState&, const juce::String& module, juce::int64 takenMs, int lists);   // and as it is read: each TARGET a place of now
     // The controls the seventy-ninth build added (GRANULAR's own, a sample's slices, loop and starts, the kick FORGE's),
     // each where it changes nothing: a snapshot from before them means this, whatever the lane was left at.
     SetupState newerOff (Target) const;
     SetupState laterOff (Target) const;     // what came after that: the same, for any snapshot that does not name them
+    // Whether a lane's state has it on that model (its MODEL or its LAYER MODEL; where the state names neither, the lane as it stands)
+    bool setupPlays (Target, const SetupState&, const juce::String& model) const;
     // A menu that has grown by one (BASS's and LEAD's MODEL and LAYER MODEL: WAVETABLE, second to last). A setup keeps a
     // menu's place as how far down the list it is; one kept from before the list grew is told by where it falls, and is
     // given as the same entry of the list as it is now.

@@ -135,7 +135,7 @@ this build does not have is written back as it was read.
   "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
   "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
-  "lists": 3,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
+  "lists": 4,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
 }
 ```
 
@@ -173,6 +173,25 @@ this build does not have is written back as it was read.
   lane's `setup` (0: the pocket is made in the instrument; 1: after the lane's inserts and EQ),
   and `duck_for` in a REVERB's or CONVOLUTION's setup, an insert's or SPACE's (0 KICK AND SOURCE,
   0.5 KICK, 1 SOURCE). A setup that names neither is read with each at 0.
+- **A MOTION's target** (eighty-fifth build): `m1_target` and `m2_target` in any `setup` are a
+  place, 0 to 1, on the list of what that module's MOTION can move (0: OFF; c of n: the c-th),
+  and the list grows when a module gains a knob. So each is written with **`m1_to`, `m2_to`
+  beside it: the parameter itself**, as its number among the module's own parameters, plus one,
+  over 1024 (0: OFF). A build that knows `to` reads it and not the place. A setup without it
+  is from before, and its place is on the list of its day: BASS, LEAD, CHORD and PAD had 38,
+  then 39 (Nov 15), 47 and 50 (Nov 17); KICK 19, 20, 21, 27; the hats and the clap 16, 17, 18;
+  RUMBLE 15, 16, 17; VOICE 16, 17; PERC 15, then 21; CONVOLUTION 9, then 20. Which, is told
+  by the snapshot's `time` and `lists` and by which length its place falls on a whole step of.
+  Builds 79 to 84 read every place on the list as it had become, which was wrong for these.
+- **WAVETABLE** (eighty-fifth build), in a lane's `setup`: `table` is a place on a longer list
+  (CLASSIC, eleven tables, FILE, SAMPLE: 0 is still the first and 1 still the last, which were
+  the list before); `wt_twist`, `wt_twist_as` (BEND, SYNC, FOLD, PULSE), `wt_env` (0.5: none),
+  `wt_wander`, `wt_from` (8 FRAMES, 64 FRAMES, 64 WITH LEVEL). A setup that names none of
+  them is read with no twist and no envelope, and, where its lane is on WAVETABLE, with
+  `wt_wander` 0.3 and `wt_from` 0, as WAVETABLE was. **`lists` 4**: WAVETABLE has POSITION
+  (`color`) and TWIST in the lane's first two knob places. A snapshot with a lower figure
+  whose lane is on WAVETABLE has the lane's usual knobs there: read, their values go to
+  `setup` under their own names and POSITION takes `color`'s.
 - **Slice markers** (eighty-third build) are in a lane's `setup`: `smp_cuts` (0 or 1: the slices
   are the file's own, or the markers') and `smp_cut01` ... `smp_cut32`, each a place in the whole
   file (0 to 1). Only the markers in use are written; a setup that names none has none.

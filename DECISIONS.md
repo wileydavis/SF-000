@@ -5094,8 +5094,120 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - Also put right while there: the help for a reverb's DUCK SHAPE still described the
        pocket of before the seventy-ninth build.
 
+## WAVETABLE made a wavetable; and what MOTIONs have been moving since build 79 (Nov 18, 17:43): eighty-fifth build
+
+727. **You**, Nov 18, 17:43: "did wavetable change?" (I said no: its own code was line for line
+     as on Nov 15. That was true and was not the answer: 730.) 17:53: "it doesn't feel like it
+     works like a regular wavetable. Moving through the positions doesn't create the kind of
+     sound changes I'm used to qith say ableton or pahe plants wavetable". It was four waves
+     crossed into each other, 32 harmonics each, every note wandering 15 % about the place, no
+     way to bend the cycle, and eight frames from a sample each brought to one loudness. I listed
+     six things to build: real tables; POSITION as its own knob, exact; a warp; the envelope to
+     position; loading a wavetable file; 64 frames from a sample with its level as an option.
+     17:54: "build it."
+728. **WAVETABLE, as built.** *All of it mine, by 727.*
+     - **Tables.** A table is many frames; the oscillator reads between the two at POSITION.
+       Every frame is band-limited an octave at a time, as the other oscillators' waves are,
+       with up to 512 harmonics. **Eleven come with it, 64 frames each**: BASIC, HARMONIC, PWM,
+       SYNC, FORMANT, FM, FOLD, DIGITAL, ORGAN, BASS, COMB. Made once when the instrument
+       starts: with the frames cut from your set's samples it starts about half a second
+       later here (1.8 s to 2.2), and holds some 35 MB more. **CLASSIC**, first on the list,
+       is the four waves as they were.
+     - **POSITION and TWIST are the first two knobs** of BASS, LEAD, CHORD and PAD while the
+       model is WAVETABLE, in the same two places on all four ("keep similar function knobs in
+       consistent positions"). POSITION is `color`, which on BASS and CHORD was in CONFIG. The
+       rest of each panel is the lane's own; on LEAD the fourth knob, where COLOR was, is POS
+       ENV. What the two took the places of (GLIDE and LAYER on BASS, TUNE and ACCENT on LEAD,
+       DETUNE and ATTACK on CHORD, DETUNE on PAD) is in CONFIG.
+     - **TWIST** (I had called it a warp; WARP is already the melting-texture knob): the cycle
+       bent as it is read. TWIST AS: BEND, SYNC, FOLD, PULSE. Whatever squeezes the wave reads
+       a level with that many fewer harmonics, so what it adds does not fold back.
+     - **POS ENV**: the note's filter envelope moves the place, either way.
+     - **WANDER**: the drift each note had, now a knob that opens at nought.
+     - **TABLE FILE**: the lane's file read as a wavetable, 2048 samples a frame, up to 256
+       frames, from the file's own samples (not as resampled for the rig). The frames keep their
+       levels against each other. A file of 4096 samples or fewer that is not whole frames is
+       one cycle; a multiple of 1024 that is not one of 2048 has 1024 a frame; anything longer
+       than 256 frames is a recording and is refused, and CONFIG's status line says which.
+     - **TABLE SAMPLE**: FROM SAMPLE chooses 8 frames (as it was), 64, or 64 WITH LEVEL.
+     - **The display** in CONFIG shows the table where VOICES was: nine of its frames one
+       behind another and the place lit.
+     - **Not in this:** a choice of frame size for a file that is not 2048 a frame; drawing or
+       editing a table; unison beyond DETUNE's second reading; a second oscillator; morphing
+       between two tables. Nothing here is on the E16 beyond the two knobs, which are the
+       lane's first two.
+729. **A snapshot from before this build sounds as it did.** *Mine.*
+     - One whose lane is on WAVETABLE (`lists` under 4): the two knob places it used for the
+       lane's usual knobs are read as those and put in CONFIG; POSITION takes COLOR's value;
+       TWIST and POS ENV are at nought; **WANDER is 30 and FROM SAMPLE 8 FRAMES, which is what
+       WAVETABLE did.** So an old wavetable snapshot still drifts: turn WANDER down for an
+       exact place.
+     - A lane that was on another model gets the wavetable of now when WAVETABLE is chosen.
+     - **Checked on your library**: SNAP 087, 088, 092 and 101 (the bass on WAVETABLE, on the
+       four waves and on a sample's eight frames), and SNAP 101 with LEAD, CHORD and PAD put on
+       WAVETABLE too, rendered by build 84 and by this one with their MOTIONs off: every lane's
+       stem the same to the sample. SNAP 115, 120 and 122 (the builds since 79) as they are:
+       every lane the same, but the lead, which differs in the last bit of 24 (140 dB down).
+     - *Caught on the way:* raising the snapshot mark to 4 would have had a snapshot of builds
+       81 to 84 read its PERC lane's model against the list of before SAMPLE was on it. It
+       does not; a check holds it.
+730. **MOTION targets, wrong since the seventy-ninth build.** *Found while doing 729, mine to
+     have caught on Nov 17.* A MOTION's TARGET is kept as a place along the list of what the
+     instrument's MOTION can move. That list is every knob-like parameter of the module, and
+     build 79 made it longer (GRANULAR's knobs, the sampler's, KICK FORGE's; the sample's GAIN
+     had already added one on Nov 15, and PERC's SAMPLE added six on Nov 18). **A place kept on
+     the shorter list was read on the longer one, and fell further down it the further down it
+     was.** Nothing converted them and no check looked.
+     - **In your library** (106 of 122 snapshots are from before build 79; they hold 231
+       MOTIONs on lanes, and build 84 read 166 of them wrong):
+       the bass's on **COLOR**, which on WAVETABLE is the table's position, moved POCKET SHAPE
+       (10 snapshots, SNAP 087 to 101); the bass's on TUNE moved SPACE (13) and on ENV AMT,
+       GATE (4); the pad's on SPACE moved a sample's END (42) and on RES, ENV AMT (55); **the
+       chord's on FILTER moved LEVEL** (6); the kick's on FILTER moved LAYER (16); the closed
+       hat's on RES moved a sample's END (5) and one on FILTER, ACCENT; PERC's on MATERIAL
+       moved DENSITY (13, since build 81) and one on FILTER, SPREAD. Read right all along:
+       the bass's and the lead's on CUTOFF, the hats' on TONE, FILTER (from Nov 15) and DECAY,
+       the clap's on DECAY: targets near the top of their lists.
+     - **Put right**: a snapshot without the parameter is read by when it was taken (its
+       `time`, and its `lists` mark) and by which of the lengths the list has had its place
+       falls on a whole step of. Every MOTION in your library falls on one. The files are not
+       rewritten.
+     - **From now on** a snapshot is written with the parameter itself beside the place
+       (`m1_to`, `m2_to`), and that is what is read. A list can grow.
+     - **What this cannot mend**: a snapshot taken on builds 79 to 84 by recalling an older
+       one with a MOTION and taking it again has the wrong target written into it as if it
+       were meant. Your snapshots from those builds (SNAP 108 to 122) have one MOTION each, on
+       the lead's CUTOFF, which is right; none carries a shifted target that I can see.
+     - **This is a likely part of what you heard since Nov 17**: 721's three findings stand
+       (they are in the snapshot's own values), but a chord whose filter motion had become a
+       level motion, and a bass whose table had stopped moving, are changes of the build's.
+731. **Small things with it.** `--targets` lists each module's MOTION targets in order (the
+     table in `Engine::motionPlaceFrom` must gain a line whenever one grows; a snapshot of
+     this build on does not need it). `--choose id=NAME` on `--shot`. A MOTION's free wave no
+     longer starts again at a recall that sets the same target it already has.
+
 ## Not verified
 
+- **The eighty-fifth build (727 to 731) is measured, and compared with your own snapshots; none
+  of it is heard.** Measured: each of the eleven tables is three different sounds at its
+  first frame, middle and last, all near one level; HARMONIC opens from 143 Hz to over 2.8 kHz
+  of spectral middle along its length; with WANDER at nought the tone is the same in the second
+  bar and the seventh, and right up it drifts over an octave; each kind of TWIST adds to a sine
+  and at nought changes nothing; POS ENV carries a note 3.3 octaves up HARMONIC at its start; a
+  file of four frames plays the note, its octave a third of the way along, its fourth harmonic
+  at the end; 64 WITH LEVEL follows a recording's 20 dB drop and the other two do not.
+  **Not known: whether the tables sound like the ones you are used to.** They are mine, made
+  from arithmetic, and this is the thing you asked for. Nor: how TWIST's four kinds sound across
+  a table (SYNC and PULSE on bright frames are harsh by nature); whether a Serum or Phase Plant
+  export reads right (the format is theirs as documented; no such file has been loaded here,
+  only one written by the check); how the table's drawing reads at its size. The conversion of
+  old WAVETABLE snapshots is bit-checked on five of yours with MOTION off; with MOTION on they
+  now differ from build 84, as they should. **The MOTION targets (730)**: every place in your
+  library falls on a length the list has had, and the three I rendered come back on the
+  parameter the arithmetic says (the bass's on COLOR and TUNE, the pad's on RES, the hat's on
+  FILTER). I have not heard that these are what you set; SNAP 101's bass sweeping its table
+  again is the one to listen for. A snapshot from the web library or a chip the analysis
+  composed goes the same way and was not tried.
 - **The eighty-fourth build (722 to 726) is measured and seen in pictures, not heard or used.**
   Measured here: the limiter's figures with the rig playing (up to 0.7 dB, the true peak at
   -1.1); CLIP at nought taking nothing and, right up with the mix 8 dB hot, 3.9 dB, the limiter

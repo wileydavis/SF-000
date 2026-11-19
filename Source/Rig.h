@@ -109,7 +109,11 @@ inline const std::vector<LaneDef>& lanes()
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
           // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
           { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
+          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
+          // it; the rest of the row and the row under it as the lane has them (GLIDE and LAYER are in CONFIG)
+            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
+                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
 
         { "RUMBLE", "rumble", "RUMBLE", false, 3,
           // made from the kick itself (and from its own steps, if any are lit)
@@ -126,7 +130,11 @@ inline const std::vector<LaneDef>& lanes()
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
           // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
           { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
+          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
+          // it; the rest of the row and the row under it as the lane has them (its fourth is POS ENV, where COLOR was; TUNE and ACCENT are in CONFIG)
+            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POS ENV", "wt_env", 'b' },
+                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
 
         { "CHORD", "chord", "LEAD", true, 3,
           // the dub stab: one note plays the chord
@@ -136,7 +144,11 @@ inline const std::vector<LaneDef>& lanes()
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
           // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
           { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
+          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
+          // it; the rest of the row and the row under it as the lane has them (DETUNE and ATTACK are in CONFIG)
+            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
+                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
 
         { "PAD", "pad", "PAD", true, 3,
           // a drifting dub wash that plays a minor seventh from one note
@@ -146,7 +158,11 @@ inline const std::vector<LaneDef>& lanes()
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
           // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
           { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
+                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
+          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
+          // it; the rest of the row and the row under it as the lane has them (DETUNE is in CONFIG)
+            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
+                             { "DECAY", "decay", 'u' }, { "ATTACK", "attack", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
 
         { "VOICE", "voice", "VOICE", true, 3,
           // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,

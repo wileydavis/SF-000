@@ -1489,7 +1489,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
     auto plays = [&] (const char* name) { return model == name || layerModel == name; };
     bool sampleIsAModel = false;
     if (const int mi = p->paramIndex ("model"); mi >= 0) for (auto& c : specs[(size_t) mi].choices) sampleIsAModel = sampleIsAModel || c == "SAMPLE";
-    const bool tableFromSample = plays ("WAVETABLE") && textOf ("table") == "SAMPLE";
+    const bool tableFromSample = plays ("WAVETABLE") && (textOf ("table") == "SAMPLE" || textOf ("table") == "FILE");
     const bool phraseIsTheSource = t.kind == 0 && juce::String (lanes()[(size_t) t.lane].module) == "VOICE";      // (every model of VOICE plays the phrase)
     const juce::String plain = t.kind == 0 ? "SOUND" : "EFFECT";
     // One of the lane's usual sound knobs, which a model's own knobs have the places of for now.
@@ -1506,7 +1506,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         if (id.startsWith ("smp_cut") && id != "smp_cuts") return {};    // (a slice marker: the display's to move, not a knob's)
         if (t.kind == 3 && id.startsWith ("in_")) return "LANES";       // (which lanes play through the drum bus)
         if (id.startsWith ("fm_")) return plays ("FM 4-OP") ? "FM 4-OP" : juce::String();
-        if (id == "table") return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
+        if (id == "table" || id.startsWith ("wt_")) return plays ("WAVETABLE") ? "WAVETABLE" : juce::String();
         if (id.startsWith ("gr_")) return plays ("GRANULAR") ? "GRANULAR" : juce::String();      // (those of them that are not its knobs)
         if (id.startsWith ("fg_")) return plays ("KICK FORGE") ? "KICK FORGE" : juce::String();
         if (usual (id)) return "USUAL KNOBS";               // (put away by a model's own knobs: a box of their own, last)
@@ -1643,6 +1643,95 @@ std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArra
     return order;
 }
 
+const std::vector<int>& Engine::motionParamsOf (const juce::String& module)
+{
+    static std::mutex lock;
+    static std::map<juce::String, std::vector<int>> known;
+    const std::lock_guard<std::mutex> g (lock);
+    if (const auto it = known.find (module); it != known.end()) return it->second;
+    SFProcessor p (sf::makeModule (module.toRawUTF8()));
+    return known[module] = p.motionTargetParams();
+}
+
+float Engine::motionTo (const juce::String& module, float place)
+{
+    const auto& t = motionParamsOf (module);
+    const int c = (int) std::lround (place * (float) t.size());
+    return c <= 0 || c > (int) t.size() ? 0.0f : (float) (t[(size_t) c - 1] + 1) / 1024.0f;
+}
+
+float Engine::motionPlaceOfTo (const juce::String& module, float to)
+{
+    const auto& t = motionParamsOf (module);
+    const int pi = (int) std::lround (to * 1024.0f) - 1;
+    for (size_t c = 0; c < t.size(); ++c) if (t[c] == pi) return (float) (c + 1) / (float) t.size();
+    return 0.0f;
+}
+
+float Engine::motionPlaceFrom (const juce::String& module, float place, juce::int64 takenMs, int lists)
+{
+    if (place <= 0.0f) return place;
+    // How long each module's list has been, and since when (the second its build was made). A module not here has had
+    // one length. The last of each is what it was until the eighty-fifth build, from which a snapshot says the parameter.
+    struct Was { juce::int64 since; int count; };
+    static const juce::int64 gain = 1794767947, grains = 1794981414, sampler = 1794982561, forge = 1794984815, percSample = 1795035064, bands = 1794592415;
+    static const std::map<juce::String, std::vector<Was>> history {
+        { "BASS",    { { 0, 38 }, { gain, 39 }, { grains, 47 }, { sampler, 50 } } },
+        { "LEAD",    { { 0, 38 }, { gain, 39 }, { grains, 47 }, { sampler, 50 } } },
+        { "PAD",     { { 0, 38 }, { gain, 39 }, { grains, 47 }, { sampler, 50 } } },
+        { "KICK",    { { 0, 19 }, { gain, 20 }, { sampler, 21 }, { forge, 27 } } },
+        { "PERC",    { { 0, 16 }, { gain, 17 }, { sampler, 18 } } },
+        { "RUMBLE",  { { 0, 15 }, { gain, 16 }, { sampler, 17 } } },
+        { "VOICE",   { { 0, 16 }, { gain, 17 } } },
+        { "STRIKE",  { { 0, 15 }, { percSample, 21 } } },
+        { "TERROIR", { { 0, 9 }, { bands, 20 } } } };
+    const auto it = history.find (module);
+    if (it == history.end()) return place;
+    const int now = (int) motionParamsOf (module).size();
+    // (when it was taken; and no later than its own mark allows: lists 1 is from before GRANULAR's knobs, 2 from before PERC's SAMPLE)
+    const juce::int64 mark = lists < 2 ? grains - 1 : lists < 3 ? percSample - 1 : std::numeric_limits<juce::int64>::max();
+    const juce::int64 when = std::min (takenMs > 0 ? takenMs / 1000 : mark, mark);
+    auto fits = [place] (int count)
+    {
+        const float x = place * (float) count;
+        const int c = (int) std::lround (x);
+        return std::abs (x - (float) c) < 0.004f && c >= 1 && c <= count ? c : 0;
+    };
+    // the latest length it had by then that the place falls on; failing that (a clock that was wrong), any it falls on
+    for (int pass = 0; pass < 2; ++pass)
+        for (auto w = it->second.rbegin(); w != it->second.rend(); ++w)
+        {
+            if (pass == 0 && w->since > when) continue;
+            if (const int c = fits (w->count); c > 0) return now > 0 ? (float) c / (float) now : place;
+        }
+    return place;
+}
+
+void Engine::motionWrite (SetupState& st, const juce::String& module)
+{
+    if (module.isEmpty()) return;
+    for (int k = 1; k <= SFProcessor::kMotions; ++k)
+    {
+        const juce::String id = "m" + juce::String (k) + "_target", to = "m" + juce::String (k) + "_to";
+        float place = -1.0f; bool has = false;
+        for (auto& kv : st) { if (kv.first == id) place = kv.second; has = has || kv.first == to; }
+        if (place >= 0.0f && ! has) st.push_back ({ to, motionTo (module, place) });
+    }
+}
+
+void Engine::motionRead (SetupState& st, const juce::String& module, juce::int64 takenMs, int lists)
+{
+    if (module.isEmpty()) return;
+    for (int k = 1; k <= SFProcessor::kMotions; ++k)
+    {
+        const juce::String id = "m" + juce::String (k) + "_target", to = "m" + juce::String (k) + "_to";
+        float said = -1.0f;
+        for (auto it = st.begin(); it != st.end(); ++it) if (it->first == to) { said = it->second; st.erase (it); break; }
+        for (auto& kv : st)
+            if (kv.first == id) kv.second = said >= 0.0f ? motionPlaceOfTo (module, said) : motionPlaceFrom (module, kv.second, takenMs, lists);
+    }
+}
+
 Engine::SetupState Engine::motionOff (Target t) const
 {
     SetupState st;
@@ -1770,6 +1859,24 @@ Engine::SetupState Engine::newerOff (Target t) const
 
 // LOOP on a drum's sample, and the PERC lane's sample (its START, END, fades, GAIN, NORMALISE, SLICE, CYCLE): a snapshot
 // from before them does not name them, and is not left with what the one before it set.
+bool Engine::setupPlays (Target t, const SetupState& st, const juce::String& model) const
+{
+    auto* p = processorFor (t);
+    if (p == nullptr) return false;
+    for (const char* id : { "model", "layer_model" })
+    {
+        const int i = p->paramIndex (id);
+        if (i < 0) continue;
+        const auto& ch = p->allSpecs()[(size_t) i].choices;
+        if (ch.size() < 2) continue;
+        float place = p->param (i)->getValue();
+        for (auto& kv : st) if (kv.first == id) place = kv.second;
+        const int at = juce::jlimit (0, (int) ch.size() - 1, (int) std::lround (place * (float) (ch.size() - 1)));
+        if (model == juce::String (ch[(size_t) at])) return true;
+    }
+    return false;
+}
+
 Engine::SetupState Engine::laterOff (Target t) const
 {
     SetupState st;
@@ -1787,6 +1894,12 @@ Engine::SetupState Engine::laterOff (Target t) const
                 st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
         // (the pocket made after the lane's effects: before them, as it always was)
         if (const int i = p->paramIndex ("pocket_post"); i >= 0 && i < p->numModuleParams()) st.push_back ({ "pocket_post", 0.0f });
+        // (WAVETABLE's own, the eighty-fifth build's: no TWIST, no POS ENV; and as WAVETABLE was until then, each note
+        // wandering 15 % about its place and TABLE SAMPLE's frames eight. Session::later puts those two as they now
+        // open where the snapshot's lane is not on WAVETABLE at all.)
+        if (const int i = p->paramIndex ("wt_twist"); i >= 0 && i < p->numModuleParams() && ! p->allSpecs()[(size_t) i].hidden)
+            for (auto& kv : std::initializer_list<std::pair<const char*, float>> { { "wt_twist", 0.0f }, { "wt_twist_as", 0.0f }, { "wt_env", 0.5f }, { "wt_wander", 0.3f }, { "wt_from", 0.0f } })
+                st.push_back ({ kv.first, kv.second });
         // (the slice markers, and whether they are the hand's: none, and the file's own cuts)
         const auto& specs = p->allSpecs();
         for (int i = 0; i < p->numModuleParams(); ++i)

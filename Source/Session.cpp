@@ -2202,6 +2202,8 @@ void Session::finishTakes (bool all)
     }
 }
 
+static void fillLater (const Engine& engine, Engine::Target t, Engine::SetupState& st);
+
 // Whether two CONFIG states differ in anything they both name.
 static bool setupDiffers (const Engine::SetupState& a, const Engine::SetupState& b)
 {
@@ -2223,12 +2225,7 @@ static Engine::SetupState withMotion (const Engine& engine, Engine::Target t, En
     if (! own) for (auto& kv : engine.sampleOwnOff (t)) st.push_back (kv);
     // (and what came later still, where the state does not name it: LOOP, PERC's sample, the slice markers. A marker
     // not in use is never written, so a state that names none has none: it is not left with the one before's.)
-    for (auto& d : engine.laterOff (t))
-    {
-        bool named = false;
-        for (auto& kv : st) named = named || kv.first == d.first;
-        if (! named) st.push_back (d);
-    }
+    fillLater (engine, t, st);
     return st;
 }
 
@@ -3226,6 +3223,16 @@ static Engine::SetupState setupFromVar (const var& v)
     return st;
 }
 
+// The module a snapshot's insert or return is: what its MOTION's TARGET counts along (Engine::motionWrite, motionRead).
+static juce::String moduleOfInsert (int type) { return type >= 0 && type < (int) effects().size() ? juce::String (effects()[(size_t) type].module) : juce::String(); }
+static juce::String moduleOfReturn (int r, const Engine::SetupState& st)
+{
+    if (r == 0) return returnA().module;
+    int model = 0;
+    for (auto& kv : st) if (kv.first == "__model") model = (int) std::lround (kv.second);      // (Engine's name for which reverb SPACE is)
+    return returnB (model).module;
+}
+
 static var snapToVar (const Snapshot& s, const Engine& e)
 {
     if (s.kept.isObject()) return s.kept;           // as it was read: nothing in it is lost (Session.h)
@@ -3271,17 +3278,19 @@ static var snapToVar (const Snapshot& s, const Engine& e)
     if (s.hasSetup)
     {
         juce::Array<var> ls, is, rs;
+        // (each MOTION's TARGET goes with the parameter it means beside it: Engine::motionWrite)
+        auto written = [] (Engine::SetupState st, const juce::String& module) { Engine::motionWrite (st, module); return setupToVar (st); };
         for (int l = 0; l < kLanes; ++l)
         {
-            ls.add (setupToVar (s.setup[(size_t) l]));
+            ls.add (written (s.setup[(size_t) l], lanes()[(size_t) l].module));
             juce::Array<var> sl;
-            for (int k = 0; k < kSlots; ++k) sl.add (setupToVar (s.insSetup[(size_t) l][(size_t) k]));
+            for (int k = 0; k < kSlots; ++k) sl.add (written (s.insSetup[(size_t) l][(size_t) k], moduleOfInsert (s.inserts[(size_t) l][(size_t) k])));
             is.add (var (sl));
         }
-        for (int r = 0; r < 2; ++r) rs.add (setupToVar (s.retSetup[(size_t) r]));
+        for (int r = 0; r < 2; ++r) rs.add (written (s.retSetup[(size_t) r], moduleOfReturn (r, s.retSetup[(size_t) r])));
         auto* su = new juce::DynamicObject();
         su->setProperty ("lanes", ls); su->setProperty ("inserts", is); su->setProperty ("returns", rs);
-        if (s.hasBus) su->setProperty ("bus", setupToVar (s.busSetup));
+        if (s.hasBus) su->setProperty ("bus", written (s.busSetup, drumBus().module));
         o->setProperty ("setup", var (su));
     }
     if (s.hasPlayed)
@@ -4680,11 +4689,12 @@ std::vector<std::pair<juce::int64, juce::uint32>> lit;       // (and nothing of 
 static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int, kLanes>& taken)
 {
     static std::array<int, kLanes> counts {};       // (how many models each lane has now: the same for as long as this runs)
+    static std::array<int, kLanes> wtAt {};         // (and where WAVETABLE is among them; -1: it has none)
     if (counts[0] == 0)
         for (int l = 0; l < kLanes; ++l)
         {
-            counts[(size_t) l] = 1;
-            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") counts[(size_t) l] = std::max (1, sp.choices.size());
+            counts[(size_t) l] = 1; wtAt[(size_t) l] = -1;
+            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") { counts[(size_t) l] = std::max (1, sp.choices.size()); wtAt[(size_t) l] = sp.choices.indexOf ("WAVETABLE"); }
         }
     for (int l = 0; l < kLanes; ++l)
     {
@@ -4693,7 +4703,8 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
         // (lists 2, the seventy-ninth build: BASS, LEAD, KICK and PAD grew. Lists 3: the PERC lane's STRIKE has SAMPLE
         // after its six objects.)
         const bool first = taken[(size_t) l] < 2;
-        const int before = module == "STRIKE" ? 6 : ! first ? 0 : module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
+        // (STRIKE's list grew at lists 3: a lane of lists 3, which lists 4 now lets in here, is already on the longer one)
+        const int before = module == "STRIKE" ? (taken[(size_t) l] < 3 ? 6 : 0) : ! first ? 0 : module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
         // (what this build added, where it changes nothing: the lane is not left with what the snapshot before it set)
         if (s.hasSetup && first)
             for (auto& d : e.newerOff ({ 0, l, 0 }))
@@ -4702,7 +4713,8 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
                 for (auto& kv : s.setup[(size_t) l]) named = named || kv.first == d.first;
                 if (! named) s.setup[(size_t) l].push_back (d);
             }
-        if (before == 0) continue;
+        if (before != 0)
+        {
         int model = -1;
         for (auto& kv : s.setup[(size_t) l])
         {
@@ -4737,6 +4749,56 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
             at (4) = std::sqrt (0.3f * det);                                            // SPRAY: three tenths of the source at DETUNE's top
             at (5) = 0.5f * det;                                                        // PITCH: a hundredth either way at DETUNE's top
         }
+        }
+        // (lists 4, the eighty-fifth build: WAVETABLE has two knobs of its own on BASS, LEAD, CHORD and PAD, POSITION
+        // and TWIST, in the lane's first two places. A snapshot from before whose lane is on WAVETABLE: what those two
+        // places held goes to CONFIG under its own name, POSITION is where COLOR was, and TWIST is at nought. On LEAD
+        // the fourth place was COLOR and is POS ENV, in the middle. So it sounds as it did.)
+        if (s.hasSetup && (module == "BASS" || module == "LEAD" || module == "PAD") && wtAt[(size_t) l] >= 0)
+        {
+            float mv = -1.0f;
+            for (auto& kv : s.setup[(size_t) l]) if (kv.first == "model") mv = kv.second;
+            if (mv >= 0.0f && (int) std::lround (mv * (float) std::max (1, counts[(size_t) l] - 1)) == wtAt[(size_t) l])
+            {
+                auto at = [&] (int k) -> float& { return s.values[(size_t) cx::lane (l, k)]; };
+                auto put = [&] (const char* id, float v)
+                {
+                    if (v < 0.0f) return;
+                    for (auto& kv : s.setup[(size_t) l]) if (kv.first == id) { kv.second = v; return; }
+                    s.setup[(size_t) l].push_back ({ id, v });
+                };
+                auto take = [&] (const char* id)
+                {
+                    auto& st = s.setup[(size_t) l];
+                    float v = 0.5f;
+                    for (auto it = st.begin(); it != st.end(); ++it) if (it->first == id) { v = it->second; st.erase (it); break; }
+                    return v;
+                };
+                const juce::String slug (lanes()[(size_t) l].slug);
+                if (slug == "bass")       { put ("glide", at (0)); put ("layer", at (1)); at (0) = take ("color"); at (1) = 0.0f; }
+                else if (slug == "lead")  { put ("tune", at (0)); put ("accent", at (1)); at (0) = at (3) >= 0.0f ? at (3) : 0.5f; at (1) = 0.0f; at (3) = 0.5f; }
+                else if (slug == "chord") { put ("detune", at (0)); put ("attack", at (1)); at (0) = take ("color"); at (1) = 0.0f; }
+                else if (slug == "pad")   { put ("detune", at (0)); at (0) = at (1) >= 0.0f ? at (1) : 0.5f; at (1) = 0.0f; }
+            }
+        }
+    }
+}
+
+// What has come since a snapshot was taken, where it names none of it: each where it changes nothing (Engine::laterOff).
+// WAVETABLE's WANDER and its frames from a sample are as they were before the eighty-fifth build (15 %, eight) where the
+// state's lane is on WAVETABLE, which is what it then sounded like; on any other lane they are as they now open (none,
+// sixty-four), so that choosing WAVETABLE there afterwards is the wavetable of now.
+static void fillLater (const Engine& engine, Engine::Target t, Engine::SetupState& st)
+{
+    const bool onTable = t.kind == 0 && engine.setupPlays (t, st, "WAVETABLE");
+    for (auto d : engine.laterOff (t))
+    {
+        bool named = false;
+        for (auto& kv : st) named = named || kv.first == d.first;
+        if (named) continue;
+        if (! onTable && d.first == "wt_wander") d.second = 0.0f;
+        if (! onTable && d.first == "wt_from") d.second = 0.5f;
+        st.push_back (d);
     }
 }
 
@@ -4777,14 +4839,24 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
     if (const var su = v.getProperty ("setup", var()); su.isObject())
     {
         const var ls = su.getProperty ("lanes", var()), is = su.getProperty ("inserts", var()), rs = su.getProperty ("returns", var());
+        // (each MOTION's TARGET as a place on its list of now: by the parameter the snapshot says, or, from before it
+        // said one, by when it was taken: Engine::motionRead)
+        const juce::int64 taken = s.time.toMilliseconds();
+        const int listsAll = (int) v.getProperty ("lists", 1);
+        auto listsOf = [&] (int l) { if (auto* by = v.getProperty ("listsBy", var()).getArray()) if (l < by->size() && ((*by)[l].isInt() || (*by)[l].isInt64())) return (int) (*by)[l]; return listsAll; };
         for (int l = 0; l < kLanes; ++l)
         {
-            if (l < ls.size()) s.setup[(size_t) l] = setupFromVar (ls[l]);
-            for (int k = 0; k < kSlots; ++k) if (l < is.size() && k < is[l].size()) s.insSetup[(size_t) l][(size_t) k] = setupFromVar (is[l][k]);
+            if (l < ls.size()) { s.setup[(size_t) l] = setupFromVar (ls[l]); Engine::motionRead (s.setup[(size_t) l], lanes()[(size_t) l].module, taken, listsOf (l)); }
+            for (int k = 0; k < kSlots; ++k)
+                if (l < is.size() && k < is[l].size())
+                {
+                    s.insSetup[(size_t) l][(size_t) k] = setupFromVar (is[l][k]);
+                    Engine::motionRead (s.insSetup[(size_t) l][(size_t) k], moduleOfInsert (s.inserts[(size_t) l][(size_t) k]), taken, listsAll);
+                }
         }
-        for (int r = 0; r < 2; ++r) if (r < rs.size()) s.retSetup[(size_t) r] = setupFromVar (rs[r]);
+        for (int r = 0; r < 2; ++r) if (r < rs.size()) { s.retSetup[(size_t) r] = setupFromVar (rs[r]); Engine::motionRead (s.retSetup[(size_t) r], moduleOfReturn (r, s.retSetup[(size_t) r]), taken, listsAll); }
         s.hasSetup = true;
-        if (const var bs = su.getProperty ("bus", var()); bs.isObject()) { s.busSetup = setupFromVar (bs); s.hasBus = true; }
+        if (const var bs = su.getProperty ("bus", var()); bs.isObject()) { s.busSetup = setupFromVar (bs); Engine::motionRead (s.busSetup, drumBus().module, taken, listsAll); s.hasBus = true; }
     }
     if (const var insf = v.getProperty ("insertFiles", var()); insf.isArray())
     {
@@ -4829,14 +4901,7 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
         if (any) fromListsBefore (s, e, taken);
         // (and what has come since with no list changed: LOOP, the PERC lane's sample. A snapshot that does not name
         // them has them where they change nothing.)
-        if (s.hasSetup)
-            for (int l = 0; l < kLanes; ++l)
-                for (auto& d : e.laterOff ({ 0, l, 0 }))
-                {
-                    bool named = false;
-                    for (auto& kv : s.setup[(size_t) l]) named = named || kv.first == d.first;
-                    if (! named) s.setup[(size_t) l].push_back (d);
-                }
+        if (s.hasSetup) for (int l = 0; l < kLanes; ++l) fillLater (e, { 0, l, 0 }, s.setup[(size_t) l]);
     }
     return s;
 }

@@ -6,6 +6,7 @@
 // Halfband decimators bring the sums back down: no audible aliasing at any pitch.
 #include "Kit.h"
 #include "../core/BandLimited.h"
+#include "../core/Wavetable.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
 
@@ -295,7 +296,12 @@ public:
            SNOTES, SLOOP, SXFADE, SVELSTART, SRANDSTART,
            SCUTS, SCUTLAST = SCUTS + kCuts,      // (SF-000) MARKERS and the 32 slice markers
            PPOST,                                // (SF-000) the pocket left to the host, to make after the lane's effects
+           WTTWIST, WTTWISTAS, WTENV, WTWANDER, WTFROM,     // (SF-000) WAVETABLE's own (see E_WAVETABLE)
            kParams };
+    // (SF-000) TABLE's list: CLASSIC (the four waves it always had), the tables that come with the instrument, FILE
+    // (the loaded file is a wavetable: 2048 samples a frame), SAMPLE (frames found along a recording). CLASSIC stays
+    // first and SAMPLE last: a menu's place is kept as how far down the list it is, and those two were the list.
+    static constexpr int kTabFile = WavetableSet::kTables + 1, kTabSample = WavetableSet::kTables + 2;
 
     SynthModule (const char* idName, int role, std::vector<SynthModel> m, float cutDef, float resDef, float envDef, float gateDef, float pDepth)
         : name (idName), roleId (role), models (std::move (m)), dCut (cutDef), dRes (resDef), dEnv (envDef), dGate (gateDef), dPocket (pDepth) {}
@@ -343,7 +349,10 @@ public:
         p.push_back (pct ("drift", "DRIFT", 0.0f).slow());
         // WAVETABLE's frames: the built-in four, or eight from the loaded sample (hidden where no
         // model is WAVETABLE).
-        auto table = choice ("table", "TABLE", { "BUILT-IN", "SAMPLE" }, 0).engineGroup();
+        std::vector<std::string> tn { "CLASSIC" };
+        for (int k = 0; k < WavetableSet::kTables; ++k) tn.push_back (WavetableSet::nameOf (k));
+        tn.push_back ("FILE"); tn.push_back ("SAMPLE");
+        auto table = choice ("table", "TABLE", tn, 0).engineGroup();
         if (! hasWavetable()) table.hide();
         p.push_back (table);
         // FM 4-OP's operators [Nov 10]: the algorithm, each operator's RATIO (to the note), LEVEL
@@ -420,6 +429,23 @@ public:
         // (SF-000) POCKET AFTER FX: the pocket is not made here. The host makes the same one after the lane's inserts and
         // its EQ, from POCKET DEPTH and POCKET SHAPE, so that an effect's tail has the hole too.
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());
+        // (SF-000) WAVETABLE's own. COLOR is the place in the table (POSITION on the panel).
+        //   TWIST       the cycle bent as it is read, by this much, in the way TWIST AS says
+        //   TWIST AS    BEND: the wave squeezed towards its end. SYNC: read faster than the note and restarted by it, up to
+        //               eight times. FOLD: driven into a folder. PULSE: the whole wave squeezed into the front of the cycle
+        //   POS ENV     the note's filter envelope moves the place: right, on along the table and back as it falls; left, back
+        //   WANDER      each note drifts about the place, slowly: none, to half the table either way. (Before these it
+        //               always did, by 15 %: a snapshot from then has it at 30.)
+        //   FROM SAMPLE TABLE SAMPLE's frames: 8 found evenly along the recording, each brought to one loudness (as it always
+        //               was), or 64, or 64 that keep the level the recording had there
+        {
+            auto own = [this, &p] (ParamSpec s) { s.engineGroup(); if (! hasWavetable()) s.hide(); p.push_back (s); };
+            own (pct ("wt_twist", "TWIST", 0.0f).slow());
+            own (choice ("wt_twist_as", "TWIST AS", { "BEND", "SYNC", "FOLD", "PULSE" }, 0));
+            own (knob ("wt_env", "POS ENV", -1.0f, 1.0f, 0.0f, "BIP").slow());
+            own (pct ("wt_wander", "WANDER", 0.0f).slow());
+            own (choice ("wt_from", "FROM SAMPLE", { "8 FRAMES", "64 FRAMES", "64 WITH LEVEL" }, 1));
+        }
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -530,11 +556,165 @@ public:
         }
         return out;
     }
+    // (SF-000) Sixty-four frames from a recording, where TABLE SAMPLE had eight: the same reading (four periods where it
+    // is cut, windowed, read as harmonics, every frame's fundamental at one phase, each brought to one loudness), at
+    // sixty-four places evenly along it, and how loud the recording was at each kept beside them (FROM SAMPLE: 64 WITH LEVEL).
+    static std::shared_ptr<const Wavetable> fineFrom (const SampleData& s, double voiceRate)
+    {
+        const int len = s.length(), chans = std::max (1, s.buf.getNumChannels());
+        constexpr int kF = 64, kN = 1024, kCycles = 4, kH = Wavetable::kMaxHarm;
+        const double fallback = s.rootHz > 20.0f ? s.sr / (double) s.rootHz : 1024.0 * s.sr / 48000.0;
+        const int win = (int) (0.085 * s.sr);
+        if (len < (int) (fallback * kCycles) + win + 8) return nullptr;
+        std::vector<float> mono ((size_t) len);
+        for (int i = 0; i < len; ++i) { float v = 0.0f; for (int ch = 0; ch < chans; ++ch) v += s.buf.getSample (ch, i); mono[(size_t) i] = v / (float) chans; }
+        auto at = [&mono, len] (double t)
+        {
+            const int i = juce::jlimit (1, len - 3, (int) t);
+            const float fr = (float) (t - i), xm1 = mono[(size_t) i - 1], x0 = mono[(size_t) i], x1 = mono[(size_t) i + 1], x2 = mono[(size_t) i + 2];
+            const float c1 = 0.5f * (x1 - xm1), c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2, c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
+            return (double) (((c3 * fr + c2) * fr + c1) * fr + x0);
+        };
+        std::vector<std::vector<float>> amps ((size_t) kF), phs ((size_t) kF);
+        std::vector<double> rms ((size_t) kF, 0.0), x ((size_t) (kN * kCycles));
+        const double usable = (double) len - 8.0 - win - fallback * kCycles;
+        // (the period is measured at every fourth frame and at the last, and taken from the two nearest between them: a
+        // recording's pitch does not move far in a sixty-fourth of its length, and the measuring is most of the work)
+        std::vector<double> period ((size_t) kF, -1.0);
+        for (int f = 0; f < kF; f = f < kF - 1 ? std::min (kF - 1, f + 4) : kF) period[(size_t) f] = periodAt (mono, (int) (2.0 + std::max (0.0, usable) * f / (kF - 1)), win, s.sr);
+        for (int f = 0; f < kF; ++f)
+        {
+            if (period[(size_t) f] >= 0.0) continue;
+            int a = f, b = f;
+            while (period[(size_t) a] < 0.0) --a;
+            while (period[(size_t) b] < 0.0) ++b;
+            const double pa = period[(size_t) a], pb = period[(size_t) b];
+            period[(size_t) f] = pa > 0.0 && pb > 0.0 ? pa + (pb - pa) * (double) (f - a) / (double) (b - a) : pa > 0.0 ? pa : pb > 0.0 ? pb : -2.0;
+        }
+        for (int f = 0; f < kF; ++f)
+        {
+            const double t0 = 2.0 + std::max (0.0, usable) * f / (kF - 1);
+            double per = period[(size_t) f];
+            if (per <= 0.0) per = fallback;
+            per = std::min (per, ((double) len - 8.0 - t0) / kCycles);
+            for (size_t i = 0; i < x.size(); ++i) x[i] = at (t0 + ((double) i + 0.5) * per / kN);
+            auto& amp = amps[(size_t) f]; auto& ph = phs[(size_t) f];
+            Mipmap::harmonicsOfCycles (x, kCycles, kH, amp, ph);
+            rms[(size_t) f] = Wavetable::rmsOf (amp);
+            const float p1 = ph[0];
+            for (size_t h = 0; h < ph.size(); ++h) ph[h] -= (float) (h + 1) * p1;
+        }
+        const double loud = *std::max_element (rms.begin(), rms.end());
+        if (loud < 1.0e-6) return nullptr;
+        std::vector<float> lev ((size_t) kF);
+        for (int f = 0; f < kF; ++f) lev[(size_t) f] = (float) (rms[(size_t) f] / loud);
+        // (a silent frame takes its nearest loud neighbour's wave, as the eight do; its own level is kept beside it)
+        for (int f = 0; f < kF; ++f)
+            if (rms[(size_t) f] < 0.01 * loud)
+                for (int d = 1; d < kF; ++d)
+                {
+                    const int k = f - d >= 0 && rms[(size_t) (f - d)] >= 0.01 * loud ? f - d : f + d < kF && rms[(size_t) (f + d)] >= 0.01 * loud ? f + d : -1;
+                    if (k >= 0) { amps[(size_t) f] = amps[(size_t) k]; phs[(size_t) f] = phs[(size_t) k]; break; }
+                }
+        for (auto& a : amps) Wavetable::toRms (a);
+        auto out = std::make_shared<Wavetable>();
+        out->build (amps, phs, voiceRate);
+        out->level = lev;
+        out->name = s.name;
+        return out;
+    }
+    // (SF-000) TABLE FILE: the loaded file is a wavetable, as Serum, Vital and Phase Plant write them: 2048 samples a
+    // frame, up to 256 frames. It is read from the file's own samples (the copy kept with the sample), not from the
+    // sample as it was brought to the rig's rate. A file of 4096 samples or fewer that is not a whole number of frames is
+    // one cycle; a file whose length is a multiple of 1024 and not of 2048 has 1024 a frame. The frames keep their levels
+    // against each other. What it made of the file, or why it could not, is `says`.
+    static std::shared_ptr<const Wavetable> fileFrom (const SampleData& s, double voiceRate, juce::String& says)
+    {
+        juce::AudioBuffer<float> raw;
+        if (s.flac.getSize() > 0)
+        {
+            juce::FlacAudioFormat fmt;
+            std::unique_ptr<juce::AudioFormatReader> r (fmt.createReaderFor (new juce::MemoryInputStream (s.flac, false), true));
+            if (r != nullptr && r->lengthInSamples > 0)
+            {
+                if (r->lengthInSamples > 256 * 2048) { says = "NOT A WAVETABLE FILE (LONGER THAN 256 FRAMES OF 2048): TABLE SAMPLE READS A RECORDING"; return nullptr; }
+                raw.setSize ((int) std::max (1u, std::min (2u, r->numChannels)), (int) r->lengthInSamples);
+                r->read (&raw, 0, (int) r->lengthInSamples, 0, true, true);
+            }
+        }
+        if (raw.getNumSamples() == 0)
+        {
+            if (s.length() > 256 * 2048) { says = "NOT A WAVETABLE FILE (LONGER THAN 256 FRAMES OF 2048): TABLE SAMPLE READS A RECORDING"; return nullptr; }
+            raw.makeCopyOf (s.buf);
+        }
+        const int n = raw.getNumSamples(), chans = raw.getNumChannels();
+        if (n < 16) { says = "NOT A WAVETABLE FILE (TOO SHORT)"; return nullptr; }
+        std::vector<double> mono ((size_t) n);
+        for (int i = 0; i < n; ++i) { double v = 0.0; for (int ch = 0; ch < chans; ++ch) v += raw.getSample (ch, i); mono[(size_t) i] = v / chans; }
+        int size = 2048, count = n / 2048;
+        bool one = false;
+        if (n % 2048 != 0)
+        {
+            if (n <= 4096) { one = true; count = 1; }
+            else if (n % 1024 == 0) { size = 1024; count = n / 1024; }
+        }
+        if (count < 1) { one = true; count = 1; }
+        const int H = std::min ((int) Wavetable::kMaxHarm, size / 2 - 1);
+        std::vector<std::vector<float>> amps ((size_t) count), phs ((size_t) count);
+        std::vector<double> cyc ((size_t) size);
+        double loud = 0.0;
+        for (int f = 0; f < count; ++f)
+        {
+            if (one)
+                // (one cycle of any length: read at 2048 even steps round it)
+                for (int i = 0; i < size; ++i)
+                {
+                    const double t = ((double) i + 0.5) * n / size - 0.5;
+                    const int i0 = (int) std::floor (t); const double fr = t - i0;
+                    auto v = [&] (int k) { return mono[(size_t) (((k % n) + n) % n)]; };
+                    const double xm1 = v (i0 - 1), x0 = v (i0), x1 = v (i0 + 1), x2 = v (i0 + 2);
+                    cyc[(size_t) i] = ((0.5 * (x2 - xm1) + 1.5 * (x0 - x1)) * fr + (xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2)) * fr * fr + 0.5 * (x1 - xm1) * fr + x0;
+                }
+            else
+                for (int i = 0; i < size; ++i) cyc[(size_t) i] = mono[(size_t) (f * size + i)];
+            Mipmap::harmonicsOf (cyc, H, amps[(size_t) f], phs[(size_t) f]);
+            loud = std::max (loud, Wavetable::rmsOf (amps[(size_t) f]));
+        }
+        if (loud < 1.0e-6) { says = "NOT A WAVETABLE FILE (IT IS SILENT)"; return nullptr; }
+        for (auto& a : amps) for (auto& v : a) v = (float) (v * 0.5 / loud);
+        auto out = std::make_shared<Wavetable>();
+        out->build (amps, phs, voiceRate);
+        out->name = s.name;
+        says = one ? juce::String ("ONE CYCLE OF ") + juce::String (n) + " SAMPLES"
+                   : juce::String (count) + (count == 1 ? " FRAME OF " : " FRAMES OF ") + juce::String (size) + (n % size != 0 ? " (" + juce::String (n % size) + " SAMPLES OVER, LEFT OUT)" : juce::String());
+        return out;
+    }
+    // What WAVETABLE can make of the loaded sample: the eight frames, the sixty-four, and the file read as a wavetable.
+    // Made once for a sample and a rate, and shared by every lane and voice that holds that sample.
+    struct SampleTables { std::shared_ptr<const SampleFrames> legacy; std::shared_ptr<const Wavetable> fine, file; juce::String fileSays; };
+    static std::shared_ptr<const SampleTables> tablesFrom (const SamplePtr& s, double voiceRate)
+    {
+        struct Kept { std::weak_ptr<const SampleData> of; double rate = 0.0; std::weak_ptr<const SampleTables> made; };
+        static std::mutex lock;
+        static std::vector<Kept> kept;
+        {
+            const std::lock_guard<std::mutex> g (lock);
+            kept.erase (std::remove_if (kept.begin(), kept.end(), [] (const Kept& k) { return k.of.expired() || k.made.expired(); }), kept.end());
+            for (auto& k : kept) if (k.rate == voiceRate && k.of.lock() == s) if (auto m = k.made.lock()) return m;
+        }
+        auto t = std::make_shared<SampleTables>();
+        t->legacy = framesFrom (*s, voiceRate);
+        t->fine = fineFrom (*s, voiceRate);
+        t->file = fileFrom (*s, voiceRate, t->fileSays);
+        const std::lock_guard<std::mutex> g (lock);
+        kept.push_back ({ s, voiceRate, t });
+        return t;
+    }
     void buildFrames()
     {
         if (! hasWavetable()) return;
         auto s = sample.get();
-        frames.set (s != nullptr ? framesFrom (*s, 2.0 * sr) : nullptr);
+        frames.set (s != nullptr ? tablesFrom (s, 2.0 * sr) : nullptr);
     }
 
     void prepare (double rate, int mb) override
@@ -545,6 +725,7 @@ public:
         osr = 2.0 * rate;
         if (rateChanged || (frames.audio() == nullptr && sample.get() != nullptr)) buildFrames();
         waves = WaveSet::get (osr);
+        if (hasWavetable()) tables = WavetableSet::get (osr);       // (SF-000)
         dec.prepare (rate);
         decB.prepare (rate);
         for (auto& d : dec4) d.set (HalfbandDesign::forStage (rate, 1));
@@ -691,8 +872,25 @@ public:
         blockReg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();
         for (auto& v : voices) if (v.active) v.reg.level = blockReg.level;        // (SF-000) GAIN reaches a note that is sounding
         // WAVETABLE's frames from the sample, if TABLE says so and there are some.
-        tableFrames = c.ci (TABLE) == 1 ? frames.audio() : nullptr;
-        if (tableFrames != nullptr && tableFrames->f.size() < (size_t) kSampleFrames) tableFrames = nullptr;
+        // (SF-000) and which table: the four waves, one that came with the instrument, the file read as one, or the
+        // recording's frames (eight as it always was, or sixty-four). What cannot be had plays the four waves.
+        tableFrames = nullptr; wtTab = nullptr; wtLevel = false;
+        if (hasWavetable())
+        {
+            const int tab = c.ci (TABLE);
+            const SampleTables* st = frames.audio();
+            if (tab >= 1 && tab <= WavetableSet::kTables) wtTab = tables != nullptr ? &tables->t[tab - 1] : nullptr;
+            else if (tab == kTabFile) wtTab = st != nullptr ? st->file.get() : nullptr;
+            else if (tab == kTabSample && st != nullptr)
+            {
+                const int from = c.ci (WTFROM);
+                if (from == 0) tableFrames = st->legacy.get();
+                else { wtTab = st->fine.get(); wtLevel = from == 2; }
+            }
+            if (tableFrames != nullptr && tableFrames->f.size() < (size_t) kSampleFrames) tableFrames = nullptr;
+            if (wtTab != nullptr && wtTab->frames() < 1) wtTab = nullptr;
+            wtTwist = c.v (WTTWIST); wtTwistAs = c.ci (WTTWISTAS); wtEnv = c.v (WTENV); wtWander = c.v (WTWANDER);
+        }
         pitchOffset = c.v (TUNE) + c.bend + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);      // (SF-000: and the pitch wheel)
         const int modelA = c.ci (MODEL), modelB = c.ci (LAYERMODEL);
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
@@ -835,15 +1033,88 @@ public:
         if (s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART, SCUTS);
         r = r.withHeight ((float) kOwn);
         auto left = r.removeFromLeft (r.getWidth() * 0.4f);
+        const int nv = activeVoices.load();
+        if (playsTable()) { paintTable (g, left); out.pocket.paint (g, r.withTrimmedLeft (8)); return; }       // (SF-000) WAVETABLE: its table where VOICES is
         ui::frame (g, left, "VOICES");
         // Playing has kPlayVoices; more sound only while a MODEL change lets the old sound release.
-        const int nv = activeVoices.load();
         ui::label (g, juce::String (nv) + (nv <= kPlayVoices ? " / " + juce::String (kPlayVoices) : juce::String()), left.reduced (10, 18), ui::kText, 18.0f, juce::Justification::centred);
         // The sample's name is on the strip under this, once the editor has made room for it.
         const juce::String root = s != nullptr && s->rootHz > 0 ? "ROOT " + juce::MidiMessage::getMidiNoteName ((int) std::lround (s->rootNote), true, true, 3) : juce::String();
         ui::label (g, s == nullptr ? juce::String ("NO SAMPLE") : st.isEmpty() ? s->name.toUpperCase() + (root.isEmpty() ? "" : " " + root) : root,
                    left.reduced (8, 2).removeFromBottom (14), ui::kFaint, 10.0f);
         out.pocket.paint (g, r.withTrimmedLeft (8));
+    }
+    // (SF-000) MODEL is WAVETABLE (as the knobs stand: the display's and the status line's question, not the audio's)
+    bool playsTable() const
+    {
+        if (! hasWavetable() || ! getParam) return false;
+        const int mi = (int) std::lround (getParam (MODEL));
+        return mi >= 0 && mi < (int) models.size() && models[(size_t) mi].engine == E_WAVETABLE;
+    }
+    // The table as the knobs choose it: one of many frames, or TABLE SAMPLE's eight, or (neither) the four waves.
+    void tableNow (const Wavetable*& wt, const SampleFrames*& eight, juce::String& called) const
+    {
+        wt = nullptr; eight = nullptr; called = "CLASSIC";
+        const int tab = (int) std::lround (getParam (TABLE));
+        const SampleTables* st = frames.audio();
+        if (tab >= 1 && tab <= WavetableSet::kTables) { if (tables != nullptr) { wt = &tables->t[tab - 1]; called = WavetableSet::nameOf (tab - 1); } }
+        else if (tab == kTabFile) { if (st != nullptr && st->file != nullptr) { wt = st->file.get(); called = "FILE"; } }
+        else if (tab == kTabSample && st != nullptr)
+        {
+            if ((int) std::lround (getParam (WTFROM)) == 0) { if (st->legacy != nullptr && st->legacy->f.size() >= (size_t) kSampleFrames) { eight = st->legacy.get(); called = "SAMPLE"; } }
+            else if (st->fine != nullptr) { wt = st->fine.get(); called = "SAMPLE"; }
+        }
+    }
+    // Its frames one behind another, from the first at the front to the last at the back, and the place the knob is at lit.
+    void paintTable (juce::Graphics& g, juce::Rectangle<float> r)
+    {
+        const Wavetable* wt; const SampleFrames* eight; juce::String called;
+        tableNow (wt, eight, called);
+        ui::frame (g, r, "TABLE " + called + (wt != nullptr ? "  " + juce::String (wt->frames()) : juce::String()), ui::kWords);
+        auto W = waves;
+        if (wt == nullptr && eight == nullptr && W == nullptr) return;
+        auto shape = [&] (float place, double ph) -> float
+        {
+            if (wt != nullptr) return wt->at (place, 4, ph);
+            if (eight != nullptr) { const float pos = place * (float) (kSampleFrames - 1); const int t0 = std::min (kSampleFrames - 2, (int) pos); return lerp (eight->f[(size_t) t0].read (4, ph), eight->f[(size_t) t0 + 1].read (4, ph), pos - (float) t0); }
+            const float pos = place * 3.0f; const int t0 = std::min (2, (int) pos);
+            return lerp (W->frame[t0].read (4, ph), W->frame[t0 + 1].read (4, ph), pos - (float) t0);
+        };
+        const auto in = r.reduced (8.0f, 4.0f).withTrimmedTop (13.0f);
+        const float w = in.getWidth() * 0.72f, back = in.getWidth() - w, rise = in.getHeight() * 0.38f, amp = in.getHeight() * 0.30f;
+        auto line = [&] (float place)
+        {
+            juce::Path p;
+            const float x0 = in.getX() + back * place, y0 = in.getBottom() - amp - 1.0f - rise * place;
+            for (int i = 0; i <= 56; ++i)
+            {
+                const float y = y0 - amp * juce::jlimit (-1.0f, 1.0f, 0.7f * shape (place, (double) i / 56.0 * 0.9999));
+                if (i == 0) p.startNewSubPath (x0, y); else p.lineTo (x0 + w * (float) i / 56.0f, y);
+            }
+            return p;
+        };
+        for (int j = 8; j >= 0; --j) { g.setColour (ui::kDim.withAlpha (0.30f + 0.45f * (1.0f - (float) j / 8.0f))); g.strokePath (line ((float) j / 8.0f), juce::PathStrokeType (1.0f)); }
+        g.setColour (ui::kText); g.strokePath (line (clamp01 (getParam (COLOR))), juce::PathStrokeType (1.8f));
+        const int nv = activeVoices.load();
+        ui::label (g, juce::String (nv) + (nv <= kPlayVoices ? " / " + juce::String (kPlayVoices) : juce::String()), r.reduced (6, 2).removeFromBottom (12), ui::kFaint, 10.0f, juce::Justification::centredRight);
+    }
+    // What TABLE FILE or TABLE SAMPLE made of what is loaded, or why the four waves are playing in its place.
+    juce::String statusLine() const override
+    {
+        if (! playsTable()) return {};
+        const int tab = (int) std::lround (getParam (TABLE));
+        const SampleTables* st = frames.audio();
+        if (tab == kTabFile)
+            return st == nullptr ? juce::String ("TABLE FILE: NO FILE ON THIS LANE. THE CLASSIC TABLE PLAYS")
+                 : st->file != nullptr ? "TABLE FILE: " + st->fileSays : "TABLE FILE: " + st->fileSays + ". THE CLASSIC TABLE PLAYS";
+        if (tab == kTabSample)
+        {
+            const bool eight = (int) std::lround (getParam (WTFROM)) == 0;
+            if (st == nullptr) return "TABLE SAMPLE: NO SAMPLE ON THIS LANE. THE CLASSIC TABLE PLAYS";
+            if (eight ? st->legacy == nullptr : st->fine == nullptr) return "TABLE SAMPLE: THE SAMPLE IS TOO SHORT TO CUT FRAMES FROM. THE CLASSIC TABLE PLAYS";
+            return juce::String ("TABLE SAMPLE: ") + (eight ? "8" : "64") + " FRAMES ALONG THE RECORDING";
+        }
+        return {};
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool press) override
     {
@@ -1249,6 +1520,14 @@ private:
         const float res = k.res; juce::ignoreUnused (res);
         const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, gainAll = k.gainAll, subMul = k.subMul;
         const double wtDet = m.detune > 0.0f ? (double) semis (k.detCents / 100.0f) : 1.0;      // (SF-000) WAVETABLE's second reading
+        // (SF-000) WAVETABLE's WANDER and TWIST, worked out once for the block
+        const float wtWanderAmp = std::abs (wtWander - 0.3f) < 1.0e-4f ? 0.15f : wtWander * 0.5f;
+        const bool wtTwisted = m.engine == E_WAVETABLE && wtTwist > 0.001f;
+        // (how far each kind squeezes the wave at its most: BEND 1 to 9 times, SYNC 1 to 8, FOLD's drive 1 to 6, PULSE 1 to 10)
+        const float wtK = wtTwistAs == 0 ? 1.0f + 8.0f * wtTwist : wtTwistAs == 1 ? 1.0f + 7.0f * wtTwist : wtTwistAs == 2 ? 1.0f + 5.0f * wtTwist : 1.0f / (1.0f - 0.9f * wtTwist);
+        const float wtFoldIn = std::min (1.0f, wtTwist * 10.0f);
+        const int wtOct = ! wtTwisted || k.oct1[0] >= Mipmap::kOct ? k.oct1[0]
+                        : std::min (Mipmap::kOct - 1, k.oct1[0] + (int) std::ceil (std::log2 (wtTwistAs == 2 ? wtK * 2.0f : wtK)));
         // (SF-000) DETUNE where an engine had none: a second 303 or a second sync up to a quarter of a semitone off, the organ's
         // drawbars each a few cents from true. Not on BASS, whose voice stays one and in the middle.
         const bool detOn = det > 0.001f && roleId != ROLE_BASS;
@@ -1421,21 +1700,52 @@ private:
                     break;
                 case E_WAVETABLE:
                 {
-                    // TABLE SAMPLE with a sample's frames: COLOR across its eight; else the built-in four.
-                    const float scan = clamp01 (color + 0.15f * std::sin (kTwoPi * v.t * 0.13f));
-                    auto wave = [&] (double ph)
+                    // The place in the table: COLOR, each note's own slow WANDER about it, and the filter envelope by POS ENV.
+                    // (SF-000: the wander was always 15 %, which is WANDER at 30; with no POS ENV this is what it always was.)
+                    float scan = wtWanderAmp > 0.0f ? color + wtWanderAmp * std::sin (kTwoPi * v.t * 0.13f) : color;
+                    if (wtEnv != 0.0f) scan += wtEnv * v.fenv.v;
+                    scan = clamp01 (scan);
+                    // one reading of the table there: a table of many frames, or TABLE SAMPLE's eight, or the four waves
+                    auto read = [&] (double ph, int oct) -> float
                     {
+                        if (wtTab != nullptr) return wtTab->at (scan, oct, ph);
                         if (tableFrames != nullptr)
                         {
                             const float pos = scan * (float) (kSampleFrames - 1);
                             const int t0 = std::min (kSampleFrames - 2, (int) pos);
                             const float fr = pos - (float) t0;
-                            return lerp (tableFrames->f[(size_t) t0].read (oct1[0], ph), tableFrames->f[(size_t) t0 + 1].read (oct1[0], ph), fr);
+                            return lerp (tableFrames->f[(size_t) t0].read (oct, ph), tableFrames->f[(size_t) t0 + 1].read (oct, ph), fr);
                         }
                         const float pos = scan * 3.0f;
                         const int t0 = std::min (2, (int) pos);
                         const float fr = pos - (float) t0;
-                        return lerp (W.frame[t0].read (oct1[0], ph), W.frame[t0 + 1].read (oct1[0], ph), fr);
+                        return lerp (W.frame[t0].read (oct, ph), W.frame[t0 + 1].read (oct, ph), fr);
+                    };
+                    // TWIST: the cycle bent as it is read. Whatever squeezes the wave reads a level with that many fewer
+                    // harmonics (wtOct), so what it adds stays under the fold.
+                    auto wave = [&] (double ph) -> float
+                    {
+                        if (! wtTwisted) return read (ph, oct1[0]);
+                        switch (wtTwistAs)
+                        {
+                            case 0:     // BEND: the wave squeezed towards the end of the cycle
+                                return read (ph / (ph + (1.0 - ph) * (double) wtK), wtOct);
+                            case 1:     // SYNC: read faster than the note and restarted by it, the restart eased over the cycle's last sixteenth
+                            {
+                                double p2 = ph * (double) wtK; p2 -= std::floor (p2);
+                                float y = read (p2, wtOct);
+                                if (ph > 0.9375) { const float w = 0.5f + 0.5f * std::cos (3.14159265f * (float) ((ph - 0.9375) * 16.0)); y = y * w + read (0.0, wtOct) * (1.0f - w); }
+                                return y;
+                            }
+                            case 2:     // FOLD: driven into a folder (brought in over the knob's first tenth, so that leaving nought never steps)
+                            {
+                                const float y = read (ph, wtOct), z = y * wtK * 0.25f + 0.25f;
+                                const float folded = 1.0f - 4.0f * std::abs (z - std::floor (z) - 0.5f);
+                                return y + wtFoldIn * (folded - y);
+                            }
+                            default:    // PULSE: the whole wave in the front of the cycle, and held where it ends
+                                return read (ph * (double) wtK < 1.0 ? ph * (double) wtK : 0.0, wtOct);
+                        }
                     };
                     x = wave (v.ph[0]);
                     v.ph[0] += inc; wrap01 (v.ph[0]);
@@ -1445,6 +1755,7 @@ private:
                         x = (x + wave (v.ph[1])) * 0.7071f;
                         v.ph[1] += inc * wtDet; wrap01 (v.ph[1]);
                     }
+                    if (wtLevel && wtTab != nullptr) x *= wtTab->levelAt (scan);        // (SF-000) the level the recording had there
                     break;
                 }
                 case E_GRAIN:
@@ -1721,8 +2032,12 @@ private:
     static constexpr int kBDrain = 64;
     int bLive = 0;
     LayerSplit split;
-    SharedSlot<SampleFrames> frames;                   // WAVETABLE's frames from the sample (buildFrames)
-    const SampleFrames* tableFrames = nullptr;         // this block's (processVoices)
+    SharedSlot<SampleTables> frames;                   // what WAVETABLE can make of the sample (buildFrames)
+    const SampleFrames* tableFrames = nullptr;         // this block's (processVoices): TABLE SAMPLE's eight, or
+    const Wavetable* wtTab = nullptr;                  // (SF-000) a table of many frames, or neither: the four waves
+    bool wtLevel = false;
+    float wtTwist = 0.0f, wtEnv = 0.0f, wtWander = 0.0f; int wtTwistAs = 0;
+    std::shared_ptr<const WavetableSet> tables;        // (SF-000) the tables that come with the instrument, at this rate
     // DRIFT: each voice slot's tuning and cutoff (-1..1), its drift's phase and pace; the drift's clock (s).
     struct SlotDrift { float tune = 0, cut = 0, ph = 0, rate = 1; };
     std::array<SlotDrift, 2 * kPlayVoices> slotDrift {};

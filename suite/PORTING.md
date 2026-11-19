@@ -102,6 +102,16 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   first (`Source/CueRig.h`): on the shared block it ducked under the first rig's kick, and
   would have written its key and its lanes' energies where the first reads them. The suite
   has no such process and nothing there changes. See DECISIONS 598.
+- **Eighty-fifth build, all marked `(SF-000)`. None of it is in the suite.** `core/Wavetable.h`,
+  new: `Wavetable` (many frames, each band-limited a level an octave as `Mipmap` is, a level
+  only as long as its harmonics need) and `WavetableSet` (eleven tables of 64 frames, made
+  once for a rate). `modules/Synth.cpp`: TABLE's list is CLASSIC, the eleven, FILE, SAMPLE
+  (it was BUILT-IN, SAMPLE: the first and last have not moved); `wt_twist`, `wt_twist_as`,
+  `wt_env`, `wt_wander`, `wt_from`, appended; `fineFrom` (64 frames from a recording, with its
+  level), `fileFrom` (a wavetable file read from the sample's own copy of it), `tablesFrom`
+  (what a sample makes, kept once for every holder of it); the oscillator reads `wtTab` where
+  there is one and what it always read where there is not; the display draws the table. The
+  suite's WAVETABLE has the four waves and eight frames from a sample. See DECISIONS 727 to 731.
 - **Eighty-fourth build, all marked `(SF-000)`. None of it is in the suite.** `core/Module.h`:
   `meter (int)`, a figure a module reports to its host. `modules/Master.cpp` (LIMIT): `meter`
   (0 the limiter's gain reduction, 1 what the clipper takes off the block's loudest sample, 2
