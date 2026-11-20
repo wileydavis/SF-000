@@ -5605,7 +5605,7 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      drawings; not in the repo; SPACE is drawn as each of its three reverbs):
      - every CONFIG is a row of 4 by 4 grids, each place a knob, a list or a button;
      - a lane has the same eight grids in the same order: LANE, SOUND, MODEL, LAYER, SAMPLE,
-       MOTION, EQ 1 to 4, EQ 5 to 8;
+       MOTION, EQ 1 to 4, EQ 5 to 8 (the EQ came out of it: 754);
      - every control has one place for good. One that is on a lane's panel leaves its place
        in CONFIG empty; one a model brings appears in its own place and moves nothing;
      - LANE and the two EQ grids and MOTION are the same on all eleven lanes, SOUND the same
@@ -5617,6 +5617,11 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - a grid is one page of the E16's sixteen knobs.
      Every control every page lists has a place in it (checked against the audit: none left
      over).
+
+754. **You**, Nov 19, 22:25, on the proposal: "1. the eq can stay exactly as it is. I like it."
+     **So the EQ is not part of the grids.** A lane's CONFIG in the proposal is six grids (LANE,
+     SOUND, MODEL, LAYER, SAMPLE, MOTION) and then the EQ as it is now, untouched. The eleven
+     lane drawings are redrawn so. Still a drawing only.
 
 ## Not verified
 
