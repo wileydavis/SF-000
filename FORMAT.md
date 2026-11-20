@@ -214,6 +214,12 @@ this build does not have is written back as it was read.
   (-1 to 1 of its travel) while the step plays. `locked`: the steps whose switch is on. A step
   in `locks` and not in `locked` is OFF and keeping what it learnt. Neither is written where
   there is none, and a build from before reads the pattern without them.
+- **RELEASE and MONO** (ninety-third build), in a synth lane's `setup` (BASS, LEAD, CHORD,
+  PAD): `release` (0 to 1; 0.5 is the model's own release, 0 a tenth of it, 1 ten times it)
+  and `mono` (0 or 1). A setup that names neither is read with `release` 0.5 and `mono` 1 on
+  BASS, 0 on the others. From this build SAMPLE, WAVETABLE, FM 4-OP, GRANULAR, ACID 303-TYPE
+  and MONO 101-TYPE are one engine each on every lane that has them, so a snapshot with BASS
+  or PAD on one of them does not sound as it did before (DECISIONS 755).
 - **WAVETABLE** (eighty-fifth build), in a lane's `setup`: `table` is a place on a longer list
   (CLASSIC, eleven tables, FILE, SAMPLE: 0 is still the first and 1 still the last, which were
   the list before); `wt_twist`, `wt_twist_as` (BEND, SYNC, FOLD, PULSE), `wt_env` (0.5: none),

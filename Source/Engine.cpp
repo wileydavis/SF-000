@@ -1528,6 +1528,13 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
         if (id.startsWith ("pocket_")) return "POCKET";
         if (id.startsWith ("echo_")) return "ECHO";
         if (id == "alloc") return {};                       // (the rig has no ALLOC: the switch would do nothing)
+        // (MONO, the ninety-third build's: listed while the lane's model or its layer's is one of the engines more than one
+        // lane has, which are the ones it speaks to. Last in its box, so nothing in the box moves as it comes and goes.)
+        if (id == "mono")
+        {
+            for (const char* e : { "SAMPLE", "WAVETABLE", "FM 4-OP", "GRANULAR", "ACID 303-TYPE", "MONO 101-TYPE" }) if (plays (e)) return "RIG";
+            return {};
+        }
         if (s.setup) return "RIG";
         return plain;
     };
@@ -1603,18 +1610,7 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
                 if (i < 0) continue;
                 auto sp = made (i);
                 sp.name = names[j]; sp.group = "MOTION " + juce::String (k); sp.ownRow = j == 0 && k == 1; sp.section = 1;        // (the two side by side, on a row of their own)
-                if (j == 2)
-                {
-                    // what it moves: the lane's own knobs first, as the panel has them, then the rest of the instrument's
-                    juce::StringArray shown;
-                    const auto order = motionOrder (t, *p, &shown);
-                    const int now = (int) std::lround (p->param (i)->convertFrom0to1 (p->param (i)->getValue()));
-                    int at = 0;
-                    for (size_t q = 0; q < order.size(); ++q) if (order[q] == now) at = (int) q + 1;
-                    sp.choices.clear(); sp.choices.add ("OFF"); sp.choices.addArray (shown);
-                    sp.value = order.empty() ? 0.0f : (float) at / (float) order.size(); sp.def = 0.0f; sp.text = sp.choices[at];
-                }
-                out.push_back (sp);
+                out.push_back (sp);         // (TARGET's list is made at the foot, once it is known what the page lists)
             }
         }
     }
@@ -1653,7 +1649,37 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
                 out.push_back (sp);
             }
         }
+    // MOTION's TARGET, what it can move: the panel's own knobs first, as the panel has them, then the rest of what this
+    // page lists, and nothing else (the ninety-third build: it listed every control the instrument has, another model's
+    // with them. Wiley, Nov 19: "the list of motion targets lists targets that aren't even visible control parameters for
+    // the selected model."). What a MOTION already moves stays on its list while it moves it, seen or not.
+    {
+        const auto seen = shownParams (*p, bound, out);
+        for (auto& sp : out)
+        {
+            if (! (isMotionId (sp.id) && sp.id.endsWith ("_target"))) continue;
+            const int i = p->paramIndex (sp.id.toStdString());
+            if (i < 0) continue;
+            juce::StringArray shown;
+            const int now = (int) std::lround (p->param (i)->convertFrom0to1 (p->param (i)->getValue()));
+            const auto order = motionOrder (t, *p, seen, now, &shown);
+            int at = 0;
+            for (size_t q = 0; q < order.size(); ++q) if (order[q] == now) at = (int) q + 1;
+            sp.choices.clear(); sp.choices.add ("OFF"); sp.choices.addArray (shown);
+            sp.value = order.empty() ? 0.0f : (float) at / (float) order.size(); sp.def = 0.0f; sp.text = sp.choices[at];
+        }
+    }
     return out;
+}
+
+// The instrument's own controls that the panel or its CONFIG page shows now (their places in the module's list).
+std::vector<int> Engine::shownParams (SFProcessor& p, const std::vector<std::string>& bound, const std::vector<SetupParam>& listed)
+{
+    std::vector<int> seen;
+    auto add = [&] (int i) { if (i >= 0 && i < p.numModuleParams() && std::find (seen.begin(), seen.end(), i) == seen.end()) seen.push_back (i); };
+    for (auto& b : bound) add (p.paramIndex (b));
+    for (auto& sp : listed) if (! isMotionId (sp.id)) add (p.paramIndex (sp.id.toStdString()));
+    return seen;
 }
 
 bool Engine::isMotionId (const juce::String& id)
@@ -1662,7 +1688,7 @@ bool Engine::isMotionId (const juce::String& id)
         && (id.endsWith ("_src") || id.endsWith ("_rate") || id.endsWith ("_target") || id.endsWith ("_depth"));
 }
 
-std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArray* names) const
+std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, const std::vector<int>& seen, int keep, juce::StringArray* names) const
 {
     const auto& targets = p.motionTargetParams();           // TARGET's choice c (1 on) moves module parameter targets[c - 1]
     const auto& specs = p.allSpecs();
@@ -1682,7 +1708,9 @@ std::vector<int> Engine::motionOrder (Target t, SFProcessor& p, juce::StringArra
             const int pi = p.paramIndex (defs[k].param);
             for (size_t c = 0; c < targets.size(); ++c) if (targets[c] == pi) add ((int) c + 1, defs[k].label);
         }
-    for (size_t c = 0; c < targets.size(); ++c) add ((int) c + 1, juce::String (specs[(size_t) targets[c]].name));
+    // (then the rest of what is shown; and what this MOTION moves now, shown or not, so that the list says what it is)
+    for (size_t c = 0; c < targets.size(); ++c)
+        if ((int) c + 1 == keep || std::find (seen.begin(), seen.end(), targets[c]) != seen.end()) add ((int) c + 1, juce::String (specs[(size_t) targets[c]].name));
     return order;
 }
 
@@ -1957,6 +1985,9 @@ Engine::SetupState Engine::laterOff (Target t) const
         if (const int i = p->paramIndex ("wt_twist"); i >= 0 && i < p->numModuleParams() && ! p->allSpecs()[(size_t) i].hidden)
             for (auto& kv : std::initializer_list<std::pair<const char*, float>> { { "wt_twist", 0.0f }, { "wt_twist_as", 0.0f }, { "wt_env", 0.5f }, { "wt_wander", 0.3f }, { "wt_from", 0.0f } })
                 st.push_back ({ kv.first, kv.second });
+        // (RELEASE and MONO, the ninety-third build's: as they open, which is each lane as it was: RELEASE in the middle, MONO
+        // on for BASS and off for the rest)
+        for (const char* id : { "release", "mono" }) if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams()) st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
         // (the slice markers, and whether they are the hand's: none, and the file's own cuts)
         const auto& specs = p->allSpecs();
         for (int i = 0; i < p->numModuleParams(); ++i)
@@ -2000,8 +2031,9 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
         v = juce::jlimit (0.0f, 1.0f, v);
         if (motion && id.endsWith ("_target"))
         {
-            // (CONFIG lists what it moves in its own order: back to the instrument's)
-            const auto order = motionOrder (t, *p);
+            // (CONFIG lists what it moves in its own order, and only what the page shows: back to the instrument's)
+            const int now = (int) std::lround (p->param (i)->convertFrom0to1 (p->param (i)->getValue()));
+            const auto order = motionOrder (t, *p, shownParams (*p, boundIds (t), setupParams (t)), now);
             const int at = juce::jlimit (0, (int) order.size(), (int) std::lround (v * (float) order.size()));
             v = p->param (i)->convertTo0to1 (at == 0 ? 0.0f : (float) order[(size_t) at - 1]);
         }

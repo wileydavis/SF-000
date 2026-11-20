@@ -738,7 +738,8 @@ private:
     std::array<SetupState, kLanes> initSetup;
     std::array<juce::String, kLanes> files;
     std::vector<std::string> boundIds (Target) const;
-    std::vector<int> motionOrder (Target, SFProcessor&, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
+    static std::vector<int> shownParams (SFProcessor&, const std::vector<std::string>& bound, const std::vector<SetupParam>& listed);     // the instrument's controls the panel or CONFIG shows now
+    std::vector<int> motionOrder (Target, SFProcessor&, const std::vector<int>& seen, int keep, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
     float mixGainWas = 1.0f;            // GAIN, at the last block's end
     std::atomic<int> eqWatch { -1 }, lowWatch { -1 };

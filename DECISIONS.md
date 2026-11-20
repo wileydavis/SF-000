@@ -5623,7 +5623,105 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      SOUND, MODEL, LAYER, SAMPLE, MOTION) and then the EQ as it is now, untouched. The eleven
      lane drawings are redrawn so. Still a drawing only.
 
+755. **You**, Nov 19, 22:33: "right now, do similar models behave exactly the same in all lanes ?
+     (sampler, granular, wave table, etc.)" 22:35: "wouldn't it make sense to standardize the
+     engines regardless of lane?" 22:36: "but each lane still sets its own atack, decauy etc. for
+     its engine, righht?" 22:37: "I want it so that if I select the same engine in any lane it's
+     available in, then the same knob settings would produce the same sound."
+     **Built, the ninety-third build, for the four synth lanes.** They did not: six engines are
+     on more than one of BASS, LEAD, CHORD and PAD (SAMPLE, WAVETABLE, FM 4-OP, GRANULAR,
+     ACID 303-TYPE, MONO 101-TYPE), and BASS, LEAD and PAD each had its own version of each,
+     with different times, levels, filter sweep and voices under the same knobs. Now each is
+     one definition (the suite's `Synth.cpp`, `sharedModel`), used by all three instruments.
+     *Mine, all of what follows:*
+     - **LEAD's version is the one kept**, since it sat between the other two, so LEAD and
+       CHORD play exactly as before and only BASS and PAD change. Their levels are in the
+       definition too; the lanes' own trims for these six are nought (`Calibration.h`).
+     - **Two things the lanes kept inside the engine are controls now**, in CONFIG on all four
+       lanes. **MONO**: one note at a time and down the middle (SPACE and DETUNE's second voice
+       do nothing); it opens ON on BASS and OFF on the others, which is each lane as it
+       played. It is listed while the lane's model or its layer's is one of the six. The 303
+       and the 101 play one note either way; on them it says only whether SPACE and DETUNE
+       spread the sound. **RELEASE**: every model's release, a tenth of it to ten times it,
+       its own in the middle, so nothing that is not one of the six changes; a sounding note
+       follows it.
+     - What BASS's and PAD's versions kept that LEAD's did not is not kept: a pad's WAVETABLE
+       had 0.4 s of attack and a second of release under its knobs, its GRANULAR 0.6 s and 1.5 s,
+       a bass's WAVETABLE half the filter sweep and a 0.08 s release. ATTACK, DECAY, ENV AMT and
+       RELEASE are where those are set now. **A snapshot of yours with BASS or PAD on one of
+       the six sounds different** (your word of 07:30: old snapshots may change, no
+       workarounds). Measured, each lane's instrument alone at the lane's starting values,
+       one half-second note, before and after: BASS WAVETABLE 1.4 dB quieter, FM 4-OP 0.7 dB
+       quieter, GRANULAR 2.3 dB louder, the 101 0.4 dB and the 303 0.1 dB quieter, SAMPLE the
+       same, and the three with a release ring on for a fifth to a third of a second where
+       they were cut dead; PAD WAVETABLE 6.0 dB louder over that half second (it comes up at once,
+       where it took 0.4 s) and the same after, GRANULAR 9.2 dB louder while held and 5.2 dB
+       after, FM 4-OP 1.2 dB quieter while held and 4.4 dB after, SAMPLE 0.6 dB louder while
+       held and 4.1 dB quieter after. Against each lane's own models on the same measure:
+       BASS's own run from -27.1 to -23.1 dB and the six are inside that but for SAMPLE
+       (-27.5, as it was); PAD's own run from -41.4 to -33.2 dB, and WAVETABLE is now -33.9,
+       GRANULAR -32.0 (1.2 dB over the loudest of them) and FM 4-OP -30.5 (it was -29.3).
+       I have not trimmed them per lane: a trim per lane is the thing you asked to be rid of.
+     - **The check that says it is so** (`sameEngineTest`, `SF000_TEST_NEW=u`): the BASS, LEAD
+       and PAD instruments themselves, every control put where LEAD's opens and then every
+       sound control somewhere else, MONO on and off, the same engine chosen, the same notes
+       (a chord, two that overlap, one left to ring): the output is the same sample for sample,
+       for each of the six, and with one of them layered under another. `--enginelevels`
+       prints the measure above.
+     - **Not covered, and said to you:** SAMPLE on KICK, the hats, CLAP, PERC, RUMBLE and VOICE
+       is a different program from the synth lanes' SAMPLE and is not made the same as it.
+       And what a lane's *panel* shows for an engine still differs in a few places (GRANULAR's
+       eighth knob, three of WAVETABLE's): that is the 4 by 4 CONFIG's to settle (753).
+
+756. **You**, Nov 19, 22:42: "also, does the eq have the ability to apply to pre or post effects
+     on all lanes?" I answered that it is after the three inserts on every lane, with no
+     switch, and offered one. 22:44: "that was just for pockets. post effects is okay for eq."
+     **So the EQ stays after the effects, and there is no PRE / POST for it.** (Before or after
+     the effects is the pocket's choice: AFTER FX.) Nothing built.
+
+757. **You**, Nov 19, 23:00: "another bug with pad. when i tured the gate down while playing a
+     sustaned note, it went away but the sound didn't comr backl when i turned the gate up. had to
+     stop/start to have it play the note again." 23:07: "when did the live update bug happen.
+     it's relatively new. i never experienced it before"
+     **Fixed, the ninety-third build; and it was mine, from the ninety-second.** Two things of
+     two ages, as I answered: (a) LAYER, LAYER MODEL, CHORD, ATTACK, DECAY, GATE and ACCENT read
+     only when a note began is as old as SF-000 (its first commit, Nov 11, and the suite's
+     Synth before it); it shows only on one long held note, since on short notes the next note
+     has the knob within a step. (b) GATE not coming back is from the ninety-second build
+     (pushed Nov 19, 22:09): until then GATE did nothing to a held note; that build made its
+     lower half end the note where the knob says and did nothing about the way back. *Mine:*
+     when GATE comes back over half way (where a note lasts as long as its key) every key that
+     is still down and has no note of its own sounding is played again, the layer's too, as
+     MODEL and CHORD play them; a key whose note had not yet ended keeps it. Checked on PAD in
+     the rig (gone by 34 dB, back within 0.4 dB of the note never touched) and on BASS's
+     instrument alone on one voice and on a chord. Within the lower half a note that has
+     ended is not brought back by a longer GATE: by then it would have ended anyway.
+
+758. **You**, Nov 19, 23:06: "and the list of motion targets lists targets that aren't even
+     visible control parameters for the selected model."
+     **Fixed, the ninety-third build.** A MOTION's TARGET listed every control the instrument
+     has (53 on a synth lane), FM 4-OP's operators and GRANULAR's grains on a lane playing
+     neither. *Mine:* it lists the panel's own knobs first, as before, then the rest of what
+     that CONFIG page lists now, and nothing else: 26 on a synth lane on one of its own
+     models, 35 on FM 4-OP, 34 on GRANULAR. The same rule on an effect and a return (a
+     convolution's bands are targets while BANDS is on). What a MOTION already moves stays on
+     that MOTION's list while it moves it, shown or not, so the list never names the wrong
+     thing after MODEL changes; it leaves when the target is set to something else. A
+     snapshot keeps its target by the parameter, as since the eighty-fifth build, so none is
+     changed by this.
+
 ## Not verified
+
+- **The ninety-third build (755) is measured, and not heard.** That the same engine with the
+  same settings is the same on BASS, LEAD and PAD is exact (the output compared sample for
+  sample), on the instruments alone: a lane's own effects, EQ, pocket and LEVEL still differ,
+  as they should. Whether LEAD's version of each engine is the one you want as the standard,
+  and whether a pad's WAVETABLE and GRANULAR coming up at once (until ATTACK is raised) and
+  louder is right, are yours to say. The drum lanes', RUMBLE's and VOICE's SAMPLE is not
+  covered. Not built on the Mac. **GATE back up (757) and MOTION's shorter list (758)** are
+  checked on the session; whether the note coming back at its start (its attack again) is
+  how you want it, and whether anything you used as a target is now missing from a list, are
+  yours to say.
 
 - **The ninety-second build (751, 752) is measured, and not heard.** The seven controls follow
   the knob on a sounding note by the numbers; whether a CHORD change that plays the held keys

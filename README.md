@@ -230,7 +230,9 @@ back at the other. The sequencer stays where it is.
   Each lane has two: WAVE (sine,
   triangle, square, ramps, random, drift, steps, an envelope, the kick's hits, the lane's own
   notes), SPEED (a sixteenth to 64 bars, locked to the bars), TARGET (the lane's own knobs first,
-  as on its panel, then the rest of the instrument's) and AMOUNT (either way, up to the whole
+  as on its panel, then the rest of what its CONFIG page lists for the model it is on, and
+  nothing the page does not show: the ninety-third build; what a MOTION already moves stays on
+  its list while it moves it) and AMOUNT (either way, up to the whole
   range). It adds to where the knob stands and to what a snapshot knob does. It is kept in
   snapshots; one taken before MOTION could be set means it off.
   **What a MOTION moves is kept by the parameter** (eighty-fifth build). It was kept as a place
@@ -752,7 +754,8 @@ long notes they did nothing until the pattern was stopped and run again.
   that are down. LAYER MODEL and CHORD play the keys that are down again on the new one, as
   MODEL does.
 - ATTACK, DECAY and GATE change the times of the envelope a note is in, where it is. GATE's
-  lower half ends a note where the knob now says.
+  lower half ends a note where the knob now says; brought back over half way while the key is
+  still down, the note plays again (the ninety-third build).
 - What a knob cannot do is reach back: ATTACK on a note that has finished coming up, ENV AMT
   after its sweep, DENSITY and ECHO (which are the notes after a note) are heard from the next
   note.
@@ -760,6 +763,30 @@ long notes they did nothing until the pattern was stopped and run again.
   FILTER, LEVEL and DRIVE act on the hit that is sounding.
 - `build/.../SF-000 --liveaudit [lane]` measures it: every parameter, on every model, a key
   held, a key played twice a second, and a key let go.
+
+### The same engine on any lane
+
+Six engines are on more than one of the synth lanes: **SAMPLE, WAVETABLE, FM 4-OP and GRANULAR**
+(BASS, LEAD, CHORD, PAD) and **ACID 303-TYPE and MONO 101-TYPE** (BASS, LEAD, CHORD). From the
+ninety-third build each is one thing: **chosen on any of those lanes, with the knobs set the
+same, it sounds the same.** (The instrument, that is: each lane still has its own effects, EQ,
+pocket and LEVEL after it.) Until then BASS, LEAD and PAD each had a version of its own, with
+different times and levels under the same knobs.
+
+Two things the lanes used to keep inside the engine are controls in CONFIG now:
+
+- **MONO**: one note at a time, and down the middle (SPACE and DETUNE's second voice do
+  nothing). ON where BASS starts, OFF on the others. It is listed while the lane's model, or
+  its layer's, is one of the six. The 303 and the 101 play one note either way; on them it
+  only says whether SPACE and DETUNE spread the sound.
+- **RELEASE**: how long a note takes to die away once it is let go, from a tenth of the
+  model's own time to ten times it, its own in the middle. On every model of the four lanes,
+  and a sounding note follows it. GATE's upper half lengthens it from there, as before.
+
+A pad's slow start and long tail on WAVETABLE and GRANULAR are no longer built in: ATTACK and
+RELEASE are where they are set. A lane's first knobs for an engine (the panel) still differ in
+a few places between lanes; and SAMPLE on the drum lanes, RUMBLE and VOICE is another program,
+not made the same as the synth lanes'.
 
 ### Airwindows' effects
 
@@ -1914,10 +1941,11 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
+build/.../SF-000 --enginelevels                   # every model of BASS, LEAD and PAD, the instrument alone at the lane's starting values: how loud a note is held, and in the second after
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
 build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each (a model with sound knobs of its own is named by them)
 build/.../SF-000 --printbus                       # what a print leaves: prints a small arrangement three ways (the drum bus at work, at rest, a lane leaving it part way) and says whether the files are one length, the stems add up to the mix, and where the bus's lanes are (--printbus DIR keeps the prints there)

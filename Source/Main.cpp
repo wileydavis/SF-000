@@ -2859,6 +2859,270 @@ static void airwindowsTest (int& bad)
     }
 }
 
+// The same engine on any lane (the ninety-third build). Wiley, Nov 19: "I want it so that if I select the same engine in
+// any lane it's available in, then the same knob settings would produce the same sound." The six engines more than one
+// lane has (SAMPLE, WAVETABLE, FM 4-OP, GRANULAR, ACID 303-TYPE, MONO 101-TYPE) are one definition each (the suite's
+// Synth, sharedModel). The proof: the BASS, LEAD and PAD instruments themselves, each with every control put where LEAD's
+// opens (and then somewhere else), the same engine chosen, the same notes played: what comes out is the same, sample for
+// sample. And the two things the lanes used to keep inside the engine are controls: MONO and RELEASE.
+static void sameEngineTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("the same engine on any lane (the ninety-third build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    const double rate = 48000.0; const int block = 256;
+    // (a sample for SAMPLE and GRANULAR: two seconds of a falling saw with a moving colour, the sides not alike)
+    const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-same-engine.wav");
+    {
+        juce::AudioBuffer<float> b (2, (int) (rate * 2.0));
+        double ph = 0.0, lp = 0.0;
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const double t = (double) i / rate;
+            ph += 110.0 / rate; ph -= std::floor (ph);
+            const double saw = (ph * 2.0 - 1.0) * (0.25 + 0.5 * std::exp (-t * 1.5));
+            lp += (0.02 + 0.3 * std::abs (std::sin (t * 2.3))) * (saw - lp);
+            b.setSample (0, i, (float) lp); b.setSample (1, i, (float) (0.8 * lp + 0.1 * saw));
+        }
+        wav.deleteFile();
+        if (auto out = wav.createOutputStream())
+            if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), rate, 2, 24, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+    }
+    struct Note { double on, off; int note, vel; };
+    // (a chord held and let go; then two notes that overlap, for what one voice does with them; then a last one left to ring)
+    const std::vector<Note> chordAndLine { { 0.0, 0.8, 60, 100 }, { 0.0, 0.8, 64, 100 }, { 0.0, 0.8, 67, 100 }, { 1.2, 1.6, 48, 127 }, { 1.45, 1.8, 55, 90 }, { 2.1, 2.4, 43, 110 } };
+    const double seconds = 4.0;
+    using Knobs = std::vector<std::pair<const char*, float>>;
+    // how the instrument `module` plays `engine` (nothing, where it has no such model), every control as LEAD's opens, then `knobs`
+    using During = std::function<void (SFProcessor&, int at)>;
+    auto play = [&] (const char* module, const char* engine, const char* layerEngine, const Knobs& knobs, bool& has, const std::vector<Note>* others = nullptr, const During& during = {})
+    {
+        const std::vector<Note>& notes = others != nullptr ? *others : chordAndLine;
+        SFProcessor p (sf::makeModule (module)), ref (sf::makeModule ("LEAD"));
+        juce::AudioBuffer<float> out (2, (int) (rate * seconds)); out.clear();
+        auto pick = [&] (const char* id, const char* name)
+        {
+            const int i = p.paramIndex (id); if (i < 0) return false;
+            const auto& ch = p.allSpecs()[(size_t) i].choices;
+            const auto at = std::find (ch.begin(), ch.end(), std::string (name));
+            if (at == ch.end()) return false;
+            p.param (i)->setValueNotifyingHost ((float) (at - ch.begin()) / (float) std::max<size_t> (1, ch.size() - 1));
+            return true;
+        };
+        for (int i = 0; i < p.numModuleParams(); ++i)
+        {
+            const juce::String id (p.allSpecs()[(size_t) i].id);
+            if (id == "model" || id == "layer_model") continue;
+            if (const int j = ref.paramIndex (id.toRawUTF8()); j >= 0) p.param (i)->setValueNotifyingHost (ref.param (j)->getDefaultValue());
+        }
+        has = pick ("model", engine) && (layerEngine == nullptr || pick ("layer_model", layerEngine));
+        if (! has) return out;
+        for (auto& kv : knobs) if (const int i = p.paramIndex (kv.first); i >= 0) p.param (i)->setValueNotifyingHost (kv.second);
+        p.setRateAndBufferSizeDetails (rate, block); p.prepareToPlay (rate, block);
+        p.mod().loadFiles (juce::StringArray (wav.getFullPathName()));
+        const int n = out.getNumSamples();
+        for (int i = 0; i < n; i += block)
+        {
+            juce::MidiBuffer midi;
+            if (during) during (p, i);
+            for (auto& nt : notes)
+            {
+                const int on = (int) (nt.on * rate), off = (int) (nt.off * rate);
+                if (on >= i && on < i + block) midi.addEvent (juce::MidiMessage::noteOn (1, nt.note, (juce::uint8) nt.vel), on - i);
+                if (off >= i && off < i + block) midi.addEvent (juce::MidiMessage::noteOff (1, nt.note), off - i);
+            }
+            juce::AudioBuffer<float> b (out.getArrayOfWritePointers(), 2, i, std::min (block, n - i));
+            p.processBlock (b, midi);
+        }
+        return out;
+    };
+    auto apart = [] (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b) { float w = 0.0f; for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < a.getNumSamples(); ++i) w = std::max (w, std::abs (a.getSample (ch, i) - b.getSample (ch, i))); return w; };
+    auto db = [] (double g) { return 20.0 * std::log10 (std::max (1.0e-12, g)); };
+    auto rms = [&] (const juce::AudioBuffer<float>& a, double from, double to) { double s = 0.0; const int i0 = (int) (from * rate), i1 = std::min (a.getNumSamples(), (int) (to * rate)); for (int ch = 0; ch < 2; ++ch) for (int i = i0; i < i1; ++i) s += (double) a.getSample (ch, i) * a.getSample (ch, i); return std::sqrt (s / (2.0 * std::max (1, i1 - i0))); };
+    auto side = [&] (const juce::AudioBuffer<float>& a) { double s = 0.0; for (int i = 0; i < a.getNumSamples(); ++i) { const double d = (double) a.getSample (0, i) - a.getSample (1, i); s += d * d; } return std::sqrt (s / std::max (1, a.getNumSamples())); };
+    // (the knobs somewhere else: every one of the lane's sound controls off where it opens)
+    const Knobs moved { { "cutoff", 0.7f }, { "res", 0.4f }, { "env_amt", 0.65f }, { "attack", 0.2f }, { "decay", 0.7f }, { "detune", 0.8f }, { "space", 0.8f }, { "drive", 0.5f },
+                        { "color", 0.7f }, { "release", 0.7f }, { "gate", 0.7f }, { "drift", 0.5f }, { "warp", 0.3f }, { "acid", 0.3f }, { "accent", 0.8f }, { "glide", 0.5f } };
+    auto with = [] (Knobs k, std::initializer_list<std::pair<const char*, float>> more) { for (auto& m : more) k.push_back (m); return k; };
+    const char* const engines[] = { "SAMPLE", "WAVETABLE", "FM 4-OP", "GRANULAR", "ACID 303-TYPE", "MONO 101-TYPE" };
+    const char* const lanesOf[] = { "BASS", "LEAD", "PAD" };
+    for (const char* e : engines)
+    {
+        bool same = true, sounds = true; int on = 0; float worst = 0.0f; juce::String where;
+        for (int scene = 0; scene < 4; ++scene)
+        {
+            const bool mono = (scene & 1) != 0;
+            const Knobs k = with ((scene & 2) != 0 ? moved : Knobs {}, { { "mono", mono ? 1.0f : 0.0f }, { "smp_env", 1.0f } });
+            bool hasLead = false; const auto lead = play ("LEAD", e, nullptr, k, hasLead);
+            sounds = sounds && hasLead && db (rms (lead, 0.0, seconds)) > -60.0;
+            on = 0;
+            for (const char* l : lanesOf)
+            {
+                bool has = false; const auto got = play (l, e, nullptr, k, has);
+                if (! has) continue;
+                ++on; where << (scene == 0 ? juce::String (on > 1 ? ", " : "") + l : juce::String());
+                const float d = apart (lead, got); worst = std::max (worst, d); same = same && d == 0.0f;
+            }
+        }
+        check (same && sounds && on >= 2, juce::String (e) + " on " + where + ": the same notes with the same settings come out the same, sample for sample (as the controls open and moved, MONO on and off; the furthest apart " + juce::String (worst, 9) + ")");
+    }
+    // a layer of another such engine under it: the same still
+    {
+        const Knobs k = with (moved, { { "layer", 0.6f }, { "mono", 0.0f } });
+        bool h1 = false, h2 = false, h3 = false;
+        const auto a = play ("BASS", "FM 4-OP", "WAVETABLE", k, h1), b = play ("LEAD", "FM 4-OP", "WAVETABLE", k, h2), c = play ("PAD", "FM 4-OP", "WAVETABLE", k, h3);
+        check (h1 && h2 && h3 && apart (a, b) == 0.0f && apart (b, c) == 0.0f && db (rms (b, 0.0, seconds)) > -60.0, "and with a layer of another of them under it (FM 4-OP with WAVETABLE at 60 %): BASS, LEAD and PAD the same, sample for sample");
+    }
+    // MONO: where each lane starts, and what it does
+    {
+        auto opens = [] (const char* module) { SFProcessor p (sf::makeModule (module)); const int i = p.paramIndex ("mono"); return i >= 0 && p.param (i)->getDefaultValue() > 0.5f; };
+        check (opens ("BASS") && ! opens ("LEAD") && ! opens ("PAD"), "MONO opens ON on BASS and OFF on LEAD and PAD (each lane as it played before)");
+        bool h = false;
+        const auto poly = play ("PAD", "WAVETABLE", nullptr, { { "mono", 0.0f }, { "space", 0.8f } }, h), one = play ("PAD", "WAVETABLE", nullptr, { { "mono", 1.0f }, { "space", 0.8f } }, h);
+        const double chordPoly = db (rms (poly, 0.3, 0.7)), chordOne = db (rms (one, 0.3, 0.7));
+        check (h && db (side (one)) < -100.0 && db (side (poly)) > -50.0, "MONO on: down the middle (the two sides apart by " + juce::String (db (side (one)), 1) + " dB; off, with SPACE up, " + juce::String (db (side (poly)), 1) + " dB)");
+        check (apart (poly, one) > 0.01f && chordPoly > chordOne + 1.5, "MONO on: one note at a time (a three-note chord held: " + juce::String (chordOne, 1) + " dB against " + juce::String (chordPoly, 1) + " dB with MONO off)");
+        const auto a303 = play ("LEAD", "ACID 303-TYPE", nullptr, { { "mono", 0.0f }, { "space", 0.0f }, { "detune", 0.0f } }, h), b303 = play ("LEAD", "ACID 303-TYPE", nullptr, { { "mono", 1.0f }, { "space", 0.0f }, { "detune", 0.0f } }, h);
+        check (h && apart (a303, b303) == 0.0f, "the 303 plays one note at a time either way (SPACE and DETUNE down, MONO on and off: the same, sample for sample)");
+    }
+    // RELEASE: a note let go dies away sooner to the left and later to the right, on a lane's own model as on these
+    for (const char* e : { "WAVETABLE", "STAB DUB" })
+    {
+        bool h = false;
+        const auto lo = play ("LEAD", e, nullptr, { { "release", 0.1f }, { "gate", 0.5f }, { "space", 0.0f } }, h), mid = play ("LEAD", e, nullptr, { { "release", 0.5f }, { "gate", 0.5f }, { "space", 0.0f } }, h),
+                   hi = play ("LEAD", e, nullptr, { { "release", 0.9f }, { "gate", 0.5f }, { "space", 0.0f } }, h);
+        // (the last note is let go at 2.4 s)
+        const double l = db (rms (lo, 2.5, 2.8)), m = db (rms (mid, 2.5, 2.8)), x = db (rms (hi, 2.5, 2.8));
+        check (h && l < m - 6.0 && x > m + 6.0, juce::String (e) + ": RELEASE left, middle and right, 0.1 to 0.4 s after a note is let go: " + juce::String (l, 1) + ", " + juce::String (m, 1) + " and " + juce::String (x, 1) + " dB");
+    }
+    // GATE down and up again on keys that stay down (the ninety-third build's other fix), on one voice and on a chord: the
+    // notes end, and play again when GATE is back over half way
+    for (const bool mono : { true, false })
+    {
+        const std::vector<Note> heldKeys { { 0.0, 3.8, 48, 100 }, { 0.1, 3.8, 55, 100 }, { 0.2, 3.8, 60, 100 } };
+        auto gate = [&] (SFProcessor& q, float v) { if (const int i = q.paramIndex ("gate"); i >= 0) q.param (i)->setValueNotifyingHost (v); };
+        bool h = false;
+        const Knobs k { { "mono", mono ? 1.0f : 0.0f }, { "gate", 0.75f }, { "space", 0.0f } };
+        const auto plain = play ("BASS", "WAVETABLE", nullptr, k, h, &heldKeys);
+        const auto back = play ("BASS", "WAVETABLE", nullptr, k, h, &heldKeys, [&] (SFProcessor& q, int at) { if (at == 48000 - 48000 % block) gate (q, 0.1f); if (at == 96000 - 96000 % block) gate (q, 0.75f); });
+        const double gone = db (rms (back, 1.6, 2.0)) - db (rms (plain, 1.6, 2.0)), again = db (rms (back, 2.8, 3.6)) - db (rms (plain, 2.8, 3.6));
+        check (h && gone < -40.0 && std::abs (again) < 3.0, juce::String (mono ? "one voice" : "a chord") + " (BASS on WAVETABLE, MONO " + (mono ? "on" : "off") + "), three keys held: GATE to its lower half and the notes are gone (" + juce::String (gone, 1) + " dB), back over half way a second later and they play again (" + juce::String (again, 1) + " dB against GATE never touched)");
+    }
+    // and in CONFIG: RELEASE on every synth lane; MONO while the lane's model is one of these, and not otherwise
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        auto lists = [&] (int l, const char* id) { for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) return true; return false; };
+        auto choose = [&] (int l, const char* id, const char* name)
+        {
+            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup ({ 0, l, 0 }, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+            return false;
+        };
+        bool rel = true, monoIn = true, monoOut = true, any = false;
+        for (int l = 0; l < kLanes; ++l)
+        {
+            const juce::String sl (lanes()[(size_t) l].slug);
+            if (sl != "bass" && sl != "lead" && sl != "chord" && sl != "pad") continue;
+            any = true;
+            rel = rel && lists (l, "release");
+            // (the layer's model counts as the lane's does, as it does for what an engine has of its own)
+            const char* own = sl == "bass" ? "BASS LADDER" : sl == "pad" ? "DUB WASH" : "STAB DUB";
+            const bool in = choose (l, "layer_model", own) && choose (l, "model", "WAVETABLE") && lists (l, "mono");
+            const bool out = choose (l, "model", own) && ! lists (l, "mono");
+            const bool layerIn = choose (l, "layer_model", "FM 4-OP") && lists (l, "mono");
+            choose (l, "layer_model", own);
+            if (! in || ! out || ! layerIn) std::printf ("      (%s: %d %d %d)\n", sl.toRawUTF8(), (int) in, (int) out, (int) layerIn);
+            monoIn = monoIn && in && layerIn; monoOut = monoOut && out;
+        }
+        check (any && rel, "CONFIG lists RELEASE on BASS, LEAD, CHORD and PAD");
+        check (any && monoIn && monoOut, "CONFIG lists MONO while the lane's model or its layer's is one of the engines more than one lane has, and not while both are the lane's own");
+    }
+    wav.deleteFile();
+}
+
+// MOTION's TARGET lists what the page shows, and no more (the ninety-third build). Wiley, Nov 19: "the list of motion
+// targets lists targets that aren't even visible control parameters for the selected model." It listed every control
+// the instrument has: FM 4-OP's operators and GRANULAR's grains on a lane playing neither.
+static void motionTargetsTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("MOTION's targets: what the page shows (the ninety-third build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    auto motion = [] (const juce::String& id) { return id.startsWith ("m1_") || id.startsWith ("m2_"); };
+    auto find = [&] (Engine::Target t, const char* id) { for (auto& sp : e.setupParams (t)) if (sp.id == id) return sp; return Engine::SetupParam(); };
+    auto choose = [&] (Engine::Target t, const char* id, const juce::String& name)
+    {
+        for (auto& sp : e.setupParams (t)) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup (t, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
+        return false;
+    };
+    // every choice is a knob on the lane's panel or a control its CONFIG page lists
+    auto onlyShown = [&] (Engine::Target t, int& count)
+    {
+        juce::StringArray ok; ok.add ("OFF");
+        if (t.kind == 0) for (int k = 0; k < kLaneKnobs; ++k) ok.add (e.control (cx::lane (t.lane, k)).label);
+        // (an effect's, a return's panel: its cells)
+        const KnobDef* cells = t.kind == 1 && e.insertType (t.lane, t.slot) >= 0 ? effects()[(size_t) e.insertType (t.lane, t.slot)].cells : t.kind == 2 ? (t.slot == 0 ? returnA() : returnB (e.spaceModel())).cells : nullptr;
+        if (cells != nullptr) for (int k = 0; k < kCells; ++k) if (cells[k].label != nullptr) ok.add (cells[k].label);
+        for (auto& sp : e.setupParams (t)) if (! motion (sp.id)) ok.add (sp.name);
+        bool all = true;
+        for (const char* id : { "m1_target", "m2_target" })
+        {
+            const auto tg = find (t, id);
+            count = tg.choices.size();
+            for (auto& c : tg.choices) if (! ok.contains (c)) { all = false; std::printf ("      (%s lists %s)\n", id, c.toRawUTF8()); }
+        }
+        return all && count > 1;
+    };
+    bool shown = true, fewer = true, gains = true; int lanesSeen = 0; juce::String counts;
+    int pad = -1;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        const juce::String sl (lanes()[(size_t) l].slug);
+        if (sl != "bass" && sl != "lead" && sl != "chord" && sl != "pad") continue;
+        if (sl == "pad") pad = l;
+        ++lanesSeen;
+        const Engine::Target t { 0, l, 0 };
+        const char* own = sl == "bass" ? "BASS LADDER" : sl == "pad" ? "DUB WASH" : "STAB DUB";
+        int nOwn = 0, nFm = 0, nGr = 0;
+        choose (t, "layer_model", own);
+        shown = shown && choose (t, "model", own) && onlyShown (t, nOwn);
+        shown = shown && choose (t, "model", "FM 4-OP") && onlyShown (t, nFm);
+        // (FM 4-OP's own are on the list while it is the model, and were not before)
+        juce::StringArray fm; for (auto& sp : e.setupParams (t)) if (sp.id.startsWith ("fm_") && (sp.kind == Kind::Knob || sp.kind == Kind::Bipolar)) fm.add (sp.name);
+        int fmListed = 0; { const auto tg = find (t, "m1_target"); for (auto& n : fm) if (tg.choices.contains (n)) ++fmListed; }
+        gains = gains && fm.size() > 4 && fmListed == fm.size();
+        shown = shown && choose (t, "model", "GRANULAR") && onlyShown (t, nGr);
+        fewer = fewer && nOwn < nFm;
+        counts << (counts.isEmpty() ? "" : "; ") << lanes()[(size_t) l].name << " " << (nOwn - 1) << ", on FM 4-OP " << (nFm - 1) << ", on GRANULAR " << (nGr - 1);
+        choose (t, "model", own);
+    }
+    check (lanesSeen == 4 && shown, "on BASS, LEAD, CHORD and PAD, on a model of the lane's own, on FM 4-OP and on GRANULAR: every target is a knob on the panel or a control the CONFIG page lists");
+    check (gains && fewer, "FM 4-OP's own controls are targets while it is the lane's model, and not on a model of the lane's own (how many targets: " + counts + ")");
+    // what a MOTION moves stays on its list when the model that has it is no longer the lane's, and leaves once it is let go
+    if (pad >= 0)
+    {
+        const Engine::Target t { 0, pad, 0 };
+        choose (t, "model", "FM 4-OP");
+        juce::String name; for (auto& sp : e.setupParams (t)) if (name.isEmpty() && sp.id.startsWith ("fm_") && sp.kind == Kind::Knob) name = sp.name;
+        const bool set = name.isNotEmpty() && choose (t, "m1_target", name) && find (t, "m1_target").text == name;
+        const bool kept = choose (t, "model", "DUB WASH") && find (t, "m1_target").text == name && find (t, "m1_target").choices.contains (name) && ! find (t, "m2_target").choices.contains (name);
+        const bool gone = choose (t, "m1_target", "OFF") && ! find (t, "m1_target").choices.contains (name) && find (t, "m1_target").text == "OFF";
+        // (and a target chosen from the shorter list is the one named)
+        const bool right = choose (t, "m1_target", "CUTOFF") && find (t, "m1_target").text == "CUTOFF" && choose (t, "m2_target", "DRIFT") && find (t, "m2_target").text == "DRIFT" && find (t, "m1_target").text == "CUTOFF";
+        choose (t, "m1_target", "OFF"); choose (t, "m2_target", "OFF");
+        check (set && kept && gone && right, "PAD: " + name + " made a MOTION's target on FM 4-OP stays on that MOTION's list (and no other's) on DUB WASH while it is its target, and leaves when the target is OFF; a target chosen from the shorter list is the one named");
+    }
+    // an effect and a return: the same rule
+    {
+        bool fx = true; int n = 0, seen = 0;
+        for (int l = 0; l < kLanes && seen < 3; ++l) for (int sl = 0; sl < 3 && seen < 3; ++sl) if (! e.setupParams ({ 1, l, sl }).empty()) { fx = fx && onlyShown ({ 1, l, sl }, n); ++seen; }
+        const bool rets = onlyShown ({ 2, 0, 0 }, n) && onlyShown ({ 2, 0, 1 }, n);
+        check (seen > 0 && fx && rets, "the same on an effect (" + juce::String (seen) + " of the rig's) and on the two returns");
+    }
+}
+
 // (the ninety-second build) LAYER and LAYER MODEL are heard as they are turned, on a note that is already sounding (a pad's
 // notes are long: a layer used to be started only with its note, at the LAYER there was then).
 static void layerLiveTest (int& bad)
@@ -2930,6 +3194,10 @@ static void layerLiveTest (int& bad)
         // GATE's lower half on the key still held: the note ends
         const auto cut = play (noGlide, [&] (Session& ses, Engine&, int i) { if (i == perSec * 2) ses.userSet (knob ("GATE"), 0.1f); });
         const double cutDown = level (cut, 6.0, 9.0) - level (plain, 6.0, 9.0);
+        // and brought back over half way two seconds later, the key still held: the note plays again (the ninety-third build)
+        const auto back = play (noGlide, [&] (Session& ses, Engine&, int i) { if (i == perSec * 2) ses.userSet (knob ("GATE"), 0.1f); if (i == perSec * 4) ses.userSet (knob ("GATE"), 0.75f); });
+        const double backGone = level (back, 3.0, 4.0) - level (plain, 3.0, 4.0), backAgain = level (back, 6.0, 9.0) - level (plain, 6.0, 9.0);
+        check (backGone < -20.0 && std::abs (backAgain) < 3.0, "GATE to its lower half on the held key and back over half way two seconds later: the note is gone (" + juce::String (backGone, 1) + " dB) and then plays again (" + juce::String (backAgain, 1) + " dB against the note never touched)");
         check (chords > 3 && chordApart > -12.0 && std::abs (chordLevel) < 4.0 && attackUp > 2.0 && attackDown < -2.0 && gateDown < -6.0 && cutDown < -20.0,
                "on the key that is held: another CHORD two seconds in is " + juce::String (chordApart, 1) + " dB apart from the first (and " + juce::String (chordLevel, 1) + " dB against it in level); ATTACK thrown to nought a third of a second in, while the pad is coming up, has it "
                + juce::String (attackUp, 1) + " dB up over the next quarter second, and thrown to full " + juce::String (attackDown, 1) + " dB down a little later; with the key let go and the tail ringing (" + juce::String (ringing, 1) + " dB a second on), GATE brought down to its middle takes the tail "
@@ -4276,7 +4544,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -6716,6 +6984,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     compressorTest (bad);
     airwindowsTest (bad);
     layerLiveTest (bad);
+    sameEngineTest (bad);
+    motionTargetsTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -16449,6 +16719,61 @@ public:
                 e.setSpaceModel (1); dump ({ 2, 0, 1 }, "return B, SPACE (convolution)");
                 dump ({ 3, 0, 0 }, "DRUM BUS");
             }
+            quit(); return;
+        }
+        if (args.contains ("--enginelevels"))
+        {
+            // (--enginelevels: every model of BASS, LEAD and PAD, the instrument alone with the lane's own starting values:
+            // one note of half a second in the lane's octave (PAD: a triad), then let go. How loud while held, and in the
+            // second after. For setting the engines every lane has against each lane's own.)
+            using namespace sf0;
+            const double rate = 48000.0; const int block = 256;
+            const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-engine-levels.wav");
+            {
+                juce::AudioBuffer<float> b (2, (int) (rate * 2.0));
+                double ph = 0.0, lp = 0.0;
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                {
+                    const double t = (double) i / rate;
+                    ph += 110.0 / rate; ph -= std::floor (ph);
+                    const double saw = (ph * 2.0 - 1.0) * (0.25 + 0.5 * std::exp (-t * 1.5));
+                    lp += (0.02 + 0.3 * std::abs (std::sin (t * 2.3))) * (saw - lp);
+                    b.setSample (0, i, (float) lp); b.setSample (1, i, (float) (0.8 * lp + 0.1 * saw));
+                }
+                wav.deleteFile();
+                if (auto out = wav.createOutputStream())
+                    if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), rate, 2, 24, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+            }
+            for (int l = 0; l < kLanes; ++l)
+            {
+                const juce::String sl (lanes()[(size_t) l].slug);
+                if (sl != "bass" && sl != "lead" && sl != "pad") continue;
+                int count = 0;
+                { SFProcessor q (sf::makeModule (lanes()[(size_t) l].module)); count = (int) q.allSpecs()[(size_t) q.paramIndex ("model")].choices.size(); }
+                for (int m = 0; m < count; ++m)
+                {
+                    SFProcessor p (sf::makeModule (lanes()[(size_t) l].module));
+                    for (auto& f : lanes()[(size_t) l].fixed) if (const int i = p.paramIndex (f.param); i >= 0) p.param (i)->setValueNotifyingHost (p.param (i)->convertTo0to1 (f.value));
+                    const int mi = p.paramIndex ("model");
+                    p.param (mi)->setValueNotifyingHost ((float) m / (float) std::max (1, count - 1));
+                    p.setRateAndBufferSizeDetails (rate, block); p.prepareToPlay (rate, block);
+                    p.mod().loadFiles (juce::StringArray (wav.getFullPathName()));
+                    juce::AudioBuffer<float> out (2, (int) (rate * 1.5)); out.clear();
+                    const std::vector<int> keys = sl == "bass" ? std::vector<int> { 36 } : sl == "lead" ? std::vector<int> { 60 } : std::vector<int> { 48, 55, 63 };
+                    for (int i = 0; i < out.getNumSamples(); i += block)
+                    {
+                        juce::MidiBuffer midi;
+                        if (i == 0) for (int k : keys) midi.addEvent (juce::MidiMessage::noteOn (1, k, (juce::uint8) 100), 0);
+                        if (i <= 24000 && 24000 < i + block) for (int k : keys) midi.addEvent (juce::MidiMessage::noteOff (1, k), 24000 - i);
+                        juce::AudioBuffer<float> b (out.getArrayOfWritePointers(), 2, i, std::min (block, out.getNumSamples() - i));
+                        p.processBlock (b, midi);
+                    }
+                    auto level = [&] (int i0, int i1) { double s2 = 0.0; for (int ch = 0; ch < 2; ++ch) for (int i = i0; i < i1; ++i) s2 += (double) out.getSample (ch, i) * out.getSample (ch, i); return 10.0 * std::log10 (std::max (1.0e-24, s2 / (2.0 * (i1 - i0)))); };
+                    std::printf ("%-5s %-16s held %7.1f dB   the second after %7.1f dB\n", lanes()[(size_t) l].name, p.allSpecs()[(size_t) mi].choices[(size_t) m].c_str(), level (0, 24000), level (24000, 72000));
+                }
+            }
+            wav.deleteFile();
+            std::fflush (stdout);
             quit(); return;
         }
         if (args.contains ("--liveaudit"))

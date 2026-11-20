@@ -122,6 +122,7 @@ struct SynthModel
     int chord = 0;                  // 0 none, else index into chord table
     float ensemble = 0.0f, drive = 0.0f, wow = 0.0f, ratio = 1.0f, pitchDive = 0.0f;
     float gain = 1.0f;
+    bool shared = false;            // (SF-000, the ninety-third build) one of the engines more than one lane has: defined once (sharedModel)
 };
 
 // Chords (semitones). Index 0 = single note.
@@ -132,30 +133,51 @@ static const std::vector<std::vector<int>>& chordTable()
 }
 static std::vector<std::string> chordNames() { return { "MODEL", "NONE", "MIN7", "MIN9", "SUS4", "MAJ7", "MIN", "5TH", "OCT" }; }
 
+// (SF-000, the ninety-third build) The engines more than one lane has, each defined ONCE: Wiley, Nov 19: "I want it so that
+// if I select the same engine in any lane it's available in, then the same knob settings would produce the same sound."
+// Until now BASS, LEAD and PAD each had its own: a bass's WAVETABLE was one voice with a 0.08 s release and half the filter
+// sweep, a pad's had 0.4 s of attack and a second of release under its knobs. What is here is what LEAD had, which sat
+// between the other two; what the others kept inside the engine is now on knobs every lane has (ATTACK, DECAY, ENV AMT,
+// RELEASE, and MONO: one note at a time and down the middle, which is where BASS starts). Their levels are here too: the
+// lanes' own trims for these six (Calibration.h) are nought.
+static SynthModel sharedModel (const std::string& n)
+{
+    SynthModel x { "", E_SUB };
+    if (n == "SAMPLE")          { x = SynthModel { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; }
+    else if (n == "WAVETABLE")  { x = SynthModel { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f * cal::gain (-2.0f); x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; }
+    else if (n == "FM 4-OP")    { x = SynthModel { "FM 4-OP", E_FM4 }; x.gain = cal::gain (1.06f); x.filt = F_SVF; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.3f; }
+    else if (n == "GRANULAR")   { x = SynthModel { "GRANULAR", E_GRAIN }; x.gain = 3.5f; x.filt = F_SVF; x.att = 0.01f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.4f; x.envMul = 0.0f; x.ensemble = 0.3f; }
+    else if (n == "ACID 303-TYPE") { x = SynthModel { "ACID 303-TYPE", E_SUB }; x.gain = cal::gain (11.88f); x.wave = 0; x.mono = true; x.acid = true; x.filt = F_DIODE; x.att = 0.003f; x.dec = 3.0f; x.sus = 0.0f; x.rel = 0.008f; x.ensemble = 0.2f; }
+    else if (n == "MONO 101-TYPE") { x = SynthModel { "MONO 101-TYPE", E_SUB }; x.gain = cal::gain (6.22f); x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.sub = 0.3f; x.mono = true; x.dec = 0.4f; x.sus = 0.6f; x.fDec = 0.25f; x.ensemble = 0.2f; }
+    else jassertfalse;
+    x.shared = true;
+    return x;
+}
+
 static std::vector<SynthModel> bassModels()
 {
     std::vector<SynthModel> m;
     { SynthModel x { "BASS LADDER", E_SUB }; x.gain = 1.6f; x.wave = 0; x.wave2 = 0; x.osc2 = 0.8f; x.detune = 0.08f; x.sub = 0.4f; x.mono = true; x.dec = 0.5f; x.sus = 0.8f; x.fDec = 0.35f; m.push_back (x); }
-    { SynthModel x { "MONO 101-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.sub = 0.5f; x.mono = true; x.dec = 0.4f; x.sus = 0.7f; x.fDec = 0.25f; m.push_back (x); }
+    m.push_back (sharedModel ("MONO 101-TYPE"));
     { SynthModel x { "SUB OSC", E_SUB }; x.wave = 1; x.sub = 0.9f; x.filt = F_SVF; x.mono = true; x.dec = 0.6f; x.sus = 0.9f; x.envMul = 0.4f; m.push_back (x); }
-    { SynthModel x { "ACID 303-TYPE", E_SUB }; x.wave = 0; x.mono = true; x.acid = true; x.filt = F_DIODE; x.att = 0.003f; x.dec = 3.0f; x.sus = 0.0f; x.rel = 0.008f; m.push_back (x); }
+    m.push_back (sharedModel ("ACID 303-TYPE"));
     { SynthModel x { "FM", E_FM }; x.ratio = 1.0f; x.mono = true; x.filt = F_SVF; x.dec = 0.5f; x.sus = 0.7f; x.fDec = 0.2f; m.push_back (x); }
     { SynthModel x { "SINE SUB", E_SUB }; x.wave = 3; x.filt = F_SVF /* (SF-000) was none: CUTOFF, RES, ENV AMT */; x.mono = true; x.dec = 0.5f; x.sus = 0.7f /* (SF-000) was 1 s to all of it: DECAY */; x.envMul = 0.3f; x.drive = 0.15f; m.push_back (x); }
     { SynthModel x { "OFFBEAT", E_SUB }; x.wave = 1; x.wave2 = 0; x.osc2 = 0.6f; x.detune = 0.05f; x.mono = true; x.dec = 0.18f; x.sus = 0.0f; x.fDec = 0.12f; x.resMul = 1.3f; x.envMul = 1.3f; m.push_back (x); }
-    { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.mono = true; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; m.push_back (x); }
+    m.push_back (sharedModel ("SAMPLE"));
     // (SF-000) WAVETABLE, as PAD has it (TABLE: the built-in waves, or eight from the loaded sample; COLOR across them).
     // Second to last, so the first and the last of the list are who they were: a place kept from before is told by that.
-    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.6f; x.sus = 0.8f; x.rel = 0.08f; x.envMul = 0.5f; m.push_back (x); }
-    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF; x.mono = true; x.att = 0.002f; x.dec = 0.8f; x.sus = 0.9f; x.rel = 0.08f; x.fDec = 0.3f; x.envMul = 0.3f; m.push_back (x); }
+    m.push_back (sharedModel ("WAVETABLE"));
+    m.push_back (sharedModel ("FM 4-OP"));
     // (SF-000) GRANULAR, as PAD has it, with a bass's envelope and one voice. Last on the list: every place before it is who it was.
-    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 2.1f /* (SF-000) level with BASS's other models: --audit 6 --model ALL --level */; x.filt = F_SVF; x.mono = true; x.att = 0.004f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.12f; x.envMul = 0.0f; m.push_back (x); }
+    m.push_back (sharedModel ("GRANULAR"));
     return m;
 }
 static std::vector<SynthModel> leadModels()
 {
     std::vector<SynthModel> m;
-    { SynthModel x { "ACID 303-TYPE", E_SUB }; x.wave = 0; x.mono = true; x.acid = true; x.filt = F_DIODE; x.att = 0.003f; x.dec = 3.0f; x.sus = 0.0f; x.rel = 0.008f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
-    { SynthModel x { "MONO 101-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.sub = 0.3f; x.mono = true; x.dec = 0.4f; x.sus = 0.6f; x.fDec = 0.25f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
+    m.push_back (sharedModel ("ACID 303-TYPE"));
+    m.push_back (sharedModel ("MONO 101-TYPE"));
     { SynthModel x { "MS20-TYPE", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.6f; x.detune = 0.1f; x.filt = F_MS20; x.mono = true; x.drive = 0.4f; x.dec = 0.5f; x.sus = 0.7f; x.resMul = 1.2f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
     { SynthModel x { "STAB DUB", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.5f; x.detune = 0.06f; x.filt = F_SVF; x.chord = 1; x.dec = 0.25f; x.sus = 0.0f; x.rel = 0.15f; x.fDec = 0.12f; x.envMul = 0.8f; x.ensemble = 0.3f; m.push_back (x); }
     { SynthModel x { "STAB DETROIT", E_SUB }; x.gain = 2.0f; x.wave = 0; x.unison = 3; x.detune = 0.15f; x.wave2 = 1; x.osc2 = 0.3f; x.filt = F_SVF; x.chord = 2; x.dec = 0.35f; x.sus = 0.2f; x.rel = 0.25f; x.fDec = 0.2f; x.ensemble = 0.6f; m.push_back (x); }
@@ -163,12 +185,12 @@ static std::vector<SynthModel> leadModels()
     { SynthModel x { "HOOVER", E_HOOVER }; x.unison = 3; x.detune = 0.25f; x.filt = F_SVF; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.8f; x.pitchDive = 7.0f; x.mono = true; x.tilt = true /* (SF-000) COLOR */; m.push_back (x); }
     { SynthModel x { "FM BELL", E_FM }; x.ratio = 3.5f; x.filt = F_SVF /* (SF-000) was none */; x.dec = 1.5f; x.sus = 0.0f; x.rel = 1.2f; x.fDec = 0.6f; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
     { SynthModel x { "SYNC", E_SYNC }; x.mono = true; x.dec = 0.5f; x.sus = 0.7f; x.fDec = 0.4f; x.filt = F_SVF; x.ensemble = 0.2f /* (SF-000) SPACE */; m.push_back (x); }
-    { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; m.push_back (x); }
+    m.push_back (sharedModel ("SAMPLE"));
     // (SF-000) WAVETABLE (see BASS), second to last.
-    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; m.push_back (x); }
-    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF /* (SF-000) was none */; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
+    m.push_back (sharedModel ("WAVETABLE"));
+    m.push_back (sharedModel ("FM 4-OP"));
     // (SF-000) GRANULAR (see BASS), last on the list.
-    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 3.5f /* (SF-000) level with LEAD's and CHORD's other models: --audit 8 --model ALL --level */; x.filt = F_SVF; x.att = 0.01f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.4f; x.envMul = 0.0f; x.ensemble = 0.3f; m.push_back (x); }
+    m.push_back (sharedModel ("GRANULAR"));
     return m;
 }
 static std::vector<SynthModel> padModels()
@@ -176,13 +198,13 @@ static std::vector<SynthModel> padModels()
     std::vector<SynthModel> m;
     { SynthModel x { "STRING MACHINE", E_SUB }; x.gain = 2.0f; x.wave = 0; x.unison = 4; x.detune = 0.2f; x.wave2 = 0; x.osc2 = 0.5f; x.ratio = 2.0f; x.filt = F_SVF; x.att = 0.3f; x.dec = 1.0f; x.sus = 0.75f /* (SF-000) was 1: DECAY */; x.rel = 0.8f; x.envMul = 0.1f; x.ensemble = 1.0f; x.tilt = true /* (SF-000) COLOR */; m.push_back (x); }
     { SynthModel x { "POLY PAD", E_SUB }; x.gain = 1.6f; x.wave = 0; x.wave2 = 1; x.osc2 = 0.6f; x.detune = 0.1f; x.sub = 0.3f; x.filt = F_SVF; x.att = 0.5f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.2f; x.fAtt = 0.8f; x.fDec = 2.0f; x.fSus = 0.4f; x.envMul = 0.4f; x.ensemble = 0.7f; m.push_back (x); }
-    { SynthModel x { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY is heard */; x.rel = 1.0f; x.envMul = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f /* (SF-000) DETUNE acts on it */; m.push_back (x); }
-    { SynthModel x { "GRANULAR", E_GRAIN }; x.gain = 1.5f; x.filt = F_SVF; x.att = 0.6f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 1.5f; x.envMul = 0.0f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
+    m.push_back (sharedModel ("WAVETABLE"));
+    m.push_back (sharedModel ("GRANULAR"));
     { SynthModel x { "DUB WASH", E_SUB }; x.wave = 0; x.wave2 = 1; x.osc2 = 0.4f; x.detune = 0.05f; x.filt = F_SVF; x.chord = 1; x.att = 0.05f; x.dec = 1.5f; x.sus = 0.6f; x.rel = 1.5f; x.fDec = 1.5f; x.envMul = 0.5f; x.ensemble = 0.5f; m.push_back (x); }
     { SynthModel x { "TAPE LOOP", E_SUB }; x.wave = 2; x.wave2 = 0; x.osc2 = 0.3f; x.detune = 0.03f; x.filt = F_SVF; x.att = 0.4f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 1.5f; x.envMul = 0.0f; x.wow = 1.0f; x.drive = 0.3f; x.noise = 0.02f; x.ensemble = 0.3f; x.tilt = true /* (SF-000) SPACE, COLOR */; m.push_back (x); }
     { SynthModel x { "NOISE BED", E_NOISE }; x.filt = F_SVF; x.att = 0.8f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 2.0f; x.envMul = 0.0f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
-    { SynthModel x { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.att = 0.05f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 0.8f; x.envMul = 0.0f; m.push_back (x); }
-    { SynthModel x { "FM 4-OP", E_FM4 }; x.filt = F_SVF /* (SF-000) was none */; x.att = 0.25f; x.dec = 1.0f; x.sus = 1.0f; x.rel = 1.2f; x.ensemble = 0.3f; m.push_back (x); }
+    m.push_back (sharedModel ("SAMPLE"));
+    m.push_back (sharedModel ("FM 4-OP"));
     return m;
 }
 
@@ -297,6 +319,7 @@ public:
            SCUTS, SCUTLAST = SCUTS + kCuts,      // (SF-000) MARKERS and the 32 slice markers
            PPOST,                                // (SF-000) the pocket left to the host, to make after the lane's effects
            WTTWIST, WTTWISTAS, WTENV, WTWANDER, WTFROM,     // (SF-000) WAVETABLE's own (see E_WAVETABLE)
+           RELEASE, MONO,                                   // (SF-000, the ninety-third build) what the lanes' own engines used to hold inside
            kParams };
     // (SF-000) TABLE's list: the twelve tables that come with the instrument (CLASSIC, the four waves WAVETABLE had before
     // it had tables, is the first), FILE (the loaded file is a wavetable: 2048 samples a frame), SAMPLE (frames found along
@@ -446,6 +469,11 @@ public:
             own (pct ("wt_wander", "WANDER", 0.0f).slow());
             own (choice ("wt_from", "LEVELS", { "EVEN", "AS RECORDED" }, 0));
         }
+        // (SF-000, the ninety-third build) RELEASE: every model's release, a tenth of it to ten times it, as it is in the
+        // middle (GATE's upper half still lengthens it from there). MONO: for the engines every lane has, one note at a time
+        // and down the middle (no SPACE, no detuned second voice): what BASS had built in, and where BASS starts.
+        p.push_back (pct ("release", "RELEASE", 0.5f).slow());
+        p.push_back (toggle ("mono", "MONO", roleId == ROLE_BASS).noPreset().forget());
         jassert ((int) p.size() == kParams);
         return p;
     }
@@ -744,7 +772,7 @@ public:
         float gain0 = 1.0f, layerWas = -1.0f, gNow = 0.0f, gStep = 0.0f;
         // (and ATTACK, DECAY, GATE and ACCENT: what the note's envelopes were last made from (-1: not yet), GATE's length
         // as it was last taken (in samples, -1: the note's own), and whether the note was an accented one)
-        float envAtt = -1.0f, envDec = -1.0f, envRel = -1.0f; int gateWas = -2; bool accented = false;
+        float envAtt = -1.0f, envDec = -1.0f, envRel = -1.0f, envRelK = -1.0f; int gateWas = -2; bool accented = false;
         float pitch = 60.0f, pitchTuned = 60.0f;   // the note (with chord interval) and the tuned pitch it plays at
         double rate = 96000.0;            // render rate: 2x, or 4x (os: setupVoice)
         int os = 2;
@@ -843,8 +871,10 @@ public:
         }
         pitchOffset = c.v (TUNE) + c.bend + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);      // (SF-000: and the pitch wheel)
         const int modelA = c.ci (MODEL), modelB = c.ci (LAYERMODEL);
+        monoSw = c.b (MONO);
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
-        if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.engine == E_SAMPLE && ! ma.mono && c.v (SENV) > 0.5f) ensembleAmt = 0.3f;      // (SF-000) SPACE on a sample
+        if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.shared)
+            ensembleAmt = centred (ma) ? 0.0f : ma.engine == E_SAMPLE ? (c.v (SENV) > 0.5f ? 0.3f : 0.0f) : ma.ensemble;      // (SF-000) SPACE on an engine every lane has: not with MONO on; on a sample, with KNOBS on
         const float layer = c.v (LAYER);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
@@ -853,8 +883,8 @@ public:
         // chord, as they are on a new MODEL. (A chord's notes were chosen when its key went down and no later, so on a
         // pad's long notes CHORD did nothing until the pattern came round.) Not where nothing that sounds plays chords.
         const int chordNow = c.ci (CHORD);
-        const bool chordPlays = ! models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].mono
-                             || (layer > 0.01f && ! models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].mono);
+        const bool chordPlays = ! monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)])
+                             || (layer > 0.01f && ! monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)]));
         const bool newChord = lastChord >= 0 && chordNow != lastChord && chordPlays && numDown > 0;
         lastChord = chordNow;
         if (modelA != lastModel || newChord)
@@ -869,8 +899,8 @@ public:
             for (auto& v : voices) if (v.active) { v.amp.off(); v.fenv.off(); v.releasing = true; }
             held.clear();
             // A mono model plays the newest key; the others go back on its stack (no slide through them).
-            const bool monoA = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].mono;
-            const bool monoB = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].mono;
+            const bool monoA = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]);
+            const bool monoB = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)]);
             restarting = true;
             for (int k = 0; k < numDown; ++k)
             {
@@ -903,7 +933,7 @@ public:
                     for (auto& v : voices) if (v.active && v.layer == 1 && ! v.releasing) { v.amp.off(); v.fenv.off(); v.releasing = true; }
                 if (start)
                 {
-                    const bool monoB = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].mono;
+                    const bool monoB = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)]);
                     restarting = true;
                     for (int k = 0; k < numDown; ++k)
                     {
@@ -914,6 +944,39 @@ public:
                     restarting = false;
                 }
             }
+        }
+        // (SF-000, the ninety-third build) GATE brought back over half way with keys still down. Its lower half ends a
+        // sounding note where the knob says (the ninety-second build), and that was the end of it: turned up again the key
+        // was still down and nothing played until the pattern was stopped and run (Wiley, Nov 19: "it went away but the
+        // sound didn't comr backl when i turned the gate up"). Over half way a note lasts as long as its key, so each key
+        // that is down and has no note of its own sounding is played again, as MODEL and CHORD play them; a key whose note
+        // had not yet ended keeps it (updateControls has given it its length back).
+        {
+            const bool gateHolds = autoOff < 0;
+            if (gateHeldWas == 0 && gateHolds && numDown > 0)
+            {
+                const bool monoA = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]);
+                const bool monoB = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)]);
+                restarting = true;
+                for (int k = 0; k < numDown; ++k)
+                {
+                    const bool newest = k == numDown - 1;
+                    const int key = down[(size_t) k].note;
+                    bool mainOn = false, layerOn = false;
+                    // (one voice plays whichever key is newest, so it stands for them all)
+                    for (auto& v : voices) if (v.active && ! v.releasing && v.gen == 0 && (v.note == key || monoOf (models[(size_t) v.model]))) (v.layer == 0 ? mainOn : layerOn) = true;
+                    NoteEvent ev;
+                    ev.note = key; ev.vel = down[(size_t) k].vel;
+                    if (! mainOn && (! monoA || newest))
+                    {
+                        if (monoA) held.erase (std::remove (held.begin(), held.end(), key), held.end());       // (noteOn puts it back on the stack)
+                        noteOn (c, modelA, ev, 1.0f, 0, autoOff, relMul);
+                    }
+                    if (layer > 0.01f && ! layerOn && (! monoB || newest)) noteOn (c, modelB, ev, 1.0f, 1, autoOff, relMul);
+                }
+                restarting = false;
+            }
+            gateHeldWas = gateHolds ? 1 : 0;
         }
         size_t e = 0;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
@@ -1116,6 +1179,13 @@ public:
     }
 
 private:
+    // (SF-000, the ninety-third build) Does this model play one note at a time? A model of a lane's own: as it is made. An
+    // engine every lane has: as MONO says (SAMPLE, WAVETABLE, FM 4-OP, GRANULAR; the 303 and the 101 are one voice always).
+    bool monoOf (const SynthModel& m) const { return m.shared && ! m.mono ? monoSw : m.mono; }
+    // (and is it down the middle: no SPACE's ensemble, no second detuned voice. Of a lane's own model that is the model's
+    // and the lane's business, as before; of an engine every lane has it is MONO's.)
+    bool centred (const SynthModel& m) const { return m.shared ? monoSw : roleId == ROLE_BASS; }
+
     // (SF-000) LAYER's share of a note's gain: MODEL's voice gives way a little as the layer comes up, and the layer's
     // voice comes up with it. (Written as it was where a note starts, so a LAYER that is not moving is the same sound.)
     static float layerGain (float gain, int layerId, float layer) { return layerId == 1 ? gain * layer / (1.0f + layer * 0.5f) : gain / (1.0f + layer * 0.5f); }
@@ -1127,7 +1197,7 @@ private:
         const auto& chord = chordIdx == 0 ? chordTable()[(size_t) m.chord] : chordTable()[(size_t) std::max (0, chordIdx - 1)];
         const float tune = pitchOffset;
         const bool accent = ev.vel > 0.85f && ev.gen == 0;
-        if (m.mono)
+        if (monoOf (m))
         {
             // Mono: legato slides (acid), else retrigger. Note stack for releases.
             // DENSITY echoes never interrupt a note that is still held.
@@ -1170,6 +1240,7 @@ private:
         // echoes, and DENSITY was all but unheard on it
         const float echoAtt = v.gen > 0 && m.att >= 0.2f ? 0.3f : 1.0f;
         const float susWas = v.amp.s;
+        relMul *= std::pow (10.0f, (c.v (RELEASE) - 0.5f) * 2.0f);          // (SF-000, the ninety-third build) RELEASE: a tenth to ten times, one in the middle
         if (v.shaped)
         {
             const float up = clamp01 ((c.v (DECAY) - 0.8f) * 5.0f);          // (the top fifth of DECAY: the sustain comes up to all of it)
@@ -1269,7 +1340,7 @@ private:
         // echoes, and DENSITY was all but unheard on it
         if (v.shaped) v.cutPos = v.through && c.v (GATE) < 0.995f ? v.reg.start + (double) c.v (GATE) * (v.reg.end - v.reg.start) : 0.0;
         setEnvelopes (c, v, m, relMul);
-        v.envAtt = c.v (ATTACK); v.envDec = c.v (DECAY); v.envRel = relMul; v.gateWas = autoOff;
+        v.envAtt = c.v (ATTACK); v.envDec = c.v (DECAY); v.envRel = relMul; v.envRelK = c.v (RELEASE); v.gateWas = autoOff;
         v.amp.on (retrigger || ! wasActive);
         v.fenv.on (retrigger || ! wasActive);
         v.autoOff = autoOff > 0 ? autoOff * v.os : autoOff;
@@ -1334,7 +1405,7 @@ private:
             {
                 if (! v.active || v.releasing || v.note != note) continue;
                 if (v.through) continue;                                    // (SF-000) it plays to its END
-                const bool mono = models[(size_t) v.model].mono;
+                const bool mono = monoOf (models[(size_t) v.model]);
                 if (mono && ! held.empty())
                 {
                     // Mono: return to the previous held note (slide).
@@ -1352,7 +1423,7 @@ private:
         }
         // Echo releases only end echo voices, never a voice a held note owns.
         for (auto& v : voices)
-            if (v.active && ! v.releasing && ! v.through && v.note == note && v.gen == gen && ! (models[(size_t) v.model].mono && ! held.empty()))
+            if (v.active && ! v.releasing && ! v.through && v.note == note && v.gen == gen && ! (monoOf (models[(size_t) v.model]) && ! held.empty()))
             { v.amp.off(); v.fenv.off(); v.releasing = true; }
     }
 
@@ -1401,11 +1472,12 @@ private:
         float driftSt = 0.0f, driftOct = 0.0f;
         if (const float dr = c.v (DRIFT); dr > 0.0f)
         {
-            const auto& d = slotDrift[m.mono ? 0 : (size_t) (&v - voices.data())];
+            const bool one = monoOf (m);
+            const auto& d = slotDrift[one ? 0 : (size_t) (&v - voices.data())];
             const float t = (float) driftClock * d.rate;
             const float w = 0.6f * std::sin (kTwoPi * (0.071f * t + d.ph)) + 0.4f * std::sin (kTwoPi * (0.17f * t + 2.3f * d.ph));
-            driftSt = dr * (0.04f * w + (m.mono ? 0.0f : 0.05f * d.tune));
-            driftOct = dr * (m.mono ? 0.1f * w : 0.2f * d.cut);
+            driftSt = dr * (0.04f * w + (one ? 0.0f : 0.05f * d.tune));
+            driftOct = dr * (one ? 0.1f * w : 0.2f * d.cut);
         }
         const float cutHz = expMap (k.cutT, 35.0f, 18000.0f) * (driftOct != 0.0f ? std::exp2 (driftOct) : 1.0f);
         switch (m.filt)
@@ -1466,7 +1538,7 @@ private:
             {
                 k.fmRatio[op] = kFmRatios[juce::jlimit (0, (int) std::size (kFmRatios) - 1, c.ci (FMRATIO + op))];
                 // (SF-000) DETUNE: the operators a few cents apart, so they beat (not on one voice in the middle: BASS)
-                if (m.engine == E_FM4 && ! m.mono && k.det > 0.001f) { static const float cents[4] = { 6.0f, -6.0f, 3.0f, -3.0f }; k.fmRatio[op] *= semis (k.det * cents[op] / 100.0f); }
+                if (m.engine == E_FM4 && ! centred (m) && k.det > 0.001f) { static const float cents[4] = { 6.0f, -6.0f, 3.0f, -3.0f }; k.fmRatio[op] *= semis (k.det * cents[op] / 100.0f); }
                 k.fmLevel[op] = clamp01 (c.v (FMLEVEL + op));
                 const float d = c.v (FMDECAY + op);
                 k.fmMul[op] = d >= 0.98f ? 1.0f : std::exp (-1.0f / (0.03f * std::pow (250.0f, d) * decK * (float) vr));
@@ -1484,10 +1556,10 @@ private:
         // GATE's length (the lower half of the knob cuts a note short): the note ends where the knob now says, counted
         // from where it began; brought back over half way, it is left to its own length again.
         if (v.accented) v.accent = c.v (ACCENT);
-        if (c.v (ATTACK) != v.envAtt || c.v (DECAY) != v.envDec || relNow != v.envRel)
+        if (c.v (ATTACK) != v.envAtt || c.v (DECAY) != v.envDec || relNow != v.envRel || c.v (RELEASE) != v.envRelK)
         {
             setEnvelopes (c, v, m, relNow);
-            v.envAtt = c.v (ATTACK); v.envDec = c.v (DECAY); v.envRel = relNow;
+            v.envAtt = c.v (ATTACK); v.envDec = c.v (DECAY); v.envRel = relNow; v.envRelK = c.v (RELEASE);
         }
         if (autoOffNow != v.gateWas)
         {
@@ -1552,7 +1624,8 @@ private:
         const float res = k.res; juce::ignoreUnused (res);
         const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, subMul = k.subMul;
         float gainAll = v.gNow; const float gainStep = v.gStep;      // (SF-000: k.gainAll, on its way there while LAYER moves)
-        const double wtDet = m.detune > 0.0f ? (double) semis (k.detCents / 100.0f) : 1.0;      // (SF-000) WAVETABLE's second reading
+        const bool wtTwo = m.detune > 0.0f && ! centred (m);     // (SF-000) WAVETABLE's second reading: not down the middle
+        const double wtDet = wtTwo ? (double) semis (k.detCents / 100.0f) : 1.0;
         // (SF-000) WAVETABLE's WANDER and TWIST, worked out once for the block
         const float wtWanderAmp = wtWander * 0.5f;
         const bool wtTwisted = m.engine == E_WAVETABLE && wtTwist > 0.001f;
@@ -1563,7 +1636,7 @@ private:
                         : std::min (Mipmap::kOct - 1, k.oct1[0] + (int) std::ceil (std::log2 (wtTwistAs == 2 ? wtK * 2.0f : wtK)));
         // (SF-000) DETUNE where an engine had none: a second 303 or a second sync up to a quarter of a semitone off, the organ's
         // drawbars each a few cents from true. Not on BASS, whose voice stays one and in the middle.
-        const bool detOn = det > 0.001f && roleId != ROLE_BASS;
+        const bool detOn = det > 0.001f && ! centred (m);       // (SF-000, the ninety-third build: of an engine every lane has, MONO's to say)
         const double det2 = (double) semis (det * 0.25f);
         const float detW = std::min (1.0f, det * 2.0f), detN = 1.0f / std::sqrt (1.0f + detW * detW);
         double orgR[6] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
@@ -1766,7 +1839,7 @@ private:
                     };
                     x = wave (v.ph[0]);
                     v.ph[0] += inc; wrap01 (v.ph[0]);
-                    if (m.detune > 0.0f)
+                    if (wtTwo)
                     {
                         // (SF-000) DETUNE: a second reading of the same waves a few cents off (the model's detune, by the knob)
                         x = (x + wave (v.ph[1])) * 0.7071f;
@@ -1918,7 +1991,7 @@ private:
                     if (v.shaped)
                     {
                         // (SF-000) DETUNE: a second reading up to 30 cents off, from the same place (not on a mono model)
-                        if (det > 0.001f && ! m.mono)
+                        if (det > 0.001f && ! centred (m))
                         {
                             if (v.spos2 < v.reg.start) v.spos2 = v.spos - rate;
                             if ((int) v.spos2 + 2 < len)
@@ -2039,6 +2112,8 @@ private:
     int lastModel = -1;
     int lastModelB = -1; bool layerWasOn = false;      // (SF-000) LAYER MODEL and whether LAYER was up, last block
     int lastChord = -1;                                // (SF-000) and CHORD
+    bool monoSw = false;                               // (SF-000) MONO, this block
+    int gateHeldWas = -1;                              // (SF-000) was GATE over half way last block (a note as long as its key)? -1: no block yet
     int autoOffNow = -1; float relNow = 1.0f;          // (SF-000) GATE as it is this block: a note's length and its release
     double osr = 96000.0;
     std::shared_ptr<const WaveSet> waves;

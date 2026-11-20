@@ -19,11 +19,13 @@ inline constexpr float perc[17] = { 4.11f, 0.45f, 0.13f, -6.83f, -6.77f, -1.64f,
 inline constexpr float rumble[6] = { -2.92f, -0.35f, -1.85f, -0.32f, -3.51f, 0.0f };
 // BASS: LADDER, MONO 101, SUB OSC, ACID 303, FM, SINE SUB, OFFBEAT, SAMPLE, WAVETABLE (SF-000), FM 4-OP
 // (WAVETABLE's figure: set in SF-000 by the lane's level beside its neighbours' (rms over its own pattern), not by LUFS)
-inline constexpr float bass[10] = { 3.22f, 7.31f, -1.94f, 12.36f, 3.87f, 3.74f, 9.26f, 0.0f, -0.5f, 1.42f };
+// (SF-000, the ninety-third build) The engines more than one lane has (the 101, the 303, SAMPLE, WAVETABLE, FM 4-OP, and
+// GRANULAR past the end) have one level, in Synth.cpp's sharedModel: their places in these three are nought.
+inline constexpr float bass[10] = { 3.22f, 0.0f, -1.94f, 0.0f, 3.87f, 3.74f, 9.26f, 0.0f, 0.0f, 0.0f };
 // LEAD: ACID 303, MONO 101, MS20, STAB DUB, STAB DETROIT, ORGAN M1, HOOVER, FM BELL, SYNC, SAMPLE, WAVETABLE (SF-000), FM 4-OP
-inline constexpr float lead[12] = { 11.88f, 6.22f, 0.41f, 3.17f, 2.23f, 6.23f, 2.84f, -2.38f, -1.11f, 0.0f, -2.0f, 1.06f };
+inline constexpr float lead[12] = { 0.0f, 0.0f, 0.41f, 3.17f, 2.23f, 6.23f, 2.84f, -2.38f, -1.11f, 0.0f, 0.0f, 0.0f };
 // PAD: STRING MACHINE, POLY PAD, WAVETABLE, GRANULAR, DUB WASH, TAPE LOOP, NOISE BED, SAMPLE, FM 4-OP
-inline constexpr float pad[9] = { -3.86f, -8.23f, -4.27f, 3.50f, -0.54f, -3.54f, -7.62f, 0.0f, 4.97f };
+inline constexpr float pad[9] = { -3.86f, -8.23f, 0.0f, 0.0f, -0.54f, -3.54f, -7.62f, 0.0f, 0.0f };
 // VOICE: formant choir (no phrase loaded); phrase models relative to SAMPLE
 inline constexpr float voiceChoir = -8.78f;
 inline constexpr float voice[6] = { 0.00f, -1.57f, -27.18f, -21.37f, -26.81f, -4.14f };   // SAMPLE, RADIO, VOCODER, ROBOT, CHOIR, STUTTER
