@@ -3123,6 +3123,156 @@ static void motionTargetsTest (int& bad)
     }
 }
 
+// The only lit step of a sequence shorter than its gate (the ninety-fourth build). It reaches itself and was tied to
+// itself: struck once and held for good. For a synth that is a drone, and the rig's pad is written so; a sample that plays
+// once was never heard again. Wiley, Nov 20: "why does shortening the sequence lemngth on pad make a sample stop playimg".
+// Now it is tied only where a held note goes on sounding: a lane on a sample that is not looped, and a drum, are struck
+// every time the sequence comes round. Two lit steps of one note that reach each other are a tie as before.
+static void loneStepTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("a lone step in a short sequence (the ninety-fourth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    // the notes a pattern plays over so many steps: how many begin, how many end, and the most sounding at once
+    struct Got { int on = 0, off = 0, most = 0; };
+    auto play = [] (const Pattern& pat, int steps, bool selfTie = false)
+    {
+        LanePlayer pl; pl.pitched = true; pl.pat = pat; pl.selfTie = selfTie;
+        Got got; int sounding = 0;
+        const double spb = 48000.0 * 60.0 / 130.0, blockBeats = 256.0 / spb;
+        const double end = (double) steps * kStepBeats;
+        for (double q = 0.0; q < end - 1.0e-9; q += blockBeats)
+        {
+            juce::MidiBuffer out;
+            pl.render (q, std::min (end, q + blockBeats), spb, 256, out, q);
+            for (const auto m : out)
+            {
+                if (m.getMessage().isNoteOn()) { ++got.on; ++sounding; } else if (m.getMessage().isNoteOff()) { ++got.off; --sounding; }
+                got.most = std::max (got.most, sounding);
+            }
+        }
+        return got;
+    };
+    Pattern one; one.steps[0].on = true; one.steps[0].gate = 16.0f; one.steps[0].note = 0; one.steps[0].octave = 3;
+    one.length = 16; const auto at16 = play (one, 64);
+    one.length = 8;  const auto at8 = play (one, 64);
+    one.length = 5;  const auto at5 = play (one, 60);
+    check (at16.on == 4 && at8.on == 8 && at5.on == 12 && at16.most == 1 && at8.most == 1 && at5.most == 1 && at8.off >= 7 && at5.off >= 11,
+           "one lit step with a gate of sixteen: over 64 steps it is struck " + juce::String (at16.on) + " times at a length of 16 and " + juce::String (at8.on) + " at 8 (it was once, and held), and " + juce::String (at5.on)
+           + " in 60 steps at 5; each ends before the next begins (where a held note does not go on sounding)");
+    {
+        one.length = 8; const auto held8 = play (one, 64, true);
+        one.steps[0].gate = 16.25f; one.length = 16; const auto held16 = play (one, 64, true);
+        check (held8.on == 1 && held8.off == 0 && held16.on == 1 && held16.off == 0, "where it does (a synth's pad): struck once and held, at a length of 8 and, a gate of 16.25, at 16, as it was");
+    }
+    // in the rig: PAD on a sample of a second, its one step as the rig has it (16.25 steps, written to hold): heard in
+    // every bar, and in every half bar with the sequence 8 steps long; looped, and on DUB WASH, the note is one, held
+    {
+        const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-lone.wav");
+        {
+            juce::AudioBuffer<float> b (2, 48000);
+            for (int i = 0; i < b.getNumSamples(); ++i) { const float x = 0.4f * std::sin ((float) i * 0.03f) * (1.0f - (float) i / 48000.0f); b.setSample (0, i, x); b.setSample (1, i, x); }
+            wav.deleteFile();
+            if (auto out = wav.createOutputStream())
+                if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), 48000.0, 2, 16, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+        }
+        // the quietest and the loudest half bar of bars 3 to 6 (after two for it to settle)
+        auto halves = [&] (const char* model, bool loop, int length, double& quietest, double& loudest)
+        {
+            Engine e; e.prepare (48000.0, 256);
+            Session ses (e, false);
+            int pad = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+            const Engine::Target t { 0, pad, 0 };
+            for (int l = 0; l < kLanes; ++l) if (l != pad) { Pattern none; e.setPattern (l, none); }
+            e.loadFile (pad, wav);
+            for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int m = sp.choices.indexOf (model); m >= 0) ses.setupByHand (t, "model", (float) m / (float) std::max (1, sp.choices.size() - 1));
+            ses.setupByHand (t, "smp_loop", loop ? 1.0f : 0.0f);
+            // (a looped sample dies away as DECAY says: right up, it plays on)
+            if (loop) for (int k = 0; k < kLaneKnobs; ++k) if (e.control (cx::lane (pad, k)).label == "DECAY") ses.userSet (cx::lane (pad, k), 1.0f);
+            ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f);
+            { Pattern p = ses.pattern (pad); p.length = length; ses.setPattern (pad, p); }
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 40; ++i) e.render (b);
+            e.setRunning (true);
+            const double half = 2.0 * 60.0 / e.tempo() * 48000.0;
+            double acc = 0.0; long n = 0, done = 0; int at = 0;
+            quietest = 0.0; loudest = -200.0;
+            while (at < 12)
+            {
+                e.render (b);
+                for (int k = 0; k < 256; ++k) { const double x = b.getSample (0, k); acc += x * x; ++n; ++done; }
+                if ((double) done >= (double) (at + 1) * half)
+                {
+                    const double db = 10.0 * std::log10 (acc / (double) std::max (1L, n) + 1.0e-18);
+                    if (std::getenv ("SF000_LONE_DEBUG") != nullptr) std::printf ("        %s loop %d len %d half %d: %.1f\n", model, (int) loop, length, at, db);
+                    if (at >= 4 && at % 2 == 0) { quietest = std::min (quietest, db); loudest = std::max (loudest, db); }     // (the first half of each bar, where the step is)
+                    if (at >= 4 && length == 8) { quietest = std::min (quietest, db); loudest = std::max (loudest, db); }
+                    acc = 0.0; n = 0; ++at;
+                }
+            }
+        };
+        double q16, l16, q8, l8, qLoop, lLoop, qSyn, lSyn;
+        halves ("SAMPLE", false, 16, q16, l16); halves ("SAMPLE", false, 8, q8, l8); halves ("SAMPLE", true, 8, qLoop, lLoop); halves ("DUB WASH", false, 8, qSyn, lSyn);
+        check (q16 > -70.0 && q8 > -70.0, "PAD on a sample of one second, its step as the rig has it: heard in every bar at 16 steps (the quietest first half of a bar " + juce::String (q16, 1) + " dB; it was silent after the first) and in every half bar at 8 (" + juce::String (q8, 1) + " dB)");
+        check (qLoop > -70.0 && qSyn > -70.0 && lSyn - qSyn < 6.0, "looped (DECAY right up), and on DUB WASH, the one note is held and goes on sounding (" + juce::String (qLoop, 1) + " dB and " + juce::String (qSyn, 1) + " dB at the quietest; DUB WASH's half bars within " + juce::String (lSyn - qSyn, 1) + " dB of each other)");
+        wav.deleteFile();
+    }
+    Pattern two; two.length = 8;
+    for (int i : { 0, 4 }) { two.steps[(size_t) i].on = true; two.steps[(size_t) i].gate = 6.0f; two.steps[(size_t) i].note = 0; two.steps[(size_t) i].octave = 3; }
+    const auto tie = play (two, 64);
+    two.steps[4].note = 3;
+    const auto slide = play (two, 64);
+    check (tie.on == 1 && slide.on == 16, "two lit steps of one note that reach each other are still a tie (struck " + juce::String (tie.on) + " time in 64 steps); of two notes, legato (" + juce::String (slide.on) + " struck)");
+}
+
+// LEVEL's lowest end is nothing (the ninety-fourth build), on every lane. It was -36 dB, the foot of the knob's range, so
+// a lane with LEVEL all the way down still played. Wiley, Nov 20: "it has a tail that playes even after the leverl is
+// tuned to zerlo"; "level doesn't silence any lane any more at zero". Above the knob's last 3 dB it is what it was.
+static void levelSilentTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("LEVEL's lowest end is nothing (the ninety-fourth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    bool silent = true, sounded = true; double loudestLeft = -200.0; juce::String worst, mute;
+    int kick = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kick = l;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        const juce::String slug (lanes()[(size_t) l].slug);
+        // the lane alone, playing its own part, its sends at nothing (the rumble is made of the kick, which plays for it, unheard: its LEVEL is down too)
+        for (int q = 0; q < kLanes; ++q) if (q != l && ! (slug == "rumble" && q == kick)) { Pattern none; e.setPattern (q, none); }
+        ses.userSet (cx::lane (l, cx::kSendA), 0.0f); ses.userSet (cx::lane (l, cx::kSendB), 0.0f);
+        auto levelOf = [&] (int lane) { for (int k = 0; k < kLaneKnobs; ++k) if (e.control (cx::lane (lane, k)).label == "LEVEL") return cx::lane (lane, k); return -1; };
+        if (slug == "rumble" && kick >= 0) { ses.userSet (levelOf (kick), 0.0f); ses.userSet (cx::lane (kick, cx::kSendA), 0.0f); ses.userSet (cx::lane (kick, cx::kSendB), 0.0f); }
+        // (and the rumble goes on being made of a kick whose LEVEL is down, as it should: for the kick's own turn it is down as well)
+        if (slug == "kick") for (int q = 0; q < kLanes; ++q) if (juce::String (lanes()[(size_t) q].slug) == "rumble") { ses.userSet (levelOf (q), 0.0f); ses.userSet (cx::lane (q, cx::kSendA), 0.0f); ses.userSet (cx::lane (q, cx::kSendB), 0.0f); }
+        juce::AudioBuffer<float> b (2, 256);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        e.setRunning (true);
+        const int perSec = 48000 / 256;
+        double before = 0.0, after = 0.0; long nb = 0, na = 0;
+        for (int i = 0; i < perSec * 12; ++i)
+        {
+            if (i == perSec * 4) ses.userSet (levelOf (l), 0.0f);
+            e.render (b);
+            for (int k = 0; k < 256; ++k)
+            {
+                const double x = b.getSample (0, k);
+                if (i < perSec * 4) { before += x * x; ++nb; } else if (i >= perSec * 8) { after += x * x; ++na; }
+            }
+        }
+        const double db0 = 10.0 * std::log10 (before / (double) std::max (1L, nb) + 1.0e-18), db1 = 10.0 * std::log10 (after / (double) std::max (1L, na) + 1.0e-18);
+        if (db0 < -70.0) { sounded = false; mute << lanes()[(size_t) l].name << " "; }
+        if (db1 > loudestLeft) { loudestLeft = db1; worst = lanes()[(size_t) l].name; }
+        silent = silent && db1 < -100.0;
+    }
+    check (sounded && silent, "each of the eleven lanes, alone and playing its part, its LEVEL thrown to the bottom: four seconds on there is nothing (the most left is " + juce::String (loudestLeft, 1) + " dB, on " + worst + ")" + (sounded ? juce::String() : "; NOT HEARD before: " + mute));
+    // and it is the knob's last 3 dB only: -33 dB and up, the gain is the plain one, to the bit
+    bool plain = true; for (float db : { -33.0f, -30.0f, -15.0f, -7.0f, 0.0f, 6.0f }) plain = plain && sf::levelGain (db) == sf::dbToGain (db);
+    check (plain && sf::levelGain (-36.0f) == 0.0f && sf::levelGain (-34.5f) > 0.0f && sf::levelGain (-34.5f) < sf::dbToGain (-34.5f), "from -33 dB up LEVEL is what it was, to the bit; under that it falls away to nothing at the knob's foot");
+}
+
 // (the ninety-second build) LAYER and LAYER MODEL are heard as they are turned, on a note that is already sounding (a pad's
 // notes are long: a layer used to be started only with its note, at the LAYER there was then).
 static void layerLiveTest (int& bad)
@@ -4544,7 +4694,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -6986,6 +7136,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     layerLiveTest (bad);
     sameEngineTest (bad);
     motionTargetsTest (bad);
+    loneStepTest (bad);
+    levelSilentTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -8170,9 +8322,11 @@ static juce::KeyPress keyNamed (const juce::String& n)
     return juce::KeyPress ((int) c, none, c);
 }
 
-// CONFIG, on every lane with every model, each kind of insert, both returns and the drum bus: nothing shares a place
-// or stands past the eighth column; and turning any switch or menu but MODEL and LAYER MODEL through all it has moves
-// no other control that is still there (what it brings stands after what stays). On a rig of its own.
+// CONFIG (the ninety-fourth build), on every lane with every model and every layer model, each kind of insert, both returns
+// (SPACE on each of its models), the drum bus and the master's compressor: every control is in a cell of a four by four
+// grid, no two in one cell, none without a cell of its own; and a control has ONE cell, the same on every page that has
+// it, whatever the model, the layer's model or any switch or menu is turned to (each turned through all it has). A cell
+// kept for a control that is away is that control's own cell too. On a rig of its own.
 static bool configStays (juce::String& says)
 {
         using namespace sf0;
@@ -8183,54 +8337,70 @@ static bool configStays (juce::String& says)
         juce::AudioBuffer<float> buf (2, 512);
         auto audio = [&] (int blocks) { for (int i = 0; i < blocks; ++i) e.render (buf); };
         audio (20);
-        int panels = 0, turned = 0, moved = 0, clash = 0, mostRows = 0;
-        juce::String firstMoved, firstClash;
-        auto sound = [&] (const std::vector<std::pair<juce::String, juce::String>>& at, const juce::String& what)
+        int panels = 0, turned = 0, moved = 0, clash = 0, loose = 0, kept = 0, most = 0;
+        juce::String firstMoved, firstClash, firstLoose;
+        std::map<juce::String, juce::String> placeOf;       // a control (by its page's kind, its grid's name, its own name and id) -> "grid.cell", wherever it was first seen
+        auto look = [&] (Engine::Target t, const juce::String& what)
         {
+            sc.testCfgLayout();
+            const auto& page = sc.testCfgPage();
+            const juce::String kind = t.kind == 0 ? juce::String ("lane") : e.processorFor (t) != nullptr ? e.processorFor (t)->getName() : juce::String ("none");
             std::set<int> taken;
-            int rows = 0;
-            for (auto& a : at)
+            int n = 0;
+            auto at = [&] (const juce::String& grid, const juce::String& name, const juce::String& id, int g, int c, bool ghost)
             {
-                const auto part = juce::StringArray::fromTokens (a.second, ".", "");
-                const int row = part[0].getIntValue(), col = part[1].getIntValue(), span = part[2].getIntValue();
-                rows = std::max (rows, row + 1);
-                bool bad = col + span > 8;
-                for (int k = 0; k < span; ++k) bad = ! taken.insert (row * 16 + col + k).second || bad;
-                if (bad) { ++clash; if (firstClash.isEmpty()) firstClash = what + ": " + a.first + " at " + a.second; }
-            }
-            mostRows = std::max (mostRows, rows);
+                if (g < 0 || g >= Engine::kCfgGrids || c < 0 || c > 15 || ! taken.insert (g * 16 + c).second) { ++clash; if (firstClash.isEmpty()) firstClash = what + ": " + name + " at " + juce::String (g) + "." + juce::String (c); return; }
+                // (an engine's own are in MODEL's grid or LAYER's, the same cell in either: known by the cell alone)
+                const bool engine = t.kind == 0 && (g == 2 || g == 3);
+                const juce::String key = kind + "/" + (engine ? juce::String ("ENGINE") : g >= 4 || t.kind == 0 ? juce::String (g) : g == 1 ? juce::String ("1") : juce::String ("own")) + "/" + name + "/" + id;
+                const juce::String place = engine ? juce::String (c) : juce::String (g) + "." + juce::String (c);
+                const auto was = placeOf.find (key);
+                if (was == placeOf.end()) placeOf[key] = place;
+                else if (was->second != place) { ++moved; if (firstMoved.isEmpty()) firstMoved = what + ": " + name + (ghost ? " (kept)" : "") + " is at " + place + " and was at " + was->second; }
+                juce::ignoreUnused (grid);
+            };
+            for (auto& sp : page.list) { if (sp.group.startsWith ("EQ ")) continue; ++n; at (sp.group, sp.name, sp.id, sp.grid, sp.cell, false); }
+            for (auto& gh : page.ghosts) { ++kept; at ({}, gh.name, gh.id, gh.grid, gh.cell, true); }
+            if (page.unplaced > 0) { loose += page.unplaced; if (firstLoose.isEmpty()) firstLoose = what; }
+            most = std::max (most, n);
         };
         auto sweep = [&] (Engine::Target t, const juce::String& what)
         {
             sc.showConfig (t);
             ++panels;
-            sound (sc.testCfgLayout(), what);
+            look (t, what);
             for (auto& sp : e.setupParams (t))
             {
                 if (sp.group.startsWith ("EQ ") || sp.id == "model" || sp.id == "layer_model" || sp.id == "__model") continue;
                 if (sp.kind != Kind::List && sp.kind != Kind::Toggle) continue;
                 const int n = sp.kind == Kind::Toggle ? 2 : sp.choices.size();
-                const auto before = sc.testCfgLayout();
                 for (int k = 0; k < n; ++k)
                 {
                     e.setSetup (t, sp.id, n > 1 ? (float) k / (float) (n - 1) : 0.0f); audio (1);
-                    const auto now = sc.testCfgLayout();
                     ++turned;
-                    sound (now, what + " with " + sp.name + " at " + juce::String (k));
-                    for (auto& b : before) for (auto& a : now)
-                        if (a.first == b.first && a.second != b.second) { ++moved; if (firstMoved.isEmpty()) firstMoved = what + ": " + sp.name + " at " + juce::String (k) + " moves " + a.first + " from " + b.second + " to " + a.second; }
+                    look (t, what + " with " + sp.name + " at " + juce::String (k));
                 }
                 e.setSetup (t, sp.id, sp.value); audio (1);
             }
         };
         for (int l = 0; l < kLanes; ++l)
         {
-            juce::StringArray models;
-            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") models = sp.choices;
+            juce::StringArray models, layers;
+            for (auto& sp : e.setupParams ({ 0, l, 0 })) { if (sp.id == "model") models = sp.choices; if (sp.id == "layer_model") layers = sp.choices; }
             for (int m = 0; m < std::max (1, models.size()); ++m)
             {
                 if (models.size() > 1) { ses.setupByHand ({ 0, l, 0 }, "model", (float) m / (float) (models.size() - 1)); audio (2); }
-                sweep ({ 0, l, 0 }, juce::String (lanes()[(size_t) l].name) + " on " + (models.isEmpty() ? juce::String ("its one model") : models[m]));
+                const juce::String what = juce::String (lanes()[(size_t) l].name) + " on " + (models.isEmpty() ? juce::String ("its one model") : models[m]);
+                sweep ({ 0, l, 0 }, what);
+                // (and under every model the layer can be)
+                float layerWas = 0.0f; for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "layer_model") layerWas = sp.value;
+                for (int k = 0; k < layers.size(); ++k)
+                {
+                    e.setSetup ({ 0, l, 0 }, "layer_model", layers.size() > 1 ? (float) k / (float) (layers.size() - 1) : 0.0f); audio (1);
+                    ++turned;
+                    look ({ 0, l, 0 }, what + " with its layer on " + layers[k]);
+                }
+                if (layers.size() > 0) { e.setSetup ({ 0, l, 0 }, "layer_model", layerWas); audio (1); }
             }
         }
         for (int type = 0; type < (int) effects().size(); ++type) { e.setInsertType (5, 0, type); audio (2); sweep ({ 1, 5, 0 }, juce::String ("the insert ") + effects()[(size_t) type].name); }
@@ -8245,10 +8415,14 @@ static bool configStays (juce::String& says)
             }
         }
         sweep ({ 3, 0, 0 }, "the DRUM BUS");
-        says = "CONFIG, on " + juce::String (panels) + " panels (every lane on every model, every insert, the returns, the drum bus): no two controls share a place; and every switch and menu but MODEL and LAYER MODEL turned through all it has ("
-                + juce::String (turned) + " settings) moves no other control" + (moved > 0 ? " (FAILS " + juce::String (moved) + " times, first: " + firstMoved + ")" : juce::String())
-                + (clash > 0 ? " (" + juce::String (clash) + " share a place or stand past the edge, first: " + firstClash + ")" : juce::String()) + "; the tallest is " + juce::String (mostRows) + " rows";
-        return panels > 80 && turned > 1000 && moved == 0 && clash == 0;
+        sweep ({ 4, 0, 0 }, "the master's COMPRESSOR");
+        says = "CONFIG, on " + juce::String (panels) + " panels (every lane on every model, every insert, the returns, the drum bus, the master's compressor) and " + juce::String (turned)
+                + " settings of them (every layer model under every model; every switch and menu turned through all it has): every control is in a cell of a four by four grid, no two in one"
+                + (clash > 0 ? " (FAILS " + juce::String (clash) + " times, first: " + firstClash + ")" : juce::String())
+                + ", none without a cell of its own" + (loose > 0 ? " (FAILS: " + juce::String (loose) + ", first on " + firstLoose + ")" : juce::String())
+                + "; and each of the " + juce::String ((int) placeOf.size()) + " controls is in one cell wherever it is" + (moved > 0 ? " (FAILS " + juce::String (moved) + " times, first: " + firstMoved + ")" : juce::String())
+                + ", a cell kept for one that is away being its own (" + juce::String (kept) + " seen kept); the most on a page is " + juce::String (most);
+        return panels > 80 && turned > 1000 && moved == 0 && clash == 0 && loose == 0;
 }
 
 static int uiTest()
@@ -8937,6 +9111,74 @@ static int uiTest()
     }
 
 
+    // 2a4. (the ninety-fourth build) CONFIG's three views. The keys 1 2 3 beside its name bring each up; what can be turned
+    // is that view's two grids and no other's; every control stands above the EQ, with a sample's strip on the display too;
+    // the view is kept from a lane's page to an effect's, which has no second view and no key for it; and the E16 on a page
+    // of CONFIG brings up the view its first knob is on.
+    {
+        int pad = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+        const Engine::Target t { 0, pad, 0 };
+        sc.setPage (Screen::pMain); ses.activeLane = pad; sc.showConfig (t); sc.testCfgScroll (0); draw();
+        auto keyOf = [&] (int v) { for (auto& h : sc.testHits()) if (Screen::testIsCfgView (h, v)) return h.r.getCentre(); return juce::Point<float>(); };
+        // the controls that can be turned now: how many, how many of them on the view that is up, and whether all are above the EQ
+        struct Seen { int n = 0, onView = 0; bool above = true; };
+        auto seen = [&] (Engine::Target at)
+        {
+            Seen sn; const auto list = e.setupParams (at);
+            for (auto& h : sc.testHits())
+            {
+                if (! Screen::testIsSetup (h) || h.a < 0 || h.a >= (int) list.size()) continue;
+                ++sn.n; if (list[(size_t) h.a].grid / 2 == sc.testCfgView()) ++sn.onView;
+                if (at.kind == 0 && h.r.getBottom() > sc.testEqTop() + 0.5f) sn.above = false;
+            }
+            return sn;
+        };
+        auto inGrids = [&] (Engine::Target at, int view) { int n = 0; for (auto& sp : e.setupParams (at)) if (sp.grid >= 0 && sp.grid / 2 == view) ++n; return n; };
+        const auto v0 = seen (t);
+        const bool first = sc.testCfgView() == 0 && v0.n > 8 && v0.n == inGrids (t, 0) && v0.onView == v0.n && v0.above;
+        click (keyOf (2)); draw();
+        const auto v2 = seen (t);
+        const bool third = sc.testCfgView() == 2 && v2.n == inGrids (t, 2) && v2.n >= 8 && v2.onView == v2.n && v2.above;
+        click (keyOf (1)); draw();
+        const auto v1 = seen (t);
+        const bool second = sc.testCfgView() == 1 && v1.n == inGrids (t, 1) && v1.onView == v1.n;
+        // a sample on the lane (its strip on the display takes room from the rows): still above the EQ, on every view
+        const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-ui-cfg.wav");
+        {
+            juce::AudioBuffer<float> b (2, 24000);
+            for (int i = 0; i < b.getNumSamples(); ++i) { const float x = 0.4f * std::sin ((float) i * 0.03f) * std::exp (-(float) i / 9000.0f); b.setSample (0, i, x); b.setSample (1, i, x); }
+            wav.deleteFile();
+            if (auto out = wav.createOutputStream())
+                if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), 48000.0, 2, 16, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+        }
+        bool strip = e.loadFile (pad, wav);
+        for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int at = sp.choices.indexOf ("SAMPLE"); at >= 0) ses.setupByHand (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1));
+        audio (4);
+        for (int v = 0; v < 3; ++v) { sc.testCfgScroll (v); sc.showConfig (t); draw(); const auto sn = seen (t); strip = strip && sn.above && sn.n == inGrids (t, v) && (v == 1 || sn.n > 0); }
+        // the view kept on an effect's page, where MOTION is the right of the third too; and no key for the second there
+        sc.testCfgScroll (2); draw();
+        int tapeAt = -1; for (int ty = 0; ty < (int) effects().size(); ++ty) if (juce::String (effects()[(size_t) ty].name) == "TAPE") tapeAt = ty;
+        ses.setInsert (pad, 0, tapeAt); audio (4);
+        const Engine::Target fx { 1, pad, 0 };
+        sc.showConfig (fx); draw();
+        const auto f2 = seen (fx);
+        bool motionThere = false; { const auto list = e.setupParams (fx); for (auto& h : sc.testHits()) if (Screen::testIsSetup (h) && h.a >= 0 && h.a < (int) list.size() && list[(size_t) h.a].id == "m1_target") motionThere = true; }
+        const bool kept = sc.testCfgView() == 2 && motionThere && f2.onView == f2.n && keyOf (1) == juce::Point<float>() && keyOf (0) != juce::Point<float>();
+        // the E16 on a page of CONFIG: the view its first knob is on
+        sc.showConfig (t); sc.testCfgScroll (0); draw();
+        int motionAt = -1; { const auto list = ses.configList(); for (int i = 0; i < (int) list.size(); ++i) if (list[(size_t) i].id == "m1_src") motionAt = i; }
+        const int pageWas = ses.cfgE16Page;
+        ses.cfgE16Page = motionAt / e16::kCfgPer; sc.testTick(); draw();
+        const int first12 = ses.cfgE16Page * e16::kCfgPer;
+        const auto list = e.setupParams (t);
+        const bool follows = motionAt >= 0 && first12 < (int) list.size() && sc.testCfgView() == list[(size_t) first12].grid / 2;
+        ses.cfgE16Page = pageWas; sc.testTick();
+        ses.setInsert (pad, 0, -1);
+        for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int at = sp.choices.indexOf ("DUB WASH"); at >= 0) ses.setupByHand (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1));
+        audio (4); sc.testCfgScroll (0); sc.hideConfig(); draw(); wav.deleteFile();
+        if (! (first && second && third && strip && kept && follows)) std::printf ("        (first %d second %d third %d strip %d kept %d follows %d; %d of %d, %d of %d, %d of %d)\n", first, second, third, strip, kept, follows, v0.n, inGrids (t, 0), v1.n, inGrids (t, 1), v2.n, inGrids (t, 2));
+        check (first && second && third && strip && kept && follows, "CONFIG's three views: the keys 1 2 3 bring each up, and what can be turned is that view's two grids and no other's; every control is above the EQ, with a sample's strip on the display too; the view is kept on an effect's page (MOTION the right of the third there as well, and no key for a second view); the E16 on a page of CONFIG brings up the view its first knob is on");
+    }
     // 2a5. (the ninety-first build) An insert slot's name: the list of what the slot can be, up in place of its eight knobs,
     // every key of it on the slot's own plate; a key makes the slot that effect and puts the list away; the name again does too.
     {
@@ -16719,6 +16961,92 @@ public:
                 e.setSpaceModel (1); dump ({ 2, 0, 1 }, "return B, SPACE (convolution)");
                 dump ({ 3, 0, 0 }, "DRUM BUS");
             }
+            quit(); return;
+        }
+        if (args.contains ("--follow"))
+        {
+            // (--follow [lane's slug]: a key held on the lane (pad by default) in a rig of its own, and three seconds in a
+            // knob thrown: LEVEL to nothing, then FILTER to its low end. The output's level every 50 ms for the second
+            // after and then every second: how fast the lane follows, and what is left. Each as the rig stands, with
+            // the lane's two sends at nothing, and with its inserts out as well.)
+            using namespace sf0;
+            const juce::String slug = args.indexOf ("--follow") + 1 < args.size() && ! args[args.indexOf ("--follow") + 1].startsWith ("--") ? args[args.indexOf ("--follow") + 1] : juce::String ("pad");
+            int lane = -1; for (int l = 0; l < kLanes; ++l) if (slug == lanes()[(size_t) l].slug) lane = l;
+            if (lane < 0) { std::printf ("no such lane\n"); quit(); return; }
+            const int perSec = 48000 / 256;
+            for (const char* what : { "LEVEL", "FILTER" })
+                for (int how = 0; how < 3; ++how)
+                {
+                    Engine e; e.prepare (48000.0, 256);
+                    Session ses (e, false);
+                    juce::AudioBuffer<float> b (2, 256);
+                    int ctl = -1; for (int k = 0; k < kLaneKnobs; ++k) if (e.control (cx::lane (lane, k)).label == what) ctl = cx::lane (lane, k);
+                    if (how >= 1) { ses.userSet (cx::lane (lane, cx::kSendA), 0.0f); ses.userSet (cx::lane (lane, cx::kSendB), 0.0f); }
+                    if (how >= 2) for (int k = 0; k < kSlots; ++k) ses.setInsert (lane, k, -1);
+                    for (int i = 0; i < 40; ++i) e.render (b);
+                    e.noteInAt (juce::MidiMessage::noteOn (lane + 1, 57, (juce::uint8) 100), 0);
+                    std::vector<float> out;
+                    for (int i = 0; i < perSec * 9; ++i)
+                    {
+                        if (i == perSec * 3 && ctl >= 0) ses.userSet (ctl, 0.0f);
+                        e.render (b);
+                        for (int k = 0; k < 256; ++k) out.push_back (0.5f * (b.getSample (0, k) + b.getSample (1, k)));
+                    }
+                    auto level = [&] (double from, double to) { double q = 0.0; const size_t a = (size_t) (from * 48000.0), z = std::min (out.size(), (size_t) (to * 48000.0)); for (size_t i = a; i < z; ++i) q += (double) out[i] * out[i]; return 10.0 * std::log10 (q / (double) std::max<size_t> (1, z - a) + 1.0e-18); };
+                    const double at = (double) (perSec * 3) * 256.0 / 48000.0;
+                    std::printf ("%s %s to nothing at 3 s, %s (GLIDE %.3f): before %.1f dB;", slug.toRawUTF8(), what, how == 0 ? "as the rig stands" : how == 1 ? "its sends at nothing" : "its sends at nothing and its inserts out", (double) e.target (cx::kGlide), level (at - 1.0, at));
+                    for (int k = 0; k < 10; ++k) std::printf (" %.0f", level (at + 0.05 * k, at + 0.05 * (k + 1)));
+                    std::printf (" | 1 s on %.0f, 2 s %.0f, 3 s %.0f, 5 s %.0f dB\n", level (at + 1.0, at + 1.2), level (at + 2.0, at + 2.2), level (at + 3.0, at + 3.2), level (at + 5.0, at + 5.2));
+                }
+            std::fflush (stdout);
+            quit(); return;
+        }
+        if (args.contains ("--lenprobe"))
+        {
+            // (--lenprobe SECONDS [GATE]: PAD alone on SAMPLE with a file of that many seconds, the rig running; its level
+            // each half bar; after four bars its sequence made 8 steps long, after eight 4, after twelve 16 again. GATE:
+            // its one step's gate in steps (the rig's own, 16.25, if none). For what a shorter sequence does to a sample.)
+            using namespace sf0;
+            const int at = args.indexOf ("--lenprobe");
+            const double seconds = at + 1 < args.size() ? args[at + 1].getDoubleValue() : 2.0;
+            const float gate = at + 2 < args.size() && ! args[at + 2].startsWith ("--") ? args[at + 2].getFloatValue() : -1.0f;
+            const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-lenprobe.wav");
+            {
+                juce::AudioBuffer<float> b (2, (int) (48000.0 * seconds));
+                for (int i = 0; i < b.getNumSamples(); ++i) { const float x = 0.4f * std::sin ((float) i * 0.03f) * (1.0f - (float) i / (float) b.getNumSamples()); b.setSample (0, i, x); b.setSample (1, i, x); }
+                wav.deleteFile();
+                if (auto out = wav.createOutputStream())
+                    if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), 48000.0, 2, 16, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+            }
+            Engine e; e.prepare (48000.0, 256);
+            Session ses (e, false);
+            int pad = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+            const Engine::Target t { 0, pad, 0 };
+            for (int l = 0; l < kLanes; ++l) if (l != pad) { Pattern none; e.setPattern (l, none); }
+            e.loadFile (pad, wav);
+            for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int m = sp.choices.indexOf ("SAMPLE"); m >= 0) ses.setupByHand (t, "model", (float) m / (float) std::max (1, sp.choices.size() - 1));
+            ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f);
+            if (gate > 0.0f) { Pattern p = ses.pattern (pad); for (auto& st : p.steps) if (st.on) st.gate = gate; ses.setPattern (pad, p); }
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 40; ++i) e.render (b);
+            e.setRunning (true);
+            const double barSamples = 4.0 * 60.0 / e.tempo() * 48000.0;
+            std::printf ("a sample of %.1f s, the step's gate %s, a bar %.2f s; level each half bar:\n", seconds, gate > 0.0f ? juce::String (gate, 2).toRawUTF8() : "as the rig has it", barSamples / 48000.0);
+            double acc = 0.0; long n = 0, done = 0; int half = 0;
+            for (int bar = 0; half < 32;)
+            {
+                juce::ignoreUnused (bar);
+                e.render (b);
+                for (int k = 0; k < 256; ++k) { const double x = b.getSample (0, k); acc += x * x; ++n; ++done; }
+                if ((double) done >= (double) (half + 1) * barSamples * 0.5)
+                {
+                    std::printf ("%s%.0f", half % 8 == 0 ? (half == 0 ? "  16 steps: " : half == 8 ? "\n   8 steps: " : half == 16 ? "\n   4 steps: " : "\n  16 steps: ") : " ", 10.0 * std::log10 (acc / (double) std::max (1L, n) + 1.0e-18));
+                    acc = 0.0; n = 0; ++half;
+                    if (half == 8 || half == 16 || half == 24) { Pattern p = ses.pattern (pad); p.length = half == 8 ? 8 : half == 16 ? 4 : 16; ses.setPattern (pad, p); }
+                }
+            }
+            std::printf ("\n");
+            wav.deleteFile(); std::fflush (stdout);
             quit(); return;
         }
         if (args.contains ("--enginelevels"))

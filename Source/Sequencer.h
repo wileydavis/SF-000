@@ -168,6 +168,7 @@ struct LanePlayer
 {
     Pattern pat;
     bool pitched = false;
+    bool selfTie = true;        // the only lit step, longer than the sequence, is tied to itself and held (a drone); false: struck every time round
     int drumNote = 60;
 
     struct Ev { double ppq = 0; int note = 0, vel = 0; bool on = false, live = false, tieable = false; };
@@ -212,7 +213,13 @@ struct LanePlayer
             }
             const int dist = stepsToNext (pat, i);
             // past the next lit step's edge: legato into it. Up to the edge: the note ends there and the next one strikes.
-            const bool reaches = st.gate >= (float) dist + kLegatoOver;
+            // (The ninety-fourth build: the only lit step, longer than the sequence, reaches its own next time round and
+            // is tied to it: struck once and held for good. That is a drone, and the rig's pad is written so. But a sample
+            // that plays once was then never heard again, and one whose gate was a sequence long stopped for good when the
+            // sequence was made shorter. Wiley, Nov 20: "why does shortening the sequence lemngth on pad make a sample stop
+            // playimg". So only where a held note goes on sounding (selfTie: the engine asks the lane's instrument, and no
+            // drum is): otherwise it ends as the sequence comes round and is struck again.)
+            const bool reaches = (dist < len || selfTie) && st.gate >= (float) dist + kLegatoOver;
             const double end = reaches ? tq + (dist + 0.12) * kStepBeats
                                        : tq + juce::jlimit (0.05, (double) dist, (double) st.gate) * kStepBeats;
             // A tie: the note before reached this step and is the same note: it carries on.

@@ -13,6 +13,9 @@ constexpr float kPi = 3.14159265358979f;
 constexpr float kTwoPi = 6.28318530717959f;
 
 inline float dbToGain (float db)       { return std::pow (10.0f, db * 0.05f); }
+// (SF-000, the ninety-fourth build) an instrument's LEVEL as a gain: the knob's foot, -36 dB, is nothing, and its last
+// 3 dB fall away to that; from -33 dB up it is dbToGain, to the bit (modules/Kit.h, levelDb)
+inline float levelGain (float db)      { return dbToGain (db) * std::min (1.0f, std::max (0.0f, (db + 36.0f) / 3.0f)); }
 inline float gainToDb (float g)        { return 20.0f * std::log10 (std::max (g, 1.0e-7f)); }
 inline float clamp01 (float x)         { return std::min (1.0f, std::max (0.0f, x)); }
 inline float lerp (float a, float b, float t) { return a + (b - a) * t; }

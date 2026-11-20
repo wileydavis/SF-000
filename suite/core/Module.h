@@ -169,6 +169,9 @@ public:
 
     // Display panel (message thread). Read only atomics / benign values set by the audio thread.
     virtual int displayHeight() const               { return 140; }
+    // (SF-000, the ninety-fourth build) Does a note held for good go on sounding? Not a sample that plays once and is over:
+    // a sequence's only step, longer than the sequence, is then struck every time round and not tied to itself (LanePlayer).
+    virtual bool holdsNotes() const                 { return true; }
     // The status line the display shows (SF TERROIR's imports and captures), as text. Message thread.
     virtual juce::String statusLine() const         { return {}; }
     virtual void paint (juce::Graphics&, juce::Rectangle<float>) {}

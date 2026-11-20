@@ -201,6 +201,12 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   of `Airwindows.cpp` is where they are named. To add another: its three files, a namespace
   block and a `Kind` in `AirKernels.*`, a row in that table, a `make`, the two Registry lines,
   an `FxDef` in `Source/Rig.h`, and its lines in `Source/Help.h`. See DECISIONS 746 to 750.
+- **The ninety-fourth build**: `core/Module.h` has `holdsNotes()` (true), which
+  `modules/Synth.cpp` answers from its model (false on SAMPLE with LOOP off: `holds`), for
+  SF-000's sequencer; `core/Dsp.h` has `levelGain` and `modules/Kit.h`'s `levelDb` uses it,
+  so an instrument's LEVEL at -36 dB is nothing and its last 3 dB fall away to that (the
+  suite's own is -36 dB there: worth taking, DECISIONS 761). Marked `(SF-000, the
+  ninety-fourth build)`.
 - **`modules/Synth.cpp` and `modules/Calibration.h`, the ninety-third build**: the engines more
   than one of BASS, LEAD and PAD has (SAMPLE, WAVETABLE, FM 4-OP, GRANULAR, ACID 303-TYPE,
   MONO 101-TYPE) are one definition each (`sharedModel`, `SynthModel::shared`), LEAD's as it

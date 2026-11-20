@@ -926,6 +926,9 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aLearnKeep, "KEEP", "TIES THE KNOBS MOVED SINCE LEARN TO THE KNOB BEING TAUGHT. NOTHING CHANGES IN THE SOUND: THE KNOB IS AT ITS FULL TURN, AND TURNED BACK THEY GO BACK TO WHERE THEY WERE." },
                 { aLearnDrop, "DROP", "PUTS BACK THE KNOBS MOVED SINCE LEARN AND TIES NOTHING." },
                 { aCfgClose, "X", "CLOSES CONFIG." },
+                { aCfgView1, "CONFIG 1", "THE FIRST OF CONFIG'S THREE VIEWS, TWO GRIDS OF FOUR BY FOUR. A LANE: LANE (ITS MODEL AND LAYER, THE KEY, ITS POCKET AND ECHO) AND SOUND. AN EFFECT: ITS OWN CONTROLS, AND TIME (WHAT THE DELAYS AND REVERBS SHARE). EVERY CONTROL HAS ONE CELL, THE SAME ON EVERY PAGE THAT HAS IT; A CELL DRAWN EMPTY IS KEPT FOR A CONTROL THAT IS ON THE PANEL FOR NOW, OR THAT THIS MODEL HAS NOT GOT." },
+                { aCfgView2, "CONFIG 2", "THE SECOND VIEW, A LANE'S ENGINES: WHAT ITS MODEL HAS OF ITS OWN ON THE LEFT, WHAT ITS LAYER'S MODEL HAS ON THE RIGHT. AN EFFECT HAS NONE." },
+                { aCfgView3, "CONFIG 3", "THE THIRD VIEW: A LANE'S SAMPLE CONTROLS (A CONVOLUTION'S BANDS) ON THE LEFT, AND MOTION ON THE RIGHT, ON EVERY PAGE." },
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
                 { aNotes, "NOTES", "WHETHER A RECALL BRINGS A SNAPSHOT'S NOTES. LIT: EACH LANE'S SEQUENCER IS GIVEN WHAT THE LANE WAS PLAYING WHEN THE SNAPSHOT WAS TAKEN (ITS OWN STEPS, AND THE NOTES THAT WERE COMING IN FROM OUTSIDE, AS STEPS) AND PLAYS IT: THE SNAPSHOT SOUNDS AS IT DID WITH NOTHING PLAYING INTO THE RIG. OUT: A RECALL CHANGES THE SOUND AND LEAVES EVERY SEQUENCER AS IT IS, FOR WHEN A SEQUENCER OUTSIDE IS PLAYING THE LANES. N ON THE KEYBOARD TOO. EVERY RECALL GOES BY IT: A TAP IN THE LIBRARY, A SNAPSHOT KNOB'S PRESS, A SEQUENCER'S RECALL." },
@@ -1330,7 +1333,7 @@ void Screen::drawMain (G& g)
 void Screen::openConfig (Engine::Target t)
 {
     ses.openConfig (t);
-    if (cfgOpen) { cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false; }
+    if (cfgOpen) { cfgStale = true; cfgName = {}; cfgNote = {}; loadOpen = false; }
     cfgSeen = cfg; cfgOpenSeen = cfgOpen;
 }
 
@@ -1357,14 +1360,14 @@ void Screen::drawConfig (G& g, R r)
     float x = x0 + wTag;
     x += plate (g, x, y0, name, fLegend, 8, col::white, col::black) + 2;
     x += plate (g, x, y0, "CONFIG", fNote, 6, col::white, col::black) + 6;
-    const float headLeft = x;               // (the title row from here to what is at its right: which page of several, below)
+    const float headLeft = x;               // (the title row from here: the three views' keys, below)
     const R cr (r.getRight() - 27, y0 + 2, 22, 22);
     float headRight = cr.getX() - 8;
     key (g, cr, col::white);
     text (g, "X", cr, fLbl, col::black);
     hit (cr.expanded (2), hAct, aCfgClose, 0);
 
-    if (cfgStale || ++cfgAge > 12) { cfgParams = p != nullptr ? eng.setupParams (cfg) : std::vector<Engine::SetupParam>(); cfgStale = false; cfgAge = 0; }
+    if (cfgStale || ++cfgAge > 12) { cfgPage = p != nullptr ? eng.setupPage (cfg) : Engine::SetupPage(); cfgParams = cfgPage.list; cfgStale = false; cfgAge = 0; }
     // the parameter last touched, with its value
     for (auto& sp : cfgParams)
         if (sp.id == cfgName)
@@ -1472,58 +1475,118 @@ void Screen::drawConfig (G& g, R r)
     if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
     loadOpen = false;
 
-    // The controls, eight across at the pitch the modules' own knobs stand at, in boxes that say what a run of them
-    // belongs to. First what the sound is: MODEL with what only that model has beside it, the LAYER, the knobs the model
-    // put away. Then, from a new row, what is always there. Then, from a new row, what comes and goes with a setting (a
-    // sample's controls). So turning a control never moves another: what it brings stands after everything that stays,
-    // and a box is not split across rows unless it is wider than one. Scrolled a row at a time.
-    // (The E16 holds them in this order, twelve to a page of its CONFIG: while it is on one, its twelve are numbered here.)
+    // The controls (the ninety-fourth build): the page is six grids of four by four, each control in a cell that is its
+    // own on every page that has it (Engine::setupPage), and two grids are up at a time, side by side: a lane's LANE and
+    // SOUND, its MODEL and LAYER, its SAMPLE and MOTION; an effect's EFFECT and TIME, and its BANDS and MOTION. The three
+    // keys in the title row choose which. A cell whose control is away is drawn empty, with its name: on the lane's panel
+    // for now (a model's own knobs have its place there, or it is one of the model's own that the panel has), or not this
+    // model's or this setting's. Nothing is ever put in another's cell, so no control moves, whatever is turned.
+    // (Wiley, Nov 19: "Every config page needs to be broken down into a 4x4 grids. each grid position can contain a knob
+    // or a button. Any knob that's shared between lane configs should always be in exactly the same place.")
+    // (The E16 holds them in the list's order, twelve to a page of its CONFIG: while it is on one, its twelve are numbered here.)
     // (a lane's EQ is listed last, for the E16: here it is its graph, at the foot of the panel, and not knobs)
     int total = (int) cfgParams.size();
     const float eqH = cfg.kind == 0 ? 286.0f : 0.0f;
     if (cfg.kind == 0) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
-    const float cellW = kCfgCell, rowH = 110.0f, gx = x0 + (544.0f - (float) kCfgCols * cellW) * 0.5f;
     const float floorY = r.getBottom() - 6 - eqH;
     if (cfg.kind == 0) drawEq (g, R (x0, floorY + 4, 544, eqH - 4)); else { eqRect = {}; eqGraph = {}; }
     layoutConfig (total);
-    const int fits = std::max (1, (int) std::floor ((floorY - y) / rowH));
-    if (cfgSeek >= 0) { if (cfgSeek < total) cfgScroll = cfgAt[(size_t) cfgSeek].row; cfgSeek = -1; }
-    cfgScroll = juce::jlimit (0, std::max (0, cfgRows - fits), cfgScroll);
-    const int lastRow = std::min (cfgRows, cfgScroll + fits) - 1;
-    auto rowY = [&] (int row) { return y + (float) (row - cfgScroll) * rowH; };
-    for (const auto& bx : cfgBoxes)
+    if (cfgSeek >= 0) { if (cfgSeek < total && cfgParams[(size_t) cfgSeek].grid >= 0) cfgView = cfgParams[(size_t) cfgSeek].grid / 2; cfgSeek = -1; }
+    cfgView = juce::jlimit (0, kCfgViews - 1, cfgView);
+    int view = cfgView;         // (a page with no such view, an effect's second: its first is shown, and the choice is kept)
+    if (! cfgPage.hasView (view)) for (int v = 0; v < kCfgViews; ++v) if (cfgPage.hasView (v)) { view = v; break; }
+    cfgViewShown = view;
     {
-        if (bx.row < cfgScroll || bx.row > lastRow || bx.title.isEmpty()) continue;
-        const float by = rowY (bx.row), left = gx + (float) bx.col * cellW;
-        const R box (left + 2, by + 6, (float) bx.cells * cellW - 4, 100.0f);
-        if (! vis (g, box.expanded (2, 8))) continue;
-        // (its name on the box's upper edge where the run begins; the line stops either side of the name)
-        const R chip (left + 8, by, std::ceil (tw (fLbl, bx.title)) + 10.0f, 15.0f);
+        // the three views' keys: lit, the one that is up; dull, one this page has not got
+        float kx = headLeft;
+        for (int v = 0; v < kCfgViews; ++v)
         {
-            const juce::Graphics::ScopedSaveState state (g);
-            if (bx.head) g.excludeClipRegion (chip.expanded (4.0f, 3.0f).getSmallestIntegerContainer());
-            g.setColour (tone (col::black).withAlpha (0.30f));
-            g.drawRoundedRectangle (box, 5.0f, 1.0f);
+            const bool there = cfgPage.hasView (v), up = v == view;
+            const R kr (kx, y0 + 1, 26, 24);
+            key (g, kr, ! there ? col::putty : up ? col::yellow : col::white, pressed (aCfgView1 + v) ? 6.0f : 2.0f, up);
+            text (g, String (v + 1), kr, fLbl, col::black);
+            if (there) hit (kr.expanded (1), hAct, aCfgView1 + v, 0);
+            kx += 28.0f;
         }
-        if (bx.head) plate (g, chip.getX(), chip.getY(), bx.title, fLbl, 5, col::black, col::white, 15);
+    }
+    // the cells: four across in each grid at 64, the two grids a wider gap apart; the rows as tall as there is room for
+    // between the display and the EQ (a sample's strip on the display takes some), the knobs smaller where they are short
+    const float cellW = kCfgCell, gap = 544.0f - 8.0f * kCfgCell - 8.0f, gx0 = x0 + 4.0f, headH = 20.0f;
+    const float rowH = juce::jlimit (83.0f, 108.0f, std::floor ((floorY - y - headH) / 4.0f));
+    const float kd = rowH >= 92.0f ? 40.0f : 34.0f, top = rowH >= 100.0f ? 6.0f : 2.0f;
+    auto gridX = [&] (int side) { return gx0 + (float) side * (4.0f * cellW + gap); };
+    auto cellAt = [&] (int grid, int cell) { return R (gridX (grid % 2) + (float) (cell % 4) * cellW, y + headH + (float) (cell / 4) * rowH, cellW, rowH); };
+    // a control's name as its cell prints it: with its row's word where the row has one (MOTION's 1 and 2, a band's LOW, MID, HIGH)
+    auto nameIn = [&] (int grid, int cell, const String& name)
+    {
+        const String& tag = cfgPage.rowTag[grid][cell / 4];
+        return tag.isEmpty() || (grid == 4 && cell < 4) ? name : tag.containsOnly ("0123456789") ? name + " " + tag : tag + " " + name;
+    };
+    for (int side = 0; side < 2; ++side)
+    {
+        const int grid = view * 2 + side;
+        const String& title = cfgPage.title[grid];
+        if (title.isEmpty()) continue;
+        const float hx = gridX (side);
+        if (vis (g, R (hx, y, 4.0f * cellW, headH)))
+        {
+            float tx = hx + plate (g, hx, y, title, fLbl, 5, col::black, col::white, 15) + 4;
+            if (cfgPage.says[grid].isNotEmpty()) plate (g, tx, y, cfgPage.says[grid].toUpperCase(), fLbl, 5, col::white, col::black, 15);
+        }
+        if (cfgPage.note[grid].isNotEmpty() && vis (g, R (hx, y + headH, 4.0f * cellW, rowH)))
+        {
+            g.setColour (tone (col::black).withAlpha (0.55f)); g.setFont (fLbl);
+            g.drawFittedText (cfgPage.note[grid], R (hx + 6, y + headH + 8, 4.0f * cellW - 12, 40).getSmallestIntegerContainer(), juce::Justification::centredLeft, 3, 0.8f);
+        }
+    }
+    // a name on its cell: one line, or two where it is two words and too wide for one, broken at the gap nearest its middle
+    // (POCKET / DEPTH, FLUTTER / SPEED, RANDOM / START). The place it breaks at, or -1.
+    auto breakOf = [&] (const String& name)
+    {
+        const int first = name.indexOfChar (' ');
+        if (first <= 0 || tw (fLbl, name) <= cellW - 8) return -1;
+        int cut = first;
+        for (int k = first; k >= 0; k = name.indexOfChar (k + 1, ' ')) if (std::abs (k * 2 - name.length()) < std::abs (cut * 2 - name.length())) cut = k;
+        return cut;
+    };
+    // the cells kept for what is away: a ring where its knob would be, its name, and where it is
+    for (const auto& gh : cfgPage.ghosts)
+    {
+        if (gh.grid / 2 != view) continue;
+        const R cr = cellAt (gh.grid, gh.cell);
+        if (! vis (g, cr)) continue;
+        const float cxm = cr.getCentreX(), cy = cr.getY() + top;
+        g.setColour (tone (col::black).withAlpha (gh.onMain ? 0.34f : 0.22f));
+        if (gh.kind == Kind::Toggle || gh.kind == Kind::Hold) g.drawRoundedRectangle (R (cxm - 18, cy + 2, 36, kd - 4), 4.0f, 1.2f);
+        else g.drawEllipse (R (cxm - kd * 0.5f + 3, cy + 3, kd - 6, kd - 6), 1.2f);
+        g.setColour (tone (col::black).withAlpha (gh.onMain ? 0.60f : 0.40f)); g.setFont (fLbl);
+        {
+            const String shown = nameIn (gh.grid, gh.cell, gh.name);
+            const int cut = breakOf (shown);
+            auto line = [&] (const String& word, float ly) { g.drawFittedText (word, R (cr.getX() + 4, ly, cellW - 8, 13).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.6f); };
+            if (cut > 0) { line (shown.substring (0, cut), cy + kd + 2); line (shown.substring (cut + 1), cy + kd + 15); }
+            else line (shown, cy + kd + 2);
+        }
+        if (gh.onMain) g.drawFittedText ("ON PANEL", R (cr.getX() + 2, cy + kd + 30, cellW - 4, 13).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.6f);
     }
     for (int i = 0; i < total; ++i)
     {
-        const auto at = cfgAt[(size_t) i];
-        if (at.row < cfgScroll || at.row > lastRow) continue;
         const auto& sp = cfgParams[(size_t) i];
-        const float by = rowY (at.row), left = gx + (float) at.col * cellW, w = (float) at.span * cellW;
-        const float cxm = left + w * 0.5f, cy = by + 16;
-        const R kr (cxm - 20, cy, 40, 40);
-        if (vis (g, R (left, cy, w, rowH - 16)))
+        if (sp.grid < 0 || sp.grid / 2 != view) continue;
+        const R cr = cellAt (sp.grid, sp.cell);
+        const float left = cr.getX(), w = cellW;
+        const float cxm = left + w * 0.5f, cy = cr.getY() + top;
+        const R kr (cxm - 20, cy, 40, kd);
+        const String shown = nameIn (sp.grid, sp.cell, sp.name);
+        if (vis (g, cr))
         {
             if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
             else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
-            else knob (g, cxm, cy + 20, 40, sp.value, sp.kind, sp.choices.size(), col::lit);
+            else knob (g, cxm, cy + kd * 0.5f, (int) kd, sp.value, sp.kind, sp.choices.size(), col::lit);
             // its name, on two lines where it is two words too wide for one, drawn narrower where a word is wider than its place
             {
-                const int gap = sp.name.indexOfChar (' ');
-                const bool two = gap > 0 && tw (fLbl, sp.name) > w - 8;       // (and a gap is left between it and its neighbour's)
+                const int cut = breakOf (shown);
+                const bool two = cut > 0;       // (and a gap is left between it and its neighbour's)
                 auto line = [&] (const String& word, float ly)
                 {
                     const R lr (left + 4, ly, w - 8, 13);
@@ -1533,82 +1596,39 @@ void Screen::drawConfig (G& g, R r)
                     // (for the checks, as legend does: where its letters are, to be held against the plate it is printed on)
                     if (recording) if (const R at = R (cxm - ww * 0.5f, ly + 1.0f, ww, 12.0f).translated (shift, 0.0f); skin.clipNow().has (at.getCentreX(), at.getY() + 3.0f)) legendRects.push_back (at);
                 };
-                if (two) { line (sp.name.substring (0, gap), cy + 42); line (sp.name.substring (gap + 1), cy + 55); }
-                else line (sp.name, cy + 42);
+                if (two) { line (shown.substring (0, cut), cy + kd + 2); line (shown.substring (cut + 1), cy + kd + 15); }
+                else line (shown, cy + kd + 2);
             }
             // INFO: its number while CONFIG is open
             if (info && sp.kind != Kind::Hold && i < e16::kCfgPer * e16::kCfgPages)
-                textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxm - 14, cy + 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
+                textRaw (g, String (e16::cfgCc (i)), sp.kind == Kind::Toggle ? kr : R (cxm - 14, cy + kd * 0.5f - 10 - (lit ? 3.0f : 0.0f), 28, 20), fLbl, sp.kind == Kind::Toggle ? inkOn (cap (sp.value > 0.5f ? col::green : col::putty), col::black) : col::lit);
             if (sp.kind == Kind::List)
             {
-                const R vr (left + 3, cy + 70, w - 6, 15);
+                const R vr (left + 2, cy + kd + 30, w - 4, 15);
                 if (lit) skin.window (g, vr, glass (col::white)); else { g.setColour (col::white); g.fillRect (vr); }
                 g.setColour (tone (col::black)); g.setFont (fLbl);
                 g.drawFittedText (sp.text.toUpperCase(), vr.reduced (2, 0).getSmallestIntegerContainer(), juce::Justification::centred, 1, 0.55f);
             }
             // while the E16 is on a page of CONFIG: which of its twelve knobs this is
             if (ses.cfgE16Page >= 0 && i / e16::kCfgPer == ses.cfgE16Page)
-                plate (g, left + 3, cy - 2, String (i % e16::kCfgPer + 1), fLbl, 3, col::lit, col::black, 13);
+                plate (g, left + 1, cy - 2, String (i % e16::kCfgPer + 1), fLbl, 3, col::lit, col::black, 13);
         }
         hit (kr.expanded (4, 2), hSetup, i, 0);
     }
-    if (cfgRows > fits)
-    {
-        // which rows of how many, in the title row: as much of it as there is room for beside the control last touched
-        const String of = String (cfgScroll + 1) + "-" + String (lastRow + 1) + " OF " + String (cfgRows);
-        for (const String& more : { "ROWS " + of + ": SCROLL", "ROWS " + of, of })
-            if (headLeft + std::ceil (tw (fNote, more)) + 12 <= headRight) { plate (g, headLeft, y0, more, fNote, 6, col::white, col::black); break; }
-    }
 }
 
-// Where each of CONFIG's controls stands (cfgAt: row, column, how many columns wide) and its boxes (cfgBoxes), from
-// the list as the engine orders it (Engine::setupParams): see drawConfig. A control is as wide as one of the modules'
-// knobs; a list whose choices are long names (MODEL, TABLE) is two.
+// Where each of CONFIG's controls stands (cfgAt), from its grid and cell (Engine::setupPage): the view it is on (two
+// grids to a view), and its row and column of the eight across that are up together. The EQ's have no cell.
 void Screen::layoutConfig (int total)
 {
-    cfgAt.assign ((size_t) total, {}); cfgBoxes.clear(); cfgRows = 0;
-    auto spanOf = [&] (const Engine::SetupParam& sp)
+    cfgAt.assign ((size_t) total, {});
+    for (int i = 0; i < total; ++i)
     {
-        if (sp.kind != Kind::List || sp.group.startsWith ("MOTION")) return 1;
-        if (sp.id == "model" || sp.id == "layer_model" || sp.id == "__model" || sp.id == "table") return 2;
-        float widest = 0.0f;
-        for (auto& c : sp.choices) widest = std::max (widest, tw (fLbl, c.toUpperCase()));
-        return widest > (kCfgCell - 10.0f) / 0.7f ? 2 : 1;
-    };
-    int row = 0, col = 0;
-    for (int i = 0; i < total;)
-    {
-        const auto& first = cfgParams[(size_t) i];
-        int n = 1, cells = 0;
-        while (i + n < total && cfgParams[(size_t) (i + n)].group == first.group && cfgParams[(size_t) (i + n)].section == first.section && ! cfgParams[(size_t) (i + n)].ownRow) ++n;
-        for (int k = 0; k < n; ++k) cells += spanOf (cfgParams[(size_t) (i + k)]);
-        // (a box is at least wide enough for its name)
-        const int named = first.group.isEmpty() ? 1 : (int) std::ceil ((tw (fLbl, first.group) + 30.0f) / kCfgCell);
-        const int wide = std::max (cells, named);
-        const bool turns = i > 0 && cfgParams[(size_t) i - 1].section != first.section;
-        if (col > 0 && (turns || first.ownRow || wide > kCfgCols || col + wide > kCfgCols)) { ++row; col = 0; }
-        if (wide <= kCfgCols)
-        {
-            cfgBoxes.push_back ({ row, col, wide, first.group, true });
-            int c = col;
-            for (int k = 0; k < n; ++k) { const int sp = spanOf (cfgParams[(size_t) (i + k)]); cfgAt[(size_t) (i + k)] = { row, c, sp }; c += sp; }
-            col += wide;
-        }
-        else
-        {
-            int from = 0;       // (wider than a row: it carries on in the next, its name on the first)
-            for (int k = 0; k < n; ++k)
-            {
-                const int sp = spanOf (cfgParams[(size_t) (i + k)]);
-                if (col + sp > kCfgCols) { cfgBoxes.push_back ({ row, from, col - from, first.group, cfgBoxes.empty() || cfgBoxes.back().title != first.group }); ++row; col = 0; from = 0; }
-                cfgAt[(size_t) (i + k)] = { row, col, sp }; col += sp;
-            }
-            cfgBoxes.push_back ({ row, from, col - from, first.group, cells <= kCfgCols });
-        }
-        if (col >= kCfgCols) { ++row; col = 0; }
-        i += n;
+        const auto& sp = cfgParams[(size_t) i];
+        if (sp.grid < 0) continue;
+        cfgAt[(size_t) i] = { sp.cell / 4, (sp.grid % 2) * 4 + sp.cell % 4, 1, sp.grid / 2 };
     }
-    for (auto& at : cfgAt) cfgRows = std::max (cfgRows, at.row + 1);
+    cfgRows = 4;
 }
 
 // The lane EQ (Engine.h, eqBand): what it does to the lane, drawn over what the lane is playing, with what every other
@@ -4473,6 +4493,7 @@ void Screen::act (int a)
             break;
         case aLoadUp:   if (loadDir.getParentDirectory() != loadDir) { loadDir = loadDir.getParentDirectory(); loadScroll = 0; readLoad(); } repaint(); break;
         case aCfgClose: cfgOpen = false; break;
+        case aCfgView1: case aCfgView2: case aCfgView3: cfgView = a - aCfgView1; repaint(); break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
@@ -4774,7 +4795,7 @@ void Screen::downOn (Hit on, juce::Point<float> p)
         case hLane: case hLanePanel:    // its name, or its plate off the controls: the lane comes to the front
             if (h->kind == hLanePanel && h->a == ses.activeLane && ses.front.kind == Session::fLane) break;
             ses.bringLane (h->a, 0);
-            if (cfgOpen && cfg.kind < 2) { cfgStale = true; cfgScroll = 0; }
+            if (cfgOpen && cfg.kind < 2) { cfgStale = true; }
             break;
         case hDropFx:   ses.bring ({ h->a == 1 ? (int) Session::fInsert : (int) Session::fReturns, h->a == 1 ? h->b : 0 }, 0); break;
         case hFront:    ses.bring ({ h->a, h->b }, 0); break;
@@ -5330,7 +5351,7 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
         dirty (eqRect);
         return;
     }
-    if (cfgOpen && cfgRect.contains (where (e))) { cfgScroll = std::max (0, cfgScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
+    if (cfgOpen && cfgRect.contains (where (e))) return;        // (CONFIG's views are its three keys': the wheel moves nothing there)
     const auto* h = hitAt (where (e));
     if (three && ! eyeLocked && stage != nullptr && (h == nullptr || ! (h->kind == hKnob || h->kind == hSnapKnob || h->kind == hRead)))
     {
@@ -5428,7 +5449,7 @@ bool Screen::keyPressed (const juce::KeyPress& k)
     if (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey)
     {
         ses.bringLane (juce::jlimit (0, kLanes - 1, ses.activeLane + (k == juce::KeyPress::upKey ? -1 : 1)), 1);
-        if (cfgOpen && cfg.kind < 2) { cfgStale = true; cfgScroll = 0; }
+        if (cfgOpen && cfg.kind < 2) { cfgStale = true; }
         repaint();
         return true;
     }
@@ -6319,7 +6340,7 @@ void Screen::timerCallback()
     if (ses.printing()) { ses.printStep (22.0); repaint(); }
     if (cfgOpen != cfgOpenSeen || cfg.kind != cfgSeen.kind || cfg.lane != cfgSeen.lane || cfg.slot != cfgSeen.slot)
     {
-        if (cfgOpen) { cfgStale = true; cfgScroll = 0; cfgName = {}; cfgNote = {}; loadOpen = false; }
+        if (cfgOpen) { cfgStale = true; cfgName = {}; cfgNote = {}; loadOpen = false; }
         cfgSeen = cfg; cfgOpenSeen = cfgOpen;
         repaint();
     }

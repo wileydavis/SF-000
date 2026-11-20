@@ -872,6 +872,8 @@ public:
         pitchOffset = c.v (TUNE) + c.bend + (c.b (KEYFOLLOW) ? (float) keyOffset (c.keyRoot) : 0.0f);      // (SF-000: and the pitch wheel)
         const int modelA = c.ci (MODEL), modelB = c.ci (LAYERMODEL);
         monoSw = c.b (MONO);
+        // (SF-000, the ninety-fourth build) a sample that is not looped plays once and is over: a held note of it does not go on (holdsNotes)
+        holds.store (! (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SAMPLE && ! (c.b (SLOOP) && c.ci (SPLAY) != 1)));
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
         if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.shared)
             ensembleAmt = centred (ma) ? 0.0f : ma.engine == E_SAMPLE ? (c.v (SENV) > 0.5f ? 0.3f : 0.0f) : ma.ensemble;      // (SF-000) SPACE on an engine every lane has: not with MONO on; on a sample, with KNOBS on
@@ -1080,6 +1082,7 @@ public:
 
     // VOICES and the pocket; under them, with a sample loaded, the sample (its START and END to drag).
     int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool holdsNotes() const override { return holds.load(); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
         auto s = sample.get();
@@ -2113,6 +2116,7 @@ private:
     int lastModelB = -1; bool layerWasOn = false;      // (SF-000) LAYER MODEL and whether LAYER was up, last block
     int lastChord = -1;                                // (SF-000) and CHORD
     bool monoSw = false;                               // (SF-000) MONO, this block
+    std::atomic<bool> holds { true };                  // (SF-000) the lane's model is not a sample that plays once (holdsNotes)
     int gateHeldWas = -1;                              // (SF-000) was GATE over half way last block (a note as long as its key)? -1: no block yet
     int autoOffNow = -1; float relNow = 1.0f;          // (SF-000) GATE as it is this block: a note's length and its release
     double osr = 96000.0;

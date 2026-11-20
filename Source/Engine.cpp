@@ -1461,11 +1461,64 @@ std::vector<std::string> Engine::boundIds (Target t) const
     return ids;
 }
 
-std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
+std::vector<Engine::SetupParam> Engine::setupParams (Target t) const { return setupPage (t).list; }
+
+// Where a control stands on its CONFIG page (the ninety-fourth build). Wiley, Nov 19: "Every config page needs to be broken
+// down into a 4x4 grids. each grid position can contain a knob or a button. Any knob that's shared between lane configs
+// should always be in exactly the same place." One table: a control's cell is its own on every page that has it, whatever
+// the model, and a cell whose control is away (on the main panel, or not this model's) is left empty, never filled.
+namespace
 {
-    std::vector<SetupParam> out;
+struct CfgCell { const char* id; int cell; };
+// a lane, the first grid, LANE: what plays, how it sits with the kick and the key
+const CfgCell kLaneCells[] = { { "model", 0 }, { "layer_model", 1 }, { "layer", 2 }, { "split", 3 },
+                               { "key_follow", 4 }, { "key_track", 5 }, { "choke", 6 }, { "mono", 6 }, { "split_hz", 7 },
+                               { "pocket_depth", 8 }, { "pocket_shape", 9 }, { "pocket_post", 10 }, { "source", 11 },
+                               { "echo_space", 12 }, { "echo_swing", 13 }, { "vel_sens", 15 } };       // (14: a drum's FILTER RES, below)
+// the second, SOUND: the synth lanes' (BASS, LEAD, CHORD, PAD), and the three drums that have any
+const CfgCell kSynthSound[] = { { "attack", 0 }, { "decay", 1 }, { "env_amt", 2 }, { "res", 3 },
+                                { "color", 4 }, { "detune", 5 }, { "drive", 6 }, { "accent", 7 },
+                                { "glide", 8 }, { "tune", 9 }, { "chord", 10 }, { "space", 11 },
+                                { "acid", 12 }, { "warp", 13 }, { "drift", 14 }, { "release", 15 } };
+const CfgCell kKickSound[]  = { { "punch", 0 }, { "click", 1 }, { "pitch_time", 2 } };
+const CfgCell kPercSound[]  = { { "distance", 0 }, { "size", 1 }, { "position", 2 }, { "tension", 3 } };
+const CfgCell kVoiceSound[] = { { "slice_mode", 0 } };
+// the third and fourth, MODEL and LAYER: an engine's own, the same cells whichever of the two it is in
+const CfgCell kEngineCells[] = { { "table", 0 }, { "wt_twist", 1 }, { "wt_twist_as", 2 }, { "wt_env", 3 }, { "wt_wander", 4 }, { "wt_from", 5 },
+                                 { "gr_pos", 0 }, { "gr_scan", 1 }, { "gr_size", 2 }, { "gr_dens", 3 }, { "gr_spray", 4 }, { "gr_pitch", 5 }, { "gr_shape", 6 }, { "gr_rev", 7 },
+                                 { "gr_clock", 8 }, { "gr_spread", 9 }, { "gr_follow", 10 }, { "gr_sync", 11 },
+                                 { "fm_algo", 0 }, { "fm_feedback", 1 }, { "fm_a_ratio", 4 }, { "fm_b_ratio", 5 }, { "fm_c_ratio", 6 }, { "fm_d_ratio", 7 },
+                                 { "fm_a_level", 8 }, { "fm_b_level", 9 }, { "fm_c_level", 10 }, { "fm_d_level", 11 }, { "fm_a_decay", 12 }, { "fm_b_decay", 13 }, { "fm_c_decay", 14 }, { "fm_d_decay", 15 },
+                                 { "fg_char", 0 }, { "fg_impact", 1 }, { "fg_body", 2 }, { "fg_ground", 3 }, { "fg_pos", 4 }, { "fg_tone", 5 } };
+// the fifth, SAMPLE (LOOP is a switch on the synths and a list of bars on the drums: one cell)
+const CfgCell kSampleCells[] = { { "smp_start", 0 }, { "smp_end", 1 }, { "smp_fade_in", 2 }, { "smp_fade_out", 3 },
+                                 { "smp_gain", 4 }, { "smp_norm", 5 }, { "smp_cuts", 6 }, { "smp_bars", 7 }, { "smp_loop", 7 },
+                                 { "smp_play", 8 }, { "smp_notes", 9 }, { "smp_env", 10 }, { "smp_xfade", 11 },
+                                 { "smp_vel", 12 }, { "smp_rand", 13 }, { "smp_slice", 14 }, { "smp_cycle", 15 } };
+// an effect or a return, the second grid, TIME: what the delays and reverbs share
+const CfgCell kTimeCells[] = { { "__model", 0 }, { "throw", 1 }, { "freeze", 2 }, { "mix", 3 },
+                               { "width", 4 }, { "lo_cut", 5 }, { "input", 6 }, { "dry", 7 },
+                               { "duck", 8 }, { "duck_shape", 9 }, { "duck_for", 10 }, { "predelay", 11 } };
+// a convolution's BANDS (its fifth grid): the switch and the two crossovers, then a row a band
+const CfgCell kBandCells[] = { { "bands", 0 }, { "bx_low", 1 }, { "bx_high", 2 },
+                               { "b1_place", 4 }, { "b1_level", 5 }, { "b1_decay", 6 }, { "b1_size", 7 },
+                               { "b2_place", 8 }, { "b2_level", 9 }, { "b2_decay", 10 }, { "b2_size", 11 },
+                               { "b3_place", 12 }, { "b3_level", 13 }, { "b3_decay", 14 }, { "b3_size", 15 } };
+// the compressor, on the master and as an insert (where the first eight are its panel's)
+const CfgCell kCompCells[] = { { "threshold", 0 }, { "attack", 1 }, { "release", 2 }, { "ratio", 3 },
+                               { "sc_hpf", 4 }, { "mix", 5 }, { "level", 6 }, { "makeup", 7 },
+                               { "knee", 8 }, { "auto", 9 }, { "start", 10 } };
+const CfgCell kBusCells[]  = { { "damp", 0 }, { "boom_tune", 1 }, { "boom_decay", 2 }, { "mix", 3 },
+                               { "type", 4 }, { "comp", 5 }, { "to_key", 6 }, { "level", 7 } };
+template <size_t N> int cfgCellIn (const CfgCell (&table)[N], const juce::String& id) { for (auto& c : table) if (id == c.id) return c.cell; return -1; }
+}
+
+Engine::SetupPage Engine::setupPage (Target t) const
+{
+    SetupPage page;
+    std::vector<SetupParam>& out = page.list;
     auto* p = processorFor (t);
-    if (p == nullptr) return out;
+    if (p == nullptr) return page;
     if (t.kind == 2 && t.slot == 1)
     {
         // which reverb SPACE is: first in its CONFIG
@@ -1669,7 +1722,154 @@ std::vector<Engine::SetupParam> Engine::setupParams (Target t) const
             sp.value = order.empty() ? 0.0f : (float) at / (float) order.size(); sp.def = 0.0f; sp.text = sp.choices[at];
         }
     }
-    return out;
+    // ---- each to its cell (the ninety-fourth build)
+    {
+        const bool lane = t.kind == 0;
+        const juce::String module = lane ? juce::String (lanes()[(size_t) t.lane].module) : p->getName().fromFirstOccurrenceOf ("SF ", false, false);
+        const bool synth = lane && (module == "BASS" || module == "LEAD" || module == "PAD");
+        const bool comp = ! lane && module == "GLUE", bus = t.kind == 3;
+        const bool hasLayer = lane && p->paramIndex ("layer_model") >= 0;
+        auto has = [&] (const juce::String& id) { const int i = p->paramIndex (id.toStdString()); return i >= 0 && i < p->numModuleParams(); };
+        auto isBound = [&] (const juce::String& id) { return std::find (bound.begin(), bound.end(), id.toStdString()) != bound.end(); };
+        auto band = [] (const juce::String& id) { return id == "bands" || id.startsWith ("bx_") || id.startsWith ("b1_") || id.startsWith ("b2_") || id.startsWith ("b3_"); };
+        auto soundCell = [&] (const juce::String& id)
+        {
+            if (synth) return cfgCellIn (kSynthSound, id);
+            if (module == "KICK") return cfgCellIn (kKickSound, id);
+            if (module == "STRIKE") return cfgCellIn (kPercSound, id);
+            if (module == "VOICE") return cfgCellIn (kVoiceSound, id);
+            return -1;
+        };
+        // (a drum's RES is its lane filter's, FILTER RES, and is the lane's; a synth's is its own filter's, and is its sound's)
+        const bool laneRes = lane && ! synth;
+        // an effect's own: the cells of its first grid in the order the module lists them, counted over all it could ever
+        // list there, so a control that comes and goes takes no other's cell
+        std::vector<juce::String> own;
+        if (! lane && ! comp && ! bus)
+            for (int i = 0; i < p->numModuleParams(); ++i)
+            {
+                const juce::String id (specs[(size_t) i].id);
+                if (specs[(size_t) i].hidden || isBound (id) || band (id) || id == "alloc" || id.startsWith ("smp_cut") || cfgCellIn (kTimeCells, id) >= 0) continue;
+                own.push_back (id);
+            }
+        struct At { int grid, cell; };
+        auto placeOf = [&] (const juce::String& id, const juce::String& group) -> At
+        {
+            if (isMotionId (id)) return { 5, (id[1] == '2' ? 4 : 0) + (id.endsWith ("_src") ? 0 : id.endsWith ("_rate") ? 1 : id.endsWith ("_target") ? 2 : 3) };
+            if (lane)
+            {
+                if (id == "res" && laneRes) return { 0, 14 };
+                if (const int c = cfgCellIn (kLaneCells, id); c >= 0) return { 0, c };
+                if (const int c = cfgCellIn (kEngineCells, id); c >= 0) return { group == "LAYER" ? 3 : 2, c };
+                if (const int c = cfgCellIn (kSampleCells, id); c >= 0) return { 4, c };
+                if (const int c = soundCell (id); c >= 0) return { 1, c };
+                return { 1, -1 };
+            }
+            if (band (id)) return { 4, cfgCellIn (kBandCells, id) };
+            if (comp) return { 0, cfgCellIn (kCompCells, id) };
+            if (bus)
+            {
+                if (id.startsWith ("in_")) { const int l = id.fromFirstOccurrenceOf ("in_", false, false).getIntValue() - 1; return { 1, l >= 0 && l < 16 ? l : -1 }; }
+                return { 0, cfgCellIn (kBusCells, id) };
+            }
+            if (const int c = cfgCellIn (kTimeCells, id); c >= 0) return { 1, c };
+            const auto it = std::find (own.begin(), own.end(), id);
+            return { 0, it != own.end() && it - own.begin() < 16 ? (int) (it - own.begin()) : -1 };
+        };
+        bool taken[kCfgGrids][16] = {};
+        int live = 0;
+        for (auto& sp : out)
+        {
+            if (sp.group.startsWith ("EQ ")) break;         // (the EQ's are last, and the screen's to draw)
+            ++live;
+            const At at = placeOf (sp.id, sp.group);
+            if (at.cell >= 0 && ! taken[at.grid][at.cell]) { sp.grid = at.grid; sp.cell = at.cell; taken[at.grid][at.cell] = true; }
+        }
+        // (one with no cell of its own, which the checks say there is none of: the first free cell of its grid, so that it
+        // is at least on the page)
+        for (int i = 0; i < live; ++i)
+        {
+            auto& sp = out[(size_t) i];
+            if (sp.cell >= 0) continue;
+            ++page.unplaced;
+            const int first = placeOf (sp.id, sp.group).grid;
+            for (int g = 0; g < kCfgGrids && sp.cell < 0; ++g)
+                for (int c = 0; c < 16 && sp.cell < 0; ++c)
+                    if (const int grid = (first + g) % kCfgGrids; ! taken[grid][c]) { sp.grid = grid; sp.cell = c; taken[grid][c] = true; }
+        }
+        // the cells kept for what is away: on the main panel for now, or not this model's or this setting's
+        auto ghost = [&] (int grid, int cell, const juce::String& id, bool onMain)
+        {
+            const int i = p->paramIndex (id.toStdString());
+            if (i < 0 || i >= p->numModuleParams() || cell < 0 || taken[grid][cell]) return;
+            const auto shape = made (i);
+            page.ghosts.push_back ({ grid, cell, id, shape.name, shape.kind, onMain });
+            taken[grid][cell] = true;
+        };
+        if (lane)
+        {
+            for (auto& c : kLaneCells) if (has (c.id)) ghost (0, c.cell, c.id, isBound (c.id));
+            if (laneRes && has ("res")) ghost (0, 14, "res", isBound ("res"));
+            for (int i = 0; i < p->numModuleParams(); ++i)
+                if (const juce::String id (specs[(size_t) i].id); soundCell (id) >= 0 && ! (id == "res" && laneRes)) ghost (1, soundCell (id), id, isBound (id));
+            // (an engine's own that its panel has while it is the lane's model: GRANULAR's first six, KICK FORGE's)
+            for (auto& c : kEngineCells)
+                if (has (c.id) && isBound (c.id))
+                {
+                    const juce::String id (c.id);
+                    const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : id.startsWith ("gr_") ? "GRANULAR" : "KICK FORGE";
+                    if (model == fam) ghost (2, c.cell, id, true);
+                }
+            for (auto& c : kSampleCells) if (has (c.id)) ghost (4, c.cell, c.id, isBound (c.id));
+        }
+        else
+        {
+            if (comp) for (auto& c : kCompCells) if (has (c.id)) ghost (0, c.cell, c.id, isBound (c.id));
+            for (auto& c : kBandCells) if (has (c.id)) ghost (4, c.cell, c.id, false);
+            if (! comp && ! bus)
+            {
+                for (auto& c : kTimeCells) if (has (c.id) && ! isBound (c.id)) ghost (1, c.cell, c.id, false);
+                for (size_t k = 0; k < own.size() && k < 16; ++k) ghost (0, (int) k, own[k], false);
+            }
+        }
+        // the grids' names
+        if (lane)
+        {
+            page.title[0] = "LANE"; page.title[1] = "SOUND"; page.title[2] = "MODEL"; page.says[2] = model;
+            if (hasLayer) { page.title[3] = "LAYER"; page.says[3] = layerModel; }
+            page.title[4] = "SAMPLE"; page.title[5] = "MOTION";
+            for (int i = 0; i < live; ++i) { auto& sp = out[(size_t) i]; if (sp.grid >= 0 && sp.grid < 5) sp.group = page.title[sp.grid].isNotEmpty() ? page.title[sp.grid] : sp.group; }
+        }
+        else
+        {
+            page.title[0] = comp ? "COMPRESSOR" : bus ? "BUS" : "EFFECT";
+            if (bus) page.title[1] = "LANES"; else if (! comp) page.title[1] = "TIME";
+            if (p->paramIndex ("bands") >= 0) { page.title[4] = "BANDS"; page.rowTag[4][1] = "LOW"; page.rowTag[4][2] = "MID"; page.rowTag[4][3] = "HIGH"; }
+            page.title[5] = "MOTION";
+        }
+        page.rowTag[5][0] = "1"; page.rowTag[5][1] = "2";
+        // (a grid with nothing in it says why; an effect with nothing the delays and reverbs share has no TIME)
+        {
+            bool any[kCfgGrids] = {};
+            for (int g = 0; g < kCfgGrids; ++g) for (int c = 0; c < 16; ++c) any[g] = any[g] || taken[g][c];
+            if (lane)
+            {
+                const bool samples = phraseIsTheSource || model == "SAMPLE";
+                if (! any[1]) page.note[1] = "ALL OF ITS SOUND IS ON THE PANEL.";
+                if (! any[2]) page.note[2] = samples ? "A SAMPLE'S CONTROLS ARE SAMPLE'S, ON 3." : "NO CONTROLS OF ITS OWN: ITS SOUND IS THE PANEL'S KNOBS AND SOUND'S.";
+                if (hasLayer && ! any[3]) page.note[3] = layerModel == model && any[2] ? "THE SAME ENGINE AS MODEL: ITS CONTROLS ARE MODEL'S, AT THE LEFT."
+                                                       : layerModel == "SAMPLE" ? "A SAMPLE'S CONTROLS ARE SAMPLE'S, ON 3." : "NO CONTROLS OF ITS OWN.";
+            }
+            else
+            {
+                if (! any[1]) page.title[1] = {};
+                if (! any[0]) page.note[0] = "ALL OF IT IS ON THE PANEL.";
+            }
+        }
+        // the list: a grid at a time, a row at a time (the E16 holds them in this order), and then the EQ's
+        std::stable_sort (out.begin(), out.begin() + live, [] (const SetupParam& a, const SetupParam& b) { return a.grid * 16 + a.cell < b.grid * 16 + b.cell; });
+    }
+    return page;
 }
 
 // The instrument's own controls that the panel or its CONFIG page shows now (their places in the module's list).
@@ -2766,6 +2966,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // was holding ends now. Notes from outside still sound.
         const bool seqOff = snd[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
         if (seqOff && ! ln.seqOff) ln.player.stop (ln.midi, 0);
+        if (auto* v = ln.voice.load()) ln.player.selfTie = ln.player.pitched && v->proc != nullptr && v->proc->mod().holdsNotes();     // (a lone step longer than its sequence: a drone, but not of a sample that plays once, nor of a drum)
         ln.seqOff = seqOff;
         if (run)
         {

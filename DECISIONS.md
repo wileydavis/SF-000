@@ -5710,7 +5710,93 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      snapshot keeps its target by the parameter, as since the eighty-fifth build, so none is
      changed by this.
 
+759. **You**, Nov 19, 23:25, with a file of another model's notes on the proposal: "and afterb those
+     fixes, gpt ideas on config layouts. not sure if it includes the recent work standarding int
+     engines". Its plan: the six grids kept and paired into three views (LANE and SOUND; MODEL and
+     LAYER; SAMPLE and MOTION), the EQ as it is, a blank grid left blank, a control that is on the
+     main panel keeping its place in CONFIG, MOTION always the right of the third view, an effect's
+     second view left out, a convolution's BANDS on the left of its third; and the E16 on one grid of
+     sixteen at a time. I said it fitted, and what I would take and what I would check. 23:41:
+     "build it".
+     **Built, the ninety-fourth build.** CONFIG is three views of two grids of four by four, chosen
+     by keys 1 2 3 beside its name. *Mine, in the building:*
+     - **One table says where every control is** (`Engine.cpp`, `kLaneCells` and the rest): a
+       control has one cell on every page that has it. LANE: MODEL, LAYER MODEL, LAYER, SPLIT /
+       KEY FOLLOW, KEY TRACK, CHOKE or MONO, SPLIT HZ / POCKET DEPTH, POCKET SHAPE, AFTER FX,
+       SOURCE / ECHO SPACE, ECHO SWING, FILTER RES, VEL SENS. SOUND (synths): ATTACK, DECAY,
+       ENV AMT, RES / COLOR, DETUNE, DRIVE, ACCENT / GLIDE, TUNE, CHORD, SPACE / ACID, WARP,
+       DRIFT, RELEASE (the ninety-third build's RELEASE took the cell the drawing had free;
+       its MONO is where the hats have CHOKE). MODEL and LAYER: an engine's own, the same cells
+       in either. SAMPLE and MOTION as drawn. Effects: EFFECT (its own, in the module's order
+       counted over all it could list, so one that comes and goes takes no other's cell) and
+       TIME (MODEL, THROW, FREEZE, MIX / WIDTH, LO CUT, INPUT, DRY / DUCK, DUCK SHAPE, DUCK FOR,
+       PREDELAY), as drawn; BANDS from the convolution's real controls (the switch and two
+       crossovers, then PLACE, LEVEL, DECAY, SIZE a band: the other model had guessed it right).
+     - **A cell whose control is away is drawn as an empty ring with its name**, never filled:
+       ON PANEL where it is one of the lane's knobs for now (and on the compressor as an
+       insert, whose first eight are its panel's), plain where it is not this model's or this
+       setting's. An effect's panel knobs never move, so they are given no cell.
+     - **The view is kept from page to page** (MOTION is the right of 3 everywhere); a page
+       with no second view shows its first and has a dull key for the second. The mouse wheel
+       no longer scrolls CONFIG: there is nothing to scroll.
+     - **The rows are as tall as there is room for** between the display and the EQ (83 to
+       108): a sample's strip on the display takes 50 of it, and under 92 the knobs are 34
+       across, not 40.
+     - **The E16 is as it was**: CONFIG's live controls twelve to a page, now in the grids'
+       order; on a page of it the screen brings up the view its first knob is on. Sixteen to a
+       grid with its own way of choosing a grid is for your E16 pass (your word of Nov 18,
+       16:31), as I said before building.
+     - `--cfgcheck` is rewritten to the new rule and is stricter than the old one: 142 pages,
+       every layer model under every model, every switch and menu through all it has (17,376
+       settings): no two controls in a cell, none without a cell of its own, and each of the
+       318 controls in one cell wherever it is, kept or live. MODEL and LAYER MODEL are no
+       longer excepted.
+
+760. **You**, Nov 20, 00:08: "why does shortening the sequence lemngth on pad make a sample stop
+     playimg".
+     **Because its one step was tied to itself, and fixed in the ninety-fourth build.** A step
+     whose gate runs past the next lit step is legato into it, a tie on the same note; the only
+     lit step's next lit step is itself, so with the sequence shorter than its gate it was struck
+     once and held for good. Measured on the build before: PAD on a sample of a second, its step's
+     gate 12 steps: heard every bar at 16 steps, silent for good from the bar the sequence was
+     made 8; and with the rig's own pad step (16.25 steps, written to hold) the sample was heard
+     once and never again at any length. I first told you I would have a lone step never tie
+     to itself. **That was wrong and I did not build it so:** the rig's pad is a drone by that
+     very tie, and it would have been struck again every bar. *Mine, as built:* a lone step
+     longer than its sequence is tied to itself only where a held note goes on sounding. The
+     engine asks the lane's instrument (`Module::holdsNotes`): a synth lane on SAMPLE with LOOP
+     off says no, and no drum lane is; there the step ends as the sequence comes round and is
+     struck again. A synth, a looped sample, GRANULAR and WAVETABLE are held as before, and the
+     rig's bars are the same to the sample.
+
+761. **You**, Nov 20, 00:28: "pad doesnt obey the filter quickly. or the level. it has a tail that
+     playes even after the leverl is tuned to zerlo". 00:34: "level doesn't silence any lane any more
+     at zero]". 00:37: "the sends were off". 00:45: "might have been an insert. carry on with the
+     config work and i''l kdep testing".
+     **LEVEL's lowest end is silence now, on every lane (the ninety-fourth build).** Measured: a
+     key held on PAD, its sends at nothing, LEVEL thrown to the bottom: 21 dB down and staying
+     there. The knob's foot was -36 dB (it has been since the first build, Nov 11: I found no
+     build in which it was silence, and said so). *Mine:* its last 3 dB fall away to nothing
+     (`levelGain`); from -33 dB up it is the same to the bit. Every lane alone, playing its
+     part, LEVEL to the bottom: under -125 dB four seconds on.
+     **FILTER and LEVEL are not slow** on the instrument: with the sends at nothing, FILTER
+     thrown to the bottom has PAD 15 dB down in 100 ms and 50 dB down in 150; LEVEL is 22 dB
+     down in 100 ms and falls 14 dB every 50 ms after. With the sends up the returns ring on
+     (a second and more), and an insert on the lane comes after LEVEL and FILTER, so its tail
+     does too: you thought it might have been that. Not changed: where LEVEL sits (before the
+     inserts, so it drives them) is the instrument's design; a fader after the inserts would
+     be another control, if you want one.
+
 ## Not verified
+
+- **The ninety-fourth build (759 to 761) is drawn and measured here, not seen on the Mac or
+  played.** Every page of the new CONFIG was drawn and looked at (PAD, BASS on GRANULAR, LEAD
+  on FM 4-OP over WAVETABLE, KICK on KICK FORGE, a hat, VOICE, PAD with a sample, four
+  inserts, the returns on each model, the drum bus, the master's compressor), in the dark
+  look only, not in 3D. Whether the empty rings read well, whether ON PANEL is the right
+  word, whether the rows are too tight with a sample's strip up, and whether the wheel
+  should do anything in CONFIG, are yours to say. The lone step and LEVEL are measured, not
+  heard.
 
 - **The ninety-third build (755) is measured, and not heard.** That the same engine with the
   same settings is the same on BASS, LEAD and PAD is exact (the output compared sample for

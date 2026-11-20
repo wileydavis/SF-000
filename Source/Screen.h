@@ -178,12 +178,17 @@ public:
     int testLibStack() const { return inAt(); }
     void testTick() { timerCallback(); }                        // what the 30-a-second timer does
     void testLowView (bool on) { lowView = on; }                // LOW END up in the EQ's place
-    void testCfgScroll (int row) { cfgScroll = std::max (0, row); }
+    void testCfgScroll (int view) { cfgView = juce::jlimit (0, kCfgViews - 1, view); }       // (which of CONFIG's three views is up)
+    int testCfgView() const { return cfgViewShown; }
+    static bool testIsCfgView (const TestHit& h, int v) { return h.kind == hAct && h.a == aCfgView1 + v; }      // (the key of CONFIG's view v, 0 to 2)
+    static bool testIsSetup (const TestHit& h) { return h.kind == hSetup; }
+    float testEqTop() const { return eqRect.getY(); }
+    const Engine::SetupPage& testCfgPage() const { return cfgPage; }
     // (for the checks: where a control of the open CONFIG stands, as "row.col", or nothing where it is not listed)
     juce::String testCfgPlace (const juce::String& id, const juce::String& group = {}) const
     {
         for (size_t i = 0; i < cfgAt.size() && i < cfgParams.size(); ++i)
-            if (cfgParams[i].id == id && (group.isEmpty() || cfgParams[i].group == group)) return juce::String (cfgAt[i].row) + "." + juce::String (cfgAt[i].col);
+            if (cfgParams[i].id == id && (group.isEmpty() || cfgParams[i].group == group)) return juce::String (cfgParams[i].grid) + "." + juce::String (cfgParams[i].cell);
         return {};
     }
     int testCfgRows() const { return cfgRows; }
@@ -192,16 +197,16 @@ public:
     int testInkFaults() const { return inkFaults; }
     juce::String testInkFirst() const { return inkFirst; }
     static bool testIsEqBandKey (const TestHit& h) { return h.kind == hEqBand || h.kind == hEqType; }      // (the EQ's band keys and its kinds of band)
-    // (the open CONFIG's list read again and laid out, without a paint: every control as its box and name, and "row.col.span")
+    // (the open CONFIG's list read again and laid out, without a paint: every control as its grid's name and its own, and "grid.cell")
     std::vector<std::pair<juce::String, juce::String>> testCfgLayout()
     {
-        cfgParams = eng.setupParams (cfg);
+        cfgPage = eng.setupPage (cfg); cfgParams = cfgPage.list;
         int total = (int) cfgParams.size();
         if (cfg.kind == 0) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
         layoutConfig (total);
         std::vector<std::pair<juce::String, juce::String>> out;
         for (int i = 0; i < total; ++i)
-            out.push_back ({ cfgParams[(size_t) i].group + "/" + cfgParams[(size_t) i].id, juce::String (cfgAt[(size_t) i].row) + "." + juce::String (cfgAt[(size_t) i].col) + "." + juce::String (cfgAt[(size_t) i].span) });
+            out.push_back ({ cfgParams[(size_t) i].group + "/" + cfgParams[(size_t) i].id, juce::String (cfgParams[(size_t) i].grid) + "." + juce::String (cfgParams[(size_t) i].cell) });
         return out;
     }
     bool testLowIsUp() const { return lowView; }
@@ -347,7 +352,8 @@ private:
                aStackCue,
                // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself
                aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete,
-               aTrimHold };     // the master's TRIM plate: the limiter's trim learnt and held, or let go
+               aTrimHold,       // the master's TRIM plate: the limiter's trim learnt and held, or let go
+               aCfgView1, aCfgView2, aCfgView3 };     // the master's TRIM plate: the limiter's trim learnt and held, or let go
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -737,14 +743,14 @@ private:
     bool knobHas = false;
     float cfgT = 0.0f;
     int insPick = -1, insPickLane = -1;         // (the ninety-first build) the insert slot whose list of effects is up in place of its knobs, and the lane it is
-    int cfgScroll = 0, cfgAge = 0;               // (cfgScroll: the row at the top)
+    int cfgView = 0, cfgViewShown = 0, cfgAge = 0;      // (cfgView: which of CONFIG's three views is up, two grids each; cfgViewShown: the one drawn, where the page has not got that one)
+    static constexpr int kCfgViews = Engine::kCfgGrids / 2;
     static constexpr int kCfgCols = 8;
-    static constexpr float kCfgCell = 66.0f;
-    struct CfgCell { int row = 0, col = 0, span = 1; };
-    struct CfgBox { int row = 0, col = 0, cells = 1; juce::String title; bool head = true; };
+    static constexpr float kCfgCell = 64.0f;
+    struct CfgCell { int row = 0, col = 0, span = 1, view = 0; };
     std::vector<CfgCell> cfgAt;                 // where each of CONFIG's controls stands (layoutConfig)
-    std::vector<CfgBox> cfgBoxes;
-    int cfgRows = 0, cfgSeek = -1;              // (cfgSeek: a control whose row is to come to the top at the next paint)
+    Engine::SetupPage cfgPage;                  // the open page whole: its grids' names and the cells kept for what is away (cfgParams is its list)
+    int cfgRows = 0, cfgSeek = -1;              // (cfgSeek: a control whose view is to come up at the next paint)
     void layoutConfig (int total);
     static constexpr int kKeysKept = 4;
     struct KeyDrawn { R r; juce::Colour cap; };

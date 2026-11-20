@@ -17,7 +17,12 @@ inline void applyGain (juce::AudioBuffer<float>& b, float g0, float g1)
 {
     for (int c = 0; c < b.getNumChannels(); ++c) b.applyGainRamp (c, 0, b.getNumSamples(), g0, g1);
 }
-inline float levelDb (const Ctx& c, int i, float& g0) { g0 = dbToGain (c.v0 (i)); return dbToGain (c.v (i)); }
+// (SF-000, the ninety-fourth build) LEVEL's lowest end is nothing. It was -36 dB, as the knob's range says, so a lane with
+// LEVEL all the way down still played, 21 dB under where a pad stands (Wiley, Nov 20: "it has a tail that playes even
+// after the leverl is tuned to zerlo"; "level doesn't silence any lane any more at zero"). The last 3 dB of the knob fade
+// to nothing; from -33 dB up it is what it was, to the bit.
+// (levelGain: core/Dsp.h)
+inline float levelDb (const Ctx& c, int i, float& g0) { g0 = levelGain (c.v0 (i)); return levelGain (c.v (i)); }
 inline ParamSpec levelParam (float def = 0.0f) { return knob ("level", "LEVEL", -36.0f, 6.0f, def, "dB", -9.0f); }
 // A sampler's region of its sample (SampleRegion): START, END and the fades at them. Appended to every
 // sampler's parameters, in the editor's SAMPLE group; with the sample, not presets (a preset carries

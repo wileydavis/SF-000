@@ -43,7 +43,7 @@ First run:
 | Click an insert's name | the list of what the slot can be, up in place of its knobs: EMPTY, DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, and Airwindows' WEAVE, DEREZ, FILTER, ENSEMBLE, TAPE, CLIP. Click one. The name again puts the list away |
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
-| Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note) |
+| Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note). The only lit step of a sequence, longer than the sequence, is tied to itself: struck once and held for good, a drone (the rig's pad is written so). **Not on a sample that plays once, nor on a drum** (ninety-fourth build): there it is struck every time the sequence comes round, where it used to play once and never again (a pad on SAMPLE went silent when its sequence was made shorter than its note). A sample with LOOP on is held, as a synth is |
 | A step's **LOCK** switch, over its key | what that step plays differently from the lane (eighty-eighth build). Three places. **LEARN**, left, yellow: the lane goes on playing as it is set, and its knobs now show and set this step. Turn one and the step keeps the difference, heard when the step plays; a double-click on a knob makes the step forget it. A double-click on the switch itself clears the step: it forgets all it learnt and keeps its note. **LOCKED**, right, green: the knobs are the lane's again and the step plays what it learnt, for its gate. **OFF**, middle: the step plays as the lane is set and keeps what it learnt for later. See "Step locks" below |
 | RATCHET, NOTE, OCTAVE | change the selected step (NOTE and OCTAVE on lanes that take notes). A step says the note that sounds: with KEY set, a new step is the key's own note, and NOTE goes up from there |
 | < NUDGE, NUDGE > | move the whole pattern one step |
@@ -217,14 +217,28 @@ back at the other. The sequencer stays where it is.
   parameters. At the top is the module's own display: the waveform with its in and out points, and
   on VOICE the phrase with its cue points. The display takes the mouse.
 - **An insert's or a return's CONFIG** holds that effect's remaining parameters and its display.
-- **The controls stand in boxes by what they belong to**, eight across at the spacing of the
-  modules' own knobs (eighty-seventh build). First what the sound is: **MODEL, with what only
-  that model has in the same box** (WAVETABLE's TABLE beside it, FM 4-OP's operators), LAYER,
-  and USUAL KNOBS. Then, from a new row, what is always there: SOUND, POCKET, ECHO, RIG, and
-  MOTION 1 and MOTION 2 side by side. Then, from a new row, what a setting brings: a sample's
-  controls where a layer or a wavetable plays the file. A model's own controls and a sample's
-  are there only while they do something. More rows than fit: scroll, a row at a time; the
-  title row says which rows of how many.
+- **The controls stand in grids of four by four, two side by side, and CONFIG has three such
+  views** (ninety-fourth build; the keys **1 2 3** beside CONFIG's name choose which):
+
+  | view | a lane, left | a lane, right | an effect or a return, left | right |
+  |---|---|---|---|---|
+  | **1** | **LANE**: MODEL, LAYER MODEL, LAYER, SPLIT / KEY FOLLOW, KEY TRACK, CHOKE or MONO, SPLIT HZ / POCKET DEPTH, POCKET SHAPE, AFTER FX, SOURCE / ECHO SPACE, ECHO SWING, FILTER RES, VEL SENS | **SOUND**: ATTACK, DECAY, ENV AMT, RES / COLOR, DETUNE, DRIVE, ACCENT / GLIDE, TUNE, CHORD, SPACE / ACID, WARP, DRIFT, RELEASE (a drum's few are its own) | **EFFECT**: what only that effect has | **TIME**: MODEL (SPACE's), THROW, FREEZE, MIX / WIDTH, LO CUT, INPUT, DRY / DUCK, DUCK SHAPE, DUCK FOR, PREDELAY |
+  | **2** | **MODEL**: what the model's engine has of its own (WAVETABLE's six, GRANULAR's twelve, FM 4-OP's fourteen, KICK FORGE's six) | **LAYER**: the same for the layer's model | none | none |
+  | **3** | **SAMPLE**: START, END, FADE IN, FADE OUT / GAIN, NORMALISE, MARKERS, LOOP / PLAY, NOTES, KNOBS, CROSSFADE / VEL START, RANDOM START, SLICE, CYCLE | **MOTION**: 1 above, 2 below | **BANDS** (a convolution's): the switch and the two crossovers, then a row a band | **MOTION** |
+
+  The compressor's eleven are one grid (the same cells on the master and as an insert); the
+  drum bus has BUS and LANES. The lane EQ stays as it was, at the foot.
+  **A control has one cell, the same on every page that has it, and nothing else is ever put
+  in it.** A cell drawn as an empty ring with a name is kept for a control that is away:
+  **ON PANEL** (it is one of the lane's knobs for now: a model with knobs of its own gives
+  the lane's usual ones their cells here, and its own that the panel has keep theirs in
+  MODEL), or not this model's or this setting's (a sample's with no sample playing, MONO on a
+  model of the lane's own, a band's with BANDS off). So no control moves, whatever is turned,
+  MODEL and LAYER MODEL included; MODEL and LAYER MODEL are on view 1 and what they bring is
+  on view 2, under each one's name. The view is kept from one page to the next, so MOTION is
+  the right of 3 everywhere. `--cfgcheck` holds every page to it (142 pages, every model
+  under every layer model, every switch and menu through all it has: 318 controls, each in
+  one cell).
 - **MOTION** moves one of the instrument's knobs by itself (an effect's and a return's CONFIG has
   the same two, moving that effect's knobs, with INPUT, the level coming in, in place of NOTES).
   Each lane has two: WAVE (sine,
@@ -618,12 +632,16 @@ the lane has them, for that step only.
 - **The step that is playing is its key, lit green.** The lamps that were over the keys are
   the switches' places now.
 
-**Nothing in CONFIG moves under the hand** (eighty-seventh build). Turning any control but
-MODEL and LAYER MODEL moves no other control: what a setting brings is listed after everything
-that stays. MODEL and LAYER MODEL change the first rows only (the model's own controls stand
-beside it), and what follows starts on a new row, so it goes up or down by whole rows and never
-sideways. The controls every panel shares are in one order everywhere: on an effect THROW,
-FREEZE and MIX first, and LO CUT, INPUT, DUCK, DUCK SHAPE and DUCK FOR last.
+**Nothing in CONFIG moves under the hand**: since the ninety-fourth build every control has a
+cell of its own in a four by four grid (CONFIG, above), so not even MODEL and LAYER MODEL
+move another control. (The eighty-seventh build had them in boxes that MODEL and LAYER MODEL
+still shifted by rows.)
+
+**LEVEL all the way down is silence**, on every lane (ninety-fourth build). The knob's foot
+was -36 dB, so a lane turned right down still played quietly; now its last 3 dB fall away to
+nothing, and from -33 dB up it is what it was. (LEVEL and FILTER are the instrument's own:
+an insert on the lane comes after them, so a delay's or a reverb's tail rings on when they
+are thrown down. The rumble goes on being made of the kick with the kick's LEVEL down.)
 
 **A model with knobs of its own** is the rule GRANULAR and KICK FORGE share: the lane's first
 eight knobs are the model's while it is on, a snapshot holds them, and a stack knob or a recall
@@ -1905,8 +1923,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
   to go through the pattern and that step's VEL, GATE, RATCH, NOTE and OCT, the generator's four,
   and the nudges: see `controllers/e16/README.md`), CONFIG (CFG 1 to
   3: its controls in the order its panel has them, twelve to a page (the panel is eight across,
-  in boxes: while the E16 is on a page of CONFIG its twelve are numbered 1 to 12 there, and the
-  panel brings the first of them into view; a CONFIG longer than three pages, as a
+  in its grids, a grid at a time and a row at a time (ninety-fourth build: the cells that are
+  empty are not counted): while the E16 is on a page of CONFIG its twelve are numbered 1 to 12
+  there, and the panel brings up the view the first of them is on; a CONFIG longer than three pages, as a
   lane's is with its EQ's bands last, goes on with PAGE +, to eight pages in all, the pages past
   the third standing on CFG 3's knobs); with POCKETS up, every
   lane's pocket), and the library's two pages.
@@ -1941,10 +1960,12 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
+build/.../SF-000 --follow pad                     # a key held on a lane, and LEVEL then FILTER thrown to the bottom: the level every 50 ms after (as the rig stands; its sends at nothing; its inserts out too)
+build/.../SF-000 --lenprobe 1.0 12                # PAD on a sample of that many seconds, its step's gate that many steps: its level each half bar as the sequence is made 8, 4 and 16 steps long
 build/.../SF-000 --enginelevels                   # every model of BASS, LEAD and PAD, the instrument alone at the lane's starting values: how loud a note is held, and in the second after
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)
 build/.../SF-000 --audit 6 --model ALL --sample f.wav      # every model that lane has, a line each (a model with sound knobs of its own is named by them)

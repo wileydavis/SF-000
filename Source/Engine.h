@@ -431,7 +431,27 @@ public:
     // section: 0 what the sound is (MODEL and what only that model has, LAYER, the knobs a model's own put away), which
     // changes with the model and is given rows of its own; 1 what is always there; 2 what comes and goes at the foot
     // (a sample's controls, a convolution's bands). A control that brings others or takes them away is before them.
-    struct SetupParam { juce::String id, name, text, group; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; bool ownRow = false; int section = 1; };
+    // grid, cell (the ninety-fourth build): where it stands. A CONFIG page is six grids of four by four, shown two at a
+    // time (kCfgGrids, setupPage); cell is 0 to 15, a row at a time. A control has one cell on every page that has it, and
+    // nothing else is ever put in a cell that is its own. The EQ's are not in a grid (-1): the screen draws its graph.
+    struct SetupParam { juce::String id, name, text, group; Kind kind = Kind::Knob; juce::StringArray choices; float value = 0.0f, def = 0.0f; bool ownRow = false; int section = 1; int grid = -1, cell = -1; };
+    // A cell whose control is not on the page now: on the main panel for the time being (onMain), or not this model's or
+    // this setting's (a sample's with no sample playing, a band's with BANDS off). Drawn, not turned: its place is kept.
+    struct SetupGhost { int grid = 0, cell = 0; juce::String id, name; Kind kind = Kind::Knob; bool onMain = false; };
+    static constexpr int kCfgGrids = 6;
+    // A CONFIG page whole. list: what setupParams gives, the live controls a grid at a time and then the EQ's. title: each
+    // grid's name (none: the page has no such grid); says: what stands beside it (the model a MODEL grid is of); rowTag:
+    // a word at the left of a row that needs one (MOTION's 1 and 2, a convolution's LOW, MID and HIGH).
+    // Lanes: LANE, SOUND | MODEL, LAYER | SAMPLE, MOTION. Effects and returns: EFFECT, TIME | none | BANDS, MOTION.
+    struct SetupPage
+    {
+        std::vector<SetupParam> list;
+        std::vector<SetupGhost> ghosts;
+        juce::String title[kCfgGrids], says[kCfgGrids], note[kCfgGrids], rowTag[kCfgGrids][4];        // (note: what an empty grid says of itself)
+        int unplaced = 0;           // (for the checks: controls that had no cell of their own and were given a free one; none)
+        bool hasView (int v) const { return v >= 0 && v < kCfgGrids / 2 && (title[v * 2].isNotEmpty() || title[v * 2 + 1].isNotEmpty()); }
+    };
+    SetupPage setupPage (Target) const;
     // MOTION: the two modulators every instrument has (the suite's own): a wave, a speed, one of
     // the instrument's knobs to move, and how far. Set in a lane's CONFIG, kept in snapshots.
     static bool isMotionId (const juce::String& id);
