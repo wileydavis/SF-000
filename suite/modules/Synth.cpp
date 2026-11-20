@@ -738,6 +738,13 @@ public:
         float tilt[2] {};                 // (SF-000) COLOR's tilt on a sample: the low part of each side
         float vel = 1.0f, gain = 1.0f, freq = 110.0f, target = 110.0f, glideCoef = 0.0f, accent = 0.0f;
         float vel0 = 1.0f;                // the note's own velocity (0..1), to play it again on a MODEL change
+        // (SF-000, the ninety-second build) LAYER is heard as it is turned, on notes that are sounding: the note's gain
+        // before LAYER's share (gain is that share of it, worked out again every sub-block), the LAYER it was last worked
+        // out at (-1: not yet), and the gain as it is being applied, with its step a sample while LAYER moves.
+        float gain0 = 1.0f, layerWas = -1.0f, gNow = 0.0f, gStep = 0.0f;
+        // (and ATTACK, DECAY, GATE and ACCENT: what the note's envelopes were last made from (-1: not yet), GATE's length
+        // as it was last taken (in samples, -1: the note's own), and whether the note was an accented one)
+        float envAtt = -1.0f, envDec = -1.0f, envRel = -1.0f; int gateWas = -2; bool accented = false;
         float pitch = 60.0f, pitchTuned = 60.0f;   // the note (with chord interval) and the tuned pitch it plays at
         double rate = 96000.0;            // render rate: 2x, or 4x (os: setupVoice)
         int os = 2;
@@ -841,7 +848,16 @@ public:
         const float layer = c.v (LAYER);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
-        if (modelA != lastModel)
+        autoOffNow = autoOff; relNow = relMul;
+        // (SF-000, the ninety-second build) CHORD, turned while keys are down: the keys are played again on the new
+        // chord, as they are on a new MODEL. (A chord's notes were chosen when its key went down and no later, so on a
+        // pad's long notes CHORD did nothing until the pattern came round.) Not where nothing that sounds plays chords.
+        const int chordNow = c.ci (CHORD);
+        const bool chordPlays = ! models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].mono
+                             || (layer > 0.01f && ! models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].mono);
+        const bool newChord = lastChord >= 0 && chordNow != lastChord && chordPlays && numDown > 0;
+        lastChord = chordNow;
+        if (modelA != lastModel || newChord)
         {
             // MODEL change, at once: what sounds releases on the old model (its own release, so a
             // mono/poly switch can't leave a voice hanging), and the keys still down start again on
@@ -862,10 +878,42 @@ public:
                 NoteEvent ev;
                 ev.note = down[(size_t) k].note; ev.vel = down[(size_t) k].vel;
                 if (monoA && ! newest) held.push_back (ev.note);
-                else noteOn (c, modelA, ev, 1.0f / (1.0f + layer * 0.5f), 0, autoOff, relMul);
-                if (layer > 0.01f && (! monoB || newest)) noteOn (c, modelB, ev, layer / (1.0f + layer * 0.5f), 1, autoOff, relMul);
+                else noteOn (c, modelA, ev, 1.0f, 0, autoOff, relMul);
+                if (layer > 0.01f && (! monoB || newest)) noteOn (c, modelB, ev, 1.0f, 1, autoOff, relMul);
             }
             restarting = false;
+            lastModelB = modelB; layerWasOn = layer > 0.01f;       // (SF-000: the layer has just been started again with the rest)
+        }
+        // (SF-000, the ninety-second build) LAYER and LAYER MODEL, turned while notes sound. A layer's voice was started
+        // only with its note, and only if LAYER was up then, at the gain LAYER gave it then: so on a pad's long notes
+        // nothing was heard of either knob until the notes were played again (Wiley, Nov 19: "as I ajdust the layer amount
+        // while playimng, the sound doesn't change. but if i stop, then hit run again, it updates"). Now a sounding note's
+        // gain follows LAYER (updateControls), and here: LAYER coming up from nothing starts the layer on the keys that
+        // are down; LAYER going to nothing lets the layer's voices go; another LAYER MODEL lets them go and starts the keys
+        // down on the new one.
+        {
+            const bool layerOn = layer > 0.01f;
+            if (lastModelB < 0) { lastModelB = modelB; layerWasOn = layerOn; }
+            if (modelB != lastModelB || layerOn != layerWasOn)
+            {
+                const bool another = modelB != lastModelB;
+                const bool start = layerOn && (another || ! layerWasOn);
+                lastModelB = modelB; layerWasOn = layerOn;
+                if (! layerOn || another)
+                    for (auto& v : voices) if (v.active && v.layer == 1 && ! v.releasing) { v.amp.off(); v.fenv.off(); v.releasing = true; }
+                if (start)
+                {
+                    const bool monoB = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].mono;
+                    restarting = true;
+                    for (int k = 0; k < numDown; ++k)
+                    {
+                        NoteEvent ev;
+                        ev.note = down[(size_t) k].note; ev.vel = down[(size_t) k].vel;
+                        if (! monoB || k == numDown - 1) noteOn (c, modelB, ev, 1.0f, 1, autoOff, relMul);
+                    }
+                    restarting = false;
+                }
+            }
         }
         size_t e = 0;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
@@ -890,8 +938,8 @@ public:
                 if (ev.on)
                 {
                     // ev.gain: the DENSITY fade, applied after the velocity response (v.gain is post-filter).
-                    noteOn (c, modelA, ev, ev.gain / (1.0f + layer * 0.5f), 0, autoOff, relMul);
-                    if (layer > 0.01f) noteOn (c, modelB, ev, ev.gain * layer / (1.0f + layer * 0.5f), 1, autoOff, relMul);
+                    noteOn (c, modelA, ev, ev.gain, 0, autoOff, relMul);
+                    if (layer > 0.01f) noteOn (c, modelB, ev, ev.gain, 1, autoOff, relMul);
                 }
                 else noteOff (ev.note, ev.gen, relMul);
             }
@@ -1068,6 +1116,10 @@ public:
     }
 
 private:
+    // (SF-000) LAYER's share of a note's gain: MODEL's voice gives way a little as the layer comes up, and the layer's
+    // voice comes up with it. (Written as it was where a note starts, so a LAYER that is not moving is the same sound.)
+    static float layerGain (float gain, int layerId, float layer) { return layerId == 1 ? gain * layer / (1.0f + layer * 0.5f) : gain / (1.0f + layer * 0.5f); }
+
     void noteOn (Ctx& c, int modelIdx, const NoteEvent& ev, float gain, int layerId, int autoOff, float relMul)
     {
         const auto& m = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelIdx)];
@@ -1104,6 +1156,29 @@ private:
             auto& v = voices[(size_t) i];
             setupVoice (c, v, m, modelIdx, ev, (float) (ev.note + chord[k]) + tune, gain / std::sqrt ((float) chord.size()), layerId, autoOff, relMul, true, accent);
         }
+    }
+
+    // (SF-000, the ninety-second build) A note's two envelopes, from ATTACK, DECAY and GATE's release as they are now:
+    // where the note starts (setupVoice), and again whenever one of the three is turned while it sounds
+    // (updateControls), so a note still coming up follows ATTACK and a tail that is ringing follows DECAY and GATE. The
+    // envelope keeps its place and its level; only its times change.
+    void setEnvelopes (Ctx& c, Voice& v, const SynthModel& m, float relMul)
+    {
+        const float decK = std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * std::pow (0.6f, (float) v.gen) * (1.0f - v.accent * 0.4f);
+        const float attK = c.v (ATTACK) * 2.0f;
+        // (SF-000) an echo of a slow model comes up in a third of the time: a pad's own attack is as long as the gap between
+        // echoes, and DENSITY was all but unheard on it
+        const float echoAtt = v.gen > 0 && m.att >= 0.2f ? 0.3f : 1.0f;
+        const float susWas = v.amp.s;
+        if (v.shaped)
+        {
+            const float up = clamp01 ((c.v (DECAY) - 0.8f) * 5.0f);          // (the top fifth of DECAY: the sustain comes up to all of it)
+            v.amp.set (m.att + attK, 0.6f * decK, up * up * (3.0f - 2.0f * up), m.rel * relMul, v.rate);
+        }
+        else
+        v.amp.set ((m.att + attK) * echoAtt, m.dec * (m.acid ? 1.0f : decK), m.sus, m.rel * relMul, v.rate);
+        v.fenv.set (m.fAtt + attK * 0.5f, m.fDec * decK, m.fSus, m.fRel * relMul, v.rate);
+        if (v.amp.st == Adsr::Sus && v.amp.s != susWas) v.amp.st = Adsr::Dec;      // (a sustain that has moved is gone to, not jumped to)
     }
 
     void setupVoice (Ctx& c, Voice& v, const SynthModel& m, int modelIdx, const NoteEvent& ev, float note, float gain, int layerId,
@@ -1147,14 +1222,15 @@ private:
         v.note = ev.note; v.gen = ev.gen; v.model = modelIdx; v.layer = layerId;
         v.vel = m.acid ? 1.0f : 0.55f + 0.45f * lerp (1.0f, ev.vel, 0.6f);   // the 303 knows no velocity, only accent
         v.vel0 = ev.vel;
-        v.gain = gain;
+        v.gain0 = gain;                                 // (SF-000: before LAYER's share of it)
+        v.gain = layerGain (gain, layerId, c.v (LAYER));
+        v.layerWas = -1.0f;
         v.target = noteHz (note);
         v.pitchTuned = note; v.pitch = note - pitchOffset;
         v.glideCoef = c.v (GLIDE) > 0.02f && ! m.acid ? std::exp (-1.0f / ((0.005f + c.v (GLIDE) * 0.4f) * (float) v.rate)) : 0.0f;
         if (! wasActive) v.freq = v.target;
+        v.accented = accent;
         v.accent = accent ? c.v (ACCENT) : 0.0f;
-        const float decK = std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * std::pow (0.6f, (float) ev.gen) * (1.0f - v.accent * 0.4f);
-        const float attK = c.v (ATTACK) * 2.0f;
         // (SF-000) a sample with ENVELOPE on: DECAY is its amp decay (0.15 to 2.4 s, to silence; at full, none), and
         // ENV AMT sweeps its filter (updateControls). PLAY THROUGH: the note's end does not end it.
         v.shaped = m.engine == E_SAMPLE && c.v (SENV) > 0.5f;
@@ -1191,16 +1267,9 @@ private:
             }
         // (SF-000) an echo of a slow model comes up in a third of the time: a pad's own attack is as long as the gap between
         // echoes, and DENSITY was all but unheard on it
-        const float echoAtt = ev.gen > 0 && m.att >= 0.2f ? 0.3f : 1.0f;
-        if (v.shaped)
-        {
-            const float up = clamp01 ((c.v (DECAY) - 0.8f) * 5.0f);          // (the top fifth of DECAY: the sustain comes up to all of it)
-            v.amp.set (m.att + attK, 0.6f * decK, up * up * (3.0f - 2.0f * up), m.rel * relMul, v.rate);
-            v.cutPos = v.through && c.v (GATE) < 0.995f ? v.reg.start + (double) c.v (GATE) * (v.reg.end - v.reg.start) : 0.0;
-        }
-        else
-        v.amp.set ((m.att + attK) * echoAtt, m.dec * (m.acid ? 1.0f : decK), m.sus, m.rel * relMul, v.rate);
-        v.fenv.set (m.fAtt + attK * 0.5f, m.fDec * decK, m.fSus, m.fRel * relMul, v.rate);
+        if (v.shaped) v.cutPos = v.through && c.v (GATE) < 0.995f ? v.reg.start + (double) c.v (GATE) * (v.reg.end - v.reg.start) : 0.0;
+        setEnvelopes (c, v, m, relMul);
+        v.envAtt = c.v (ATTACK); v.envDec = c.v (DECAY); v.envRel = relMul; v.gateWas = autoOff;
         v.amp.on (retrigger || ! wasActive);
         v.fenv.on (retrigger || ! wasActive);
         v.autoOff = autoOff > 0 ? autoOff * v.os : autoOff;
@@ -1410,7 +1479,30 @@ private:
         if (m.engine == E_NOISE) { v.nbp.set (v.freq, 4.0f + k.color * 40.0f, vr); if (k.det > 0.001f) v.nbp2.set (std::min ((float) (v.freq * semis (k.det * 7.0f)), (float) (0.45 * vr)), 4.0f + k.color * 40.0f, vr); }      // (SF-000) DETUNE: a second band, up to a fifth over it
         k.uni = std::max (1, std::min (8, m.unison));
         k.detCents = m.detune * 40.0f * (0.2f + k.det * 1.6f);
+        // (SF-000, the ninety-second build) ACCENT, ATTACK, DECAY and GATE on a note that is sounding. An accented note
+        // takes ACCENT as it is now. The envelopes are made again when ATTACK, DECAY or GATE's release has moved. And
+        // GATE's length (the lower half of the knob cuts a note short): the note ends where the knob now says, counted
+        // from where it began; brought back over half way, it is left to its own length again.
+        if (v.accented) v.accent = c.v (ACCENT);
+        if (c.v (ATTACK) != v.envAtt || c.v (DECAY) != v.envDec || relNow != v.envRel)
+        {
+            setEnvelopes (c, v, m, relNow);
+            v.envAtt = c.v (ATTACK); v.envDec = c.v (DECAY); v.envRel = relNow;
+        }
+        if (autoOffNow != v.gateWas)
+        {
+            v.gateWas = autoOffNow;
+            if (! v.releasing && ! v.through)
+                v.autoOff = autoOffNow > 0 ? std::max (1, autoOffNow * v.os - (int) ((double) v.t * v.rate)) : autoOffNow;
+        }
+        // (SF-000, the ninety-second build) LAYER as it is now, not as it was when the note began. While it does not
+        // move the gain is what it was, to the bit; while it moves the gain goes there in a line over the sub-block.
+        const float layerNow = c.v (LAYER);
+        v.gain = layerGain (v.gain0, v.layer, layerNow);
         k.gainAll = v.gain * v.vel * (1.0f + v.accent * 0.5f) * 0.32f * m.gain;
+        if (v.layerWas < 0.0f || layerNow == v.layerWas) { v.gNow = k.gainAll; v.gStep = 0.0f; }
+        else v.gStep = (k.gainAll - v.gNow) / (float) std::max (1, n);
+        v.layerWas = layerNow;
         // Pitch multipliers that move slowly.
         k.subMul = 1.0f;
         if (m.pitchDive > 0.0f) k.subMul *= semis (-m.pitchDive * std::exp (-v.t / 0.08f));
@@ -1458,7 +1550,8 @@ private:
         if (onGrid || v.ctlStale) { updateControls (c, v, kSub * v.os); v.ctlStale = false; }
         const auto& k = v.ctl;
         const float res = k.res; juce::ignoreUnused (res);
-        const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, gainAll = k.gainAll, subMul = k.subMul;
+        const float driveG = k.driveG, driveNorm = k.driveNorm, driveW = k.driveW, color = k.color, det = k.det, subMul = k.subMul;
+        float gainAll = v.gNow; const float gainStep = v.gStep;      // (SF-000: k.gainAll, on its way there while LAYER moves)
         const double wtDet = m.detune > 0.0f ? (double) semis (k.detCents / 100.0f) : 1.0;      // (SF-000) WAVETABLE's second reading
         // (SF-000) WAVETABLE's WANDER and TWIST, worked out once for the block
         const float wtWanderAmp = wtWander * 0.5f;
@@ -1885,10 +1978,12 @@ private:
             else { yl = yr = filt (xl); }
             L[i] += yl * a * gainAll;
             R[i] += yr * a * gainAll;
+            gainAll += gainStep;
             v.t += invOsr;
             if (v.autoOff > 0 && --v.autoOff == 0 && ! v.releasing && ! v.through) { v.amp.off(); v.fenv.off(); v.releasing = true; }
             if (v.amp.st == Adsr::Idle && v.t > 0.001f) { v.active = false; return; }
         }
+        v.gNow = gainAll;
     }
 
     void buildGrainSource()
@@ -1942,6 +2037,9 @@ private:
     Noise smpRng { 0x7F4A7C15u };      // (SF-000) SAMPLE's RANDOM START: its own, so nothing else's chances move
     float ensembleAmt = 0.0f, pitchOffset = 0.0f;
     int lastModel = -1;
+    int lastModelB = -1; bool layerWasOn = false;      // (SF-000) LAYER MODEL and whether LAYER was up, last block
+    int lastChord = -1;                                // (SF-000) and CHORD
+    int autoOffNow = -1; float relNow = 1.0f;          // (SF-000) GATE as it is this block: a note's length and its release
     double osr = 96000.0;
     std::shared_ptr<const WaveSet> waves;
     Decimator2x dec;

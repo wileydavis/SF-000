@@ -741,6 +741,26 @@ build. It is set by what it does to a sound's shape in time: its strike, its bod
 - A cued snapshot is now heard at the level the set will play it at: the cue's rig is given
   the set's limiter trim (it learnt its own from nothing, and was quieter by that much).
 
+### A knob turned while its note sounds
+
+On the four synth lanes (BASS, LEAD, CHORD, PAD) **a note that is already sounding follows
+every knob**, the ones in CONFIG too. Until the ninety-second build seven of them were read
+only when a note began (LAYER, LAYER MODEL, CHORD, ATTACK, DECAY, GATE, ACCENT), so on a pad's
+long notes they did nothing until the pattern was stopped and run again.
+
+- LAYER fades the layer in and out on the note; from nothing, it starts the layer on the keys
+  that are down. LAYER MODEL and CHORD play the keys that are down again on the new one, as
+  MODEL does.
+- ATTACK, DECAY and GATE change the times of the envelope a note is in, where it is. GATE's
+  lower half ends a note where the knob now says.
+- What a knob cannot do is reach back: ATTACK on a note that has finished coming up, ENV AMT
+  after its sweep, DENSITY and ECHO (which are the notes after a note) are heard from the next
+  note.
+- **Drums and RUMBLE take a change on the next hit**: a hit is made whole when it is struck.
+  FILTER, LEVEL and DRIVE act on the hit that is sounding.
+- `build/.../SF-000 --liveaudit [lane]` measures it: every parameter, on every model, a key
+  held, a key played twice a second, and a key let go.
+
 ### Airwindows' effects
 
 Seven of Chris Johnson's [Airwindows](https://github.com/airwindows/airwindows) effects, in the
@@ -1894,7 +1914,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

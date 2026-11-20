@@ -5537,7 +5537,94 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        CLIP 0.09, DEREZ 0.23, FILTER 0.28, WEAVE 0.39, ENSEMBLE 0.80, TAPE 1.14 (COMPRESSOR
        0.13, DISTORTION 0.83, DELAY 2.5, REVERB 3.2). ENSEMBLE holds 4.5 MiB each, GALAXY 1 MiB.
 
+## Every control heard while it plays (Nov 19, 21:01): ninety-second build
+
+751. **You**, Nov 19, 21:01: "also, i think pad is broken. even with layer all the way down, it
+     still plays the layer sounds". 21:02: "The bug is that as I ajdust the layer amount while
+     playimng, the sound doesn't change. but if i stop, then hit run again, it updates". 21:10:
+     "none of the controls change the sound while playing in pad". 21:12: "some do some don't.
+     chord doesn't update while playig but acid does." 21:12: "every control that can change a
+     sound needs to work while playing." **Found, and mended on the four synth lanes (BASS,
+     LEAD, CHORD, PAD, which are one instrument):** seven controls were read when a note
+     began and never again, so a note that was already sounding ignored them until it was
+     played again. On a pad, whose notes last bars, that is until the pattern is stopped and
+     run.
+     - **LAYER.** A layer's voice was started with its note, only if LAYER was up then, at the
+       level LAYER gave it then. Now a sounding note's level follows LAYER (in a line over 32
+       samples while it moves; to the bit what it was while it does not). LAYER coming up from
+       nothing starts the layer on the keys that are down; LAYER going to nothing lets the
+       layer's voices go.
+     - **LAYER MODEL.** Another one lets the old layer's voices go and starts the keys that
+       are down on the new one.
+     - **CHORD.** A chord's notes were chosen when its key went down. Another CHORD now plays
+       the keys that are down again on the new chord, as another MODEL always has.
+     - **ATTACK and DECAY.** A note's two envelopes are made again when either moves; the
+       envelope keeps its place and its level, and only its times change. So a pad still
+       coming up follows ATTACK.
+     - **GATE.** Its upper half is how long a note rings on after it is let go: a tail that
+       is ringing follows it. Its lower half cuts a note short: the note now ends where the
+       knob says, counted from where it began, and brought back over half way it is left to
+       its own length again.
+     - **ACCENT.** An accented note takes ACCENT as it is now.
+     Measured, PAD with a key held: LAYER turned up two seconds in is -0.7 dB against LAYER
+     full from the start, and turned down, five seconds on, what is left of the layer is
+     -107 dB. LAYER MODEL changed (POLY PAD to FM 4-OP) is 0.1 dB against the new one from the
+     start. Another CHORD is 2.3 dB apart from the first. ATTACK thrown to nought a third of a
+     second in has the pad 2.9 dB up over the next quarter second. GATE to its lower half ends
+     the held note (-86 dB). LAYER swept end to end in half a second adds nothing above 6 kHz.
+     The reference render is the same file as before: nothing changes where no knob moves.
+752. *Mine:* **what "while playing" can mean, control by control, and where it stops.** I
+     measured every parameter of every lane on every model three ways: a key held, a key
+     played twice a second, and a key let go (`SF-000 --liveaudit`, 5,482 measurements).
+     - **A note that is held (synth lanes): everything follows the knob now**, but for what
+       the note is already past. ENV AMT, DECAY, FM 4-OP's D operator and WAVETABLE's POS ENV
+       work through an envelope that has finished on a note held for a second; ATTACK is
+       heard only while the note is still coming up. Turning them then is heard on the next
+       note. That is what those controls are, not a fault.
+     - **DENSITY, ECHO SPACE, ECHO SWING and GLIDE are about the notes that follow a note**
+       (its echoes, the slide into the next), so they are heard from the next note on.
+     - **Drums (KICK, the hats, CLAP, PERC) and RUMBLE take a change on the next hit.** Each
+       hit is made whole when it is struck, as on a drum machine. FILTER, LEVEL and DRIVE act
+       on the sounding hit; TUNE, DECAY, TONE, PUNCH, CLICK and the rest act from the next
+       one, which with a pattern running is a beat away at most. I have left that as it is:
+       say if you want a ringing kick or an open hat to bend under the knob.
+     - **Not measured: VOICE and every SAMPLE model** (the tool has no file to play), and the
+       POCKET controls (they need the kick beside them). They are read every block in the
+       code, but I have not put a number on them.
+753. **You**, Nov 19, 21:00: "the config controls are moving all ver the place. on pad, when you
+     change the layer model the knob disappears under our hand. Every config page needs to be
+     broken down into a 4x4 grids. each grid position can contain a knob or a button. Any knob
+     that's shared between lane configs should always be in exactly the same place. audit
+     every config page and give me a proposal drawing of each one. You can forego drawing
+     boxes around groups." **Audited and drawn, not built: it waits for your word.** The audit
+     (`SF-000 --configjson`: the 27 pages in all 692 of their forms, a lane on each model with each layer model) found why it moves: a model's or a
+     layer model's own controls are put in among the lane's, so choosing LAYER MODEL
+     WAVETABLE puts TABLE between LAYER MODEL and LAYER and pushes LAYER, SPLIT and SPLIT HZ
+     along under the hand; and what a lane lists under SOUND is whatever its panel has no room
+     for, so the same knob is in a different place on every lane. The proposal (a canvas of 30
+     drawings; not in the repo; SPACE is drawn as each of its three reverbs):
+     - every CONFIG is a row of 4 by 4 grids, each place a knob, a list or a button;
+     - a lane has the same eight grids in the same order: LANE, SOUND, MODEL, LAYER, SAMPLE,
+       MOTION, EQ 1 to 4, EQ 5 to 8;
+     - every control has one place for good. One that is on a lane's panel leaves its place
+       in CONFIG empty; one a model brings appears in its own place and moves nothing;
+     - LANE and the two EQ grids and MOTION are the same on all eleven lanes, SOUND the same
+       on the four synth lanes, SAMPLE the same wherever there is a sample;
+     - a model's own controls (WAVETABLE, GRANULAR, FM 4-OP, KICK FORGE) are in the same
+       places whether it is the lane's MODEL (grid 3) or its LAYER MODEL (grid 4);
+     - an effect or a return has three: its own, TIME (what the delays and reverbs share:
+       THROW, FREEZE, MIX, PREDELAY, WIDTH, LO CUT, INPUT, DRY, the three DUCKs) and MOTION;
+     - a grid is one page of the E16's sixteen knobs.
+     Every control every page lists has a place in it (checked against the audit: none left
+     over).
+
 ## Not verified
+
+- **The ninety-second build (751, 752) is measured, and not heard.** The seven controls follow
+  the knob on a sounding note by the numbers; whether a CHORD change that plays the held keys
+  again (the old chord lets go as the new one comes up) is how you want it to sound is yours
+  to say. VOICE, the SAMPLE models and the POCKET controls were not measured (752). Drums take
+  a change on the next hit, by choice (752). **The 4 by 4 CONFIG (753) is a drawing only.**
 
 - **The ninety-first build (746 to 750) is measured, and not heard.** I cannot hear, so what
   each effect is said to sound like in INFO and the README is read from Airwindows' code and

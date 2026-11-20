@@ -201,3 +201,12 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   of `Airwindows.cpp` is where they are named. To add another: its three files, a namespace
   block and a `Kind` in `AirKernels.*`, a row in that table, a `make`, the two Registry lines,
   an `FxDef` in `Source/Rig.h`, and its lines in `Source/Help.h`. See DECISIONS 746 to 750.
+- **`modules/Synth.cpp`, the ninety-second build**: a sounding note follows LAYER, LAYER MODEL,
+  CHORD, ATTACK, DECAY, GATE and ACCENT (each was read when the note began and no later). The
+  note's gain before LAYER's share is kept (`gain0`) and the share worked out every sub-block
+  (`layerGain`, `updateControls`); the envelopes' times are made in one place
+  (`setEnvelopes`) from where a note starts and from `updateControls`; `process` plays the
+  keys down again on another CHORD and starts or lets go the layer when LAYER crosses nothing
+  or LAYER MODEL changes. All marked `(SF-000, the ninety-second build)`. With no knob moving
+  the output is the same to the bit. The suite's own Synth has the same seven read at the
+  note's start: worth taking there too (DECISIONS 751).
