@@ -435,8 +435,16 @@ sets all of them at once:
 | KICK, CLOSED HAT, OPEN HAT, CLAP | TUNE 0, DECAY 100 (the whole sample), CLICK 0, TONE centre, DRIVE 0, FILTER centre, LAYER 0 and SPLIT OFF, DENSITY 0, KEY TRACK off, the EQ centre. They play a sample at its own pitch whatever the note |
 | VOICE | TUNE 0, GATE 100, ECHO 0, TONE centre, DRIVE 0, FILTER centre, POCKET DEPTH 0, DENSITY 0, SLICE MODE WHOLE (any note is the whole phrase, at its own pitch), the EQ centre |
 
-It says what it did in CONFIG and in the bar. **It leaves LEVEL, GAIN, NORMALISE, the sends and
-the lane's insert effects** (it names the inserts that still act: LEAD opens with DELAY and RADIO). RUMBLE has no
+It says what it did in CONFIG and in the bar. **It leaves LEVEL, GAIN, NORMALISE, the sends, the
+lane's insert effects, any bands drawn on its EQ beyond LOW, MID and HIGH, and its fader in
+the mix, and it names every one of those that still acts** (ninety-sixth build; it named only
+the inserts, and CONFIG's line was cut off before it reached them: the line now runs on under
+the keys, up to three more lines). Once PLAIN has set them, BASS, LEAD, CHORD and PAD play
+a sample alike: where one lane sounds as the file does and another does not, it is one of
+the things PLAIN names. **A file longer than the gap between its lit steps never plays
+through**, since every lit step starts it again: four bars resampled onto a lane with one
+step in a sequence of 16 plays its first bar over and over, and PLAIN says so, and how long
+a sequence plays all of it (64 steps for four bars). RUMBLE has no
 PLAIN: it shapes whatever it is given. PERC plays no sample.
 
 **A sample's own controls**, in CONFIG's SAMPLE box with START, END and the fades:
@@ -1993,11 +2001,12 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --follow pad                     # a key held on a lane, and LEVEL then FILTER thrown to the bottom: the level every 50 ms after (as the rig stands; its sends at nothing; its inserts out too)
+build/.../SF-000 --resampleprobe plain 64 --lane pad   # the rig's last four bars resampled onto a lane, PLAIN pressed, played back alone: what comes out against what went in (levels, the octaves, the stereo); asis: without PLAIN; --noins, --set id=place, --values
 build/.../SF-000 --holdprobe 0.95                 # PAD on a looped sample struck again every bar, RELEASE as given: the level every 50 ms across two bars (the dip between notes)
 build/.../SF-000 --lenprobe 1.0 12                # PAD on a sample of that many seconds, its step's gate that many steps: its level each half bar as the sequence is made 8, 4 and 16 steps long
 build/.../SF-000 --enginelevels                   # every model of BASS, LEAD and PAD, the instrument alone at the lane's starting values: how loud a note is held, and in the second after

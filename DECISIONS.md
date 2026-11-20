@@ -5844,7 +5844,37 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      share the pattern's 96 differences unless that is raised. I said it would be the next
      build if you say so.
 
+765. **You**, Nov 20, 10:05: "when playing a resampled audio file in the pad as a sample, it doesn't
+     sound the same as the original." 10:11: "lead plays it s it sounds when plain is pressed, but
+     pad does not."
+     **Not reproduced as a fault of PAD's; what PLAIN says is made whole, the ninety-sixth
+     build.** Measured (`--resampleprobe`): the rig's last four bars resampled onto PAD,
+     PLAIN pressed, played back alone with a sequence of 64 steps, against what went in: the
+     same within 0.1 dB in every octave to 4 kHz, 0.5 dB down in the next and 1.3 dB down
+     in the top one, the stereo picture kept (sides to middle -19.0 dB in, -19.6 out); and
+     LEAD, BASS and CHORD, their inserts out, give the same figures as PAD to the tenth of a
+     dB. After PLAIN the two lanes' settings differ only in MODEL's place on their lists,
+     LEVEL and ACCENT. So on your set it is something PLAIN leaves alone, and I said which:
+     an insert on PAD (my guess: on Nov 20 at 00:45 you thought it had one), its sends (PAD
+     opens with SEND B at 40), bands drawn on its EQ, its fader in the mix; and, on any
+     lane, that a four-bar file on a one-bar sequence starts again every bar.
+     *Mine, built:* PLAIN names every one of those that still acts, not the inserts alone,
+     and says when the file is longer than the gap between lit steps and what length of
+     sequence plays all of it. And CONFIG's line, which was one line of about 45 letters and
+     cut PLAIN's off before it reached "ITS INSERTS STILL ACT", runs on under the keys for
+     up to three more lines. PLAIN still does not take the inserts, sends, EQ bands or fader
+     away: they are the lane's routing and yours. **I do not know which of them it was on
+     your PAD.**
+
 ## Not verified
+
+- **The ninety-sixth build (765): the cause on your set is not known.** PAD and LEAD are
+  measured alike after PLAIN on the rig as it opens; what differed on yours I have named
+  the candidates for and not seen. The top octave comes back 1.3 dB down on every lane
+  (the sample's filter at CUTOFF 100, or the reading between samples: not looked into).
+  The longer line in CONFIG was looked at once, on PAD with a sample's strip up, where the
+  rows under it are at their tightest: the last row's menu window sits right on the EQ's
+  title.
 
 - **The ninety-fifth build (762) is drawn and measured here, not seen on the Mac or
   played.** The mix page was looked at in the dark look only. Whether the faders' law

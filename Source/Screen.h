@@ -185,6 +185,7 @@ public:
     static bool testIsConfigOf (const TestHit& h, int kind) { return h.kind == hConfig && h.a == kind; }     // (the key that opens that kind of CONFIG: 5, the mix page)
     static bool testIsLufsReset (const TestHit& h) { return h.kind == hAct && h.a == aLufsReset; }             // (the mix page's loudness readout)
     bool testCfgIsOpen() const { return cfgOpen; }
+    void testCfgNote (const juce::String& says) { cfgNote = says; }      // (what CONFIG's line says, as after PLAIN: for a picture of it)
     float testEqTop() const { return eqRect.getY(); }
     const Engine::SetupPage& testCfgPage() const { return cfgPage; }
     // (for the checks: where a control of the open CONFIG stands, as "row.col", or nothing where it is not listed)

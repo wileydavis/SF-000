@@ -2253,6 +2253,35 @@ juce::String Session::samplePlain (int lane)
     juce::StringArray ins;
     for (int sl = 0; sl < kSlots; ++sl) if (const int ty = engine.insertType (lane, sl); ty >= 0 && engine.target (cx::insMute (lane, sl)) < 0.5f) ins.add (juce::String (effects()[(size_t) ty].name));
     if (! ins.isEmpty()) told << ". ITS INSERTS STILL ACT: " << ins.joinIntoString (", ");
+    // (The ninety-sixth build: and the rest of what PLAIN leaves that still stands between the sample and what is heard,
+    // each named, so that what it says is all there is. Wiley, Nov 20: "lead plays it s it sounds when plain is pressed,
+    // but pad does not": the two lanes play a sample alike once PLAIN has set them, so it was one of these.)
+    {
+        const int sa = juce::roundToInt (engine.target (cx::lane (lane, cx::kSendA)) * 100.0f), sb = juce::roundToInt (engine.target (cx::lane (lane, cx::kSendB)) * 100.0f);
+        if (sa > 0 || sb > 0) told << ". ITS SENDS STILL ACT: " << (sa > 0 ? "A " + juce::String (sa) : juce::String()) << (sa > 0 && sb > 0 ? ", " : "") << (sb > 0 ? "B " + juce::String (sb) : juce::String());
+        int bands = 0;
+        for (int b = 0; b < Engine::kEqBands; ++b)
+            if (Engine::eqKnobOf (b) < 0) { const auto band = engine.eqBand (lane, b); if (band.type != Engine::eqOff && (! Engine::eqHasGain (band.type) || std::abs (band.db) > 0.05f)) ++bands; }
+        if (bands > 0) told << ". ITS EQ HAS " << bands << (bands == 1 ? " MORE BAND IN" : " MORE BANDS IN");
+        if (std::abs (engine.mixFader (lane) - Engine::kMixUnity) > 1.0e-4f) told << ". ITS FADER IN THE MIX IS AT " << Engine::mixText (engine.mixFader (lane));
+        // a file longer than the gap between its lit steps never plays through: every lit step starts it again
+        if (synth && says.has && says.seconds > 0.0 && engine.tempo() > 1.0)
+        {
+            const auto pat = engine.pattern (lane);
+            const double stepSec = 60.0 / engine.tempo() / 4.0, fileSteps = says.seconds / stepSec;
+            int lit = 0, first = -1, last = -1, gap = pat.length;
+            for (int i = 0; i < pat.length; ++i) if (pat.steps[(size_t) i].on) { if (first < 0) first = i; else gap = std::min (gap, i - last); last = i; ++lit; }
+            if (lit > 1) gap = std::min (gap, first + pat.length - last);
+            if (lit > 0 && fileSteps > (double) gap + 0.5)
+            {
+                const double bars = fileSteps / 16.0;
+                const juce::String barsSay = std::abs (bars - std::round (bars)) < 0.02 ? juce::String ((int) std::lround (bars)) : juce::String (bars, 1);
+                told << ". IT IS " << barsSay << (barsSay == "1" ? " BAR" : " BARS") << " LONG AND STARTS AGAIN AT EVERY LIT STEP: " << (lit == 1 ? "EVERY " : "AS LITTLE AS ") << gap << (gap == 1 ? " STEP" : " STEPS") << " HERE";
+                const int want = (int) std::ceil (fileSteps - 0.5);
+                if (want <= kMaxSteps) told << " (ONE LIT STEP IN A SEQUENCE OF " << want << " PLAYS ALL OF IT)";
+            }
+        }
+    }
     touch();
     if (onChange) onChange();
     return told;

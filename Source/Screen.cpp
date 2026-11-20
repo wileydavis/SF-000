@@ -1453,13 +1453,41 @@ void Screen::drawConfig (G& g, R r)
         if (status.isNotEmpty() || takesFile)
         {
             status = status.toUpperCase();
+            float more = 0.0f;          // (the height of what a long line runs on into, under the keys)
             if (status.isNotEmpty())
             {
                 const bool resample = takesFile && cfg.kind == 0;         // (RESAMPLE: a lane only)
-                const R sr (x0, y, std::min ((plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f), std::ceil (tw (fNote, status)) + 12.0f), 22);
+                const float most = (plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f);
+                // (The ninety-sixth build: a line too long for its window runs on under the keys, the panel's width, as many
+                // lines as it needs up to three. It was cut off with dots, and what PLAIN says of what still colours a
+                // sample, its inserts and sends, was the part cut.)
+                String head = status; juce::StringArray rest;
+                if (std::ceil (tw (fNote, status)) + 12.0f > most)
+                {
+                    juce::StringArray words; words.addTokens (status, " ", "");
+                    String line; int at = 0; head = {};
+                    for (; at < words.size(); ++at) { const String next = line.isEmpty() ? words[at] : line + " " + words[at]; if (tw (fNote, next) + 12.0f > most && line.isNotEmpty()) break; line = next; }
+                    head = line; line = {};
+                    for (; at < words.size(); ++at)
+                    {
+                        const String next = line.isEmpty() ? words[at] : line + " " + words[at];
+                        if (tw (fNote, next) + 12.0f > 544.0f && line.isNotEmpty()) { rest.add (line); line = words[at]; } else line = next;
+                    }
+                    if (line.isNotEmpty()) rest.add (line);
+                    while (rest.size() > 3) { rest.remove (rest.size() - 1); rest.set (2, rest[2] + " ..."); }
+                }
+                const R sr (x0, y, std::min (most, std::ceil (tw (fNote, head)) + 12.0f), 22);
                 window (g, sr, col::white);
                 g.setColour (tone (col::black)); g.setFont (fNote);
-                g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
+                g.drawText (head, sr.reduced (6, 0), juce::Justification::centredLeft, true);
+                if (! rest.isEmpty())
+                {
+                    more = (float) rest.size() * 15.0f + 6.0f;
+                    const R rr (x0, y + 26, 544, more - 2.0f);
+                    window (g, rr, col::white);
+                    g.setColour (tone (col::black)); g.setFont (fNote);
+                    for (int k = 0; k < rest.size(); ++k) g.drawText (rest[k], R (rr.getX() + 6, rr.getY() + 2 + (float) k * 15.0f, rr.getWidth() - 12, 15), juce::Justification::centredLeft, true);
+                }
             }
             if (takesFile)
             {
@@ -1485,7 +1513,7 @@ void Screen::drawConfig (G& g, R r)
                     hit (pr.expanded (2), hAct, aSamplePlain, 0);
                 }
             }
-            y += 28;
+            y += 28 + more;
         }
         if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
         loadOpen = false;

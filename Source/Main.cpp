@@ -3385,6 +3385,57 @@ static void mixTest (int& bad)
     }
 }
 
+// PLAIN names all that still stands between a sample and what is heard (the ninety-sixth build). It set the lane's own
+// knobs and named the inserts it left in; the sends, the EQ's other bands and the mix's fader it left and did not name,
+// and its line in CONFIG was cut off before even the inserts. Wiley, Nov 20: "when playing a resampled audio file in the
+// pad as a sample, it doesn't sound the same as the original."; "lead plays it s it sounds when plain is pressed, but pad
+// does not." (The two lanes play a sample alike once PLAIN has set them: the round trip is measured, --resampleprobe.)
+static void plainSaysTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("PLAIN names what still acts on the sample (the ninety-sixth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> b (2, 256);
+    int pad = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+    const Engine::Target t { 0, pad, 0 };
+    // a file of four bars at the rig's tempo
+    const double barSec = 4.0 * 60.0 / e.tempo();
+    const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-plain-says.wav");
+    {
+        juce::AudioBuffer<float> f (2, (int) (48000.0 * barSec * 4.0));
+        for (int i = 0; i < f.getNumSamples(); ++i) { const float x = 0.3f * std::sin ((float) i * 0.02f); f.setSample (0, i, x); f.setSample (1, i, x); }
+        wav.deleteFile();
+        if (auto out = wav.createOutputStream())
+            if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), 48000.0, 2, 16, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (f, 0, f.getNumSamples()); }
+    }
+    e.loadFile (pad, wav);
+    for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int m = sp.choices.indexOf ("SAMPLE"); m >= 0) ses.setupByHand (t, "model", (float) m / (float) std::max (1, sp.choices.size() - 1));
+    for (int i = 0; i < 40; ++i) e.render (b);
+    // all of it in the way: an insert, a send, a band of the EQ, the fader down, and the rig's own one-bar sequence
+    int tape = -1; for (int ty = 0; ty < (int) effects().size(); ++ty) if (juce::String (effects()[(size_t) ty].name) == "TAPE") tape = ty;
+    ses.setInsert (pad, 0, tape);
+    ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.4f);
+    Engine::EqBand band; band.type = Engine::eqHighCut; band.hz = 4000.0f; band.q = 0.7071f; e.setEqBand (pad, 4, band);
+    e.setSetup ({ Engine::kMixPage, 0, 0 }, Engine::mixId (pad), 0.5f);
+    for (int i = 0; i < 40; ++i) e.render (b);
+    const juce::String all = ses.samplePlain (pad);
+    const bool named = all.contains ("ITS INSERTS STILL ACT: TAPE") && all.contains ("ITS SENDS STILL ACT: B 40") && all.contains ("ITS EQ HAS 1 MORE BAND IN") && all.contains ("ITS FADER IN THE MIX IS AT -10.6 DB")
+                    && all.contains ("IT IS 4 BARS LONG AND STARTS AGAIN AT EVERY LIT STEP: EVERY 16 STEPS HERE (ONE LIT STEP IN A SEQUENCE OF 64 PLAYS ALL OF IT)");
+    if (! named) std::printf ("      (%s)\n", all.toRawUTF8());
+    check (named, "PAD on a file of four bars, with an insert in, SEND B at 40, a high cut drawn on its EQ, its fader down and the rig's one-bar sequence: PLAIN names each of the five");
+    // and none of it: nothing more is said
+    ses.setInsert (pad, 0, -1); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f); e.eqReset (pad); e.setSetup ({ Engine::kMixPage, 0, 0 }, Engine::mixId (pad), Engine::kMixUnity);
+    { Pattern p = ses.pattern (pad); p.length = 64; ses.setPattern (pad, p); }
+    for (int i = 0; i < 40; ++i) e.render (b);
+    const juce::String none = ses.samplePlain (pad);
+    if (none.contains ("STILL ACT") || none.contains ("MORE BAND") || none.contains ("FADER") || none.contains ("STARTS AGAIN")) std::printf ("      (%s)\n", none.toRawUTF8());
+    check (none.startsWith ("PLAIN: THE SAMPLE AS IT WAS RECORDED") && ! none.contains ("STILL ACT") && ! none.contains ("MORE BAND") && ! none.contains ("FADER") && ! none.contains ("STARTS AGAIN"),
+           "with none of them, and a sequence as long as the file: it says none of it");
+    wav.deleteFile();
+}
+
 // (the ninety-second build) LAYER and LAYER MODEL are heard as they are turned, on a note that is already sounding (a pad's
 // notes are long: a layer used to be started only with its note, at the LAYER there was then).
 static void layerLiveTest (int& bad)
@@ -4806,7 +4857,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') mixTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -7251,6 +7302,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     loneStepTest (bad);
     levelSilentTest (bad);
     mixTest (bad);
+    plainSaysTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -12596,13 +12648,14 @@ static int shot (const juce::StringArray& args)
             for (int k = 0; k < kLaneKnobs; ++k) if (const auto& kd = e.laneKnob (ses.activeLane, k); kd.param != nullptr && id == kd.param && what.containsOnly ("0123456789.")) ses.userSet (cx::lane (ses.activeLane, k), what.getFloatValue());
         }
     }
+    juce::String plainSaid;
     if (arg ("--sample", "").isNotEmpty())
     {
         // (--sample FILE: the active lane plays that file, its MODEL at SAMPLE; --plain: and PLAIN was pressed)
         const Engine::Target t { 0, ses.activeLane, 0 };
         for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains ("SAMPLE")) e.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1));
         e.loadFile (ses.activeLane, juce::File (arg ("--sample", "")));
-        if (args.contains ("--plain")) ses.samplePlain (ses.activeLane);
+        if (args.contains ("--plain")) plainSaid = ses.samplePlain (ses.activeLane);
         if (args.contains ("--loop")) ses.setupByHand (t, "smp_bars", 1.0f / 7.0f);       // (--loop: and LOOP at AUTO, as chosen by hand)
     }
     if (cfg == "lane") sc.showConfig ({ 0, ses.activeLane, 0 });
@@ -12618,7 +12671,8 @@ static int shot (const juce::StringArray& args)
         sc.showConfig ({ 1, ses.activeLane, 0 });
     }
     else if (cfg == "mastercomp") { ses.userSet (cx::kMaster + 1, 0.6f); sc.showConfig ({ 4, 0, 0 }); }
-    else if (cfg == "mix") sc.showConfig ({ Engine::kMixPage, 0, 0 });           // (the mix page: the faders, the loudness, the master's EQ)
+    if (cfg == "lane" && plainSaid.isNotEmpty()) sc.testCfgNote (plainSaid);       // (and what PLAIN said, on CONFIG's line)
+    if (cfg == "mix") sc.showConfig ({ Engine::kMixPage, 0, 0 });           // (the mix page: the faders, the loudness, the master's EQ)
     else if (cfg == "bands")
     {
         // a convolution in the active lane's first slot, with BANDS lit: the low and the top from place 2
@@ -17246,6 +17300,140 @@ public:
             }
             std::printf ("\n  loudest %.1f dB, quietest %.1f dB: a dip of %.1f dB\n", hi, lo, hi - lo);
             wav.deleteFile(); std::fflush (stdout);
+            quit(); return;
+        }
+        if (args.contains ("--resampleprobe"))
+        {
+            // (--resampleprobe [plain|asis] [steps]: the rig as it opens plays six bars; RESAMPLE on PAD (its last four bars
+            // become PAD's sample, MODEL to SAMPLE); PLAIN pressed, or not (asis). Then PAD alone, its one step at the top
+            // of a sequence `steps` long (64: four bars, the sample's length), from the top: the four bars that come out
+            // against the four that went in. Their levels, the lag that fits them best and how alike they are there, and
+            // the level in each octave. With the lane's sends at nothing and the master as it stands.)
+            using namespace sf0;
+            const int at = args.indexOf ("--resampleprobe");
+            const bool plainIt = ! (at + 1 < args.size() && args[at + 1] == "asis");
+            int steps = 64; for (int k = at + 1; k < args.size() && k <= at + 2; ++k) if (args[k].containsOnly ("0123456789") && args[k].isNotEmpty()) steps = args[k].getIntValue();
+            Engine e; e.prepare (48000.0, 256);
+            Session ses (e, false);
+            juce::AudioBuffer<float> b (2, 256);
+            // (--lane SLUG: on that lane and not PAD. --set ID=PLACE ...: after PLAIN, that control of the lane put there, 0 to 1.
+            // --values: every control of the lane as PLAIN leaves it. --bars: the fit bar by bar as well, which is slow.)
+            const juce::String slug = args.contains ("--lane") ? args[args.indexOf ("--lane") + 1] : juce::String ("pad");
+            int pad = -1; for (int l = 0; l < kLanes; ++l) if (slug == lanes()[(size_t) l].slug) pad = l;
+            if (pad < 0) { std::printf ("no such lane\n"); quit(); return; }
+            const Engine::Target t { 0, pad, 0 };
+            for (int i = 0; i < 40; ++i) e.render (b);
+            e.setRunning (true);
+            const double bar = 4.0 * 60.0 / e.tempo() * 48000.0;
+            for (long done = 0; (double) done < bar * 6.2; done += 256) e.render (b);
+            Engine::Heard h;
+            if (! e.lastHeard (h, 4)) { std::printf ("nothing heard\n"); quit(); return; }
+            juce::AudioBuffer<float> was; was.makeCopyOf (h.audio);
+            std::printf ("%s\n", ses.resampleInto (pad).toRawUTF8());
+            e.setRunning (false);
+            for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int m = sp.choices.indexOf ("SAMPLE"); m >= 0) ses.setupByHand (t, "model", (float) m / (float) std::max (1, sp.choices.size() - 1));
+            for (int i = 0; i < 40; ++i) e.render (b);
+            if (plainIt) std::printf ("%s\n", ses.samplePlain (pad).toRawUTF8());
+            for (int k = 0; k + 1 < args.size(); ++k)
+                if (args[k] == "--set")
+                {
+                    const juce::String id = args[k + 1].upToFirstOccurrenceOf ("=", false, false); const float v = args[k + 1].fromFirstOccurrenceOf ("=", false, false).getFloatValue();
+                    bool done = false;
+                    for (int q = 0; q < kLaneKnobs && ! done; ++q) if (juce::String (e.laneKnob (pad, q).param) == id) { ses.userSet (cx::lane (pad, q), v); done = true; }
+                    if (! done) e.setSetup (t, id, v);
+                }
+            if (args.contains ("--noins")) for (int k = 0; k < kSlots; ++k) ses.setInsert (pad, k, -1);       // (the lane's inserts out)
+            for (int i = 0; i < 40; ++i) e.render (b);
+            if (args.contains ("--values"))
+            {
+                for (int q = 0; q < kLaneKnobs; ++q) std::printf ("  knob %s=%.3f\n", e.laneKnob (pad, q).param, (double) e.target (cx::lane (pad, q)));
+                for (auto& kv : e.getSetup (t)) std::printf ("  %s=%.3f\n", kv.first.toRawUTF8(), (double) kv.second);
+            }
+            for (int l = 0; l < kLanes; ++l) if (l != pad) { Pattern none; ses.setPattern (l, none); }
+            { Pattern p = ses.pattern (pad); int first = -1; for (int i = 0; i < p.length; ++i) if (p.steps[(size_t) i].on && first < 0) first = i; Pattern q; if (first >= 0) q.steps[0] = p.steps[(size_t) first]; q.steps[0].on = true; q.length = steps; ses.setPattern (pad, q); }
+            ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f);
+            // a rig of its own from this one's state, so that it starts at the top
+            const juce::var kept = ses.stateVar();
+            Engine e2; e2.prepare (48000.0, 256);
+            Session s2 (e2, false);
+            s2.takeState (kept);
+            for (int i = 0; i < 60; ++i) e2.render (b);
+            e2.setRunning (true);
+            std::vector<float> out[2];
+            while ((double) out[0].size() < bar * 4.0 + 16384.0) { e2.render (b); for (int k = 0; k < 256; ++k) { out[0].push_back (b.getSample (0, k)); out[1].push_back (b.getSample (1, k)); } }
+            const int N = std::min (was.getNumSamples(), (int) (bar * 4.0));
+            auto rms = [] (const float* x, int n) { double q = 0.0; for (int i = 0; i < n; ++i) q += (double) x[i] * x[i]; return 10.0 * std::log10 (q / (double) std::max (1, n) + 1.0e-18); };
+            // the lag that fits best (0 to 8191 samples late), over the first bar
+            int bestLag = 0; double best = -2.0;
+            {
+                const int n = (int) bar;
+                double ea = 0.0; for (int i = 0; i < n; ++i) ea += (double) was.getSample (0, i) * was.getSample (0, i);
+                for (int lag = 0; lag < 8192; lag += 1)
+                {
+                    double c = 0.0, eb = 0.0;
+                    for (int i = 0; i < n; i += 3) { const double y = out[0][(size_t) (i + lag)]; c += (double) was.getSample (0, i) * y; eb += y * y; }
+                    const double r = c / std::sqrt ((ea / 3.0) * eb + 1.0e-30);
+                    if (r > best) { best = r; bestLag = lag; }
+                }
+            }
+            std::printf ("what went in %.1f dB, what came out %.1f dB (bar by bar: in", rms (was.getReadPointer (0), N), rms (out[0].data() + bestLag, N));
+            for (int k = 0; k < 4; ++k) std::printf (" %.1f", rms (was.getReadPointer (0) + (int) (bar * k), (int) bar));
+            std::printf ("; out");
+            for (int k = 0; k < 4; ++k) std::printf (" %.1f", rms (out[0].data() + bestLag + (int) (bar * k), (int) bar));
+            std::printf (")\nfits best %d samples late, where the two are alike by %.3f (1: the same but for level)\n", bestLag, best);
+            if (args.contains ("--bars"))
+            {
+                // (the lag that fits best at the start of each bar, and how well: a speed that is off shows as a lag that grows)
+                std::printf ("bar by bar, the lag that fits and how alike:");
+                for (int k = 0; k < 4; ++k)
+                {
+                    const int from = (int) (bar * k), n = (int) (bar * 0.25);
+                    int bl = 0; double bb = -2.0;
+                    for (int lag = 0; lag < 4096; ++lag)
+                    {
+                        double c = 0.0, ea = 0.0, eb = 0.0;
+                        for (int i = 0; i < n; i += 2) { const double a = was.getSample (0, from + i), y = out[0][(size_t) (from + i + lag)]; c += a * y; ea += a * a; eb += y * y; }
+                        const double r = c / std::sqrt (ea * eb + 1.0e-30);
+                        if (r > bb) { bb = r; bl = lag; }
+                    }
+                    std::printf ("  %d (%.3f)", bl, bb);
+                }
+                std::printf ("\n");
+            }
+            {
+                // (which of what went in the left that came out is most like: its left, its right, the two together)
+                const int n = (int) bar * 2;
+                auto like = [&] (int outCh, int how)
+                {
+                    double c = 0.0, ea = 0.0, eb = 0.0;
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const double a = how == 0 ? was.getSample (0, i) : how == 1 ? was.getSample (1, i) : 0.5 * (was.getSample (0, i) + was.getSample (1, i)), y = out[outCh][(size_t) (i + bestLag)];
+                        c += a * y; ea += a * a; eb += y * y;
+                    }
+                    return c / std::sqrt (ea * eb + 1.0e-30);
+                };
+                auto side = [&] (bool ofOut) { double m = 0.0, sd = 0.0; for (int i = 0; i < n; ++i) { const double l = ofOut ? out[0][(size_t) (i + bestLag)] : was.getSample (0, i), r = ofOut ? out[1][(size_t) (i + bestLag)] : was.getSample (1, i); m += (l + r) * (l + r); sd += (l - r) * (l - r); } return 10.0 * std::log10 ((sd + 1.0e-30) / (m + 1.0e-30)); };
+                std::printf ("the left out is like the left in by %.3f, the right in by %.3f, the two together by %.3f; the right out like the right in by %.3f; the sides against the middle: in %.1f dB, out %.1f dB\n",
+                             like (0, 0), like (0, 1), like (0, 2), like (1, 1), side (false), side (true));
+            }
+            // the octaves: each one's level out against in (level-matched over all), from 2^16 points a quarter of the way in
+            {
+                const int order = 16, M = 1 << order;
+                auto spectrum = [&] (const float* x) { std::vector<float> f ((size_t) M * 2, 0.0f); for (int i = 0; i < M; ++i) f[(size_t) i] = x[i] * (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * (double) i / (double) (M - 1))); juce::dsp::FFT fft (order); fft.performFrequencyOnlyForwardTransform (f.data()); return f; };
+                const int from = (int) (bar * 0.5);
+                const auto fa = spectrum (was.getReadPointer (0) + from), fb = spectrum (out[0].data() + bestLag + from);
+                const double hz = 48000.0 / (double) M, shift = rms (out[0].data() + bestLag, N) - rms (was.getReadPointer (0), N);
+                std::printf ("each octave, out against in with the levels matched:");
+                for (double lo = 31.25; lo < 16000.0; lo *= 2.0)
+                {
+                    double pa = 0.0, pb = 0.0;
+                    for (int k = (int) (lo / hz); k < (int) (lo * 2.0 / hz) && k < M / 2; ++k) { pa += (double) fa[(size_t) k] * fa[(size_t) k]; pb += (double) fb[(size_t) k] * fb[(size_t) k]; }
+                    std::printf ("  %.0f Hz %+.1f", lo, 10.0 * std::log10 ((pb + 1.0e-30) / (pa + 1.0e-30)) - shift);
+                }
+                std::printf (" dB\n");
+            }
+            std::fflush (stdout);
             quit(); return;
         }
         if (args.contains ("--enginelevels"))
