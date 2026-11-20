@@ -143,6 +143,29 @@ public:
     float heldDb() const;
     // ---- each lane's short-term loudness as it reaches the mix (LUFS; -70: silent)
     std::array<std::atomic<float>, kLanes> laneLufs;
+    // ---- THE MIX (the ninety-fifth build). Wiley, Nov 20: "Would it make sense to have a master mixing panel? A knob and
+    // meter for each lane post inserts. Maybe as a config for the master Module."; "faders not part of the snapshot. and
+    // it's like in ableton where an instrument has its own volume knob, but the track has a level."; "i'd add an eq to
+    // the master mix is well for any final fine tuning. below the mix page. and a lufs readout".
+    // A fader for each lane, after its inserts, its EQ and its pocket and before its sends and the drum bus; one for each
+    // return and one for the drum bus, as each goes into the mix. As it comes (kMixUnity) a fader changes nothing, to the
+    // bit; right up it is +6 dB; at its foot it is silence. Not a snapshot's: kept with the set, as the master's
+    // compressor is. Its CONFIG page is Target { kMixPage, 0, 0 }: the faders, then the master's EQ (lane kLanes to
+    // eqBand and the rest).
+    static constexpr int kMixFaders = kLanes + 3, kMixDub = kLanes, kMixSpace = kLanes + 1, kMixBus = kLanes + 2;
+    static constexpr int kMixPage = 5;
+    static constexpr float kMixUnity = 0.75f;
+    static float mixGainOf (float place)        { const float p = juce::jlimit (0.0f, 1.0f, place); if (p <= kMixUnity) { const float x = p / kMixUnity; return x * x * x; } return std::pow (10.0f, (p - kMixUnity) / (1.0f - kMixUnity) * 6.0f * 0.05f); }
+    static juce::String mixText (float place);          // "-6.0 DB", "OFF"
+    static juce::String mixId (int fader);              // "mix_kick" ... "mix_dub", "mix_space", "mix_bus"
+    static juce::String mixName (int fader);
+    static int mixOfId (const juce::String& id);        // (-1: not a fader's)
+    float mixFader (int fader) const            { return fader >= 0 && fader < kMixFaders ? mixPlace[(size_t) fader].load() : kMixUnity; }
+    void setMixFader (int fader, float place)   { if (fader >= 0 && fader < kMixFaders) { mixPlace[(size_t) fader] = juce::jlimit (0.0f, 1.0f, place); stateMoved(); } }
+    std::array<std::atomic<float>, kMixFaders> mixDb;   // each as it goes into the mix: its peak, held and let fall (dB; -100: nothing)
+    // the master's loudness, with the short-term figure lufs is: momentary (400 ms) and integrated (since RUN, or since asked)
+    std::atomic<float> lufsM { -70.0f }, lufsI { -70.0f };
+    void lufsReset()                            { lufsResetAsk = true; }
     // ---- what a lane's EQ costs: its level after the EQ against before it, over the last seconds (dB), for the lane
     // being watched (-1: none, and nothing is measured)
     void watchEq (int lane)                     { eqWatch = lane; }
@@ -622,7 +645,20 @@ private:
         ~Voice();
     };
     static constexpr int kStages = kSlots + 1;      // the three inserts, then the instrument
-    struct Lane
+    // An EQ of eight bands (see eqBand): what is wanted, set by the message thread, and what the audio thread has made of
+    // it. Each lane is one; the master's, on the whole mix, is another (the ninety-fifth build: masterEq, lane kLanes to
+    // eqBand and the rest).
+    struct EqStrip
+    {
+        std::atomic<int> eqType[kEqBands];
+        std::atomic<float> eqHz[kEqBands], eqGain[kEqBands], eqQ[kEqBands];
+        Biquad eq[kEqBands];
+        float eqDb[kEqBands] = {}, eqHzNow[kEqBands] = {}, eqQNow[kEqBands] = {};
+        float eqSet[kEqBands], eqHzSet[kEqBands] = {}, eqQSet[kEqBands] = {};
+        int eqTypeSet[kEqBands];
+        bool eqLive[kEqBands] = {};
+    };
+    struct Lane : EqStrip
     {
         // What plays, and what is leaving: at each stage one may be on its way out while another
         // takes its place. Only the message thread changes these; the audio thread reads them and
@@ -650,14 +686,7 @@ private:
         Voice* voiceSeen = nullptr;
         LanePlayer player;
         juce::MidiBuffer midi;
-        // the lane EQ (see eqBand): what is wanted, set by the message thread, and what the audio thread has made of it
-        std::atomic<int> eqType[kEqBands];
-        std::atomic<float> eqHz[kEqBands], eqGain[kEqBands], eqQ[kEqBands];
-        Biquad eq[kEqBands];
-        float eqDb[kEqBands] = {}, eqHzNow[kEqBands] = {}, eqQNow[kEqBands] = {};
-        float eqSet[kEqBands], eqHzSet[kEqBands] = {}, eqQSet[kEqBands] = {};
-        int eqTypeSet[kEqBands];
-        bool eqLive[kEqBands] = {};
+        // (the lane EQ: EqStrip, which a lane is)
         float sendWas[2] = { 0, 0 }, gainWas = 1.0f, hold = -100.0f;
         bool seqOff = false;                    // audio thread: its sequencer was muted last block
         std::vector<float> dl[2];
@@ -678,8 +707,8 @@ private:
     static float readBind (const Bind&);
     static void applyBind (const Bind&, float v);
     void advanceControls (double beats, int n);
-    void setEq (Lane&, int band, int type, float hz, float db, float q);
     static void eqCoefs (int type, double hz, double db, double q, double sr, double c[5]);
+    void setEq (EqStrip&, int band, int type, float hz, float db, float q);
     void updateLatency();
     void collectRetired (bool all);
 
@@ -713,6 +742,17 @@ private:
     std::array<bool, cx::kCount> gliding {};
 
     std::array<Lane, kLanes> lane;
+    // ---- the mix (the ninety-fifth build)
+    EqStrip masterEq;                                           // the master's EQ: on the whole mix, before GAIN and the master's chain
+    std::array<std::atomic<float>, kMixFaders> mixPlace;        // each fader, as its knob stands (kMixUnity: as it comes)
+    float mixNow[kMixFaders], mixWas[kMixFaders];               // audio thread: its gain on its way, and as the last block left it
+    float mixHold[kMixFaders];                                  // audio thread: the returns' and the bus's peaks, held and let fall
+    std::atomic<bool> lufsResetAsk { false };
+    bool lufsRan = false;
+    EqStrip& eqOf (int l)                                       { return l >= kLanes ? masterEq : static_cast<EqStrip&> (lane[(size_t) l]); }
+    const EqStrip& eqOf (int l) const                           { return l >= kLanes ? masterEq : static_cast<const EqStrip&> (lane[(size_t) l]); }
+    bool eqUpdate (EqStrip&, int knobLane, const float* snd);   // audio thread: the bands brought to what is wanted; is any of them in?
+    void eqList (int l, std::vector<SetupParam>& out) const;    // an EQ's bands as CONFIG lists them (l: a lane, or kLanes for the master's)
     std::array<std::array<int, kSlots>, kLanes> insType {};
     std::unique_ptr<SFProcessor> retA;
     std::unique_ptr<SFProcessor> busProc;                    // the drum bus

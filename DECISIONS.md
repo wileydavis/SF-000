@@ -5787,7 +5787,72 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      inserts, so it drives them) is the instrument's design; a fader after the inserts would
      be another control, if you want one.
 
+762. **You**, Nov 20, 08:11: "Would it make sense to have a master mixing panel? A knob and meter for
+     each lane post inserts. Maybe as a config for the master Module." I said yes, and why (LEVEL
+     is before the inserts and does two jobs), how I would build it, and asked whether the
+     faders are a snapshot's. 08:17: "faders not part of the snapshot. and it's like in ableton
+     where an instrument has its own volume knob, but the track has a level. pretty standard
+     workflow. Also, i'd add an eq to the master mix is well for any final fine tuning. below the
+     mix page. and a lufs readout".
+     **Built, the ninety-fifth build: the mix page.** *Mine, in the building:*
+     - **Fourteen faders**: the eleven lanes, DUB, SPACE and the drum bus, one grid of four by
+       four (the lanes in their order, the returns and the bus a row under them). A lane's is
+       after its inserts, its EQ and its pocket and before its sends and the drum bus (the
+       returns and the bus follow it, as on a desk); it is one gain with the lane's mute.
+     - **The law**: three quarters up is 1 exactly (the rig's bars are the same to the
+       sample with the mix untouched), +6 dB right up, and under it the cube of the knob, so
+       half way to unity is -18 dB and the foot is silence with no floor.
+     - **The meters** are each fader's peak after it, with 0 dB marked. The master display's
+       eleven bars were already the lanes as they reach the mix, so they are after the fader
+       too.
+     - **Not a snapshot's, and so not MIDI controls of their own**: the mix is the page's
+       own setup, written with the set (`"mix"`, as `"masterComp"` is). The E16 has it
+       through CONFIG's pages when the page is open. A page of its own on the E16 is for
+       your E16 pass.
+     - **The master's EQ** is the lane EQ, eight bands, on the whole mix **before GAIN and
+       the master's chain**, so the limiter still has the last word (*my choice of where*;
+       after the compressor is the other usual place). It is the set's, like the faders
+       (*mine*: you said so of the faders). No panel knobs, no LOW END view, no "costs"
+       figure.
+     - **LOUDNESS**: momentary, short-term and integrated LUFS of what leaves, the peak, and
+       the limiter's and clipper's reduction. Integrated starts again at RUN and when the
+       readout is pressed (*mine*).
+     - **Where it opens**: the word MIX under the mix's bars on the master's display is now a
+       key. I did not put a C beside MASTER: there is no room in that row without taking the
+       word FAULT off or shortening FINISH.
+     Checked (`mixTest`, `SF000_TEST_NEW=o`): a fader right up is +6.0 LU on the lane and
+     half way to unity -18.1; at its foot nothing, and its send with it (DUB given nothing);
+     DUB's and the bus's faders take them out of the mix; a bell on the master's EQ is on no
+     lane's, and a high cut at 200 Hz takes 42.5 dB off a hat alone; a recall leaves all of
+     it; the set is written with it and read, and a set without it opens at 0 dB and flat.
+
+763. **You**, Nov 20, 08:25: "how do i ghet a sample on pad to hold a note like it used to. now it
+     audibly hasd a break when the sample ends but it used to allow a sustained note/texture when
+     loop ws on and play through was on held." I answered: RELEASE up to about 95 % (CONFIG,
+     view 1, SOUND, the last cell). The ninety-third build took the pad's own 0.8 s release
+     out of its sampler with the rest of what the lanes kept inside the engines, so a note
+     struck again every bar no longer overlapped the one before (measured, `--holdprobe`: a
+     dip of about 8 dB for a third of a second at each strike with RELEASE in the middle,
+     gone at 0.95); or the step's gate drawn past the last step, which ties it. I offered to
+     have PAD set RELEASE high by itself on those engines. 08:28: "it's good, just needed to
+     remember about release." **Nothing built: RELEASE stays where you put it.**
+
+764. **You**, Nov 20, 08:33: "can step locks apply to config settings as well?" **Not built; I
+     answered.** Today a step holds the lane's twelve knobs, its sends, LOW MID HIGH and its
+     inserts' knobs. It could hold CONFIG's knobs too, by the way MOTION already moves them
+     (not its menus, switches or MODEL); some are read only as a note starts, and they would
+     share the pattern's 96 differences unless that is raised. I said it would be the next
+     build if you say so.
+
 ## Not verified
+
+- **The ninety-fifth build (762) is drawn and measured here, not seen on the Mac or
+  played.** The mix page was looked at in the dark look only. Whether the faders' law
+  suits a hand (unity at three quarters, the cube under it), whether the master's EQ
+  should be before the master's chain or after its compressor, and whether MIX under the
+  bars is where you would look for the page, are yours to say. The lanes' shapes behind
+  the master's EQ were not in the picture I looked at (they are drawn while the rig runs
+  and the page is up): not seen.
 
 - **The ninety-fourth build (759 to 761) is drawn and measured here, not seen on the Mac or
   played.** Every page of the new CONFIG was drawn and looked at (PAD, BASS on GRANULAR, LEAD

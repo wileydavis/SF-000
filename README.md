@@ -860,6 +860,39 @@ next one; with twelve, the one wanted could be eleven clicks away. A click on th
 EMPTY and the twelve effects up in place of the slot's knobs, each a key, the one it is lit;
 a key makes the slot that effect and the knobs come back. The name again puts the list away.
 
+### THE MIX: a fader a lane, the master's EQ, the loudness
+
+**MIX**, the key under the mix's own bars on the master's display, opens the mix page
+(ninety-fifth build), where CONFIG opens. MIX again, X or Esc closes it.
+
+- **A fader and a meter for each lane**, in the lanes' order, and one each for **DUB**,
+  **SPACE** and the **DRUM BUS**: fourteen, in one grid of four by four. A lane's fader is
+  **after its inserts, its EQ and its pocket, and before its sends and the drum bus**, so
+  the returns and the bus follow it; a return's and the bus's are as each goes into the mix.
+  As in a workstation, where an instrument has its own volume and its track has a level: a
+  lane's **LEVEL** knob is the instrument's, before its inserts, and sets how hard it drives
+  them; its **fader** is how loud it is in the mix.
+- **Three quarters up is as it comes** (0 dB, and to the bit: a set that has never touched a
+  fader sounds as it did). Right up is +6 dB. Right down is silence. Double-click: back to
+  0 dB. The bar beside each is its level after the fader, with a mark at 0 dB; the lanes'
+  bars on the master's display are after the fader too.
+- **The mix is the set's, and no snapshot's**: a recall leaves the faders where they are, and
+  they are written with the set as the master's compressor is. A set from before there was a
+  mix opens with every fader at 0 dB.
+- **MASTER EQ**, at the foot of the page, is the lane EQ's eight bands on the whole mix:
+  drag a band, double-click the graph for a new one, the wheel for its width, the keys under
+  it for its kind. It sits **before GAIN and the master's chain**, so TAPE, COMP and LIMIT
+  are given what it has shaped and the limiter still has the last word. The lanes' shapes
+  are behind its curve (OTHERS, and a key a lane). It has no knobs on a panel and no LOW END
+  view. Flat, it does nothing at all. The set's, like the faders.
+- **LOUDNESS**, beside the faders: the whole mix as it leaves, in LUFS, three ways. **M**
+  over the last 0.4 s, **S** over the last 3 s (the figure on the master's display), and
+  **I**, integrated, over all that has played since RUN was pressed; press the readout and
+  I starts again from now. Under them the peak, and what the limiter and its clipper are
+  taking off.
+- On the E16 the page is CONFIG's, as any page is: the faders first, twelve to a page, then
+  the master EQ's bands.
+
 ### GAIN: the whole mix, into the master
 
 A knob on the MASTER panel, under TAPE (eighty-second build). It turns the whole mix up or down
@@ -1960,11 +1993,12 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --follow pad                     # a key held on a lane, and LEVEL then FILTER thrown to the bottom: the level every 50 ms after (as the rig stands; its sends at nothing; its inserts out too)
+build/.../SF-000 --holdprobe 0.95                 # PAD on a looped sample struck again every bar, RELEASE as given: the level every 50 ms across two bars (the dip between notes)
 build/.../SF-000 --lenprobe 1.0 12                # PAD on a sample of that many seconds, its step's gate that many steps: its level each half bar as the sequence is made 8, 4 and 16 steps long
 build/.../SF-000 --enginelevels                   # every model of BASS, LEAD and PAD, the instrument alone at the lane's starting values: how loud a note is held, and in the second after
 build/.../SF-000 --audit 6 --model SAMPLE --sample f.wav   # the same for one lane (1 to 11) playing a model, with a file loaded (--table: WAVETABLE from the file; --plain: after PLAIN; --level: only how loud it plays)

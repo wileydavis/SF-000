@@ -731,10 +731,19 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             const auto& sp = cfgParams[(size_t) h.a];
             const char* module = cfg.kind == 0 ? lanes()[(size_t) cfg.lane].module
                                : cfg.kind == 1 ? (eng.insertType (cfg.lane, cfg.slot) >= 0 ? effects()[(size_t) eng.insertType (cfg.lane, cfg.slot)].module : nullptr)
-                               : cfg.kind == 3 ? drumBus().module : cfg.kind == 4 ? "GLUE"
+                               : cfg.kind == 3 ? drumBus().module : cfg.kind == 4 ? "GLUE" : cfg.kind == Engine::kMixPage ? nullptr
                                : (cfg.slot == 0 ? returnA() : returnB (eng.spaceModel())).module;
             t.title = (sp.group.isNotEmpty() && sp.group != "SOUND" && sp.group != "EFFECT" ? sp.group + ": " : String()) + sp.name;
             if (const char* what = module != nullptr ? help::param (module, sp.id.toRawUTF8()) : nullptr) body = what;
+            if (cfg.kind == Engine::kMixPage && Engine::mixOfId (sp.id) >= 0)
+            {
+                const int k = Engine::mixOfId (sp.id);
+                t.title = "MIX: " + sp.name;
+                body = k < kLanes ? "THIS LANE'S FADER: ITS LEVEL IN THE MIX, AFTER ITS INSERTS, ITS EQ AND ITS POCKET, AND BEFORE ITS SENDS AND THE DRUM BUS (THE LANE'S OWN LEVEL KNOB IS THE INSTRUMENT'S, BEFORE ITS INSERTS, AND DRIVES THEM)."
+                     : k == Engine::kMixBus ? "THE DRUM BUS'S FADER: THE LANES ON THE BUS, TOGETHER, AS THEY LEAVE IT FOR THE MIX."
+                     : "THIS RETURN'S FADER: ITS LEVEL AS IT GOES INTO THE MIX.";
+                body << " THREE QUARTERS UP IS AS IT COMES (0 DB); RIGHT UP IS +6 DB; RIGHT DOWN IS SILENCE. THE BAR BESIDE IT IS ITS LEVEL AFTER THE FADER. NOT A SNAPSHOT'S: THE MIX IS KEPT WITH THE SET.";
+            }
             body << (body.isEmpty() ? "" : " ") << (sp.kind == Kind::Toggle ? "CLICK TO SWITCH IT." : sp.kind == Kind::Hold ? "HOLD IT DOWN." : "DRAG UP AND DOWN (SHIFT: FINELY). DOUBLE-CLICK: BACK TO WHERE IT STARTS.");
             midi = sp.kind == Kind::Hold ? String ("KEPT IN SNAPSHOTS. A KEY THAT IS HELD: NOT ON THE E16.")
                  : h.a < e16::kCfgPer * e16::kCfgPages ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE CFG " + String (h.a / e16::kCfgPer + 1) + ", KNOB " + String (h.a % e16::kCfgPer + 1)
@@ -928,6 +937,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aCfgClose, "X", "CLOSES CONFIG." },
                 { aCfgView1, "CONFIG 1", "THE FIRST OF CONFIG'S THREE VIEWS, TWO GRIDS OF FOUR BY FOUR. A LANE: LANE (ITS MODEL AND LAYER, THE KEY, ITS POCKET AND ECHO) AND SOUND. AN EFFECT: ITS OWN CONTROLS, AND TIME (WHAT THE DELAYS AND REVERBS SHARE). EVERY CONTROL HAS ONE CELL, THE SAME ON EVERY PAGE THAT HAS IT; A CELL DRAWN EMPTY IS KEPT FOR A CONTROL THAT IS ON THE PANEL FOR NOW, OR THAT THIS MODEL HAS NOT GOT." },
                 { aCfgView2, "CONFIG 2", "THE SECOND VIEW, A LANE'S ENGINES: WHAT ITS MODEL HAS OF ITS OWN ON THE LEFT, WHAT ITS LAYER'S MODEL HAS ON THE RIGHT. AN EFFECT HAS NONE." },
+                { aLufsReset, "LOUDNESS", "THE WHOLE MIX AS IT LEAVES, IN LUFS: M, OVER THE LAST 0.4 S; S, OVER THE LAST 3 S (THE MASTER PANEL'S FIGURE); I, INTEGRATED, OVER ALL THAT HAS PLAYED SINCE RUN WAS PRESSED. PRESS IT AND I STARTS AGAIN FROM NOW. UNDER THEM: THE HIGHEST PEAK NOW, AND WHAT THE LIMITER AND ITS CLIPPER ARE TAKING OFF." },
                 { aCfgView3, "CONFIG 3", "THE THIRD VIEW: A LANE'S SAMPLE CONTROLS (A CONVOLUTION'S BANDS) ON THE LEFT, AND MOTION ON THE RIGHT, ON EVERY PAGE." },
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
@@ -1354,7 +1364,9 @@ void Screen::drawConfig (G& g, R r)
     }
     else if (cfg.kind == 3) { tag = "M"; name = "DRUM BUS"; }
     else if (cfg.kind == 4) { tag = "M"; name = "COMPRESSOR"; }
+    else if (cfg.kind == Engine::kMixPage) { tag = "M"; name = "MIX"; }
     else { tag = cfg.slot == 0 ? "A" : "B"; name = cfg.slot == 0 ? "DUB" : "SPACE"; }
+    const bool mixPage = cfg.kind == Engine::kMixPage;       // (the mix: the engine's own page, no module's)
     const float wTag = std::max (30.0f, std::ceil (tw (fLegend, tag)) + 10.0f);
     this->tag (g, R (x0, y0, wTag, 26), tag);
     float x = x0 + wTag;
@@ -1367,7 +1379,7 @@ void Screen::drawConfig (G& g, R r)
     text (g, "X", cr, fLbl, col::black);
     hit (cr.expanded (2), hAct, aCfgClose, 0);
 
-    if (cfgStale || ++cfgAge > 12) { cfgPage = p != nullptr ? eng.setupPage (cfg) : Engine::SetupPage(); cfgParams = cfgPage.list; cfgStale = false; cfgAge = 0; }
+    if (cfgStale || ++cfgAge > 12) { cfgPage = p != nullptr || mixPage ? eng.setupPage (cfg) : Engine::SetupPage(); cfgParams = cfgPage.list; cfgStale = false; cfgAge = 0; }
     // the parameter last touched, with its value
     for (auto& sp : cfgParams)
         if (sp.id == cfgName)
@@ -1381,100 +1393,103 @@ void Screen::drawConfig (G& g, R r)
 
     float y = y0 + 34;
     cfgDisplay = {};
-    if (p == nullptr)
+    loudRect = {};
+    if (p == nullptr && ! mixPage)
     {
         text (g, "THIS SLOT IS EMPTY. CLICK ITS NAME ON THE MAIN SCREEN TO PUT AN EFFECT IN IT.", R (x0, y, 544, 40), fLbl, col::black, juce::Justification::centredLeft);
         return;
     }
-    auto& m = p->mod();
-    if (const int dh = juce::jmin (230, m.displayHeight()); dh > 0)
+    if (! mixPage)
     {
-        // the module's own display: waveform, in and out points, cue points. It takes the mouse.
-        cfgDisplay = R (x0, y, 544, (float) dh);
-        if (vis (g, cfgDisplay))
+        auto& m = p->mod();
+        if (const int dh = juce::jmin (230, m.displayHeight()); dh > 0)
         {
-            if (recording) skin.window (g, cfgDisplay, juce::Colours::black);       // (in 3D it is a display like the others: what it shows is light)
-            g.setColour (juce::Colours::black); g.fillRect (cfgDisplay);
-            if (! recording)
+            // the module's own display: waveform, in and out points, cue points. It takes the mouse.
+            cfgDisplay = R (x0, y, 544, (float) dh);
+            if (vis (g, cfgDisplay))
             {
-                const juce::Graphics::ScopedSaveState state (g);
-                g.reduceClipRegion (cfgDisplay.getSmallestIntegerContainer());
-                m.paint (g, cfgDisplay);
+                if (recording) skin.window (g, cfgDisplay, juce::Colours::black);       // (in 3D it is a display like the others: what it shows is light)
+                g.setColour (juce::Colours::black); g.fillRect (cfgDisplay);
+                if (! recording)
+                {
+                    const juce::Graphics::ScopedSaveState state (g);
+                    g.reduceClipRegion (cfgDisplay.getSmallestIntegerContainer());
+                    m.paint (g, cfgDisplay);
+                }
+                if (lit && ! three)
+                {
+                    // set into the plate: the cut shades its upper and left edges
+                    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.6f), 0.0f, cfgDisplay.getY(), juce::Colours::transparentBlack, 0.0f, cfgDisplay.getY() + 7.0f, false));
+                    g.fillRect (cfgDisplay.withHeight (7.0f));
+                    g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.4f), cfgDisplay.getX(), 0.0f, juce::Colours::transparentBlack, cfgDisplay.getX() + 5.0f, 0.0f, false));
+                    g.fillRect (cfgDisplay.withWidth (5.0f));
+                    g.setColour (juce::Colours::white.withAlpha (0.45f));
+                    g.fillRect (R (cfgDisplay.getX(), cfgDisplay.getBottom(), cfgDisplay.getWidth(), 1.0f));
+                }
             }
-            if (lit && ! three)
-            {
-                // set into the plate: the cut shades its upper and left edges
-                g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.6f), 0.0f, cfgDisplay.getY(), juce::Colours::transparentBlack, 0.0f, cfgDisplay.getY() + 7.0f, false));
-                g.fillRect (cfgDisplay.withHeight (7.0f));
-                g.setGradientFill (juce::ColourGradient (juce::Colours::black.withAlpha (0.4f), cfgDisplay.getX(), 0.0f, juce::Colours::transparentBlack, cfgDisplay.getX() + 5.0f, 0.0f, false));
-                g.fillRect (cfgDisplay.withWidth (5.0f));
-                g.setColour (juce::Colours::white.withAlpha (0.45f));
-                g.fillRect (R (cfgDisplay.getX(), cfgDisplay.getBottom(), cfgDisplay.getWidth(), 1.0f));
-            }
+            hit (cfgDisplay, hDisplay);
+            y += (float) dh + 6;
         }
-        hit (cfgDisplay, hDisplay);
-        y += (float) dh + 6;
-    }
-    // what the module says of itself, and where a dropped file goes: onto this panel, for this panel
-    String status = m.statusLine();
-    const bool plain = cfg.kind == 0 && ses.playsSample (cfg.lane);        // (a lane playing a sample: PLAIN is there, beside LOAD)
-    if (cfg.kind == 0 && m.acceptsFiles())
-    {
-        const String f = juce::File (eng.laneFile (cfg.lane)).getFileName();
-        if (f.isNotEmpty() && saysPath != eng.laneFile (cfg.lane)) { saysPath = eng.laneFile (cfg.lane); saysOf = ses.sampleSays (cfg.lane); }
-        // (LOOP on: how many bars the file is taken for and the tempo it was made at, first, where a long name cannot push it off)
-        if (f.isEmpty()) loopText.clear();
-        else if (loopStamp != eng.stateStamp() || loopLane != cfg.lane || loopTempo != eng.tempo() || loopPath != saysPath)      // (asked again only when something has moved)
-        { loopStamp = eng.stateStamp(); loopLane = cfg.lane; loopTempo = eng.tempo(); loopPath = saysPath; loopText = ses.loopSays (cfg.lane, saysOf); }
-        if (loopText.isNotEmpty()) status << (status.isEmpty() ? "" : "   ") << "LOOP " << loopText;
-        status << (status.isEmpty() ? "" : "   ") << (f.isNotEmpty() ? "FILE: " + f : m.fileHint() + " ON THIS LANE");
-        // (what the file is heard to be: its loudest point, which nothing here raises, and the note that plays it at its own pitch)
-        if (f.isNotEmpty() && saysOf.has) status << "   PEAK " << String (saysOf.peakDb, 1) << " DB" << (saysOf.pitched ? "   ROOT " + saysOf.root : String());
-    }
-    else if (cfg.kind != 0 && eng.acceptsFiles (cfg) && status.isEmpty())
-        status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");
-    if (cfgNote.isNotEmpty()) status = cfgNote;
-    const bool takesFile = eng.acceptsFiles (cfg);
-    if (status.isNotEmpty() || takesFile)
-    {
-        status = status.toUpperCase();
-        if (status.isNotEmpty())
+        // what the module says of itself, and where a dropped file goes: onto this panel, for this panel
+        String status = m.statusLine();
+        const bool plain = cfg.kind == 0 && ses.playsSample (cfg.lane);        // (a lane playing a sample: PLAIN is there, beside LOAD)
+        if (cfg.kind == 0 && m.acceptsFiles())
         {
-            const bool resample = takesFile && cfg.kind == 0;         // (RESAMPLE: a lane only)
-            const R sr (x0, y, std::min ((plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f), std::ceil (tw (fNote, status)) + 12.0f), 22);
-            window (g, sr, col::white);
-            g.setColour (tone (col::black)); g.setFont (fNote);
-            g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
+            const String f = juce::File (eng.laneFile (cfg.lane)).getFileName();
+            if (f.isNotEmpty() && saysPath != eng.laneFile (cfg.lane)) { saysPath = eng.laneFile (cfg.lane); saysOf = ses.sampleSays (cfg.lane); }
+            // (LOOP on: how many bars the file is taken for and the tempo it was made at, first, where a long name cannot push it off)
+            if (f.isEmpty()) loopText.clear();
+            else if (loopStamp != eng.stateStamp() || loopLane != cfg.lane || loopTempo != eng.tempo() || loopPath != saysPath)      // (asked again only when something has moved)
+            { loopStamp = eng.stateStamp(); loopLane = cfg.lane; loopTempo = eng.tempo(); loopPath = saysPath; loopText = ses.loopSays (cfg.lane, saysOf); }
+            if (loopText.isNotEmpty()) status << (status.isEmpty() ? "" : "   ") << "LOOP " << loopText;
+            status << (status.isEmpty() ? "" : "   ") << (f.isNotEmpty() ? "FILE: " + f : m.fileHint() + " ON THIS LANE");
+            // (what the file is heard to be: its loudest point, which nothing here raises, and the note that plays it at its own pitch)
+            if (f.isNotEmpty() && saysOf.has) status << "   PEAK " << String (saysOf.peakDb, 1) << " DB" << (saysOf.pitched ? "   ROOT " + saysOf.root : String());
         }
-        if (takesFile)
+        else if (cfg.kind != 0 && eng.acceptsFiles (cfg) && status.isEmpty())
+            status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");
+        if (cfgNote.isNotEmpty()) status = cfgNote;
+        const bool takesFile = eng.acceptsFiles (cfg);
+        if (status.isNotEmpty() || takesFile)
         {
-            // LOAD: the same as dropping a file here, from a list in this panel (so with the window full screen too)
-            const R lr (x0 + 474, y - 1, 70, 24);
-            key (g, lr, loadOpen ? col::green : col::yellow, pressed (aLoad) ? 6.0f : 2.0f, loadOpen);
-            text (g, "LOAD", lr, fLbl, col::black);
-            hit (lr.expanded (2), hAct, aLoad, 0);
-            if (cfg.kind == 0)
+            status = status.toUpperCase();
+            if (status.isNotEmpty())
             {
-                // RESAMPLE: the bars of the snapshot last taken or recalled become this lane's sample
-                const R rr (x0 + (plain ? 302.0f : 378.0f), y - 1, 90, 24);
-                key (g, rr, col::white, pressed (aResample) ? 6.0f : 2.0f);
-                text (g, "RESAMPLE", rr, fLbl, col::black);
-                hit (rr.expanded (2), hAct, aResample, 0);
+                const bool resample = takesFile && cfg.kind == 0;         // (RESAMPLE: a lane only)
+                const R sr (x0, y, std::min ((plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f), std::ceil (tw (fNote, status)) + 12.0f), 22);
+                window (g, sr, col::white);
+                g.setColour (tone (col::black)); g.setFont (fNote);
+                g.drawText (status, sr.reduced (6, 0), juce::Justification::centredLeft, true);
             }
-            if (plain)
+            if (takesFile)
             {
-                // PLAIN: the lane set to play its sample as it was recorded
-                const R pr (x0 + 398, y - 1, 70, 24);
-                key (g, pr, col::white, pressed (aSamplePlain) ? 6.0f : 2.0f);
-                text (g, "PLAIN", pr, fLbl, col::black);
-                hit (pr.expanded (2), hAct, aSamplePlain, 0);
+                // LOAD: the same as dropping a file here, from a list in this panel (so with the window full screen too)
+                const R lr (x0 + 474, y - 1, 70, 24);
+                key (g, lr, loadOpen ? col::green : col::yellow, pressed (aLoad) ? 6.0f : 2.0f, loadOpen);
+                text (g, "LOAD", lr, fLbl, col::black);
+                hit (lr.expanded (2), hAct, aLoad, 0);
+                if (cfg.kind == 0)
+                {
+                    // RESAMPLE: the bars of the snapshot last taken or recalled become this lane's sample
+                    const R rr (x0 + (plain ? 302.0f : 378.0f), y - 1, 90, 24);
+                    key (g, rr, col::white, pressed (aResample) ? 6.0f : 2.0f);
+                    text (g, "RESAMPLE", rr, fLbl, col::black);
+                    hit (rr.expanded (2), hAct, aResample, 0);
+                }
+                if (plain)
+                {
+                    // PLAIN: the lane set to play its sample as it was recorded
+                    const R pr (x0 + 398, y - 1, 70, 24);
+                    key (g, pr, col::white, pressed (aSamplePlain) ? 6.0f : 2.0f);
+                    text (g, "PLAIN", pr, fLbl, col::black);
+                    hit (pr.expanded (2), hAct, aSamplePlain, 0);
+                }
             }
+            y += 28;
         }
-        y += 28;
+        if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
+        loadOpen = false;
     }
-    if (loadOpen && takesFile) { drawLoad (g, R (x0, y, 544, r.getBottom() - 8 - y)); return; }
-    loadOpen = false;
-
     // The controls (the ninety-fourth build): the page is six grids of four by four, each control in a cell that is its
     // own on every page that has it (Engine::setupPage), and two grids are up at a time, side by side: a lane's LANE and
     // SOUND, its MODEL and LAYER, its SAMPLE and MOTION; an effect's EFFECT and TIME, and its BANDS and MOTION. The three
@@ -1486,10 +1501,10 @@ void Screen::drawConfig (G& g, R r)
     // (The E16 holds them in the list's order, twelve to a page of its CONFIG: while it is on one, its twelve are numbered here.)
     // (a lane's EQ is listed last, for the E16: here it is its graph, at the foot of the panel, and not knobs)
     int total = (int) cfgParams.size();
-    const float eqH = cfg.kind == 0 ? 286.0f : 0.0f;
-    if (cfg.kind == 0) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
+    const float eqH = eqPage() ? 286.0f : 0.0f;
+    if (eqPage()) while (total > 0 && cfgParams[(size_t) total - 1].group.startsWith ("EQ ")) --total;
     const float floorY = r.getBottom() - 6 - eqH;
-    if (cfg.kind == 0) drawEq (g, R (x0, floorY + 4, 544, eqH - 4)); else { eqRect = {}; eqGraph = {}; }
+    if (eqPage()) drawEq (g, R (x0, floorY + 4, 544, eqH - 4)); else { eqRect = {}; eqGraph = {}; }
     layoutConfig (total);
     if (cfgSeek >= 0) { if (cfgSeek < total && cfgParams[(size_t) cfgSeek].grid >= 0) cfgView = cfgParams[(size_t) cfgSeek].grid / 2; cfgSeek = -1; }
     cfgView = juce::jlimit (0, kCfgViews - 1, cfgView);
@@ -1539,6 +1554,32 @@ void Screen::drawConfig (G& g, R r)
             g.drawFittedText (cfgPage.note[grid], R (hx + 6, y + headH + 8, 4.0f * cellW - 12, 40).getSmallestIntegerContainer(), juce::Justification::centredLeft, 3, 0.8f);
         }
     }
+    // THE MIX's readout, where its second grid would be: the whole mix's loudness as it leaves, three ways, its peak, and
+    // what the limiter and its clipper are taking off. Pressed, the integrated figure starts again.
+    if (mixPage && view == 0)
+    {
+        const R lr (gridX (1), y + headH + 4, 4.0f * cellW, std::min (150.0f, 2.0f * rowH - 8));
+        loudRect = lr;
+        if (vis (g, lr))
+        {
+            window (g, lr, col::white);
+            auto says = [] (float lu) { return lu < -60.0f ? String ("--") : String (lu, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212); };
+            const float colW = lr.getWidth() / 3.0f;
+            const char* const names[3] = { "M  0.4 S", "S  3 S", "I  SINCE RUN" };
+            const float lus[3] = { eng.lufsM.load(), eng.lufs.load(), eng.lufsI.load() };
+            for (int k = 0; k < 3; ++k)
+            {
+                text (g, names[k], R (lr.getX() + 8 + (float) k * colW, lr.getY() + 6, colW - 10, 14), fNote, col::black, juce::Justification::centredLeft);
+                text (g, says (lus[k]), R (lr.getX() + 8 + (float) k * colW, lr.getY() + 22, colW - 10, 26), fRead, col::black, juce::Justification::centredLeft);
+            }
+            text (g, "LUFS", R (lr.getX() + 8, lr.getY() + 52, 60, 14), fNote, col::black, juce::Justification::centredLeft);
+            auto dbs = [] (float db) { if (std::abs (db) < 0.05f) db = 0.0f; return String (db, 1).replaceCharacter ('-', (juce::juce_wchar) 0x2212); };
+            const float pk = std::max (eng.peakL.load(), eng.peakR.load());
+            text (g, "PEAK " + (pk < -90.0f ? String ("--") : dbs (pk)) + "   LIMIT " + dbs (-eng.limGr.load()) + "   CLIP " + dbs (-eng.clipGr.load()), R (lr.getX() + 8, lr.getY() + 72, lr.getWidth() - 16, 14), fNote, col::black, juce::Justification::centredLeft);
+            text (g, "PRESS: I FROM NOW", R (lr.getX() + 8, lr.getBottom() - 20, lr.getWidth() - 16, 14), fNote, col::black, juce::Justification::centredLeft);
+        }
+        hit (lr, hAct, aLufsReset, 0);
+    }
     // a name on its cell: one line, or two where it is two words and too wide for one, broken at the gap nearest its middle
     // (POCKET / DEPTH, FLUTTER / SPEED, RANDOM / START). The place it breaks at, or -1.
     auto breakOf = [&] (const String& name)
@@ -1583,6 +1624,17 @@ void Screen::drawConfig (G& g, R r)
             if (sp.kind == Kind::Toggle) key (g, kr, sp.value > 0.5f ? col::green : col::putty, 2.0f, sp.value > 0.5f);
             else if (sp.kind == Kind::Hold) key (g, kr, col::yellow, sp.value > 0.5f ? 8.0f : 2.0f);
             else knob (g, cxm, cy + kd * 0.5f, (int) kd, sp.value, sp.kind, sp.choices.size(), col::lit);
+            // a fader's meter: its level as it goes into the mix, after the fader (-60 to +6 dB, as the master's bars)
+            if (mixPage) if (const int k = Engine::mixOfId (sp.id); k >= 0)
+            {
+                const R mr (cxm + kd * 0.5f + 4, cy, 7, kd);
+                const float db = eng.mixDb[(size_t) k].load();
+                const float h = mr.getHeight() * juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 66.0f), zero = mr.getHeight() * 60.0f / 66.0f;
+                // (a display of its own, dark in either look, as the EQ's graph is)
+                g.setColour (Colour (0xff0b0c0b)); g.fillRect (mr);
+                g.setColour (db > 0.0f ? col::red : db > -6.0f ? col::amber : col::green); g.fillRect (R (mr.getX() + 1, mr.getBottom() - h, mr.getWidth() - 2, h));
+                g.setColour (juce::Colours::white.withAlpha (0.55f)); g.fillRect (R (mr.getX(), mr.getBottom() - zero, mr.getWidth(), 1.0f));     // (0 dB)
+            }
             // its name, on two lines where it is two words too wide for one, drawn narrower where a word is wider than its place
             {
                 const int cut = breakOf (shown);
@@ -1638,15 +1690,15 @@ void Screen::layoutConfig (int total)
 void Screen::drawEq (G& g, R r)
 {
     eqRect = r;
-    if (lowView) { drawLow (g, r); return; }
+    if (lowView && cfg.kind == 0) { drawLow (g, r); return; }      // (a lane's: the master's EQ has no low end of its own to show)
     lowGraph = {};
-    const int l = cfg.lane;
+    const int l = eqLane();         // (a lane, or kLanes: the master's, on the whole mix)
     eqSel = juce::jlimit (0, Engine::kEqBands - 1, eqSel);
     const auto sel = eng.eqBand (l, eqSel);
     // its name, and the band chosen in words
-    float x = r.getX() + plate (g, r.getX(), r.getY(), "EQ", fLegend, 8, col::white, col::black) + 4;
+    float x = r.getX() + plate (g, r.getX(), r.getY(), l < kLanes ? "EQ" : "MASTER EQ", fLegend, 8, col::white, col::black) + 4;
     {
-        const int knob = Engine::eqKnobOf (eqSel);
+        const int knob = l < kLanes ? Engine::eqKnobOf (eqSel) : -1;
         String says = "BAND " + String (eqSel + 1) + (knob == 0 ? " (LOW)" : knob == 1 ? " (MID)" : knob == 2 ? " (HIGH)" : "") + "   " + Engine::eqTypeName (sel.type);
         if (sel.type != Engine::eqOff)
         {
@@ -1659,6 +1711,7 @@ void Screen::drawEq (G& g, R r)
         if (std::abs (eqCostShown) >= 0.05f && x + 100 < r.getRight() - 152)
             plate (g, x, r.getY(), (eqCostShown < 0.0f ? "COSTS " : "ADDS ") + String (std::abs (eqCostShown), 1) + " DB", fNote, 6, eqCostShown < -3.0f ? col::amber : col::white, col::black);
     }
+    if (l < kLanes)
     {
         // LOW END: the graph gives its place to the bar's low end, and this lane's pocket over it
         const R kr (r.getRight() - 150, r.getY() + 1, 72, 24);
@@ -2286,7 +2339,14 @@ void Screen::drawMaster (G& g, R r)
     bar (mx + 14, 13, eng.peakR.load());
     flatKey (g, R (mx, mp.getY() + 6, 13, 12), eng.clipL.load() ? col::red : col::white);       // (flags on the display, not keys)
     flatKey (g, R (mx + 14, mp.getY() + 6, 13, 12), eng.clipR.load() ? col::red : col::white);
-    text (g, "MIX", R (mx - 4, bot + 8, 35, 16), fLbl, col::black);
+    // MIX, under the mix's own bars: the key of the mix page (the ninety-fifth build: a fader and a meter a lane, the
+    // master's EQ, the loudness three ways), lit while it is open
+    {
+        const R kr (mx - 5, bot + 7, 37, 18);
+        const bool open = cfgOpen && cfg.kind == Engine::kMixPage;
+        if (vis (g, kr)) { key (g, kr, open ? col::black : col::white, 2.0f, open); textRaw (g, "MIX", kr, fLbl, inkOn (cap (open ? col::black : col::white), open ? col::lit : col::black)); }
+        hit (kr.expanded (1), hConfig, Engine::kMixPage, 0);
+    }
     const float sx = mx + 29;
     g.setColour (col::amber); g.fillRect (R (sx, yOf (0), 3, yOf (-6) - yOf (0)));
     g.setColour (col::red); g.fillRect (R (sx, yOf (6), 3, yOf (0) - yOf (6)));
@@ -4494,6 +4554,7 @@ void Screen::act (int a)
         case aLoadUp:   if (loadDir.getParentDirectory() != loadDir) { loadDir = loadDir.getParentDirectory(); loadScroll = 0; readLoad(); } repaint(); break;
         case aCfgClose: cfgOpen = false; break;
         case aCfgView1: case aCfgView2: case aCfgView3: cfgView = a - aCfgView1; repaint(); break;
+        case aLufsReset: eng.lufsReset(); dirty (cfgRect); break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
         case aPhones:   eng.setPhones (! eng.phones()); repaint(); break;
@@ -4750,17 +4811,17 @@ void Screen::downOn (Hit on, juce::Point<float> p)
         case hLock: drag.v0 = h->r.getX(); drag.g0 = h->r.getWidth(); lockAt (h->a, p.x, h->r); break;      // (and dragged along it: mouseDrag)
         case hPocket:   drag.v0 = ses.value (cx::pk (h->a, 0)); drag.g0 = ses.value (cx::pk (h->a, 1)); break;
         case hEq:
-            if (cfgOpen && cfg.kind == 0 && h->a >= 0 && h->a < Engine::kEqBands)
+            if (cfgOpen && eqPage() && h->a >= 0 && h->a < Engine::kEqBands)
             {
                 eqSel = h->a;
-                const auto band = eng.eqBand (cfg.lane, eqSel);
+                const auto band = eng.eqBand (eqLane(), eqSel);
                 drag.v0 = Engine::eqHzPlace (band.hz);
                 drag.g0 = Engine::eqHasGain (band.type) ? band.db : Engine::eqQPlace (band.q);
                 dirty (eqRect);
             }
             break;
         case hEqBand:
-            if (cfgOpen && cfg.kind == 0) { eqSel = juce::jlimit (0, Engine::kEqBands - 1, h->a); dirty (eqRect); }
+            if (cfgOpen && eqPage()) { eqSel = juce::jlimit (0, Engine::kEqBands - 1, h->a); dirty (eqRect); }
             break;
         case hLow:
             // the low end's graph: this lane's pocket, as it is when the hand comes down
@@ -4778,12 +4839,12 @@ void Screen::downOn (Hit on, juce::Point<float> p)
             dirty (eqRect);
             break;
         case hEqType:
-            if (cfgOpen && cfg.kind == 0)
+            if (cfgOpen && eqPage())
             {
                 // the band chosen is that kind (a band of the kind it already is: nothing)
-                auto band = eng.eqBand (cfg.lane, eqSel);
+                auto band = eng.eqBand (eqLane(), eqSel);
                 band.type = juce::jlimit (0, (int) Engine::kEqTypes - 1, h->a);
-                eng.setEqBand (cfg.lane, eqSel, band);
+                eng.setEqBand (eqLane(), eqSel, band);
                 cfgStale = true; ses.touch(); dirty (eqRect);
             }
             break;
@@ -5039,19 +5100,19 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
         case hEq:
         {
             // a band follows the hand: along the graph its frequency, up and down its gain (a cut's or a notch's width)
-            if (! cfgOpen || cfg.kind != 0 || drag.a < 0 || drag.a >= Engine::kEqBands || eqGraph.getWidth() < 2.0f) break;
+            if (! cfgOpen || ! eqPage() || drag.a < 0 || drag.a >= Engine::kEqBands || eqGraph.getWidth() < 2.0f) break;
             if (! drag.moved && std::max (std::abs (dx), std::abs (dy)) < 3.0f) break;
             drag.moved = true;
-            auto band = eng.eqBand (cfg.lane, drag.a);
+            auto band = eng.eqBand (eqLane(), drag.a);
             band.hz = Engine::eqHzOf (drag.v0 + dx / eqGraph.getWidth());
             if (Engine::eqHasGain (band.type))
             {
                 const float db = drag.g0 + dy * kEqSpan / eqGraph.getHeight();
-                if (const int knob = Engine::eqKnobOf (drag.a); knob >= 0) ses.userSet (cx::lane (cfg.lane, cx::kEqLow + knob), Engine::eqKnobPlace (db));     // (LOW, MID or HIGH: its knob)
+                if (const int knob = cfg.kind == 0 ? Engine::eqKnobOf (drag.a) : -1; knob >= 0) ses.userSet (cx::lane (cfg.lane, cx::kEqLow + knob), Engine::eqKnobPlace (db));     // (LOW, MID or HIGH: its knob)
                 else band.db = db;
             }
             else band.q = Engine::eqQOf (drag.g0 + dy / 220.0f);
-            eng.setEqBand (cfg.lane, drag.a, band);
+            eng.setEqBand (eqLane(), drag.a, band);
             cfgStale = true; ses.touch(); dirty (eqRect);
             break;
         }
@@ -5262,26 +5323,26 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hKnob && ses.lockTeaches (h->a)) { ses.lockForget (h->a); repaint(); }      // (a step at LEARN: it forgets that knob, which is the lane's again)
         else if (h->kind == hKnob) ses.userSet (h->a, eng.control (h->a).def);
         else if (h->kind == hPocket) for (int k = 0; k < 2; ++k) ses.userSet (cx::pk (h->a, k), eng.control (cx::pk (h->a, k)).def);
-        else if (h->kind == hEq && cfgOpen && cfg.kind == 0)
+        else if (h->kind == hEq && cfgOpen && eqPage())
         {
             if (h->a >= 0 && h->a < Engine::kEqBands)
             {
                 // on a band: as it starts (a free one off; LOW, MID and HIGH flat, where they always were)
-                eng.setEqBand (cfg.lane, h->a, Engine::eqDefault (h->a));
-                if (const int knob = Engine::eqKnobOf (h->a); knob >= 0) ses.userSet (cx::lane (cfg.lane, cx::kEqLow + knob), 0.5f);
+                eng.setEqBand (eqLane(), h->a, Engine::eqDefault (h->a));
+                if (const int knob = cfg.kind == 0 ? Engine::eqKnobOf (h->a) : -1; knob >= 0) ses.userSet (cx::lane (cfg.lane, cx::kEqLow + knob), 0.5f);
             }
             else if (eqGraph.getWidth() > 2.0f)
             {
                 // on the graph: the first band that is off is a bell there, as high as the hand
                 const auto at = where (e);
                 for (int b = 0; b < Engine::kEqBands; ++b)
-                    if (eng.eqBand (cfg.lane, b).type == Engine::eqOff)
+                    if (eng.eqBand (eqLane(), b).type == Engine::eqOff)
                     {
                         Engine::EqBand band;
                         band.type = Engine::eqBell; band.q = 1.0f;
                         band.hz = Engine::eqHzOf ((at.x - eqGraph.getX()) / eqGraph.getWidth());
                         band.db = juce::jlimit (-18.0f, 18.0f, kEqTop - kEqSpan * (at.y - eqGraph.getY()) / eqGraph.getHeight());
-                        eng.setEqBand (cfg.lane, b, band);
+                        eng.setEqBand (eqLane(), b, band);
                         eqSel = b;
                         break;
                     }
@@ -5337,15 +5398,15 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
     }
     if (page == pLibrary || page == pMacros || page == pArrange) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
-    if (cfgOpen && cfg.kind == 0 && ! eqRect.isEmpty() && eqRect.contains (where (e)))
+    if (cfgOpen && eqPage() && ! eqRect.isEmpty() && eqRect.contains (where (e)))
     {
         // over the EQ: the width of the band chosen (the one under the hand, if one is)
         if (const auto* at = hitAt (where (e)); at != nullptr && at->kind == hEq && at->a >= 0) eqSel = at->a;
-        auto band = eng.eqBand (cfg.lane, eqSel);
+        auto band = eng.eqBand (eqLane(), eqSel);
         if (band.type != Engine::eqOff && w.deltaY != 0.0f)
         {
             band.q = Engine::eqQOf (Engine::eqQPlace (band.q) + (w.deltaY > 0 ? 0.04f : -0.04f));
-            eng.setEqBand (cfg.lane, eqSel, band);
+            eng.setEqBand (eqLane(), eqSel, band);
             cfgStale = true; ses.touch();
         }
         dirty (eqRect);
@@ -6449,9 +6510,12 @@ void Screen::timerCallback()
     if (page == pMacros && motionSig() != motSig) repaint();       // MOTION turned from a controller: its words, and the marks on the knobs' cards
     // (the lane EQ's graph: POCKETS looks at the lanes while it is up, and it is drawn again as they play)
     {
-        const bool eqUp = page == pMain && cfgOpen && cfg.kind == 0 && ! eqRect.isEmpty();
-        if (eng.pocketsWatched() != (page == pPockets || eqUp)) eng.watchPockets (page == pPockets || eqUp);
-        if (eqUp) { eng.pocketsSeen (pkSeen); dirty (eqRect); }
+        const bool eqShown = page == pMain && cfgOpen && eqPage() && ! eqRect.isEmpty();       // (a lane's, or the master's on the mix page)
+        const bool eqUp = eqShown && cfg.kind == 0;
+        if (eng.pocketsWatched() != (page == pPockets || eqShown)) eng.watchPockets (page == pPockets || eqShown);
+        if (eqShown) { eng.pocketsSeen (pkSeen); dirty (eqRect); }
+        // (the mix page: its meters and its loudness move by themselves)
+        if (page == pMain && cfgOpen && cfg.kind == Engine::kMixPage) dirty (cfgRect);
         // (and what the EQ costs the lane; or, with LOW END up, the bar's low end and the lane's pocket over it)
         const bool lowUp = eqUp && lowView;
         if (eng.eqWatched() != (eqUp && ! lowView ? cfg.lane : -1)) eng.watchEq (eqUp && ! lowView ? cfg.lane : -1);

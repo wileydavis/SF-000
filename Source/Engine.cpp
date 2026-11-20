@@ -300,6 +300,14 @@ Engine::Engine()
             ln.eqType[b] = d.type; ln.eqHz[b] = d.hz; ln.eqGain[b] = 0.0f; ln.eqQ[b] = d.q;
             ln.eqHzNow[b] = d.hz; ln.eqQNow[b] = d.q; ln.eqSet[b] = 99.0f; ln.eqTypeSet[b] = -1;
         }
+    for (int b = 0; b < kEqBands; ++b)
+    {
+        const auto d = eqDefault (b);
+        auto& ln = masterEq;
+        ln.eqType[b] = d.type; ln.eqHz[b] = d.hz; ln.eqGain[b] = 0.0f; ln.eqQ[b] = d.q;
+        ln.eqHzNow[b] = d.hz; ln.eqQNow[b] = d.q; ln.eqSet[b] = 99.0f; ln.eqTypeSet[b] = -1;
+    }
+    for (int k = 0; k < kMixFaders; ++k) { mixPlace[(size_t) k] = kMixUnity; mixNow[k] = mixWas[k] = 1.0f; mixHold[k] = -100.0f; mixDb[(size_t) k] = -100.0f; }
     controls.resize ((size_t) cx::kCount);
     for (auto& c : controls) { c.used = false; c.snapshot = false; }
     auto named = [this] (int i, juce::String id, juce::String label, Kind k, float def, bool snap, bool morph) -> Control&
@@ -1436,6 +1444,7 @@ Pockets::Set Engine::pocketSet (bool shownNow) const
 // ---------------------------------------------------------------------------------------- setup
 SFProcessor* Engine::processorFor (Target t) const
 {
+    if (t.kind == kMixPage) return nullptr;       // (the mix: no instrument's, the engine's own)
     if (t.kind == 0) return lane[(size_t) t.lane].voice.load()->proc.get();
     if (t.kind == 1) { auto* in = lane[(size_t) t.lane].ins[t.slot].load(); return in != nullptr ? in->proc.get() : nullptr; }
     if (t.kind == 3) return busProc.get();
@@ -1459,6 +1468,68 @@ std::vector<std::string> Engine::boundIds (Target t) const
     else if (t.kind == 4) { if (auto* k = masterCompKnob()) add (k, 1); }
     else add ((t.slot == 0 ? returnA() : returnB (spaceWant.load())).cells, kCells);
     return ids;
+}
+
+// An EQ's bands as CONFIG lists them, a row a band: a lane's, or the master's (l: kLanes), which has no knobs on a panel.
+void Engine::eqList (int l, std::vector<SetupParam>& out) const
+{
+    for (int b = 0; b < kEqBands; ++b)
+    {
+        const auto band = eqBand (l, b), d = eqDefault (b);
+        const int knob = l < kLanes ? eqKnobOf (b) : -1;
+        const juce::String group = "EQ " + juce::String (b + 1) + (knob == 0 ? " LOW" : knob == 1 ? " MID" : knob == 2 ? " HIGH" : "");
+        for (int w = 0; w < 4; ++w)
+        {
+            SetupParam sp;
+            sp.id = eqIdOf (b, w); sp.group = group; sp.ownRow = w == 0;
+            if (w == 0)
+            {
+                sp.name = "KIND"; sp.kind = Kind::List;
+                for (int k = 0; k < kEqTypes; ++k) sp.choices.add (eqTypeName (k));
+                sp.value = (float) band.type / (float) (kEqTypes - 1); sp.def = (float) d.type / (float) (kEqTypes - 1); sp.text = eqTypeName (band.type);
+            }
+            else if (w == 1)
+            {
+                sp.name = "FREQ"; sp.kind = Kind::Knob; sp.value = eqHzPlace (band.hz); sp.def = eqHzPlace (d.hz);
+                sp.text = band.hz >= 1000.0f ? juce::String (band.hz / 1000.0f, band.hz >= 10000.0f ? 1 : 2) + " KHZ" : juce::String ((int) std::lround (band.hz)) + " HZ";
+            }
+            else if (w == 2)
+            {
+                // (a knob band's gain is its knob: shown here as the knob stands)
+                sp.name = "GAIN"; sp.kind = Kind::Bipolar;
+                sp.value = knob >= 0 ? target (cx::lane (l, cx::kEqLow + knob)) : eqDbPlace (band.db); sp.def = 0.5f;
+                sp.text = (band.db > 0.0f ? "+" : "") + juce::String (band.db, 1) + " DB";
+            }
+            else { sp.name = "WIDTH"; sp.kind = Kind::Knob; sp.value = eqQPlace (band.q); sp.def = eqQPlace (d.q); sp.text = "Q " + juce::String (band.q, 2); }
+            out.push_back (sp);
+        }
+    }
+}
+
+// ---- the mix (the ninety-fifth build)
+juce::String Engine::mixId (int k)
+{
+    if (k >= 0 && k < kLanes) return "mix_" + juce::String (lanes()[(size_t) k].slug);
+    return k == kMixDub ? "mix_dub" : k == kMixSpace ? "mix_space" : k == kMixBus ? "mix_bus" : juce::String();
+}
+juce::String Engine::mixName (int k)
+{
+    if (k >= 0 && k < kLanes) return lanes()[(size_t) k].name;
+    return k == kMixDub ? "DUB" : k == kMixSpace ? "SPACE" : k == kMixBus ? "DRUM BUS" : juce::String();
+}
+int Engine::mixOfId (const juce::String& id)
+{
+    if (! id.startsWith ("mix_")) return -1;
+    for (int k = 0; k < kMixFaders; ++k) if (id == mixId (k)) return k;
+    return -1;
+}
+juce::String Engine::mixText (float place)
+{
+    const float g = mixGainOf (place);
+    if (g <= 1.0e-5f) return "OFF";
+    float db = 20.0f * std::log10 (g);
+    if (std::abs (db) < 0.05f) db = 0.0f;
+    return (db > 0.0f ? "+" : "") + juce::String (db, 1) + " DB";
 }
 
 std::vector<Engine::SetupParam> Engine::setupParams (Target t) const { return setupPage (t).list; }
@@ -1517,6 +1588,22 @@ Engine::SetupPage Engine::setupPage (Target t) const
 {
     SetupPage page;
     std::vector<SetupParam>& out = page.list;
+    if (t.kind == kMixPage)
+    {
+        // THE MIX: a fader a lane in the lanes' order, a row of the returns and the drum bus under them (one grid, sixteen
+        // cells: an E16's sixteen), and then the master's EQ, which the screen draws as its graph
+        for (int k = 0; k < kMixFaders; ++k)
+        {
+            SetupParam sp;
+            sp.id = mixId (k); sp.name = mixName (k); sp.group = "MIX"; sp.kind = Kind::Knob;
+            sp.value = mixFader (k); sp.def = kMixUnity; sp.text = mixText (sp.value);
+            sp.grid = 0; sp.cell = k < kLanes ? k : 12 + (k - kLanes);
+            out.push_back (sp);
+        }
+        eqList (kLanes, out);
+        page.title[0] = "MIX"; page.title[1] = "LOUDNESS";
+        return page;
+    }
     auto* p = processorFor (t);
     if (p == nullptr) return page;
     if (t.kind == 2 && t.slot == 1)
@@ -1670,38 +1757,7 @@ Engine::SetupPage Engine::setupPage (Target t) const
     boxes ({ "BANDS", "LOW BAND", "MID BAND", "HIGH BAND" }, 2);
     if (! sampleStays) boxes ({ "SAMPLE" }, 2);
     // the lane's EQ, a row a band (the screen draws them as a graph, and the E16 has them as its last pages)
-    if (t.kind == 0)
-        for (int b = 0; b < kEqBands; ++b)
-        {
-            const auto band = eqBand (t.lane, b), d = eqDefault (b);
-            const int knob = eqKnobOf (b);
-            const juce::String group = "EQ " + juce::String (b + 1) + (knob == 0 ? " LOW" : knob == 1 ? " MID" : knob == 2 ? " HIGH" : "");
-            for (int w = 0; w < 4; ++w)
-            {
-                SetupParam sp;
-                sp.id = eqIdOf (b, w); sp.group = group; sp.ownRow = w == 0;
-                if (w == 0)
-                {
-                    sp.name = "KIND"; sp.kind = Kind::List;
-                    for (int k = 0; k < kEqTypes; ++k) sp.choices.add (eqTypeName (k));
-                    sp.value = (float) band.type / (float) (kEqTypes - 1); sp.def = (float) d.type / (float) (kEqTypes - 1); sp.text = eqTypeName (band.type);
-                }
-                else if (w == 1)
-                {
-                    sp.name = "FREQ"; sp.kind = Kind::Knob; sp.value = eqHzPlace (band.hz); sp.def = eqHzPlace (d.hz);
-                    sp.text = band.hz >= 1000.0f ? juce::String (band.hz / 1000.0f, band.hz >= 10000.0f ? 1 : 2) + " KHZ" : juce::String ((int) std::lround (band.hz)) + " HZ";
-                }
-                else if (w == 2)
-                {
-                    // (a knob band's gain is its knob: shown here as the knob stands)
-                    sp.name = "GAIN"; sp.kind = Kind::Bipolar;
-                    sp.value = knob >= 0 ? target (cx::lane (t.lane, cx::kEqLow + knob)) : eqDbPlace (band.db); sp.def = 0.5f;
-                    sp.text = (band.db > 0.0f ? "+" : "") + juce::String (band.db, 1) + " DB";
-                }
-                else { sp.name = "WIDTH"; sp.kind = Kind::Knob; sp.value = eqQPlace (band.q); sp.def = eqQPlace (d.q); sp.text = "Q " + juce::String (band.q, 2); }
-                out.push_back (sp);
-            }
-        }
+    if (t.kind == 0) eqList (t.lane, out);
     // MOTION's TARGET, what it can move: the panel's own knobs first, as the panel has them, then the rest of what this
     // page lists, and nothing else (the ninety-third build: it listed every control the instrument has, another model's
     // with them. Wiley, Nov 19: "the list of motion targets lists targets that aren't even visible control parameters for
@@ -2207,6 +2263,21 @@ bool Engine::laneFollowsKey (int lane) const
 void Engine::setSetup (Target t, const juce::String& id, float v)
 {
     stateMoved();
+    if (t.kind == kMixPage)
+    {
+        // the mix: a fader, or a band of the master's EQ
+        if (const int k = mixOfId (id); k >= 0) { setMixFader (k, v); return; }
+        if (int b = 0, w = 0; eqId (id, b, w))
+        {
+            auto band = eqBand (kLanes, b);
+            if (w == 0) band.type = (int) std::lround (juce::jlimit (0.0f, 1.0f, v) * (float) (kEqTypes - 1));
+            else if (w == 1) band.hz = eqHzOf (v);
+            else if (w == 2) band.db = eqDbOf (v);
+            else band.q = eqQOf (v);
+            setEqBand (kLanes, b, band);
+        }
+        return;
+    }
     if (int b = 0, w = 0; t.kind == 0 && eqId (id, b, w))
     {
         // a band of the lane's EQ (a knob band's gain is its knob's: the session sets that)
@@ -2257,6 +2328,21 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
 Engine::SetupState Engine::getSetup (Target t) const
 {
     SetupState st;
+    if (t.kind == kMixPage)
+    {
+        // the mix: every fader, and the master's EQ where it is not as it starts
+        for (int k = 0; k < kMixFaders; ++k) st.push_back ({ mixId (k), mixFader (k) });
+        if (! eqIsDefault (kLanes))
+            for (int b = 0; b < kEqBands; ++b)
+            {
+                const auto band = eqBand (kLanes, b);
+                st.push_back ({ eqIdOf (b, 0), (float) band.type / (float) (kEqTypes - 1) });
+                st.push_back ({ eqIdOf (b, 1), eqHzPlace (band.hz) });
+                st.push_back ({ eqIdOf (b, 2), eqDbPlace (band.db) });
+                st.push_back ({ eqIdOf (b, 3), eqQPlace (band.q) });
+            }
+        return st;
+    }
     if (auto* p = processorFor (t))
     {
         // SPACE's setup says which reverb it was read from: it is only ever put back on that one
@@ -2326,6 +2412,14 @@ void Engine::applySetupTo (SFProcessor& p, const std::vector<std::string>& bound
 
 void Engine::applySetup (Target t, const SetupState& st)
 {
+    if (t.kind == kMixPage)
+    {
+        // the mix as a set has it: a fader it does not name is as it comes, and so is the master's EQ if it names no band
+        for (int k = 0; k < kMixFaders; ++k) mixPlace[(size_t) k] = kMixUnity;
+        eqReset (kLanes);
+        for (auto& kv : st) setSetup (t, kv.first, kv.second);
+        return;
+    }
     if (auto* p = processorFor (t))
     {
         if (t.kind == 2 && t.slot == 1)
@@ -2695,7 +2789,7 @@ void Engine::eqCoefs (int type, double hz, double db, double q, double sr, doubl
     c[0] = b0 / a0; c[1] = b1 / a0; c[2] = b2 / a0; c[3] = a1 / a0; c[4] = a2 / a0;
 }
 
-void Engine::setEq (Lane& ln, int band, int type, float hz, float db, float q)
+void Engine::setEq (EqStrip& ln, int band, int type, float hz, float db, float q)
 {
     double c[5];
     eqCoefs (type, hz, db, q, sr, c);
@@ -2706,22 +2800,22 @@ void Engine::setEq (Lane& ln, int band, int type, float hz, float db, float q)
 Engine::EqBand Engine::eqBand (int l, int band) const
 {
     EqBand b;
-    if (l < 0 || l >= kLanes || band < 0 || band >= kEqBands) return b;
-    const auto& ln = lane[(size_t) l];
+    if (l < 0 || l > kLanes || band < 0 || band >= kEqBands) return b;           // (kLanes: the master's)
+    const auto& ln = eqOf (l);
     b.type = ln.eqType[band].load(); b.hz = ln.eqHz[band].load(); b.q = ln.eqQ[band].load();
-    const int knob = eqKnobOf (band);
+    const int knob = l < kLanes ? eqKnobOf (band) : -1;         // (the master's has no knobs on a panel: all eight are its own)
     b.db = knob >= 0 ? eqKnobDb (target (cx::lane (l, cx::kEqLow + knob))) : ln.eqGain[band].load();
     return b;
 }
 
 void Engine::setEqBand (int l, int band, EqBand b)
 {
-    if (l < 0 || l >= kLanes || band < 0 || band >= kEqBands) return;
-    auto& ln = lane[(size_t) l];
+    if (l < 0 || l > kLanes || band < 0 || band >= kEqBands) return;
+    auto& ln = eqOf (l);
     ln.eqType[band] = juce::jlimit (0, (int) kEqTypes - 1, b.type);
     ln.eqHz[band] = juce::jlimit (20.0f, 20000.0f, b.hz);
     ln.eqQ[band] = juce::jlimit (0.3f, 12.0f, b.q);
-    if (eqKnobOf (band) < 0) ln.eqGain[band] = juce::jlimit (-18.0f, 18.0f, b.db);
+    if (l >= kLanes || eqKnobOf (band) < 0) ln.eqGain[band] = juce::jlimit (-18.0f, 18.0f, b.db);
     stateMoved();
 }
 
@@ -2730,7 +2824,7 @@ bool Engine::eqIsDefault (int l) const
     for (int b = 0; b < kEqBands; ++b)
     {
         const auto now = eqBand (l, b), d = eqDefault (b);
-        if (now.type != d.type || std::abs (now.hz - d.hz) > 0.01f * d.hz || std::abs (now.q - d.q) > 1.0e-3f || (eqKnobOf (b) < 0 && std::abs (now.db) > 1.0e-3f)) return false;
+        if (now.type != d.type || std::abs (now.hz - d.hz) > 0.01f * d.hz || std::abs (now.q - d.q) > 1.0e-3f || ((l >= kLanes || eqKnobOf (b) < 0) && std::abs (now.db) > 1.0e-3f)) return false;
     }
     return true;
 }
@@ -2760,6 +2854,36 @@ float Engine::eqResponse (int l, float hz, int only) const
 
 // An EQ knob: centre is flat, down cuts to -24 dB, up lifts to +9 dB.
 static float eqDbFor (float v) { return v < 0.5f ? -24.0f * (1.0f - 2.0f * v) : 9.0f * (2.0f * v - 1.0f); }
+
+// An EQ's eight bands brought to what is wanted (audio thread): each band's gain, place and width travel to it, and its
+// filter is made again where any of them has moved. knobLane: the lane whose LOW, MID and HIGH knobs three of the bands'
+// gains are (-1: the master's, which has none). Is any band in?
+bool Engine::eqUpdate (EqStrip& ln, int knobLane, const float* snd)
+{
+    bool eqOn = false;
+    for (int e = 0; e < kEqBands; ++e)
+    {
+        const int knob = knobLane >= 0 ? eqKnobOf (e) : -1, type = ln.eqType[e].load (std::memory_order_relaxed);
+        const float want = knob >= 0 ? eqDbFor (snd[(size_t) cx::lane (knobLane, cx::kEqLow + knob)]) : ln.eqGain[e].load (std::memory_order_relaxed);
+        const float wantHz = ln.eqHz[e].load (std::memory_order_relaxed), wantQ = ln.eqQ[e].load (std::memory_order_relaxed);
+        ln.eqDb[e] += 0.25f * (want - ln.eqDb[e]);
+        if (std::abs (want - ln.eqDb[e]) < 0.02f) ln.eqDb[e] = want;
+        // (a band's place and width travel as its gain does: no step in the sound as it is dragged)
+        if (ln.eqHzNow[e] != wantHz) { ln.eqHzNow[e] = ln.eqHzNow[e] < 1.0f ? wantHz : ln.eqHzNow[e] * std::pow (wantHz / ln.eqHzNow[e], 0.25f); if (std::abs (wantHz - ln.eqHzNow[e]) < 0.001f * wantHz) ln.eqHzNow[e] = wantHz; }
+        if (ln.eqQNow[e] != wantQ) { ln.eqQNow[e] = ln.eqQNow[e] <= 0.0f ? wantQ : ln.eqQNow[e] + 0.25f * (wantQ - ln.eqQNow[e]); if (std::abs (wantQ - ln.eqQNow[e]) < 0.001f) ln.eqQNow[e] = wantQ; }
+        if (type != ln.eqTypeSet[e] || std::abs (ln.eqDb[e] - ln.eqSet[e]) > 0.01f || ln.eqHzNow[e] != ln.eqHzSet[e] || ln.eqQNow[e] != ln.eqQSet[e])
+        {
+            setEq (ln, e, type, ln.eqHzNow[e], ln.eqDb[e], ln.eqQNow[e]);
+            ln.eqTypeSet[e] = type; ln.eqSet[e] = ln.eqDb[e]; ln.eqHzSet[e] = ln.eqHzNow[e]; ln.eqQSet[e] = ln.eqQNow[e];
+        }
+        const bool live = type != eqOff && (! eqHasGain (type) || std::abs (ln.eqDb[e]) > 0.01f || std::abs (want) > 0.01f);
+        if (live && ! ln.eqLive[e]) { ln.eq[e].z1[0] = ln.eq[e].z1[1] = ln.eq[e].z2[0] = ln.eq[e].z2[1] = 0.0f; }
+        ln.eqLive[e] = live;
+        eqOn = eqOn || live;
+    }
+    return eqOn;
+}
+
 
 void Engine::render (juce::AudioBuffer<float>& out)
 {
@@ -3084,27 +3208,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
         profIns[(size_t) l] += since (tp);
         // the lane EQ, after the inserts
-        bool eqOn = false;
-        for (int e = 0; e < kEqBands; ++e)
-        {
-            const int knob = eqKnobOf (e), type = ln.eqType[e].load (std::memory_order_relaxed);
-            const float want = knob >= 0 ? eqDbFor (snd[(size_t) cx::lane (l, cx::kEqLow + knob)]) : ln.eqGain[e].load (std::memory_order_relaxed);
-            const float wantHz = ln.eqHz[e].load (std::memory_order_relaxed), wantQ = ln.eqQ[e].load (std::memory_order_relaxed);
-            ln.eqDb[e] += 0.25f * (want - ln.eqDb[e]);
-            if (std::abs (want - ln.eqDb[e]) < 0.02f) ln.eqDb[e] = want;
-            // (a band's place and width travel as its gain does: no step in the sound as it is dragged)
-            if (ln.eqHzNow[e] != wantHz) { ln.eqHzNow[e] = ln.eqHzNow[e] < 1.0f ? wantHz : ln.eqHzNow[e] * std::pow (wantHz / ln.eqHzNow[e], 0.25f); if (std::abs (wantHz - ln.eqHzNow[e]) < 0.001f * wantHz) ln.eqHzNow[e] = wantHz; }
-            if (ln.eqQNow[e] != wantQ) { ln.eqQNow[e] = ln.eqQNow[e] <= 0.0f ? wantQ : ln.eqQNow[e] + 0.25f * (wantQ - ln.eqQNow[e]); if (std::abs (wantQ - ln.eqQNow[e]) < 0.001f) ln.eqQNow[e] = wantQ; }
-            if (type != ln.eqTypeSet[e] || std::abs (ln.eqDb[e] - ln.eqSet[e]) > 0.01f || ln.eqHzNow[e] != ln.eqHzSet[e] || ln.eqQNow[e] != ln.eqQSet[e])
-            {
-                setEq (ln, e, type, ln.eqHzNow[e], ln.eqDb[e], ln.eqQNow[e]);
-                ln.eqTypeSet[e] = type; ln.eqSet[e] = ln.eqDb[e]; ln.eqHzSet[e] = ln.eqHzNow[e]; ln.eqQSet[e] = ln.eqQNow[e];
-            }
-            const bool live = type != eqOff && (! eqHasGain (type) || std::abs (ln.eqDb[e]) > 0.01f || std::abs (want) > 0.01f);
-            if (live && ! ln.eqLive[e]) { ln.eq[e].z1[0] = ln.eq[e].z1[1] = ln.eq[e].z2[0] = ln.eq[e].z2[1] = 0.0f; }
-            ln.eqLive[e] = live;
-            eqOn = eqOn || live;
-        }
+        const bool eqOn = eqUpdate (ln, l, snd.data());
         const int dly = ln.delay.load();
         // (what the EQ costs, for the lane being watched: its level after against before, over the last seconds)
         const bool costs = eqWatch.load (std::memory_order_relaxed) == l;
@@ -3144,7 +3248,13 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // MUTE and SOLO: a silenced lane still runs, so it comes back in time
         const int so = solo.load();
         const bool heard = snd[(size_t) cx::lane (l, cx::kMute)] < 0.5f && (! anySolo || snd[(size_t) cx::lane (l, cx::kSolo)] > 0.5f) && (so < 0 || so == l);
-        const float lg = heard ? 1.0f : 0.0f;
+        // (and its fader, the ninety-fifth build: as it comes, 1 exactly, and the lane is left as it was, to the bit)
+        {
+            const float want = mixGainOf (mixPlace[(size_t) l].load (std::memory_order_relaxed));
+            mixNow[l] += 0.35f * (want - mixNow[l]);
+            if (std::abs (want - mixNow[l]) < 1.0e-5f) mixNow[l] = want;
+        }
+        const float lg = heard ? mixNow[l] : 0.0f;
         if (so >= 0 && so != l) ln.gainWas = 0.0f;       // a test's solo is in force from the first sample
         if (lg != 1.0f || ln.gainWas != 1.0f) for (int ch = 0; ch < 2; ++ch) b2.applyGainRamp (ch, 0, n, ln.gainWas, lg);
         ln.gainWas = lg;
@@ -3166,6 +3276,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         const float lp = b2.getMagnitude (0, n);
         ln.hold = std::max (juce::Decibels::gainToDecibels (lp, -100.0f), ln.hold - fall);
         laneDb[(size_t) l] = ln.hold;
+        mixDb[(size_t) l] = ln.hold;                // (the mix page's meter: the same, after the fader)
         laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
         {
             // its loudness as it reaches the mix; and, while a lane's low end is being watched, every lane's level under
@@ -3245,6 +3356,16 @@ void Engine::render (juce::AudioBuffer<float>& out)
         if (pan) busProc->panic();
         busProc->processBlock (d2, noMidi);
         if (recMore) rec->also (RecSink::kBusOut, d2.getReadPointer (0), d2.getReadPointer (1), n);
+        // (its fader, as it goes into the mix: what the bus is recorded as doing has it too, so the stems still add up)
+        {
+            const float want = mixGainOf (mixPlace[(size_t) kMixBus].load (std::memory_order_relaxed));
+            mixNow[kMixBus] += 0.35f * (want - mixNow[kMixBus]);
+            if (std::abs (want - mixNow[kMixBus]) < 1.0e-5f) mixNow[kMixBus] = want;
+            if (mixNow[kMixBus] != 1.0f || mixWas[kMixBus] != 1.0f) for (int ch = 0; ch < 2; ++ch) d2.applyGainRamp (ch, 0, n, mixWas[kMixBus], mixNow[kMixBus]);
+            mixWas[kMixBus] = mixNow[kMixBus];
+            mixHold[kMixBus] = std::max (juce::Decibels::gainToDecibels (d2.getMagnitude (0, n), -100.0f), mixHold[kMixBus] - fall);
+            mixDb[(size_t) kMixBus] = mixHold[kMixBus];
+        }
         for (int ch = 0; ch < 2; ++ch) m2.addFrom (ch, 0, d2, ch, 0, n);
         {
             for (int ch = 0; ch < 2; ++ch)
@@ -3276,8 +3397,21 @@ void Engine::render (juce::AudioBuffer<float>& out)
     const bool spaceQuiet = spaceSwap || spaceHold > 0;
     spaceHold = std::max (0, spaceHold - n);
     if (spaceSwap) { spaceNow = spaceNext; space[(size_t) spaceNow]->panic(); spaceHold = (int) (sr * 0.02); }
-    const float rg[2] = { snd[(size_t) cx::kRetMS] < 0.5f && (! anyRetSolo || retSolo[0]) ? 1.0f : 0.0f,
-                          snd[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) && ! spaceQuiet ? 1.0f : 0.0f };
+    // (each return's fader with its mute: as it comes, 1 exactly)
+    for (int k = 0; k < 2; ++k)
+    {
+        const float want = mixGainOf (mixPlace[(size_t) (kMixDub + k)].load (std::memory_order_relaxed));
+        mixNow[kMixDub + k] += 0.35f * (want - mixNow[kMixDub + k]);
+        if (std::abs (want - mixNow[kMixDub + k]) < 1.0e-5f) mixNow[kMixDub + k] = want;
+    }
+    const float rg[2] = { snd[(size_t) cx::kRetMS] < 0.5f && (! anyRetSolo || retSolo[0]) ? mixNow[kMixDub] : 0.0f,
+                          snd[(size_t) cx::kRetMS + 2] < 0.5f && (! anyRetSolo || retSolo[1]) && ! spaceQuiet ? mixNow[kMixSpace] : 0.0f };
+    for (int k = 0; k < 2; ++k)
+    {
+        const float pk = (k == 0 ? a2 : bb2).getMagnitude (0, n) * rg[k];
+        mixHold[kMixDub + k] = std::max (juce::Decibels::gainToDecibels (pk, -100.0f), mixHold[kMixDub + k] - fall);
+        mixDb[(size_t) (kMixDub + k)] = mixHold[kMixDub + k];
+    }
     for (int ch = 0; ch < 2; ++ch)
     {
         m2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, retGainWas[0], rg[0]);
@@ -3301,6 +3435,14 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     float inPk = 0.0f;
     tr = clock();
+    // The master's EQ (the ninety-fifth build): on the whole mix, before GAIN and the master's chain, so TAPE, COMP and
+    // LIMIT are given what it has shaped and the limiter still has the last word. With no band in it does nothing at all.
+    if (eqUpdate (masterEq, -1, snd.data()))
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* x = m2.getWritePointer (ch);
+            for (int e = 0; e < kEqBands; ++e) if (masterEq.eqLive[e]) for (int i = 0; i < n; ++i) x[i] = masterEq.eq[e].tick (x[i], ch);
+        }
     // GAIN: the whole mix, as it goes into the master chain (in the middle, where it starts: untouched)
     {
         const float db = gainDb (snd[(size_t) cx::kGain]);
@@ -3338,6 +3480,11 @@ void Engine::render (juce::AudioBuffer<float>& out)
     }
     peakL = peakHold[0]; peakR = peakHold[1];
     lufs = loud->m.shortTerm;
+    // (the ninety-fifth build: momentary and integrated with it; the integrated figure starts again when RUN is pressed
+    // and when the mix page's readout is)
+    if (lufsResetAsk.exchange (false) || (run && ! lufsRan)) loud->m.resetIntegrated();
+    lufsRan = run;
+    lufsM = loud->m.momentary; lufsI = loud->m.integrated;
     const float outPk = std::max (pk[0], pk[1]);
     const float gr = inPk > 1e-4f && outPk > 1e-5f ? juce::jlimit (-24.0f, 0.0f, juce::Decibels::gainToDecibels (outPk / inPk)) : 0.0f;
     juce::ignoreUnused (gr);

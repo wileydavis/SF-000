@@ -5122,6 +5122,7 @@ var Session::stateVar (bool withChips)
     root->setProperty ("transition", transToVar());
     root->setProperty ("finish", finishPct());
     if (engine.hold()) root->setProperty ("hold", engine.heldDb());          // (the limiter's trim, held: at what. Not there: it follows the set)
+    root->setProperty ("mix", setupToVar (engine.getSetup ({ Engine::kMixPage, 0, 0 })));      // (the mix's faders and the master's EQ: the set's, as the compressor is, and no snapshot's)
     root->setProperty ("masterComp", setupToVar (engine.getSetup ({ 4, 0, 0 })));     // (the master's compressor, but for COMP, which is a control: kept with the set as TAPE, COMP and LIMIT are)
     juce::Array<var> fl;
     for (int l = 0; l < kLanes; ++l) fl.add (refOf (engine.laneFile (l)));
@@ -5417,7 +5418,7 @@ void Session::takeState (const var& root)
 {
     settleHolds();                  // (a lane held between two instruments by a knob: the file says which one it has)
     // What this build does not know is carried, not dropped: the next save writes it back.
-    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "hold", "masterComp", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
+    static const char* const known[] = { "sf000", "wrote", "libraryId", "defs", "base", "baseId", "controls", "activeLane", "files", "space", "insertFiles", "library", "knobs", "recallNotes", "transition", "finish", "hold", "masterComp", "mix", "cueInSet" /* (a switch of the forty-first build, taken out with it: let go of, not carried) */, "samples", "arrangement", "stacks", "module", "stackCue", "knobsAside", "knobsUnseated", "stacksGone", "modules", "moduleAt", "keptKnobs", "arrangements", "arrangementAt" };
     rootMore.clear(); controlsMore.clear(); defsKept.clear();
     for (auto& p : root.getDynamicObject()->getProperties())
     {
@@ -5551,6 +5552,8 @@ void Session::takeState (const var& root)
     finishAt = juce::jlimit (0, 4, (int) std::lround ((double) root.getProperty ("finish", 0) / 25.0));
     finishApply();
     // (the limiter's trim: held at a figure, or following the set, as a set from before it could be held does)
+    // (the mix: its faders and the master's EQ as the file has them; a file from before there was one: every fader as it comes, the EQ flat)
+    { const var mx = root.getProperty ("mix", var()); engine.applySetup ({ Engine::kMixPage, 0, 0 }, mx.isObject() ? setupFromVar (mx) : Engine::SetupState()); }
     // (the master's compressor: as the file has it, and what the file does not name as it opens)
     { auto st = masterCompInit; if (const var mc = root.getProperty ("masterComp", var()); mc.isObject()) for (auto& kv : setupFromVar (mc)) { bool found = false; for (auto& d : st) if (d.first == kv.first) { d.second = kv.second; found = true; } if (! found) st.push_back (kv); } engine.applySetup ({ 4, 0, 0 }, st); }
     if (root.hasProperty ("hold")) engine.setHold (true, juce::jlimit (-12.0f, 12.0f, (float) (double) root.getProperty ("hold", 0.0))); else engine.setHold (false);

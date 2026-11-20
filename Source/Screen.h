@@ -182,6 +182,9 @@ public:
     int testCfgView() const { return cfgViewShown; }
     static bool testIsCfgView (const TestHit& h, int v) { return h.kind == hAct && h.a == aCfgView1 + v; }      // (the key of CONFIG's view v, 0 to 2)
     static bool testIsSetup (const TestHit& h) { return h.kind == hSetup; }
+    static bool testIsConfigOf (const TestHit& h, int kind) { return h.kind == hConfig && h.a == kind; }     // (the key that opens that kind of CONFIG: 5, the mix page)
+    static bool testIsLufsReset (const TestHit& h) { return h.kind == hAct && h.a == aLufsReset; }             // (the mix page's loudness readout)
+    bool testCfgIsOpen() const { return cfgOpen; }
     float testEqTop() const { return eqRect.getY(); }
     const Engine::SetupPage& testCfgPage() const { return cfgPage; }
     // (for the checks: where a control of the open CONFIG stands, as "row.col", or nothing where it is not listed)
@@ -353,7 +356,8 @@ private:
                // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself
                aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete,
                aTrimHold,       // the master's TRIM plate: the limiter's trim learnt and held, or let go
-               aCfgView1, aCfgView2, aCfgView3 };     // the master's TRIM plate: the limiter's trim learnt and held, or let go
+               aCfgView1, aCfgView2, aCfgView3,
+               aLufsReset };    // the mix page's loudness readout: the integrated figure from now     // the master's TRIM plate: the limiter's trim learnt and held, or let go
 
     void timerCallback() override;
     void handleAsyncUpdate() override;
@@ -749,6 +753,9 @@ private:
     static constexpr float kCfgCell = 64.0f;
     struct CfgCell { int row = 0, col = 0, span = 1, view = 0; };
     std::vector<CfgCell> cfgAt;                 // where each of CONFIG's controls stands (layoutConfig)
+    bool eqPage() const { return cfg.kind == 0 || cfg.kind == Engine::kMixPage; }       // a page with an EQ at its foot: a lane's, and the mix's (the master's EQ)
+    int eqLane() const { return cfg.kind == Engine::kMixPage ? kLanes : cfg.lane; }      // whose EQ that is: the lane's, or the master's (kLanes, to Engine's eqBand and the rest)
+    juce::Rectangle<float> loudRect;            // the mix page's loudness readout (pressed: the integrated figure starts again)
     Engine::SetupPage cfgPage;                  // the open page whole: its grids' names and the cells kept for what is away (cfgParams is its list)
     int cfgRows = 0, cfgSeek = -1;              // (cfgSeek: a control whose view is to come up at the next paint)
     void layoutConfig (int total);

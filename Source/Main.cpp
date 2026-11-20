@@ -3273,6 +3273,118 @@ static void levelSilentTest (int& bad)
     check (plain && sf::levelGain (-36.0f) == 0.0f && sf::levelGain (-34.5f) > 0.0f && sf::levelGain (-34.5f) < sf::dbToGain (-34.5f), "from -33 dB up LEVEL is what it was, to the bit; under that it falls away to nothing at the knob's foot");
 }
 
+// THE MIX (the ninety-fifth build). Wiley, Nov 20: "Would it make sense to have a master mixing panel? A knob and meter
+// for each lane post inserts."; "faders not part of the snapshot. and it's like in ableton where an instrument has its own
+// volume knob, but the track has a level."; "i'd add an eq to the master mix is well for any final fine tuning. below the
+// mix page. and a lufs readout". A fader for each lane after its inserts and EQ and before its sends, one for each return
+// and the drum bus, the master's EQ on the whole mix, and the loudness three ways. The set's, and no snapshot's.
+static void mixTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("the mix: faders, the master's EQ, loudness (the ninety-fifth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    const Engine::Target mix { Engine::kMixPage, 0, 0 };
+    const int perSec = 48000 / 256;
+    auto laneOf = [] (const char* slug) { for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == slug) return l; return -1; };
+    const int bass = laneOf ("bass"), hat = laneOf ("chat") >= 0 ? laneOf ("chat") : 1, kick = laneOf ("kick");
+    // a rig with one lane playing (its sends as given), run for `seconds`; `at`: called each block
+    struct Got { double db = -200.0, lane = -70.0, dub = -100.0, bus = -100.0; };
+    auto run = [&] (int lane, float sendA, const std::function<void (Engine&, Session&)>& set, double seconds, double from)
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        for (int q = 0; q < kLanes; ++q) if (q != lane) { Pattern none; e.setPattern (q, none); }
+        ses.userSet (cx::lane (lane, cx::kSendA), sendA); ses.userSet (cx::lane (lane, cx::kSendB), 0.0f);
+        if (set) set (e, ses);
+        juce::AudioBuffer<float> b (2, 256);
+        for (int i = 0; i < 40; ++i) e.render (b);
+        e.setRunning (true);
+        Got g; double acc = 0.0; long n = 0;
+        for (int i = 0; i < (int) (perSec * seconds); ++i)
+        {
+            e.render (b);
+            if (i >= (int) (perSec * from)) { for (int k = 0; k < 256; ++k) { const double x = b.getSample (0, k); acc += x * x; ++n; } g.dub = std::max (g.dub, (double) e.mixDb[(size_t) Engine::kMixDub].load()); g.bus = std::max (g.bus, (double) e.mixDb[(size_t) Engine::kMixBus].load()); }
+        }
+        g.db = 10.0 * std::log10 (acc / (double) std::max (1L, n) + 1.0e-18);
+        g.lane = e.laneLufs[(size_t) lane].load();
+        return g;
+    };
+    auto fader = [&] (int k, float place) { return [=] (Engine& e, Session&) { e.setSetup ({ Engine::kMixPage, 0, 0 }, Engine::mixId (k), place); }; };
+    // 1. a lane's fader: as it comes, right up, half way to as it comes, and at its foot
+    {
+        const auto unity = run (bass, 0.0f, {}, 6.0, 2.0), top = run (bass, 0.0f, fader (bass, 1.0f), 6.0, 2.0), half = run (bass, 0.0f, fader (bass, 0.375f), 6.0, 2.0), foot = run (bass, 0.0f, fader (bass, 0.0f), 6.0, 2.0);
+        check (Engine::mixGainOf (Engine::kMixUnity) == 1.0f && Engine::mixGainOf (0.0f) == 0.0f && std::abs (20.0f * std::log10 (Engine::mixGainOf (1.0f)) - 6.0f) < 0.01f,
+               "a fader as it comes is a gain of 1 exactly, right up +6 dB, at its foot nothing");
+        check (std::abs ((top.lane - unity.lane) - 6.0) < 0.4 && std::abs ((half.lane - unity.lane) + 18.06) < 0.6 && foot.db < -120.0 && unity.db > -60.0,
+               "BASS alone: its fader right up, the lane reaches the mix " + juce::String (top.lane - unity.lane, 1) + " LU louder; half way to where it comes, " + juce::String (half.lane - unity.lane, 1) + " LU; at its foot there is nothing (" + juce::String (juce::roundToInt (foot.db)) + " dB)");
+        // (after the fader: the send goes down with it, so the return has nothing to ring on with)
+        const auto sent = run (bass, 0.8f, {}, 6.0, 2.0), sentOff = run (bass, 0.8f, fader (bass, 0.0f), 6.0, 2.0);
+        check (sent.dub > -60.0 && sentOff.dub < -99.0 && sentOff.db < -120.0, "its send to DUB is after the fader: with the fader down the return is given nothing (DUB's meter " + juce::String (juce::roundToInt (sent.dub)) + " dB, then " + juce::String (juce::roundToInt (sentOff.dub)) + ")");
+    }
+    // 2. the returns' and the drum bus's
+    {
+        const auto wet = run (bass, 0.8f, {}, 6.0, 2.0), dubDown = run (bass, 0.8f, fader (Engine::kMixDub, 0.0f), 6.0, 2.0), dubUp = run (bass, 0.8f, fader (Engine::kMixDub, 1.0f), 6.0, 2.0);
+        const auto drums = run (kick, 0.0f, {}, 6.0, 2.0), busDown = run (kick, 0.0f, fader (Engine::kMixBus, 0.0f), 6.0, 2.0);
+        check (dubDown.dub < -99.0 && std::abs ((dubUp.dub - wet.dub) - 6.0) < 0.5, "DUB's fader: at its foot the return is out of the mix (its meter " + juce::String (juce::roundToInt (dubDown.dub)) + " dB), right up it is " + juce::String (dubUp.dub - wet.dub, 1) + " dB up");
+        check (drums.bus > -60.0 && busDown.bus < -99.0, "the DRUM BUS's fader at its foot: the bus is out of the mix (its meter " + juce::String (juce::roundToInt (drums.bus)) + " dB, then " + juce::String (juce::roundToInt (busDown.bus)) + ")");
+    }
+    // 3. the master's EQ: on the whole mix, and not on a lane's
+    {
+        auto cut = [] (Engine& e, Session&) { Engine::EqBand band; band.type = Engine::eqHighCut; band.hz = 200.0f; band.q = 0.7071f; e.setEqBand (kLanes, 1, band); };
+        const auto flat = run (hat, 0.0f, {}, 5.0, 1.0), dull = run (hat, 0.0f, cut, 5.0, 1.0);
+        Engine e; e.prepare (48000.0, 256);
+        Engine::EqBand bell; bell.type = Engine::eqBell; bell.hz = 1000.0f; bell.db = 6.0f; bell.q = 1.0f;
+        e.setEqBand (kLanes, 2, bell);
+        const bool own = std::abs (e.eqResponse (kLanes, 1000.0f) - 6.0f) < 0.05f && std::abs (e.eqResponse (0, 1000.0f)) < 1.0e-4f && e.eqIsDefault (0) && ! e.eqIsDefault (kLanes);
+        e.eqReset (kLanes);
+        check (own && e.eqIsDefault (kLanes) && flat.db - dull.db > 12.0, "the master's EQ: a bell on it is on it and on no lane; a high cut at 200 Hz takes " + juce::String (flat.db - dull.db, 1) + " dB off a hat alone in the mix; reset, it is flat");
+    }
+    // 4. the set's, and no snapshot's
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, 256);
+        const auto a = ses.take();
+        e.setSetup (mix, Engine::mixId (bass), 0.4f); e.setSetup (mix, Engine::mixId (Engine::kMixSpace), 0.9f);
+        Engine::EqBand band; band.type = Engine::eqBell; band.hz = 3000.0f; band.db = -4.0f; band.q = 1.5f; e.setEqBand (kLanes, 4, band);
+        for (int i = 0; i < 20; ++i) e.render (b);
+        ses.recall (a);
+        for (int i = 0; i < 60; ++i) e.render (b);
+        const bool stays = std::abs (e.mixFader (bass) - 0.4f) < 1.0e-6f && std::abs (e.mixFader (Engine::kMixSpace) - 0.9f) < 1.0e-6f && std::abs (e.eqBand (kLanes, 4).db + 4.0f) < 1.0e-4f;
+        const juce::var kept = ses.stateVar();
+        Engine e2; e2.prepare (48000.0, 256);
+        Session s2 (e2, false);
+        s2.takeState (kept);
+        const bool read = std::abs (e2.mixFader (bass) - 0.4f) < 1.0e-6f && std::abs (e2.mixFader (Engine::kMixSpace) - 0.9f) < 1.0e-6f && std::abs (e2.mixFader (kick) - Engine::kMixUnity) < 1.0e-6f
+                       && e2.eqBand (kLanes, 4).type == Engine::eqBell && std::abs (e2.eqBand (kLanes, 4).hz - 3000.0f) < 1.0f && std::abs (e2.eqBand (kLanes, 4).db + 4.0f) < 0.01f;
+        kept.getDynamicObject()->removeProperty ("mix");
+        s2.takeState (kept);
+        const bool fresh = std::abs (e2.mixFader (bass) - Engine::kMixUnity) < 1.0e-6f && e2.eqIsDefault (kLanes);
+        check (stays && read && fresh, "a snapshot recalled leaves the faders and the master's EQ where they are; the set is written with them and read; a set from before there was a mix opens with every fader as it comes and the EQ flat");
+    }
+    // 5. CONFIG's page of it, and the loudness
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        const auto page = e.setupPage (mix);
+        int faders = 0, eq = 0; bool cells = true; std::set<int> taken;
+        for (auto& sp : page.list) { if (sp.group.startsWith ("EQ ")) { ++eq; continue; } ++faders; cells = cells && sp.grid == 0 && sp.cell >= 0 && sp.cell < 16 && taken.insert (sp.cell).second && sp.kind == Kind::Knob && sp.text == "0.0 DB"; }
+        e.setSetup (mix, "mix_pad", 0.0f);
+        juce::String pad; for (auto& sp : e.setupParams (mix)) if (sp.id == "mix_pad") pad = sp.text;
+        check (faders == Engine::kMixFaders && eq == Engine::kEqBands * 4 && cells && pad == "OFF" && e.processorFor (mix) == nullptr, "its CONFIG page lists " + juce::String (faders) + " faders, each in a cell of one grid and at 0.0 DB as it comes (OFF at its foot), then the master EQ's eight bands");
+        juce::AudioBuffer<float> b (2, 256);
+        e.setRunning (true);
+        for (int i = 0; i < perSec * 8; ++i) e.render (b);
+        const float m = e.lufsM.load(), s = e.lufs.load(), in = e.lufsI.load();
+        e.lufsReset(); e.render (b);
+        const float after = e.lufsI.load();
+        for (int i = 0; i < perSec * 4; ++i) e.render (b);
+        const float again = e.lufsI.load();
+        check (m > -40.0f && m < 0.0f && std::abs (m - s) < 6.0f && std::abs (in - s) < 6.0f && after < -60.0f && std::abs (again - s) < 6.0f,
+               "the rig running: momentary " + juce::String (m, 1) + ", short-term " + juce::String (s, 1) + " and integrated " + juce::String (in, 1) + " LUFS; asked, the integrated figure starts again (" + juce::String (juce::roundToInt (after)) + ") and comes back (" + juce::String (again, 1) + ")");
+    }
+}
+
 // (the ninety-second build) LAYER and LAYER MODEL are heard as they are turned, on a note that is already sounding (a pad's
 // notes are long: a layer used to be started only with its note, at the LAYER there was then).
 static void layerLiveTest (int& bad)
@@ -4694,7 +4806,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') mixTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -7138,6 +7250,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     motionTargetsTest (bad);
     loneStepTest (bad);
     levelSilentTest (bad);
+    mixTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -8416,6 +8529,7 @@ static bool configStays (juce::String& says)
         }
         sweep ({ 3, 0, 0 }, "the DRUM BUS");
         sweep ({ 4, 0, 0 }, "the master's COMPRESSOR");
+        sweep ({ Engine::kMixPage, 0, 0 }, "the MIX");
         says = "CONFIG, on " + juce::String (panels) + " panels (every lane on every model, every insert, the returns, the drum bus, the master's compressor) and " + juce::String (turned)
                 + " settings of them (every layer model under every model; every switch and menu turned through all it has): every control is in a cell of a four by four grid, no two in one"
                 + (clash > 0 ? " (FAILS " + juce::String (clash) + " times, first: " + firstClash + ")" : juce::String())
@@ -9178,6 +9292,42 @@ static int uiTest()
         audio (4); sc.testCfgScroll (0); sc.hideConfig(); draw(); wav.deleteFile();
         if (! (first && second && third && strip && kept && follows)) std::printf ("        (first %d second %d third %d strip %d kept %d follows %d; %d of %d, %d of %d, %d of %d)\n", first, second, third, strip, kept, follows, v0.n, inGrids (t, 0), v1.n, inGrids (t, 1), v2.n, inGrids (t, 2));
         check (first && second && third && strip && kept && follows, "CONFIG's three views: the keys 1 2 3 bring each up, and what can be turned is that view's two grids and no other's; every control is above the EQ, with a sample's strip on the display too; the view is kept on an effect's page (MOTION the right of the third there as well, and no key for a second view); the E16 on a page of CONFIG brings up the view its first knob is on");
+    }
+    // 2a4b. (the ninety-fifth build) THE MIX. The key MIX, under the mix's bars on the master's display, opens its page: a
+    // fader a lane, one for each return and the drum bus; a fader dragged moves that lane's fader and no knob of the lane;
+    // the loudness readout pressed starts the integrated figure again; and the EQ at its foot is the master's: a double
+    // click on its graph puts a band on the master's EQ and on no lane's. MIX again closes it.
+    {
+        sc.setPage (Screen::pMain); sc.hideConfig(); sc.testCfgScroll (0); draw();
+        auto mixKey = [&] { for (auto& h : sc.testHits()) if (Screen::testIsConfigOf (h, Engine::kMixPage)) return h.r.getCentre(); return juce::Point<float>(); };
+        const bool keyThere = mixKey() != juce::Point<float>();
+        click (mixKey()); sc.testTick(); draw();
+        const Engine::Target mx { Engine::kMixPage, 0, 0 };
+        const auto list = e.setupParams (mx);
+        int faders = 0; juce::Rectangle<float> padKnob; bool above = true;
+        for (auto& h : sc.testHits())
+            if (Screen::testIsSetup (h) && h.a >= 0 && h.a < (int) list.size() && Engine::mixOfId (list[(size_t) h.a].id) >= 0)
+            { ++faders; if (list[(size_t) h.a].id == "mix_pad") padKnob = h.r; above = above && h.r.getBottom() <= sc.testEqTop() + 0.5f; }
+        const bool opened = ses.cfgOpen && ses.cfg.kind == Engine::kMixPage && faders == Engine::kMixFaders && above && ! padKnob.isEmpty();
+        // a fader dragged down: the mix's, and the lane's own LEVEL is where it was
+        int pad = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+        int padLevel = -1; for (int k = 0; k < kLaneKnobs; ++k) if (e.control (cx::lane (pad, k)).label == "LEVEL") padLevel = cx::lane (pad, k);
+        const float levelWas = e.target (padLevel);
+        dragBy (padKnob.getCentre(), 0.0f, 60.0f); draw();
+        const bool faded = e.mixFader (pad) < Engine::kMixUnity - 0.05f && e.target (padLevel) == levelWas;
+        // the master's EQ: a double click on the graph is a band of it
+        juce::Point<float> graph; for (auto& h : sc.testHits()) if (Screen::testIsEqGraph (h)) graph = h.r.getCentre();
+        const bool flatWas = e.eqIsDefault (kLanes);
+        { const auto at = graph.translated (40.0f, -30.0f); sc.mouseDoubleClick (ev (at, at, false)); } draw();
+        bool lanesFlat = true; for (int l = 0; l < kLanes; ++l) lanesFlat = lanesFlat && e.eqIsDefault (l);
+        const bool masterEq = graph != juce::Point<float>() && flatWas && ! e.eqIsDefault (kLanes) && lanesFlat;
+        // the loudness readout
+        bool loud = false; for (auto& h : sc.testHits()) if (Screen::testIsLufsReset (h)) loud = true;
+        click (mixKey()); sc.testTick(); draw();
+        const bool closed = ! ses.cfgOpen;
+        e.eqReset (kLanes); e.setSetup (mx, "mix_pad", Engine::kMixUnity);
+        if (! (keyThere && opened && faded && masterEq && loud && closed)) std::printf ("        (key %d opened %d [%d faders] faded %d masterEq %d loud %d closed %d)\n", keyThere, opened, faders, faded, masterEq, loud, closed);
+        check (keyThere && opened && faded && masterEq && loud && closed, "the MIX key on the master's display opens the mix page: fourteen faders, all above the master's EQ; a fader dragged moves the mix and not the lane's LEVEL; a double click on the EQ's graph is a band of the master's EQ and of no lane's; the loudness readout is there to press; MIX again closes it");
     }
     // 2a5. (the ninety-first build) An insert slot's name: the list of what the slot can be, up in place of its eight knobs,
     // every key of it on the slot's own plate; a key makes the slot that effect and puts the list away; the name again does too.
@@ -12468,6 +12618,7 @@ static int shot (const juce::StringArray& args)
         sc.showConfig ({ 1, ses.activeLane, 0 });
     }
     else if (cfg == "mastercomp") { ses.userSet (cx::kMaster + 1, 0.6f); sc.showConfig ({ 4, 0, 0 }); }
+    else if (cfg == "mix") sc.showConfig ({ Engine::kMixPage, 0, 0 });           // (the mix page: the faders, the loudness, the master's EQ)
     else if (cfg == "bands")
     {
         // a convolution in the active lane's first slot, with BANDS lit: the low and the top from place 2
@@ -17046,6 +17197,54 @@ public:
                 }
             }
             std::printf ("\n");
+            wav.deleteFile(); std::fflush (stdout);
+            quit(); return;
+        }
+        if (args.contains ("--holdprobe"))
+        {
+            // (--holdprobe RELEASE [GATE]: PAD on a looped sample of three seconds, PLAY held, DECAY right up, its one step's
+            // gate GATE steps (16 if none: struck again every bar), RELEASE as given (0 to 1). The level every 50 ms across
+            // two bars: how deep the dip is where one note ends and the next begins.)
+            using namespace sf0;
+            const int at = args.indexOf ("--holdprobe");
+            const float release = at + 1 < args.size() ? args[at + 1].getFloatValue() : 0.5f;
+            const float gate = at + 2 < args.size() && ! args[at + 2].startsWith ("--") ? args[at + 2].getFloatValue() : 16.0f;
+            const juce::File wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-holdprobe.wav");
+            {
+                juce::AudioBuffer<float> b (2, 48000 * 3);
+                for (int i = 0; i < b.getNumSamples(); ++i) { const float x = 0.3f * (std::sin ((float) i * 0.021f) + 0.5f * std::sin ((float) i * 0.0317f)); b.setSample (0, i, x); b.setSample (1, i, x); }
+                wav.deleteFile();
+                if (auto out = wav.createOutputStream())
+                    if (auto* w = juce::WavAudioFormat().createWriterFor (out.release(), 48000.0, 2, 16, {}, 0)) { std::unique_ptr<juce::AudioFormatWriter> own (w); own->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+            }
+            Engine e; e.prepare (48000.0, 256);
+            Session ses (e, false);
+            int pad = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+            const Engine::Target t { 0, pad, 0 };
+            for (int l = 0; l < kLanes; ++l) if (l != pad) { Pattern none; e.setPattern (l, none); }
+            e.loadFile (pad, wav);
+            for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int m = sp.choices.indexOf ("SAMPLE"); m >= 0) ses.setupByHand (t, "model", (float) m / (float) std::max (1, sp.choices.size() - 1));
+            ses.setupByHand (t, "smp_loop", 1.0f);
+            ses.setupByHand (t, "release", release);
+            for (int k = 0; k < kLaneKnobs; ++k) if (e.control (cx::lane (pad, k)).label == "DECAY") ses.userSet (cx::lane (pad, k), 1.0f);
+            ses.userSet (cx::lane (pad, cx::kSendA), 0.0f); ses.userSet (cx::lane (pad, cx::kSendB), 0.0f);
+            { Pattern p = ses.pattern (pad); for (auto& st : p.steps) if (st.on) st.gate = gate; ses.setPattern (pad, p); }
+            juce::AudioBuffer<float> b (2, 256);
+            for (int i = 0; i < 40; ++i) e.render (b);
+            e.setRunning (true);
+            const double barSamples = 4.0 * 60.0 / e.tempo() * 48000.0;
+            std::vector<float> out;
+            while ((double) out.size() < barSamples * 5.0) { e.render (b); for (int k = 0; k < 256; ++k) out.push_back (b.getSample (0, k)); }
+            double lo = 0.0, hi = -200.0;
+            std::printf ("RELEASE %.2f, the step's gate %.2f: every 50 ms over bars 3 and 4:", (double) release, (double) gate);
+            for (double q = barSamples * 2.0; q + 2400.0 <= barSamples * 4.0; q += 2400.0)
+            {
+                double a = 0.0; for (int i = 0; i < 2400; ++i) a += (double) out[(size_t) q + (size_t) i] * out[(size_t) q + (size_t) i];
+                const double db = 10.0 * std::log10 (a / 2400.0 + 1.0e-18);
+                lo = std::min (lo, db); hi = std::max (hi, db);
+                std::printf (" %.0f", db);
+            }
+            std::printf ("\n  loudest %.1f dB, quietest %.1f dB: a dip of %.1f dB\n", hi, lo, hi - lo);
             wav.deleteFile(); std::fflush (stdout);
             quit(); return;
         }
