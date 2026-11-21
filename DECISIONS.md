@@ -5928,6 +5928,54 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      built, offered:* the look's own brightness in SETUP, so that the screen's need not be
      turned down for it.
 
+## Three engines for a lifetime: KICK FORGE, SAMPLE, SYNTH (Nov 20, 21:49): a design, nothing built
+
+771. **You**, Nov 20, 21:49: "I want sf-000 to become my lifetime instrument. The goal is to reach a
+     state where nothing changes and I grow in skill using it over many years. as such, it needs
+     to contain within it powerful tools for building all kinds of sounds.  I feel like fewer
+     but much more poweful module engines could streamline the isntrument while also making it
+     more long-lived. I love what the kick forge is becoming. my favorite so far. And I think
+     having a sampler gaurantees future relevance because I can make sounds with anything and
+     play them. And I think an easy to sue but powerful synthesizer capable of making everything
+     from fat basslines, to acid, to leads and pertcussives would be good.  So we have three
+     engines: Kick Forge, Sample, and Synth. How would you design each of these to be han ds
+     down, the best of their kind? The goal is huge breadth of sound design possibilities, fast
+     performative workflows, and stunning sound quality, capable of producing everything from
+     ambient to dub techno,  hard techno, edm."
+     **Answered with a design; nothing built, and nothing to be until you say which of it.**
+     *Mine, all of it:*
+     - **The pattern is the Forge's**, for all three: a few parts tied to each other, a knob
+       that travels through landmark sounds with no step, the lane's twelve knobs working from
+       where it stands. What is a list of models today (8 kicks, 17 drums, about 25 synth
+       models, most of them one voice with other settings) becomes a place on a knob or a
+       saved patch. One architecture an engine means any two of its sounds have a way between
+       them (snapshots), and step locks and MOTION reach all of it.
+     - **KICK FORGE:** IMPACT, BODY, GROUND and CHARACTER kept. CHARACTER given more landmarks
+       (four to about seven) to take in the 909, a long 808, industrial and hard kicks, voiced
+       by measuring against today's models, which then go; the two circuit models would not be
+       matched to the sample, so their hits are rendered into the library first. Played by
+       pitch with GLIDE (kick-bass, 808 slides, toms, zaps, drops). IMPACT's place in the file
+       held by a step. The clipper oversampled. RUMBLE stays its own lane, fed by it.
+     - **SAMPLE:** one file read four ways (PLAY, SLICE, GRAIN, TABLE), which today are
+       SAMPLE, GRANULAR, WAVETABLE and the drum lanes' own sampler; POSITION and SIZE mean the
+       same in each. RESAMPLE as the centre of it. A file at its own pitch with the knobs at
+       rest comes back as it went in (the top octave's 1.3 dB, 765, mended); band-limited
+       sinc when pitched. A file as a kit of sixteen slices: where hats and claps come from.
+     - **SYNTH:** one voice and no models. Two oscillators of continuous shape with sync, FM
+       between them and unison; a sub; noise that runs from white to a metallic cluster. One
+       filter whose CHARACTER passes through clean, ladder, the 303's, an MS-20's and a tuned
+       resonator (where PERC's physical model goes). Two fast envelopes, one with bursts;
+       accent and slide on any sound; chords, drift. Today's models become patches.
+     - **Shared:** the same twelve places on every engine, any engine on any lane, the filter,
+       drive and envelopes one piece of code in SYNTH and SAMPLE, and a render of each engine
+       that must come out the same in every later build.
+     - **Order:** SAMPLE, then SYNTH, then the Forge; a model goes only when what replaces it
+       is measured to cover it.
+     **Asked of you:** whether the drum models (the 909's hats, CLAP, PERC's physical model) go
+     in favour of SAMPLE and SYNTH. **Said plainly:** whether any of it is the best of its kind
+     is for ears; I can measure and cannot listen. And the app under the instrument will need
+     building again as macOS moves, though the instrument need not change.
+
 ## Not verified
 
 - **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
