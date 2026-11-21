@@ -3,6 +3,7 @@
 // sources, drive inside the oversampled path) and are decimated by a halfband filter; RUMBLE's
 // GRIT runs 2x oversampled. Sample models read with 4-point Hermite interpolation.
 #include "Kit.h"
+#include "SampleEngine.h"
 #include "../core/BandLimited.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
@@ -181,7 +182,7 @@ public:
         p.push_back (pct ("fg_gwidth", "GROUND WIDTH", 0.0f).slow().engineGroup());
         p = withCuts (std::move (p));        // (SF-000) the slice markers
         jassert ((int) p.size() == SCUTLAST + 1);
-        return p;
+        return smp::with (std::move (p));    // (SF-000, the hundredth build) SAMPLE's own, last
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP A SAMPLE: FOR SAMPLE, OR FORGE'S IMPACT"; }
@@ -198,6 +199,8 @@ public:
         decB.set (HalfbandDesign::forStage (rate, 0));
         decS.set (HalfbandDesign::forStage (rate, 0)); decSB.set (HalfbandDesign::forStage (rate, 0));      // (SF-000)
         split.prepare (rate);
+        eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
+        eng.prepare (rate, mb);
         ground.prepare (osr);               // (SF-000)
         out.prepare (rate, mb, ROLE_KICK, "KICK", false);
         events.reserve (2048);
@@ -206,6 +209,7 @@ public:
     void reset() override
     {
         echoes.reset();
+        eng.reset();            // (SF-000, the hundredth build)
         for (auto& v : voices) v.active = false;
         dec.reset();
         decB.reset();
@@ -359,6 +363,23 @@ public:
         float level() const { return active ? vel * std::exp (-(float) t / std::max (0.01f, decay)) : 0.0f; }
     };
 
+    // (SF-000, the hundredth build) SAMPLE's hit, told to the bus as a kick's is (RUMBLE and the pockets follow it): its pitch
+    // the file's (as TUNE moves it), its length DECAY's on it or its own, at most.
+    void publishSample (Ctx& c, float vel, int offset, const SampleData* s)
+    {
+        if (c.bus == nullptr || c.inCut (c.ppqAt (offset))) return;
+        float hp, lp;
+        DJFilter::corners (c.v (FILT), hp, lp);
+        const int tuneAt = eng.ids.tune;
+        const float rate = semis (tuneAt >= 0 ? c.v (tuneAt) : 0.0f);
+        float f1 = 50.0f, dec = 0.3f;
+        if (s != nullptr)
+        {
+            f1 = s->rootHz > 20 && s->rootHz < 200 ? s->rootHz * rate : 50.0f;
+            dec = std::max (0.02f, std::min (s->decaySec * 0.4f, sampleGateSeconds (c.v (DECAY), (float) (s->length() / s->sr) / rate, 0)));
+        }
+        c.bus->publishKick ({ c.ppqAt (offset), std::min (1.0f, vel), f1 * 2.0f, f1, 0.012f, std::min (dec, lp < 200.0f ? 0.05f : dec), hp, lp });
+    }
     // Fade every ringing voice over 3 ms (called once per hit, before the main and the layer voice start).
     void fadeRinging()
     {
@@ -851,7 +872,8 @@ public:
         // (SF-000) a stereo sample (MODEL or the layer at SAMPLE, or KICK FORGE's impact from a file): its left less its
         // right goes beside the kick through halfbands and the split of its own, and is put back at the end. With none,
         // and none still ringing, the kick is one channel exactly as it was.
-        auto reads = [] (int m) { return m == kKickSample || m == kKickForge; };
+        auto reads = [] (int m) { return m == kKickForge; };          // (the hundredth build: SAMPLE is the engine's, in stereo of its own)
+        eng.begin (c, smp, c.v (DECAY), false);
         const bool forgeSide = (model == kKickForge || (layer > 0.01f && layerModel == kKickForge)) && (c.v (FGIWIDTH) > 0.5f || c.v (FGGWIDTH) > 0.0f);     // (the ninety-ninth build: WIDTH made or kept)
         const bool wide = (smp != nullptr && smp->wide && (reads (model) || (layer > 0.01f && reads (layerModel)))) || sideLive > 0 || forgeSide;
         if (wide && ! wasWide) { decS.reset(); decSB.reset(); split.widen(); }
@@ -874,8 +896,14 @@ public:
                 if (ev.gen == 0 || ev.gain >= 0.5f) fadeRinging();
                 // Main and layer start together and are largely in phase: gains sum to 1, so the
                 // layered kick never peaks above the single one.
-                trigger (c, model, vel, ev.gen, ev.note, ev.gain / (1.0f + layer), true, i, smp, ev.gain);
-                if (layer > 0.01f) trigger (c, layerModel, vel, ev.gen, ev.note, ev.gain * layer / (1.0f + layer), false, i, smp, ev.gain);
+                // (SF-000, the hundredth build) SAMPLE, the model or the layer: the engine every lane has plays it
+                if (model == kKickSample) { eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain / (1.0f + layer), ev.gen, 0); publishSample (c, vel * ev.gain, i, smp); }
+                else trigger (c, model, vel, ev.gen, ev.note, ev.gain / (1.0f + layer), true, i, smp, ev.gain);
+                if (layer > 0.01f)
+                {
+                    if (layerModel == kKickSample) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain * layer / (1.0f + layer), ev.gen, 1);
+                    else trigger (c, layerModel, vel, ev.gen, ev.note, ev.gain * layer / (1.0f + layer), false, i, smp, ev.gain);
+                }
                 lastHit = 1.0f;
             }
             // MODEL's voices and the layer's sum apart, each through its own halfband, then split
@@ -905,12 +933,17 @@ public:
             L[i] = y; R[i] = y;
             hist.push (std::fabs (y));
         }
+        if (model == kKickSample || layerModel == kKickSample || eng.sounding()) eng.render (c, L, R, c.n);
         out.process (c, io, FILT, RES, 0.0f, 0.0f, c.b (ALLOCON), LEVEL);
     }
     // OUTPUT; under it, with a sample loaded, the sample (its START and END to drag).
-    int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    // (SF-000, the hundredth build) with SAMPLE the model or the layer, SAMPLE's display
+    bool engShown() const { return getParam && ((int) std::lround (getParam (MODEL)) == kKickSample || (int) std::lround (getParam (LAYERMODEL)) == kKickSample); }
+    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         auto s = sample.get();
         const auto st = SampleStrip::frameIn (r, kOwn);
         if (s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART, SCUTS);
@@ -931,15 +964,18 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 private:
+    SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
     static constexpr int kOwn = 70;     // OUTPUT
     SampleStrip strip;
     struct DecimHist { std::atomic<float> v[512] {}; int w = 0, k = 0; float acc = 0; void push (float x) { acc = std::max (acc, x); if (++k >= 512) { v[w].store (std::min (1.0f, acc)); w = (w + 1) % 512; k = 0; acc = 0; } } };
@@ -1001,7 +1037,7 @@ public:
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").next().prim(),
+        return smp::with (withCuts (withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").next().prim(),
                  pct ("decay", "DECAY", 0.5f).next().prim().dir (1),
                  pct ("tone", "TONE", 0.5f).next().prim(),
                  pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
@@ -1016,7 +1052,7 @@ public:
                  toggle ("choke", "CHOKE", true),
                  pct ("spread", "SPREAD", 0.3f).slow(),
                  pct ("res", "FILTER RES", 0.1f),
-                 toggle ("alloc", "ALLOC", true).noPreset().forget() })))));
+                 toggle ("alloc", "ALLOC", true).noPreset().forget() }))))));       // (SF-000, the hundredth build) SAMPLE's own, last
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL: SAMPLE)"; }
@@ -1031,12 +1067,15 @@ public:
         for (auto& d : dec) d.set (HalfbandDesign::forStage (rate, 0));
         out.prepare (rate, mb, ROLE_PERC, "PERC", false);
         events.reserve (2048);
+        eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
+        eng.prepare (rate, mb);
         reset();
     }
     void reset() override
     {
         echoes.reset();
         lp.reset();                                 // (SF-000)
+        eng.reset();
         for (auto& v : voices) v.active = false;
         for (auto& d : dec) d.reset();
         out.reset();
@@ -1341,6 +1380,8 @@ public:
         // (SF-000) LOOP: the sample goes round on the rig's bars (see loopSetup). The lane's hits then open it and do not
         // start it again.
         const bool loop = loopSetup (c, model, smp);
+        const bool engModel = kPercModels[model].type == P_SAMPLE;      // (SF-000, the hundredth build) SAMPLE: the engine every lane has
+        eng.begin (c, smp, c.v (DECAY), false);
         size_t e = 0;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
         for (int i = 0; i < c.n; ++i)
@@ -1349,7 +1390,8 @@ public:
             {
                 const auto& ev = events[e++];
                 if (! ev.on) continue;
-                if (loop) loopHit (c, ev); else trigger (c, model, ev);
+                if (engModel) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0);
+                else if (loop) loopHit (c, ev); else trigger (c, model, ev);
             }
             float l[2] {}, r[2] {};
             for (int k = 0; k < 2; ++k)
@@ -1373,6 +1415,7 @@ public:
             L[i] = dec[0].down (l[0], l[1]) * 1.41f;
             R[i] = dec[1].down (r[0], r[1]) * 1.41f;
         }
+        if (engModel || eng.sounding()) eng.render (c, L, R, c.n);
         out.process (c, io, FILT, RES, 0.0f, 0.0f, c.b (ALLOCON), LEVEL);
     }
     // (SF-000) LOOP. A sample on a hat or the clap is a hit: every step starts it again, and DECAY cuts it. With LOOP on
@@ -1387,28 +1430,35 @@ public:
     SampleLoop lp;
     bool loopSetup (Ctx& c, int model, const SampleData* smp)
     {
-        return lp.setup (c, c.ci (SBARS), kPercModels[model].type == P_SAMPLE, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
+        return lp.setup (c, c.ci (SBARS), false, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
                          osr, cal::at (cal::perc, model), c.v (TONE), c.v (DECAY), c.v (TUNE));
     }
     void loopHit (Ctx& c, const NoteEvent& ev) { lp.hit (c, c.v (DECAY), lerp (0.7f, ev.vel, c.v (ACCENT)) * ev.gain, ev.gen); }
     void loopTick (const SampleData* smp, float drv, float dg, float dn, float& l, float& r) { lp.tick (smp, drv, dg, dn, l, r); }
     // No display of its own: with a sample loaded, the sample (its START and END to drag).
-    int displayHeight() const override { return sample.get() != nullptr ? SampleStrip::kHeight : 0; }
+    // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
+    bool engShown() const { return getParam && kPercModels[juce::jlimit (0, kNumPercModels - 1, (int) std::lround (getParam (MODEL)))].type == P_SAMPLE; }
+    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return sample.get() != nullptr ? SampleStrip::kHeight : 0; }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         if (auto s = sample.get()) strip.paint (g, SampleStrip::frameIn (r, 0), *s, *this, SSTART, SCUTS);
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, 0); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, 0); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 private:
+    SampleEngine eng;                       // (SF-000, the hundredth build) SAMPLE, as every lane has it
     SampleStrip strip;
     double sr = 48000.0, osr = 96000.0;
     std::shared_ptr<const WaveSet> waves;
@@ -1456,7 +1506,7 @@ public:
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() }))));
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
-        return p;
+        return smp::with (std::move (p));        // (SF-000, the hundredth build) SAMPLE's own, last
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP RUMBLE ONE-SHOT (MODEL: SAMPLE)"; }
@@ -1468,6 +1518,8 @@ public:
         if (auto s = sample.get(); s != nullptr && std::abs (s->sr - rate) > 1 && s->flac.getSize() > 0) sample.set (loadSampleFlac (s->flac, s->name, rate, s->flacGain));
         sr = rate;
         out.prepare (rate, mb, ROLE_RUMBLE, "RUMBLE", true);
+        eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
+        eng.prepare (rate, mb);
         fdn.prepare (rate);
         for (auto& d : dly) d.prepare ((int) (rate * 3));
         for (auto& d : pre) d.prepare ((int) (rate * 1));
@@ -1479,6 +1531,7 @@ public:
     void reset() override
     {
         out.reset();
+        eng.reset();            // (SF-000, the hundredth build)
         fdn.clear();
         for (auto& d : dly) d.clear();
         for (auto& d : pre) d.clear();
@@ -1527,10 +1580,15 @@ public:
         sliceCuts = smp != nullptr ? cutsFrom (c, SCUTS, *smp) : Cuts();
         const float modelCal = cal::at (cal::rumble, model);
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
+        // (SF-000, the hundredth build) SAMPLE: the engine every lane has, struck as the thump is (the kick, or the notes);
+        // what it makes goes through GRIT, DARK, the gate and the pump after it, as the rumble does, and not into the room
+        engModel = model == 5;
+        eng.begin (c, smp, c.v (GATE), false);
         float gates[Oversampler::kBlock];
         const int n = std::min (c.n, Oversampler::kBlock);
         for (int i = 0; i < n; ++i)
         {
+            fireAt = i;
             const double tq = c.ppqAt (i) - look;
             // Kick-bus triggers whose time has come on the delayed timeline.
             for (int h = 0; h < nh; ++h)
@@ -1551,7 +1609,8 @@ public:
             float x = 0.0f, xs = 0.0f;          // (SF-000) xs: a stereo sample's left less its right, halved (x is their sum, halved)
             if (thumpT < 0.4f)
             {
-                if (model == 5 && smp != nullptr)
+                if (model == 5) {}           // (the hundredth build: the engine's)
+                else if (model == 5 && smp != nullptr)
                 {
                     const int len = sReg.end > 0.0 ? std::min (smp->length(), sReg.last()) : smp->length();
                     if ((int) sPos + 2 < len)
@@ -1626,6 +1685,7 @@ public:
             gateZ = gt + 0.998f * (gateZ - gt);
             gates[i] = gateZ;
         }
+        if (engModel || eng.sounding()) eng.render (c, L, R, n);
         // GRIT, 2x oversampled. Always through the oversampler (no delay switching in or out);
         // below 2 % the grit fades in from exactly clean.
         {
@@ -1644,30 +1704,39 @@ public:
         out.process (c, io, FILT, -1, c.b (PPOST) ? 0.0f : c.v (PUMP), c.v (PSHAPE), c.b (ALLOCON), LEVEL, false);
     }
     // The pocket; under it, with a sample loaded, the sample (its START and END to drag).
-    int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
+    bool engShown() const { return getParam && (int) std::lround (getParam (MODEL)) == 5; }
+    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         const auto st = SampleStrip::frameIn (r, kOwn);
         if (auto s = sample.get(); s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART, SCUTS);
         out.pocket.paint (g, r.withHeight ((float) kOwn));
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 private:
+    SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    bool engModel = false; int fireAt = 0;
     static constexpr int kOwn = 80;     // the pocket
     SampleStrip strip;
     SampleRegion nextReg, sReg;         // SAMPLE: the part the next thump plays; the part this one plays
     const SampleData* sliceSmp = nullptr; float sliceAt = 0.0f; int sliceCycle = 0, sliceHits = 0; Noise sliceRng; Cuts sliceCuts;      // (SF-000) slices
     void fire (float f0, float f1, float tau, float vel, float tune, double tq, float dens, double space)
     {
+        if (engModel) eng.noteOn (fireAt, 60, 60.0f, vel, 1.0f, tq > 0.0 ? 0 : 1, 0);
         thF0 = f0 * tune; thF1 = std::max (25.0f, f1 * tune); thTau = std::max (0.002f, tau);
         sReg = nextReg;
         if (sliceSmp != nullptr && (sliceAt > 0.001f || sliceCycle != 0))      // (SF-000) hitRegion's rule, with what the block read

@@ -3,6 +3,7 @@
 #include "Build.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include "core/Sample.h"
+#include "modules/SampleEngine.h"
 
 namespace sf0
 {
@@ -2232,11 +2233,17 @@ juce::String Session::samplePlain (int lane)
     }
     else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); put ("tone", 0.5f); put ("signal", 1.0f); }      // (the drums: DECAY is how much of it plays; TONE tilts a sample about its centre)
     choose ("slice_mode", "WHOLE");                 // (VOICE: any note is the whole phrase, at its own pitch)
+    // (the hundredth build) SAMPLE, the engine every lane has: each of its own where it leaves the file as it is
+    for (const char* id : { "sp_pos", "sp_spread", "sp_attack", "sp_drive", "sp_start", "sp_fin", "sp_fout", "sp_norm", "sp_rev", "sp_loop", "sp_vels" }) put (id, 0.0f);
+    for (const char* id : { "sp_size", "sp_end" }) put (id, 1.0f);
+    for (const char* id : { "sp_tune", "sp_scan", "sp_gain" }) put (id, 0.5f);
+    choose ("sp_method", "REPITCH"); choose ("sp_notes", "PITCH"); choose ("sp_play", "THROUGH"); choose ("sp_lock", "OFF");
+    const bool engineRoot = has ("sp_root");
     for (int e = 0; e < 3; ++e) userSet (cx::lane (lane, cx::kEqLow + e), 0.5f);
     // Its pitch. A drum and a phrase play at their own whatever the note; the others at the note's, and at their own on their root.
     const auto says = sampleSays (lane);
     juce::String told = "PLAIN: THE SAMPLE AS IT WAS RECORDED";
-    if (synth && says.has)
+    if ((synth || (engineRoot && lanes()[(size_t) lane].pitched)) && says.has)       // (SAMPLE on VOICE too: its steps are notes)
     {
         // TUNE, so that the lane's first lit step is that root (where TUNE reaches: two octaves either way)
         const auto pat = engine.pattern (lane);
@@ -2244,7 +2251,13 @@ juce::String Session::samplePlain (int lane)
         for (int i = 0; i < pat.length && stepNote < 0; ++i)
             if (pat.steps[(size_t) i].on) { stepNote = (pat.steps[(size_t) i].octave + 2) * 12 + pat.steps[(size_t) i].note + keyMoves (lane); stepName = noteSays (lane, pat.steps[(size_t) i]); }
         const int st = stepNote >= 0 ? says.rootNote - stepNote : 0;
-        if (stepNote >= 0 && std::abs (st) <= 24 && st != 0 && put ("tune", 0.5f + (float) st / 48.0f))
+        if (engineRoot && stepNote >= 0)
+        {
+            // (SAMPLE: ROOT is put on that step's note, so it plays the file at its own pitch exactly)
+            choose ("sp_root", sf::smp::noteName (stepNote).toRawUTF8());
+            told << ". " << stepName << " PLAYS IT AT ITS OWN PITCH (ROOT " << sf::smp::noteName (stepNote) << "; THE PITCH HEARD IN IT IS " << says.root << ")";
+        }
+        else if (stepNote >= 0 && std::abs (st) <= 24 && st != 0 && put ("tune", 0.5f + (float) st / 48.0f))
             told << ". " << stepName << " PLAYS IT AT ITS OWN PITCH (TUNE " << (st > 0 ? "+" : "") << st << " ST; ITS ROOT IS " << says.root << ")";
         else told << (stepNote >= 0 && st == 0 ? ". ITS STEPS ARE ON ITS ROOT, " : ". IT IS AT ITS OWN PITCH ON ") << says.root;
         told << ". A STEP PLAYS IT TO ITS END (PLAY: THROUGH)";

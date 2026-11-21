@@ -694,14 +694,14 @@ void SFProcessor::updateParams (const Ctx& c, int n, float motionInput)
                 base[i] = k >= 1.0 ? glideTo[i] : glideFrom[i] + (glideTo[i] - glideFrom[i]) * (float) k;
                 if (k >= 1.0) glideBeats[i] = 0.0;
             }
-            else base[i] = t + smooth * (base[i] - t);
+            else base[i] = s.quick ? t : t + smooth * (base[i] - t);        // (SF-000: quick, at once)
         }
         else
         {
             // Not a SLOW knob, or the first block (where the knobs start, not a move).
             glideTo[i] = glides ? t : NAN;
             glideBeats[i] = 0.0;
-            base[i] = firstBlock ? t : t + smooth * (base[i] - t);
+            base[i] = firstBlock || s.quick ? t : t + smooth * (base[i] - t);        // (SF-000: quick, at once)
         }
         // MACRO and MOTION act on the knob's travel (normalised, skew included), after the glide,
         // so they stay immediate and move a frequency knob as evenly as the hand does.

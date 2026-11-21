@@ -67,25 +67,42 @@ inline const std::vector<LaneDef>& lanes()
           // from, its tone. TUNE and DRIVE stay where they are; LAYER, the echo's two, PITCH TIME, PUNCH and CLICK are in CONFIG.
           { { "KICK FORGE", { { "TUNE", "tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
+              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "CLOSED HAT", "closed_hat", "PERC", false, 3,
           { { "model", 0 }, { "decay", 0.28f }, { "tone", 0.55f }, { "spread", 0.3f }, { "level", -13 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "ECHO PROB", "echo_prob", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
             { "SPREAD", "spread", 'u' }, { "ACCENT", "accent", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
-            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
 
         { "OPEN HAT", "open_hat", "PERC", false, 3,
           { { "model", 0 }, { "decay", 0.72f }, { "tone", 0.5f }, { "spread", 0.4f }, { "level", -15 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "ECHO PROB", "echo_prob", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
             { "SPREAD", "spread", 'u' }, { "ACCENT", "accent", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
-            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
 
         { "CLAP", "clap", "PERC", false, 3,
           { { "model", 5 }, { "decay", 0.4f }, { "tone", 0.5f }, { "spread", 0.5f }, { "level", -11 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "ECHO PROB", "echo_prob", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
             { "SPREAD", "spread", 'u' }, { "ACCENT", "accent", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
-            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
 
         { "PERC", "perc", "STRIKE", false, 3,
           // a struck membrane: SIZE, TENSION and MATERIAL take it from a tom to a pipe to a sheet of glass
@@ -94,11 +111,9 @@ inline const std::vector<LaneDef>& lanes()
           { { "TUNE", "tune", 'b' }, { "SIZE", "size", 'u' }, { "POSITION", "position", 'u' }, { "DISTANCE", "distance", 'u' },
             { "SPREAD", "spread", 'u' }, { "TENSION", "tension", 'u' }, { "MATERIAL", "material", 'u' }, { "POWER", "power", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // SAMPLE's own sound knobs, each where a hat or the clap has its like: the echoes' two, WIDTH where SPREAD is,
-          // ACCENT, TONE and DRIVE. SIZE, POSITION, DISTANCE and TENSION (the object's) are in CONFIG.
-          { { "SAMPLE", { { "TUNE", "tune", 'b' }, { "FILTER RES", "res", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
-                          { "WIDTH", "spread", 'u' }, { "ACCENT", "vel_sens", 'u' }, { "TONE", "material", 'u' }, { "DRIVE", "power", 'u' } },
-              { { "spread", 0.5f }, { "vel_sens", 0.5f }, { "material", 0.5f }, { "power", 0.0f } }, 0u } } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine). The object's are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
 
         { "BASS", "bass", "BASS", true, 1,
           // a rolling ladder bass with a sine sub under it (LAYER); the kick's pocket is cut for it
@@ -113,14 +128,23 @@ inline const std::vector<LaneDef>& lanes()
           // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
           // it; the rest of the row and the row under it as the lane has them (GLIDE and LAYER are in CONFIG)
             { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
+                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "RUMBLE", "rumble", "RUMBLE", false, 3,
           // made from the kick itself (and from its own steps, if any are lit)
           { { "model", 0 }, { "source", 2 }, { "size", 0.7f }, { "dark", 0.68f }, { "grit", 0.25f }, { "pump", 0.78f }, { "level", -10 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "SIZE", "size", 'u' }, { "POCKET SHAPE", "pocket_shape", 'u' }, { "PUMP", "pump", 'u' },
             { "WIDTH", "width", 'u' }, { "PREDELAY", "predelay", 'm' }, { "DARK", "dark", 'u' }, { "GRIT", "grit", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
 
         { "LEAD", "lead", "LEAD", true, 3,
           // the 303 circuit: a gate that reaches the next step slides, a hard step is the accent
@@ -134,7 +158,12 @@ inline const std::vector<LaneDef>& lanes()
           // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
           // it; the rest of the row and the row under it as the lane has them (its fourth is POS ENV, where COLOR was; TUNE and ACCENT are in CONFIG)
             { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POS ENV", "wt_env", 'b' },
-                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } } } },
+                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "CHORD", "chord", "LEAD", true, 3,
           // the dub stab: one note plays the chord
@@ -148,7 +177,12 @@ inline const std::vector<LaneDef>& lanes()
           // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
           // it; the rest of the row and the row under it as the lane has them (DETUNE and ATTACK are in CONFIG)
             { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
+                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "PAD", "pad", "PAD", true, 3,
           // a drifting dub wash that plays a minor seventh from one note
@@ -162,7 +196,12 @@ inline const std::vector<LaneDef>& lanes()
           // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
           // it; the rest of the row and the row under it as the lane has them (DETUNE is in CONFIG)
             { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-                             { "DECAY", "decay", 'u' }, { "ATTACK", "attack", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } } } },
+                             { "DECAY", "decay", 'u' }, { "ATTACK", "attack", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "VOICE", "voice", "VOICE", true, 3,
           // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,
@@ -170,7 +209,11 @@ inline const std::vector<LaneDef>& lanes()
           { { "model", 1 }, { "signal", 0.7f }, { "echo", 0.3f }, { "echo_fb", 0.55f }, { "level", -14 }, { "alloc", 0 } },
           { { "TUNE", "tune", 'b' }, { "SIGNAL", "signal", 'u' }, { "ECHO TIME", "echo_time", 'm' }, { "POCKET DEPTH", "pocket_depth", 'u' },
             { "ECHO FDBK", "echo_fb", 'u' }, { "ECHO", "echo", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } } },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
+          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
     };
     return L;
 }

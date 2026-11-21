@@ -13,6 +13,87 @@ static juce::AudioFormatManager& formats()
     return fm;
 }
 
+// (SF-000, the hundredth build) What SAMPLE's display draws and where the file's transients are (SampleView, SampleHit).
+// The colour of a block: its low part is what two one-poles at 200 Hz leave, its high part what is over two at 2.5 kHz,
+// the middle the rest. The transients: the rise of a loudness that leans to the highs (the full signal and its part over
+// 300 Hz twice), in steps of 2.7 ms, each a peak of that rise over its neighbours and over a floor that follows the
+// music (so a quiet hit after a loud one is still found); then put on the sample where the swing first passes a fifth of
+// what it reaches within 6 ms. Strength: that rise, against the largest. One a 30th of a second at most.
+static void analyseView (SampleData& s)
+{
+    const int n = s.buf.getNumSamples();
+    auto& v = s.view;
+    v = SampleView();
+    s.hits.clear();
+    if (n <= 0) return;
+    const float* a = s.buf.getReadPointer (0);
+    const float* b = s.buf.getReadPointer (s.buf.getNumChannels() > 1 ? 1 : 0);
+    const int blocks = (n + SampleView::kBlock - 1) / SampleView::kBlock;
+    v.peak.assign ((size_t) blocks, 0.0f); v.rms.assign ((size_t) blocks, 0.0f);
+    v.lo.assign ((size_t) blocks, 0); v.mid.assign ((size_t) blocks, 0); v.hi.assign ((size_t) blocks, 0); v.clip.assign ((size_t) blocks, 0);
+    const float kLo = 1.0f - std::exp (-6.2831853f * 200.0f / (float) s.sr), kHi = 1.0f - std::exp (-6.2831853f * 2500.0f / (float) s.sr);
+    const float kTr = 1.0f - std::exp (-6.2831853f * 300.0f / (float) s.sr);
+    float l1 = 0, l2 = 0, h1 = 0, h2 = 0, t1 = 0, t2 = 0;
+    constexpr int kHop = 128;
+    std::vector<float> hopE ((size_t) (n / kHop + 1), 0.0f);
+    for (int k = 0; k < blocks; ++k)
+    {
+        const int i0 = k * SampleView::kBlock, i1 = std::min (n, i0 + SampleView::kBlock);
+        double el = 0, em = 0, eh = 0, sq = 0; float pk = 0.0f; bool clip = false;
+        for (int i = i0; i < i1; ++i)
+        {
+            const float x = 0.5f * (a[i] + b[i]);
+            pk = std::max (pk, std::max (std::abs (a[i]), std::abs (b[i])));
+            clip = clip || std::abs (a[i]) >= 0.999f || std::abs (b[i]) >= 0.999f;
+            l1 += kLo * (x - l1); l2 += kLo * (l1 - l2);
+            h1 += kHi * (x - h1); h2 += kHi * (h1 - h2);
+            t1 += kTr * (x - t1); t2 += kTr * (t1 - t2);
+            const float hi = x - h2, lo = l2, mid = x - lo - hi;
+            el += (double) lo * lo; em += (double) mid * mid; eh += (double) hi * hi; sq += (double) x * x;
+            const float tr = x - t2;
+            hopE[(size_t) (i / kHop)] += 0.5f * x * x + tr * tr;
+        }
+        v.peak[(size_t) k] = pk;
+        v.rms[(size_t) k] = (float) std::sqrt (sq / (double) std::max (1, i1 - i0));
+        eh *= 2.5;
+        const double tot = el + em + eh + 1.0e-20;
+        v.lo[(size_t) k] = (uint8_t) std::lround (255.0 * el / tot);
+        v.mid[(size_t) k] = (uint8_t) std::lround (255.0 * em / tot);
+        v.hi[(size_t) k] = (uint8_t) std::lround (255.0 * eh / tot);
+        v.clip[(size_t) k] = clip ? 1 : 0;
+    }
+    // the transients
+    const int hops = (int) hopE.size();
+    std::vector<float> lg ((size_t) hops), rise ((size_t) hops, 0.0f);
+    for (int h = 0; h < hops; ++h) lg[(size_t) h] = 10.0f * std::log10 (hopE[(size_t) h] / (float) kHop + 1.0e-12f);
+    for (int h = 3; h < hops; ++h)
+    {
+        const float before = std::min (lg[(size_t) h - 1], std::min (lg[(size_t) h - 2], lg[(size_t) h - 3]));
+        const float r = lg[(size_t) h] - before;
+        rise[(size_t) h] = lg[(size_t) h] > -70.0f && r > 0.0f ? r : 0.0f;
+    }
+    float top = 1.0e-6f;
+    for (auto r : rise) top = std::max (top, r);
+    int last = -100000;
+    const int gap = (int) (s.sr / 30.0 / kHop);
+    for (int h = 3; h + 1 < hops; ++h)
+    {
+        const float r = rise[(size_t) h];
+        if (r < 4.0f || r < rise[(size_t) h - 1] || r < rise[(size_t) h + 1]) continue;
+        if (h - last < gap) continue;
+        // where it starts: the first sample whose swing passes a fifth of what is reached within 6 ms of the hop
+        const int from = std::max (0, (h - 2) * kHop), to = std::min (n, h * kHop + (int) (0.006 * s.sr));
+        float most = 0.0f;
+        for (int i = from; i < to; ++i) most = std::max (most, std::abs (a[i] + b[i]));
+        int at = from;
+        for (int i = from; i < to; ++i) if (std::abs (a[i] + b[i]) >= 0.2f * most) { at = i; break; }
+        // and back to the zero it rises from, at most a millisecond
+        for (int i = at, lim = std::max (0, at - (int) (0.001 * s.sr)); i > lim; --i) { at = i; if ((a[i - 1] + b[i - 1]) * (a[i] + b[i]) <= 0.0f) break; }
+        s.hits.push_back ({ at, r / top });
+        last = h;
+    }
+}
+
 static void analyse (SampleData& s)
 {
     const int n = s.buf.getNumSamples();
@@ -258,6 +339,7 @@ SamplePtr makeSample (juce::AudioBuffer<float>&& audio, double fileSr, double ta
         for (int i = 0; i < outN && ! s->wide; ++i) s->wide = std::abs (a[i] - b[i]) > floor;
     }
     analyse (*s);
+    analyseView (*s);           // (SF-000)
     s->mips.build (s->buf);
     // The displays' waveform: the largest |x| of either channel over each part, over the peak.
     s->overview.assign ((size_t) SampleData::kOverview, 0.0f);

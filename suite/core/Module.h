@@ -46,7 +46,10 @@ struct ParamSpec
     bool inLayer = false;           // the second layer's (LAYER MODEL, LAYER, SPLIT, SPLIT HZ): the editor's LAYER group
     bool inEngine = false;          // one model's own (FM 4-OP's operators, WAVETABLE's TABLE): the editor's ENGINE group
     Reach reach = Reach::Live;      // (SF-000) how a change reaches a sounding note
+    bool quick = false;             // (SF-000, the hundredth build) taken as it is set, not over 30 ms: the module makes its own
+                                    // way there (SAMPLE's SIZE and END: a note they cut is let go over 3 ms)
     std::vector<std::string> liveIn;    // (SF-000) the models on which a NEXT one is in fact heard at once (GRANULAR reads its region as it plays)
+    std::vector<std::string> nextIn;    // (SF-000, the hundredth build) and those on which a LIVE one is heard only from the next note (SAMPLE: what only the layer hears)
 
     ParamSpec& prim()           { primary = true; return *this; }
     ParamSpec& dir (int d)      { macroDir = d; return *this; }
@@ -64,8 +67,10 @@ struct ParamSpec
     ParamSpec& engineGroup()    { inEngine = true; return *this; }
     ParamSpec& eased()          { reach = Reach::Eased; return *this; }    // (SF-000)
     ParamSpec& next()           { reach = Reach::Next; return *this; }     // (SF-000)
+    ParamSpec& quickly()        { quick = true; return *this; }            // (SF-000)
     ParamSpec& liveOn (const char* model) { liveIn.push_back (model); return *this; }      // (SF-000)
-    Reach reachIn (const std::string& model) const { for (auto& m : liveIn) if (m == model) return Reach::Live; return reach; }
+    ParamSpec& nextOn (const char* model) { nextIn.push_back (model); return *this; }      // (SF-000)
+    Reach reachIn (const std::string& model) const { for (auto& m : liveIn) if (m == model) return Reach::Live; for (auto& m : nextIn) if (m == model) return Reach::Next; return reach; }
 };
 
 inline ParamSpec knob (const char* id, const char* name, float mn, float mx, float def, const char* unit = "", float centre = NAN)
@@ -193,6 +198,7 @@ public:
     virtual void displayMouse (juce::Point<float>, juce::Rectangle<float>, bool down) { juce::ignoreUnused (down); }
     virtual void displayMouseUp() {}
     virtual void displayDouble (juce::Point<float>, juce::Rectangle<float>) {}      // (SF-000) a double-click on the display
+    virtual bool displayWheel (juce::Point<float>, juce::Rectangle<float>, float dy) { juce::ignoreUnused (dy); return false; }      // (SF-000) the wheel over the display: true if it took it
     // (SF-000) A reading of the module's own for the host to show (LIMIT: 0 the limiter's gain reduction, 1 the clipper's,
     // 2 the automatic trim as it stands, 3 the output's true peak, 4 the trim the last minute's loudest asks for; all dB). Any thread.
     virtual float meter (int) const { return 0.0f; }
@@ -207,6 +213,10 @@ public:
     std::function<float (int index)> getParam;
     // The value a stored song holds for a parameter (NaN: that song isn't stored). Audio thread.
     std::function<float (int song, int index)> getSongValue;
+    // (SF-000, the hundredth build) The lane's steps as its sequencer has them, for a display: how many, the one playing
+    // (-1: stopped), and for each whether it is lit and its note. Set by the host; message thread.
+    struct StepsView { static constexpr int kMax = 64; int count = 0, now = -1; bool on[kMax] {}; int note[kMax] {}; float vel[kMax] {}; };
+    std::function<void (StepsView&)> stepsOf;
 };
 
 using ModulePtr = std::unique_ptr<Module>;

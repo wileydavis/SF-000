@@ -5,6 +5,7 @@
 // antiderivative anti-aliasing on top.
 // Halfband decimators bring the sums back down: no audible aliasing at any pitch.
 #include "Kit.h"
+#include "SampleEngine.h"
 #include "../core/BandLimited.h"
 #include "../core/Wavetable.h"
 #include "../core/Oversample.h"
@@ -349,9 +350,9 @@ public:
                  pct ("decay", "DECAY", 0.5f).slow(),
                  pct ("attack", "ATTACK", 0.0f).slow(),
                  pct ("accent", "ACCENT", 0.5f).slow(),
-                 pct ("glide", "GLIDE", 0.2f).slow(),
+                 pct ("glide", "GLIDE", 0.2f).slow().nextOn ("SAMPLE"),        // (on SAMPLE only the layer's voices have them, from their next note)
                  knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st"),
-                 pct ("detune", "DETUNE", 0.5f).slow(),
+                 pct ("detune", "DETUNE", 0.5f).slow().nextOn ("SAMPLE"),
                  pct ("color", "COLOR", 0.5f).slow(),
                  choice ("layer_model", "LAYER MODEL", mn, std::min<int> (1, (int) mn.size() - 1)).eased().layerGroup(),
                  pct ("layer", "LAYER", 0.0f).layerGroup(),
@@ -473,16 +474,16 @@ public:
         // middle (GATE's upper half still lengthens it from there). MONO: for the engines every lane has, one note at a time
         // and down the middle (no SPACE, no detuned second voice): what BASS had built in, and where BASS starts.
         p.push_back (pct ("release", "RELEASE", 0.5f).slow());
-        p.push_back (toggle ("mono", "MONO", roleId == ROLE_BASS).eased().noPreset().forget());
+        p.push_back (toggle ("mono", "MONO", roleId == ROLE_BASS).eased().nextOn ("SAMPLE").noPreset().forget());
         jassert ((int) p.size() == kParams);
         // (SF-000) the sample's own are read as a note starts (Kit.h); GRANULAR reads its region and its gain as it plays,
         // and SAMPLE its gain
         for (auto& s : p)
         {
             if (s.id == "smp_start" || s.id == "smp_end" || s.id == "smp_fade_in" || s.id == "smp_fade_out") s.liveOn ("GRANULAR");
-            if (s.id == "smp_gain" || s.id == "smp_norm") s.liveOn ("GRANULAR").liveOn ("SAMPLE");
+            if (s.id == "smp_gain" || s.id == "smp_norm") s.liveOn ("GRANULAR");
         }
-        return p;
+        return smp::with (std::move (p));        // (SF-000, the hundredth build) SAMPLE's own, last
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override
@@ -718,11 +719,14 @@ public:
         events.reserve (2048);
         held.reserve (128);
         buildGrainSource();
+        eng.bind (params(), true, SampleEngine::Ends::keys);       // (SF-000, the hundredth build)
+        eng.prepare (rate, mb);
         reset();
     }
     void reset() override
     {
         echoes.reset();
+        eng.reset();
         for (auto& v : voices) v.active = false;
         held.clear();
         numDown = 0;
@@ -823,7 +827,7 @@ public:
     void process (Ctx& c, juce::AudioBuffer<float>& io, juce::AudioBuffer<float>* side, juce::AudioBuffer<float>* extra, juce::MidiBuffer& midi) override
     {
         const float* p = c.p; const float* p0 = c.p0;
-        std::copy (p, p + kParams, pushed); std::copy (p0, p0 + kParams, pushed0);
+        std::copy (p, p + kParams + smp::kParamCount, pushed); std::copy (p0, p0 + kParams + smp::kParamCount, pushed0);      // (and SAMPLE's, after them)
         push (pushed); push (pushed0);
         c.p = pushed; c.p0 = pushed0;
         processVoices (c, io, side, extra, midi);
@@ -880,10 +884,13 @@ public:
         const int modelA = c.ci (MODEL), modelB = c.ci (LAYERMODEL);
         monoSw = c.b (MONO);
         // (SF-000, the ninety-fourth build) a sample that is not looped plays once and is over: a held note of it does not go on (holdsNotes)
-        holds.store (! (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SAMPLE && ! (c.b (SLOOP) && c.ci (SPLAY) != 1)));
+        // (the hundredth build: SAMPLE is the engine every lane has, and says so itself)
+        eng.begin (c, smp, c.v (GATE), c.b (MONO), c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);
+        engAt = 0;
+        holds.store (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SAMPLE ? eng.holds() : true);
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
         if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.shared)
-            ensembleAmt = centred (ma) ? 0.0f : ma.engine == E_SAMPLE ? (c.v (SENV) > 0.5f ? 0.3f : 0.0f) : ma.ensemble;      // (SF-000) SPACE on an engine every lane has: not with MONO on; on a sample, with KNOBS on
+            ensembleAmt = centred (ma) || ma.engine == E_SAMPLE ? 0.0f : ma.ensemble;        // (the hundredth build: SAMPLE is as recorded; SPACE is not on it)      // (SF-000) SPACE on an engine every lane has: not with MONO on; on a sample, with KNOBS on
         const float layer = c.v (LAYER);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
@@ -906,6 +913,7 @@ public:
             // freed voice is reused by a newer key). Echoes don't come back.
             lastModel = modelA;
             for (auto& v : voices) if (v.active) { v.amp.off(); v.fenv.off(); v.releasing = true; }
+            eng.noteOff (0, -1, 0);         // (SF-000, the hundredth build) SAMPLE's too
             held.clear();
             // A mono model plays the newest key; the others go back on its stack (no slide through them).
             const bool monoA = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]);
@@ -998,6 +1006,7 @@ public:
             segPpq = c.ppq + (double) i0 * c.bpm / (60.0 * c.sr);        // (SF-000) for a note that starts in it
 
             // Sub-blocks end at the next event: every note starts on its own sample.
+            engAt = i0;
             while (e < events.size() && events[e].offset <= i0)
             {
                 const auto& ev = events[e++];
@@ -1079,6 +1088,9 @@ public:
             ++renderTick;                              // every voice started before now has sounded
             i0 += n;
         }
+        // (SF-000, the hundredth build) SAMPLE, the model or the layer: the engine's sound, beside the voices
+        if (eng.sounding() || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SAMPLE || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].engine == E_SAMPLE)
+            eng.render (c, L, R, c.n, layer);
         ens.process (L, R, c.n, ensembleAmt * c.v (SPACE) * 2.0f);
         split.monoLows (L, R, c.n, k0, k1);
         driftClock += (double) c.n / sr;
@@ -1088,10 +1100,19 @@ public:
     }
 
     // VOICES and the pocket; under them, with a sample loaded, the sample (its START and END to drag).
-    int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    // (SF-000, the hundredth build) with SAMPLE the model or the layer, SAMPLE's display
+    bool engShown() const
+    {
+        if (! getParam) return false;
+        auto isS = [this] (int m) { return models[(size_t) juce::jlimit (0, (int) models.size() - 1, m)].engine == E_SAMPLE; };
+        return isS ((int) std::lround (getParam (MODEL))) || (isS ((int) std::lround (getParam (LAYERMODEL))) && getParam (LAYER) > 0.01f);
+    }
+    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     bool holdsNotes() const override { return holds.load(); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         auto s = sample.get();
         const auto st = SampleStrip::frameIn (r, kOwn);
         if (s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART, SCUTS);
@@ -1179,12 +1200,14 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool press) override
     {
+        if (engShown()) { eng.mouse (p, r, press, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), press, *this, SSTART, SCUTS, *smp); return; } }
         if (press) strip.up();
     }
-    void displayMouseUp() override { strip.up(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 
@@ -1205,6 +1228,13 @@ private:
         const auto& m = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelIdx)];
         int chordIdx = c.ci (CHORD);
         const auto& chord = chordIdx == 0 ? chordTable()[(size_t) m.chord] : chordTable()[(size_t) std::max (0, chordIdx - 1)];
+        // (SF-000, the hundredth build) SAMPLE: the engine every lane has. A chord's notes each (MONO: the key alone).
+        if (m.engine == E_SAMPLE)
+        {
+            if (monoOf (m)) eng.noteOn (engAt, ev.note, (float) ev.note, ev.vel, gain, ev.gen, layerId, autoOff);
+            else for (size_t k = 0; k < chord.size(); ++k) eng.noteOn (engAt, ev.note, (float) (ev.note + chord[k]), ev.vel, gain / std::sqrt ((float) chord.size()), ev.gen, layerId, autoOff);
+            return;
+        }
         const float tune = pitchOffset;
         const bool accent = ev.vel > 0.85f && ev.gen == 0;
         if (monoOf (m))
@@ -1407,6 +1437,7 @@ private:
     void noteOff (int note, int gen, float relMul)
     {
         juce::ignoreUnused (relMul);
+        eng.noteOff (engAt, note, gen);          // (SF-000, the hundredth build)
         if (note < 0) { for (auto& v : voices) { v.amp.off(); v.fenv.off(); v.releasing = true; } held.clear(); return; }
         if (gen == 0)
         {
@@ -2107,7 +2138,7 @@ private:
     // note of its charged or held it in this sub-block.
     float acidCap[2] {};
     bool acidOwned[2] {};
-    float pushed[kParams] {}, pushed0[kParams] {};    // the knobs as ACID and WARP push them (process)
+    float pushed[kParams + smp::kParamCount] {}, pushed0[kParams + smp::kParamCount] {};    // the knobs as ACID and WARP push them (process)
     double segPpq = 0.0;                              // (SF-000) the song's place where the part of the block being rendered starts
     static float acidDrainSeconds (float res) { return 0.15f + 0.35f * res; }
     EchoScheduler echoes;
@@ -2115,6 +2146,8 @@ private:
     RoleOutput out;
     Ensemble ens;
     SampleSlot sample;
+    SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    int engAt = 0;                      // where in the block the notes being started are
     Noise rng;
     Noise warpRng { 0x2545F491u };
     Noise smpRng { 0x7F4A7C15u };      // (SF-000) SAMPLE's RANDOM START: its own, so nothing else's chances move

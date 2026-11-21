@@ -247,6 +247,20 @@ this build does not have is written back as it was read.
 - **Slice markers** (eighty-third build) are in a lane's `setup`: `smp_cuts` (0 or 1: the slices
   are the file's own, or the markers') and `smp_cut01` ... `smp_cut32`, each a place in the whole
   file (0 to 1). Only the markers in use are written; a setup that names none has none.
+- **SAMPLE's own** (hundredth build) are in a lane's `setup` under `sp_` ids, the same on every
+  lane that has SAMPLE: the panel's eight (`sp_tune`, `sp_pos`, `sp_size`, `sp_scan`, `sp_spread`,
+  `sp_attack`, `sp_release`, `sp_drive`: the lane's first eight knobs while SAMPLE is the model,
+  kept as a model's own knobs are), SOURCE (`sp_start`, `sp_end`, `sp_fin`, `sp_fout`,
+  `sp_gain`, `sp_norm`, `sp_rev`, `sp_root`, `sp_loop`, `sp_lstart`, `sp_lend`, `sp_xfade`,
+  `sp_sliceby`, `sp_count`, `sp_sens`, `sp_base`) and PLAY (`sp_method`, `sp_notes`, `sp_play`,
+  `sp_choke`, `sp_cycle`, `sp_vels`, `sp_vary`, `sp_rate`, `sp_pspread`, `sp_shape`, `sp_gsync`,
+  `sp_bars`, `sp_warp`, `sp_lock`); and the display's markers, `sp_cut01` ... `sp_cut32` (slice
+  markers, each a place in the whole file, 0 for none) and `sp_ws01` ... `sp_ws16` with `sp_wd01`
+  ... `sp_wd16` (a warp marker: the place in the file, and where along BARS' length it is put,
+  each 0 to 1; both 0 for none). A setup that names none of them is read with each where it starts:
+  no markers. **The `smp_` ids above no longer reach SAMPLE**: they are GRANULAR's, TABLE
+  SAMPLE's and VOICE's phrase models' file; a snapshot from before the hundredth build on SAMPLE
+  is read with SAMPLE at rest (its old `smp_` values kept, unused).
 - **A lane's EQ** (eightieth build) is in its `setup`: `eq1_type`, `eq1_hz`, `eq1_gain`, `eq1_q` ...
   `eq8_q`, each a place from 0 to 1. `type`: OFF, BELL, LOW SHELF, HIGH SHELF, LOW CUT, HIGH
   CUT, NOTCH along 0 to 1 (sixths). `hz`: 20 Hz · 1000^v. `gain`: -18 dB + 36 v. `q`:

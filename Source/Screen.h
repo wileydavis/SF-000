@@ -368,7 +368,7 @@ private:
                // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself
                aRowAdd, aRowOut, aRowEarlier, aRowLater, aAddTo, aOpenLoad, aOpenNew, aOpenCopy, aOpenDelete,
                aTrimHold,       // the master's TRIM plate: the limiter's trim learnt and held, or let go
-               aCfgView1, aCfgView2, aCfgView3,
+               aCfgView1, aCfgView2, aCfgView3, aCfgView4,
                aLufsReset };    // the mix page's loudness readout: the integrated figure from now     // the master's TRIM plate: the limiter's trim learnt and held, or let go
 
     void timerCallback() override;

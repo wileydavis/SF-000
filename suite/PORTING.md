@@ -248,3 +248,14 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   or LAYER MODEL changes. All marked `(SF-000, the ninety-second build)`. With no knob moving
   the output is the same to the bit. The suite's own Synth has the same seven read at the
   note's start: worth taking there too (DECISIONS 751).
+- **The hundredth build: SAMPLE, one engine** (`modules/SampleEngine.h`, `.cpp`,
+  `SampleDisplay.cpp`, new and SF-000's own). Every lane module that had a SAMPLE model (KICK,
+  PERC, STRIKE, RUMBLE in `modules/Drums.cpp` and `Strike.cpp`, the synths in `Synth.cpp`, VOICE)
+  appends its `sp_` parameters last and sends that model's notes to it; their old SAMPLE code
+  is taken out (the `smp_` parameters stay for GRANULAR, TABLE SAMPLE and VOICE's phrases).
+  `core/Sample.h`, `.cpp`: `SampleData::hits` (transients with a strength) and `::view` (the
+  display's bands, 256 samples a block), made as a file is read. `core/Module.h`:
+  `displayWheel`, `StepsView` and `stepsOf` (the lane's steps, for the display),
+  `ParamSpec::nextOn` and `quick` (`quickly()`: taken as set, with no 30 ms ease;
+  `core/Processor.cpp` honours it). All marked `(SF-000, the hundredth build)`. Nothing of it is
+  in the suite, and it would need SF-000's engine for its clock and steps (DECISIONS 780).

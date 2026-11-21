@@ -5,6 +5,7 @@
 #include "Help.h"
 #include "BinaryData.h"
 #include "core/Processor.h"
+#include "modules/SampleEngine.h"
 #include <map>
 
 namespace sf0
@@ -953,6 +954,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aCfgView1, "CONFIG 1", "THE FIRST OF CONFIG'S THREE VIEWS, TWO GRIDS OF FOUR BY FOUR. A LANE: LANE (ITS MODEL AND LAYER, THE KEY, ITS POCKET AND ECHO) AND SOUND. AN EFFECT: ITS OWN CONTROLS, AND TIME (WHAT THE DELAYS AND REVERBS SHARE). EVERY CONTROL HAS ONE CELL, THE SAME ON EVERY PAGE THAT HAS IT; A CELL DRAWN EMPTY IS KEPT FOR A CONTROL THAT IS ON THE PANEL FOR NOW, OR THAT THIS MODEL HAS NOT GOT." },
                 { aCfgView2, "CONFIG 2", "THE SECOND VIEW, A LANE'S ENGINES: WHAT ITS MODEL HAS OF ITS OWN ON THE LEFT, WHAT ITS LAYER'S MODEL HAS ON THE RIGHT. AN EFFECT HAS NONE." },
                 { aLufsReset, "LOUDNESS", "THE WHOLE MIX AS IT LEAVES, IN LUFS: M, OVER THE LAST 0.4 S; S, OVER THE LAST 3 S (THE MASTER PANEL'S FIGURE); I, INTEGRATED, OVER ALL THAT HAS PLAYED SINCE RUN WAS PRESSED. PRESS IT AND I STARTS AGAIN FROM NOW. UNDER THEM: THE HIGHEST PEAK NOW, AND WHAT THE LIMITER AND ITS CLIPPER ARE TAKING OFF." },
+                { aCfgView4, "CONFIG 4", "THE FOURTH VIEW, ONLY ON KICK WITH SAMPLE AND KICK FORGE BOTH PLAYING: SAMPLE'S SOURCE AND PLAY (THE FORGE HAS THE SECOND VIEW)." },
                 { aCfgView3, "CONFIG 3", "THE THIRD VIEW: A LANE'S SAMPLE CONTROLS (A CONVOLUTION'S BANDS) ON THE LEFT, AND MOTION ON THE RIGHT, ON EVERY PAGE." },
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
@@ -1560,6 +1562,7 @@ void Screen::drawConfig (G& g, R r)
         for (int v = 0; v < kCfgViews; ++v)
         {
             const bool there = cfgPage.hasView (v), up = v == view;
+            if (v == 3 && ! there) continue;         // (the fourth: only where a page has it)
             const R kr (kx, y0 + 1, 26, 24);
             key (g, kr, ! there ? col::putty : up ? col::yellow : col::white, pressed (aCfgView1 + v) ? 6.0f : 2.0f, up);
             text (g, String (v + 1), kr, fLbl, col::black);
@@ -4596,7 +4599,7 @@ void Screen::act (int a)
             break;
         case aLoadUp:   if (loadDir.getParentDirectory() != loadDir) { loadDir = loadDir.getParentDirectory(); loadScroll = 0; readLoad(); } repaint(); break;
         case aCfgClose: cfgOpen = false; break;
-        case aCfgView1: case aCfgView2: case aCfgView3: cfgView = a - aCfgView1; repaint(); break;
+        case aCfgView1: case aCfgView2: case aCfgView3: case aCfgView4: cfgView = a - aCfgView1; repaint(); break;
         case aLufsReset: eng.lufsReset(); dirty (cfgRect); break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;
@@ -5441,6 +5444,9 @@ void Screen::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
     }
     if (page == pLibrary || page == pMacros || page == pArrange) { libScroll = std::max (0, libScroll - (w.deltaY > 0 ? 1 : w.deltaY < 0 ? -1 : 0)); repaint(); return; }
     if (cfgOpen && loadOpen && cfgRect.contains (where (e))) { loadScroll = std::max (0, loadScroll - (w.deltaY > 0 ? 3 : w.deltaY < 0 ? -3 : 0)); repaint(); return; }
+    // (SF-000, the hundredth build) over a module's display that takes the wheel (SAMPLE's: it zooms)
+    if (cfgOpen && ! loadOpen && ! cfgDisplay.isEmpty() && cfgDisplay.contains (where (e)))
+        if (auto* pr = eng.processorFor (cfg)) if (pr->mod().displayWheel (where (e), cfgDisplay, w.deltaY)) { dirty (cfgDisplay); return; }
     if (cfgOpen && eqPage() && ! eqRect.isEmpty() && eqRect.contains (where (e)))
     {
         // over the EQ: the width of the band chosen (the one under the hand, if one is)
@@ -6417,7 +6423,10 @@ void Screen::refreshStage()
         recorded.settle();
         stage->setParts (recorded);
         // (the outline look keeps the EQ's colours: where its graph is, if it is up)
-        { std::vector<juce::Rectangle<float>> boxes; if (page == pMain && cfgOpen && eqPage() && ! eqRect.isEmpty()) boxes.push_back (eqRect); stage->keepColours (boxes); }
+        { std::vector<juce::Rectangle<float>> boxes; if (page == pMain && cfgOpen && eqPage() && ! eqRect.isEmpty()) boxes.push_back (eqRect);
+          // (SF-000, the hundredth build) and SAMPLE's display's (Wiley, Nov 21: "in the 3d outline look (all the 3d views) the display should have color, similar to how we keep color with the eq")
+          if (page == pMain && cfgOpen && ! cfgDisplay.isEmpty() && (int) cfgDisplay.getHeight() == sf::SampleEngine::kDisplayHeight) boxes.push_back (cfgDisplay);
+          stage->keepColours (boxes); }
     }
     auto& img = stage->sheet();
     const juce::Rectangle<int> whole (0, 0, img.getWidth(), img.getHeight());

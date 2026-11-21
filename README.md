@@ -240,13 +240,17 @@ back at the other. The sequencer stays where it is.
   on VOICE the phrase with its cue points. The display takes the mouse.
 - **An insert's or a return's CONFIG** holds that effect's remaining parameters and its display.
 - **The controls stand in grids of four by four, two side by side, and CONFIG has three such
-  views** (ninety-fourth build; the keys **1 2 3** beside CONFIG's name choose which):
+  views** (ninety-fourth build; the keys **1 2 3** beside CONFIG's name choose which), and a
+  lane a fourth (key **4**, hundredth build) only while SAMPLE and another engine with controls
+  of its own are both chosen on it:
 
   | view | a lane, left | a lane, right | an effect or a return, left | right |
   |---|---|---|---|---|
-  | **1** | **LANE**: MODEL, LAYER MODEL, LAYER, SPLIT / KEY FOLLOW, KEY TRACK, CHOKE or MONO, SPLIT HZ / POCKET DEPTH, POCKET SHAPE, AFTER FX, SOURCE / ECHO SPACE, ECHO SWING, FILTER RES, VEL SENS | **SOUND**: ATTACK, DECAY, ENV AMT, RES / COLOR, DETUNE, DRIVE, ACCENT / GLIDE, TUNE, CHORD, SPACE / ACID, WARP, DRIFT, RELEASE (a drum's few are its own) | **EFFECT**: what only that effect has | **TIME**: MODEL (SPACE's), THROW, FREEZE, MIX / WIDTH, LO CUT, INPUT, DRY / DUCK, DUCK SHAPE, DUCK FOR, PREDELAY |
+  | **1** | **LANE**: MODEL, LAYER MODEL, LAYER, SPLIT / KEY FOLLOW, KEY TRACK, CHOKE or MONO, SPLIT HZ / POCKET DEPTH, POCKET SHAPE, AFTER FX, SOURCE / ECHO SPACE, ECHO SWING, FILTER RES (a synth's CUTOFF there), VEL SENS | **SOUND**: ATTACK, DECAY, ENV AMT, RES / COLOR, DETUNE, DRIVE, ACCENT / GLIDE, TUNE, CHORD, SPACE / ACID, WARP, DRIFT, RELEASE (a drum's few are its own) | **EFFECT**: what only that effect has | **TIME**: MODEL (SPACE's), THROW, FREEZE, MIX / WIDTH, LO CUT, INPUT, DRY / DUCK, DUCK SHAPE, DUCK FOR, PREDELAY |
   | **2** | **MODEL**: what the model's engine has of its own (WAVETABLE's six, GRANULAR's twelve, FM 4-OP's fourteen, KICK FORGE's six) | **LAYER**: the same for the layer's model | none | none |
-  | **3** | **SAMPLE**: START, END, FADE IN, FADE OUT / GAIN, NORMALISE, MARKERS, LOOP / PLAY, NOTES, KNOBS, CROSSFADE / VEL START, RANDOM START, SLICE, CYCLE | **MOTION**: 1 above, 2 below | **BANDS** (a convolution's): the switch and the two crossovers, then a row a band | **MOTION** |
+  | **2 with SAMPLE** (the model or the layer; hundredth build) | **SOURCE**: START, END, FADE IN, FADE OUT / GAIN, NORMALISE, REVERSE, ROOT / LOOP, LOOP START, LOOP END, CROSSFADE / SLICE BY, COUNT, SENSITIVITY, BASE NOTE | **PLAY**: METHOD, NOTES, PLAY, CHOKE / CYCLE, VEL START, VARIATION, RATE / PITCH SPREAD, GRAIN SHAPE, SYNC, BARS / WARP, LOCK | | |
+  | **3** | **SAMPLE** (GRANULAR's and a phrase model's file): START, END, FADE IN, FADE OUT / GAIN, NORMALISE, MARKERS, LOOP / PLAY, NOTES, KNOBS, CROSSFADE / VEL START, RANDOM START, SLICE, CYCLE. **With SAMPLE**: its panel eight, as rings marked ON PANEL | **MOTION**: 1 above, 2 below | **BANDS** (a convolution's): the switch and the two crossovers, then a row a band | **MOTION** |
+  | **4** (with SAMPLE) | what the other model has of its own (KICK FORGE's BODY; WAVETABLE's, FM 4-OP's, GRANULAR's) | KICK FORGE's IMPACT AND GROUND, or the file's box of a GRANULAR or phrase model | | |
 
   The compressor's eleven are one grid (the same cells on the master and as an insert); the
   drum bus has BUS and LANES. The lane EQ stays as it was, at the foot.
@@ -440,7 +444,79 @@ Four for each lane, beside its map:
 - Its cost on the machine this was written on (a slow one): 2 % of a core to look at all thirteen
   parts, 5 % with two hundred bells cutting at once, which is every lane giving way all over.
 
+### SAMPLE: the engine every lane has (hundredth build)
+
+**SAMPLE is one engine, the same on every lane**: KICK, the hats, CLAP, PERC, RUMBLE, BASS, LEAD,
+CHORD, PAD and VOICE each have it as a MODEL, and KICK and the note lanes have it as LAYER MODEL
+too. What a knob is called and where it sits is the same everywhere. (GRANULAR, WAVETABLE's
+TABLE SAMPLE and VOICE's phrase models read their file as before: the section below.)
+
+**The panel's eight** while SAMPLE is the model, with DECAY, DENSITY, FILTER and LEVEL where they
+always are:
+
+| knob | |
+|---|---|
+| TUNE | the note's pitch, two octaves either way (heard at once) |
+| POSITION | where in the file (or the slice) a note starts |
+| SIZE | how much of what is left it plays; turned down on a sounding note, the note stops there, over 3 ms |
+| SCAN | how fast the file goes by: in REPITCH its speed and pitch together, in STRETCH and GRAIN the speed alone. Middle: as recorded; left down to a standstill, right up to four times |
+| SPREAD | how far each note strays, in place, pitch and level (VARIATION in PLAY says how) |
+| ATTACK, RELEASE | the note's two ends |
+| DRIVE | the engine's own saturation, before the lane's filter |
+
+**CONFIG** (the keys 1 2 3, and 4 where there is a fourth): with SAMPLE the model or the layer,
+view 2 is **SOURCE** (left) and **PLAY** (right), and view 3's left is the panel's eight, kept
+there as rings marked ON PANEL. What another model has of its own (KICK FORGE's, WAVETABLE's,
+FM 4-OP's) is on a **fourth view**, which a lane has only while SAMPLE and one of those are both
+chosen.
+
+| SOURCE | |
+|---|---|
+| START, END | the part of the file played. END is heard at once |
+| FADE IN, FADE OUT | **each slice's own**, and the whole's: at least 1 ms in and 2 ms out always, so no slice clicks at either end |
+| GAIN, NORMALISE, REVERSE | |
+| ROOT | the key the file is at (FOUND: the pitch heard in it). A note plays it at its own pitch on ROOT |
+| LOOP, LOOP START, LOOP END, CROSSFADE | with NOTES on PITCH, a held note goes round between them |
+| SLICE BY | **MARKERS** (as it opens: **none are put down for you**; a file with none is one slice), ONSETS (the hits found, as strong as SENSITIVITY lets in), EQUAL, BEATS |
+| COUNT, SENSITIVITY, BASE NOTE | how many slices (EQUAL and BEATS), how many hits count (ONSETS), the key the first slice is on |
+
+| PLAY | |
+|---|---|
+| METHOD | **REPITCH**: read faster or slower, pitch with it (clean to two octaves up). **STRETCH**: the tempo changes and the pitch does not (four notes at a time). **GRAIN**: grains of it |
+| NOTES | PITCH (a key plays the file at its pitch) or SLICES (a key chooses a slice, from BASE NOTE up) |
+| PLAY | HELD (sounds while the note is held) or THROUGH (to its end, however short the note) |
+| CHOKE | a new note cuts the last, over 3 ms |
+| CYCLE | which slice a hit plays: OFF (the one its key chooses), ROUND, RANDOM |
+| VEL START | a soft note starts further in |
+| VARIATION | at nought every note is the same, to the sample; middle as SPREAD says; over it, more |
+| RATE, PITCH SPREAD, GRAIN SHAPE, SYNC | GRAIN's: how many a second, how far each strays in pitch, the window from sharp to smooth, FREE or on the clock |
+| BARS | how long the file is taken to be (AUTO: the power of two nearest at its own tempo): STRETCH and LOCK play it in time |
+| WARP | on, STRETCH follows the warp markers |
+| LOCK | BAR: the file is where the clock is in its bars, whenever a note starts it: it cannot be put out of time (what LOOP was on the hats) |
+
+**The display** (544 by 196, in colour in every look, the outline and the 3D ones too): a strip
+of the whole file to pan along, tabs a slice (a click plays it), the wave in the file's lows,
+mids and highs as bands with clipping in red, the steps that play each slice under it, the
+playheads as notes sound, GRAIN's grains, START, END, the loop's ends and the markers. The
+wheel zooms. **START and END** snap to a zero crossing. **Double-click** puts a marker in, or
+takes one out; on a file sliced by ONSETS, EQUAL or BEATS the first double-click turns its cuts
+into markers (SLICE BY goes to MARKERS) for you to move. Up to 32, kept in the snapshot.
+
+**WARP** (STRETCH): the display's axis is then beats. Double-click on a hit to put a warp
+marker on it; drag it, and the file is stretched so that the hit lands where it is dropped (it
+snaps to a sixteenth within five pixels). Up to sixteen, kept in the snapshot. Double-click one
+to take it out.
+
+**RESAMPLE** stays as it was (the last four bars, onto the lane). There is no live capture.
+**PLAIN** sets SAMPLE's own to rest as well (PLAY THROUGH, ROOT the lane's first step's note on a
+lane that plays notes) and says what it did. A snapshot from before this build on SAMPLE comes
+back with SAMPLE's controls at rest.
+
 ### A sample as it was recorded
+
+*Before the hundredth build, SAMPLE on each lane was its own; what follows is how that was, and
+how GRANULAR, TABLE SAMPLE and VOICE's phrase models still read a file (their START, END, fades,
+slices and markers). SAMPLE itself is the section above.*
 
 A lane does not play a sample back: it plays it through everything the lane is. As SF-000 opens,
 the BASS lane with a sample plays a fraction of each note (GATE), through a low-pass (CUTOFF),
@@ -2087,8 +2163,9 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's controls in CONFIG (GROUND LENGTH, LOW PRESERVE and the ninety-ninth build's sixteen), f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice and warp markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's controls in CONFIG (GROUND LENGTH, LOW PRESERVE and the ninety-ninth build's sixteen), P SAMPLE, the engine every lane has (twelve checks: transparency, folding, clicks, timing, STRETCH, WARP, GRAIN, LOOP, REVERSE, its cost, every lane), f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
+build/.../SF-000 --sampleprint out.raw            # SAMPLE alone in nine settings, as raw floats: two builds that write the same file play the same
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --follow pad                     # a key held on a lane, and LEVEL then FILTER thrown to the bottom: the level every 50 ms after (as the rig stands; its sends at nothing; its inserts out too)

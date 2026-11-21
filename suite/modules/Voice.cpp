@@ -5,6 +5,7 @@
 // oversampled. KEY FOLLOW moves the carriers and the choir to the SF CONTROL key (phrases keep
 // their own pitch; TUNE moves them).
 #include "Kit.h"
+#include "SampleEngine.h"
 #include "../core/BandLimited.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
@@ -24,7 +25,7 @@ public:
     {
         auto p = withCuts (withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
-                 pct ("gate", "GATE", 0.6f).prim(),
+                 pct ("gate", "GATE", 0.6f).prim().nextOn ("SAMPLE"),        // (SF-000, the hundredth build: on SAMPLE it sets how long a hit is held, as it starts)
                  pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  pct ("echo", "ECHO", 0.2f).prim().dir (1),
@@ -41,7 +42,7 @@ public:
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() })));
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
-        return p;
+        return smp::with (std::move (p));        // (SF-000, the hundredth build) SAMPLE's own, last
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP PHRASE (C3 = SLICE 1)"; }
@@ -54,6 +55,8 @@ public:
         if (auto s = sample.get(); s != nullptr && std::abs (s->sr - rate) > 1 && s->flac.getSize() > 0) sample.set (loadSampleFlac (s->flac, s->name, rate, s->flacGain));
         sr = rate;
         out.prepare (rate, mb, ROLE_VOICE, "VOICE", true);
+        eng.bind (params(), true, SampleEngine::Ends::keys);       // (SF-000, the hundredth build)
+        eng.prepare (rate, mb);
         events.reserve (2048);
         for (auto& d : echoLine) d.prepare ((int) (rate * 9));
         for (int b = 0; b < kVb; ++b)
@@ -68,6 +71,7 @@ public:
     void reset() override
     {
         out.reset();
+        eng.reset();            // (SF-000, the hundredth build)
         echoes.reset();
         play = {};
         for (auto& v : choir) { v.active = false; for (auto& f : v.fm) f.reset(); }
@@ -88,6 +92,10 @@ public:
         const int model = c.ci (MODEL);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
+        // (SF-000, the hundredth build) SAMPLE is the engine every lane has: it has the notes, and what it makes goes to the
+        // lane's output beside what the other models make of the phrase
+        const bool engModel = model == 0;
+        eng.begin (c, smp, c.v (GATE), false, c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);
         // (SF-000) GATE on the phrase that is playing: how long it is let sound, counted from when it began, and how long
         // its release, as GATE now stands (a phrase GATE has outlived is let go now). Where GATE has not moved this is
         // what it was, to the sample.
@@ -136,8 +144,9 @@ public:
             while (e < events.size() && events[e].offset <= i)
             {
                 const auto& ev = events[e++];
-                if (ev.on) noteOn (ev, smp, c.ci (SLICEMODE), autoOff, relMul, reg, smp != nullptr ? cutsFrom (c, SCUTS, *smp) : Cuts());
-                else noteOff (ev.note, ev.gen);
+                if (ev.on && engModel) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0, autoOff);
+                else if (ev.on) noteOn (ev, smp, c.ci (SLICEMODE), autoOff, relMul, reg, smp != nullptr ? cutsFrom (c, SCUTS, *smp) : Cuts());
+                else { noteOff (ev.note, ev.gen); eng.noteOff (i, ev.note, ev.gen); }
             }
             float x = 0.0f, sd = 0.0f;
             if (smp != nullptr)
@@ -209,15 +218,20 @@ public:
             L[i] = xl + yl * 0.9f;
             R[i] = xr + yr * 0.9f;
         }
+        if (engModel || eng.sounding()) eng.render (c, L, R, c.n);
         out.process (c, io, FILT, -1, c.b (PPOST) ? 0.0f : c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
         dispSlice = play.active ? play.slice : -1;
     }
 
     // The phrase: the part that plays bright, its slices (the one playing green), START and END to
     // drag over it.
-    int displayHeight() const override { return 110; }
+    // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
+    bool engShown() const { return getParam && (int) std::lround (getParam (MODEL)) == 0; }
+    int displayHeight() const override { return engShown() ? SampleEngine::kDisplayHeight : 110; }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         ui::frame (g, r, "PHRASE", ui::kWords);        // (SF-000) its wording bright enough to read
         auto in = r.reduced (8, 18);
         auto s = sample.get();
@@ -243,6 +257,7 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr)
         {
             double a[65]; int n = 0;
@@ -251,13 +266,15 @@ public:
         }
         else if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { double a[65]; const int n = startsNow (*smp, a); SampleStrip::doubleClick (p, r.reduced (8, 18), *this, SCUTS, *smp, a, n); }
     }
 
 private:
+    SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
     static constexpr int kVb = 16;
     float tiltLp = 0.0f;        // (SF-000) TONE's tilt on the phrase: its low part
     float sigLo = 0.0f, sigHi = 0.0f;       // (SF-000) SIGNAL's band on the phrase: what is under it, and what is left

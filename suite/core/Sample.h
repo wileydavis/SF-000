@@ -30,6 +30,21 @@ inline float readAt (const juce::AudioBuffer<float>& b, const Mips& m, int ch, d
     return sampleAt (src->getReadPointer (std::min (ch, src->getNumChannels() - 1)), src->getNumSamples(), pos, rate);
 }
 
+// (SF-000, the hundredth build) A transient the file has: where its attack begins (in the file's samples, found to within
+// a millisecond and then put on the first sample that rises), and how strong it is against the strongest (0 to 1).
+// SAMPLE's ONSETS cut at the ones over SENSITIVITY; a warp marker put down near one is put on it.
+struct SampleHit { int at = 0; float strength = 0.0f; };
+// (SF-000, the hundredth build) What a display draws, worked out once as the file is read: for every 256 samples the
+// largest swing of either channel, the loudness of the two together, and how much of it is low (under 200 Hz), middle and
+// high (over 2.5 kHz), each 0 to 255 of the three; clip: a sample at full scale in it.
+struct SampleView
+{
+    static constexpr int kBlock = 256;
+    std::vector<float> peak, rms;
+    std::vector<uint8_t> lo, mid, hi, clip;
+    int blocks() const { return (int) peak.size(); }
+};
+
 struct SampleData
 {
     static constexpr int kOverview = 1024;
@@ -48,6 +63,8 @@ struct SampleData
     bool wide = false;          // (SF-000) the two channels differ: a stereo recording (false: one channel, or the same in both; every reader then reads one)
     Mips mips;                      // octave-down copies of buf (readAt)
     std::vector<float> overview;    // kOverview parts: the largest |x| of either channel in each, over the peak (displays)
+    std::vector<SampleHit> hits;    // (SF-000) every transient found, in order (SAMPLE's ONSETS, its warp markers)
+    SampleView view;                // (SF-000) what SAMPLE's display draws
     int length() const { return buf.getNumSamples(); }
     float read (int ch, double pos, double rate) const { return readAt (buf, mips, ch, pos, rate); }
 };

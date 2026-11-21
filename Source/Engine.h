@@ -462,7 +462,7 @@ public:
     // A cell whose control is not on the page now: on the main panel for the time being (onMain), or not this model's or
     // this setting's (a sample's with no sample playing, a band's with BANDS off). Drawn, not turned: its place is kept.
     struct SetupGhost { int grid = 0, cell = 0; juce::String id, name; Kind kind = Kind::Knob; bool onMain = false; };
-    static constexpr int kCfgGrids = 6;
+    static constexpr int kCfgGrids = 8;      // (the hundredth build: a fourth view, only where SAMPLE and KICK FORGE both play on KICK)
     // A CONFIG page whole. list: what setupParams gives, the live controls a grid at a time and then the EQ's. title: each
     // grid's name (none: the page has no such grid); says: what stands beside it (the model a MODEL grid is of); rowTag:
     // a word at the left of a row that needs one (MOTION's 1 and 2, a convolution's LOW, MID and HIGH).

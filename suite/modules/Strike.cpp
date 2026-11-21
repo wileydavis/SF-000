@@ -6,6 +6,7 @@
 // Big hits raise the pitch for a moment (TENSION); above ~70 % POWER the object FRACTURES:
 // modes split and detune, debris rattles, and the output saturates (2x oversampled).
 #include "Kit.h"
+#include "SampleEngine.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
 
@@ -52,7 +53,7 @@ public:
     double tailSeconds() const override { return 12.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).next().liveOn ("SAMPLE").prim().dir (1),
+        return smp::with (withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).next().liveOn ("SAMPLE").prim().dir (1),
                  pct ("distance", "DISTANCE", 0.3f).next().prim(),
                  pct ("size", "SIZE", 0.5f).next().prim(),
                  pct ("material", "MATERIAL", 0.5f).next().liveOn ("SAMPLE").prim(),
@@ -71,7 +72,7 @@ public:
                  pct ("echo_swing", "ECHO SWING", 0.0f).next(),
                  pct ("vel_sens", "VEL SENS", 0.5f).next(),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() })))));
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() }))))));      // (SF-000, the hundredth build) SAMPLE's own, last
     }
     // (SF-000) SAMPLE's file
     bool acceptsFiles() const override { return true; }
@@ -85,6 +86,8 @@ public:
         sr = rate;
         out.prepare (rate, mb, ROLE_PERC, "STRIKE", false);
         os.prepare (rate, 2);
+        eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
+        eng.prepare (rate, mb);
         events.reserve (2048);
         reset();
     }
@@ -94,6 +97,7 @@ public:
         for (auto& v : voices) v.active = false;
         for (auto& h : shots) h.active = false;     // (SF-000)
         lp.reset();
+        eng.reset();
         out.reset();
         os.reset();
         fractureSm = 0.0f;
@@ -123,7 +127,10 @@ public:
         const SampleData* smp = sample.audio();
         const bool sampleModel = c.ci (MODEL) == kStrikeSample;
         const float width = c.v (SPREAD) * 2.0f, sCal = cal::at (cal::perc, 12);
-        const bool loop = lp.setup (c, c.ci (SBARS), sampleModel, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
+        // (SF-000, the hundredth build) SAMPLE is the engine every lane has (SampleEngine): it has its notes and its own
+        // DRIVE, and what it makes goes on through FRACTURE (nothing, with no object struck) and the lane's output
+        eng.begin (c, smp, c.v (DECAY), false);
+        const bool loop = lp.setup (c, c.ci (SBARS), false, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
                                     sr, sCal * 1.41f, c.v (MATERIAL), c.v (DECAY), c.v (TUNE), width);
         const float sTilt = (c.v (MATERIAL) - 0.5f) * 2.0f, sTiltA = 1.0f - std::exp (-kTwoPi * 2000.0f / (float) sr),
                     sTiltLo = std::pow (10.0f, -sTilt * 0.6f), sTiltHi = std::pow (10.0f, sTilt * 0.6f);
@@ -135,9 +142,8 @@ public:
                 const auto& ev = events[e++];
                 if (! ev.on) continue;
                 if (! sampleModel) { strike (c, ev); continue; }
-                const float velK = (ev.gen == 0 ? lerp (1.0f, ev.vel, c.v (VELSENS)) : ev.vel) * std::pow (0.7f, (float) ev.gen) * ev.gain;
-                if (loop) lp.hit (c, c.v (DECAY), velK, ev.gen);
-                else if (smp != nullptr) shoot (c, ev, *smp, velK);
+                eng.noteOn (i, ev.note, (float) ev.note, ev.vel, std::pow (0.7f, (float) ev.gen) * ev.gain, ev.gen, 0);
+                juce::ignoreUnused (loop);
             }
             float l = 0.0f, r = 0.0f;
             for (auto& v : voices) if (v.active) render (v, l, r);
@@ -165,6 +171,7 @@ public:
             else for (auto& h : shots) h.active = false;
             L[i] = l; R[i] = r;
         }
+        if (sampleModel || eng.sounding()) eng.render (c, L, R, c.n);
         // FRACTURE: the object distorts (2x oversampled). The amount follows the fractured voices'
         // own envelopes (full at the blast, gone by the time they die), smoothed (2 ms up, 50 ms
         // down) and ramped across the chunk, and it is blended in from exactly clean at 0: no level
@@ -180,7 +187,7 @@ public:
         if (fractureSm < 1.0e-5f) fractureSm = 0.0f;
         const float f1 = fractureSm, span = 1.0f / (float) (2 * c.n);
         // (SF-000) SAMPLE's DRIVE (POWER's knob), across the chunk from where it was: each side through it
-        const float d1 = sampleModel ? c.v (POWER) : 0.0f, d0 = driveWas;
+        const float d1 = 0.0f, d0 = driveWas;           // (the hundredth build: SAMPLE has a DRIVE of its own)
         driveWas = d1;
         for (int ch = 0; ch < 2; ++ch)
         {
@@ -202,19 +209,25 @@ public:
     }
 
     // (SF-000) under its own display, with a sample loaded: the sample (its START and END to drag)
-    int displayHeight() const override { return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
+    bool engShown() const { return getParam && (int) std::lround (getParam (MODEL)) == kStrikeSample; }
+    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         if (auto smp = sample.get())
             if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) strip.paint (g, st, *smp, *this, SSTART, SCUTS);
         r = r.withHeight ((float) kOwn);
@@ -438,6 +451,7 @@ private:
     Oversampler os;
     Noise rng;
     SampleSlot sample;                      // (SF-000) SAMPLE
+    SampleEngine eng;                       // (SF-000, the hundredth build) SAMPLE, as every lane has it
     SampleStrip strip;
     static constexpr int kOwn = 110;
     std::array<Shot, 6> shots;

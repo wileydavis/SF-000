@@ -6134,7 +6134,93 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      POLARITY and PHASE are the controls such a view would use. **The Forge is finished unless
      you find a sound it cannot make.**
 
+## SAMPLE, the engine every lane has (Nov 21, 07:48 to 08:15): the hundredth build
+
+777. **You**, Nov 21, 07:48: "Let’s start on the sampler. It’s the most complex and I’ll be
+     working with it a lot, so start by producing a description of what you’ll build and
+     drawings of the ui. I’d like a more robust waveform ui element that also shows a moving
+     playhead, the notes that trigger a slice where that’s relevant, and anything else you can
+     think of."
+     **Made**: the plan ("SF-000 SAMPLE: what will be built", a doc) and its drawings (a design
+     canvas). Nothing built.
+
+778. **You**, Nov 21, 08:13: "1. attack and release is fine in 6,7. 2. I'm on the fence about
+     live sample capture. I don't actually think I'd ever use it in a performance setting so we
+     can eliminate that aspect. 3. in the 3d outline look (all the 3d views) the display should
+     have color, similar to how we keep color with the eq. 4. I would like to add to this build
+     the ability to plave manual warp markers and warp a sample so the elements I choose warp to
+     new positions. This is something I do a lot outside sf-000 to get samples to land on the
+     beat at key transients, so I'd love to have that function built in. 5. For sliced samples,
+     the fade in/ouit should probably apply to each slice to prevent click, yes? 6. don't
+     automatically place arkers by default... a lot of time it diesn't get it right and I waste
+     time deleting lots of incorrect markers. 7. Build the entire sampler in one go according to
+     this plan."
+
+779. **You**, Nov 21, 08:15: "and because this will be one of three engines eventuaklly, keep the
+     config controls as consolidated to the fewest pages possible, even if it means disrupting
+     old config layouts with other models."
+
+780. **Built: SAMPLE, one engine, the same on every lane** (`suite/modules/SampleEngine`). Each
+     lane's SAMPLE model (and SAMPLE as the kick's or a synth's layer) plays through it; the
+     old per-module SAMPLE code is gone. GRANULAR, TABLE SAMPLE and VOICE's phrase models keep
+     their `smp_` controls as they were.
+     - **The panel's eight on every lane**: TUNE, POSITION, SIZE, SCAN, SPREAD, ATTACK, RELEASE,
+       DRIVE (ATTACK and RELEASE at 6 and 7, as you said), with DECAY, DENSITY, FILTER, LEVEL
+       where they always are.
+     - **METHOD**: REPITCH (a 32-point sinc read; above the file's own speed a wider filter so
+       nothing folds back: a 15 kHz tone two octaves up is 96 dB down), STRETCH (the tempo
+       changes, the pitch does not; up to four notes at once), GRAIN (24 grains a note, RATE,
+       PITCH SPREAD, GRAIN SHAPE, SYNC to the clock).
+     - **WARP** (your 4): in STRETCH the display's axis is beats. Double-click on a hit puts a
+       warp marker there; drag it and the file is stretched so that hit lands where you dropped
+       it (it snaps to a sixteenth within five pixels). Sixteen markers a lane, kept in the
+       snapshot. Checked: a hit 310 ms into a bar-long file, dragged to the second beat at 120,
+       is heard 500 ms in.
+     - **Slices** (your 5 and 6): SLICE BY MARKERS is the default and **none are put down for
+       you**: a file with none is one slice. ONSETS, EQUAL and BEATS are there to choose. A
+       double-click on a file sliced another way turns its cuts into markers you can then move.
+       FADE IN and FADE OUT are each slice's own (at least 1 ms in, 2 ms out, always), so no
+       slice clicks at either end.
+     - **CAPTURE is not built** (your 2). RESAMPLE stays.
+     - **The display** (your 3): 544 by 196, in colour in every look, the outline and the 3D
+       views included (as the EQ keeps its colour): the file's lows, mids and highs as bands,
+       clipping in red, an overview strip to pan, tabs a slice (a click plays it), the steps
+       that play each slice under it, the playheads moving, the grains, the markers, the loop.
+       The wheel zooms.
+     - **CONFIG** (your 779): kept to three pages wherever it can be. With SAMPLE on, view 2 is
+       SOURCE and PLAY (left and right), and the left of view 3 is the panel's eight under
+       SAMPLE (ghosts, ON PANEL). What another model has of its own moves to a fourth view,
+       which exists only on a lane where SAMPLE and another engine (FORGE, WAVETABLE, FM) are
+       both chosen. **Old layouts moved**: the drums, hats, rumble and voice each have a SOUND
+       grid of their own now, and a synth's CUTOFF is in the lane grid's cell 14.
+     *Mine:*
+     - The RUMBLE made of a SAMPLE kick is made of the kick's sample (the rumble had been silent).
+       A sample on RUMBLE is not sent into its own room.
+     - VOICE's echo is not on SAMPLE.
+     - LOCK BAR in REPITCH follows the tempo by speed, so TUNE is not heard there.
+     - LOOP is a loop only with NOTES on PITCH; the old LOOP (a phrase held to bars) is LOCK BAR.
+     - VARIATION at nought: every note the same to the sample; over the middle, more.
+     - No MPE hook (774's rule: nothing a saved sound would break on if added later).
+     - Old snapshots on SAMPLE come back with SAMPLE's controls at rest (you said old snapshots
+       may change).
+     - SIZE and END are taken as they are set, not eased over 30 ms as every other knob is
+       (`quickly()` in `Module.h`): a note they cut is let go over 3 ms anyway, and eased, a
+       closed hat was over before SIZE reached it. ROOT, MONO and VOICE's GATE on SAMPLE say
+       NEXT: each is read as a note starts.
+     **Checked**: `sampleEngineTest` (12 checks: at rest a file comes out as it went in, to
+     -120 dB; folding; no clicks at POSITION, SIZE, CHOKE; markers; timing to the sample; STRETCH
+     and WARP timing; GRAIN's variation; LOOP; REVERSE; CPU on one core; every lane plays it),
+     the markers, sampler and stereo-and-LOCK tests rewritten for it, the contract walk, and a
+     print of nine settings kept as a standing check (`--sampleprint`).
+
 ## Not verified
+
+- **The hundredth build (780): SAMPLE is measured, not heard, and not seen on the Mac.**
+  Worth your ears first: STRETCH on a drum loop (the Signalsmith stretcher's transients), WARP
+  by mouse on a real loop, GRAIN's ranges, and the CPU of GRAIN on many lanes at once (about a
+  fifth of a core for sixteen held notes here). The display is checked drawn, not used: whether
+  the zoom, the markers and the warp drags feel right are yours to say. The CONFIG layouts of
+  the hats, rumble and voice moved; if a knob you used is hard to find, say which.
 
 - **The ninety-ninth build (776): the Forge's sixteen are measured, not heard.** The ones most
   likely to want your ears: HANG and CURVE's ranges, IMPACT ONLY's level (louder than in the
