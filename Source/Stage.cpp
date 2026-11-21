@@ -248,10 +248,17 @@ const char* const kSlabVert = R"(#version 150
 in vec2 aCorner; in vec2 aArc; in vec3 aProf; in vec2 aN; in float aTop;
 in vec4 iRect; in vec4 iShape; in vec4 iColour; in vec4 iMat; in vec4 iClip;
 uniform mat4 uVP;
-out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip; flat out vec4 vRect;
+out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip; flat out vec4 vRect; flat out vec2 vId;
+// (whose a point is: two numbers that go with one part and no other, for the outline look's lines)
+vec2 idOf (vec4 a, float b)
+{
+    vec3 q = fract (vec3 (a.x + a.z * 0.37, a.y + a.w * 0.71, b + a.x * 0.13 + a.w * 0.29) * vec3 (0.1031, 0.1030, 0.0973));
+    q += dot (q, q.yzx + 33.33);
+    return fract ((q.xx + q.yz) * q.zy);
+}
 void main()
 {
-    vRect = iRect;
+    vRect = iRect; vId = idOf (iRect, iShape.x);
     vec2 hs = iRect.zw;
     float r = min (iShape.z, min (hs.x, hs.y));
     float bev = min (iShape.w, r);
@@ -268,10 +275,17 @@ const char* const kTurnedVert = R"(#version 150
 in vec3 aPos; in vec3 aNormal; in float aTop;
 in vec4 iPos; in vec4 iColour; in vec4 iMat; in vec4 iClip;
 uniform mat4 uVP;
-out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip; flat out vec4 vRect;
+out vec3 vPos; out vec3 vNormal; out float vTop; out vec4 vColour; out vec4 vMat; out vec4 vClip; flat out vec4 vRect; flat out vec2 vId;
+// (whose a point is: two numbers that go with one part and no other, for the outline look's lines)
+vec2 idOf (vec4 a, float b)
+{
+    vec3 q = fract (vec3 (a.x + a.z * 0.37, a.y + a.w * 0.71, b + a.x * 0.13 + a.w * 0.29) * vec3 (0.1031, 0.1030, 0.0973));
+    q += dot (q, q.yzx + 33.33);
+    return fract ((q.xx + q.yz) * q.zy);
+}
 void main()
 {
-    vRect = vec4 (0.0);
+    vRect = vec4 (0.0); vId = idOf (iPos, iColour.r + 3.0);
     vPos = vec3 (iPos.x + aPos.x * iPos.w, iPos.z + aPos.y * iPos.w, iPos.y + aPos.z * iPos.w);
     vNormal = aNormal;
     vTop = aTop; vColour = iColour; vMat = iMat; vClip = iClip;
@@ -283,12 +297,21 @@ void main()
 const char* const kLightVert = R"(#version 150
 in vec3 aPos;
 in vec4 iPos; in vec4 iColour; in vec4 iClip;
-uniform mat4 uVP;
-out vec3 vPos; out vec3 vColour; out vec4 vClip;
+uniform mat4 uVP; uniform float uGrow;
+out vec3 vPos; out vec3 vColour; out vec4 vClip; flat out vec2 vId;
+// (whose a point is: two numbers that go with one part and no other, for the outline look's lines)
+vec2 idOf (vec4 a, float b)
+{
+    vec3 q = fract (vec3 (a.x + a.z * 0.37, a.y + a.w * 0.71, b + a.x * 0.13 + a.w * 0.29) * vec3 (0.1031, 0.1030, 0.0973));
+    q += dot (q, q.yzx + 33.33);
+    return fract ((q.xx + q.yz) * q.zy);
+}
 void main()
 {
+    vId = idOf (vec4 (iPos.xyz, 0.0), 7.0);          // (all the lights round one knob are one thing)
     float c = cos (iPos.w), s = sin (iPos.w);
     vec3 p = vec3 (aPos.x * c + aPos.z * s, aPos.y, aPos.z * c - aPos.x * s) * iColour.a;
+    p.xz *= 1.0 + uGrow;         // (the outline look's lights stand a little way off their knob: an arc of its own, clear of the cap's line)
     vPos = vec3 (iPos.x + p.x, iPos.z + p.y, iPos.y + p.z);
     vColour = iColour.rgb; vClip = iClip;
     gl_Position = uVP * vec4 (vPos, 1.0);
@@ -296,11 +319,21 @@ void main()
 )";
 
 const char* const kLightFrag = R"(#version 150
-in vec3 vPos; in vec3 vColour; in vec4 vClip;
-out vec4 oColour;
+in vec3 vPos; in vec3 vColour; in vec4 vClip; flat in vec2 vId;
+uniform float uInk;
+out vec4 oColour; out vec4 oData;
 void main()
 {
     if (vPos.x < vClip.x || vPos.z < vClip.y || vPos.x > vClip.z || vPos.z > vClip.w) discard;
+    if (uInk > 0.5)
+    {
+        // (the outline look: a light that is on is filled in; one that is off is not drawn at all)
+        float v = max (vColour.r, max (vColour.g, vColour.b));
+        if (v < 0.15) discard;
+        oColour = vec4 (vec3 (clamp (v, 0.0, 1.0)), 0.0);
+        oData = vec4 (0.5, 0.5, (floor (vId * 254.0) + 1.0) / 255.0);
+        return;
+    }
     oColour = vec4 (clamp (vColour, 0.0, 60.0), 1.0);
 }
 )";
@@ -319,13 +352,14 @@ void main()
 // Every solid surface. vMat.x says what it is: 0 plain; 1 its top carries the sheet's print;
 // 2 a display (what the sheet shows there is light); 3 a lit key; 4 the case.
 const char* const kSurfaceFrag = R"(#version 150
-in vec3 vPos; in vec3 vNormal; in float vTop; in vec4 vColour; in vec4 vMat; in vec4 vClip; flat in vec4 vRect;
+in vec3 vPos; in vec3 vNormal; in float vTop; in vec4 vColour; in vec4 vMat; in vec4 vClip; flat in vec4 vRect; flat in vec2 vId;
+uniform float uInk; uniform vec4 uKeep[2];
 uniform vec3 uEye; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uSky; uniform vec3 uGround; uniform float uFinish;
 uniform sampler2D uSheet; uniform vec4 uSheetMap;
 uniform sampler2DShadow uShadow; uniform mat4 uShadowVP; uniform float uShadowTexel;
 uniform sampler2D uWear; uniform vec2 uWearSpan;
 uniform vec3 uWarm; uniform float uCaseDepth;
-out vec4 oColour;
+out vec4 oColour; out vec4 oData;
 const float PI = 3.14159265;
 const vec2 kTaps[9] = vec2[9] (vec2 (0.0, 0.0), vec2 (0.95, 0.20), vec2 (-0.35, 0.90), vec2 (-0.90, -0.30), vec2 (0.30, -0.95),
                                vec2 (0.55, 0.65), vec2 (-0.70, 0.45), vec2 (-0.50, -0.75), vec2 (0.75, -0.50));
@@ -379,6 +413,34 @@ void main()
     if (vPos.x < vClip.x || vPos.z < vClip.y || vPos.x > vClip.z || vPos.z > vClip.w) discard;
     vec3 n = normalize (vNormal);
     if (! gl_FrontFacing) n = -n;
+    if (uInk > 0.5)
+    {
+        // The outline look: nothing here is lit. What leaves is what the surface shows of itself
+        // (its print, a display's picture, a lit key's light; a dark surface shows nothing), and
+        // beside it which way it faces and whose it is: the lines are drawn afterwards, wherever
+        // either of those changes. (alpha: its colours are to be kept, as the EQ's are.)
+        if (vMat.x < 0.5 && vMat.y < -0.5) discard;          // (a place where a control could be and is not, and the disc under a knob: left out, a line round either says nothing)
+        float top = max (vColour.r, max (vColour.g, vColour.b));
+        vec3 show = vColour.rgb * smoothstep (0.18, 0.60, top);
+        float keep = 0.0;
+        if (vTop > 0.5 && vMat.x > 0.5)
+        {
+            vec4 p = texture (uSheet, (vPos.xz + uSheetMap.xy) * uSheetMap.zw);
+            float cover = clamp (p.a, 0.0, 1.0);
+            vec3 ink = cover > 0.002 ? toLinear (clamp (p.rgb / cover, 0.0, 1.0)) : vec3 (0.0);
+            for (int i = 0; i < 2; ++i) if (vPos.x > uKeep[i].x && vPos.z > uKeep[i].y && vPos.x < uKeep[i].z && vPos.z < uKeep[i].w) keep = 1.0;
+            bool display = vMat.x > 1.5 && vMat.x < 2.5;
+            // (print on a plate is print: full strength unless it was meant to be faint. A display keeps its greys.)
+            if (! display && keep < 0.5) ink = vec3 (smoothstep (0.02, 0.36, max (ink.r, max (ink.g, ink.b))));
+            show = mix (display ? vColour.rgb : show, ink, cover);
+        }
+        if (vMat.x > 2.5 && vMat.x < 3.5) show = max (show, vec3 (clamp (top * vMat.y * 4.0, 0.0, 1.0)));       // (a lit key is filled in)
+        oColour = vec4 (show, keep);
+        // (which way: up, or round to which side. A rounded edge is then one line, not a band of them.)
+        vec2 way = n.y > 0.72 ? vec2 (0.0) : n.xz / max (length (n.xz), 0.001);
+        oData = vec4 (way * 0.5 + vec2 (0.5), (floor (vId * 254.0) + 1.0) / 255.0);
+        return;
+    }
     vec3 albedo = vColour.rgb;
     float rough = clamp (vColour.a, 0.06, 1.0), metal = clamp (vMat.z, 0.0, 1.0), kind = vMat.x;
     vec3 emit = vec3 (0.0);
@@ -589,6 +651,57 @@ void main()
 }
 )";
 
+// The outline look. The lines: wherever, a line's width away, the picture is of another part or
+// of a face turned another way. Under them, what the surfaces show of themselves, as so much ink:
+// all of it in one colour on one ground, except where colours are kept.
+const char* const kInkFrag = R"(#version 150
+in vec2 vUv;
+uniform sampler2D uTex; uniform sampler2D uData; uniform vec2 uTexel; uniform float uWeight; uniform vec3 uInkCol; uniform vec3 uPaper; uniform float uKeepGain;
+out vec4 oColour;
+const vec2 kRound[8] = vec2[8] (vec2 (1.0, 0.0), vec2 (0.7071, 0.7071), vec2 (0.0, 1.0), vec2 (-0.7071, 0.7071), vec2 (-1.0, 0.0), vec2 (-0.7071, -0.7071), vec2 (0.0, -1.0), vec2 (0.7071, -0.7071));
+float differs (vec4 a, vec4 b)
+{
+    float who = step (0.6 / 255.0, max (abs (a.z - b.z), abs (a.w - b.w)));
+    float way = smoothstep (0.20, 0.40, distance (a.xy, b.xy));
+    return max (who, way);
+}
+void main()
+{
+    vec4 c = texture (uTex, vUv);
+    vec4 d = texture (uData, vUv);
+    float line = 0.0;
+    for (int i = 0; i < 8; ++i)
+    {
+        line += differs (texture (uData, vUv + kRound[i] * uTexel * uWeight), d);
+        line += 0.5 * differs (texture (uData, vUv + kRound[i] * uTexel * uWeight * 0.5), d);
+    }
+    line = clamp (line / 6.0 * 1.9, 0.0, 1.0);
+    float v = max (c.r, max (c.g, c.b));
+    float fill = clamp (1.15 * pow (clamp (v, 0.0, 1.0), 0.65) - 0.07, 0.0, 1.0);      // (how bright it is, as so much ink: a screen of one colour still has its greys)
+    vec3 flat_ = mix (uPaper, uInkCol, fill);
+    flat_ = mix (flat_, c.rgb * uKeepGain, clamp (c.a, 0.0, 1.0));
+    vec3 o = mix (flat_, uInkCol, line);
+    if (! (o.r >= 0.0)) o.r = 0.0;
+    if (! (o.g >= 0.0)) o.g = 0.0;
+    if (! (o.b >= 0.0)) o.b = 0.0;
+    oColour = vec4 (min (o, vec3 (8.0)), 1.0);
+}
+)";
+// ...and as the window shows it: a little of its own glow round the ink (a tube's), none on paper.
+const char* const kInkOutFrag = R"(#version 150
+in vec2 vUv;
+uniform sampler2D uTex; uniform sampler2D uBloom; uniform float uBloomGain; uniform float uExposure;
+out vec4 oColour;
+void main()
+{
+    vec3 c = (texture (uTex, vUv).rgb + texture (uBloom, vUv).rgb * uBloomGain) * uExposure;
+    c = clamp (c, 0.0, 1.0);
+    c = mix (c * 12.92, 1.055 * pow (c, vec3 (1.0 / 2.4)) - vec3 (0.055), step (vec3 (0.0031308), c));
+    float grain = fract (sin (dot (gl_FragCoord.xy, vec2 (12.9898, 78.233))) * 43758.5453) - 0.5;
+    oColour = vec4 (c + vec3 (grain / 255.0), 1.0);
+}
+)";
+
 const char* const kCopyFrag = R"(#version 150
 in vec2 vUv;
 uniform sampler2D uTex;
@@ -678,6 +791,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         std::vector<SheetUpdate> sheet; size_t sheetBytes = 0;
         bool hasTags = false; std::vector<Tag> tags;
         bool dark = false;
+        int ink = 0; float inkWeight = 1.0f; float keep[8] {};
         // the eye: where home is, where it is to go, and how
         V3 homeEye, homeAt, goalEye, goalAt; bool jump = true, eyeSet = false;
         bool capture = false, snap = false;
@@ -727,7 +841,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     };
     Batch slabs, keySlabs, capBig, capSmall, baseBig, baseSmall, lens, segBig, segSmall, lensLit;
     GLuint quadVao = 0, quadVbo = 0;
-    std::unique_ptr<juce::OpenGLShaderProgram> pSlab, pTurned, pSlabDepth, pTurnedDepth, pLight, pRoom, pGlow, pDown, pUp, pFinal, pCopy, pTag;
+    std::unique_ptr<juce::OpenGLShaderProgram> pSlab, pTurned, pSlabDepth, pTurnedDepth, pLight, pRoom, pGlow, pDown, pUp, pFinal, pCopy, pTag, pInk, pInkOut;
     GLuint sheetTex = 0, shadowTex = 0, shadowFbo = 0;
     GLuint wearTex = 0;                                 // the wear sheet (the dark instrument's scratches)
     static constexpr float kWearSpan = 330.0f;          // how much of a plate the sheet's height covers: about one of the lanes' plates
@@ -736,10 +850,14 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     GLuint msFbo = 0, msColour = 0, msDepth = 0, sceneFbo = 0, sceneTex = 0, finalFbo = 0, finalTex = 0;
     static constexpr int kMips = 6;
     GLuint mipFbo[kMips] {}, mipTex[kMips] {}; int mipW[kMips] {}, mipH[kMips] {};
+    // the outline look's own pictures (made the first time it is asked for): which way each point faces and whose it is, and the inked picture
+    GLuint msData = 0, dataFbo = 0, dataTex = 0, inkFbo = 0, inkTex = 0;
+    int ink = 0; float inkWeight = 1.0f; float keep[8] {}; bool inkBroken = false;
     int fbW = 0, fbH = 0, samples = 4;
     static constexpr int kShadow = 4096;
     Parts parts;
     bool dark = false, shadowStale = true, sceneStale = true, haveFinal = false, needBuild = false;
+    bool inking = false, inkShown = false;      // (inking: the parts are being drawn for the outline look; inkShown: the last picture was that look's)
     bool gotSheet = false, looked = false, blankForTest = false; int lookedBad = 0;
     juce::uint64 shapeWas = 0;
     struct Live { float v = -2.0f, target = -2.0f; bool gliding = false, taught = false; };
@@ -838,6 +956,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             for (const auto& w : where) if (std::strcmp (w.first, a) == 0) glBindAttribLocation (p->getProgramID(), w.second, a);
         }
         glBindFragDataLocation (p->getProgramID(), 0, "oColour");
+        glBindFragDataLocation (p->getProgramID(), 1, "oData");         // (the outline look's second picture: the programs that have none are none the worse)
         if (! p->link()) { fail (juce::String (name) + " program: " + p->getLastError()); return nullptr; }
         return p;
     }
@@ -907,6 +1026,8 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         pUp = program ("glow up", kFullVert, kUpFrag, { "aPos" });
         pFinal = program ("final", kFullVert, kFinalFrag, { "aPos" });
         pCopy = program ("copy", kFullVert, kCopyFrag, { "aPos" });
+        pInk = program ("outline", kFullVert, kInkFrag, { "aPos" });
+        pInkOut = program ("outline final", kFullVert, kInkOutFrag, { "aPos" });
         pTag = program ("tag", kTagVert, kTagFrag, { "aPos" });
         if (stateNow.load() == (int) State::failed) return;
 
@@ -1036,15 +1157,15 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         if (shadowFbo != 0) { glDeleteFramebuffers (1, &shadowFbo); shadowFbo = 0; }
         for (auto& t : tags) if (t.tex != 0) glDeleteTextures (1, &t.tex);
         tags.clear();
-        for (auto* p : { &pSlab, &pTurned, &pSlabDepth, &pTurnedDepth, &pLight, &pRoom, &pGlow, &pDown, &pUp, &pFinal, &pCopy, &pTag }) p->reset();
+        for (auto* p : { &pSlab, &pTurned, &pSlabDepth, &pTurnedDepth, &pLight, &pRoom, &pGlow, &pDown, &pUp, &pFinal, &pCopy, &pTag, &pInk, &pInkOut }) p->reset();
         haveFinal = false;
     }
 
     void dropBuffers()
     {
-        for (GLuint* f : { &msFbo, &sceneFbo, &finalFbo }) if (*f != 0) { glDeleteFramebuffers (1, f); *f = 0; }
-        for (GLuint* r : { &msColour, &msDepth }) if (*r != 0) { glDeleteRenderbuffers (1, r); *r = 0; }
-        for (GLuint* t : { &sceneTex, &finalTex }) if (*t != 0) { glDeleteTextures (1, t); *t = 0; }
+        for (GLuint* f : { &msFbo, &sceneFbo, &finalFbo, &dataFbo, &inkFbo }) if (*f != 0) { glDeleteFramebuffers (1, f); *f = 0; }
+        for (GLuint* r : { &msColour, &msDepth, &msData }) if (*r != 0) { glDeleteRenderbuffers (1, r); *r = 0; }
+        for (GLuint* t : { &sceneTex, &finalTex, &dataTex, &inkTex }) if (*t != 0) { glDeleteTextures (1, t); *t = 0; }
         for (int i = 0; i < kMips; ++i)
         {
             if (mipFbo[i] != 0) glDeleteFramebuffers (1, &mipFbo[i]);
@@ -1104,6 +1225,38 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         return true;
     }
 
+    // The outline look's pictures, beside the others: a second layer in the smoothed buffer (which
+    // way each point faces, whose it is), the same as one layer, and the inked picture. Made when
+    // the look is first asked for: until then they cost nothing. If this driver will not give
+    // them, the look is not to be had and the picture stays as it was.
+    bool makeInkBuffers (int w, int h)
+    {
+        if (dataTex != 0) return true;
+        if (inkBroken) return false;
+        clearErrors();
+        glBindFramebuffer (GL_FRAMEBUFFER, msFbo);
+        glGenRenderbuffers (1, &msData); glBindRenderbuffer (GL_RENDERBUFFER, msData);
+        if (samples > 1) glRenderbufferStorageMultisample (GL_RENDERBUFFER, samples, GL_RGBA8, w, h); else glRenderbufferStorage (GL_RENDERBUFFER, GL_RGBA8, w, h);
+        glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_RENDERBUFFER, msData);
+        const GLenum both[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+        glDrawBuffers (2, both);
+        bool ok = glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        glDrawBuffer (GL_COLOR_ATTACHMENT0);
+        dataTex = target (dataFbo, GL_RGBA8, w, h, GL_LINEAR);
+        ok = ok && glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+        inkTex = target (inkFbo, GL_RGBA16F, w, h, GL_LINEAR);
+        ok = ok && glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && glGetError() == GL_NO_ERROR;
+        if (ok) return true;
+        glBindFramebuffer (GL_FRAMEBUFFER, msFbo);
+        glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_RENDERBUFFER, 0);
+        for (GLuint* f : { &dataFbo, &inkFbo }) if (*f != 0) { glDeleteFramebuffers (1, f); *f = 0; }
+        if (msData != 0) { glDeleteRenderbuffers (1, &msData); msData = 0; }
+        for (GLuint* t : { &dataTex, &inkTex }) if (*t != 0) { glDeleteTextures (1, t); *t = 0; }
+        clearErrors();
+        inkBroken = true;
+        return false;
+    }
+
     // ------------------------------------------------------------------- the parts, as drawn
     struct Look { Rgb body, cap, base, unlit, lensOff, badge, pocket; float plateRough = 0.82f; };
     Look look() const
@@ -1141,9 +1294,11 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
                          colour.r, colour.g, colour.b, rough, kind, emit, metal, finish }) d.push_back (f);
         clipTo (d, clip);
     }
-    void turnedAt (Batch& b, float cx, float cy, float base, float scale, Rgb colour, float rough, float kind, const Parts::Clip& clip)
+    // (a plain part's light is not used for anything: on a hollow it says "nothing is here", which the outline look goes by)
+    static constexpr float kNotThere = -1.0f;
+    void turnedAt (Batch& b, float cx, float cy, float base, float scale, Rgb colour, float rough, float kind, const Parts::Clip& clip, float emit = 0.0f)
     {
-        for (float f : { cx - kW * 0.5f, cy - kH * 0.5f, base, scale, colour.r, colour.g, colour.b, rough, kind, 0.0f, 0.0f, 0.0f }) b.data.push_back (f);
+        for (float f : { cx - kW * 0.5f, cy - kH * 0.5f, base, scale, colour.r, colour.g, colour.b, rough, kind, emit, 0.0f, 0.0f }) b.data.push_back (f);
         clipTo (b.data, clip);
     }
     static void lightAt (Batch& b, float cx, float cy, float base, float angle, Rgb colour, float scale, const Parts::Clip& clip)
@@ -1205,20 +1360,20 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
                 // a pocket: its floor, darker still, w by h; and a lip standing round it, just inside its edge, so that a pile in it
                 // stands in something (a plate cannot be cut into: the pocket is a tray on it)
                 const juce::Rectangle<float> wr (h.cx - h.w * 0.5f, h.cy - h.h * 0.5f, h.w, h.h);
-                slab (wr.reduced (1.0f), h.base + 0.04f, 0.02f, 5.0f, 0.0f, ground * (dark ? 0.42f : 0.50f), 0.85f, 0.0f, 0.0f, 0.0f, h.clip);
+                slab (wr.reduced (1.0f), h.base + 0.04f, 0.02f, 5.0f, 0.0f, ground * (dark ? 0.42f : 0.50f), 0.85f, 0.0f, kNotThere, 0.0f, h.clip);
                 const float lip = Parts::kPlate * 0.5f, t = 3.5f;
                 const Rgb rim = ground * (dark ? 0.78f : 0.84f);
-                slab ({ wr.getX(), wr.getY(), wr.getWidth(), t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);                              // far
-                slab ({ wr.getX(), wr.getBottom() - t, wr.getWidth(), t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);                     // near
-                slab ({ wr.getX(), wr.getY() + t, t, wr.getHeight() - 2.0f * t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);              // left
-                slab ({ wr.getRight() - t, wr.getY() + t, t, wr.getHeight() - 2.0f * t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);      // right
+                slab ({ wr.getX(), wr.getY(), wr.getWidth(), t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, kNotThere, 0.0f, h.clip);                              // far
+                slab ({ wr.getX(), wr.getBottom() - t, wr.getWidth(), t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, kNotThere, 0.0f, h.clip);                     // near
+                slab ({ wr.getX(), wr.getY() + t, t, wr.getHeight() - 2.0f * t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, kNotThere, 0.0f, h.clip);              // left
+                slab ({ wr.getRight() - t, wr.getY() + t, t, wr.getHeight() - 2.0f * t }, h.base, lip, 1.2f, 0.0f, rim, 0.8f, 0.0f, kNotThere, 0.0f, h.clip);      // right
             }
-            else if (h.round) turnedAt (baseBig, h.cx, h.cy, h.base + 0.02f, (h.d * 0.5f - 1.0f) / 19.5f, dim, 0.8f, 0.0f, h.clip);
-            else slab (juce::Rectangle<float> (h.cx - h.d * 0.5f, h.cy - h.d * 0.5f, h.d, h.d).reduced (1.0f), h.base + 0.04f, 0.02f, 2.6f, 0.0f, dim, 0.8f, 0.0f, 0.0f, 0.0f, h.clip);
+            else if (h.round) turnedAt (baseBig, h.cx, h.cy, h.base + 0.02f, (h.d * 0.5f - 1.0f) / 19.5f, dim, 0.8f, 0.0f, h.clip, kNotThere);
+            else slab (juce::Rectangle<float> (h.cx - h.d * 0.5f, h.cy - h.d * 0.5f, h.d, h.d).reduced (1.0f), h.base + 0.04f, 0.02f, 2.6f, 0.0f, dim, 0.8f, 0.0f, kNotThere, 0.0f, h.clip);
         }
         for (const auto& k : parts.knobs)
         {
-            turnedAt (k.big ? baseBig : baseSmall, k.cx, k.cy, k.base + 0.02f, 1.0f, l.base, 0.3f, 0.0f, k.clip);
+            turnedAt (k.big ? baseBig : baseSmall, k.cx, k.cy, k.base + 0.02f, 1.0f, l.base, 0.3f, 0.0f, k.clip, kNotThere);      // (the outline look leaves the disc out: a knob is its cap and its lights)
             turnedAt (k.big ? capBig : capSmall, k.cx, k.cy, k.base, 1.0f, l.cap, dark ? 0.36f : 0.42f, 1.0f, k.clip);
         }
         for (const auto& lp : parts.lamps)
@@ -1358,6 +1513,8 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             glUniform3f (loc ("uWarm"), c.x * 0.13f * gain, c.y * 0.13f * gain, c.z * 0.13f * gain);
         }
         glUniform1f (loc ("uCaseDepth"), Parts::kCase);
+        glUniform1f (loc ("uInk"), inking ? 1.0f : 0.0f);
+        glUniform4fv (loc ("uKeep"), 2, keep);
     }
 
     void fullPass (juce::OpenGLShaderProgram& p, GLuint fbo, int w, int h)
@@ -1384,6 +1541,11 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             const juce::ScopedLock sl (lock);
             if (pending.hasParts) { parts = std::move (pending.parts); pending.parts = {}; pending.hasParts = false; gotParts = true; }
             if (pending.dark != dark) { dark = pending.dark; gotParts = true; }
+            if (pending.ink != ink || pending.inkWeight != inkWeight || std::memcmp (pending.keep, keep, sizeof (keep)) != 0)
+            {
+                ink = pending.ink; inkWeight = pending.inkWeight; std::memcpy (keep, pending.keep, sizeof (keep));
+                sceneStale = true;
+            }
             updates.swap (pending.sheet); pending.sheetBytes = 0;
             if (pending.hasTags) { newTags = std::move (pending.tags); pending.tags.clear(); pending.hasTags = false; gotTags = true; }
             if (pending.eyeSet)
@@ -1533,6 +1695,23 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
                     if ((bits & 0x7f800000u) == 0x7f800000u) { ++notNumbers; break; }       // (asked of the bits: the build's quick sums may not tell)
                 }
             }
+        if (inkShown)
+        {
+            // (the outline look's picture is mostly its ground, and a point may well miss every line: it is read at its
+            // smallest, where the lines have run together. That size is the one the glow only takes from and never adds to.)
+            constexpr int at = kMips - 1;
+            glBindFramebuffer (GL_READ_FRAMEBUFFER, mipFbo[at]);
+            for (int j = 0; j < ny; ++j)
+                for (int i = 0; i < nx; ++i)
+                {
+                    float f[4] {};
+                    glReadPixels ((int) (((float) i + 0.5f) * (float) mipW[at] / (float) nx), (int) (((float) j + 0.5f) * (float) mipH[at] / (float) ny), 1, 1, GL_RGBA, GL_FLOAT, f);
+                    const int v = (int) (255.0f * juce::jlimit (0.0f, 1.0f, std::max ({ f[0], f[1], f[2] }) * (blankForTest ? 0.0f : 1.0f)));
+                    lo = std::min (lo, v); hi = std::max (hi, v);
+                }
+        }
+        else
+        {
         glBindFramebuffer (GL_READ_FRAMEBUFFER, finalFbo);
         for (int j = 0; j < ny; ++j)
             for (int i = 0; i < nx; ++i)
@@ -1542,6 +1721,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
                 const int v = std::max ({ (int) b[0], (int) b[1], (int) b[2] });
                 lo = std::min (lo, v); hi = std::max (hi, v);
             }
+        }
         glBindFramebuffer (GL_READ_FRAMEBUFFER, 0);
         // (if the reading back itself was refused, nothing was learned: the picture is taken on trust, not thrown away)
         if (glGetError() != GL_NO_ERROR) { clearErrors(); lookSpread = -2; return true; }
@@ -1552,12 +1732,109 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
 
     static void clearErrors() { for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; ++i) {} }
 
+    // The glow: the bright parts of a picture, down and back up; what is left in mipTex[0] is laid over it.
+    void soften (GLuint from, int fw, int fh, float knee)
+    {
+        glDisable (GL_DEPTH_TEST); glDepthMask (GL_FALSE);
+        for (int i = 0; i < kMips; ++i)
+        {
+            fullPass (*pDown, mipFbo[i], mipW[i], mipH[i]);
+            glBindTexture (GL_TEXTURE_2D, from);
+            glUniform1i (glGetUniformLocation (pDown->getProgramID(), "uTex"), 0);
+            glUniform2f (glGetUniformLocation (pDown->getProgramID(), "uTexel"), 1.0f / (float) fw, 1.0f / (float) fh);
+            glUniform1f (glGetUniformLocation (pDown->getProgramID(), "uKnee"), i == 0 ? knee : 0.0f);
+            glDrawArrays (GL_TRIANGLES, 0, 6);
+            from = mipTex[i]; fw = mipW[i]; fh = mipH[i];
+        }
+        glEnable (GL_BLEND); glBlendFunc (GL_ONE, GL_ONE);
+        // (how much each size counts: the smallest and softest least, so that the glow hugs its light)
+        static const float kWeight[kMips] = { 1.0f, 0.75f, 0.5f, 0.32f, 0.2f, 0.12f };
+        for (int i = kMips - 1; i > 0; --i)
+        {
+            fullPass (*pUp, mipFbo[i - 1], mipW[i - 1], mipH[i - 1]);
+            glBindTexture (GL_TEXTURE_2D, mipTex[i]);
+            glUniform1i (glGetUniformLocation (pUp->getProgramID(), "uTex"), 0);
+            glUniform2f (glGetUniformLocation (pUp->getProgramID(), "uTexel"), 1.0f / (float) mipW[i], 1.0f / (float) mipH[i]);
+            glUniform1f (glGetUniformLocation (pUp->getProgramID(), "uGain"), kWeight[i] / kWeight[i - 1]);
+            glDrawArrays (GL_TRIANGLES, 0, 6);
+        }
+        glDisable (GL_BLEND);
+    }
+
+    // The outline look: the instrument as lines of one colour on one ground (green or red on black
+    // for the dark; black on white for daylight), what is lit filled in, and only what is kept
+    // (the EQ) in its own colours. Nothing is lit and nothing casts a shadow: the parts are drawn
+    // once, flat, with which way they face and whose they are beside them, and the lines are found
+    // from that. It is less work than the lit picture.
+    void inkScene (const M4& vp, int w, int h)
+    {
+        inking = true;
+        glBindFramebuffer (GL_FRAMEBUFFER, msFbo);
+        glViewport (0, 0, w, h);
+        const GLenum both[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+        glDrawBuffers (2, both);
+        const GLfloat nothing[4] = { 0.0f, 0.0f, 0.0f, 0.0f }, nowhere[4] = { 0.5f, 0.5f, 0.0f, 0.0f };
+        glClearBufferfv (GL_COLOR, 0, nothing); glClearBufferfv (GL_COLOR, 1, nowhere);
+        glClear (GL_DEPTH_BUFFER_BIT);
+        useSurface (*pSlab, vp, curEye); draw (slabs); draw (keySlabs);
+        useSurface (*pTurned, vp, curEye); draw (baseBig); draw (baseSmall); draw (capBig); draw (capSmall); draw (lens);
+        pLight->use(); glUniformMatrix4fv (glGetUniformLocation (pLight->getProgramID(), "uVP"), 1, GL_FALSE, vp.m);
+        glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uInk"), 1.0f);
+        glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uGrow"), 0.24f);
+        draw (segBig); draw (segSmall);
+        glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uGrow"), 0.0f);
+        draw (lensLit);
+        glDrawBuffer (GL_COLOR_ATTACHMENT0);
+        inking = false;
+
+        glBindFramebuffer (GL_READ_FRAMEBUFFER, msFbo);
+        glReadBuffer (GL_COLOR_ATTACHMENT0); glBindFramebuffer (GL_DRAW_FRAMEBUFFER, sceneFbo);
+        glBlitFramebuffer (0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glReadBuffer (GL_COLOR_ATTACHMENT1); glBindFramebuffer (GL_DRAW_FRAMEBUFFER, dataFbo);
+        glBlitFramebuffer (0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glReadBuffer (GL_COLOR_ATTACHMENT0);
+
+        glDisable (GL_DEPTH_TEST); glDepthMask (GL_FALSE);
+        const bool paper = ink == Stage::inkPaper;
+        fullPass (*pInk, inkFbo, w, h);
+        {
+            const GLuint id = pInk->getProgramID();
+            glActiveTexture (GL_TEXTURE1); glBindTexture (GL_TEXTURE_2D, dataTex);
+            glActiveTexture (GL_TEXTURE0); glBindTexture (GL_TEXTURE_2D, sceneTex);
+            glUniform1i (glGetUniformLocation (id, "uTex"), 0);
+            glUniform1i (glGetUniformLocation (id, "uData"), 1);
+            glUniform2f (glGetUniformLocation (id, "uTexel"), 1.0f / (float) w, 1.0f / (float) h);
+            glUniform1f (glGetUniformLocation (id, "uWeight"), std::max (1.0f, 1.25f * inkWeight * (float) h / kH));       // (as wide on a big window as on a small one)
+            if (paper)                          { glUniform3f (glGetUniformLocation (id, "uInkCol"), 0.004f, 0.004f, 0.005f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.90f, 0.90f, 0.88f); }
+            else if (ink == Stage::inkRed)      { glUniform3f (glGetUniformLocation (id, "uInkCol"), 1.00f, 0.040f, 0.022f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.0f, 0.0f, 0.0f); }
+            else if (ink == Stage::inkAmber)    { glUniform3f (glGetUniformLocation (id, "uInkCol"), 1.00f, 0.42f, 0.010f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.0f, 0.0f, 0.0f); }
+            else                                { glUniform3f (glGetUniformLocation (id, "uInkCol"), 0.030f, 1.00f, 0.085f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.0f, 0.0f, 0.0f); }
+            glUniform1f (glGetUniformLocation (id, "uKeepGain"), 1.25f);
+        }
+        glDrawArrays (GL_TRIANGLES, 0, 6);
+
+        soften (inkTex, w, h, 0.0f);
+
+        fullPass (*pInkOut, finalFbo, w, h);
+        glActiveTexture (GL_TEXTURE1); glBindTexture (GL_TEXTURE_2D, mipTex[0]);
+        glActiveTexture (GL_TEXTURE0); glBindTexture (GL_TEXTURE_2D, inkTex);
+        glUniform1i (glGetUniformLocation (pInkOut->getProgramID(), "uTex"), 0);
+        glUniform1i (glGetUniformLocation (pInkOut->getProgramID(), "uBloom"), 1);
+        glUniform1f (glGetUniformLocation (pInkOut->getProgramID(), "uBloomGain"), paper ? 0.0f : 0.055f);
+        glUniform1f (glGetUniformLocation (pInkOut->getProgramID(), "uExposure"), blankForTest ? 0.0f : 1.0f);
+        glDrawArrays (GL_TRIANGLES, 0, 6);
+        glDepthMask (GL_TRUE);
+        glFrontFace (GL_CCW);
+    }
+
     void scene (const M4& vp, int w, int h)
     {
         glActiveTexture (GL_TEXTURE0); glBindTexture (GL_TEXTURE_2D, sheetTex);
         glDisable (GL_BLEND); glDisable (GL_CULL_FACE);
         glFrontFace (GL_CW);            // (the shapes here are wound that way round: the outside of each is its front)
         glEnable (GL_DEPTH_TEST); glDepthFunc (GL_LEQUAL); glDepthMask (GL_TRUE);
+        inkShown = ink != Stage::inkNone && makeInkBuffers (w, h);
+        if (inkShown) { inkScene (vp, w, h); return; }
 
         if (shadowStale)
         {
@@ -1606,38 +1883,15 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         useSurface (*pSlab, vp, curEye); draw (slabs); draw (keySlabs);
         useSurface (*pTurned, vp, curEye); draw (baseBig); draw (baseSmall); draw (capBig); draw (capSmall); draw (lens);
         pLight->use(); glUniformMatrix4fv (glGetUniformLocation (pLight->getProgramID(), "uVP"), 1, GL_FALSE, vp.m);
+        glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uInk"), 0.0f);
+        glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uGrow"), 0.0f);
         draw (segBig); draw (segSmall); draw (lensLit);
 
         // the smoothed picture, as one layer
         glBindFramebuffer (GL_READ_FRAMEBUFFER, msFbo); glBindFramebuffer (GL_DRAW_FRAMEBUFFER, sceneFbo);
         glBlitFramebuffer (0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-        // the glow: down, and back up
-        glDisable (GL_DEPTH_TEST); glDepthMask (GL_FALSE);
-        GLuint from = sceneTex; int fw = w, fh = h;
-        for (int i = 0; i < kMips; ++i)
-        {
-            fullPass (*pDown, mipFbo[i], mipW[i], mipH[i]);
-            glBindTexture (GL_TEXTURE_2D, from);
-            glUniform1i (glGetUniformLocation (pDown->getProgramID(), "uTex"), 0);
-            glUniform2f (glGetUniformLocation (pDown->getProgramID(), "uTexel"), 1.0f / (float) fw, 1.0f / (float) fh);
-            glUniform1f (glGetUniformLocation (pDown->getProgramID(), "uKnee"), i == 0 ? 1.05f : 0.0f);
-            glDrawArrays (GL_TRIANGLES, 0, 6);
-            from = mipTex[i]; fw = mipW[i]; fh = mipH[i];
-        }
-        glEnable (GL_BLEND); glBlendFunc (GL_ONE, GL_ONE);
-        // (how much each size counts: the smallest and softest least, so that the glow hugs its light)
-        static const float kWeight[kMips] = { 1.0f, 0.75f, 0.5f, 0.32f, 0.2f, 0.12f };
-        for (int i = kMips - 1; i > 0; --i)
-        {
-            fullPass (*pUp, mipFbo[i - 1], mipW[i - 1], mipH[i - 1]);
-            glBindTexture (GL_TEXTURE_2D, mipTex[i]);
-            glUniform1i (glGetUniformLocation (pUp->getProgramID(), "uTex"), 0);
-            glUniform2f (glGetUniformLocation (pUp->getProgramID(), "uTexel"), 1.0f / (float) mipW[i], 1.0f / (float) mipH[i]);
-            glUniform1f (glGetUniformLocation (pUp->getProgramID(), "uGain"), kWeight[i] / kWeight[i - 1]);
-            glDrawArrays (GL_TRIANGLES, 0, 6);
-        }
-        glDisable (GL_BLEND);
+        soften (sceneTex, w, h, 1.05f);
 
         fullPass (*pFinal, finalFbo, w, h);
         glActiveTexture (GL_TEXTURE1); glBindTexture (GL_TEXTURE_2D, mipTex[0]);
@@ -1803,6 +2057,23 @@ void Stage::setGlow (float hue, float bright, float pulse)
 }
 
 void Stage::setDark (bool on) { { const juce::ScopedLock sl (impl->lock); impl->pending.dark = on; } impl->kick(); }
+void Stage::setInk (int which, float weight)
+{
+    { const juce::ScopedLock sl (impl->lock); impl->pending.ink = juce::jlimit (0, (int) inkAmber, which); impl->pending.inkWeight = juce::jlimit (0.4f, 4.0f, weight); }
+    impl->kick();
+}
+void Stage::keepColours (const std::vector<juce::Rectangle<float>>& boxes)
+{
+    float k[8] {};
+    for (size_t i = 0; i < boxes.size() && i < 2; ++i)
+    {
+        k[i * 4] = boxes[i].getX() - kW * 0.5f; k[i * 4 + 1] = boxes[i].getY() - kH * 0.5f;
+        k[i * 4 + 2] = boxes[i].getRight() - kW * 0.5f; k[i * 4 + 3] = boxes[i].getBottom() - kH * 0.5f;
+    }
+    bool changed = false;
+    { const juce::ScopedLock sl (impl->lock); changed = std::memcmp (impl->pending.keep, k, sizeof (k)) != 0; std::memcpy (impl->pending.keep, k, sizeof (k)); }
+    if (changed) impl->kick();
+}
 
 juce::Image& Stage::sheet() { return impl->sheetImg; }
 float Stage::sheetScale() const { return impl->sheetS; }

@@ -6044,6 +6044,7 @@ void Screen::setThree (bool on)
         lit = true;
         if (stage == nullptr) { stage = std::make_unique<Stage> (eng); stage->onState = [this] { stageState(); }; }
         stage->setDark (dark);
+        stage->setInk (ink, inkWeight);
         stage->setGlow (glowHue, glowBright, glowPulse);
         stage->setHome (eyePose, false);
         stage->attachTo (*this);
@@ -6396,6 +6397,8 @@ void Screen::refreshStage()
         recording = false;
         recorded.settle();
         stage->setParts (recorded);
+        // (the outline look keeps the EQ's colours: where its graph is, if it is up)
+        { std::vector<juce::Rectangle<float>> boxes; if (page == pMain && cfgOpen && eqPage() && ! eqRect.isEmpty()) boxes.push_back (eqRect); stage->keepColours (boxes); }
     }
     auto& img = stage->sheet();
     const juce::Rectangle<int> whole (0, 0, img.getWidth(), img.getHeight());

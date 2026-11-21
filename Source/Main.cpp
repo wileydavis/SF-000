@@ -12779,6 +12779,9 @@ static int shot (const juce::StringArray& args)
         if (args.contains ("--turn")) eye.pose.turn = arg ("--turn", "0").getFloatValue();
         if (args.contains ("--tilt")) eye.pose.tilt = arg ("--tilt", "56").getFloatValue();
         sc.setEye (eye);
+        // (--ink green|red|amber|paper [--weight N]: the outline look)
+        if (const auto ik = arg ("--ink", ""); ik.isNotEmpty())
+            sc.setInk (ik == "red" ? Stage::inkRed : ik == "paper" ? Stage::inkPaper : ik == "amber" ? Stage::inkAmber : Stage::inkGreen, arg ("--weight", "1").getFloatValue());
         if (const int gi = args.indexOf ("--glow"); gi >= 0 && gi + 1 < args.size())
         {
             const auto hb = juce::StringArray::fromTokens (args[gi + 1], ",", "");

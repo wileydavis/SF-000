@@ -34,6 +34,9 @@ public:
     float glowPulseNow() const { return glowPulse; }
     void setDark (bool on) { dark = on; skin.setDark (on); if (stage != nullptr) stage->setDark (on); warm = false; repaint(); }
     bool isDark() const { return dark; }
+    // The 3D stage's outline look (Stage::setInk): which, and how wide its lines.
+    void setInk (int which, float weight = 1.0f) { ink = which; inkWeight = weight; if (stage != nullptr) stage->setInk (ink, inkWeight); }
+    int inkNow() const { return ink; }
     // The 3D stage (3 on the keyboard): the instrument as a solid thing, lit, seen through an eye
     // that can be moved. It is the lit skin's layout and the same hand; only the drawing differs.
     // Asked for, it shows once OpenGL has started; if it cannot start, the lit skin stays and
@@ -391,6 +394,7 @@ private:
     juce::uint32 followAt = 0;
     juce::uint32 startingSince = 0;             // when the stage was first seen still starting, in front
     float glowHue = Stage::kGlowHue, glowBright = Stage::kGlowBright, glowPulse = 0.0f;
+    int ink = 0; float inkWeight = 1.0f;
     bool settledSaid = true;
     void settled();
     bool watchStart (juce::uint32 now, bool inFront);

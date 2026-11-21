@@ -5866,6 +5866,38 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      away: they are the lane's routing and yours. **I do not know which of them it was on
      your PAD.**
 
+## An outline look for the 3D view, for a camera and a room (Nov 20, 19:00): renders only, not on main
+
+766. **You**, Nov 20, 19:00: "for live shows, i plan to lay a screen flat on the grough or table and
+     play sg-000 in 3d mode with follow on. I'd like a camera and audience friendly skin on the
+     3d interface. My thought is to do an outline style where the instrument is rendered in
+     either black lines on a white screen for daylight, or in green or red outlines on black for
+     night shows. The goal with the monochrome outline style is to make the movement and
+     legibility better from a distance. and give it a plain buyt retro futuristic look. The Eqs
+     can retain color but everything else would render like an 80s green monochrome screen. how
+     hard with that be?" 19:03: "make some renders"
+     **Drawing, as stills; no switch for it in the instrument yet, and not pushed.** It is on
+     the branch `outline-look`, reachable only from the picture tool (`--3d --ink
+     green|red|paper [--weight N]`). `Stage::setInk`: the parts are drawn once, flat, unlit and
+     without shadows, into the smoothed buffer with a second layer beside the colour (which
+     way each point faces, up or round to which side; whose it is, two numbers a part); a
+     whole-picture pass draws a line wherever, a line's width away, either differs, and under
+     the lines what each surface shows of itself as so much ink: the sheet's print at full
+     strength, a display with its greys, a lit key and a knob's lit lights filled in, unlit
+     lights not drawn. One colour on one ground (green, red, amber on black with a little of
+     the glow; black on white with none), except inside `Stage::keepColours`' boxes: the
+     screen gives it the EQ's rectangle while the EQ is up, and that keeps its own colours.
+     The lit 3D picture is the same to the pixel with the look off (compared before and
+     after; only the hint at the window's foot differed, which comes and goes by the clock).
+     *Mine, in the stills:* the disc under each knob and the dimples where a control could be
+     are left out; a knob's lights stand a quarter further out than they do, so its arc is
+     clear of the cap's line; a rounded edge is one line; the blank-picture check reads the
+     look at its smallest size, where lines have run together, since a grid of points can miss
+     every line. **Not done:** a way to choose it on the instrument and keep the choice; the
+     look taking the dark sheet by itself (the stills ask for `--dark`); the value tags and
+     the hint in the look's colours; what GLIDE's green and LEARN's yellow lights become when
+     everything is one colour; the suite's checks. **Not seen on a Mac's own OpenGL.**
+
 ## Not verified
 
 - **The ninety-sixth build (765): the cause on your set is not known.** PAD and LEAD are

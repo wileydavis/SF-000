@@ -37,6 +37,13 @@ public:
     // ---- what it draws
     void setParts (const Parts&);               // a whole new record
     void setDark (bool);
+    // The outline look: the instrument as lines of one colour on one ground, what is lit filled
+    // in, for a camera and for the back of a room. Green, red or amber on black for the dark; black
+    // on white for daylight. weight: how wide its lines are (1: as they come).
+    enum { inkNone = 0, inkGreen, inkRed, inkPaper, inkAmber };
+    void setInk (int which, float weight = 1.0f);
+    // ...in which these places (the screen's units; two at most) keep their own colours: the EQ.
+    void keepColours (const std::vector<juce::Rectangle<float>>& boxes);
     // The glow under the case and the warm light up its sides: its colour (round the wheel, 0 to 1)
     // and how bright (0 none, 0.5 as it comes, 1 four times that).
     // pulse: how much it beats with the kick (0 steady; 1 nearly out between hits and three times as bright on one).
