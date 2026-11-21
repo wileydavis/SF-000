@@ -5976,6 +5976,22 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      is for ears; I can measure and cannot listen. And the app under the instrument will need
      building again as macOS moves, though the instrument need not change.
 
+772. **You**, Nov 20, 21:56: "my goal is to ahve each lane contain only the three models (once we
+     have them refined, we'll strip out the others). and to have ech model behave the same in
+     every lane, but have them be expressive enough they can create the kinds of sounds required
+     for that lane. this allows me to break out iof the lane sound-wise when I need to.  so the
+     drum models could go."
+     **Settled, not yet built:** every lane offers KICK FORGE, SAMPLE and SYNTH and nothing
+     else; each is the same engine with the same panel on whichever lane it stands; the drum
+     models go with the rest, once the three are refined and not before. *Mine, what follows
+     from it:* a lane is then a place (its name, its sequencer, its seat in the mix, the drum
+     bus, the pockets) and a patch it opens with, not a kind of sound; what differs between
+     lanes today inside an engine (LEAD's trims, a drum lane's one-shot sampler) has to become
+     the engine's own setting or go. **Open, and I said so:** RUMBLE and VOICE are not built
+     from a list of models as the others are; what each becomes is to be looked at when its
+     turn comes and brought to you. **Not started:** I said SAMPLE would be the first build
+     and asked for the word.
+
 ## Not verified
 
 - **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
