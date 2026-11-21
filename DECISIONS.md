@@ -5992,6 +5992,13 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      turn comes and brought to you. **Not started:** I said SAMPLE would be the first build
      and asked for the word.
 
+773. **You**, Nov 20, 22:04: "synth would also need to be polyphonic"
+     **It is in the design, and I said so: every voice whole** (its own oscillators, filter
+     and envelopes: chords whose notes each open and close by themselves), with MONO a
+     patch's switch as it is since the ninety-third build. Today's synth already plays more
+     than one note on every synth lane; under 772 that holds on all eleven. *Mine:* how many
+     voices is to be set by what the new filter costs on your Mac, measured, not guessed.
+
 ## Not verified
 
 - **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
