@@ -6235,6 +6235,24 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      line under it runs on only as far as leaves the rows their height (one more line here; the bar still says it
      whole). Drawn and looked at on BASS after PLAIN and on PERC, views 2 and 3.
 
+## SYNTH: the plan (Nov 21, 14:33)
+
+782. **You**, Nov 21, 14:33: "Start on the synth."
+     **Made, as the sampler was begun (777):** the plan ("SF-000 SYNTH: what will be built", a doc)
+     and its drawings (a design canvas). Nothing built. *Mine, in it:* one polyphonic engine on
+     every lane, each voice whole: two wavetable oscillators (SHAPE, WARP, FM, SYNC, MIX), a sub,
+     NOISE from white to the 808's metal, PHASE; one filter in four fixed circuits (CLEAN, LADDER,
+     DIODE, MS-20); BODY, PERC's resonators as part of the voice; AMP and MOD envelopes with ENV
+     DECAY shared as on a 303, a PITCH ENV, BURSTS; ACCENT and SLIDE on any sound; VOICES 1 to 16,
+     UNISON to 7. The panel: TUNE, SHAPE, CUTOFF, RES / ENV AMT, ENV DECAY, ACCENT, DRIVE. CONFIG
+     on SAMPLE's pages: OSCILLATORS and FILTER AND ENVELOPES on view 2, VOICE AND BODY on view 3.
+     Today's synth models and the hats, clap, rim, cowbell, clave, shaker and PERC's objects as
+     patches, each measured against its model before anything goes. A display of the same size as
+     SAMPLE's: the wave, the filter's curve, the envelopes, a cell for each voice, the steps.
+     **Asked of you:** the panel's 6 and 7 (ENV DECAY and ACCENT, or ATTACK and RELEASE as
+     SAMPLE); patches of your own, or snapshots only; FM 4-OP covered or kept as a mode; one
+     build or stages.
+
 ## Not verified
 
 - **The hundredth build (780): SAMPLE is measured, not heard, and not seen on the Mac.**
