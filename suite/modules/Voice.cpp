@@ -25,21 +25,21 @@ public:
         auto p = withCuts (withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
                  pct ("gate", "GATE", 0.6f).prim(),
-                 pct ("density", "DENSITY", 0.0f).prim().dir (1),
+                 pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  pct ("echo", "ECHO", 0.2f).prim().dir (1),
                  pct ("drive", "DRIVE", 0.1f).prim(),
                  levelParam (-6.0f).prim(),
                  choice ("model", "MODEL", { "SAMPLE", "RADIO", "VOCODER", "ROBOT", "CHOIR", "STUTTER" }, 1),
-                 choice ("slice_mode", "SLICE MODE", { "AUTO", "EQUAL 8", "EQUAL 16", "WHOLE" }, 0),
+                 choice ("slice_mode", "SLICE MODE", { "AUTO", "EQUAL 8", "EQUAL 16", "WHOLE" }, 0).next(),
                  knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").slow(),
                  choice ("echo_time", "ECHO TIME", divisionNames (divIndex ("1 BAR"), divIndex ("1/16")), divIndex ("1/4D") - divIndex ("1 BAR")),
                  pct ("echo_fb", "ECHO FDBK", 0.55f).slow(),
                  pct ("pocket_depth", "POCKET DEPTH", 0.2f).slow(),
                  pct ("pocket_shape", "POCKET SHAPE", 0.3f),
-                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
+                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1).next(),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })));
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() })));
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
         return p;
     }
@@ -88,6 +88,11 @@ public:
         const int model = c.ci (MODEL);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
+        // (SF-000) GATE on the phrase that is playing: how long it is let sound, counted from when it began, and how long
+        // its release, as GATE now stands (a phrase GATE has outlived is let go now). Where GATE has not moved this is
+        // what it was, to the sample.
+        if (play.active && ! play.releasing) play.autoOff = autoOff > 0 ? std::max (1, autoOff - play.age) : -1;
+        if (play.active && play.releasing && relMul != play.relMul) { play.relMul = relMul; play.relCoef = std::exp (-1.0f / (0.02f * relMul * (float) sr)); }
         const float tone = c.v (TONE), sig = c.v (SIGNAL), drive = c.v (DRIVE);
         // (SF-000) TONE on the phrase as it is (MODEL SAMPLE): a tilt about 1.5 kHz, darker under the centre, brighter over it
         // SIGNAL on the phrase as it is and on STUTTER: how much of its band is left (all of it at full; a thin middle at nought)
@@ -149,6 +154,7 @@ public:
                         const float as = 0.5f * (ra - rb) * play.reg.gain (play.pos);
                         float env = std::min (1.0f, (float) (play.pos - play.start) / (0.003f * (float) sr) + 0.001f);
                         if (play.releasing) { play.rel *= play.relCoef; env *= play.rel; if (play.rel < 1e-4f) play.active = false; }
+                        ++play.age;
                         if (play.autoOff > 0 && --play.autoOff == 0) startRelease (relMul);
                         x = a * env * play.vel;
                         if (wideNow && (model == 0 || model == 5)) sd = as * env * play.vel;
@@ -256,7 +262,7 @@ private:
     float tiltLp = 0.0f;        // (SF-000) TONE's tilt on the phrase: its low part
     float sigLo = 0.0f, sigHi = 0.0f;       // (SF-000) SIGNAL's band on the phrase: what is under it, and what is left
     float tiltLp2 = 0.0f, sigLo2 = 0.0f, sigHi2 = 0.0f;     // (SF-000) the same, for a stereo phrase's left less its right
-    struct Play { bool active = false, releasing = false; double pos = 0, start = 0; int end = 0, slice = -1, autoOff = -1; float vel = 1, rel = 1, relCoef = 0.999f; SampleRegion reg; };
+    struct Play { bool active = false, releasing = false; double pos = 0, start = 0; int end = 0, slice = -1, autoOff = -1, age = 0; float vel = 1, rel = 1, relCoef = 0.999f, relMul = 1; SampleRegion reg; };
     struct ChoirVoice { bool active = false; int note = 0, gen = 0; float f = 220, a = 0, target = 0; Osc osc; Svf fm[3]; };
 
     // (SF-000) The phrase's slices: where the hand's markers are (MARKERS), or as SLICE MODE cuts it.
@@ -301,10 +307,10 @@ private:
         play.pos = play.start;
         play.active = true; play.releasing = false; play.rel = 1.0f;
         play.vel = (0.5f + 0.5f * ev.vel) * ev.gain;      // velocity response, then the DENSITY fade
-        play.autoOff = autoOff;
-        play.relCoef = std::exp (-1.0f / (0.02f * relMul * (float) sr));
+        play.autoOff = autoOff; play.age = 0;
+        play.relCoef = std::exp (-1.0f / (0.02f * relMul * (float) sr)); play.relMul = relMul;
     }
-    void startRelease (float relMul) { play.releasing = true; play.relCoef = std::exp (-1.0f / (0.02f * relMul * (float) sr)); }
+    void startRelease (float relMul) { play.releasing = true; play.relMul = relMul; play.relCoef = std::exp (-1.0f / (0.02f * relMul * (float) sr)); }
     // A played note's release ends every choir voice on that note; a DENSITY ghost's release ends
     // that ghost (ghosts that start after their note was released used to sound forever).
     void noteOff (int note, int gen)

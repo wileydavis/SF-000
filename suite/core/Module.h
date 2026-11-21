@@ -13,6 +13,15 @@ class Bus;
 
 enum class PType { Float, Choice, Toggle, Momentary };
 
+// (SF-000) How a change of a parameter reaches a note that is already sounding. Every parameter says which,
+// and is held to it (SF-000's Main.cpp, reachTest):
+//   Live   the sounding note follows it, while it sounds
+//   Eased  by a made change-over: the voices that are sounding are let go and the keys that are down are played again
+//          as it now stands, or one sound is crossed into the other. Heard at once, though not by bending the note
+//   Next   from the next note (on a drum: the next hit). One that is sounding keeps what it began with, and the
+//          instrument says so where the control is shown
+enum class Reach { Live, Eased, Next };
+
 struct ParamSpec
 {
     std::string id, name;
@@ -36,6 +45,8 @@ struct ParamSpec
     bool inSample = false;          // the sample's own (START, END, its fades): the editor's SAMPLE group
     bool inLayer = false;           // the second layer's (LAYER MODEL, LAYER, SPLIT, SPLIT HZ): the editor's LAYER group
     bool inEngine = false;          // one model's own (FM 4-OP's operators, WAVETABLE's TABLE): the editor's ENGINE group
+    Reach reach = Reach::Live;      // (SF-000) how a change reaches a sounding note
+    std::vector<std::string> liveIn;    // (SF-000) the models on which a NEXT one is in fact heard at once (GRANULAR reads its region as it plays)
 
     ParamSpec& prim()           { primary = true; return *this; }
     ParamSpec& dir (int d)      { macroDir = d; return *this; }
@@ -51,6 +62,10 @@ struct ParamSpec
     ParamSpec& sampleGroup()    { inSample = true; return *this; }
     ParamSpec& layerGroup()     { inLayer = true; return *this; }
     ParamSpec& engineGroup()    { inEngine = true; return *this; }
+    ParamSpec& eased()          { reach = Reach::Eased; return *this; }    // (SF-000)
+    ParamSpec& next()           { reach = Reach::Next; return *this; }     // (SF-000)
+    ParamSpec& liveOn (const char* model) { liveIn.push_back (model); return *this; }      // (SF-000)
+    Reach reachIn (const std::string& model) const { for (auto& m : liveIn) if (m == model) return Reach::Live; return reach; }
 };
 
 inline ParamSpec knob (const char* id, const char* name, float mn, float mx, float def, const char* unit = "", float centre = NAN)

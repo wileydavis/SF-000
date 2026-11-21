@@ -698,6 +698,18 @@ kick is a 909 over an 808 with a crossover that takes the 909's own lows out: le
 would have no low end of its own); both are in CONFIG. While it is on, the kick's module is a
 dark red plate on the dark instrument. None of it has been heard: see Not verified in DECISIONS.
 
+**Two more, in CONFIG**, beside those six in its MODEL grid (ninety-eighth build):
+
+| | |
+|---|---|
+| GROUND LENGTH | how long the ground rings, apart from the body's DECAY: in the middle what CHARACTER and DECAY make it, left down to an eighth of that, right up to eight times (twelve seconds at most). Drawn out, it is fed less of the body, so it carries about the same: longer, not louder. A short tight body over a long dark floor, or a long body with none |
+| LOW PRESERVE | how much of the body's own note goes round the mids' drive and the last clipper. Nothing: the whole kick is driven and clipped, note and all, as it was. Up: the body's fundamental (the sine itself, so nothing is turned in phase) is taken out before the drive and put back after the clipper, clean, from where its falling pitch comes within two and a half times the note; the knock above that, the harmonics and the impact are driven as they were. It comes in at the level the clipper was giving the note, and from there dies away as the body does, where the clipper would have held it up: a hard kick with LOW PRESERVE up has a cleaner and shorter note; DECAY lengthens it |
+
+With both at rest the kick is the kick it was, to the sample (`--forgeprint`: five settings,
+with and without a file, against the ninety-seventh build's). TONE, DRIVE, BODY, GROUND, GROUND
+LENGTH and LOW PRESERVE are heard on a hit that is sounding; CHARACTER, IMPACT, POSITION, TUNE,
+PUNCH, PITCH TIME, CLICK and DECAY build the hit when it is struck.
+
 **Every knob is heard, on every model.** `--audit` (see Checks) turns each of a lane's twelve
 knobs down and up and measures what the lane's sound does, for every model the lane has (85
 lane-and-model pairs, and the seventy-ninth build's four more, each audited by itself: KICK
@@ -807,10 +819,37 @@ long notes they did nothing until the pattern was stopped and run again.
 - What a knob cannot do is reach back: ATTACK on a note that has finished coming up, ENV AMT
   after its sweep, DENSITY and ECHO (which are the notes after a note) are heard from the next
   note.
-- **Drums and RUMBLE take a change on the next hit**: a hit is made whole when it is struck.
-  FILTER, LEVEL and DRIVE act on the hit that is sounding.
+- **Drums and RUMBLE take most changes on the next hit**: a hit is made whole when it is
+  struck. FILTER and LEVEL act on the hit that is sounding everywhere; on KICK FORGE so do
+  TONE, DRIVE, BODY, GROUND, GROUND LENGTH and LOW PRESERVE.
 - `build/.../SF-000 --liveaudit [lane]` measures it: every parameter, on every model, a key
   held, a key played twice a second, and a key let go.
+
+**The parameter contract** (ninety-eighth build). Every parameter of every lane's instrument
+says how a change of it reaches a note that is already sounding, and is held to it:
+
+| it says | it means |
+|---|---|
+| LIVE | the sounding note follows it |
+| EASED | heard at once by a change-over: the keys that are down are played again as it now stands (LAYER MODEL, CHORD, MONO) |
+| NEXT | from the next note (on a drum, the next hit); one that is sounding keeps what it began with |
+
+INFO says so on any knob that is not LIVE, in the panel and in CONFIG: "FROM THE NEXT HIT: ONE
+THAT IS SOUNDING KEEPS WHAT IT WAS STRUCK WITH" (or NOTE on a pitched lane). It goes by the
+model the lane has: KICK's DRIVE is NEXT on the 909 and LIVE on KICK FORGE. A sounding VOICE
+phrase now follows GATE (until now it kept the length it began with).
+
+The check walks all of them (`reachTest`; `--reach [lane]` prints the lot, one line each:
+lane, module, model, parameter, what it says, how far a move half a second into a held note is
+heard on it, how far on the next note, and the verdict). A parameter is moved to its far end
+60 thousandths of a second into a note (8 into a hit), and, if that is not heard, the note is
+begun at the far end and the parameter brought back (an ATTACK a note has already passed is
+one it is in). On the ninety-eighth build: of 2,744 parameter and model pairs, 1,024 that say
+LIVE or EASED are heard on the sounding note, 1,259 say NEXT, and 461 cannot be told (the
+sound is over by then, or the parameter is heard on no note as the instrument stands, as a
+FILTER RES with the FILTER in the middle). None says LIVE and waits. The sample's own controls
+(START, END, the fades, GAIN, SLICE...) are NEXT on every lane but GRANULAR's region and
+SAMPLE's GAIN on the synth lanes: they are SAMPLE's to settle when its turn comes.
 
 ### The same engine on any lane
 
@@ -2023,7 +2062,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's GROUND LENGTH and LOW PRESERVE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

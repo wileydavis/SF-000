@@ -97,30 +97,31 @@ public:
     enum { TUNE, DECAY, PUNCH, CLICK, DRIVE, FILT, DENS, LEVEL, MODEL, LAYERMODEL, LAYER, PTIME, VELSENS, ESPACE, ESWING, KEYTRACK, RES, ALLOCON, KEYFOLLOW, SSTART,
            SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM, SSLICE, SCYCLE,         // (SF-000) the sample's own GAIN and NORMALISE, then SLICE and CYCLE
            FGCHAR, FGIMPACT, FGBODY, FGGROUND, FGPOS, FGTONE,                 // (SF-000) KICK FORGE's own
+           FGGLEN, FGLOW,                                                     // (SF-000) ...and its GROUND LENGTH and LOW PRESERVE
            SCUTS, SCUTLAST = SCUTS + kCuts };                                 // (SF-000) MARKERS and the 32 slice markers, last
     std::string id() const override { return "KICK"; }
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        auto p = withRegion ({ knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").prim(),
-                 pct ("decay", "DECAY", 0.5f).prim().dir (1),
-                 pct ("punch", "PUNCH", 0.5f).prim().dir (1),
-                 pct ("click", "CLICK", 0.5f).prim(),
-                 pct ("drive", "DRIVE", 0.2f).prim().dir (1),
+        auto p = withRegion ({ knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").next().prim(),
+                 pct ("decay", "DECAY", 0.5f).next().prim().dir (1),
+                 pct ("punch", "PUNCH", 0.5f).next().prim().dir (1),
+                 pct ("click", "CLICK", 0.5f).next().prim(),
+                 pct ("drive", "DRIVE", 0.2f).next().liveOn ("KICK FORGE").prim().dir (1),
                  bip ("filter", "FILTER").prim(),
-                 pct ("density", "DENSITY", 0.0f).prim(),
+                 pct ("density", "DENSITY", 0.0f).next().prim(),
                  levelParam (-3.0f).prim(),
                  choice ("model", "MODEL", kickModelNames(), 0),
-                 choice ("layer_model", "LAYER MODEL", kickModelNames(), 1).layerGroup(),
+                 choice ("layer_model", "LAYER MODEL", kickModelNames(), 1).next().layerGroup(),
                  pct ("layer", "LAYER", 0.0f).slow().layerGroup(),
-                 pct ("pitch_time", "PITCH TIME", 0.5f).slow(),
-                 pct ("vel_sens", "VEL SENS", 0.5f),
-                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
-                 pct ("echo_swing", "ECHO SWING", 0.0f).slow(),
-                 toggle ("key_track", "KEY TRACK"),
+                 pct ("pitch_time", "PITCH TIME", 0.5f).next().slow(),
+                 pct ("vel_sens", "VEL SENS", 0.5f).next(),
+                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1).next(),
+                 pct ("echo_swing", "ECHO SWING", 0.0f).next().slow(),
+                 toggle ("key_track", "KEY TRACK").next(),
                  pct ("res", "FILTER RES", 0.1f),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() });
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() });
         // LAYER SPLIT (Kit.h): one kick's lows, the other's punch and click.
         p.push_back (knob ("split", "SPLIT", 0.0f, 1.0f, 0.5f, "SPLIT").layerGroup());
         p.push_back (knob ("split_hz", "SPLIT HZ", 50.0f, 800.0f, 150.0f, "Hz", 200.0f).layerGroup());
@@ -130,12 +131,22 @@ public:
         // POSITION: where in the lane's file the impact is taken from. TONE: darker and plainer to the left, brighter and
         // richer in harmonics to the right. The lane's TUNE, DECAY and DRIVE act on it; PUNCH (how far the pitch falls),
         // PITCH TIME (how fast) and CLICK (a pulse on the front of it) move it from where CHARACTER has them.
-        p.push_back (pct ("fg_char", "CHARACTER", 0.3f).slow().engineGroup());
-        p.push_back (pct ("fg_impact", "IMPACT", 0.5f).engineGroup());
+        p.push_back (pct ("fg_char", "CHARACTER", 0.3f).next().slow().engineGroup());
+        p.push_back (pct ("fg_impact", "IMPACT", 0.5f).next().engineGroup());
         p.push_back (pct ("fg_body", "BODY", 0.5f).engineGroup());
         p.push_back (pct ("fg_ground", "GROUND", 0.5f).slow().engineGroup());
-        p.push_back (pct ("fg_pos", "POSITION", 0.1f).engineGroup());
+        p.push_back (pct ("fg_pos", "POSITION", 0.1f).next().engineGroup());
         p.push_back (pct ("fg_tone", "TONE", 0.5f).slow().engineGroup());
+        // (SF-000) GROUND LENGTH: how long the ground rings, against what CHARACTER and DECAY make it: at its middle that,
+        // to the left down to an eighth of it, to the right up to eight times it (twelve seconds at most). So a short
+        // tight body can stand on a long floor, and a long body on none. It and GROUND act on a ground that is ringing.
+        // LOW PRESERVE: how much of the body's own note goes round the last clipper. At nothing (as it was), the whole
+        // kick goes through it, note and all. Turned up, the body's fundamental (the sine itself, not a filter's guess at
+        // it: so nothing is turned in phase) is taken out before the clipper and put back after it, clean, from where its
+        // falling pitch comes within two and a half times the kick's note: the knock, above that, is clipped as it was;
+        // the note it falls onto is not, and its harmonics and the impact still are.
+        p.push_back (knob ("fg_glen", "GROUND LENGTH", 0.0f, 1.0f, 0.5f, "BIP").slow().engineGroup());
+        p.push_back (pct ("fg_low", "LOW PRESERVE", 0.0f).slow().engineGroup());
         p = withCuts (std::move (p));        // (SF-000) the slice markers
         jassert ((int) p.size() == SCUTLAST + 1);
         return p;
@@ -179,7 +190,7 @@ public:
     {
         std::vector<float> d[4];
         int len[4] = { 1, 1, 1, 1 }, w[4] = {}, live = 0;
-        float z[4] = {}, inLp = 0, inK = 0, damp = 0, fb = 0.4f, level = 0, env = 0, rel = 0, dcX = 0, dcY = 0, dcR = 0;
+        float z[4] = {}, inLp = 0, inK = 0, damp = 0, fb = 0.4f, level = 0, levelTo = 0, levelK = 0, secNow = 0, feed = 1, env = 0, rel = 0, dcX = 0, dcY = 0, dcR = 0;
         Svf ring;
         double rate = 96000.0;
         void prepare (double r)
@@ -190,6 +201,7 @@ public:
             inK = 1.0f - std::exp (-kTwoPi * 150.0f / (float) r);
             damp = 1.0f - std::exp (-kTwoPi * 420.0f / (float) r);
             rel = std::exp (-1.0f / (0.07f * (float) r));
+            levelK = 1.0f - std::exp (-1.0f / (0.02f * (float) r));
             dcR = 1.0f - kTwoPi * 28.0f / (float) r;
             reset();
         }
@@ -202,12 +214,24 @@ public:
             ring.ic1 = ring.ic2 = 0.0f;
         }
         // A hit: how long it rings (seconds to 60 dB down), how much of it, and the note it is rung at.
-        void hit (float seconds, float amount, float hz)
+        // (feed: how much of the body goes in: less, for a ground drawn out longer, so that what it carries stays the same)
+        void hit (float seconds, float amount, float hz, float feedIn = 1.0f)
         {
             fb = std::pow (10.0f, -3.0f * 0.0605f / std::max (0.08f, seconds));
-            level = amount;
+            level = levelTo = amount; secNow = seconds; feed = feedIn;
             ring.set (hz, 5.0f, rate);
             live = (int) ((2.0 * (double) seconds + 1.0) * rate);
+        }
+        // While it rings: how long, and how much of it, as the knobs stand now (GROUND LENGTH and GROUND are heard on
+        // a ground that is already ringing). Its level goes there in a fiftieth of a second; where the knobs have not
+        // moved since the hit this changes nothing, to the bit.
+        void follow (float seconds, float amount, float feedIn = 1.0f)
+        {
+            levelTo = amount; feed = feedIn;
+            if (seconds == secNow) return;
+            secNow = seconds;
+            fb = std::pow (10.0f, -3.0f * 0.0605f / std::max (0.08f, seconds));
+            live = std::max (live, (int) ((2.0 * (double) seconds + 1.0) * rate));      // (its length has moved: what is ringing is given the whole of the new one to die in, so a ground made longer is not cut off where the shorter would have ended)
         }
         bool awake() const { return live > 0; }
         // One sample: in, the body as it is before its clipper.
@@ -216,7 +240,7 @@ public:
             if (live <= 0) return 0.0f;
             if (--live == 0) { reset(); return 0.0f; }
             env = std::max (std::abs (in), env * rel);
-            inLp += inK * (in - inLp);
+            inLp += inK * ((feed != 1.0f ? in * feed : in) - inLp);
             float o[4], sum = 0.0f;
             for (int i = 0; i < 4; ++i) { o[i] = d[i][(size_t) w[i]]; sum += o[i]; }
             for (int i = 0; i < 4; ++i)
@@ -229,6 +253,7 @@ public:
             const float y = 0.8f * sum + 2.0f * ring.bp;
             dcY = y - dcX + dcR * dcY; dcX = y;
             const float open = 1.0f - std::min (1.0f, env * 1.6f);
+            if (level != levelTo) { level += levelK * (levelTo - level); if (std::abs (levelTo - level) < 1.0e-6f) level = levelTo; }
             return dcY * level * open * open;
         }
     };
@@ -252,6 +277,8 @@ public:
         // (SF-000) KICK FORGE: the fundamental's last value (it bends itself), harmonics, the body's and the impact's level,
         // the sub's, the split's state and pace, the impact's place in the file, its two high-passes, its strength, how long
         // it lasts, the clipper's drive and what it is turned by after, and whether it feeds the ground
+        float fgKeep = 0, fgKeepG = 1;      // (SF-000) LOW PRESERVE: how much, and the clean note's gain
+        float fgCh = 0, fgEcho = 1;         // (SF-000) CHARACTER and the echo's darkening as they were at the hit (forgeFollow)
         float fgPrev = 0, fgHarm = 0, fgBody = 1, fgImp = 0, fgSub = 1, fgLo = 0, fgLoK = 0, fgHpK = 0, fgHp1 = 0, fgHp2 = 0, fgImpTau = 0.006f, fgClip = 1, fgOut = 1, fgBright = 0;
         double fgPos = -1.0;
         float fgNoise = 1.0f;             // with no file: what the impact's noise, through its band, is turned by to be one strength
@@ -445,20 +472,15 @@ public:
         const ForgeShape f = forgeAt (ch);
         const float tone = c.v (FGTONE) * 2.0f - 1.0f;                           // -1 .. 1
         const float echo = std::pow (0.6f, (float) gen);
+        v.fgCh = ch; v.fgEcho = echo;
         v.f0 = v.f1 * (1.0f + (f.ratio - 1.0f) * std::pow (2.0f, (c.v (PUNCH) - 0.5f) * 2.0f));
         v.tau = f.tau * std::pow (2.0f, (c.v (PTIME) - 0.5f) * 3.0f);
         v.decay = f.decay * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * echo;
-        v.fm = f.fm * (1.0f + 0.5f * tone);
-        v.fgHarm = std::max (0.0f, f.harm + 0.5f * tone * (0.25f + f.harm));
-        v.drive = clamp01 (f.drive * 0.7f + c.v (DRIVE) * 0.8f);
-        v.fgBody = 2.0f * c.v (FGBODY);
+        juce::ignoreUnused (tone);
         v.fgSub = f.sub;
         v.fgLoK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) osr);
-        v.lp = std::min (18000.0f, f.lp * std::pow (4.0f, tone)) * echo;
-        v.fgBright = std::min (6000.0f, v.lp * 2.0f);                           // (the filter opens on the hit and closes onto v.lp)
         v.click = c.v (CLICK) * f.impact * 1.2f;            // (the pulse on the front of it: as much as the impact, so next to none on the mellow kick)
-        v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
-        v.fgOut = forgeTrim (ch) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
+        forgeFollow (c, v, f);
         // the impact: from the lane's file at POSITION (ninety thousandths of a second of it, a little either side from hit
         // to hit), brought to one strength; or noise
         v.fgImp = 2.0f * c.v (FGIMPACT) * f.impact * (0.9f + 0.2f * rng.uni());
@@ -498,7 +520,48 @@ public:
         }
         v.fgFeeds = main;
         if (main && gen == 0)
-            ground.hit (f.groundT * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 2.0f), 2.0f * c.v (FGGROUND) * f.ground * forgeTrim (ch), v.f1);
+        {
+            groundSec = f.groundT * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 2.0f);
+            groundAmt = f.ground; groundTrim = forgeTrim (ch);
+            ground.hit (groundLen (c), 2.0f * c.v (FGGROUND) * groundAmt * groundTrim, v.f1, groundFor (c));
+        }
+    }
+    // (SF-000) how long the ground rings: what CHARACTER and DECAY made it at the hit, by GROUND LENGTH (an eighth to
+    // eight times; at its middle exactly that), twelve seconds at most
+    float groundLen (Ctx& c) const { return std::min (12.0f, groundSec * std::pow (2.0f, (c.v (FGGLEN) - 0.5f) * 6.0f)); }
+    // ...and a ground drawn out longer than that is fed less of the body (by how much longer: measured, it then carries
+    // about the same in all), so that GROUND LENGTH is how long and GROUND how much: a feedback that rings longer while it
+    // is fed builds up more. Shorter, it is fed as it was. What is ringing already rings on at the level it has.
+    float groundFor (Ctx& c) const { const float len = groundLen (c); return len > groundSec ? groundSec / len : 1.0f; }
+
+    // (SF-000) What shapes a Forge hit after it is struck: TONE (its filter, its harmonics, the knock's bend), DRIVE, BODY and
+    // LOW PRESERVE. Taken at the hit, and again every block while it sounds, so that a ringing kick follows them; from
+    // the same numbers the same values, so a hit whose knobs have not moved is the hit it always was. CHARACTER, PUNCH,
+    // PITCH TIME, DECAY, CLICK, IMPACT and POSITION build the hit when it is struck: they are heard from the next.
+    void forgeFollow (Ctx& c, Voice& v, const ForgeShape& f)
+    {
+        const float tone = c.v (FGTONE) * 2.0f - 1.0f;
+        v.fm = f.fm * (1.0f + 0.5f * tone);
+        v.fgHarm = std::max (0.0f, f.harm + 0.5f * tone * (0.25f + f.harm));
+        v.lp = std::min (18000.0f, f.lp * std::pow (4.0f, tone)) * v.fgEcho;
+        v.fgBright = std::min (6000.0f, v.lp * 2.0f);                           // (the filter opens on the hit and closes onto v.lp)
+        v.drive = clamp01 (f.drive * 0.7f + c.v (DRIVE) * 0.8f);
+        v.fgBody = 2.0f * c.v (FGBODY);
+        v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
+        v.fgOut = forgeTrim (v.fgCh) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
+        v.fgKeep = c.v (FGLOW);
+        // the clean note's gain: what the clipper gives the note at the moment its falling pitch comes to one and a half
+        // times the kick's note (halfway into LOW PRESERVE's crossing), so it comes in at the level it was leaving the
+        // clipper at (a sine driven a times over full scale into it leaves with a fundamental of about tanh a, rising
+        // to 4/pi of the clipper's ceiling as it squares off); from there it dies away as the body does, where the
+        // clipper would have held it up
+        if (v.fgKeep > 0.0f)
+        {
+            const float tn = v.f0 > 1.5f * v.f1 ? v.tau * std::log ((v.f0 - v.f1) / (0.5f * v.f1)) : 0.0f;
+            const float e = std::min (1.0f, tn / 0.0004f) * std::exp (-tn / v.decay) * v.fgBody * v.fgSub * v.vel;
+            const float a = std::min (8.0f, v.fgClip * e);
+            v.fgKeepG = e > 1.0e-4f ? v.fgOut * fastTanh (a) * (1.0f + 0.2732f * a * a / (1.0f + a * a)) / e : v.fgClip * v.fgOut;
+        }
     }
 
     // One sample of it (at osr).
@@ -513,8 +576,20 @@ public:
         const float hE = v.fgHarm * std::exp (-t / (0.22f * v.decay + 0.012f));
         float body = fund;
         if (hE > 1.0e-4f) body += hE * (0.55f * std::sin (2.0f * w + 0.5f * bend * fund) + 0.30f * std::sin (3.0f * w));
-        body *= std::min (1.0f, t / 0.0004f) * std::exp (-t / v.decay) * v.fgBody;
+        const float bodyEnv = std::min (1.0f, t / 0.0004f) * std::exp (-t / v.decay) * v.fgBody;
+        body *= bodyEnv;
         if (v.fgFeeds) groundIn += body * v.fade * v.mix * v.vel;
+        // (SF-000) LOW PRESERVE: the share of the body's own note that goes round the mids' drive and the clipper, as the
+        // falling pitch nears the note. Taken out of the body before the body is split into its lows and mids (that split
+        // is gentle, and leaves a third of the note in the mids), and put back after the clipper. The ground has it all.
+        float clean = 0.0f;
+        if (v.fgKeep > 0.0f)
+        {
+            const float near = std::min (1.0f, std::max (0.0f, (2.5f - f / v.f1) / 1.5f));
+            const float part = v.fgKeep * near * fund * bodyEnv;
+            body -= part;
+            clean = part * v.fgSub * v.vel;
+        }
         v.fgLo += v.fgLoK * (body - v.fgLo);
         float mid = body - v.fgLo;
         float sd = 0.0f;                    // (SF-000) a stereo file's impact: its left less its right, halved
@@ -562,6 +637,7 @@ public:
         {
             const float u = y * v.fgClip, sat = fastTanh (u);
             y = sat * v.fgOut;
+            if (clean != 0.0f) y += clean * v.fgKeepG;
             side = sideOn ? sd * (std::abs (u) > 1.0e-4f ? sat / u : 1.0f) * v.fgClip * v.fgOut : 0.0f;
         }
         v.phase += f / osr;
@@ -649,6 +725,10 @@ public:
         const bool wide = (smp != nullptr && smp->wide && (reads (model) || (layer > 0.01f && reads (layerModel)))) || sideLive > 0;
         if (wide && ! wasWide) { decS.reset(); decSB.reset(); split.widen(); }
         wasWide = wide;
+        // (SF-000) a ground that is ringing follows GROUND LENGTH and GROUND as they stand now, and a Forge hit that is
+        // sounding its TONE, DRIVE, BODY and LOW PRESERVE
+        if (ground.awake()) ground.follow (groundLen (c), 2.0f * c.v (FGGROUND) * groundAmt * groundTrim, groundFor (c));       // (in the order the hit has it: the same numbers to the bit)
+        for (auto& v : voices) if (v.active && v.model == kKickForge) forgeFollow (c, v, forgeAt (v.fgCh));
         for (int i = 0; i < c.n; ++i)
         {
             while (e < events.size() && events[e].offset <= i)
@@ -736,6 +816,7 @@ private:
     float sideIn[2] = { 0.0f, 0.0f };   // (what the voices gave of it this sample)
     int sideLive = 0; bool wasWide = false;
     LayerSplit split;
+    float groundSec = 0.5f, groundAmt = 0.0f, groundTrim = 1.0f;       // (SF-000) the ground as the last hit made it, before GROUND LENGTH and GROUND
     Ground ground; float groundIn = 0.0f;   // (SF-000) KICK FORGE's ground, and what the body gives it this sample
     static constexpr int kVoices = 8;
     std::array<Voice, kVoices> voices;
@@ -787,18 +868,18 @@ public:
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").prim(),
-                 pct ("decay", "DECAY", 0.5f).prim().dir (1),
-                 pct ("tone", "TONE", 0.5f).prim(),
-                 pct ("density", "DENSITY", 0.0f).prim().dir (1),
+        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").next().prim(),
+                 pct ("decay", "DECAY", 0.5f).next().prim().dir (1),
+                 pct ("tone", "TONE", 0.5f).next().prim(),
+                 pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
-                 pct ("accent", "ACCENT", 0.5f).prim(),
+                 pct ("accent", "ACCENT", 0.5f).next().prim(),
                  pct ("drive", "DRIVE", 0.0f).prim(),
                  levelParam (-6.0f).prim(),
                  choice ("model", "MODEL", percModelNames(), 0),
-                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
-                 pct ("echo_swing", "ECHO SWING", 0.0f).slow(),
-                 pct ("echo_prob", "ECHO PROB", 1.0f).slow(),
+                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1).next(),
+                 pct ("echo_swing", "ECHO SWING", 0.0f).next().slow(),
+                 pct ("echo_prob", "ECHO PROB", 1.0f).next().slow(),
                  toggle ("choke", "CHOKE", true),
                  pct ("spread", "SPREAD", 0.3f).slow(),
                  pct ("res", "FILTER RES", 0.1f),
@@ -1229,18 +1310,18 @@ public:
                  pct ("grit", "GRIT", 0.3f).prim().dir (1),
                  pct ("pump", "PUMP", 0.7f).prim(),
                  pct ("gate", "GATE", 1.0f).prim(),
-                 pct ("density", "DENSITY", 0.0f).prim().dir (1),
+                 pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  levelParam (-6.0f).prim(),
                  choice ("model", "MODEL", { "REVERB", "DELAY", "SUB DRONE", "DISTORTED", "DUB BOOM", "SAMPLE" }, 0),
-                 knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").slow(),
+                 knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").next().liveOn ("SAMPLE").slow(),
                  choice ("source", "SOURCE", { "KICK BUS", "MIDI", "BOTH" }, 0).noPreset().forget(),
                  choice ("predelay", "PREDELAY", { "0", "1/32", "1/16", "1/8" }, 1),
                  pct ("width", "WIDTH", 0.3f).slow(),
                  pct ("pocket_shape", "POCKET SHAPE", 0.5f).slow(),
-                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0),
+                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0).next(),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() }))));
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() }))));
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
         return p;
     }

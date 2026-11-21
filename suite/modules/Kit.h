@@ -29,10 +29,10 @@ inline ParamSpec levelParam (float def = 0.0f) { return knob ("level", "LEVEL", 
 // no sample: choosing one leaves the part of yours that plays alone). Songs keep them, as any knob.
 inline std::vector<ParamSpec> sampleRegionParams()
 {
-    return { pct ("smp_start", "START", 0.0f).noPreset().sampleGroup(),
-             pct ("smp_end", "END", 1.0f).noPreset().sampleGroup(),
-             knob ("smp_fade_in", "FADE IN", 0.0f, 2000.0f, 0.0f, "ms", 200.0f).noPreset().sampleGroup(),
-             knob ("smp_fade_out", "FADE OUT", 0.0f, 2000.0f, 0.0f, "ms", 200.0f).noPreset().sampleGroup() };
+    return { pct ("smp_start", "START", 0.0f).next().noPreset().sampleGroup(),
+             pct ("smp_end", "END", 1.0f).next().noPreset().sampleGroup(),
+             knob ("smp_fade_in", "FADE IN", 0.0f, 2000.0f, 0.0f, "ms", 200.0f).next().noPreset().sampleGroup(),
+             knob ("smp_fade_out", "FADE OUT", 0.0f, 2000.0f, 0.0f, "ms", 200.0f).next().noPreset().sampleGroup() };
 }
 // first: the module's index of START (END, FADE IN, FADE OUT follow it).
 inline SampleRegion regionFrom (const Ctx& c, int first, const SampleData& s)
@@ -50,8 +50,8 @@ inline std::vector<ParamSpec> withRegion (std::vector<ParamSpec> v)
 // index and NORMALISE follows it. A sample is otherwise as loud as its file, and no louder.
 inline std::vector<ParamSpec> withSampleGain (std::vector<ParamSpec> v)
 {
-    v.push_back (knob ("smp_gain", "GAIN", -24.0f, 24.0f, 0.0f, "dB").noPreset().sampleGroup());
-    v.push_back (toggle ("smp_norm", "NORMALISE").noPreset().sampleGroup());
+    v.push_back (knob ("smp_gain", "GAIN", -24.0f, 24.0f, 0.0f, "dB").next().noPreset().sampleGroup());
+    v.push_back (toggle ("smp_norm", "NORMALISE").next().noPreset().sampleGroup());
     return v;
 }
 inline float sampleLevel (const Ctx& c, int gainAt, const SampleData& s)
@@ -173,8 +173,8 @@ inline SampleRegion sliceRegion (const SampleData& s, const SampleRegion& r, int
 // each hit moves on from it (ROUND: the next one each time. RANDOM: any). Appended last, after GAIN and NORMALISE.
 inline std::vector<ParamSpec> withSlices (std::vector<ParamSpec> v)
 {
-    v.push_back (pct ("smp_slice", "SLICE", 0.0f).noPreset().sampleGroup());
-    v.push_back (choice ("smp_cycle", "CYCLE", { "OFF", "ROUND", "RANDOM" }, 0).noPreset().sampleGroup());
+    v.push_back (pct ("smp_slice", "SLICE", 0.0f).next().noPreset().sampleGroup());
+    v.push_back (choice ("smp_cycle", "CYCLE", { "OFF", "ROUND", "RANDOM" }, 0).next().noPreset().sampleGroup());
     return v;
 }
 // (SF-000) A drum's LOOP: the sample as a loop on the rig's bars and not a hit (PERC: the hats and the clap). OFF: hits, as
@@ -182,7 +182,7 @@ inline std::vector<ParamSpec> withSlices (std::vector<ParamSpec> v)
 // Appended last, after SLICE and CYCLE.
 inline std::vector<ParamSpec> withLoop (std::vector<ParamSpec> v)
 {
-    v.push_back (choice ("smp_bars", "LOOP", { "OFF", "AUTO", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", "32 BARS" }, 0).noPreset().sampleGroup());
+    v.push_back (choice ("smp_bars", "LOOP", { "OFF", "AUTO", "1 BAR", "2 BARS", "4 BARS", "8 BARS", "16 BARS", "32 BARS" }, 0).next().noPreset().sampleGroup());
     return v;
 }
 // DECAY as a gate on samples: 0 = 10 ms, 90 %+ = the whole sample, exponential in between;

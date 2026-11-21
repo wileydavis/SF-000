@@ -3438,6 +3438,169 @@ static void plainSaysTest (int& bad)
 
 // (the ninety-second build) LAYER and LAYER MODEL are heard as they are turned, on a note that is already sounding (a pad's
 // notes are long: a layer used to be started only with its note, at the LAYER there was then).
+// The parameter contract (the suite's Module.h, Reach), held to. Every parameter of every lane's instrument, on each of
+// its models (a module and model once, on the first lane that has it): a note is played (a pitched lane's held six
+// tenths of a second; a drum's hit), and the parameter is moved to its far end a little way into it (60 thousandths of a
+// second into a note, 8 into a hit). Is what sounds from then on different from the same note with nothing moved? If
+// not: is a note played after the move different? A parameter that says LIVE or EASED must be heard on the note that is
+// sounding wherever it is heard on the next; one that says NEXT has promised nothing, and is reported if it is in fact
+// heard at once. What nothing can be told of (the sound is over by then, or the parameter is heard on no note as the
+// instrument stands) is counted and left.
+struct ReachRow { juce::String lane, module, model, id; sf::Reach says = sf::Reach::Live; bool told = false, now = false, next = false; double nowDb = -200.0, nextDb = -200.0; };
+static std::vector<ReachRow> reachWalk (const juce::String& only)
+{
+    using namespace sf0;
+    std::vector<ReachRow> rows;
+    // a file for the models that play one: two seconds, a rich low tone with a moving high one and some noise
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-reachtest");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto file = dir.getChildFile ("reach.wav");
+    {
+        juce::AudioBuffer<float> b (2, 96000);
+        juce::Random r (7);
+        for (int n = 0; n < 96000; ++n)
+        {
+            const double t = n / 48000.0, w = 2.0 * juce::MathConstants<double>::pi;
+            const float v = (float) (0.25 * std::sin (w * 110.0 * t) + 0.12 * std::sin (w * 220.0 * t) + 0.10 * std::sin (w * 330.0 * t) + 0.12 * std::sin (w * (900.0 + 1400.0 * t) * t)) + 0.05f * (r.nextFloat() - 0.5f);
+            b.setSample (0, n, v); b.setSample (1, n, v * 0.9f);
+        }
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> wr { wav.createWriterFor (new juce::FileOutputStream (file), 48000.0, 2, 24, {}, 0) };
+        if (wr != nullptr) wr->writeFromAudioSampleBuffer (b, 0, 96000);
+    }
+    std::set<std::string> done;
+    for (auto& lane : lanes())
+    {
+        if (only.isNotEmpty() && only != lane.slug) continue;
+        juce::StringArray models;
+        {
+            SFProcessor q (sf::makeModule (lane.module));
+            if (const int mi = q.paramIndex ("model"); mi >= 0) for (auto& c : q.allSpecs()[(size_t) mi].choices) models.add (c);
+        }
+        for (int m = 0; m < std::max (1, models.size()); ++m)
+        {
+            const juce::String model = m < models.size() ? models[m] : juce::String();
+            if (! done.insert ((juce::String (lane.module) + "|" + model).toStdString()).second) continue;
+            constexpr int kBlock = 64, kBlocks = 48000 / kBlock;                 // (a second of it)
+            const int at = lane.pitched ? 45 : 6, off = lane.pitched ? 450 : -1;
+            // when: -1 nothing is moved; 0 before the note; otherwise at that block. from: where the parameter stands
+            // before the note (-1: where it is)
+            auto play = [&] (int moved, float to, int when, float from = -1.0f)
+            {
+                SFProcessor q (sf::makeModule (lane.module));
+                auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+                for (auto& f : lane.fixed) setPlain (f.param, f.value);
+                if (models.size() > 1) setPlain ("model", (float) m);
+                setPlain ("layer", 0.6f);
+                q.setRateAndBufferSizeDetails (48000.0, kBlock); q.prepareToPlay (48000.0, kBlock);
+                if (q.mod().acceptsFiles()) q.mod().loadFiles (juce::StringArray (file.getFullPathName()));
+                if (moved >= 0 && from >= 0.0f) q.param (moved)->setValueNotifyingHost (from);
+                juce::AudioBuffer<float> b (2, kBlock);
+                // (a quarter of a second first, with nothing playing: what a file needs to be taken up, and every knob to arrive)
+                for (int i = 0; i < 190; ++i) { juce::MidiBuffer none; b.clear(); q.processBlock (b, none); }
+                if (moved >= 0 && when == 0)
+                {
+                    q.param (moved)->setValueNotifyingHost (to);
+                    for (int i = 0; i < 190; ++i) { juce::MidiBuffer none; b.clear(); q.processBlock (b, none); }
+                }
+                else for (int i = 0; i < 190; ++i) { juce::MidiBuffer none; b.clear(); q.processBlock (b, none); }
+                std::vector<float> out;
+                out.reserve ((size_t) kBlocks * kBlock);
+                const int note = lane.pitched ? 45 : 60;
+                for (int i = 0; i < kBlocks; ++i)
+                {
+                    juce::MidiBuffer midi;
+                    if (i == 0) midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 110), 0);
+                    if (i == off) midi.addEvent (juce::MidiMessage::noteOff (1, note), 0);
+                    if (moved >= 0 && when > 0 && i == when) q.param (moved)->setValueNotifyingHost (to);
+                    b.clear();
+                    q.processBlock (b, midi);
+                    for (int k = 0; k < kBlock; ++k) out.push_back (b.getSample (0, k) + b.getSample (1, k));
+                }
+                return out;
+            };
+            auto level = [] (const std::vector<float>& v, size_t from) { double q = 0.0; for (size_t i = from; i < v.size(); ++i) q += (double) v[i] * v[i]; return 10.0 * std::log10 (q / (double) std::max<size_t> (1, v.size() - from) + 1e-20); };
+            auto apart = [] (const std::vector<float>& x, const std::vector<float>& y, size_t from) { double q = 0.0; for (size_t i = from; i < x.size() && i < y.size(); ++i) q += ((double) x[i] - y[i]) * ((double) x[i] - y[i]); return 10.0 * std::log10 (q / (double) std::max<size_t> (1, x.size() - from) + 1e-20); };
+            const auto base = play (-1, 0.0f, -1);
+            const size_t from = (size_t) at * kBlock;
+            const double rest = level (base, from), whole = level (base, 0);
+            // (the same note twice is the same note: if this model is not, what it differs by of itself is the floor)
+            const double self = apart (play (-1, 0.0f, -1), base, 0) - whole;
+            const double heard = self < -150.0 ? -120.0 : self + 20.0;
+            const bool repeats = self < -60.0;          // (a model whose note is not the same note twice, by more than this, cannot be told of: SUB DRONE)
+            SFProcessor probe (sf::makeModule (lane.module));
+            for (auto& f : lane.fixed) if (const int i = probe.paramIndex (f.param); i >= 0) probe.param (i)->setValueNotifyingHost (probe.param (i)->convertTo0to1 (f.value));
+            if (models.size() > 1) if (const int i = probe.paramIndex ("model"); i >= 0) probe.param (i)->setValueNotifyingHost (probe.param (i)->convertTo0to1 ((float) m));
+            if (const int i = probe.paramIndex ("layer"); i >= 0) probe.param (i)->setValueNotifyingHost (0.6f);
+            for (int i = 0; i < probe.numModuleParams(); ++i)
+            {
+                const auto& sp = probe.allSpecs()[(size_t) i];
+                const juce::String id (sp.id);
+                if (id == "model" || (id.startsWith ("smp_cut")) || id.startsWith ("m1_") || id.startsWith ("m2_") || sp.type == sf::PType::Momentary) continue;
+                // (one model's own knobs are no other's)
+                if (const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : id.startsWith ("gr_") ? "GRANULAR" : id.startsWith ("fg_") ? "KICK FORGE" : nullptr)
+                    if (model != fam) continue;
+                ReachRow row; row.lane = lane.slug; row.module = lane.module; row.model = model; row.id = id; row.says = sp.reachIn (model.toStdString());
+                const float now = probe.param (i)->getValue();
+                const int places = (int) sp.choices.size();
+                const float to = sp.type == sf::PType::Choice && places > 1 ? (now >= 1.0f - 0.5f / (float) (places - 1) ? now - 1.0f / (float) (places - 1) : now + 1.0f / (float) (places - 1)) : now > 0.5f ? 0.0f : 1.0f;
+                if (whole > -100.0 && repeats)
+                {
+                    if (rest > -100.0) { row.nowDb = apart (play (i, to, at), base, from) - rest; row.now = row.nowDb > heard; }
+                    if (! row.now && rest > -100.0)
+                    {
+                        // (and the other way: the note begun with it at the far end, and it brought back to where it stands. A
+                        // stage the note has already passed with it where it is (an ATTACK of nothing) is then one it is in)
+                        const auto other = play (i, now, -1, to), back = play (i, now, at, to);
+                        const double o = level (other, from);
+                        if (o > -100.0) { const double d = apart (back, other, from) - o; if (d > row.nowDb) row.nowDb = d; row.now = d > heard; }
+                    }
+                    if (! row.now) { row.nextDb = apart (play (i, to, 0), base, 0) - whole; row.next = row.nextDb > heard; }
+                    row.told = row.now || (row.next && rest > -100.0);
+                }
+                rows.push_back (row);
+            }
+        }
+    }
+    dir.deleteRecursively();
+    return rows;
+}
+static const char* reachName (sf::Reach r) { return r == sf::Reach::Live ? "LIVE" : r == sf::Reach::Eased ? "EASED" : "NEXT"; }
+static void reachTest (int& bad)
+{
+    auto check = [&] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    const auto rows = reachWalk ({});
+    int live = 0, next = 0, untold = 0, broken = 0, early = 0;
+    juce::StringArray which, sooner;
+    for (auto& r : rows)
+    {
+        if (r.says == sf::Reach::Next) { ++next; if (r.now) { ++early; if (sooner.size() < 6) sooner.add (r.module + " " + r.model + " " + r.id); } continue; }
+        if (! r.told) { ++untold; continue; }
+        if (r.now) ++live;
+        else { ++broken; if (which.size() < 12) which.add (r.module + " " + r.model + " " + r.id); }
+    }
+    {
+        // what the instrument says of the kick lane's knobs on KICK FORGE and on KICK 909-TYPE (INFO's word: Screen::reachSays)
+        using namespace sf0;
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        int kick = 0;
+        for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kick = l;
+        auto choose = [&] (const char* name) { for (auto& sp : e.setupParams ({ 0, kick, 0 })) if (sp.id == "model") if (const int at = sp.choices.indexOf (name); at >= 0) e.setSetup ({ 0, kick, 0 }, "model", (float) at / (float) std::max (1, sp.choices.size() - 1)); };
+        choose ("KICK FORGE");
+        const bool forge = e.reachOf (kick, "fg_tone") == sf::Reach::Live && e.reachOf (kick, "fg_low") == sf::Reach::Live && e.reachOf (kick, "drive") == sf::Reach::Live
+                        && e.reachOf (kick, "fg_char") == sf::Reach::Next && e.reachOf (kick, "tune") == sf::Reach::Next;
+        choose ("KICK 909-TYPE");
+        const bool nine = e.reachOf (kick, "drive") == sf::Reach::Next && e.reachOf (kick, "filter") == sf::Reach::Live;
+        check (forge && nine, "the lane says it of the model it has: on KICK FORGE, TONE, LOW PRESERVE and DRIVE are heard on a hit that is sounding and CHARACTER and TUNE from the next; on KICK 909-TYPE, DRIVE from the next and FILTER at once");
+    }
+    check (! rows.empty() && broken == 0,
+           "every parameter keeps to what it says of itself (Module.h, Reach): of " + juce::String ((int) rows.size()) + " on the lanes' instruments and their models, "
+               + juce::String (live) + " that say LIVE or EASED are heard on a note that is sounding; " + juce::String (next) + " say NEXT (" + juce::String (early) + " of those are in fact heard at once"
+               + (sooner.isEmpty() ? juce::String() : ": " + sooner.joinIntoString (", ")) + "); " + juce::String (untold) + " could not be told (the sound was over, or they are heard on no note as it stands)"
+               + (broken > 0 ? "; " + juce::String (broken) + " say LIVE and wait for the next note: " + which.joinIntoString (", ") : juce::String()));
+}
+
 static void layerLiveTest (int& bad)
 {
     using namespace sf0;
@@ -4295,6 +4458,101 @@ static void samplerTest (int& bad)
     if (! (listed && drumsHave)) std::printf ("    (listed %d, the drums have them %d)\n", (int) listed, (int) drumsHave);
 }
 
+// (SF-000) KICK FORGE's GROUND LENGTH and LOW PRESERVE (the ninety-eighth build), on the kick lane's module alone: GROUND
+// LENGTH draws out or cuts short what rings after the body, and not the body; a ground that is ringing follows it; LOW
+// PRESERVE keeps the lows out of the last clipper, so that a hard-driven kick's note is cleaner and its knock as driven.
+static void forgeMoreTest (int& bad)
+{
+    using namespace sf0;
+    auto check = [&] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    int kickLane = 0;
+    for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kickLane = l;
+    const auto& lane = lanes()[(size_t) kickLane];
+    // one hit (or two, the second at `again` seconds), `secs` seconds of it; `move`: set a knob at a time into it
+    auto hit = [&] (std::vector<std::pair<const char*, float>> set, double secs, std::pair<const char*, float> move = { nullptr, 0.0f }, double moveAt = 0.0)
+    {
+        SFProcessor q (sf::makeModule (lane.module));
+        auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+        for (auto& f : lane.fixed) setPlain (f.param, f.value);
+        if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == "KICK FORGE") setPlain ("model", (float) k); }
+        setPlain ("layer", 0.0f); setPlain ("split", 0.5f);         // (as the rig has it when KICK FORGE is chosen: Rig.h)
+        for (auto& kv : set) setPlain (kv.first, kv.second);
+        q.setRateAndBufferSizeDetails (48000.0, 64); q.prepareToPlay (48000.0, 64);
+        juce::AudioBuffer<float> b (2, 64);
+        for (int i = 0; i < 200; ++i) { juce::MidiBuffer none; b.clear(); q.processBlock (b, none); }
+        std::vector<float> out;
+        const int blocks = (int) (secs * 750.0), at = (int) (moveAt * 750.0);
+        for (int i = 0; i < blocks; ++i)
+        {
+            juce::MidiBuffer midi;
+            if (i == 0) midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 110), 0);
+            if (i == 60) midi.addEvent (juce::MidiMessage::noteOff (1, 36), 0);
+            if (move.first != nullptr && i == at) setPlain (move.first, move.second);
+            b.clear(); q.processBlock (b, midi);
+            for (int k = 0; k < 64; ++k) out.push_back (0.5f * (b.getSample (0, k) + b.getSample (1, k)));
+        }
+        return out;
+    };
+    auto rms = [] (const std::vector<float>& v, double a, double z) { double q = 0.0; const size_t i0 = (size_t) (a * 48000.0), i1 = std::min (v.size(), (size_t) (z * 48000.0)); for (size_t i = i0; i < i1; ++i) q += (double) v[i] * v[i]; return 10.0 * std::log10 (q / (double) std::max<size_t> (1, i1 - i0) + 1e-20); };
+    // GROUND LENGTH: the tail a second on, at its three places; the first sixtieth of a second (the knock and the body's start) the same at all three
+    const std::vector<std::pair<const char*, float>> boomy { { "fg_char", 0.62f }, { "fg_ground", 0.8f } };
+    auto with = [&] (std::vector<std::pair<const char*, float>> v, const char* id, float x) { v.push_back ({ id, x }); return v; };
+    // (the ground alone: each less the same hit with no ground, which is the same to the sample but for it)
+    const auto none = hit ({ { "fg_char", 0.62f }, { "fg_ground", 0.0f } }, 3.0);
+    auto alone = [&] (std::vector<float> v) { for (size_t i = 0; i < v.size() && i < none.size(); ++i) v[i] -= none[i]; return v; };
+    const auto g0 = alone (hit (with (boomy, "fg_glen", 0.0f), 3.0)), g5 = alone (hit (with (boomy, "fg_glen", 0.5f), 3.0)), g1 = alone (hit (with (boomy, "fg_glen", 1.0f), 3.0));
+    double front = 0.0;
+    {
+        const auto w0 = hit (with (boomy, "fg_glen", 0.0f), 0.05), w1 = hit (with (boomy, "fg_glen", 1.0f), 0.05);
+        for (size_t i = 0; i < 800; ++i) front = std::max (front, (double) std::abs (w0[i] - w1[i]));
+    }
+    const double s0 = rms (g0, 0.0, 3.0), s5 = rms (g5, 0.0, 3.0), s1 = rms (g1, 0.0, 3.0);
+    const double l0 = rms (g0, 1.2, 1.4), l5 = rms (g5, 1.2, 1.4), l1 = rms (g1, 1.2, 1.4);
+    check (l5 > l0 + 6.0 && l1 > l5 + 12.0 && std::max ({ s0, s5, s1 }) - std::min ({ s0, s5, s1 }) < 6.0 && front < 2.0e-2,
+           "GROUND LENGTH (the ground alone): 1.2 seconds after a hit it is " + juce::String (l0, 1) + " dB at the left, " + juce::String (l5, 1) + " in the middle, " + juce::String (l1, 1) + " at the right, and over three seconds it carries "
+               + juce::String (s0, 1) + ", " + juce::String (s5, 1) + " and " + juce::String (s1, 1) + " dB: longer, not louder; the hit's front (its first sixtieth of a second) is the same at both ends (they part by " + juce::String (front, 5) + " at most)");
+    // on a ground that is already ringing: let out half a second after the hit, it rings on
+    const auto mv = alone (hit (with (boomy, "fg_glen", 0.5f), 3.0, { "fg_glen", 1.0f }, 0.5));
+    const double tm = rms (mv, 1.0, 1.5);
+    const double t5late = rms (g5, 1.0, 1.5);
+    check (tm > t5late + 12.0, "GROUND LENGTH on a ground that is ringing: turned up half a second after the hit, the ground a second on is " + juce::String (tm, 1) + " dB (left where it was, " + juce::String (t5late, 1) + ")");
+    // LOW PRESERVE: a hard-driven distorted kick; its body's tail (60 to 250 thousandths of a second), the share of what is
+    // over 150 Hz against what is under it, with LOW PRESERVE out and in
+    const std::vector<std::pair<const char*, float>> hard { { "fg_char", 1.0f }, { "drive", 1.0f }, { "fg_ground", 0.0f }, { "fg_tone", 0.5f }, { "decay", 0.8f } };
+    // what the clipper makes of the note: its third harmonic against it, in the body's tail (150 to 400 thousandths of a
+    // second, when the body's own harmonics have died away), found by looking for the note between 35 and 90 Hz
+    // what the clipper makes of the note, in the body's tail (150 to 400 thousandths of a second, when the body's own
+    // harmonics have died away): its third, fifth and seventh harmonics, as levels, found from the note (looked for
+    // between 35 and 90 Hz); and the note's level as it comes in (40 to 90 thousandths of a second)
+    auto bin = [] (const std::vector<float>& v, double hz, double a, double z)
+    {
+        const size_t i0 = (size_t) (a * 48000.0), i1 = std::min (v.size(), (size_t) (z * 48000.0));
+        double re = 0.0, im = 0.0;
+        for (size_t i = i0; i < i1; ++i) { const double ph = 2.0 * juce::MathConstants<double>::pi * hz * (double) i / 48000.0; re += v[i] * std::cos (ph); im += v[i] * std::sin (ph); }
+        return 20.0 * std::log10 (std::sqrt (re * re + im * im) / (double) std::max<size_t> (1, i1 - i0) + 1e-12);
+    };
+    struct Heard { double hz = 50.0, note = -200.0, odd = -200.0, five = -200.0, start = -200.0; };
+    auto hear = [&] (const std::vector<float>& v)
+    {
+        Heard h;
+        for (double f = 35.0; f <= 90.0; f += 0.5) if (const double m = bin (v, f, 0.15, 0.4); m > h.note) { h.note = m; h.hz = f; }
+        double e = 0.0;
+        for (int k : { 3, 5, 7 }) e += std::pow (10.0, bin (v, k * h.hz, 0.15, 0.4) / 10.0);
+        h.odd = 10.0 * std::log10 (e + 1e-24); h.five = bin (v, 5.0 * h.hz, 0.15, 0.4); h.start = bin (v, h.hz, 0.04, 0.09);
+        return h;
+    };
+    const auto out = hear (hit (with (hard, "fg_low", 0.0f), 0.45)), in = hear (hit (with (hard, "fg_low", 1.0f), 0.45));
+    const auto k0 = hit (with (hard, "fg_low", 0.0f), 0.05), k1 = hit (with (hard, "fg_low", 1.0f), 0.05);
+    const double knock0 = rms (k0, 0.0, 0.012), knock1 = rms (k1, 0.0, 0.012);
+    check (in.odd < out.odd - 8.0 && in.five < out.five - 15.0 && std::abs (knock1 - knock0) < 3.0 && std::abs (in.start - out.start) < 4.0,
+           "LOW PRESERVE: a hard-driven distorted kick's note, in its tail, has its third, fifth and seventh harmonics at " + juce::String (out.odd, 1) + " dB with LOW PRESERVE out and " + juce::String (in.odd, 1)
+               + " in (the fifth alone " + juce::String (out.five, 1) + " and " + juce::String (in.five, 1) + "); the note comes in at " + juce::String (out.start, 1) + " and " + juce::String (in.start, 1)
+               + " dB (in its tail it is " + juce::String (out.note, 1) + " and " + juce::String (in.note, 1) + ": clean, it dies away as the body does); the knock, its first twelve thousandths of a second, is " + juce::String (knock0, 1) + " and " + juce::String (knock1, 1) + " dB");
+    // on a hit that is sounding
+    const auto mid = hear (hit (with (hard, "fg_low", 0.0f), 0.45, { "fg_low", 1.0f }, 0.03));
+    check (mid.five < out.five - 15.0, "LOW PRESERVE on a hit that is sounding: put in 30 thousandths of a second into the hit, the note's fifth harmonic is " + juce::String (mid.five, 1) + " dB (" + juce::String (out.five, 1) + " left out)");
+}
+
 static void forgeTest (int& bad)
 {
     using namespace sf0;
@@ -4857,7 +5115,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') reachTest (bad); else if (w == 'j') forgeMoreTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -7303,6 +7561,8 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     levelSilentTest (bad);
     mixTest (bad);
     plainSaysTest (bad);
+    reachTest (bad);
+    forgeMoreTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -17608,6 +17868,73 @@ public:
                 }
             }
             wav.deleteFile();
+            std::fflush (stdout);
+            quit(); return;
+        }
+        if (args.contains ("--forgeprint"))
+        {
+            // (--forgeprint OUT.raw: KICK FORGE alone, hit eight times a second apart over a range of its settings (CHARACTER,
+            // TONE, DRIVE, BODY, GROUND, DENSITY, with and without a file for its impact), its output written as raw floats.
+            // Two builds that write the same file make the same kick, to the sample.)
+            using namespace sf0;
+            juce::File out (args[args.indexOf ("--forgeprint") + 1]);
+            out.deleteFile();
+            juce::FileOutputStream os (out);
+            const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-forgeprint");
+            dir.deleteRecursively(); dir.createDirectory();
+            const auto file = dir.getChildFile ("hit.wav");
+            {
+                juce::AudioBuffer<float> b (2, 48000);
+                juce::Random r (3);
+                for (int n = 0; n < 48000; ++n) { const float v = 0.4f * (r.nextFloat() - 0.5f) * std::exp (-(float) (n % 6000) / 900.0f) + 0.2f * (float) std::sin (0.05 * n); b.setSample (0, n, v); b.setSample (1, n, 0.8f * v); }
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatWriter> wr { wav.createWriterFor (new juce::FileOutputStream (file), 48000.0, 2, 24, {}, 0) };
+                if (wr != nullptr) wr->writeFromAudioSampleBuffer (b, 0, 48000);
+            }
+            int kickLane = 0;
+            for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kickLane = l;
+            const auto& lane = lanes()[(size_t) kickLane];
+            struct Set { float ch, tone, drive, body, ground, dens; bool file; };
+            const Set sets[] = { { 0.0f, 0.5f, 0.2f, 0.5f, 0.5f, 0.0f, false }, { 0.3f, 0.5f, 0.2f, 0.5f, 0.5f, 0.0f, true }, { 0.6f, 0.2f, 0.7f, 0.8f, 0.9f, 0.0f, true },
+                                 { 1.0f, 0.8f, 0.0f, 0.3f, 0.2f, 0.5f, true }, { 0.45f, 0.65f, 1.0f, 1.0f, 1.0f, 0.3f, false } };
+            long total = 0;
+            for (const auto& st : sets)
+            {
+                SFProcessor q (sf::makeModule (lane.module));
+                auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+                for (auto& f : lane.fixed) setPlain (f.param, f.value);
+                if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == "KICK FORGE") setPlain ("model", (float) k); }
+                setPlain ("layer", 0.0f); setPlain ("split", 0.5f);
+                setPlain ("fg_char", st.ch); setPlain ("fg_tone", st.tone); setPlain ("drive", st.drive); setPlain ("fg_body", st.body); setPlain ("fg_ground", st.ground); setPlain ("density", st.dens);
+                q.setRateAndBufferSizeDetails (48000.0, 64); q.prepareToPlay (48000.0, 64);
+                if (st.file) q.mod().loadFiles (juce::StringArray (file.getFullPathName()));
+                juce::AudioBuffer<float> b (2, 64);
+                for (int i = 0; i < 200; ++i) { juce::MidiBuffer none; b.clear(); q.processBlock (b, none); }
+                for (int i = 0; i < 750 * 8; ++i)
+                {
+                    juce::MidiBuffer midi;
+                    if (i % 750 == 0) midi.addEvent (juce::MidiMessage::noteOn (1, 36 + (i / 750) % 3, (juce::uint8) (90 + 10 * ((i / 750) % 3))), 0);
+                    if (i % 750 == 100) midi.addEvent (juce::MidiMessage::noteOff (1, 36 + (i / 750) % 3), 0);
+                    b.clear();
+                    q.processBlock (b, midi);
+                    os.write (b.getReadPointer (0), 64 * sizeof (float));
+                    os.write (b.getReadPointer (1), 64 * sizeof (float));
+                    total += 64;
+                }
+            }
+            os.flush();
+            dir.deleteRecursively();
+            std::printf ("wrote %s (%ld frames)\n", out.getFullPathName().toRawUTF8(), total);
+            quit(); return;
+        }
+        if (args.contains ("--reach"))
+        {
+            // (--reach [lane's slug]: the parameter contract, parameter by parameter (reachWalk): lane|module|model|parameter|
+            // what it says of itself|heard on the sounding note, dB against the note|heard on the next, dB|the verdict)
+            const juce::String only = args.indexOf ("--reach") + 1 < args.size() && ! args[args.indexOf ("--reach") + 1].startsWith ("--") ? args[args.indexOf ("--reach") + 1] : juce::String();
+            for (auto& r : reachWalk (only))
+                std::printf ("%s|%s|%s|%s|%s|%.1f|%.1f|%s\n", r.lane.toRawUTF8(), r.module.toRawUTF8(), r.model.toRawUTF8(), r.id.toRawUTF8(), reachName (r.says), r.nowDb, r.nextDb,
+                             r.now ? "at once" : ! r.told ? "not told" : "next note");
             std::fflush (stdout);
             quit(); return;
         }

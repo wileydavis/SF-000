@@ -459,6 +459,7 @@ private:
     // INFO
     struct Tip { juce::String title; juce::StringArray body, midi; R box; bool any = false; };
     Tip tipFor (const Hit&) const;
+    juce::String reachSays (int lane, const juce::String& id) const;
     bool describe (int ctl, juce::String& where, juce::String& label, const char*& what) const;
     juce::String midiOf (int ctl) const;
     juce::StringArray wrap (const juce::String&, const juce::Font&, float width) const;

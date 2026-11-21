@@ -157,7 +157,10 @@ this build does not have is written back as it was read.
   With `lists` at 2: PAD on GRANULAR, places 1 to 6 are `gr_pos`, `gr_scan`, `gr_size`,
   `gr_dens`, `gr_spray`, `gr_pitch` (and so on BASS, LEAD and CHORD, where 7 and 8 are CUTOFF and
   the lane's own eighth); KICK on KICK FORGE, places 2 to 7 are `fg_char`, `fg_impact`,
-  `fg_body`, `fg_ground`, `fg_pos`, `fg_tone`, and 1 and 8 TUNE and DRIVE as ever. Without
+  `fg_body`, `fg_ground`, `fg_pos`, `fg_tone`, and 1 and 8 TUNE and DRIVE as ever. Two more of
+  KICK FORGE's are in `setup` only (the ninety-eighth build): `fg_glen` (GROUND LENGTH, 0 to 1,
+  the middle as it was) and `fg_low` (LOW PRESERVE, 0 to 1, nought as it was). A snapshot
+  without them has them at those. Without
   `lists`, a PAD on GRANULAR has those six places as the pad's usual knobs, which GRANULAR then
   read as its size (COLOR) and its scatter (DETUNE).
   **`lists` 3** (eighty-first build): PERC's list has SAMPLE after its six objects, and a snapshot

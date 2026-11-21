@@ -52,26 +52,26 @@ public:
     double tailSeconds() const override { return 12.0; }
     std::vector<ParamSpec> params() const override
     {
-        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).prim().dir (1),
-                 pct ("distance", "DISTANCE", 0.3f).prim(),
-                 pct ("size", "SIZE", 0.5f).prim(),
-                 pct ("material", "MATERIAL", 0.5f).prim(),
-                 pct ("decay", "DECAY", 0.5f).prim().dir (1),
-                 pct ("density", "DENSITY", 0.0f).prim().dir (1),
+        return withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).next().liveOn ("SAMPLE").prim().dir (1),
+                 pct ("distance", "DISTANCE", 0.3f).next().prim(),
+                 pct ("size", "SIZE", 0.5f).next().prim(),
+                 pct ("material", "MATERIAL", 0.5f).next().liveOn ("SAMPLE").prim(),
+                 pct ("decay", "DECAY", 0.5f).next().prim().dir (1),
+                 pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  levelParam (-6.0f).prim(),
                  choice ("model", "MODEL", objectNames(), 0),      // (SF-000) MODEL, as on every other lane, now that SAMPLE is one of them (the suite: OBJECT)
-                 pct ("position", "POSITION", 0.3f).slow(),
-                 pct ("spread", "SPREAD", 0.5f).slow(),
-                 pct ("tension", "TENSION", 0.3f).slow(),
-                 knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").slow(),
-                 toggle ("key_track", "KEY TRACK"),
+                 pct ("position", "POSITION", 0.3f).next().slow(),
+                 pct ("spread", "SPREAD", 0.5f).next().liveOn ("SAMPLE").slow(),
+                 pct ("tension", "TENSION", 0.3f).next().slow(),
+                 knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").next().slow(),
+                 toggle ("key_track", "KEY TRACK").next(),
                  pct ("res", "FILTER RES", 0.1f),
-                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0),
-                 pct ("echo_swing", "ECHO SWING", 0.0f),
-                 pct ("vel_sens", "VEL SENS", 0.5f),
+                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 0).next(),
+                 pct ("echo_swing", "ECHO SWING", 0.0f).next(),
+                 pct ("vel_sens", "VEL SENS", 0.5f).next(),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() })))));
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() })))));
     }
     // (SF-000) SAMPLE's file
     bool acceptsFiles() const override { return true; }

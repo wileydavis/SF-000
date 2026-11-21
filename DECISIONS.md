@@ -6033,7 +6033,77 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      reaches a sounding note, with a check that walks all of them; GROUND LENGTH and LOW
      PRESERVE in the Forge's CONFIG, at rest the kick it is now to the sample.
 
+## The parameter contract, and the Forge's ground and low end (Nov 20, 22:21): ninety-eighth build
+
+775. **You**, Nov 20, 22:21: "That all sounds good. let's build it. In the order you proposed. but
+     start with the parameter contract and then move immediately into forge. We'll get that
+     dialed, then move on to each module one by one."
+     **Built: the parameter contract.** Every parameter says how a change of it reaches a note
+     that is sounding (`sf::Reach` in the suite's `Module.h`: LIVE, EASED, NEXT; LIVE unless it
+     says otherwise; `liveOn (model)` for a NEXT one that a model hears at once), and the
+     declarations are what the instrument does, found by walking every parameter of every
+     lane's instrument on every model (2,744 pairs): moved to its far end 60 thousandths of a
+     second into a note (8 into a hit), and, if that is not heard, the note begun with it there
+     and the knob brought back. `reachTest` holds every one to its word: none says LIVE and
+     waits. 1,024 that say LIVE or EASED are heard on the sounding note; 1,259 say NEXT; 461
+     cannot be told (the sound is over by then, or it does nothing as the instrument stands).
+     INFO says FROM THE NEXT HIT / NOTE on a knob that is NEXT on the lane's model, panel and
+     CONFIG; EASED says the keys that are down are played again. `--reach [lane]` prints the
+     lot.
+     *What it found, and what I did about it:*
+     - **Drums** (KICK, PERC, STRIKE, RUMBLE): almost everything of a hit is taken when it is
+       struck: NEXT. FILTER, LEVEL, LAYER and SPLIT act on the sounding hit.
+     - **VOICE's GATE waited for the next phrase** (on all six models), the GATE and LEVEL kind
+       of fault the brief names. Mended: a sounding phrase follows GATE.
+     - **KICK FORGE**: TONE, DRIVE, BODY, GROUND and both new controls now act on a hit that is
+       sounding (`forgeFollow`); CHARACTER, IMPACT, POSITION, TUNE, PUNCH, PITCH TIME, CLICK and
+       DECAY build the hit when it is struck: NEXT. *Mine:* I did not make those live. TUNE on
+       a ringing kick is the kick-bass work for later; DECAY mid-hit would need the envelope
+       rebuilt; the rest are the hit's shape.
+     - **The synth lanes**: DENSITY, ECHO SPACE and SWING, KEY FOLLOW, the sample's PLAY,
+       KNOBS, NOTES, LOOP, VEL START and RANDOM START are NEXT. ATTACK is LIVE (a note still in
+       its attack follows it, as the ninety-second build made it).
+     - **The sample's own** (START, END, the fades, GAIN, NORMALISE, SLICE, CYCLE, LOOP's
+       length): NEXT everywhere but GRANULAR's region and gain and the synth's SAMPLE's gain.
+       Left for SAMPLE's turn, not mended now.
+     - RUMBLE's SUB DRONE does not play the same note twice, so nothing on it can be told: the
+       walk counts its parameters as untold.
+     **Built: GROUND LENGTH and LOW PRESERVE** in the Forge's CONFIG (MODEL grid, cells 6 and 7).
+     - GROUND LENGTH: an eighth to eight times what CHARACTER and DECAY make the ground's ring
+       (twelve seconds at most). *Mine:* drawn out, the ground is fed less of the body, by how
+       much longer, so that it carries about the same (measured over three seconds: -26.4,
+       -25.1 and -24.5 dB at its left, middle and right): longer, not louder. Shorter, it is fed
+       as it was. What is ringing already rings on at its level.
+     - LOW PRESERVE: *mine, how:* the body's own fundamental, the sine itself, is taken out of
+       the body before its lows-and-mids split (that split is a one-pole at 120 Hz: it leaves a
+       third of the note in the driven mids, so "the lows are kept from the drive" was only
+       partly so), as the falling pitch comes within two and a half times the note, and put
+       back after the clipper. No filter, so nothing turned in phase. It comes in at the level
+       the clipper was giving the note at that moment and dies away as the body does. Measured
+       on a hard, distorted kick: the note's third, fifth and seventh harmonics -25.1 dB out,
+       -35.5 in (the fifth -38.8 and -80.9); the knock the same (-8.2); the note comes in 1.8 dB
+       under; in its tail it is 6.6 dB under, because the clipper was holding it up. A first
+       try with a filter split did nothing measurable, and I said why in the code.
+     - **With both at rest the kick is the ninety-seventh build's to the sample**: five
+       settings (CHARACTER 0 to 1, TONE, DRIVE, BODY, GROUND, DENSITY; with and without a file)
+       rendered by this build and by the ninety-seventh's `Drums.cpp`, compared byte for byte.
+       My first comparison left LAYER SPLIT at the kick lane's own (full), which sends the main
+       model's lows away; done again as the rig has it with the Forge chosen. That print is now
+       a standing check beside the rig's (`--forgeprint`, against the one kept).
+     *Not done in this build:* the brief's other Forge items (a pitch and amplitude envelope
+     with a mid point, IMPACT's audition and lock, GROUND's darkness and width, CHARACTER's
+     offsets made explicit, the kick-and-bass view). The next Forge build, when you have
+     played this one.
+
 ## Not verified
+
+- **The ninety-eighth build (775): GROUND LENGTH and LOW PRESERVE are measured, not heard.**
+  Whether GROUND LENGTH's make-up (a longer ground fed less) feels right, and whether LOW
+  PRESERVE's clean note is the sound you want from a hard kick (cleaner, and shorter in its
+  tail than the clipped note), are for your ears. The contract's declarations are measured on
+  one note a lane at 48 kHz in 64-sample blocks, the sample's own controls with one test file:
+  a parameter that is heard only in some other state (another file, a long note) can be
+  declared NEXT and be LIVE there, which the check reports and does not fail.
 
 - **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
   (769, your word).** Checked here, on a software driver: each of the three is its one colour

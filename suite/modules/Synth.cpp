@@ -341,7 +341,7 @@ public:
                  pct ("res", "RES", dRes).prim(),
                  pct ("env_amt", "ENV AMT", dEnv).prim().dir (1),
                  pct ("gate", "GATE", dGate).prim(),
-                 pct ("density", "DENSITY", 0.0f).prim().dir (1),
+                 pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  pct ("drive", "DRIVE", 0.0f).prim().dir (1),
                  levelParam (-6.0f).prim(),
@@ -353,16 +353,16 @@ public:
                  knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st"),
                  pct ("detune", "DETUNE", 0.5f).slow(),
                  pct ("color", "COLOR", 0.5f).slow(),
-                 choice ("layer_model", "LAYER MODEL", mn, std::min<int> (1, (int) mn.size() - 1)).layerGroup(),
+                 choice ("layer_model", "LAYER MODEL", mn, std::min<int> (1, (int) mn.size() - 1)).eased().layerGroup(),
                  pct ("layer", "LAYER", 0.0f).layerGroup(),
-                 choice ("chord", "CHORD", chordNames(), 0),
+                 choice ("chord", "CHORD", chordNames(), 0).eased(),
                  pct ("space", "SPACE", 0.5f).slow(),
                  pct ("pocket_depth", "POCKET DEPTH", dPocket).slow(),
                  pct ("pocket_shape", "POCKET SHAPE", 0.25f),
-                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1),
-                 pct ("echo_swing", "ECHO SWING", 0.0f),
+                 choice ("echo_space", "ECHO SPACE", echoSpaceNames(), 1).next(),
+                 pct ("echo_swing", "ECHO SWING", 0.0f).next(),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).noPreset().forget() });
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() });
         // The E16's NRG page [Nov 10]: ACID on the 303's track, WARP on the PAD's (any model takes them).
         p.push_back (pct ("acid", "ACID", 0.0f).slow().dir (1));
         p.push_back (pct ("warp", "WARP", 0.0f).slow().dir (1));
@@ -400,12 +400,12 @@ public:
         // its note is held; THROUGH, a note plays it to its END however short the note (a one-shot). ENVELOPE: the
         // lane's DECAY and ENV AMT act on it as on a synth model (DECAY at full: no decay); off, they leave it alone.
         p = withSampleGain (std::move (p));
-        p.push_back (choice ("smp_play", "PLAY", { "HELD", "THROUGH" }, 0).noPreset().sampleGroup());
+        p.push_back (choice ("smp_play", "PLAY", { "HELD", "THROUGH" }, 0).next().noPreset().sampleGroup());
         // KNOBS (on as a sample opens): every knob of the lane acts on a sample. DECAY is its decay (the top fifth of the
         // knob brings the sustain up to all of it), ENV AMT sweeps the filter, COLOR tilts it darker or brighter about
         // the centre, DETUNE adds a second reading a few cents off and SPACE the ensemble (not on a mono model), and in
         // PLAY THROUGH GATE is how much of the sample plays. Off: as samples played before, all of those asleep.
-        p.push_back (toggle ("smp_env", "KNOBS", true).noPreset().sampleGroup());
+        p.push_back (toggle ("smp_env", "KNOBS", true).next().noPreset().sampleGroup());
         // (SF-000) GRANULAR's own knobs. Until now the grains had two knobs shared with other things (COLOR their size,
         // DETUNE their scatter and pitch spread), four to a grain's length always, and the place they came from drifted
         // through the source at one fixed pace. Where each of these starts is what GRANULAR did before, so nothing that
@@ -444,11 +444,11 @@ public:
         //   CROSSFADE   how much of the loop's end fades into its start: none (a hard join) to half of it
         //   VEL START   a soft note starts further in: at full, the softest half way through. A hard note from the start
         //   RANDOM START  each note starts somewhere else: none, to almost anywhere in what plays
-        p.push_back (choice ("smp_notes", "NOTES", { "PITCH", "SLICES" }, 0).noPreset().sampleGroup());
-        p.push_back (toggle ("smp_loop", "LOOP", false).noPreset().sampleGroup());
+        p.push_back (choice ("smp_notes", "NOTES", { "PITCH", "SLICES" }, 0).next().noPreset().sampleGroup());
+        p.push_back (toggle ("smp_loop", "LOOP", false).next().noPreset().sampleGroup());
         p.push_back (pct ("smp_xfade", "CROSSFADE", 0.25f).noPreset().sampleGroup());
-        p.push_back (pct ("smp_vel", "VEL START", 0.0f).noPreset().sampleGroup());
-        p.push_back (pct ("smp_rand", "RANDOM START", 0.0f).noPreset().sampleGroup());
+        p.push_back (pct ("smp_vel", "VEL START", 0.0f).next().noPreset().sampleGroup());
+        p.push_back (pct ("smp_rand", "RANDOM START", 0.0f).next().noPreset().sampleGroup());
         p = withCuts (std::move (p));        // (SF-000) the slice markers
         // (SF-000) POCKET AFTER FX: the pocket is not made here. The host makes the same one after the lane's inserts and
         // its EQ, from POCKET DEPTH and POCKET SHAPE, so that an effect's tail has the hole too.
@@ -473,8 +473,15 @@ public:
         // middle (GATE's upper half still lengthens it from there). MONO: for the engines every lane has, one note at a time
         // and down the middle (no SPACE, no detuned second voice): what BASS had built in, and where BASS starts.
         p.push_back (pct ("release", "RELEASE", 0.5f).slow());
-        p.push_back (toggle ("mono", "MONO", roleId == ROLE_BASS).noPreset().forget());
+        p.push_back (toggle ("mono", "MONO", roleId == ROLE_BASS).eased().noPreset().forget());
         jassert ((int) p.size() == kParams);
+        // (SF-000) the sample's own are read as a note starts (Kit.h); GRANULAR reads its region and its gain as it plays,
+        // and SAMPLE its gain
+        for (auto& s : p)
+        {
+            if (s.id == "smp_start" || s.id == "smp_end" || s.id == "smp_fade_in" || s.id == "smp_fade_out") s.liveOn ("GRANULAR");
+            if (s.id == "smp_gain" || s.id == "smp_norm") s.liveOn ("GRANULAR").liveOn ("SAMPLE");
+        }
         return p;
     }
     bool acceptsFiles() const override { return true; }

@@ -201,6 +201,18 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   of `Airwindows.cpp` is where they are named. To add another: its three files, a namespace
   block and a `Kind` in `AirKernels.*`, a row in that table, a `make`, the two Registry lines,
   an `FxDef` in `Source/Rig.h`, and its lines in `Source/Help.h`. See DECISIONS 746 to 750.
+- **The ninety-eighth build, the parameter contract**: `core/Module.h` has `enum class Reach
+  { Live, Eased, Next }`, `ParamSpec::reach` (LIVE unless said), `eased()`, `next()`,
+  `liveOn (model)` and `reachIn (model)`; every module's parameters that a sounding note does
+  not follow say `.next()` (KICK's, PERC's, STRIKE's, RUMBLE's, VOICE's, the synth's DENSITY,
+  the echo's two, KEY FOLLOW, the sample's own in `modules/Kit.h`), LAYER MODEL, CHORD and MONO
+  `.eased()`. `modules/Voice.cpp`: a sounding phrase follows GATE (`Play::age`, `relMul`).
+  `modules/Drums.cpp`, KICK FORGE: `forgeFollow` takes TONE, DRIVE, BODY and LOW PRESERVE at
+  the hit and every block after; `fg_glen` and `fg_low` appended (`FGGLEN`, `FGLOW`); the
+  ground's length and level followed while it rings (`Ground::follow`, `groundLen`,
+  `groundFor`, a feed into it), and LOW PRESERVE takes the body's fundamental round the drive
+  and the clipper. At rest the kick is the same to the sample. All marked `(SF-000)`. The
+  suite's own modules have none of it: the contract is worth taking there (DECISIONS 775).
 - **The ninety-fourth build**: `core/Module.h` has `holdsNotes()` (true), which
   `modules/Synth.cpp` answers from its model (false on SAMPLE with LOOP off: `holds`), for
   SF-000's sequencer; `core/Dsp.h` has `levelGain` and `modules/Kit.h`'s `levelDb` uses it,

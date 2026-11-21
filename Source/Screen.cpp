@@ -684,6 +684,18 @@ String Screen::midiOf (int ctl) const
     return s;
 }
 
+// (SF-000) INFO's word on how a change of a lane instrument's control reaches a note that is sounding, where it is not at
+// once and by itself (the parameter contract: the suite's Module.h, Reach)
+juce::String Screen::reachSays (int lane, const juce::String& id) const
+{
+    const auto r = eng.reachOf (lane, id);
+    const bool drum = ! lanes()[(size_t) lane].pitched;
+    if (r == sf::Reach::Next) return drum ? " FROM THE NEXT HIT: ONE THAT IS SOUNDING KEEPS WHAT IT WAS STRUCK WITH."
+                                          : " FROM THE NEXT NOTE: ONE THAT IS SOUNDING KEEPS WHAT IT BEGAN WITH.";
+    if (r == sf::Reach::Eased) return " HEARD AT ONCE: THE KEYS THAT ARE DOWN ARE PLAYED AGAIN AS IT NOW STANDS.";
+    return {};
+}
+
 Screen::Tip Screen::tipFor (const Hit& h) const
 {
     Tip t;
@@ -698,6 +710,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             if (! describe (h.a, where, label, what)) return t;
             t.title = where.isEmpty() ? label : where + ": " + label;
             if (what != nullptr) body = what;
+            if (h.a < kLanes * cx::kPerLane && h.a % cx::kPerLane < kLaneKnobs)
+                body << reachSays (h.a / cx::kPerLane, eng.laneKnob (h.a / cx::kPerLane, h.a % cx::kPerLane).param);
             midi = midiOf (h.a);
             below = h.kind != hRead && h.a != cx::kGlide;
             break;
@@ -735,6 +749,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                                : (cfg.slot == 0 ? returnA() : returnB (eng.spaceModel())).module;
             t.title = (sp.group.isNotEmpty() && sp.group != "SOUND" && sp.group != "EFFECT" ? sp.group + ": " : String()) + sp.name;
             if (const char* what = module != nullptr ? help::param (module, sp.id.toRawUTF8()) : nullptr) body = what;
+            if (cfg.kind == 0) body << reachSays (cfg.lane, sp.id);
             if (cfg.kind == Engine::kMixPage && Engine::mixOfId (sp.id) >= 0)
             {
                 const int k = Engine::mixOfId (sp.id);

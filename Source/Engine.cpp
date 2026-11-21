@@ -1442,6 +1442,22 @@ Pockets::Set Engine::pocketSet (bool shownNow) const
 }
 
 // ---------------------------------------------------------------------------------------- setup
+sf::Reach Engine::reachOf (int lane, const juce::String& id) const
+{
+    auto* p = processorFor ({ 0, lane, 0 });
+    if (p == nullptr) return sf::Reach::Live;
+    const int i = p->paramIndex (id.toRawUTF8());
+    if (i < 0 || i >= p->numModuleParams()) return sf::Reach::Live;
+    std::string model;
+    if (const int mi = p->paramIndex ("model"); mi >= 0)
+    {
+        const auto& ch = p->allSpecs()[(size_t) mi].choices;
+        const int at = juce::roundToInt (p->param (mi)->convertFrom0to1 (p->param (mi)->getValue()));
+        if (at >= 0 && at < (int) ch.size()) model = ch[(size_t) at];
+    }
+    return p->allSpecs()[(size_t) i].reachIn (model);
+}
+
 SFProcessor* Engine::processorFor (Target t) const
 {
     if (t.kind == kMixPage) return nullptr;       // (the mix: no instrument's, the engine's own)
@@ -1560,7 +1576,8 @@ const CfgCell kEngineCells[] = { { "table", 0 }, { "wt_twist", 1 }, { "wt_twist_
                                  { "gr_clock", 8 }, { "gr_spread", 9 }, { "gr_follow", 10 }, { "gr_sync", 11 },
                                  { "fm_algo", 0 }, { "fm_feedback", 1 }, { "fm_a_ratio", 4 }, { "fm_b_ratio", 5 }, { "fm_c_ratio", 6 }, { "fm_d_ratio", 7 },
                                  { "fm_a_level", 8 }, { "fm_b_level", 9 }, { "fm_c_level", 10 }, { "fm_d_level", 11 }, { "fm_a_decay", 12 }, { "fm_b_decay", 13 }, { "fm_c_decay", 14 }, { "fm_d_decay", 15 },
-                                 { "fg_char", 0 }, { "fg_impact", 1 }, { "fg_body", 2 }, { "fg_ground", 3 }, { "fg_pos", 4 }, { "fg_tone", 5 } };
+                                 { "fg_char", 0 }, { "fg_impact", 1 }, { "fg_body", 2 }, { "fg_ground", 3 }, { "fg_pos", 4 }, { "fg_tone", 5 },
+                                 { "fg_glen", 6 }, { "fg_low", 7 } };
 // the fifth, SAMPLE (LOOP is a switch on the synths and a list of bars on the drums: one cell)
 const CfgCell kSampleCells[] = { { "smp_start", 0 }, { "smp_end", 1 }, { "smp_fade_in", 2 }, { "smp_fade_out", 3 },
                                  { "smp_gain", 4 }, { "smp_norm", 5 }, { "smp_cuts", 6 }, { "smp_bars", 7 }, { "smp_loop", 7 },
@@ -2178,7 +2195,7 @@ Engine::SetupState Engine::newerOff (Target t) const
     if (auto* p = processorFor (t))
         for (const char* id : { "gr_pos", "gr_scan", "gr_size", "gr_dens", "gr_spray", "gr_pitch", "gr_shape", "gr_rev", "gr_clock", "gr_spread", "gr_follow", "gr_sync",
                                 "smp_notes", "smp_loop", "smp_xfade", "smp_vel", "smp_rand", "smp_slice", "smp_cycle",
-                                "fg_char", "fg_impact", "fg_body", "fg_ground", "fg_pos", "fg_tone" })
+                                "fg_char", "fg_impact", "fg_body", "fg_ground", "fg_pos", "fg_tone", "fg_glen", "fg_low" })
             if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams())
                 st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
     return st;

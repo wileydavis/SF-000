@@ -3,6 +3,7 @@
 // returns, a built-in lane EQ and master chain, in one fixed graph with delay compensation.
 // Every screen control is a Control with a stable id and a value from 0 to 1; the engine glides
 // values on the audio thread and hands them to the suite's processors.
+#include "core/Module.h"     // (SF-000: sf::Reach)
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
 #include <atomic>
@@ -531,6 +532,9 @@ public:
     bool setAt (int ctl, float v, double atPpq);
     void clearSetsAt();     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
     SFProcessor* processorFor (Target) const;
+    // (SF-000) how a change of a lane instrument's parameter reaches a note that is sounding, on the model the lane has
+    // now (the suite's Module.h, Reach). Not the lane's instrument's (an effect's, the mix's): LIVE.
+    sf::Reach reachOf (int lane, const juce::String& id) const;
     bool laneFollowsKey (int lane) const;       // its KEY FOLLOW, in CONFIG, is on (false: the lane has none, or it is off)
     std::vector<SetupParam> setupParams (Target) const;
     void setSetup (Target, const juce::String& id, float v);
