@@ -5866,7 +5866,7 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      away: they are the lane's routing and yours. **I do not know which of them it was on
      your PAD.**
 
-## An outline look for the 3D view, for a camera and a room (Nov 20, 19:00): renders only, not on main
+## An outline look for the 3D view, for a camera and a room (Nov 20, 19:00): ninety-seventh build
 
 766. **You**, Nov 20, 19:00: "for live shows, i plan to lay a screen flat on the grough or table and
      play sg-000 in 3d mode with follow on. I'd like a camera and audience friendly skin on the
@@ -5876,29 +5876,61 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      legibility better from a distance. and give it a plain buyt retro futuristic look. The Eqs
      can retain color but everything else would render like an 80s green monochrome screen. how
      hard with that be?" 19:03: "make some renders"
-     **Drawing, as stills; no switch for it in the instrument yet, and not pushed.** It is on
-     the branch `outline-look`, reachable only from the picture tool (`--3d --ink
-     green|red|paper [--weight N]`). `Stage::setInk`: the parts are drawn once, flat, unlit and
-     without shadows, into the smoothed buffer with a second layer beside the colour (which
-     way each point faces, up or round to which side; whose it is, two numbers a part); a
-     whole-picture pass draws a line wherever, a line's width away, either differs, and under
-     the lines what each surface shows of itself as so much ink: the sheet's print at full
-     strength, a display with its greys, a lit key and a knob's lit lights filled in, unlit
-     lights not drawn. One colour on one ground (green, red, amber on black with a little of
-     the glow; black on white with none), except inside `Stage::keepColours`' boxes: the
-     screen gives it the EQ's rectangle while the EQ is up, and that keeps its own colours.
-     The lit 3D picture is the same to the pixel with the look off (compared before and
-     after; only the hint at the window's foot differed, which comes and goes by the clock).
-     *Mine, in the stills:* the disc under each knob and the dimples where a control could be
-     are left out; a knob's lights stand a quarter further out than they do, so its arc is
-     clear of the cap's line; a rounded edge is one line; the blank-picture check reads the
-     look at its smallest size, where lines have run together, since a grid of points can miss
-     every line. **Not done:** a way to choose it on the instrument and keep the choice; the
-     look taking the dark sheet by itself (the stills ask for `--dark`); the value tags and
-     the hint in the look's colours; what GLIDE's green and LEARN's yellow lights become when
-     everything is one colour; the suite's checks. **Not seen on a Mac's own OpenGL.**
+     **Built: `Stage::setInk`.** The parts are drawn once, flat, unlit and without shadows,
+     into the smoothed buffer with a second layer beside the colour (which way each point
+     faces, up or round to which side; whose it is, two numbers a part); a whole-picture pass
+     draws a line wherever, a line's width away, either differs, and under the lines what each
+     surface shows of itself as so much ink: the sheet's print at full strength, a display with
+     its greys, a lit key and a knob's lit lights filled in, unlit lights not drawn. One colour
+     on one ground (green or red on black with a little of the glow; black on white with none),
+     except inside `Stage::keepColours`' boxes: the screen gives it the EQ's rectangle while
+     the EQ is up. I took "the Eqs" to be the EQ's graph; LOW, MID and HIGH on a lane are
+     knobs like the rest. The second layer and the inked picture are made the first time the
+     look is asked for; a driver that will not give them leaves the lit picture as it is.
+     *Mine:* the disc under each knob and the dimples where a control could be are left out; a
+     knob's lights stand a quarter further out than they do, so its arc is clear of the cap's
+     line; a rounded edge is one line; the look is drawn from the dark instrument's parts and
+     print whichever the lit skin shows (`Screen::refreshStage`); the tags (a turned knob's
+     value, the hint at the foot) are of the look's colour; the blank-picture check reads the
+     look at its smallest size, where its lines have run together, since a grid of points can
+     miss every line. The glow under the case is not drawn in the look.
+     Seven stills were sent first (the top, a followed close view, an audience angle, the EQ in
+     colour, red, daylight twice), drawn by the stage itself.
+
+767. **You**, Nov 20, 19:33, of the stills: "for the glides, make it green and yellow on the white
+     version, and invert the colors for the green and red (so green outline gets reg glides and
+     re doutline gets green glides, yellow on both)" and "line weight could be a touch thinner
+     too"
+     **Built.** A knob's lights now say what they are saying beside their colour (`lightAt`'s
+     `what`: its value; on its way; a step at LEARN holds a difference on it), and the look
+     goes by that: on its way is green on white and on red, red on green; LEARN's is yellow in
+     all three; the mark for where a knob is going stays the ink's colour. No line is drawn
+     over a light that keeps a colour, so its arc is whole. The lines are about three quarters
+     of the width they were in the stills (0.95 of a point's radius, was 1.25).
+
+768. **You**, Nov 20, 19:34: "switch for the look can be in the setup bemnu along with the color
+     brightness and pulse settings"
+     **Built.** In SETUP's LOOK row, beside FULL SCREEN: a list, 3D: LIT, OUTLINE GREEN, OUTLINE
+     RED, OUTLINE DAYLIGHT. It acts at once and is kept in `look.json` (`"ink"`: `green`,
+     `red`, `paper`, or nothing). *Mine, not built:* a knob for the lines' width (the row has
+     no room for a fourth; the width is in the code, `Screen::setInk`'s second number).
 
 ## Not verified
+
+- **The ninety-seventh build (766 to 768): the outline look has never been drawn by a Mac's
+  own OpenGL.** Here it is drawn by a software driver. It asks the card for something the lit
+  picture does not: two pictures written at once into the smoothed buffer (a second colour
+  attachment, RGBA8 beside RGBA16F), each then taken out as one layer. That is ordinary OpenGL
+  3.2, and if the card refuses it the lit picture stays; but if it takes it and draws it wrong
+  I cannot see that from here. The first time you choose an OUTLINE in SETUP: lines round
+  every part and legible print means it is right. A blank or half-drawn picture should fall
+  back to the lit skin by itself and say why in the top bar; tell me if it does either. Checked
+  here: each of the three is its one colour on its ground; a glide and a LEARN step show the
+  colours you gave; the EQ keeps its own; the picture is the same from the pale skin as from
+  the dark; and with the look put away the lit picture is the same to the point. **Not
+  checked:** how it reads through a camera or from the back of a room, how wide the lines
+  should be on your screen at its size, and what a frame costs on your Mac (it should be less
+  than the lit picture: no shadows, no lighting).
 
 - **The ninety-sixth build (765): the cause on your set is not known.** PAD and LEAD are
   measured alike after PLAIN on the rig as it opens; what differed on yours I have named

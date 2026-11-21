@@ -296,9 +296,9 @@ void main()
 // A light: it is its colour, whatever falls on it. (iColour.a: how big; iPos.w: turned how far round.)
 const char* const kLightVert = R"(#version 150
 in vec3 aPos;
-in vec4 iPos; in vec4 iColour; in vec4 iClip;
+in vec4 iPos; in vec4 iColour; in vec4 iMat; in vec4 iClip;
 uniform mat4 uVP; uniform float uGrow;
-out vec3 vPos; out vec3 vColour; out vec4 vClip; flat out vec2 vId;
+out vec3 vPos; out vec3 vColour; out vec4 vClip; flat out vec2 vId; flat out float vWhat;
 // (whose a point is: two numbers that go with one part and no other, for the outline look's lines)
 vec2 idOf (vec4 a, float b)
 {
@@ -309,6 +309,7 @@ vec2 idOf (vec4 a, float b)
 void main()
 {
     vId = idOf (vec4 (iPos.xyz, 0.0), 7.0);          // (all the lights round one knob are one thing)
+    vWhat = iMat.x;
     float c = cos (iPos.w), s = sin (iPos.w);
     vec3 p = vec3 (aPos.x * c + aPos.z * s, aPos.y, aPos.z * c - aPos.x * s) * iColour.a;
     p.xz *= 1.0 + uGrow;         // (the outline look's lights stand a little way off their knob: an arc of its own, clear of the cap's line)
@@ -319,8 +320,8 @@ void main()
 )";
 
 const char* const kLightFrag = R"(#version 150
-in vec3 vPos; in vec3 vColour; in vec4 vClip; flat in vec2 vId;
-uniform float uInk;
+in vec3 vPos; in vec3 vColour; in vec4 vClip; flat in vec2 vId; flat in float vWhat;
+uniform float uInk; uniform vec3 uGlideCol; uniform vec3 uTaughtCol;
 out vec4 oColour; out vec4 oData;
 void main()
 {
@@ -330,7 +331,8 @@ void main()
         // (the outline look: a light that is on is filled in; one that is off is not drawn at all)
         float v = max (vColour.r, max (vColour.g, vColour.b));
         if (v < 0.15) discard;
-        oColour = vec4 (vec3 (clamp (v, 0.0, 1.0)), 0.0);
+        // (a knob on its way somewhere, and one a step at LEARN holds a difference on, keep a colour of their own: it is what they are saying)
+        oColour = vWhat > 1.5 ? vec4 (uTaughtCol, 1.0) : vWhat > 0.5 ? vec4 (uGlideCol, 1.0) : vec4 (vec3 (clamp (v, 0.0, 1.0)), 0.0);
         oData = vec4 (0.5, 0.5, (floor (vId * 254.0) + 1.0) / 255.0);
         return;
     }
@@ -680,7 +682,7 @@ void main()
     float fill = clamp (1.15 * pow (clamp (v, 0.0, 1.0), 0.65) - 0.07, 0.0, 1.0);      // (how bright it is, as so much ink: a screen of one colour still has its greys)
     vec3 flat_ = mix (uPaper, uInkCol, fill);
     flat_ = mix (flat_, c.rgb * uKeepGain, clamp (c.a, 0.0, 1.0));
-    vec3 o = mix (flat_, uInkCol, line);
+    vec3 o = mix (flat_, uInkCol, line * (1.0 - clamp (c.a, 0.0, 1.0)));        // (no line is drawn over what keeps its colour: it is whole to its edge)
     if (! (o.r >= 0.0)) o.r = 0.0;
     if (! (o.g >= 0.0)) o.g = 0.0;
     if (! (o.b >= 0.0)) o.b = 0.0;
@@ -718,9 +720,15 @@ void main() { vUv = vec2 (aPos.x, 1.0 - aPos.y); gl_Position = vec4 (uRect.xy + 
 )";
 const char* const kTagFrag = R"(#version 150
 in vec2 vUv;
-uniform sampler2D uTex; uniform float uAlpha;
+uniform sampler2D uTex; uniform float uAlpha; uniform vec4 uInk; uniform vec3 uGround;
 out vec4 oColour;
-void main() { oColour = texture (uTex, vUv) * uAlpha; }
+void main()
+{
+    vec4 t = texture (uTex, vUv);
+    // (the outline look: a tag is of its one colour too. As bright as it was, so much ink; the rest of it ground.)
+    if (uInk.a > 0.5) { float v = clamp (max (t.r, max (t.g, t.b)), 0.0, t.a); t.rgb = uGround * (t.a - v) + uInk.rgb * v; }
+    oColour = t * uAlpha;
+}
 )";
 
 // The knob caps, as the model has them (radius, height above the plate; screen units).
@@ -1019,7 +1027,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         pTurned = program ("turned", kTurnedVert, kSurfaceFrag, { "aPos", "aNormal", "aTop", "iPos", "iColour", "iMat", "iClip" });
         pSlabDepth = program ("slab shadow", kSlabVert, kDepthFrag, { "aCorner", "aArc", "aProf", "aN", "aTop", "iRect", "iShape", "iColour", "iMat", "iClip" });
         pTurnedDepth = program ("turned shadow", kTurnedVert, kDepthFrag, { "aPos", "aNormal", "aTop", "iPos", "iColour", "iMat", "iClip" });
-        pLight = program ("light", kLightVert, kLightFrag, { "aPos", "iPos", "iColour", "iClip" });
+        pLight = program ("light", kLightVert, kLightFrag, { "aPos", "iPos", "iColour", "iMat", "iClip" });
         pRoom = program ("room", kFullVert, kRoomFrag, { "aPos" });
         pGlow = program ("underglow", kGlowVert, kGlowFrag, { "aPos" });
         pDown = program ("glow down", kFullVert, kDownFrag, { "aPos" });
@@ -1033,7 +1041,7 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
 
         const std::initializer_list<std::pair<GLuint, int>> slabVertex { { 0, 2 }, { 1, 2 }, { 2, 3 }, { 3, 2 }, { 4, 1 } }, slabCopy { { 5, 4 }, { 6, 4 }, { 7, 4 }, { 8, 4 }, { 9, 4 } };
         const std::initializer_list<std::pair<GLuint, int>> turnedVertex { { 0, 3 }, { 1, 3 }, { 4, 1 } }, turnedCopy { { 5, 4 }, { 7, 4 }, { 8, 4 }, { 9, 4 } };
-        const std::initializer_list<std::pair<GLuint, int>> lightCopy { { 5, 4 }, { 7, 4 }, { 9, 4 } };
+        const std::initializer_list<std::pair<GLuint, int>> lightCopy { { 5, 4 }, { 7, 4 }, { 8, 4 }, { 9, 4 } };
         makeBatch (slabs, slabMesh(), slabVertex, slabCopy);
         makeBatch (keySlabs, slabMesh(), slabVertex, slabCopy);
         makeBatch (capBig, turned (kCapBig, 32), turnedVertex, turnedCopy);
@@ -1301,9 +1309,11 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         for (float f : { cx - kW * 0.5f, cy - kH * 0.5f, base, scale, colour.r, colour.g, colour.b, rough, kind, emit, 0.0f, 0.0f }) b.data.push_back (f);
         clipTo (b.data, clip);
     }
-    static void lightAt (Batch& b, float cx, float cy, float base, float angle, Rgb colour, float scale, const Parts::Clip& clip)
+    // (what: what the light is saying. 0: its control's value; 1: the control is on its way somewhere; 2: a step at LEARN holds a difference on it.
+    // The lit picture says it by colour alone; the outline look, which has one colour, goes by this.)
+    static void lightAt (Batch& b, float cx, float cy, float base, float angle, Rgb colour, float scale, const Parts::Clip& clip, float what = 0.0f)
     {
-        for (float f : { cx - kW * 0.5f, cy - kH * 0.5f, base, angle, colour.r, colour.g, colour.b, scale }) b.data.push_back (f);
+        for (float f : { cx - kW * 0.5f, cy - kH * 0.5f, base, angle, colour.r, colour.g, colour.b, scale, what, 0.0f, 0.0f, 0.0f }) b.data.push_back (f);
         clipTo (b.data, clip);
     }
 
@@ -1478,8 +1488,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
                 const float part = juce::jlimit (0.0f, 1.0f, (std::min (b, hi) - std::max (a, lo)) * 16.0f);
                 const float lit = part > 0.995f ? 1.0f : part > 0.02f ? 0.25f + 0.75f * part : 0.0f;
                 Rgb c { l.unlit.r + (on.r - l.unlit.r) * lit, l.unlit.g + (on.g - l.unlit.g) * lit, l.unlit.b + (on.b - l.unlit.b) * lit };
-                if (mark >= lo && mark < hi) c = { std::max (c.r, white.r), std::max (c.g, white.g), std::max (c.b, white.b) };       // where it is going
-                lightAt (batch, k.cx, k.cy, k.base, -(((float) s + 0.5f) / 16.0f) * 2.0f * kPi, c, 1.0f, k.clip);
+                float what = i < liveWas.size() && k.ctl >= 0 && k.ctl < cx::kCount ? (liveWas[i].taught ? 2.0f : liveWas[i].gliding ? 1.0f : 0.0f) : 0.0f;
+                if (mark >= lo && mark < hi) { c = { std::max (c.r, white.r), std::max (c.g, white.g), std::max (c.b, white.b) }; what = 0.0f; }       // where it is going
+                lightAt (batch, k.cx, k.cy, k.base, -(((float) s + 0.5f) / 16.0f) * 2.0f * kPi, c, 1.0f, k.clip, what);
             }
         }
         fill (segBig); fill (segSmall);
@@ -1766,6 +1777,20 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
     // (the EQ) in its own colours. Nothing is lit and nothing casts a shadow: the parts are drawn
     // once, flat, with which way they face and whose they are beside them, and the lines are found
     // from that. It is less work than the lit picture.
+    // Its colours. Everything is the ink's colour on the ground's, but for two things a knob's
+    // lights say by colour and by nothing else: that the knob is on its way somewhere (GLIDE), and
+    // that a step at LEARN holds a difference on it. Those keep colours of their own: yellow for
+    // LEARN in every look; for a glide, green on white and on red, red on green.
+    struct InkLook { Rgb ink, ground, glide, taught; };
+    static constexpr float kKeepGain = 1.25f;       // (kept colours are shown a little brighter than they are printed: an EQ's are)
+    static InkLook inkLook (int which)
+    {
+        const Rgb green { 0.030f, 1.00f, 0.085f }, red { 1.00f, 0.040f, 0.022f }, yellow { 1.00f, 0.78f, 0.020f };
+        if (which == Stage::inkPaper) return { { 0.004f, 0.004f, 0.005f }, { 0.90f, 0.90f, 0.88f }, { 0.0f, 0.42f, 0.07f }, { 0.96f, 0.60f, 0.0f } };
+        if (which == Stage::inkRed)   return { red, { 0.0f, 0.0f, 0.0f }, green, yellow };
+        return { green, { 0.0f, 0.0f, 0.0f }, red, yellow };
+    }
+
     void inkScene (const M4& vp, int w, int h)
     {
         inking = true;
@@ -1781,6 +1806,9 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         pLight->use(); glUniformMatrix4fv (glGetUniformLocation (pLight->getProgramID(), "uVP"), 1, GL_FALSE, vp.m);
         glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uInk"), 1.0f);
         glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uGrow"), 0.24f);
+        const InkLook il = inkLook (ink);
+        glUniform3f (glGetUniformLocation (pLight->getProgramID(), "uGlideCol"), il.glide.r / kKeepGain, il.glide.g / kKeepGain, il.glide.b / kKeepGain);
+        glUniform3f (glGetUniformLocation (pLight->getProgramID(), "uTaughtCol"), il.taught.r / kKeepGain, il.taught.g / kKeepGain, il.taught.b / kKeepGain);
         draw (segBig); draw (segSmall);
         glUniform1f (glGetUniformLocation (pLight->getProgramID(), "uGrow"), 0.0f);
         draw (lensLit);
@@ -1804,12 +1832,10 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
             glUniform1i (glGetUniformLocation (id, "uTex"), 0);
             glUniform1i (glGetUniformLocation (id, "uData"), 1);
             glUniform2f (glGetUniformLocation (id, "uTexel"), 1.0f / (float) w, 1.0f / (float) h);
-            glUniform1f (glGetUniformLocation (id, "uWeight"), std::max (1.0f, 1.25f * inkWeight * (float) h / kH));       // (as wide on a big window as on a small one)
-            if (paper)                          { glUniform3f (glGetUniformLocation (id, "uInkCol"), 0.004f, 0.004f, 0.005f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.90f, 0.90f, 0.88f); }
-            else if (ink == Stage::inkRed)      { glUniform3f (glGetUniformLocation (id, "uInkCol"), 1.00f, 0.040f, 0.022f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.0f, 0.0f, 0.0f); }
-            else if (ink == Stage::inkAmber)    { glUniform3f (glGetUniformLocation (id, "uInkCol"), 1.00f, 0.42f, 0.010f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.0f, 0.0f, 0.0f); }
-            else                                { glUniform3f (glGetUniformLocation (id, "uInkCol"), 0.030f, 1.00f, 0.085f); glUniform3f (glGetUniformLocation (id, "uPaper"), 0.0f, 0.0f, 0.0f); }
-            glUniform1f (glGetUniformLocation (id, "uKeepGain"), 1.25f);
+            glUniform1f (glGetUniformLocation (id, "uWeight"), std::max (0.7f, 0.95f * inkWeight * (float) h / kH));       // (as wide on a big window as on a small one)
+            glUniform3f (glGetUniformLocation (id, "uInkCol"), il.ink.r, il.ink.g, il.ink.b);
+            glUniform3f (glGetUniformLocation (id, "uPaper"), il.ground.r, il.ground.g, il.ground.b);
+            glUniform1f (glGetUniformLocation (id, "uKeepGain"), kKeepGain);
         }
         glDrawArrays (GL_TRIANGLES, 0, 6);
 
@@ -1940,6 +1966,13 @@ struct Stage::Impl : public juce::OpenGLRenderer, private juce::AsyncUpdater
         glEnable (GL_BLEND); glBlendFunc (GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         pTag->use();
         glUniform1i (glGetUniformLocation (pTag->getProgramID(), "uTex"), 0);
+        {
+            // (these go straight to the window: the look's colours as the window has them)
+            auto shown = [] (float c) { c = juce::jlimit (0.0f, 1.0f, c); return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow (c, 1.0f / 2.4f) - 0.055f; };
+            const InkLook il = inkLook (ink);
+            glUniform4f (glGetUniformLocation (pTag->getProgramID(), "uInk"), shown (il.ink.r), shown (il.ink.g), shown (il.ink.b), inkShown ? 1.0f : 0.0f);
+            glUniform3f (glGetUniformLocation (pTag->getProgramID(), "uGround"), shown (il.ground.r), shown (il.ground.g), shown (il.ground.b));
+        }
         const float scale = (float) context.getRenderingScale();
         for (auto& t : tags)
         {
@@ -2059,7 +2092,7 @@ void Stage::setGlow (float hue, float bright, float pulse)
 void Stage::setDark (bool on) { { const juce::ScopedLock sl (impl->lock); impl->pending.dark = on; } impl->kick(); }
 void Stage::setInk (int which, float weight)
 {
-    { const juce::ScopedLock sl (impl->lock); impl->pending.ink = juce::jlimit (0, (int) inkAmber, which); impl->pending.inkWeight = juce::jlimit (0.4f, 4.0f, weight); }
+    { const juce::ScopedLock sl (impl->lock); impl->pending.ink = juce::jlimit (0, (int) inkPaper, which); impl->pending.inkWeight = juce::jlimit (0.4f, 4.0f, weight); }
     impl->kick();
 }
 void Stage::keepColours (const std::vector<juce::Rectangle<float>>& boxes)

@@ -904,7 +904,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aPanic, "PANIC", "SILENCES EVERY VOICE AND TAIL." },
                 { aModules, "MODULES", "THE MODULES KEPT ON THE INSTRUMENT: EACH A SET OF KNOBS (FOUR MACRO KNOBS, TEN STACK KNOBS) UNDER A NAME, ONE FOR EACH SET YOU PLAY. THE ONE IN THE CHASSIS IS ALWAYS ONE OF THEM, AND WHAT YOU CHANGE CHANGES IT. PRESSED AGAIN: BACK TO THE KNOB." },
                 { aNewTrack, "NEW", "HELD UNTIL IT IS FULL OF LIGHT: A NEW TRACK. THE RIG AS IT STARTS: NO STEPS, NO EFFECTS IN THE RACKS, EVERY KNOB WHERE THE RIG STARTS IT, EVERY MUTE AND SOLO OUT, THE MACRO KNOBS AT REST. TEMPO, THE MASTER, THE SNAPSHOT MODULE'S KNOBS AND THE LIBRARY STAY. TAKE A SNAPSHOT FIRST IF WHAT IS PLAYING IS WORTH KEEPING." },
-                { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (PHONES, UNDER ITS NAME, IS ITS OWN SMALL KEY.)" },
+                { aAudio, "SETUP", "WHAT IS SET ONCE, BEFORE THE SET: THE INTERFACE, ITS OUTPUTS AND BUFFER, MIDI AND THE CLOCK, FULL SCREEN, THE 3D VIEW'S LOOK (LIT, OR IN OUTLINE FOR A CAMERA AND A ROOM: GREEN OR RED ON BLACK, BLACK ON WHITE), AND THE COLOUR AND BRIGHTNESS OF THE GLOW UNDER THE CASE. (PHONES, UNDER ITS NAME, IS ITS OWN SMALL KEY.)" },
                 { aRec, "REC", "PRESS TO START A TAKE; HOLD TO END IT. THE SET, EVERY LANE AND THE TWO RETURNS ARE RECORDED." },
                 { aSnapshot, "SNAPSHOT", "KEEPS EVERYTHING ON THE MAIN SCREEN AS A NEW SNAPSHOT, WITH THE BARS IT WAS HEARD OVER." },
                 { aLibrary, "LIBRARY", "THE SNAPSHOT LIBRARY: TAP TO RECALL, RENAME, HEAR ONE IN THE HEADPHONES." },
@@ -6043,7 +6043,7 @@ void Screen::setThree (bool on)
         if (onThreeStarting) onThreeStarting();
         lit = true;
         if (stage == nullptr) { stage = std::make_unique<Stage> (eng); stage->onState = [this] { stageState(); }; }
-        stage->setDark (dark);
+        stage->setDark (stageDark());
         stage->setInk (ink, inkWeight);
         stage->setGlow (glowHue, glowBright, glowPulse);
         stage->setHome (eyePose, false);
@@ -6383,6 +6383,10 @@ void Screen::showTags()
 void Screen::refreshStage()
 {
     if (! three || stage == nullptr) return;
+    // (the outline look is drawn from the dark instrument: its parts are recorded and its sheet printed as the dark
+    // one's, here and only here, whichever the lit skin is showing)
+    struct AsDark { Screen& s; bool was; ~AsDark() { if (s.dark != was) { s.dark = was; s.skin.setDark (was); } } } asDark { *this, dark };
+    if (ink != 0 && ! dark) { dark = true; skin.setDark (true); }
     {
         juce::Image none (juce::Image::ARGB, 1, 1, true, juce::SoftwareImageType());
         G g (none);

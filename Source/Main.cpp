@@ -12779,9 +12779,9 @@ static int shot (const juce::StringArray& args)
         if (args.contains ("--turn")) eye.pose.turn = arg ("--turn", "0").getFloatValue();
         if (args.contains ("--tilt")) eye.pose.tilt = arg ("--tilt", "56").getFloatValue();
         sc.setEye (eye);
-        // (--ink green|red|amber|paper [--weight N]: the outline look)
+        // (--ink green|red|paper [--weight N]: the outline look)
         if (const auto ik = arg ("--ink", ""); ik.isNotEmpty())
-            sc.setInk (ik == "red" ? Stage::inkRed : ik == "paper" ? Stage::inkPaper : ik == "amber" ? Stage::inkAmber : Stage::inkGreen, arg ("--weight", "1").getFloatValue());
+            sc.setInk (ik == "red" ? Stage::inkRed : ik == "paper" ? Stage::inkPaper : Stage::inkGreen, arg ("--weight", "1").getFloatValue());
         if (const int gi = args.indexOf ("--glow"); gi >= 0 && gi + 1 < args.size())
         {
             const auto hb = juce::StringArray::fromTokens (args[gi + 1], ",", "");
@@ -15780,6 +15780,109 @@ static int stageTest()
                    "each plate has its own wear (" + juce::String ((int) numbers.size()) + " numbers for the " + juce::String ((int) shut.size()) + " lane-sized plates) and keeps it when CONFIG slides the rows over ("
                        + juce::String (moved) + " plates moved, " + juce::String (known) + " of " + juce::String ((int) open.size()) + " with the number they had)");
         }
+        // 7c. the outline look: one colour on one ground, what is lit filled in; a glide and a step at LEARN keep colours of their own
+        {
+            struct Seen { int all = 0, ground = 0, ink = 0, red = 0, green = 0, yellow = 0, white = 0, black = 0; };
+            auto seen = [] (const juce::Image& im)
+            {
+                Seen n;
+                if (! im.isValid()) return n;
+                const juce::Image::BitmapData bd (im, juce::Image::BitmapData::readOnly);
+                for (int y = 0; y < bd.height; ++y)
+                    for (int x = 0; x < bd.width; ++x)
+                    {
+                        const auto c = bd.getPixelColour (x, y);
+                        const int r = c.getRed(), g = c.getGreen(), b = c.getBlue();
+                        ++n.all;
+                        if (r < 50 && g < 50 && b < 50) ++n.black;
+                        if (r > 215 && g > 215 && b > 205) ++n.white;
+                        if (g > 170 && r < 120 && b < 170) ++n.green;
+                        if (r > 170 && g < 110 && b < 110) ++n.red;
+                        if (r > 180 && g > 130 && b < 90) ++n.yellow;
+                    }
+                return n;
+            };
+            auto rowsApart = [] (const juce::Image& x, const juce::Image& y)
+            {
+                if (! x.isValid() || x.getBounds() != y.getBounds()) return -1;
+                const juce::Image::BitmapData a (x, juce::Image::BitmapData::readOnly), c (y, juce::Image::BitmapData::readOnly);
+                int n = 0;
+                for (int yy = 0; yy < a.height; ++yy) if (std::memcmp (a.getLinePointer (yy), c.getLinePointer (yy), (size_t) a.width * 4) != 0) ++n;
+                return n;
+            };
+            auto pc = [] (int n, int of) { return juce::String (100.0 * n / std::max (1, of), 1) + "%"; };
+            sc.setInk (Stage::inkGreen);
+            const auto green = fresh();
+            const Seen g = seen (green);
+            check (st->state() == Stage::State::running && sc.threeShowing() && g.black > g.all / 2 && g.green > g.all / 50 && g.red == 0 && g.yellow == 0 && g.white == 0,
+                   "green on black: the stage still runs, most of the picture is ground (" + pc (g.black, g.all) + "), the rest green (" + pc (g.green, g.all) + "), and nothing is red, yellow or white ("
+                       + juce::String (g.red) + ", " + juce::String (g.yellow) + ", " + juce::String (g.white) + " points)");
+            sc.setDark (false);
+            const int paleRows = rowsApart (green, fresh());
+            sc.setDark (true); fresh();
+            check (paleRows == 0, "it is the same picture whichever instrument the lit skin shows, dark or pale (" + juce::String (paleRows) + " rows different)");
+            sc.setInk (Stage::inkRed);
+            const Seen r = seen (fresh());
+            check (r.black > r.all / 2 && r.red > r.all / 50 && r.green == 0 && r.yellow == 0, "red on black (" + pc (r.black, r.all) + " ground, " + pc (r.red, r.all) + " red; " + juce::String (r.green) + " points green)");
+            sc.setInk (Stage::inkPaper);
+            const Seen w = seen (fresh());
+            check (w.white > w.all / 2 && w.black > w.all / 50 && w.green == 0 && w.red == 0 && w.yellow == 0,
+                   "black on white (" + pc (w.white, w.all) + " ground, " + pc (w.black, w.all) + " ink; nothing coloured: " + juce::String (w.green + w.red + w.yellow) + " points)");
+            // a knob on its way somewhere: green on white and on red, red on green
+            const float glideWas = e.target (cx::kGlide), knobWas = e.target (cx::kSnap);
+            ses.userSet (cx::kGlide, 5.0f / 11.0f);
+            ses.turnSnapKnob (0, knobWas > 0.5f ? 0.0f : 1.0f);
+            { juce::AudioBuffer<float> gb (2, 512); for (int i = 0; i < 40; ++i) { gb.clear(); e.render (gb); } }
+            bool going = false;
+            for (int i = 0; i < cx::kCount && ! going; ++i) going = e.isGliding (i);
+            const Seen wg = seen (fresh());
+            sc.setInk (Stage::inkRed);
+            const Seen rg = seen (fresh());
+            sc.setInk (Stage::inkGreen);
+            const Seen gg = seen (fresh());
+            check (going && wg.green > 150 && wg.red == 0 && rg.green > 150 && gg.red > 150,
+                   "a knob on its way keeps a colour: green on white (" + juce::String (wg.green) + " points), green on red (" + juce::String (rg.green) + "), red on green (" + juce::String (gg.red) + ")");
+            ses.userSet (cx::kGlide, 0.0f);
+            ses.turnSnapKnob (0, knobWas);
+            { juce::AudioBuffer<float> gb (2, 512); for (int i = 0; i < 8; ++i) { gb.clear(); e.render (gb); } }
+            ses.userSet (cx::kGlide, glideWas);
+            // a step at LEARN holding a difference on a knob: yellow, in all three
+            const int ln = ses.activeLane;
+            const float filterWas = e.target (cx::lane (ln, 6));
+            ses.setStepLock (ln, 2, Session::lkLearn);
+            ses.userSet (cx::lane (ln, 6), std::abs (filterWas - 0.9f) < 0.1f ? 0.6f : 0.9f);
+            int yellows[3] {};
+            for (int k = 0; k < 3; ++k) { sc.setInk (k == 0 ? Stage::inkGreen : k == 1 ? Stage::inkRed : Stage::inkPaper); yellows[k] = seen (fresh()).yellow; }
+            check (e.teachHolds (cx::lane (ln, 6)) && yellows[0] > 50 && yellows[1] > 50 && yellows[2] > 50,
+                   "a knob a step at LEARN holds a difference on is yellow in all three (" + juce::String (yellows[0]) + ", " + juce::String (yellows[1]) + ", " + juce::String (yellows[2]) + " points)");
+            ses.lockClear (ln, 2);
+            // the EQ keeps its colours
+            sc.setInk (Stage::inkGreen);
+            sc.showConfig ({ 0, ses.activeLane, 0 });
+            const auto eqPic = fresh();
+            int coloured = 0, inBox = 0;
+            {
+                const auto top = st->pointsOf (sc.testEqBox().getX(), sc.testEqBox().getY(), 0.0f), foot = st->pointsOf (sc.testEqBox().getRight(), sc.testEqBox().getBottom(), 0.0f);
+                const float sx = (float) eqPic.getWidth() / (float) sc.getWidth(), sy = (float) eqPic.getHeight() / (float) sc.getHeight();
+                for (int y = (int) (top.y * sy); y < (int) (foot.y * sy); ++y)
+                    for (int x = (int) (top.x * sx); x < (int) (foot.x * sx); ++x)
+                    {
+                        if (x < 0 || y < 0 || x >= eqPic.getWidth() || y >= eqPic.getHeight()) continue;
+                        const auto c = eqPic.getPixelAt (x, y);
+                        ++inBox;
+                        if (c.getBrightness() > 0.35f && ! (c.getGreen() > c.getRed() + 60 && c.getGreen() > c.getBlue() + 40)) ++coloured;       // (lit, and not the look's green)
+                    }
+            }
+            check (! sc.testEqBox().isEmpty() && inBox > 1000 && coloured > 200, "the EQ keeps its own colours (" + juce::String (coloured) + " of the " + juce::String (inBox) + " points in it are lit and not the look's green)");
+            sc.hideConfig();
+            // (put away, brought out and put away again with nothing else touched between: the lit picture is the lit picture)
+            sc.setInk (Stage::inkNone);
+            const auto lit = fresh();
+            sc.setInk (Stage::inkPaper); fresh();
+            sc.setInk (Stage::inkNone);
+            const int backRows = rowsApart (lit, fresh());
+            check (backRows == 0, "the look put away: the lit picture is as it was, to the point (" + juce::String (backRows) + " rows different)");
+        }
         sc.setDark (false);
         sc.keyPressed (juce::KeyPress ('3', juce::ModifierKeys(), '3'));
         pump (100);
@@ -15924,6 +16027,15 @@ public:
             l->setFont (juce::FontOptions (14.0f));
         }
         lookLabel.setText ("LOOK", juce::dontSendNotification);
+        // (the 3D view: lit, or in outline for a camera and a room)
+        addAndMakeVisible (inkBox);
+        inkBox.addItem ("3D: LIT", 1);
+        inkBox.addItem ("3D: OUTLINE, GREEN", 2);
+        inkBox.addItem ("3D: OUTLINE, RED", 3);
+        inkBox.addItem ("3D: OUTLINE, DAYLIGHT", 4);
+        inkBox.setSelectedId (1, juce::dontSendNotification);
+        inkBox.setTooltip ("The 3D view (3 on the keyboard): lit, as a solid thing; or in outline, one colour on one ground, for a camera and the back of a room. Green or red on black for the dark, black on white for daylight. The EQ keeps its colours.");
+        inkBox.onChange = [this] { if (onInk) onInk (inkBox.getSelectedId() - 1); };
         for (auto* l : { &glowLabel, &pulseLabel })
         {
             addAndMakeVisible (*l);
@@ -16035,6 +16147,8 @@ public:
         auto top = look.removeFromTop (26);
         lookLabel.setBounds (top.removeFromLeft (110));
         fullScreen.setBounds (top.removeFromLeft (147));
+        top.removeFromLeft (8);
+        inkBox.setBounds (top.removeFromLeft (212));
         look.removeFromTop (6);
         auto knobs = look;
         glowLabel.setBounds (knobs.removeFromLeft (110).removeFromTop (26));
@@ -16052,6 +16166,8 @@ public:
     // the look row: where its knobs stand, and what turning them or pressing FULL SCREEN does
     std::function<void (float hue, float bright, float pulse)> onGlow;
     std::function<void()> onFull;
+    std::function<void (int which)> onInk;          // (Stage::inkNone and the rest)
+    void setInk (int which) { inkBox.setSelectedId (juce::jlimit (0, 3, which) + 1, juce::dontSendNotification); }
     void setGlow (float hue, float bright, float pulse)
     {
         glowHue.setValue (hue, juce::dontSendNotification); glowBright.setValue (bright, juce::dontSendNotification); glowPulse.setValue (pulse, juce::dontSendNotification);
@@ -16134,6 +16250,7 @@ private:
     juce::Label lookLabel, glowLabel, hueLabel, brightLabel, pulseLabel;
     juce::Slider glowHue, glowBright, glowPulse;
     juce::TextButton fullScreen;
+    juce::ComboBox inkBox;
     // FILES: the library's folder and the folder takes go to
     juce::Label libLabel, libPath, recLabel, recPath, filesNote;
     juce::TextButton libChoose, recChoose;
@@ -17797,6 +17914,11 @@ public:
             if (look.isObject())
                 screen->setGlow ((float) (double) look.getProperty ("glow_hue", sf0::Stage::kGlowHue), juce::jlimit (0.0f, 1.0f, (float) (double) look.getProperty ("glow_bright", sf0::Stage::kGlowBright)),
                                  juce::jlimit (0.0f, 1.0f, (float) (double) look.getProperty ("glow_pulse", 0.0)));
+            if (look.isObject())
+            {
+                const auto ink = look.getProperty ("ink", "").toString();
+                screen->setInk (ink == "green" ? sf0::Stage::inkGreen : ink == "red" ? sf0::Stage::inkRed : ink == "paper" ? sf0::Stage::inkPaper : sf0::Stage::inkNone);
+            }
             screen->onLook = [screen]
             {
                 auto* o = new juce::DynamicObject();
@@ -17810,6 +17932,7 @@ public:
                 v->setProperty ("locked", e.locked); v->setProperty ("follow", e.follow);
                 o->setProperty ("eye", juce::var (v));
                 o->setProperty ("glow_hue", screen->glowHueNow()); o->setProperty ("glow_bright", screen->glowBrightNow()); o->setProperty ("glow_pulse", screen->glowPulseNow());
+                o->setProperty ("ink", screen->inkNow() == sf0::Stage::inkGreen ? "green" : screen->inkNow() == sf0::Stage::inkRed ? "red" : screen->inkNow() == sf0::Stage::inkPaper ? "paper" : "");
                 o->setProperty ("load_lane", screen->loadFolder (false)); o->setProperty ("load_fx", screen->loadFolder (true));
                 lookFile().replaceWithText (juce::JSON::toString (juce::var (o)));
                 // if the 3D stage could not start, why is kept beside the session
@@ -17897,6 +18020,8 @@ private:
             sel->setGlow (screen->glowHueNow(), screen->glowBrightNow(), screen->glowPulseNow());
             sel->onGlow = [screen] (float hue, float bright, float pulse) { screen->setGlow (hue, bright, pulse); if (screen->onLook) screen->onLook(); };
             sel->onFull = [screen] { if (screen->onFullScreen) screen->onFullScreen(); };
+            sel->setInk (screen->inkNow());
+            sel->onInk = [screen] (int which) { screen->setInk (which); if (screen->onLook) screen->onLook(); };
         }
         sel->onRecordings = [this] { if (recorder != nullptr) recorder->root = sf0::Session::recordingsDir(); };       // (from the next take)
         juce::DialogWindow::LaunchOptions o;

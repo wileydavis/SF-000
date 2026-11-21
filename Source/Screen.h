@@ -32,11 +32,18 @@ public:
     float glowHueNow() const { return glowHue; }
     float glowBrightNow() const { return glowBright; }
     float glowPulseNow() const { return glowPulse; }
-    void setDark (bool on) { dark = on; skin.setDark (on); if (stage != nullptr) stage->setDark (on); warm = false; repaint(); }
+    void setDark (bool on) { dark = on; skin.setDark (on); if (stage != nullptr) stage->setDark (stageDark()); warm = false; repaint(); }
     bool isDark() const { return dark; }
     // The 3D stage's outline look (Stage::setInk): which, and how wide its lines.
-    void setInk (int which, float weight = 1.0f) { ink = which; inkWeight = weight; if (stage != nullptr) stage->setInk (ink, inkWeight); }
+    // It is drawn from the dark instrument's parts and print, whichever the lit skin is showing.
+    void setInk (int which, float weight = 1.0f)
+    {
+        ink = juce::jlimit (0, (int) Stage::inkPaper, which); inkWeight = weight;
+        if (stage != nullptr) { stage->setDark (stageDark()); stage->setInk (ink, inkWeight); }
+        repaint();
+    }
     int inkNow() const { return ink; }
+    bool stageDark() const { return dark || ink != 0; }
     // The 3D stage (3 on the keyboard): the instrument as a solid thing, lit, seen through an eye
     // that can be moved. It is the lit skin's layout and the same hand; only the drawing differs.
     // Asked for, it shows once OpenGL has started; if it cannot start, the lit skin stays and
@@ -190,6 +197,7 @@ public:
     bool testCfgIsOpen() const { return cfgOpen; }
     void testCfgNote (const juce::String& says) { cfgNote = says; }      // (what CONFIG's line says, as after PLAIN: for a picture of it)
     float testEqTop() const { return eqRect.getY(); }
+    juce::Rectangle<float> testEqBox() const { return eqRect; }
     const Engine::SetupPage& testCfgPage() const { return cfgPage; }
     // (for the checks: where a control of the open CONFIG stands, as "row.col", or nothing where it is not listed)
     juce::String testCfgPlace (const juce::String& id, const juce::String& group = {}) const

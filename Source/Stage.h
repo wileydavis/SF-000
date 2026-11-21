@@ -38,9 +38,11 @@ public:
     void setParts (const Parts&);               // a whole new record
     void setDark (bool);
     // The outline look: the instrument as lines of one colour on one ground, what is lit filled
-    // in, for a camera and for the back of a room. Green, red or amber on black for the dark; black
-    // on white for daylight. weight: how wide its lines are (1: as they come).
-    enum { inkNone = 0, inkGreen, inkRed, inkPaper, inkAmber };
+    // in, for a camera and for the back of a room. Green or red on black for the dark; black on
+    // white for daylight. weight: how wide its lines are (1: as they come). Two things a knob's
+    // lights say by colour alone keep a colour: on its way somewhere (GLIDE) is green on white
+    // and on red, red on green; a step at LEARN holding a difference on it is yellow in all three.
+    enum { inkNone = 0, inkGreen, inkRed, inkPaper };
     void setInk (int which, float weight = 1.0f);
     // ...in which these places (the screen's units; two at most) keep their own colours: the EQ.
     void keepColours (const std::vector<juce::Rectangle<float>>& boxes);

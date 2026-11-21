@@ -187,6 +187,28 @@ to four times what it comes with) and PULSE: how much it beats with the kick, fr
 as it comes) to intense (nearly out between hits, three times as bright on one). It follows the
 kick lane's own meter, so a muted kick does not pulse. Double-click a knob for what it came with.
 
+**The outline look: the 3D view for a camera and a room** (ninety-seventh build). Beside FULL
+SCREEN in SETUP is a list: 3D: LIT (the solid, lit instrument above), or the same instrument in
+OUTLINE, one colour on one ground: GREEN or RED on black for the dark, DAYLIGHT (black on
+white). It is for a screen laid flat with a camera over it, and for the back of a room: movement
+and state read from far off, which shading does not.
+
+- Every part is one line round its edge. Nothing is lit and nothing casts a shadow, so it is
+  less work to draw than the lit picture.
+- What is on is filled in: a lit key is a solid block, a step that is set carries its bar, and a
+  knob's value is a bold arc round its cap. A light that is off is not drawn.
+- The print on the plates is at full strength. Displays keep their greys (the meters, a chosen
+  lane's name).
+- **The EQ keeps its own colours** while it is up. Everything else is the one colour, with two
+  exceptions a knob's lights make, since colour is the only way they say it: a knob **on its
+  way somewhere (GLIDE)** is green on white and on red, and red on green; a knob **a step at
+  LEARN holds a difference on** is yellow in all three.
+- The disc under each knob and the dimples where a control could be are left out, and a knob's
+  lights stand a quarter further from it than they are, so that the arc is clear of the cap.
+- It is drawn from the dark instrument whichever the lit skin is showing. The choice is kept
+  with the rest of the look (`look.json`, on this machine). The glow under the case is the lit
+  picture's: the outline look has none.
+
 If OpenGL cannot start on a machine, the lit skin stays, the top bar says why for a few seconds,
 and the reason is written to `3d.log` beside the session. The same if it starts and its first
 picture comes out blank: the stage reads that picture back, and gives way to the lit skin
