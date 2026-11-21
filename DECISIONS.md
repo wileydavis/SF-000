@@ -5915,23 +5915,22 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      `red`, `paper`, or nothing). *Mine, not built:* a knob for the lines' width (the row has
      no room for a fourth; the width is in the code, `Screen::setInk`'s second number).
 
+769. **You**, Nov 20, 20:45, of the ninety-seventh build: "it looks really good." 20:46, asked
+     whether that was the stills or the app: "drew properly on the mic in 3d"
+     **Nothing to build. The outline look is drawn rightly by the Mac's own OpenGL**, which
+     was the one thing about it not seen here.
+
 ## Not verified
 
-- **The ninety-seventh build (766 to 768): the outline look has never been drawn by a Mac's
-  own OpenGL.** Here it is drawn by a software driver. It asks the card for something the lit
-  picture does not: two pictures written at once into the smoothed buffer (a second colour
-  attachment, RGBA8 beside RGBA16F), each then taken out as one layer. That is ordinary OpenGL
-  3.2, and if the card refuses it the lit picture stays; but if it takes it and draws it wrong
-  I cannot see that from here. The first time you choose an OUTLINE in SETUP: lines round
-  every part and legible print means it is right. A blank or half-drawn picture should fall
-  back to the lit skin by itself and say why in the top bar; tell me if it does either. Checked
-  here: each of the three is its one colour on its ground; a glide and a LEARN step show the
-  colours you gave; the EQ keeps its own; the picture is the same from the pale skin as from
-  the dark; and with the look put away the lit picture is the same to the point. **Not
-  checked:** how it reads through a camera or from the back of a room, how wide the lines
-  should be on your screen at its size, and what a frame costs on your Mac (it should be less
-  than the lit picture: no shadows, no lighting).
-
+- **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
+  (769, your word).** Checked here, on a software driver: each of the three is its one colour
+  on its ground; a glide and a LEARN step show the colours you gave; the EQ keeps its own; the
+  picture is the same from the pale skin as from the dark; and with the look put away the lit
+  picture is the same to the point. **Not checked:** how it reads through a camera or from
+  the back of a room, how wide the lines should be on your screen at its size, what a frame
+  costs on your Mac (it should be less than the lit picture: no shadows, no lighting), and
+  the fall back to the lit skin on a card that refuses the look's second picture (yours does
+  not).
 - **The ninety-sixth build (765): the cause on your set is not known.** PAD and LEAD are
   measured alike after PLAIN on the rig as it opens; what differed on yours I have named
   the candidates for and not seen. The top octave comes back 1.3 dB down on every lane
