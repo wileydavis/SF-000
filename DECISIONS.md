@@ -5999,6 +5999,40 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      than one note on every synth lane; under 772 that holds on all eleven. *Mine:* how many
      voices is to be set by what the new filter costs on your Mac, measured, not guessed.
 
+774. **You**, Nov 20, 22:15, with a file, "SF-000 Lifetime Instrument Design Brief" (another
+     model's, written from the repository at `cf422c0`; not kept in the repo): "thoughts?"
+     **Answered; nothing built.** Its claims about the code I checked and they hold: the
+     Forge's lows are kept from the mids' drive and then go through the last clipper with
+     everything else (`Drums.cpp`, 518 to 565); GROUND's length is DECAY's (501); a sample is
+     kept as 24-bit FLAC (`Sample.cpp`); Signalsmith's stretcher is already in `Deck.cpp`; a
+     note event is a note, a velocity and a gain. One slip: the panel's last row has five
+     knobs, and it left MID out.
+     *Mine, where I took its way over my own (771):*
+     - **CHARACTER stays as it is**, four landmarks where they are. I had said seven, which
+       would have moved the kicks you like under your hand. What is edited deeper is an
+       offset about CHARACTER's path, as IMPACT, BODY, GROUND, PUNCH and CLICK already are;
+       a 909's or an 808's kind of kick is a patch.
+     - **The filter is a choice of three** (state-variable, transistor ladder, diode ladder)
+       in fixed places, not a knob through five circuits: between two unlike filters there is
+       only a crossfade, at twice the cost. The resonator is a small part of its own.
+     - **SAMPLE plays three ways** (REPITCH, STRETCH, GRAIN). Slices are a map, not a way of
+       playing; a wavetable is the SYNTH's oscillator's. STRETCH is not GRAIN.
+     - **The order:** what each control does to a sounding note, declared and checked, first;
+       then the Forge; then SAMPLE; then SYNTH. I had said SAMPLE first.
+     - **Two things for the Forge it found:** GROUND's own length, and LOW PRESERVE (how much
+       of the fundamental goes round the last clipper).
+     *Mine, where I would hold back:* MPE, tunings, a multisample zone editor, a modulation
+     matrix, drawn motion curves, the kick-and-bass phase view, level-matched comparing: each
+     can be argued and together they are a workstation. The rule I gave: where adding a thing
+     after the freeze would break what is saved, put its hook in now (per-note pitch, pressure
+     and timbre on the note event; one place where a note becomes a frequency; a map that can
+     hold more than one zone), and build the thing itself only when a sound you want cannot
+     be made without it. And no paths kept for old sounds until the freeze: your word of Nov
+     19 (07:30) stands over the brief's.
+     **Offered as the ninety-eighth build, not started:** every parameter declares how it
+     reaches a sounding note, with a check that walks all of them; GROUND LENGTH and LOW
+     PRESERVE in the Forge's CONFIG, at rest the kick it is now to the sample.
+
 ## Not verified
 
 - **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
