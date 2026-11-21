@@ -5920,14 +5920,22 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      **Nothing to build. The outline look is drawn rightly by the Mac's own OpenGL**, which
      was the one thing about it not seen here.
 
+770. **You**, Nov 20, 20:47, with a photograph of the screen in the dark (the red look, CONFIG and
+     the EQ up, the eye round to one side): "i turned the screen brightness down and its
+     perfect. Photo of screen"
+     **Nothing to build.** In the photograph, taken by a phone: the lines hold, the legends
+     read, lit steps are solid, and the EQ is in its own colours against the red. *Mine, not
+     built, offered:* the look's own brightness in SETUP, so that the screen's need not be
+     turned down for it.
+
 ## Not verified
 
 - **The ninety-seventh build (766 to 769): the outline look is drawn rightly on your Mac
   (769, your word).** Checked here, on a software driver: each of the three is its one colour
   on its ground; a glide and a LEARN step show the colours you gave; the EQ keeps its own; the
   picture is the same from the pale skin as from the dark; and with the look put away the lit
-  picture is the same to the point. **Not checked:** how it reads through a camera or from
-  the back of a room, how wide the lines should be on your screen at its size, what a frame
+  picture is the same to the point. It reads in a phone's photograph of your screen in the
+  dark, the screen turned down (770). **Not checked:** how it reads from the back of a room, how wide the lines should be on your screen at its size, what a frame
   costs on your Mac (it should be less than the lit picture: no shadows, no lighting), and
   the fall back to the lit skin on a card that refuses the look's second picture (yours does
   not).
