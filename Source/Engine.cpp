@@ -1576,8 +1576,17 @@ const CfgCell kEngineCells[] = { { "table", 0 }, { "wt_twist", 1 }, { "wt_twist_
                                  { "gr_clock", 8 }, { "gr_spread", 9 }, { "gr_follow", 10 }, { "gr_sync", 11 },
                                  { "fm_algo", 0 }, { "fm_feedback", 1 }, { "fm_a_ratio", 4 }, { "fm_b_ratio", 5 }, { "fm_c_ratio", 6 }, { "fm_d_ratio", 7 },
                                  { "fm_a_level", 8 }, { "fm_b_level", 9 }, { "fm_c_level", 10 }, { "fm_d_level", 11 }, { "fm_a_decay", 12 }, { "fm_b_decay", 13 }, { "fm_c_decay", 14 }, { "fm_d_decay", 15 },
-                                 { "fg_char", 0 }, { "fg_impact", 1 }, { "fg_body", 2 }, { "fg_ground", 3 }, { "fg_pos", 4 }, { "fg_tone", 5 },
-                                 { "fg_glen", 6 }, { "fg_low", 7 } };
+                               };
+// KICK FORGE's own (the ninety-ninth build): two grids of it. Cells 0 to 15, the third grid, BODY: what is struck and
+// how its pitch and level fall; 16 to 31, the fourth, IMPACT AND GROUND: the front of the hit, then the floor under it.
+// The same two whether it is the kick's model or its layer: no other kick model has knobs of its own.
+const CfgCell kForgeCells[] = { { "fg_char", 0 }, { "fg_body", 1 }, { "fg_tone", 2 }, { "fg_low", 3 },
+                                { "fg_hang", 4 }, { "fg_curve", 5 }, { "fg_hold", 6 }, { "fg_hdec", 7 },
+                                { "fg_phase", 8 }, { "fg_flip", 9 },
+                                { "fg_impact", 16 }, { "fg_pos", 17 }, { "fg_ilen", 18 }, { "fg_ipitch", 19 },
+                                { "fg_icut", 20 }, { "fg_iwidth", 21 }, { "fg_vary", 22 }, { "fg_solo", 23 },
+                                { "fg_ground", 24 }, { "fg_glen", 25 }, { "fg_gdark", 26 }, { "fg_gduck", 27 },
+                                { "fg_grec", 28 }, { "fg_gwidth", 29 } };
 // the fifth, SAMPLE (LOOP is a switch on the synths and a list of bars on the drums: one cell)
 const CfgCell kSampleCells[] = { { "smp_start", 0 }, { "smp_end", 1 }, { "smp_fade_in", 2 }, { "smp_fade_out", 3 },
                                  { "smp_gain", 4 }, { "smp_norm", 5 }, { "smp_cuts", 6 }, { "smp_bars", 7 }, { "smp_loop", 7 },
@@ -1834,6 +1843,7 @@ Engine::SetupPage Engine::setupPage (Target t) const
                 if (id == "res" && laneRes) return { 0, 14 };
                 if (const int c = cfgCellIn (kLaneCells, id); c >= 0) return { 0, c };
                 if (const int c = cfgCellIn (kEngineCells, id); c >= 0) return { group == "LAYER" ? 3 : 2, c };
+                if (const int c = cfgCellIn (kForgeCells, id); c >= 0) return { 2 + c / 16, c % 16 };     // (the same cells whether it is the model or the layer: no other kick model has knobs of its own)
                 if (const int c = cfgCellIn (kSampleCells, id); c >= 0) return { 4, c };
                 if (const int c = soundCell (id); c >= 0) return { 1, c };
                 return { 1, -1 };
@@ -1890,9 +1900,11 @@ Engine::SetupPage Engine::setupPage (Target t) const
                 if (has (c.id) && isBound (c.id))
                 {
                     const juce::String id (c.id);
-                    const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : id.startsWith ("gr_") ? "GRANULAR" : "KICK FORGE";
+                    const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : "GRANULAR";
                     if (model == fam) ghost (2, c.cell, id, true);
                 }
+            if (model == "KICK FORGE")
+                for (auto& c : kForgeCells) if (has (c.id) && isBound (c.id)) ghost (2 + c.cell / 16, c.cell % 16, c.id, true);
             for (auto& c : kSampleCells) if (has (c.id)) ghost (4, c.cell, c.id, isBound (c.id));
         }
         else
@@ -1910,6 +1922,9 @@ Engine::SetupPage Engine::setupPage (Target t) const
         {
             page.title[0] = "LANE"; page.title[1] = "SOUND"; page.title[2] = "MODEL"; page.says[2] = model;
             if (hasLayer) { page.title[3] = "LAYER"; page.says[3] = layerModel; }
+            // (the Forge has both, as the model or as the layer: the ninety-ninth build)
+            if (model == "KICK FORGE") { page.title[2] = "BODY"; page.title[3] = "IMPACT AND GROUND"; page.says[3] = model; }
+            else if (layerModel == "KICK FORGE" && module == "KICK") { page.title[2] = "LAYER BODY"; page.says[2] = layerModel; page.title[3] = "LAYER IMPACT AND GROUND"; page.says[3] = layerModel; }
             page.title[4] = "SAMPLE"; page.title[5] = "MOTION";
             for (int i = 0; i < live; ++i) { auto& sp = out[(size_t) i]; if (sp.grid >= 0 && sp.grid < 5) sp.group = page.title[sp.grid].isNotEmpty() ? page.title[sp.grid] : sp.group; }
         }
@@ -2195,7 +2210,9 @@ Engine::SetupState Engine::newerOff (Target t) const
     if (auto* p = processorFor (t))
         for (const char* id : { "gr_pos", "gr_scan", "gr_size", "gr_dens", "gr_spray", "gr_pitch", "gr_shape", "gr_rev", "gr_clock", "gr_spread", "gr_follow", "gr_sync",
                                 "smp_notes", "smp_loop", "smp_xfade", "smp_vel", "smp_rand", "smp_slice", "smp_cycle",
-                                "fg_char", "fg_impact", "fg_body", "fg_ground", "fg_pos", "fg_tone", "fg_glen", "fg_low" })
+                                "fg_char", "fg_impact", "fg_body", "fg_ground", "fg_pos", "fg_tone", "fg_glen", "fg_low",
+                                "fg_hang", "fg_curve", "fg_hold", "fg_hdec", "fg_phase", "fg_flip", "fg_ilen", "fg_ipitch", "fg_icut", "fg_iwidth",
+                                "fg_vary", "fg_gdark", "fg_gduck", "fg_grec", "fg_gwidth" })
             if (const int i = p->paramIndex (id); i >= 0 && i < p->numModuleParams())
                 st.push_back ({ juce::String (id), p->param (i)->getDefaultValue() });
     return st;

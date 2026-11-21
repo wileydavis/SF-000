@@ -98,6 +98,9 @@ public:
            SPLIT = SSTART + 4, SPLITHZ, SGAIN, SNORM, SSLICE, SCYCLE,         // (SF-000) the sample's own GAIN and NORMALISE, then SLICE and CYCLE
            FGCHAR, FGIMPACT, FGBODY, FGGROUND, FGPOS, FGTONE,                 // (SF-000) KICK FORGE's own
            FGGLEN, FGLOW,                                                     // (SF-000) ...and its GROUND LENGTH and LOW PRESERVE
+           FGHANG, FGCURVE, FGHOLD, FGHDEC, FGPHASE, FGFLIP,                  // (SF-000, the ninety-ninth build) the body's shape
+           FGILEN, FGIPITCH, FGICUT, FGIWIDTH, FGVARY, FGSOLO,                // ...the impact's
+           FGGDARK, FGGDUCK, FGGREC, FGGWIDTH,                                // ...the ground's
            SCUTS, SCUTLAST = SCUTS + kCuts };                                 // (SF-000) MARKERS and the 32 slice markers, last
     std::string id() const override { return "KICK"; }
     bool instrument() const override { return true; }
@@ -147,6 +150,35 @@ public:
         // the note it falls onto is not, and its harmonics and the impact still are.
         p.push_back (knob ("fg_glen", "GROUND LENGTH", 0.0f, 1.0f, 0.5f, "BIP").slow().engineGroup());
         p.push_back (pct ("fg_low", "LOW PRESERVE", 0.0f).slow().engineGroup());
+        // (SF-000, the ninety-ninth build) the rest of the Forge, each about where CHARACTER has it (at its middle, or at
+        // nought where it adds a thing that was not there, it is the kick as it was, to the sample). THE BODY: HANG, how
+        // much of the pitch's fall lingers in a second, eight times slower stage (a two-stage fall; a plateau at full);
+        // CURVE, the fall's shape (left: quick away and a long glide in; right: held high, then dropped); HOLD, the body
+        // at full for up to a tenth of a second before its decay; HARM DECAY, how long its harmonics last against its
+        // note; PHASE, where in its wave the body starts (nought: at nought, rising; full: at its top, a hard edge);
+        // POLARITY, the whole kick turned over (for lining it up with a bass). THE IMPACT: LENGTH (a quarter to four
+        // times), PITCH (two octaves either way), CUT (its high-pass, as CHARACTER has it a quarter to four times),
+        // WIDTH (a stereo file's own width, from none to twice; above the middle a mono file or the noise is given one,
+        // which falls away in mono), VARIATION (how far one hit differs from the next: in place, level, and over the
+        // middle pitch; at nought every hit is the same), IMPACT ONLY (held: the impact alone, through all the kick's
+        // processing). THE GROUND: DARK, DUCK (how far it is held down while the body sounds, and over the middle how
+        // long), RECOVER (how quickly it comes back), WIDTH (stereo, above 100 Hz: its floor stays in the middle).
+        p.push_back (pct ("fg_hang", "HANG", 0.0f).next().engineGroup());
+        p.push_back (knob ("fg_curve", "CURVE", 0.0f, 1.0f, 0.5f, "BIP").next().engineGroup());
+        p.push_back (pct ("fg_hold", "HOLD", 0.0f).next().engineGroup());
+        p.push_back (knob ("fg_hdec", "HARM DECAY", 0.0f, 1.0f, 0.5f, "BIP").next().engineGroup());
+        p.push_back (pct ("fg_phase", "PHASE", 0.0f).next().engineGroup());
+        p.push_back (toggle ("fg_flip", "POLARITY").next().engineGroup());
+        p.push_back (knob ("fg_ilen", "IMPACT LENGTH", 0.0f, 1.0f, 0.5f, "BIP").next().engineGroup());
+        p.push_back (knob ("fg_ipitch", "IMPACT PITCH", -24.0f, 24.0f, 0.0f, "st").next().engineGroup());
+        p.push_back (knob ("fg_icut", "IMPACT CUT", 0.0f, 1.0f, 0.5f, "BIP").next().engineGroup());
+        p.push_back (knob ("fg_iwidth", "IMPACT WIDTH", 0.0f, 1.0f, 0.5f, "BIP").next().engineGroup());
+        p.push_back (pct ("fg_vary", "VARIATION", 0.5f).next().engineGroup());
+        p.push_back (momentary ("fg_solo", "IMPACT ONLY").engineGroup());
+        p.push_back (knob ("fg_gdark", "GROUND DARK", 0.0f, 1.0f, 0.5f, "BIP").slow().engineGroup());
+        p.push_back (pct ("fg_gduck", "GROUND DUCK", 0.5f).slow().engineGroup());
+        p.push_back (knob ("fg_grec", "GROUND RECOVER", 0.0f, 1.0f, 0.5f, "BIP").slow().engineGroup());
+        p.push_back (pct ("fg_gwidth", "GROUND WIDTH", 0.0f).slow().engineGroup());
         p = withCuts (std::move (p));        // (SF-000) the slice markers
         jassert ((int) p.size() == SCUTLAST + 1);
         return p;
@@ -190,7 +222,7 @@ public:
     {
         std::vector<float> d[4];
         int len[4] = { 1, 1, 1, 1 }, w[4] = {}, live = 0;
-        float z[4] = {}, inLp = 0, inK = 0, damp = 0, fb = 0.4f, level = 0, levelTo = 0, levelK = 0, secNow = 0, feed = 1, env = 0, rel = 0, dcX = 0, dcY = 0, dcR = 0;
+        float z[4] = {}, inLp = 0, inK = 0, damp = 0, fb = 0.4f, level = 0, levelTo = 0, levelK = 0, secNow = 0, feed = 1, darkNow = 1, depth = 1, sens = 1.6f, recNow = 1, width = 0, sideHp[4] = {}, sideK = 0, tilt = 0, tiltLp = 0, tiltK = 0, sign = 1, env = 0, rel = 0, dcX = 0, dcY = 0, dcR = 0;
         Svf ring;
         double rate = 96000.0;
         void prepare (double r)
@@ -201,6 +233,9 @@ public:
             inK = 1.0f - std::exp (-kTwoPi * 150.0f / (float) r);
             damp = 1.0f - std::exp (-kTwoPi * 420.0f / (float) r);
             rel = std::exp (-1.0f / (0.07f * (float) r));
+            sideK = 1.0f - std::exp (-kTwoPi * 140.0f / (float) r);
+            tiltK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) r);
+            darkNow = recNow = 1.0f;
             levelK = 1.0f - std::exp (-1.0f / (0.02f * (float) r));
             dcR = 1.0f - kTwoPi * 28.0f / (float) r;
             reset();
@@ -209,7 +244,8 @@ public:
         {
             for (auto& x : d) std::fill (x.begin(), x.end(), 0.0f);
             for (auto& x : z) x = 0.0f;
-            inLp = env = dcX = dcY = 0.0f; live = 0;
+            inLp = env = dcX = dcY = tiltLp = 0.0f; live = 0;
+            for (auto& x : sideHp) x = 0.0f;
             for (auto& x : w) x = 0;
             ring.ic1 = ring.ic2 = 0.0f;
         }
@@ -234,9 +270,26 @@ public:
             live = std::max (live, (int) ((2.0 * (double) seconds + 1.0) * rate));      // (its length has moved: what is ringing is given the whole of the new one to die in, so a ground made longer is not cut off where the shorter would have ended)
         }
         bool awake() const { return live > 0; }
-        // One sample: in, the body as it is before its clipper.
-        float tick (float in)
+        // (SF-000, the ninety-ninth build) its colour and how it gives way to the body, as the knobs stand now. dark: its
+        // cut-offs (what goes in, what each pass round keeps) divided by it; duck: how far it is held down while the body
+        // sounds (0 to 1) and how readily (its follower's gain); recover: how long that follower takes to let go, times
+        // it; spread: its width above 100 Hz. Each is worked out again only when it moves: as they come, nothing changes.
+        void shade (float dark, float duckDepth, float duckSens, float recover, float spread)
         {
+            if (dark != darkNow)
+            {
+                darkNow = dark;
+                tilt = -0.5f * std::log2 (dark);         // (and a tilt on what it gives, about 120 Hz: -1, only what is under it; +1, what is over it twice)
+                inK = 1.0f - std::exp (-kTwoPi * 150.0f / dark / (float) rate);
+                damp = 1.0f - std::exp (-kTwoPi * 420.0f / dark / (float) rate);
+            }
+            if (recover != recNow) { recNow = recover; rel = std::exp (-1.0f / (0.07f * recover * (float) rate)); }
+            depth = duckDepth; sens = duckSens; width = spread;
+        }
+        // One sample: in, the body as it is before its clipper; side, what it gives beside the middle (only with WIDTH).
+        float tick (float in, float& side)
+        {
+            side = 0.0f;
             if (live <= 0) return 0.0f;
             if (--live == 0) { reset(); return 0.0f; }
             env = std::max (std::abs (in), env * rel);
@@ -252,9 +305,19 @@ public:
             ring.tick (sum);
             const float y = 0.8f * sum + 2.0f * ring.bp;
             dcY = y - dcX + dcR * dcY; dcX = y;
-            const float open = 1.0f - std::min (1.0f, env * 1.6f);
+            float out = dcY;
+            if (tilt != 0.0f) { tiltLp += tiltK * (dcY - tiltLp); out = dcY + tilt * (dcY - tiltLp); }
+            const float open = 1.0f - depth * std::min (1.0f, env * sens);
             if (level != levelTo) { level += levelK * (levelTo - level); if (std::abs (levelTo - level) < 1.0e-6f) level = levelTo; }
-            return dcY * level * open * open;
+            if (width > 0.0f)
+            {
+                // (two of its four passes against the other two: they are apart in time, so apart in sound; four one-pole
+                // high-passes at 140 Hz, so that at the kick's note, about 50 Hz, it is 40 dB down: the floor stays in the middle)
+                float sd = 0.5f * ((o[0] + o[2]) - (o[1] + o[3]));
+                for (auto& h : sideHp) { h += sideK * (sd - h); sd -= h; }
+                side = 16.0f * sd * width * level * open * open * sign;
+            }
+            return sign != 1.0f ? -(out * level * open * open) : out * level * open * open;
         }
     };
 
@@ -279,6 +342,13 @@ public:
         // it lasts, the clipper's drive and what it is turned by after, and whether it feeds the ground
         float fgKeep = 0, fgKeepG = 1;      // (SF-000) LOW PRESERVE: how much, and the clean note's gain
         float fgCh = 0, fgEcho = 1;         // (SF-000) CHARACTER and the echo's darkening as they were at the hit (forgeFollow)
+        // (SF-000, the ninety-ninth build) the body's shape (HANG, CURVE's power, HOLD, HARM DECAY's times, POLARITY's sign),
+        // the impact's (its end and where it starts fading, its read speed, IMPACT WIDTH's times, a hit that is the same
+        // every time and its own noise for that), IMPACT ONLY, and a moment of the impact behind it, for the width it is given
+        float fgHang = 0, fgCurve = 1, fgHold = 0, fgHdec = 1, fgSign = 1, fgImpEnd = 0.09f, fgImpFade0 = 0.07f, fgRate = 0.5f, fgIw = 1;
+        bool fgLock = false, fgSolo = false, fgSide = false;
+        Noise fgN;
+        float fgDly[64] {}; int fgDi = 0;
         float fgPrev = 0, fgHarm = 0, fgBody = 1, fgImp = 0, fgSub = 1, fgLo = 0, fgLoK = 0, fgHpK = 0, fgHp1 = 0, fgHp2 = 0, fgImpTau = 0.006f, fgClip = 1, fgOut = 1, fgBright = 0;
         double fgPos = -1.0;
         float fgNoise = 1.0f;             // with no file: what the impact's noise, through its band, is turned by to be one strength
@@ -477,34 +547,57 @@ public:
         v.tau = f.tau * std::pow (2.0f, (c.v (PTIME) - 0.5f) * 3.0f);
         v.decay = f.decay * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * echo;
         juce::ignoreUnused (tone);
+        // (the ninety-ninth build) the body's shape, built with the hit
+        v.fgHang = c.v (FGHANG);
+        v.fgCurve = std::pow (2.0f, (c.v (FGCURVE) - 0.5f) * 2.0f);
+        v.fgHold = 0.1f * c.v (FGHOLD) * c.v (FGHOLD);
+        v.fgHdec = std::pow (2.0f, (c.v (FGHDEC) - 0.5f) * 4.0f);
+        v.fgSign = c.b (FGFLIP) ? -1.0f : 1.0f;
+        v.phase = 0.25 * (double) c.v (FGPHASE);
         v.fgSub = f.sub;
         v.fgLoK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) osr);
         v.click = c.v (CLICK) * f.impact * 1.2f;            // (the pulse on the front of it: as much as the impact, so next to none on the mellow kick)
         forgeFollow (c, v, f);
         // the impact: from the lane's file at POSITION (ninety thousandths of a second of it, a little either side from hit
-        // to hit), brought to one strength; or noise
-        v.fgImp = 2.0f * c.v (FGIMPACT) * f.impact * (0.9f + 0.2f * rng.uni());
-        v.fgImpTau = f.impTau;
-        v.fgHpK = 1.0f - std::exp (-kTwoPi * f.impHp / (float) osr);
+        // to hit), brought to one strength; or noise. VARIATION: how far one hit's differs from the next's (at its middle,
+        // as it was; at nought not at all, the noise its own and the same every time; over the middle further in place
+        // and level, and in pitch)
+        const float vary = c.v (FGVARY), a = 2.0f * vary;
+        v.fgLock = vary <= 0.0f;
+        if (v.fgLock) v.fgN = Noise();
+        const float lvl = vary == 0.5f ? 0.9f + 0.2f * rng.uni() : v.fgLock ? 1.0f : 1.0f + a * (0.2f * rng.uni() - 0.1f);
+        v.fgImp = 2.0f * c.v (FGIMPACT) * f.impact * lvl;
+        // IMPACT LENGTH (its decay, and how long it is let sound: never less than as it was), PITCH, CUT
+        const float lenMul = std::pow (2.0f, (c.v (FGILEN) - 0.5f) * 4.0f);
+        v.fgImpTau = f.impTau * lenMul;
+        if (lenMul > 1.0f) { v.fgImpEnd = 0.09f * lenMul; v.fgImpFade0 = v.fgImpEnd - 0.02f * lenMul; }
+        float ip = c.v (FGIPITCH);
+        if (a > 1.0f) ip += (a - 1.0f) * 2.0f * rng.next();
+        const float ipMul = semis (ip);
+        v.fgRate = 0.5f * ipMul;
+        const float hp = f.impHp * std::pow (2.0f, (c.v (FGICUT) - 0.5f) * 4.0f);
+        v.fgHpK = 1.0f - std::exp (-kTwoPi * hp / (float) osr);
+        v.fgIw = 2.0f * c.v (FGIWIDTH);
         v.fgPos = -1.0;
         {
             // with no file POSITION is the noise's colour, a band from a low knock (250 Hz) to a bright tick (10 kHz), so
             // the knob is never one that does nothing
-            const float hz = 250.0f * std::pow (40.0f, c.v (FGPOS));
+            const float hz = std::min (0.45f * (float) osr, 250.0f * std::pow (40.0f, c.v (FGPOS)) * ipMul);
             v.clickBp.set (hz, 1.6f, osr);
             v.fgNoise = 0.4f / (0.577f * std::sqrt (1.9635f * hz / (float) osr));
         }
         if (smp != nullptr && smp->length() > 4096 && v.fgImp > 0.0f)
         {
             const auto reg = regionFrom (c, SSTART, *smp, SGAIN);
-            const double span = 0.09 * smp->sr, room = std::max (0.0, reg.end - reg.start - span - 8.0);
-            double at = reg.start + (double) c.v (FGPOS) * room + (double) rng.next() * 0.0015 * smp->sr;
+            const double span = (lenMul > 1.0f || ipMul != 1.0f ? 0.09 * std::max (1.0f, lenMul) * ipMul : 0.09) * smp->sr, room = std::max (0.0, reg.end - reg.start - span - 8.0);
+            const double jit = vary == 0.5f ? (double) rng.next() * 0.0015 * smp->sr : v.fgLock ? 0.0 : (double) rng.next() * (a <= 1.0f ? 0.0015 * a : 0.0015 + 0.0185 * (a - 1.0f)) * smp->sr;
+            double at = reg.start + (double) c.v (FGPOS) * room + jit;
             at = std::min (std::max (at, reg.start), reg.start + room);
             // (its strength: the grain's own over what will sound of it, with its lows out as they will be when it plays)
             double sum = 0.0;
             const int n0 = (int) at, n1 = std::min (smp->length() - 2, n0 + (int) (0.03 * smp->sr));
             const float* l = smp->buf.getReadPointer (0); const float* r = smp->buf.getReadPointer (smp->buf.getNumChannels() > 1 ? 1 : 0);
-            const float hk = 1.0f - std::exp (-kTwoPi * f.impHp / (float) smp->sr);
+            const float hk = 1.0f - std::exp (-kTwoPi * hp / (float) smp->sr);
             float h1 = 0.0f, h2 = 0.0f;
             for (int n = n0; n < n1; ++n)
             {
@@ -518,13 +611,31 @@ public:
             v.fgPos = at;
             v.fgWide = smp->wide;             // (SF-000) a stereo file: the impact keeps its left and right
         }
+        v.fgSide = v.fgWide || v.fgIw > 1.0f;
         v.fgFeeds = main;
         if (main && gen == 0)
         {
             groundSec = f.groundT * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 2.0f);
             groundAmt = f.ground; groundTrim = forgeTrim (ch);
             ground.hit (groundLen (c), 2.0f * c.v (FGGROUND) * groundAmt * groundTrim, v.f1, groundFor (c));
+            ground.sign = v.fgSign;
         }
+    }
+    // (SF-000, the ninety-ninth build) the ground's colour and its give, as the knobs stand: DARK, DUCK, RECOVER, WIDTH
+    void groundShade (Ctx& c)
+    {
+        const float duck = c.v (FGGDUCK);
+        ground.shade (std::pow (2.0f, (c.v (FGGDARK) - 0.5f) * 4.0f),
+                      duck <= 0.5f ? 2.0f * duck : 1.0f, duck <= 0.5f ? 1.6f : 1.6f * std::pow (4.0f, (duck - 0.5f) * 2.0f),
+                      std::pow (2.0f, (c.v (FGGREC) - 0.5f) * 6.0f), c.v (FGGWIDTH));
+    }
+    // (SF-000, the ninety-ninth build) the body's pitch as it falls, against its note: how far there is still to fall (1
+    // at the hit, 0 on the note). As it was, one curve; HANG keeps some of it in a stage eight times slower, CURVE bends it.
+    static float forgeFall (const Voice& v, float t)
+    {
+        if (v.fgHang == 0.0f && v.fgCurve == 1.0f) return std::exp (-t / v.tau);
+        const float x = v.fgCurve == 1.0f ? t / v.tau : std::pow (t / v.tau, v.fgCurve);
+        return (1.0f - v.fgHang) * std::exp (-x) + v.fgHang * std::exp (-x * 0.125f);
     }
     // (SF-000) how long the ground rings: what CHARACTER and DECAY made it at the hit, by GROUND LENGTH (an eighth to
     // eight times; at its middle exactly that), twelve seconds at most
@@ -550,6 +661,7 @@ public:
         v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
         v.fgOut = forgeTrim (v.fgCh) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
         v.fgKeep = c.v (FGLOW);
+        v.fgSolo = c.v (FGSOLO) > 0.5f;
         // the clean note's gain: what the clipper gives the note at the moment its falling pitch comes to one and a half
         // times the kick's note (halfway into LOW PRESERVE's crossing), so it comes in at the level it was leaving the
         // clipper at (a sine driven a times over full scale into it leaves with a fundamental of about tanh a, rising
@@ -557,8 +669,16 @@ public:
         // clipper would have held it up
         if (v.fgKeep > 0.0f)
         {
-            const float tn = v.f0 > 1.5f * v.f1 ? v.tau * std::log ((v.f0 - v.f1) / (0.5f * v.f1)) : 0.0f;
-            const float e = std::min (1.0f, tn / 0.0004f) * std::exp (-tn / v.decay) * v.fgBody * v.fgSub * v.vel;
+            float tn = v.f0 > 1.5f * v.f1 ? v.tau * std::log ((v.f0 - v.f1) / (0.5f * v.f1)) : 0.0f;
+            if (tn > 0.0f && (v.fgHang != 0.0f || v.fgCurve != 1.0f))
+            {
+                // (HANG or CURVE: when the fall comes to one and a half times the note, found by halving)
+                const float want = 0.5f * v.f1 / (v.f0 - v.f1);
+                float lo = 0.0f, hi = 2.0f;
+                for (int k = 0; k < 24; ++k) { const float m = 0.5f * (lo + hi); (forgeFall (v, m) > want ? lo : hi) = m; }
+                tn = hi;
+            }
+            const float e = std::min (1.0f, tn / 0.0004f) * std::exp (-std::max (0.0f, tn - v.fgHold) / v.decay) * v.fgBody * v.fgSub * v.vel;
             const float a = std::min (8.0f, v.fgClip * e);
             v.fgKeepG = e > 1.0e-4f ? v.fgOut * fastTanh (a) * (1.0f + 0.2732f * a * a / (1.0f + a * a)) / e : v.fgClip * v.fgOut;
         }
@@ -567,16 +687,16 @@ public:
     // One sample of it (at osr).
     float forgeVoice (Voice& v, float t, const SampleData* s, float& side)
     {
-        // BODY: the wave starts at nought, rising, every hit
-        const float f = v.f1 + (v.f0 - v.f1) * std::exp (-t / v.tau);
+        // BODY: the wave starts at nought, rising, every hit (or where PHASE has it)
+        const float f = v.f1 + (v.f0 - v.f1) * forgeFall (v, t);
         const float w = kTwoPi * (float) v.phase;
         const float bend = v.fm * std::exp (-t / 0.03f);
         const float fund = std::sin (w + bend * v.fgPrev);
         v.fgPrev = fund;
-        const float hE = v.fgHarm * std::exp (-t / (0.22f * v.decay + 0.012f));
+        const float hE = v.fgHarm * std::exp (-t / ((0.22f * v.decay + 0.012f) * v.fgHdec));
         float body = fund;
         if (hE > 1.0e-4f) body += hE * (0.55f * std::sin (2.0f * w + 0.5f * bend * fund) + 0.30f * std::sin (3.0f * w));
-        const float bodyEnv = std::min (1.0f, t / 0.0004f) * std::exp (-t / v.decay) * v.fgBody;
+        const float bodyEnv = std::min (1.0f, t / 0.0004f) * std::exp (-(v.fgHold > 0.0f ? std::max (0.0f, t - v.fgHold) : t) / v.decay) * v.fgBody;
         body *= bodyEnv;
         if (v.fgFeeds) groundIn += body * v.fade * v.mix * v.vel;
         // (SF-000) LOW PRESERVE: the share of the body's own note that goes round the mids' drive and the clipper, as the
@@ -590,18 +710,19 @@ public:
             body -= part;
             clean = part * v.fgSub * v.vel;
         }
+        if (v.fgSolo) { body = 0.0f; clean = 0.0f; }          // (IMPACT ONLY: the body heard no more, though it still feeds the ground)
         v.fgLo += v.fgLoK * (body - v.fgLo);
         float mid = body - v.fgLo;
         float sd = 0.0f;                    // (SF-000) a stereo file's impact: its left less its right, halved
         // IMPACT
-        if (v.fgImp > 0.0f && t < 0.09f)
+        if (v.fgImp > 0.0f && t < v.fgImpEnd)
         {
             float x, xs = 0.0f;
             if (v.fgPos >= 0.0 && s != nullptr && (int) v.fgPos + 3 < s->length())
             {
-                const float a = s->read (0, v.fgPos, 0.5), b = v.fgWide ? s->read (1, v.fgPos, 0.5) : a;
+                const float a = s->read (0, v.fgPos, v.fgRate), b = v.fgWide ? s->read (1, v.fgPos, v.fgRate) : a;
                 x = 0.5f * (a + b);
-                v.fgPos += 0.5;
+                v.fgPos += v.fgRate;
                 v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;       // (the file's lows are the body's to have)
                 v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
                 if (v.fgWide)
@@ -611,8 +732,16 @@ public:
                     v.fgHpS2 += v.fgHpK * (xs - v.fgHpS2); xs -= v.fgHpS2;
                 }
             }
-            else x = v.clickBp.tickBP (rng.next()) * v.fgNoise;        // (the noise's band is its colour)
-            const float tail = clamp01 ((t - 0.07f) / 0.02f);           // (and out by its end, whatever its decay)
+            else x = v.clickBp.tickBP (v.fgLock ? v.fgN.next() : rng.next()) * v.fgNoise;        // (the noise's band is its colour)
+            if (v.fgIw != 1.0f)
+            {
+                // IMPACT WIDTH: its own side, made wider or narrower; over the middle, one made beside a mono impact from the
+                // impact two thirds of a thousandth of a second before (it falls away in mono)
+                xs *= std::min (v.fgIw, 1.0f) * (v.fgWide ? std::max (v.fgIw, 1.0f) : 1.0f);
+                if (v.fgIw > 1.0f && ! v.fgWide) xs += (v.fgIw - 1.0f) * 0.5f * (x - v.fgDly[v.fgDi]);
+                v.fgDly[v.fgDi] = x; v.fgDi = (v.fgDi + 1) & 63;
+            }
+            const float tail = clamp01 ((t - v.fgImpFade0) / (v.fgImpEnd > 0.09f ? 0.02f * v.fgImpEnd / 0.09f : 0.02f));   // (and out by its end, whatever its decay)
             const float e = std::min (1.0f, t / 0.0003f) * std::exp (-t / v.fgImpTau) * (1.0f - tail * tail * (3.0f - 2.0f * tail));
             mid += x * e * v.fgImp;
             sd = xs * e * v.fgImp;
@@ -627,7 +756,7 @@ public:
         float y = (v.fgLo * v.fgSub + mid) * v.vel;
         sd *= v.vel;
         // the tone's low-pass: open on the hit, closing onto where TONE and CHARACTER have it
-        const bool sideOn = v.fgWide && t < 0.2f;              // (its low-pass rings a little past the impact's end)
+        const bool sideOn = v.fgSide && t < (v.fgImpEnd > 0.09f ? v.fgImpEnd + 0.11f : 0.2f);    // (its low-pass rings a little past the impact's end)
         if (v.lp < 15000.0f)
         {
             if ((v.tick++ & 15) == 0) { v.res.set (v.lp + v.fgBright * std::exp (-t / 0.03f), 0.7071f, osr); if (sideOn) { v.resS.g = v.res.g; v.resS.k = v.res.k; v.resS.a1 = v.res.a1; v.resS.a2 = v.res.a2; v.resS.a3 = v.res.a3; } }
@@ -643,7 +772,8 @@ public:
         v.phase += f / osr;
         if (v.phase > 1.0) v.phase -= 1.0;
         v.t += 1.0 / osr;
-        if (t > v.decay * 9.0f + 0.06f) v.active = false;
+        if (t > v.decay * 9.0f + 0.06f + v.fgHold) v.active = false;
+        if (v.fgSign != 1.0f) { side = -side; return -y; }
         return y;
     }
 
@@ -722,12 +852,15 @@ public:
         // right goes beside the kick through halfbands and the split of its own, and is put back at the end. With none,
         // and none still ringing, the kick is one channel exactly as it was.
         auto reads = [] (int m) { return m == kKickSample || m == kKickForge; };
-        const bool wide = (smp != nullptr && smp->wide && (reads (model) || (layer > 0.01f && reads (layerModel)))) || sideLive > 0;
+        const bool forgeSide = (model == kKickForge || (layer > 0.01f && layerModel == kKickForge)) && (c.v (FGIWIDTH) > 0.5f || c.v (FGGWIDTH) > 0.0f);     // (the ninety-ninth build: WIDTH made or kept)
+        const bool wide = (smp != nullptr && smp->wide && (reads (model) || (layer > 0.01f && reads (layerModel)))) || sideLive > 0 || forgeSide;
         if (wide && ! wasWide) { decS.reset(); decSB.reset(); split.widen(); }
         wasWide = wide;
         // (SF-000) a ground that is ringing follows GROUND LENGTH and GROUND as they stand now, and a Forge hit that is
         // sounding its TONE, DRIVE, BODY and LOW PRESERVE
         if (ground.awake()) ground.follow (groundLen (c), 2.0f * c.v (FGGROUND) * groundAmt * groundTrim, groundFor (c));       // (in the order the hit has it: the same numbers to the bit)
+        groundShade (c);
+        const bool solo = c.v (FGSOLO) > 0.5f;
         for (auto& v : voices) if (v.active && v.model == kKickForge) forgeFollow (c, v, forgeAt (v.fgCh));
         for (int i = 0; i < c.n; ++i)
         {
@@ -750,11 +883,11 @@ public:
             float y0 = 0.0f, y1 = 0.0f, b0 = 0.0f, b1 = 0.0f;
             groundIn = 0.0f; sideIn[0] = sideIn[1] = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b0 : y0) += renderVoice (v, smp);
-            if (ground.awake()) y0 += ground.tick (groundIn);              // (SF-000) KICK FORGE's ground, with MODEL's voices
+            if (ground.awake()) { float gs; const float g = ground.tick (groundIn, gs); if (! solo) { y0 += g; sideIn[0] += gs; } }      // (SF-000) KICK FORGE's ground, with MODEL's voices
             const float sa0 = sideIn[0], sb0 = sideIn[1];
             groundIn = 0.0f; sideIn[0] = sideIn[1] = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b1 : y1) += renderVoice (v, smp);
-            if (ground.awake()) y1 += ground.tick (groundIn);
+            if (ground.awake()) { float gs; const float g = ground.tick (groundIn, gs); if (! solo) { y1 += g; sideIn[0] += gs; } }
             const float ya = dec.down (y0, y1), yb = decB.down (b0, b1);
             if (wide)
             {

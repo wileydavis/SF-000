@@ -4553,6 +4553,226 @@ static void forgeMoreTest (int& bad)
     check (mid.five < out.five - 15.0, "LOW PRESERVE on a hit that is sounding: put in 30 thousandths of a second into the hit, the note's fifth harmonic is " + juce::String (mid.five, 1) + " dB (" + juce::String (out.five, 1) + " left out)");
 }
 
+// (SF-000, the ninety-ninth build) the rest of KICK FORGE: the body's shape (HANG, CURVE, HOLD, HARM DECAY, PHASE, POLARITY),
+// the impact's (LENGTH, PITCH, CUT, WIDTH, VARIATION, IMPACT ONLY), the ground's (DARK, DUCK, RECOVER, WIDTH); each does
+// what it says, and the kick stays bounded when everything is pushed and it is hit fast.
+static void forgeFinishTest (int& bad)
+{
+    using namespace sf0;
+    auto check = [&] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
+    int kickLane = 0;
+    for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kickLane = l;
+    const auto& lane = lanes()[(size_t) kickLane];
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-forgefinish");
+    dir.deleteRecursively(); dir.createDirectory();
+    // two files: a stereo one (a 1 kHz tone, left and right apart, with a low rumble) and a mono one (the same tone)
+    auto write = [&] (const char* name, bool stereo)
+    {
+        const auto f = dir.getChildFile (name);
+        juce::AudioBuffer<float> b (2, 48000);
+        juce::Random r (5);
+        for (int n = 0; n < 48000; ++n)
+        {
+            const double t = n / 48000.0, w = 2.0 * juce::MathConstants<double>::pi;
+            const float tone = (float) (0.3 * std::sin (w * 1000.0 * t)), low = (float) (0.3 * std::sin (w * 70.0 * t)), nz = 0.1f * (r.nextFloat() - 0.5f);
+            b.setSample (0, n, tone + low + nz); b.setSample (1, n, stereo ? (float) (0.3 * std::sin (w * 1000.0 * t + 1.7)) + low - nz : tone + low + nz);
+        }
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (f), 48000.0, 2, 24, {}, 0) };
+        if (w != nullptr) w->writeFromAudioSampleBuffer (b, 0, 48000);
+        return f;
+    };
+    const auto wideFile = write ("wide.wav", true), monoFile = write ("mono.wav", false);
+    struct Out { std::vector<float> l, r; std::vector<float> mono() const { std::vector<float> m (l.size()); for (size_t i = 0; i < l.size(); ++i) m[i] = 0.5f * (l[i] + r[i]); return m; }
+                 std::vector<float> side() const { std::vector<float> m (l.size()); for (size_t i = 0; i < l.size(); ++i) m[i] = 0.5f * (l[i] - r[i]); return m; } };
+    // hits at the times given (seconds), `secs` long; knobs set before; `hold`: IMPACT ONLY held from `holdAt` to `holdTo` seconds
+    auto play = [&] (std::vector<std::pair<const char*, float>> set, double secs, std::vector<double> hits, const juce::File* file = nullptr, double holdAt = -1.0, double holdTo = -1.0)
+    {
+        SFProcessor q (sf::makeModule (lane.module));
+        auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+        for (auto& f : lane.fixed) setPlain (f.param, f.value);
+        if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == "KICK FORGE") setPlain ("model", (float) k); }
+        setPlain ("layer", 0.0f); setPlain ("split", 0.5f);
+        for (auto& kv : set) setPlain (kv.first, kv.second);
+        q.setRateAndBufferSizeDetails (48000.0, 64); q.prepareToPlay (48000.0, 64);
+        if (file != nullptr) q.mod().loadFiles (juce::StringArray (file->getFullPathName()));
+        juce::AudioBuffer<float> b (2, 64);
+        for (int i = 0; i < 200; ++i) { juce::MidiBuffer none; b.clear(); q.processBlock (b, none); }
+        Out o;
+        const int blocks = (int) (secs * 750.0);
+        const int solo = q.paramIndex ("fg_solo");
+        for (int i = 0; i < blocks; ++i)
+        {
+            juce::MidiBuffer midi;
+            for (double h : hits) { const int at = (int) (h * 750.0); if (i == at) midi.addEvent (juce::MidiMessage::noteOn (1, 36, (juce::uint8) 110), 0); if (i == at + 30) midi.addEvent (juce::MidiMessage::noteOff (1, 36), 0); }
+            if (solo >= 0 && holdAt >= 0.0 && i == (int) (holdAt * 750.0)) q.param (solo)->setValueNotifyingHost (1.0f);
+            if (solo >= 0 && holdTo >= 0.0 && i == (int) (holdTo * 750.0)) q.param (solo)->setValueNotifyingHost (0.0f);
+            b.clear(); q.processBlock (b, midi);
+            for (int k = 0; k < 64; ++k) { o.l.push_back (b.getSample (0, k)); o.r.push_back (b.getSample (1, k)); }
+        }
+        return o;
+    };
+    auto with = [] (std::vector<std::pair<const char*, float>> v, std::vector<std::pair<const char*, float>> more) { for (auto& m : more) v.push_back (m); return v; };
+    auto rms = [] (const std::vector<float>& v, double a, double z) { double q = 0.0; const size_t i0 = (size_t) (a * 48000.0), i1 = std::min (v.size(), (size_t) (z * 48000.0)); for (size_t i = i0; i < i1; ++i) q += (double) v[i] * v[i]; return 10.0 * std::log10 (q / (double) std::max<size_t> (1, i1 - i0) + 1e-20); };
+    auto crossings = [] (const std::vector<float>& v, double a, double z) { int n = 0; const size_t i0 = (size_t) (a * 48000.0), i1 = std::min (v.size(), (size_t) (z * 48000.0)); for (size_t i = i0 + 1; i < i1; ++i) if ((v[i - 1] < 0.0f) != (v[i] < 0.0f)) ++n; return n; };
+    auto apart = [] (const std::vector<float>& x, const std::vector<float>& y, double a, double z) { double q = 0.0; const size_t i0 = (size_t) (a * 48000.0), i1 = std::min ({ x.size(), y.size(), (size_t) (z * 48000.0) }); for (size_t i = i0; i < i1; ++i) q += ((double) x[i] - y[i]) * ((double) x[i] - y[i]); return 10.0 * std::log10 (q / (double) std::max<size_t> (1, i1 - i0) + 1e-20); };
+    // a level at a frequency (one DFT bin, through a Hann window so that a loud note does not leak far), a band of them (5 Hz
+    // apart), and the body's note (looked for between 35 and 90 Hz)
+    auto bin = [] (const std::vector<float>& v, double hz, double a, double z)
+    {
+        const size_t i0 = (size_t) (a * 48000.0), i1 = std::min (v.size(), (size_t) (z * 48000.0));
+        double re = 0.0, im = 0.0;
+        const double len = (double) std::max<size_t> (2, i1 - i0);
+        for (size_t i = i0; i < i1; ++i)
+        {
+            const double wgt = 0.5 - 0.5 * std::cos (2.0 * juce::MathConstants<double>::pi * (double) (i - i0) / (len - 1.0));
+            const double ph = 2.0 * juce::MathConstants<double>::pi * hz * (double) i / 48000.0; re += wgt * v[i] * std::cos (ph); im += wgt * v[i] * std::sin (ph);
+        }
+        return (re * re + im * im) / ((double) std::max<size_t> (1, i1 - i0) * (double) std::max<size_t> (1, i1 - i0));
+    };
+    auto band = [&] (const std::vector<float>& v, double f0, double f1, double a, double z) { double e = 0.0; for (double f = f0; f <= f1; f += 5.0) e += bin (v, f, a, z); return 10.0 * std::log10 (e + 1e-30); };
+    auto noteOf = [&] (const std::vector<float>& v, double a, double z) { double best = 0.0, hz = 50.0; for (double f = 35.0; f <= 90.0; f += 0.5) if (const double m = bin (v, f, a, z); m > best) { best = m; hz = f; } return hz; };
+    // when the body comes to its nth zero crossing (seconds)
+    auto nth = [] (const std::vector<float>& v, int n) { int k = 0; for (size_t i = 1; i < v.size(); ++i) if ((v[i - 1] < 0.0f) != (v[i] < 0.0f) && ++k == n) return (double) i / 48000.0; return 1.0; };
+    // a high-pass (two one-poles) at hz, for what is over the body
+    auto over = [] (std::vector<float> v, float hz) { const float k = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * hz / 48000.0f); float a = 0, b = 0; for (auto& x : v) { a += k * (x - a); b += k * (a - b); x -= b; } return v; };
+    // the body alone: no impact, no ground, no drive, no click
+    const std::vector<std::pair<const char*, float>> bare { { "fg_char", 0.3f }, { "fg_impact", 0.0f }, { "fg_ground", 0.0f }, { "drive", 0.0f }, { "click", 0.0f } };
+    const std::vector<double> one { 0.0 };
+
+    // HANG: the body's pitch from 30 to 60 thousandths of a second is higher with HANG up (more of its fall still to come)
+    {
+        const int c0 = crossings (play (bare, 0.2, one).mono(), 0.03, 0.06), c1 = crossings (play (with (bare, { { "fg_hang", 1.0f } }), 0.2, one).mono(), 0.03, 0.06);
+        check (c1 > c0 + 2, "HANG: the body's zero crossings from 30 to 60 thousandths of a second, " + juce::String (c0) + " with it at nought and " + juce::String (c1) + " at full (a slower second stage of the fall)");
+    }
+    // CURVE: held high (right), the body comes to its fourth zero crossing sooner than as it was, and that sooner than at the left
+    {
+        const double tl = nth (play (with (bare, { { "fg_curve", 0.0f } }), 0.2, one).mono(), 4), tm = nth (play (bare, 0.2, one).mono(), 4), tr = nth (play (with (bare, { { "fg_curve", 1.0f } }), 0.2, one).mono(), 4);
+        check (tr < tm && tm < tl, "CURVE: the body comes to its fourth zero crossing at " + juce::String (tl * 1000.0, 2) + ", " + juce::String (tm * 1000.0, 2) + " and " + juce::String (tr * 1000.0, 2)
+                   + " thousandths of a second at the left, the middle and the right (held high, it goes round sooner)");
+    }
+    // HOLD: the body 60 to 90 thousandths of a second in is louder held; its first 4 the same
+    {
+        const auto a = play (bare, 0.3, one).mono(), h = play (with (bare, { { "fg_hold", 1.0f } }), 0.3, one).mono();
+        check (rms (h, 0.06, 0.09) > rms (a, 0.06, 0.09) + 6.0 && std::abs (rms (h, 0.0, 0.004) - rms (a, 0.0, 0.004)) < 1.0,
+               "HOLD: the body 60 to 90 thousandths of a second in is " + juce::String (rms (a, 0.06, 0.09), 1) + " dB, held " + juce::String (rms (h, 0.06, 0.09), 1) + "; its first four thousandths as loud ("
+                   + juce::String (rms (a, 0.0, 0.004), 1) + " and " + juce::String (rms (h, 0.0, 0.004), 1) + ")");
+    }
+    // HARM DECAY: on a bright tone, the body's second and third harmonics against its note, 40 to 100 thousandths in, at each end
+    {
+        const auto bright = with (bare, { { "fg_char", 0.3f }, { "fg_tone", 1.0f } });
+        auto harms = [&] (float hd) { const auto m = play (with (bright, { { "fg_hdec", hd } }), 0.2, one).mono(); const double n = noteOf (m, 0.04, 0.1);
+                                      return 10.0 * std::log10 ((bin (m, 2.0 * n, 0.04, 0.1) + bin (m, 3.0 * n, 0.04, 0.1)) / (bin (m, n, 0.04, 0.1) + 1e-30) + 1e-30); };
+        const double l = harms (0.0f), r = harms (1.0f);
+        check (r > l + 4.0, "HARM DECAY: the body's second and third harmonics against its note, from 40 to 100 thousandths of a second, " + juce::String (l, 1) + " dB at the left and " + juce::String (r, 1) + " at the right");
+    }
+    // PHASE: its first fifth of a thousandth of a second, from nought and from the top of its wave
+    {
+        const double p0 = rms (play (bare, 0.05, one).mono(), 0.0, 0.0002), p1 = rms (play (with (bare, { { "fg_phase", 1.0f } }), 0.05, one).mono(), 0.0, 0.0002);
+        check (p1 > p0 + 5.0, "PHASE: the body's first fifth of a thousandth of a second is " + juce::String (p0, 1) + " dB starting at nought and " + juce::String (p1, 1) + " starting at its top");
+    }
+    // POLARITY: the whole kick (impact, body, ground) turned over, to the sample
+    {
+        const auto full = std::vector<std::pair<const char*, float>> { { "fg_char", 0.5f }, { "fg_ground", 0.8f } };
+        const auto a = play (full, 0.6, one, &wideFile), f = play (with (full, { { "fg_flip", 1.0f } }), 0.6, one, &wideFile);
+        double worst = 0.0;
+        for (size_t i = 0; i < a.l.size(); ++i) worst = std::max ({ worst, (double) std::abs (a.l[i] + f.l[i]), (double) std::abs (a.r[i] + f.r[i]) });
+        check (worst < 1.0e-5 && rms (a.mono(), 0.0, 0.6) > -40.0, "POLARITY: the kick with its impact from a stereo file and its ground, turned over, is the kick less itself to within " + juce::String (worst, 7));
+    }
+    // the impact alone (no body, no ground, no drive): LENGTH, PITCH, CUT
+    const std::vector<std::pair<const char*, float>> imp { { "fg_char", 0.5f }, { "fg_body", 0.0f }, { "fg_ground", 0.0f }, { "drive", 0.0f }, { "click", 0.0f }, { "fg_vary", 0.0f }, { "fg_pos", 0.3f } };
+    {
+        const double s = rms (play (with (imp, { { "fg_ilen", 0.0f } }), 0.4, one, &monoFile).mono(), 0.03, 0.08), m = rms (play (imp, 0.4, one, &monoFile).mono(), 0.03, 0.08), l = rms (play (with (imp, { { "fg_ilen", 1.0f } }), 0.4, one, &monoFile).mono(), 0.03, 0.08);
+        const double late = rms (play (with (imp, { { "fg_ilen", 1.0f } }), 0.4, one, &monoFile).mono(), 0.12, 0.2);
+        check (l > m + 6.0 && m > s + 6.0 && late > -80.0, "IMPACT LENGTH: the impact 30 to 80 thousandths of a second in is " + juce::String (s, 1) + ", " + juce::String (m, 1) + " and " + juce::String (l, 1)
+                   + " dB at the left, middle and right, and at the right it still sounds 120 to 200 in (" + juce::String (late, 1) + ")");
+    }
+    {
+        const int c0 = crossings (play (imp, 0.1, one, &monoFile).mono(), 0.002, 0.03), c1 = crossings (play (with (imp, { { "fg_ipitch", 12.0f } }), 0.1, one, &monoFile).mono(), 0.002, 0.03);
+        check (c1 > c0 * 3 / 2, "IMPACT PITCH: the impact (a 1 kHz tone from the file) crosses nought " + juce::String (c0) + " times in its first 30 thousandths of a second, an octave up " + juce::String (c1));
+    }
+    {
+        // a file with a low rumble under a tone: how much of the rumble comes through with the cut down and up (the impact
+        // is brought to one strength either way: what moves is the balance)
+        auto rumble = [&] (float cut) { const auto m = play (with (imp, { { "fg_icut", cut } }), 0.1, one, &monoFile).mono(); return 10.0 * std::log10 (bin (m, 70.0, 0.002, 0.04) / (bin (m, 1000.0, 0.002, 0.04) + 1e-30) + 1e-30); };
+        const double lo = rumble (0.0f), hi = rumble (1.0f);
+        check (lo > hi + 6.0, "IMPACT CUT: the impact from a file with a 70 Hz rumble under a 1 kHz tone, the rumble against the tone in its first 40 thousandths of a second, " + juce::String (lo, 1) + " dB with the cut down and " + juce::String (hi, 1) + " with it up");
+    }
+    // IMPACT WIDTH: a stereo file's side, at none, as it is, twice; a mono file's, as it is and over the middle; the middle the same
+    {
+        auto sideOf = [&] (const juce::File& f, float w) { const auto o = play (with (imp, { { "fg_iwidth", w } }), 0.15, one, &f); return std::make_pair (rms (o.side(), 0.0, 0.1), o.mono()); };
+        const auto w0 = sideOf (wideFile, 0.0f), w5 = sideOf (wideFile, 0.5f), w1 = sideOf (wideFile, 1.0f), m5 = sideOf (monoFile, 0.5f), m1 = sideOf (monoFile, 1.0f);
+        double middle = 0.0;
+        for (size_t i = 0; i < w5.second.size(); ++i) middle = std::max ({ middle, (double) std::abs (w5.second[i] - w1.second[i]), (double) std::abs (w5.second[i] - w0.second[i]) });
+        check (w0.first < -100.0 && w1.first > w5.first + 4.0 && m5.first < -100.0 && m1.first > -60.0 && middle < 1.0e-4,
+               "IMPACT WIDTH: a stereo file's impact has its side at " + juce::String (w0.first, 1) + ", " + juce::String (w5.first, 1) + " and " + juce::String (w1.first, 1) + " dB at none, as it is and twice; a mono file's "
+                   + juce::String (m5.first, 1) + " as it is and " + juce::String (m1.first, 1) + " over the middle; summed to mono they are the same (to within " + juce::String (middle, 6) + ")");
+    }
+    // VARIATION: at nought two hits a second apart are the same to the sample (from a file and from the noise); as it was they
+    // differ; and over twelve hits a quarter of a second apart, the impacts' levels spread wider at full than as it was
+    {
+        const std::vector<double> two { 0.0, 1.0 };
+        auto diff = [&] (float vary, const juce::File* f) { auto o = with (imp, { { "fg_vary", vary } }); if (f == nullptr) o.push_back ({ "fg_pos", 0.5f }); const auto m = play (o, 1.2, two, f).mono();
+                                                            double q = 0.0, e = 0.0; for (size_t i = 0; i < 4800; ++i) { q += ((double) m[i] - m[i + 48000]) * ((double) m[i] - m[i + 48000]); e += (double) m[i] * m[i]; } return 10.0 * std::log10 (q / (e + 1e-30) + 1e-30); };
+        const double f0 = diff (0.0f, &monoFile), n0 = diff (0.0f, nullptr), f5 = diff (0.5f, &monoFile);
+        std::vector<double> twelve; for (int k = 0; k < 24; ++k) twelve.push_back (0.25 * k);
+        auto spread = [&] (float vary) { auto o = with (imp, { { "fg_vary", vary } }); const auto m = play (o, 6.1, twelve, &monoFile).mono(); double lo = 1e9, hi = -1e9;
+                                         for (int k = 0; k < 24; ++k) { const double r = rms (m, 0.25 * k, 0.25 * k + 0.015); lo = std::min (lo, r); hi = std::max (hi, r); } return hi - lo; };
+        const double s0 = spread (0.0f), s5 = spread (0.5f), s1 = spread (1.0f);
+        check (f0 < -200.0 && n0 < -200.0 && f5 > -60.0 && s0 < 0.1 && s1 > s5 + 0.5, "VARIATION: two hits a second apart differ by " + juce::String (f0, 1) + " dB against the hit at nought (" + juce::String (n0, 1) + " from the noise) and "
+                   + juce::String (f5, 1) + " as it was; twenty-four hits' impacts from a file spread over " + juce::String (s0, 2) + ", " + juce::String (s5, 2) + " and " + juce::String (s1, 2) + " dB at nought, as it was and at full");
+    }
+    // IMPACT ONLY: held over a hit, what is under 120 Hz is gone and what is over 1 kHz is as it was; let go, the next hit is the whole kick
+    {
+        const auto full = std::vector<std::pair<const char*, float>> { { "fg_char", 0.5f }, { "fg_ground", 0.8f } };
+        const std::vector<double> two { 0.0, 1.0 };
+        const auto a = play (full, 1.6, two, &monoFile), h = play (full, 1.6, two, &monoFile, 0.0, 0.9);
+        auto under = [] (std::vector<float> v) { const float k = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * 120.0f / 48000.0f); float x = 0, y = 0; for (auto& s : v) { x += k * (s - x); y += k * (x - y); s = y; } return v; };
+        const double lowA = rms (under (a.mono()), 0.0, 0.3), lowH = rms (under (h.mono()), 0.0, 0.3), hiA = rms (over (a.mono(), 1000.0f), 0.0, 0.01), hiH = rms (over (h.mono(), 1000.0f), 0.0, 0.01);
+        const double back = apart (a.mono(), h.mono(), 1.3, 1.6) - rms (a.mono(), 1.3, 1.6);
+        check (lowH < lowA - 30.0 && hiH > hiA - 3.0 && back < -20.0, "IMPACT ONLY: held over a hit, what is under 120 Hz is " + juce::String (lowH, 1) + " dB (" + juce::String (lowA, 1) + " as the whole kick) and over 1 kHz in its first hundredth of a second "
+                   + juce::String (hiH, 1) + " (" + juce::String (hiA, 1) + "); let go, the next hit's tail is the whole kick's (they part by " + juce::String (back, 1) + " dB against it)");
+    }
+    // the ground alone (each less the same with no ground): DARK, DUCK, RECOVER, WIDTH
+    {
+        const auto boom = std::vector<std::pair<const char*, float>> { { "fg_char", 0.62f }, { "fg_ground", 0.9f }, { "fg_vary", 0.0f } };
+        const auto none = play (with (boom, { { "fg_ground", 0.0f } }), 1.5, one).mono();
+        auto alone = [&] (std::vector<std::pair<const char*, float>> more) { auto m = play (with (boom, more), 1.5, one); auto mono = m.mono(); for (size_t i = 0; i < mono.size(); ++i) mono[i] -= none[i]; return std::make_pair (mono, m.side()); };
+        const auto g = alone ({}), dk = alone ({ { "fg_gdark", 1.0f } }), br = alone ({ { "fg_gdark", 0.0f } });
+        // (what of it is from twice to six times its note, against its note: its colour)
+        auto colour = [&] (const std::vector<float>& m) { const double n = noteOf (m, 0.2, 0.8); return band (m, 2.0 * n, 6.0 * n, 0.2, 0.8) - band (m, n - 5.0, n + 5.0, 0.2, 0.8); };
+        const double share = colour (g.first), shareDk = colour (dk.first), shareBr = colour (br.first);
+        check (shareDk < share - 3.0 && shareBr > share + 3.0, "GROUND DARK: the ground from twice to six times its note against its note, " + juce::String (shareBr, 1) + " dB at the left, " + juce::String (share, 1) + " in the middle and " + juce::String (shareDk, 1) + " at the right");
+        const auto open = alone ({ { "fg_gduck", 0.0f } }), hard = alone ({ { "fg_gduck", 1.0f } });
+        const double dOpen = rms (open.first, 0.02, 0.12), dMid = rms (g.first, 0.02, 0.12), dHard = rms (hard.first, 0.05, 0.25), dMid2 = rms (g.first, 0.05, 0.25);
+        check (dOpen > dMid + 6.0 && dHard < dMid2 - 3.0, "GROUND DUCK: the ground under the body (20 to 120 thousandths of a second) is " + juce::String (dOpen, 1) + " dB with no duck and " + juce::String (dMid, 1) + " as it was; with it held down longer, from 50 to 250 thousandths, "
+                   + juce::String (dHard, 1) + " (" + juce::String (dMid2, 1) + " as it was)");
+        const auto quick = alone ({ { "fg_grec", 0.0f } }), slow = alone ({ { "fg_grec", 1.0f } });
+        const double rq = rms (quick.first, 0.1, 0.3), rm = rms (g.first, 0.1, 0.3), rs = rms (slow.first, 0.1, 0.3);
+        check (rq > rm && rm > rs + 3.0, "GROUND RECOVER: the ground from 100 to 300 thousandths of a second, " + juce::String (rq, 1) + ", " + juce::String (rm, 1) + " and " + juce::String (rs, 1) + " dB quick, as it was and slow");
+        const auto wideG = alone ({ { "fg_gwidth", 1.0f } });
+        auto low = [] (std::vector<float> v) { const float k = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * 60.0f / 48000.0f); float x = 0, y = 0; for (auto& s : v) { x += k * (s - x); y += k * (x - y); s = y; } return v; };
+        const double n = noteOf (g.first, 0.2, 0.8);
+        const double sideAll = rms (wideG.second, 0.2, 1.0), sideLow = band (wideG.second, n - 5.0, n + 5.0, 0.2, 0.8), midLow = band (wideG.first, n - 5.0, n + 5.0, 0.2, 0.8), sideNone = rms (g.second, 0.2, 1.0);
+        juce::ignoreUnused (low);
+        double middle = 0.0; for (size_t i = 0; i < g.first.size(); ++i) middle = std::max (middle, (double) std::abs (g.first[i] - wideG.first[i]));
+        check (sideNone < -150.0 && sideAll > -60.0 && sideLow < midLow - 30.0 && middle < 1.0e-4, "GROUND WIDTH: the ground's side is " + juce::String (sideNone, 1) + " dB at nought and " + juce::String (sideAll, 1) + " at full; at the kick's note it is "
+                   + juce::String (sideLow, 1) + " against the middle's " + juce::String (midLow, 1) + " (the floor stays in the middle); its middle is the same either way (to within " + juce::String (middle, 6) + ")");
+    }
+    // everything pushed, hit sixteen times a second for two seconds: a number, and bounded
+    {
+        const auto all = std::vector<std::pair<const char*, float>> { { "fg_char", 1.0f }, { "drive", 1.0f }, { "fg_body", 1.0f }, { "fg_impact", 1.0f }, { "fg_ground", 1.0f }, { "fg_glen", 1.0f }, { "fg_hang", 1.0f },
+                                                                      { "fg_hold", 1.0f }, { "fg_hdec", 1.0f }, { "fg_phase", 1.0f }, { "fg_ilen", 1.0f }, { "fg_ipitch", 24.0f }, { "fg_iwidth", 1.0f }, { "fg_vary", 1.0f },
+                                                                      { "fg_gduck", 0.0f }, { "fg_grec", 1.0f }, { "fg_gwidth", 1.0f }, { "fg_gdark", 0.0f }, { "fg_low", 1.0f }, { "density", 1.0f } };
+        std::vector<double> fast; for (int k = 0; k < 32; ++k) fast.push_back (k / 16.0);
+        const auto o = play (all, 3.0, fast, &wideFile);
+        bool finite = true; float peak = 0.0f;
+        for (size_t i = 0; i < o.l.size(); ++i) { finite = finite && std::isfinite (o.l[i]) && std::isfinite (o.r[i]); peak = std::max ({ peak, std::abs (o.l[i]), std::abs (o.r[i]) }); }
+        check (finite && peak <= 4.0f, "every one of them pushed to its end, hit sixteen times a second for two seconds: always a number, and at most " + juce::String (peak, 2) + " (the instrument's own ceiling: it is the lane's LEVEL and the mix's to tame)");
+    }
+    dir.deleteRecursively();
+}
+
 static void forgeTest (int& bad)
 {
     using namespace sf0;
@@ -5115,7 +5335,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') reachTest (bad); else if (w == 'j') forgeMoreTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') reachTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -7563,6 +7783,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     plainSaysTest (bad);
     reachTest (bad);
     forgeMoreTest (bad);
+    forgeFinishTest (bad);
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)

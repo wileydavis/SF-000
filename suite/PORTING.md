@@ -201,6 +201,14 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   of `Airwindows.cpp` is where they are named. To add another: its three files, a namespace
   block and a `Kind` in `AirKernels.*`, a row in that table, a `make`, the two Registry lines,
   an `FxDef` in `Source/Rig.h`, and its lines in `Source/Help.h`. See DECISIONS 746 to 750.
+- **The ninety-ninth build, KICK FORGE finished**: `modules/Drums.cpp` appends `FGHANG` ...
+  `FGGWIDTH` (`fg_hang`, `fg_curve`, `fg_hold`, `fg_hdec`, `fg_phase`, `fg_flip`, `fg_ilen`,
+  `fg_ipitch`, `fg_icut`, `fg_iwidth`, `fg_vary`, `fg_solo` (momentary), `fg_gdark`,
+  `fg_gduck`, `fg_grec`, `fg_gwidth`); `forgeFall` (the pitch's fall with HANG and CURVE);
+  `Ground::shade` (DARK's cut-offs and tilt, DUCK, RECOVER, WIDTH's side through four one-pole
+  high-passes), `Ground::tick` gives a side; `groundShade`; a hit's VARIATION, its own `Noise`
+  when locked, IMPACT WIDTH's side (`fgDly`). The module opens its stereo path for either WIDTH.
+  At rest the kick is the same to the sample. All marked `(SF-000, the ninety-ninth build)`.
 - **The ninety-eighth build, the parameter contract**: `core/Module.h` has `enum class Reach
   { Live, Eased, Next }`, `ParamSpec::reach` (LIVE unless said), `eased()`, `next()`,
   `liveOn (model)` and `reachIn (model)`; every module's parameters that a sounding note does

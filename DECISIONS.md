@@ -6095,7 +6095,50 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      offsets made explicit, the kick-and-bass view). The next Forge build, when you have
      played this one.
 
+## KICK FORGE finished (Nov 21, 00:36): ninety-ninth build
+
+776. **You**, Nov 21, 00:36: "it sounds good. finish off forge"
+     **Built: the rest of the brief's Forge, sixteen controls, in CONFIG's second view as two
+     grids**: BODY (CHARACTER, BODY, TONE on the panel; LOW PRESERVE, HANG, CURVE, HOLD, HARM
+     DECAY, PHASE, POLARITY) and IMPACT AND GROUND (IMPACT, POSITION, GROUND on the panel;
+     IMPACT LENGTH, PITCH, CUT, WIDTH, VARIATION, IMPACT ONLY, GROUND LENGTH, DARK, DUCK,
+     RECOVER, WIDTH): the brief's own grouping (its 6.1). The same cells whether the Forge is the
+     model or the layer. **At rest the kick is the ninety-seventh build's to the sample**
+     (`--forgeprint`). Each is checked (`forgeFinishTest`, 16 checks), and the contract walk
+     holds every one to what it says: the ground's four are heard on a sounding hit, the rest
+     from the next.
+     *Mine, where the brief left the how open:*
+     - The body's pitch is two stages, not a point to drag: **HANG** keeps part of the fall in a
+       stage eight times slower (a two-stage fall; a plateau at full), **CURVE** bends it. The
+       brief's "one intermediate point" in two knobs, with no point to place by mouse.
+     - The amplitude has **HOLD** and DECAY; no ATTACK (the body's 0.4 ms is the click; PHASE is
+       the hard front) and no tail curve (HOLD and DECAY between them make the shapes I could
+       find a use for).
+     - **VARIATION** is the lock and the amount in one knob: in the middle as it was, at nought
+       every hit identical (its noise its own, seeded the same each hit), over the middle more,
+       and in pitch.
+     - **IMPACT ONLY** is the impact alone through the kick's drive, filter and clipper. With
+       no body the clipper holds it down less: measured 6.6 dB louder over 1 kHz than inside the
+       kick. Hearing its true share would need the kick drawn twice; I left it, and INFO says so.
+     - **GROUND DARK** first moved only the ground's cut-offs and did next to nothing: the
+       ground is mostly a resonance at the kick's note. It now tilts its output too, about 120
+       Hz: measured from twice to six times the note against the note, -27.7, -34.8 and -39.4 dB
+       at the left, the middle and the right.
+     - **GROUND WIDTH** is made of two of its four passes against the other two, through four
+       high-passes at 140 Hz: at the kick's note 37 dB under the middle. The ground has little
+       above its floor, so it is subtle unless DARK is to the left.
+     - My first measures for six of the checks were wrong (a window that leaked the loud note
+       into the harmonics, an impact that is brought to one strength measured by its level,
+       zero crossings too few to count); they measure what the controls do now.
+     **Not built, on purpose** (774's rule): the kick-and-bass view, and a level-matched A/B.
+     POLARITY and PHASE are the controls such a view would use. **The Forge is finished unless
+     you find a sound it cannot make.**
+
 ## Not verified
+
+- **The ninety-ninth build (776): the Forge's sixteen are measured, not heard.** The ones most
+  likely to want your ears: HANG and CURVE's ranges, IMPACT ONLY's level (louder than in the
+  kick), GROUND DARK's tilt, and GROUND WIDTH, which may be too subtle to matter.
 
 - **The ninety-eighth build (775): GROUND LENGTH and LOW PRESERVE are measured, not heard.**
   Whether GROUND LENGTH's make-up (a longer ground fed less) feels right, and whether LOW

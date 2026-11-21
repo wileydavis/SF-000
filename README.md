@@ -698,17 +698,42 @@ kick is a 909 over an 808 with a crossover that takes the 909's own lows out: le
 would have no low end of its own); both are in CONFIG. While it is on, the kick's module is a
 dark red plate on the dark instrument. None of it has been heard: see Not verified in DECISIONS.
 
-**Two more, in CONFIG**, beside those six in its MODEL grid (ninety-eighth build):
+**The rest of it is in CONFIG** (ninety-eighth and ninety-ninth builds), its second view: two grids,
+**BODY** on the left and **IMPACT AND GROUND** on the right (the same cells when KICK FORGE is the
+layer and not the model). Each control works about where CHARACTER has the kick: in its middle,
+or at nought where it adds a thing, it is the kick as it was, and moving CHARACTER keeps what you
+set there.
 
-| | |
+| BODY | |
 |---|---|
-| GROUND LENGTH | how long the ground rings, apart from the body's DECAY: in the middle what CHARACTER and DECAY make it, left down to an eighth of that, right up to eight times (twelve seconds at most). Drawn out, it is fed less of the body, so it carries about the same: longer, not louder. A short tight body over a long dark floor, or a long body with none |
 | LOW PRESERVE | how much of the body's own note goes round the mids' drive and the last clipper. Nothing: the whole kick is driven and clipped, note and all, as it was. Up: the body's fundamental (the sine itself, so nothing is turned in phase) is taken out before the drive and put back after the clipper, clean, from where its falling pitch comes within two and a half times the note; the knock above that, the harmonics and the impact are driven as they were. It comes in at the level the clipper was giving the note, and from there dies away as the body does, where the clipper would have held it up: a hard kick with LOW PRESERVE up has a cleaner and shorter note; DECAY lengthens it |
+| HANG | how much of the pitch's fall hangs on in a second stage, eight times slower: a two-stage fall; at full almost a plateau (zaps, toms) |
+| CURVE | the fall's shape: left, away quickly and a long glide in; right, held high and then dropped |
+| HOLD | the body at full for up to a tenth of a second before it decays: fatter, squarer |
+| HARM DECAY | how long the body's harmonics last against its note, a quarter to four times |
+| PHASE | where in its wave the body starts: nought (soft, as it was) to its top (a hard edge made of the body itself) |
+| POLARITY | the whole kick, ground and all, turned over: for lining it up with a bass |
 
-With both at rest the kick is the kick it was, to the sample (`--forgeprint`: five settings,
-with and without a file, against the ninety-seventh build's). TONE, DRIVE, BODY, GROUND, GROUND
-LENGTH and LOW PRESERVE are heard on a hit that is sounding; CHARACTER, IMPACT, POSITION, TUNE,
-PUNCH, PITCH TIME, CLICK and DECAY build the hit when it is struck.
+| IMPACT AND GROUND | |
+|---|---|
+| IMPACT LENGTH | a quarter to four times as long (and let sound for up to a third of a second) |
+| IMPACT PITCH | two octaves either way: the file read faster or slower, or the noise's band moved |
+| IMPACT CUT | where its lows are cut, a quarter to four times where CHARACTER has it (the impact is brought to one strength either way: what moves is how much of the file's weight comes with it) |
+| IMPACT WIDTH | a stereo file's own width from none to twice; above the middle a mono file or the noise is given one. It all falls away in mono: the middle is not touched |
+| VARIATION | how far one hit differs from the next: in the middle as it was (a little, in place and level); **at nought every hit is the same to the sample**, the noise too, for making the sound; over the middle further, and in pitch |
+| IMPACT ONLY | held: the impact alone, through the kick's drive, filter and clipper, in time. With no body to push against the clipper holds it down less, so it can be a little louder than inside the kick |
+| GROUND LENGTH | how long the ground rings, apart from the body's DECAY: an eighth to eight times what CHARACTER and DECAY make it (twelve seconds at most). Drawn out it is fed less of the body: longer, not louder |
+| GROUND DARK | its colour: right darker (its cut-offs down to a quarter, and its output tilted under 120 Hz), left brighter |
+| GROUND DUCK | how far it is held down while the body sounds: left less, to not at all; right held down longer (a pump) |
+| GROUND RECOVER | how quickly it comes back after: up to eight times quicker or slower (a swell between kicks) |
+| GROUND WIDTH | stereo made only of what is above its floor: at the kick's note 40 dB down, so the floor stays in the middle. Subtle on a dark ground; falls away in mono |
+
+With all of them at rest the kick is the kick it was, to the sample (`--forgeprint`: five
+settings, with and without a file, against the ninety-seventh build's). TONE, DRIVE, BODY,
+GROUND, GROUND LENGTH, LOW PRESERVE and GROUND DARK, DUCK, RECOVER and WIDTH are heard on a
+hit that is sounding; the rest build the hit when it is struck (INFO says FROM THE NEXT HIT).
+Not built, on purpose: a view of the kick against the bass (phase and polarity are here as
+controls; the view waits until a sound needs it), and a level-matched A/B.
 
 **Every knob is heard, on every model.** `--audit` (see Checks) turns each of a lane's twelve
 knobs down and up and measures what the lane's sound does, for every model the lane has (85
@@ -2062,7 +2087,7 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's GROUND LENGTH and LOW PRESERVE, f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's controls in CONFIG (GROUND LENGTH, LOW PRESERVE and the ninety-ninth build's sixteen), f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)

@@ -159,8 +159,12 @@ this build does not have is written back as it was read.
   the lane's own eighth); KICK on KICK FORGE, places 2 to 7 are `fg_char`, `fg_impact`,
   `fg_body`, `fg_ground`, `fg_pos`, `fg_tone`, and 1 and 8 TUNE and DRIVE as ever. Two more of
   KICK FORGE's are in `setup` only (the ninety-eighth build): `fg_glen` (GROUND LENGTH, 0 to 1,
-  the middle as it was) and `fg_low` (LOW PRESERVE, 0 to 1, nought as it was). A snapshot
-  without them has them at those. Without
+  the middle as it was) and `fg_low` (LOW PRESERVE, 0 to 1, nought as it was), and from the
+  ninety-ninth: `fg_hang`, `fg_hold`, `fg_phase`, `fg_gwidth` (0 to 1, nought as it was),
+  `fg_curve`, `fg_hdec`, `fg_ilen`, `fg_icut`, `fg_iwidth`, `fg_vary`, `fg_gdark`, `fg_gduck`,
+  `fg_grec` (0 to 1, the middle as it was), `fg_ipitch` (semitones, -24 to 24, nought) and
+  `fg_flip` (0 or 1). `fg_solo` (IMPACT ONLY) is a held key and is not kept. A snapshot without
+  them has them at those. Without
   `lists`, a PAD on GRANULAR has those six places as the pad's usual knobs, which GRANULAR then
   read as its size (COLOR) and its scatter (DETUNE).
   **`lists` 3** (eighty-first build): PERC's list has SAMPLE after its six objects, and a snapshot
