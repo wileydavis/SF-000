@@ -3,7 +3,7 @@
 //   header    18  METHOD and NOTES, the voices sounding
 //   overview  11  the whole file: the region bracketed, the part shown below lit, every playhead a tick
 //   tabs      17  each slice: its number, and the note that plays it; lit as it is struck
-//   wave     104  the part shown: coloured by what is in it (warm the lows, green the middle, blue the highs), its
+//   wave      64  the part shown: coloured by what is in it (warm the lows, green the middle, blue the highs), its
 //                 loudness solid inside its peak; START, END and the fades; the loop; the slices; a playhead for every
 //                 voice that sounds, its trail as long as it is fast, and what it plays; GRAIN's grains; STRETCH's bars
 //                 and beats and its warp markers
@@ -18,7 +18,7 @@ namespace sf
 using namespace smp;
 namespace
 {
-constexpr float kHead = 0, kOv = 20, kOvH = 11, kTab = 33, kTabH = 17, kWave = 52, kWaveH = 104, kSteps = 158, kStepsH = 20, kFoot = 179;
+constexpr float kHead = 0, kOv = 20, kOvH = 11, kTab = 33, kTabH = 17, kWave = 52, kWaveH = 64, kSteps = 118, kStepsH = 20, kFoot = 139;      // (156 high: 196 left CONFIG's grids no room above the EQ)
 constexpr float kX = 8, kW = 528;
 const juce::Colour kYellow { 0xffe2c33c };
 const juce::Colour kRedMark { 0xffff3b30 };

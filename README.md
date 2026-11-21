@@ -484,7 +484,7 @@ chosen.
 |---|---|
 | METHOD | **REPITCH**: read faster or slower, pitch with it (clean to two octaves up). **STRETCH**: the tempo changes and the pitch does not (four notes at a time). **GRAIN**: grains of it |
 | NOTES | PITCH (a key plays the file at its pitch) or SLICES (a key chooses a slice, from BASE NOTE up) |
-| PLAY | HELD (sounds while the note is held) or THROUGH (to its end, however short the note) |
+| PLAY | HELD (sounds while the note is held) or THROUGH (to its end, however short the note). GRAIN's end is as long as its part at the file's own speed; a LOOP goes round only while a note is held. Stopping the transport lets go every GRAIN note and every loop |
 | CHOKE | a new note cuts the last, over 3 ms |
 | CYCLE | which slice a hit plays: OFF (the one its key chooses), ROUND, RANDOM |
 | VEL START | a soft note starts further in |
@@ -494,7 +494,7 @@ chosen.
 | WARP | on, STRETCH follows the warp markers |
 | LOCK | BAR: the file is where the clock is in its bars, whenever a note starts it: it cannot be put out of time (what LOOP was on the hats) |
 
-**The display** (544 by 196, in colour in every look, the outline and the 3D ones too): a strip
+**The display** (544 by 156, in colour in every look, the outline and the 3D ones too): a strip
 of the whole file to pan along, tabs a slice (a click plays it), the wave in the file's lows,
 mids and highs as bands with clipping in red, the steps that play each slice under it, the
 playheads as notes sound, GRAIN's grains, START, END, the loop's ends and the markers. The
@@ -2193,7 +2193,7 @@ build/.../SF-000 --onlinetest http://127.0.0.1:8787   # ONLINE against a snapsho
 build/.../SF-000 --shot setup.png --setup follow  # draw the SETUP panel: --setup send|follow|off, --beat
 build/.../SF-000 --e16 controllers/e16/SF-000.oxie16   # write the E16's two scenes: that one (snapshot knob names from your session) and SF-000-FX.oxie16 beside it
 python3 tests/e16_scene_test.py                   # the scene's shape and addresses, and its script on a mock E16 (pip install lupa)
-build/.../SF-000 --shot main.png --scale 2        # draw a screen: --page library|macros|pockets (pockets: --amount 0 to 100), --lane N, --cfg lane|insert|return|space|master|bands (bands: a convolution with BANDS lit), --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
+build/.../SF-000 --shot main.png --scale 2        # draw a screen: --cfgview 1 to 4 (CONFIG's view), --page library|macros|pockets (pockets: --amount 0 to 100), --lane N, --cfg lane|insert|return|space|master|bands (bands: a convolution with BANDS lit), --space conv, --seqmute, --rec, --dark (the dark instrument), --flat (the flat drawing), --info [--point x,y] (INFO, and the mouse resting there), --phones
 python3 tools/icon.py assets/icon.png             # the app's icon again: the SF-000 tag (add "one" for the tag on a single line)
 python3 tools/wear.py photo.png assets/wear.png   # the dark instrument's scratches again, from a photograph of scratched black metal (pip install numpy scipy pillow)
 build/.../SF-000 --shot x.png --page macros --motion  # the macro designer with two MOTIONs at work

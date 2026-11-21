@@ -281,6 +281,10 @@ void SampleEngine::begin (const Ctx& c, const SampleData* smp, float decay, bool
     smpNow = smp; decayKnob = decay; monoNow = mono; keyShiftNow = keyShift;
     spb = c.samplesPerBeat();
     seen.bpm.store ((float) c.bpm); seen.beatsPerBar.store ((float) c.beatsPerBar); seen.ppq.store (c.ppq); seen.playing.store (c.playing);
+    // the transport stopped: what has no end of its own (GRAIN, a loop going round) lets go with RELEASE
+    if (wasPlaying && ! c.playing)
+        for (auto& v : voices) if (v.on && (v.method == kGrain || blk.loop)) release (v);
+    wasPlaying = c.playing;
     if (! ids.ok()) return;
     auto& b = blk;
     b.method = c.ci (ids.method); b.notes = c.ci (ids.notes); b.play = c.ci (ids.play); b.cycle = c.ci (ids.cycle);
@@ -420,6 +424,9 @@ void SampleEngine::start (const Pending& p)
         v.holdLeft = g > 1.0e8f ? -1 : std::max (1, (int) (g * (float) sr));
         v.held = false;
     }
+    // GRAIN has no end of its own (the place its grains are read about goes round the part): a note let play to its end
+    // lasts as long as its part does at the file's own speed, then lets go with RELEASE
+    if (b.method == kGrain && v.holdLeft < 0 && ! v.held) v.holdLeft = std::max (1, (int) (playSec * sr));
     v.env = b.attack <= 0.01f ? 1.0f : 0.0f;
     // the method's own start
     if (b.method == kStretch)
@@ -533,7 +540,9 @@ void SampleEngine::renderRepitch (Voice& v, float* L, float* R, int n)
     const double endAt = v.dir > 0 ? v.from + span : v.from - span;          // SIZE: where it stops (as SIZE is now)
     const bool partEnd = std::abs (endAt - (v.dir > 0 ? v.b : v.a)) < 0.5;
     const double fo = partEnd ? v.fadeOut : std::max (v.fadeOut, 0.002 * s->sr);
-    const bool loop = b.loop && b.notes == 0 && v.dir > 0 && b.loopB - b.loopA > 16.0;
+    // (a loop only where something will let it go: a key held, a gate, its release. A note played to its end with LOOP on
+    // plays to its end)
+    const bool loop = b.loop && b.notes == 0 && v.dir > 0 && b.loopB - b.loopA > 16.0 && (v.held || v.holdLeft > 0 || v.releasing);
     const double loopLen = b.loopB - b.loopA, xf = b.xfadeLen;
     const float level = b.reg.level * v.vel * v.gain * v.varyLevel;
     const bool wide = s->wide;
@@ -773,6 +782,7 @@ void SampleEngine::render (const Ctx& c, float* L, float* R, int n, float layerG
     int act = 0;
     for (auto& v : voices) act += v.on ? 1 : 0;
     active = act;
+
     publish();
 }
 

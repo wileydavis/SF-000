@@ -4462,6 +4462,7 @@ struct Rig
     double sr = 48000.0, bpm = 120.0, ppq = 0.0;
     int64_t pos = 0;
     float decay = 1.0f;
+    bool playing = true;        // (the transport)
     Rig (bool pitched, sf::SampleEngine::Ends ends)
     {
         for (auto& p : specs) v.push_back (p.def);
@@ -4480,7 +4481,7 @@ struct Rig
         for (int b = 0; b < blocks; ++b)
         {
             if (each) each (b);
-            sf::Ctx c; c.sr = sr; c.n = 64; c.bpm = bpm; c.ppq = ppq; c.playing = true; c.beatsPerBar = 4.0; c.samplePos = pos; c.p = v.data(); c.p0 = v.data();
+            sf::Ctx c; c.sr = sr; c.n = 64; c.bpm = bpm; c.ppq = ppq; c.playing = playing; c.beatsPerBar = 4.0; c.samplePos = pos; c.p = v.data(); c.p0 = v.data();
             e.begin (c, s.get(), decay, false);
             for (auto& nt : notes)
                 if (nt.at >= b * 64 && nt.at < (b + 1) * 64)
@@ -4712,6 +4713,77 @@ static void sampleEngineTest (int& bad)
             fine = fine && ms < 1000.0;
         }
         check (fine, "sixteen notes held, each METHOD, of one core here (Linux, not the Mac): " + says);
+    }
+    // 11b. (Wiley, Nov 21: "in grain mode, play as held or through, the sampler does not stop emitting sound after the
+    //      sequencer notes or after transport has been stopped.") Every note ends: GRAIN played to its end lasts its part
+    //      (a second's file: a second) and lets go; held, it lets go with its key; a drum's at DECAY full is played to its
+    //      end; the transport stopped lets go what has no end of its own; a LOOP played to its end is not a loop
+    {
+        auto quietAfter = [&] (bool pitched, Ends ends, std::vector<std::pair<const char*, float>> knobs, std::vector<Rig::Note> notes, double stopAt, double from, double& before)
+        {
+            Rig r (pitched, ends);
+            auto b = tone (sr, 1.0, 330.0, 0.5f, false);
+            r.file (std::move (b));
+            r.set ("sp_root", 61.0f); r.set ("sp_method", 2.0f);
+            for (auto& kv : knobs) r.set (kv.first, kv.second);
+            r.run (3.0, notes, L, R, [&] (int blk) { if (stopAt > 0.0 && blk * 64 >= (int) (stopAt * sr)) r.playing = false; });
+            before = db (energy (L, (size_t) (0.3 * sr), (size_t) (0.5 * sr)) / (0.2 * sr));
+            return db (energy (L, (size_t) (from * sr), L.size()) / ((3.0 - from) * sr));
+        };
+        double b1, b2, b3, b4, b5;
+        const double through = quietAfter (true, Ends::keys, { { "sp_play", 1.0f } }, { { 0, 60, 1.0f, true }, { 2400, 60, 0.0f, false } }, 0.0, 1.3, b1);
+        const double drum = quietAfter (false, Ends::hits, {}, { { 0, 60, 1.0f, true } }, 0.0, 1.3, b2);
+        const double held = quietAfter (true, Ends::keys, { { "sp_play", 0.0f } }, { { 0, 60, 1.0f, true }, { 30000, 60, 0.0f, false } }, 0.0, 0.8, b3);
+        const double stopped = quietAfter (true, Ends::keys, { { "sp_play", 0.0f }, { "sp_size", 1.0f } }, { { 0, 60, 1.0f, true } }, 0.6, 0.8, b4);
+        const double loopThrough = quietAfter (true, Ends::keys, { { "sp_method", 0.0f }, { "sp_play", 1.0f }, { "sp_loop", 1.0f }, { "sp_lstart", 0.2f }, { "sp_lend", 0.8f } }, { { 0, 60, 1.0f, true }, { 2400, 60, 0.0f, false } }, 0.0, 1.3, b5);
+        const bool sounded = b1 > -40.0 && b2 > -40.0 && b3 > -40.0 && b4 > -40.0 && b5 > -40.0;
+        check (sounded && through < -120.0 && drum < -120.0 && held < -120.0 && stopped < -120.0 && loopThrough < -120.0,
+               "every note ends: GRAIN played THROUGH lasts its part and lets go (" + juce::String (through, 1) + " dB after), on a drum lane at DECAY full ("
+                   + juce::String (drum, 1) + "), HELD with its key (" + juce::String (held, 1) + "), held with the transport stopped (" + juce::String (stopped, 1)
+                   + "); a LOOP played THROUGH plays to its end (" + juce::String (loopThrough, 1) + "). Each sounded first (" + juce::String (std::min ({ b1, b2, b3, b4, b5 }), 1) + " dB at least)");
+    }
+    // 11c. the same through the instrument: each lane on SAMPLE in GRAIN, HELD and THROUGH, its own pattern playing, then
+    //      the transport stopped: a second and a half later it is silent
+    {
+        using namespace sf0;
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-grainstop");
+        dir.deleteRecursively(); dir.createDirectory();
+        const auto f = dir.getChildFile ("g.wav");
+        {
+            auto b = tone (sr, 4.0, 220.0, 0.5f, false);
+            juce::WavAudioFormat wf;
+            if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { wf.createWriterFor (os.release(), sr, 2, 24, {}, 0) }) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+        }
+        juce::StringArray still;
+        int tried = 0;
+        for (int l = 0; l < kLanes; ++l)
+            for (int play = 0; play < 2; ++play)
+            {
+                Engine e; e.prepare (sr, 256);
+                const Engine::Target t { 0, l, 0 };
+                bool has = false;
+                for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains ("SAMPLE")) { e.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1)); has = true; }
+                if (! has) continue;
+                e.loadFile (l, f.getFullPathName());
+                auto setTo = [&] (const char* id, float v) { for (auto& sp : e.setupParams (t)) if (sp.id == id) { e.setSetup (t, id, v); return; } for (int k = 0; k < kLaneKnobs; ++k) if (juce::String (e.laneKnob (l, k).param) == id) e.set (cx::lane (l, k), v); };
+                setTo ("sp_method", 1.0f); setTo ("sp_play", (float) play); if (! lanes()[(size_t) l].pitched) setTo ("decay", 1.0f);      // (a drum's: the whole of its sample. A synth's DECAY is its filter's and envelope's, and full, its own tail rings on)
+                setTo ("gate", 1.0f);
+                setTo ("density", 0.0f);         // (no echoes of the lane's own: they are notes of their own, after the last)
+                for (int k : { cx::kSendA, cx::kSendB }) e.set (cx::lane (l, k), 0.0f);        // (no sends: the returns' tails are theirs)
+                e.solo = l; e.setRunning (true);
+                juce::AudioBuffer<float> b (2, 256);
+                double during = 0.0, after = 0.0;
+                for (int i = 0; i < (int) (3.0 * sr / 256); ++i) { e.render (b); for (int k = 0; k < 256; ++k) during += (double) b.getSample (0, k) * b.getSample (0, k); }
+                e.setRunning (false);
+                // (from four seconds after: a synth lane's own filter can ring on a little after its last note, dying away by
+                // some 20 dB a second; a note that has not ended is as loud at six seconds as at four)
+                for (int i = 0; i < (int) (6.0 * sr / 256); ++i) { e.render (b); if (i > (int) (4.0 * sr / 256)) for (int k = 0; k < 256; ++k) after += (double) b.getSample (0, k) * b.getSample (0, k) + (double) b.getSample (1, k) * b.getSample (1, k); }
+                ++tried;
+                if (during > 1.0e-6 && db (after / (2.0 * sr)) > -100.0) still.add (juce::String (lanes()[(size_t) l].slug) + (play ? " THROUGH " : " HELD ") + juce::String (db (after / (2.0 * sr)), 1) + " dB");
+            }
+        dir.deleteRecursively();
+        check (tried >= 16 && still.isEmpty(), "every lane on SAMPLE in GRAIN, HELD and THROUGH, its pattern played and the transport stopped, is silent four seconds after (under -100 dB; "
+                   + juce::String (tried) + " tried" + (still.isEmpty() ? juce::String() : "; still sounding: " + still.joinIntoString (", ")) + ")");
     }
     // 12. every lane's instrument has it, and its SAMPLE plays the file through it
     {
@@ -13351,6 +13423,7 @@ static int shot (const juce::StringArray& args)
     }
     else if (cfg == "mastercomp") { ses.userSet (cx::kMaster + 1, 0.6f); sc.showConfig ({ 4, 0, 0 }); }
     if (cfg == "lane" && plainSaid.isNotEmpty()) sc.testCfgNote (plainSaid);       // (and what PLAIN said, on CONFIG's line)
+    if (const int cv = arg ("--cfgview", "0").getIntValue(); cv > 0) sc.testCfgScroll (cv - 1);      // (--cfgview N: CONFIG's view N, 1 to 4)
     if (cfg == "mix") sc.showConfig ({ Engine::kMixPage, 0, 0 });           // (the mix page: the faders, the loudness, the master's EQ)
     else if (cfg == "bands")
     {

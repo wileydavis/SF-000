@@ -1491,7 +1491,11 @@ void Screen::drawConfig (G& g, R r)
                         if (tw (fNote, next) + 12.0f > 544.0f && line.isNotEmpty()) { rest.add (line); line = words[at]; } else line = next;
                     }
                     if (line.isNotEmpty()) rest.add (line);
-                    while (rest.size() > 3) { rest.remove (rest.size() - 1); rest.set (2, rest[2] + " ..."); }
+                    // (as many as leave the grids' four rows their height above the lane's EQ: none at all, under a
+                    // sample's display, and the bar says it whole. Hundredth build: they ran on into the EQ)
+                    const float floorAt = r.getBottom() - 6 - (eqPage() ? 286.0f : 0.0f);
+                    const int fits = juce::jlimit (0, 3, (int) std::floor ((floorAt - (y + 28) - 20.0f - 4.0f * 83.0f - 6.0f) / 15.0f));
+                    while (rest.size() > fits) { rest.remove (rest.size() - 1); if (! rest.isEmpty()) rest.set (rest.size() - 1, rest[rest.size() - 1] + " ..."); else head = head + " ..."; }
                 }
                 const R sr (x0, y, std::min (most, std::ceil (tw (fNote, head)) + 12.0f), 22);
                 window (g, sr, col::white);

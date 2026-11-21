@@ -6182,7 +6182,7 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        FADE IN and FADE OUT are each slice's own (at least 1 ms in, 2 ms out, always), so no
        slice clicks at either end.
      - **CAPTURE is not built** (your 2). RESAMPLE stays.
-     - **The display** (your 3): 544 by 196, in colour in every look, the outline and the 3D
+     - **The display** (your 3): 544 by 196 (156 from the next build, 781), in colour in every look, the outline and the 3D
        views included (as the EQ keeps its colour): the file's lows, mids and highs as bands,
        clipping in red, an overview strip to pan, tabs a slice (a click plays it), the steps
        that play each slice under it, the playheads moving, the grains, the markers, the loop.
@@ -6212,6 +6212,28 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      and WARP timing; GRAIN's variation; LOOP; REVERSE; CPU on one core; every lane plays it),
      the markers, sampler and stereo-and-LOCK tests rewritten for it, the contract walk, and a
      print of nine settings kept as a standing check (`--sampleprint`).
+
+## SAMPLE mended (Nov 21, 12:18): the hundred and first build
+
+781. **You**, Nov 21, 12:18: "some overlapping config elements with the eq. Also, in grain mode, play as held or
+     through, the sampler does not stop emitting sound after the sequencer notes or after transport has been
+     stopped. panic stops the noise. there are no inserts or sends on the lane."
+     **Why it kept sounding**: a GRAIN note has no end of its own (the place its grains are read about goes round
+     its part), so a note let play to its end (PLAY THROUGH, or any hit on a drum lane with DECAY full) went on for
+     ever. A LOOP played THROUGH did the same in REPITCH. HELD let go with its key: the drum lanes, which always play
+     a hit to its end, were the ones that never stopped.
+     **Mended**: a GRAIN note played to its end lasts as long as its part does at the file's own speed (a four-second
+     file: four seconds), then lets go with RELEASE. A LOOP goes round only where something will let it go (a key held,
+     GATE, its release); played THROUGH it plays to its end. **Stopping the transport lets go every GRAIN note and every
+     note on a LOOP**, with RELEASE. Checked on the engine (each case silent after, each sounding before) and through
+     the instrument: every lane on SAMPLE in GRAIN, HELD and THROUGH, its own pattern played, the transport stopped,
+     is under -100 dB four seconds later. *Mine:* the lane's sends were off for that check, as yours were: with them
+     on, the returns' tails ring on as they always have. LEAD's own filter rings on for about two seconds after its
+     last note (-58 dB at a second and a half, falling 20 dB a second), on its own models too; it is not SAMPLE's.
+     **The overlap**: SAMPLE's display at 196 left CONFIG's four rows too little room above the lane's EQ, and a
+     long line under the display (PLAIN's) took more. *Mine:* the display is 156 high (the wave 64, from 104), and the
+     line under it runs on only as far as leaves the rows their height (one more line here; the bar still says it
+     whole). Drawn and looked at on BASS after PLAIN and on PERC, views 2 and 3.
 
 ## Not verified
 

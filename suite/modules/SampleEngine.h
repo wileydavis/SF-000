@@ -101,8 +101,8 @@ public:
     bool holds() const { return holdsNow; }
     int indexOf (const char* id) const;
 
-    // ---- the display (message thread): 544 by 196
-    static constexpr int kDisplayHeight = 196;
+    // ---- the display (message thread): 544 by 156
+    static constexpr int kDisplayHeight = 156;
     void paint (juce::Graphics& g, juce::Rectangle<float> r, const Module& m, const SampleData* s, bool lit);
     void mouse (juce::Point<float> p, juce::Rectangle<float> r, bool down, Module& m, const SampleData* s);
     void mouseUp() { drag = Drag(); }
@@ -183,7 +183,7 @@ private:
 
     const SampleData* smpNow = nullptr;
     double sr = 48000.0, spb = 24000.0;
-    bool pitched = true, holdsNow = false, monoNow = false;
+    bool pitched = true, holdsNow = false, monoNow = false, wasPlaying = false;
     Ends ends = Ends::keys;
     float decayKnob = 0.5f;
     int keyShiftNow = 0;
