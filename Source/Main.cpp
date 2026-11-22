@@ -11066,6 +11066,49 @@ static int uiTest()
             std::printf ("        (before %d [%s] began %d [%s; page %d edit %d run %d] kept %d [%s, lanes %x lit %x, lib %d of %d, note %s] again %d besides %d dropped %d by play %d in file %d running %d [part %d bass %.2f])\n",
                          (int) before, why.toRawUTF8(), (int) began, why2.toRawUTF8(), (int) sc.testPage(), ses.arrEdit, (int) ses.engine.isRunning(), (int) kept, name1.toRawUTF8(), ses.arrangement.size() > 2 ? ses.arrangement[2].lanes : 0u, ses.arrEditLit,
                          (int) ses.library.size(), (int) libWas, ses.printNote.toRawUTF8(), (int) again, (int) besides, (int) dropped, (int) byPlay, (int) inFile, (int) running, ses.arrPart(), ses.engine.target (bc));
+        {
+            // (the hundred and fifth build) COPY BEFORE and COPY AFTER: the chosen part again on that side, into EDIT at once.
+            // KEEP makes the copy its own snapshot, the one copied untouched; DROP before a KEEP takes the copy out again;
+            // SHIFT [ and SHIFT ] are the two keys. The arrangement is left as it was found.
+            auto copyKey = [&] (bool after) { for (auto& h : sc.testHits()) if (Screen::testIsArrCopy (h, after)) return h.r.getCentre(); return juce::Point<float> (-1.0f, -1.0f); };
+            const auto partsWas = ses.arrangement.size(), libNow = ses.library.size();
+            const auto p2 = ses.arrangement[2];
+            sc.setPage (Screen::pArrange); sc.testPickPart (2); draw();
+            click (copyKey (false)); draw();
+            const bool opened = sc.testPage() == Screen::pMain && ses.arrEdit == 2 && ses.arrEditCopy && ses.arrangement.size() == partsWas + 1
+                                && ses.arrangement[2].snap == p2.snap && ses.arrangement[3].snap == p2.snap && ses.arrangement[2].bars == p2.bars && ses.arrangement[2].morph == p2.morph
+                                && ses.arrangement[2].lanes == p2.lanes && ! ses.arrangement[2].edited && ses.arrangement[2].transIn == 0 && ses.arrangement[2].transHit == 0 && ses.engine.isRunning();
+            ses.userSet (kc, 0.37f); audio (8);
+            sc.keyPressed (juce::KeyPress (juce::KeyPress::returnKey)); draw();
+            const auto made = ses.arrangement.size() > 2 ? ses.arrangement[2].snap : 0;
+            const auto* mk = ses.findSnap (made);
+            const auto* orig = ses.findSnap (p2.snap);
+            const bool keptCopy = made != p2.snap && mk != nullptr && orig != nullptr && std::abs (mk->values[(size_t) kc] - 0.37f) < 1.0e-4f
+                                  && std::abs (orig->values[(size_t) kc] - 0.37f) > 1.0e-3f && ses.arrangement[3].snap == p2.snap && ses.library.size() == libNow + 1 && ! ses.arrEditCopy
+                                  && mk->name.startsWith (cWas.name);
+            // COPY AFTER on the original, then DROP: the copy goes, the library as it was
+            sc.setPage (Screen::pArrange); sc.testPickPart (3); draw();
+            click (copyKey (true)); draw();
+            const bool afterOpened = ses.arrEdit == 4 && ses.arrEditCopy && ses.arrangement.size() == partsWas + 2 && ses.arrangement[4].snap == p2.snap;
+            click (editKey (1)); draw();
+            const bool dropGoes = sc.testPage() == Screen::pArrange && ses.arrEdit < 0 && ses.arrangement.size() == partsWas + 1 && ses.arrangement[3].snap == p2.snap
+                                  && ses.library.size() == libNow + 1 && ses.printNote.contains ("COPY");
+            // SHIFT ] on the chosen part: the same as COPY AFTER
+            sc.testPickPart (1); draw();
+            sc.keyPressed (juce::KeyPress (']', juce::ModifierKeys::shiftModifier, '}')); draw();
+            const bool byKey = ses.arrEdit == 2 && ses.arrEditCopy && ses.arrangement.size() == partsWas + 2 && ses.arrangement[2].snap == ses.arrangement[1].snap;
+            click (editKey (1)); draw();
+            const bool byKeyGone = ses.arrangement.size() == partsWas + 1 && ses.arrEdit < 0;
+            // (as it was found: the kept copy's part out, its snapshot gone)
+            ses.arrRemove (2); ses.remove (made);
+            const bool restored = ses.arrangement.size() == partsWas && ses.arrangement[2].snap == p2.snap && ses.library.size() == libNow;
+            check (opened && keptCopy && afterOpened && dropGoes && byKey && byKeyGone && restored,
+                   (juce::String ("COPY BEFORE and COPY AFTER: the chosen part again beside it (its snapshot, bars, morph and keys; no lead-in or hit), straight into EDIT; KEEP makes the copy its own snapshot (")
+                       + (mk != nullptr ? mk->name : juce::String ("?")) + ") and the part copied is untouched; DROP before a KEEP takes the copy out again; SHIFT ] is COPY AFTER").toRawUTF8());
+            if (! (opened && keptCopy && afterOpened && dropGoes && byKey && byKeyGone && restored))
+                std::printf ("        (opened %d kept %d after %d drop %d key %d key gone %d restored %d; page %d edit %d copy %d parts %d of %d)\n", (int) opened, (int) keptCopy, (int) afterOpened, (int) dropGoes, (int) byKey, (int) byKeyGone, (int) restored,
+                             (int) sc.testPage(), ses.arrEdit, (int) ses.arrEditCopy, (int) ses.arrangement.size(), (int) partsWas);
+        }
         // TO STACK: the parts' snapshots in order, each with its part's keys, as a stack kept here
         const auto stacksWas = ses.stacks.size();
         sc.setPage (Screen::pArrange); draw();

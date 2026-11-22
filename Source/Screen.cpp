@@ -970,7 +970,9 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aArrEdit, "EDIT", "THE PART THAT IS CHOSEN, IN THE MAIN VIEW. THE ARRANGEMENT STOPS, THE RIG IS MADE WHAT THE ARRANGEMENT HAS AT THAT PART (WHAT EVERY PART BEFORE IT LEFT, THEN IT, ARRIVED), AND IT PLAYS. CHANGE ANYTHING. KEEP, IN THE BAR THERE, MAKES THE RIG AS IT THEN STANDS A NEW SNAPSHOT IN THE LIBRARY, NAMED AFTER THE PART'S, AND PUTS IT IN THE PART'S PLACE: THE SNAPSHOT IT WAS IS NOT TOUCHED. THE PART KEEPS ITS KEYS AND GAINS THOSE OF WHATEVER YOU CHANGED. DROP KEEPS NOTHING. EDITED AGAIN, THE SNAPSHOT THE LAST EDIT MADE IS REPLACED, UNLESS SOMETHING ELSE USES IT." },
                 { aArrStack, "TO STACK", "KEEPS THE ARRANGEMENT AS A STACK IN THE MACRO DESIGNER'S RACK: ITS PARTS' SNAPSHOTS IN ORDER, EACH WITH THE KEYS ITS PART HAS. PUT ON A STACK KNOB THERE, THE KNOB'S TURN IS THE TRACK FROM FIRST PART TO LAST. A PART WITH A KEY OUT LEANS ON WHAT CAME BEFORE IT, ON A KNOB AS HERE." },
                 { aEditKeep, "KEEP", "EDIT: THE RIG AS IT STANDS BECOMES A NEW SNAPSHOT AND TAKES THE PART'S PLACE IN THE ARRANGEMENT (RETURN). THE SNAPSHOT THE PART HAD IS LEFT AS IT IS." },
-                { aEditDrop, "DROP", "EDIT: NOTHING IS KEPT, AND THE ARRANGEMENT IS AS IT WAS. THE RIG STAYS AS YOU LEFT IT." },
+                { aEditDrop, "DROP", "EDIT: NOTHING IS KEPT, AND THE ARRANGEMENT IS AS IT WAS. THE RIG STAYS AS YOU LEFT IT. A PART MADE BY COPY BEFORE OR AFTER AND NOT YET KEPT IS TAKEN OUT AGAIN." },
+                { aArrCopyBefore, "COPY BEFORE", "THE CHOSEN PART AGAIN, JUST BEFORE IT (SHIFT [): ITS SNAPSHOT, BARS, MORPH AND KEYS, NOT ITS LEAD-IN OR HIT. THE COPY OPENS IN EDIT IN THE MAIN VIEW: TAKE THINGS AWAY OR CHANGE THEM, THEN KEEP MAKES IT A NEW SNAPSHOT OF ITS OWN AND THE ONE YOU COPIED IS NOT TOUCHED. DROP TAKES THE COPY OUT AGAIN. FOR BUILDING THE PEAK FIRST AND WORKING BACK FROM IT." },
+                { aArrCopyAfter, "COPY AFTER", "THE CHOSEN PART AGAIN, JUST AFTER IT (SHIFT ]): ITS SNAPSHOT, BARS, MORPH AND KEYS, NOT ITS LEAD-IN OR HIT. THE COPY OPENS IN EDIT IN THE MAIN VIEW: CHANGE IT, THEN KEEP MAKES IT A NEW SNAPSHOT OF ITS OWN AND THE ONE YOU COPIED IS NOT TOUCHED. DROP TAKES THE COPY OUT AGAIN." },
                 { aArrEarlier, "EARLIER", "MOVES THE CHOSEN PART ONE PLACE EARLIER." },
                 { aArrLater, "LATER", "MOVES THE CHOSEN PART ONE PLACE LATER." },
                 { aArrRemove, "REMOVE", "TAKES THE CHOSEN PART OUT OF THE ARRANGEMENT. ITS SNAPSHOT STAYS IN THE LIBRARY." },
@@ -1197,7 +1199,7 @@ void Screen::drawBar (G& g)
             text (g, "DROP", R (kx + 142, 17.5f, 44, 40), fLegend, col::black, juce::Justification::centredLeft);
             const float tx = kx + 196, tw2 = std::max (60.0f, 796.0f - tx);
             text (g, "KEEP: A NEW SNAPSHOT", R (tx, 20, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
-            text (g, "IN THE PART'S PLACE.", R (tx, 38, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
+            text (g, ses.arrEditCopy ? "DROP: THE COPY GOES." : "IN THE PART'S PLACE.", R (tx, 38, tw2, 17), fLbl, col::black, juce::Justification::centredLeft);
         }
         else if (info)
         {
@@ -4519,13 +4521,17 @@ void Screen::drawArrange (G& g)
     actKey (g, aArrPlay, x0 + 368, ky, 64, play ? "STOP" : "PLAY", play ? col::green : col::putty, 5, n > 0, play);
     actKey (g, aArrHere, x0 + 434, ky, 64, "FROM HERE", col::yellow, 5, selPart >= 0);
     actKey (g, aArrEdit, x0 + 500, ky, 64, "EDIT", editing ? col::amber : col::yellow, 5, selPart >= 0 && ! pr, editing);
+    // (the hundred and fifth build) the chosen part again, before it or after it, and into EDIT: build the peak, then work out from it
+    const bool room = selPart >= 0 && n < Session::kArrMost && ! pr;
+    actKey (g, aArrCopyBefore, x0 + 574, ky, 80, "COPY BEFORE", col::yellow, 5, room);
+    actKey (g, aArrCopyAfter, x0 + 656, ky, 80, "COPY AFTER", col::yellow, 5, room);
     // (the words a stack's row and a knob's pile have: the chosen part earlier, later, or taken out of the arrangement)
-    actKey (g, aArrEarlier, x0 + 582, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
-    actKey (g, aArrLater, x0 + 648, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
-    actKey (g, aArrRemove, x0 + 714, ky, 64, "TAKE OUT", col::yellow, 5, selPart >= 0);
-    actKey (g, aArrClear, x0 + 796, ky, 64, "CLEAR", col::red, 5, n > 0);
-    actKey (g, aArrStack, x0 + 878, ky, 64, "TO STACK", col::yellow, 5, n > 0);
-    actKey (g, aArrPrint, x0 + 944, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
+    actKey (g, aArrEarlier, x0 + 746, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
+    actKey (g, aArrLater, x0 + 812, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
+    actKey (g, aArrRemove, x0 + 878, ky, 64, "TAKE OUT", col::yellow, 5, selPart >= 0);
+    actKey (g, aArrClear, x0 + 960, ky, 64, "CLEAR", col::red, 5, n > 0);
+    actKey (g, aArrStack, x0 + 1042, ky, 64, "TO STACK", col::yellow, 5, n > 0);
+    actKey (g, aArrPrint, x0 + 1108, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
     if (vis (g, strip))
     {
         String now;
@@ -4539,12 +4545,12 @@ void Screen::drawArrange (G& g)
         else if (editing) now = "PART " + String (ses.arrEdit + 1) + " IS BEING EDITED IN THE MAIN VIEW: KEEP OR DROP IT THERE (EDIT GOES BACK TO IT).";
         else now = ses.printNote;
         g.setColour (tone (col::black)); g.setFont (fLegend);
-        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 1028, (int) y0, 642, 24), juce::Justification::centredLeft, 2, 0.7f);
+        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 1192, (int) y0, 478, 24), juce::Justification::centredLeft, 2, 0.7f);
         const String help = "PRESS A CHIP IN THE RACK TO HEAR IT; ITS ADD PUTS IT AFTER THE CHOSEN PART, WITH THE PARTS LIT ON IT. CARRIED ONTO THE ARRANGEMENT IT GOES AT THE END; A STACK'S PILE CARRIED HERE IS A PART FOR EACH OF ITS CHIPS. "
-                            "A PART'S KEYS: WHAT IT TAKES OF ITS CHIP. DRAG ITS BARS, AND ITS MORPH: HOW LONG THE WAY IN. EDIT: THE CHOSEN PART IN THE MAIN VIEW, KEPT AS A NEW CHIP IN ITS PLACE. "
+                            "A PART'S KEYS: WHAT IT TAKES OF ITS CHIP. DRAG ITS BARS, AND ITS MORPH: HOW LONG THE WAY IN. EDIT: THE CHOSEN PART IN THE MAIN VIEW, KEPT AS A NEW CHIP IN ITS PLACE. COPY BEFORE, AFTER (SHIFT [ ]): THE PART AGAIN BESIDE IT, INTO EDIT. "
                             "TO STACK: THE PARTS AS A STACK, FOR A KNOB. PRINT: THE TRACK AND ITS STEMS AS FILES, WHERE TAKES GO.";
         g.setFont (fLbl);
-        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1028, (int) y0 + 28, 642, 68), juce::Justification::topLeft, 6, 0.75f);
+        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1192, (int) y0 + 28, 478, 68), juce::Justification::topLeft, 6, 0.75f);
     }
     drawCarry (g);          // (what is in the hand, over everything)
 }
@@ -4644,7 +4650,28 @@ void Screen::act (int a)
             setPage (pArrange);
             break;
         }
-        case aEditDrop: { const int part = ses.arrEdit; ses.arrEditDrop(); ses.printNote = "NOTHING KEPT. THE RIG IS AS YOU LEFT IT."; selPart = part; setPage (pArrange); break; }
+        case aEditDrop:
+        {
+            const int part = ses.arrEdit;
+            const bool copy = ses.arrEditCopy;
+            ses.arrEditDrop();
+            ses.printNote = copy ? String ("NOTHING KEPT: THE COPY IS TAKEN OUT AGAIN. THE RIG IS AS YOU LEFT IT.") : String ("NOTHING KEPT. THE RIG IS AS YOU LEFT IT.");
+            selPart = copy ? std::min (part, (int) ses.arrangement.size() - 1) : part;
+            setPage (pArrange);
+            break;
+        }
+        case aArrCopyBefore:
+        case aArrCopyAfter:
+        {
+            // (the chosen part again, on that side of it, and into EDIT: KEEP makes it its own snapshot, DROP takes it out again)
+            if (selPart < 0 || ses.printing()) break;
+            const int at = ses.arrCopy (selPart, a == aArrCopyAfter);
+            if (at < 0) { ses.printNote = "NO ROOM: AN ARRANGEMENT HOLDS " + String (Session::kArrMost) + " PARTS."; break; }
+            selPart = at;
+            if (const int line = selPart / 4; line < arrScroll) arrScroll = line; else if (line > arrScroll + 6) arrScroll = line - 6;
+            if (ses.arrEdit == at) setPage (pMain);
+            break;
+        }
         case aArrStack:
         {
             const int at = ses.arrToStack();
@@ -5770,6 +5797,7 @@ bool Screen::kbKey (const juce::KeyPress& k)
         if (page == pArrange)
         {
             if (add) { for (const auto& h : hits) if (h.kind == hPickAdd && h.a < (int) ses.library.size() && ses.library[(size_t) h.a].id == handId) { tap (h); break; } }
+            else if ((earlier || later) && shift) act (earlier ? aArrCopyBefore : aArrCopyAfter);      // (SHIFT [ ]: COPY BEFORE, AFTER)
             else act (back ? aArrRemove : earlier ? aArrEarlier : aArrLater);
         }
         else if ((earlier || later) && tiesAt().what != 0 && tieSel >= 0) tieStep (tieSel, way * (shift ? 10 : 1));
@@ -5835,6 +5863,7 @@ bool Screen::kbKey (const juce::KeyPress& k)
         kbSeek (hRowCard, rowSel);
     }
     else if (c.kind == hColCard) { colSel = c.a; act (way < 0 ? aRowEarlier : aRowLater); kbSeek (hColCard, colSel); }
+    else if (c.kind == hArrPart && shift) { selPart = c.a; act (way < 0 ? aArrCopyBefore : aArrCopyAfter); }      // (SHIFT [ ]: the part copied, into EDIT)
     else if (c.kind == hArrPart)
     {
         selPart = c.a;

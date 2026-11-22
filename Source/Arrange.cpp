@@ -247,6 +247,7 @@ bool Session::arrEditBegin (int part)
     engine.setRunning (false);
     arrBring (part, 0.0);
     arrEdit = part;
+    arrEditCopy = false;
     arrEditWas = capture();
     engine.setRunning (true);
     if (onChange) onChange();
@@ -256,8 +257,28 @@ bool Session::arrEditBegin (int part)
 void Session::arrEditDrop()
 {
     if (arrEdit < 0) return;
+    const int part = arrEdit;
     arrEdit = -1;
+    // (a copy dropped before it was ever kept is the part beside it again: it goes)
+    if (arrEditCopy) { arrEditCopy = false; arrRemove (part); return; }
     if (onChange) onChange();
+}
+
+int Session::arrCopy (int part, bool after)
+{
+    if (part < 0 || part >= (int) arrangement.size() || (int) arrangement.size() >= kArrMost || print != nullptr) return -1;
+    ArrPart p = arrangement[(size_t) part];
+    p.transIn = 0; p.transHit = 0; p.inFile = {}; p.hitFile = {};      // (its lead-in and hit belong where they were put)
+    p.edited = false;                                                   // (its snapshot is the part's: an EDIT of the copy makes its own)
+    const int at = after ? part + 1 : part;
+    arrangement.insert (arrangement.begin() + at, p);
+    logAction ("add", p.snap, { { "to", "arr" }, { "arr", arrAtId }, { "at", at }, { "parts", (int) p.lanes }, { "copy", part } });
+    if (arrOn && at <= arrAt) ++arrAt;
+    if (arrEdit >= 0 && at <= arrEdit) ++arrEdit;
+    touch();
+    if (! arrEditBegin (at)) { if (onChange) onChange(); return at; }
+    arrEditCopy = true;
+    return at;
 }
 
 juce::int64 Session::arrEditKeep()
@@ -321,6 +342,7 @@ juce::int64 Session::arrEditKeep()
     if (makesWay) remove (was);
     if (name.isNotEmpty()) rename (id, name);
     arrEdit = -1;
+    arrEditCopy = false;
     baseId = id;
     touch();
     if (onChange) onChange();

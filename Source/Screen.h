@@ -267,6 +267,7 @@ public:
     bool testDescribe (int ctl, juce::String& where, juce::String& label, const char*& what) const { return describe (ctl, where, label, what); }      // what INFO's box says of a control
     static bool testIsPanic (const TestHit& h) { return h.kind == hAct && h.a == aPanic; }
     // the arrangement's page: its key (0), PLAY, FROM HERE, EARLIER, LATER, REMOVE, CLEAR, PRINT; a part's card, its BARS, its MORPH
+    static bool testIsArrCopy (const TestHit& h, bool after) { return h.kind == hAct && h.a == (after ? aArrCopyAfter : aArrCopyBefore); }      // (COPY BEFORE, AFTER)
     static bool testIsArrKey (const TestHit& h, int which) { return h.kind == hAct && h.a == aArrange + which; }        // (0 the page's own, 1 PLAY, 2 FROM HERE, 3 EARLIER, 4 LATER, 5 REMOVE, 6 CLEAR, 7 PRINT, 8 EDIT, 9 TO STACK)
     static bool testIsEdit (const TestHit& h, int which) { return h.kind == hAct && h.a == aEditKeep + which; }         // (EDIT, in the main page's bar: 0 KEEP, 1 DROP)
     static bool testIsArrPart (const TestHit& h, int part, int what = 0) { return h.kind == (what == 0 ? hArrPart : what == 1 ? hArrBars : hArrMorph) && h.a == part; }
@@ -363,6 +364,7 @@ private:
                aPockets, aPkAuto, aPkReset,
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint, aArrEdit, aArrStack,
                aEditKeep, aEditDrop,
+               aArrCopyBefore, aArrCopyAfter,      // (the hundred and fifth build) the chosen part again, beside it, into EDIT
                aFetch,
                aStackCue,
                // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself

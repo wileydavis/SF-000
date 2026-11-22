@@ -521,6 +521,11 @@ public:
     bool arrEditBegin (int part);
     juce::int64 arrEditKeep();                          // the new snapshot (0: nothing was being edited, or none could be taken)
     void arrEditDrop();
+    // (the hundred and fifth build) COPY BEFORE / COPY AFTER: the part again, beside it on that side, with its snapshot, bars,
+    // morph, keys and N (no lead-in or hit: those are for the part they were put on), and the copy straight into EDIT. KEEP
+    // makes it its own snapshot; DROP before anything is kept takes the copy out again. The new part's place (-1: no room).
+    int arrCopy (int part, bool after);
+    bool arrEditCopy = false;                           // the part being edited is a copy not yet kept: DROP takes it out
     bool usedBesides (juce::int64 snap, int part) const;    // a snapshot that something other than that part of the arrangement holds: another part, a knob, a stack, a knob or a module kept
     // TO STACK: the arrangement as a stack in the rack, its parts' snapshots in order, each with the parts of the rig its
     // part takes. Where it is in the rack (-1: the arrangement is empty). arrOpenParts: how many parts have a key out

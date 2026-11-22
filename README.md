@@ -1186,6 +1186,7 @@ beyond it.
 | **=** | ADD the chip the mark is on: in the library into the pile that is out, last; in MACROS onto the chosen stack knob's pile; beside the arrangement a part after the chosen one |
 | **Backspace** | TAKE OUT what the mark is on: a chip of a pile (it stays in the bin), a tie, a part |
 | **[** **]** | EARLIER, LATER: a chip in its pile, a part in the arrangement. The mark goes with it. On a tie: a hundredth less, more (with Shift: ten) |
+| SHIFT **[** **]** (ARRANGE) | COPY BEFORE, COPY AFTER: the chosen part (or the one the mark is on) again beside it, into EDIT |
 | **Tab** | the next shelf (Shift-Tab: the one before); the mark is on its first pocket |
 
 Where a thing is chosen by being pressed (a chip of a pile, a tie, a part) the mark coming to
@@ -1437,6 +1438,14 @@ whole of it is one travel from the snapshot before.
     (another part, a knob, a stack): then it stays and the new one is numbered on.
   - **DROP** keeps nothing; the rig stays as you left it. Playing or printing the arrangement,
     or moving its parts, drops an edit too.
+- **COPY BEFORE and COPY AFTER** (SHIFT **[** and SHIFT **]**; hundred and fifth build): the chosen
+  part again, just before or just after it, with its snapshot, BARS, MORPH, keys and N (not its
+  IN or HIT: a lead-in belongs to the part it was put on), and the copy straight into EDIT. Take
+  things away or change them, then KEEP: the copy is a new snapshot of its own (named on from the
+  one copied) and the part you copied is not touched. DROP before a KEEP takes the copy out again.
+  Wiley, Nov 22: "Often i work by building up the peak snapshot, than working backward to take
+  elements away or lower the energy": build the peak, COPY BEFORE, take something out, KEEP;
+  COPY BEFORE again on that one, and so on down.
 - **Arrangements are kept, and nothing has to be saved.** The page always holds one of the
   arrangements kept (its name is beside ARRANGEMENT on the strip; a session starts with
   ARRANGEMENT 1): what you change on the page changes that one. **ARRANGEMENTS** is a shelf

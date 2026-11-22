@@ -6477,6 +6477,27 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      again keeping its oscillators' phase with PHASE on RESET, and released tails counting past
      VOICES for a moment. None of them is a knob that does nothing.
 
+## A part copied beside itself (Nov 22, 12:21): the hundred and fifth build
+
+787. **You**, Nov 22, 12:21 (your clock): "In the arrange tool, I often find I want to take a snapshot with a
+     full sound, and create copies either before or after in the arrangement, and then edit thos to
+     remove or modify sounds. So a fst way to simply create a new snapshot to the right or left of a
+     given snapshot in the arrangement based on the selected arrangement. Often i work by building up
+     the peak snapshot, than working backward to take elements away or lower the energy. thoughts?";
+     12:23, "I use levels to control if a sound is playing, so no need to store mute". **Built.**
+     - **COPY BEFORE and COPY AFTER** on the arrangement's strip, after EDIT (SHIFT [ and SHIFT ] on
+       the keyboard, on the chosen part or the part the mark is on): the part again on that side, its
+       snapshot, BARS, MORPH, keys and N, and the copy straight into EDIT. KEEP makes it a snapshot of
+       its own, named on from the one copied; the part copied is not touched. MUTE is not kept in a
+       snapshot and stays not kept (your 12:23: LEVEL says what plays).
+     *Mine:* **the copy has no IN or HIT.** A lead-in or a hit is for the part it was put on: copied
+     before the peak, the riser would land twice.
+     *Mine:* **DROP before a KEEP takes the copy out again**: a copy never edited is its neighbour a
+     second time, and the line should not fill with them. Once kept it is a part like any other. A copy
+     left by other means (PLAY, EDIT on another part) stays, as an edit dropped that way does.
+     *Mine:* **names as EDIT's do** (PEAK, PEAK 2, PEAK 3), whichever side the copy is on.
+     The strip's note moves right to make room for the two keys.
+
 ## Not verified
 
 - **The hundred and fourth build (786) has not been heard**: the mended knobs are checked here,
