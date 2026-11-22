@@ -80,6 +80,13 @@ public:
     void render (const Ctx& c, float* L, float* R, int n, float layerGain = 1.0f);
     bool sounding() const { return active > 0; }
     bool holds() const { return ends == Ends::keys; }
+    // (SF-000, the hundred and third build) GATE turned as notes sound, on a lane that plays keys: `hold` is the length it now
+    // gives a note (samples from where it began; -1: as long as its key), and `down` the keys still held. A note past its new
+    // length lets go; one given back to its key keeps sounding only if that key is down. keySounding: a note of that key is
+    // sounding and not let go (GATE brought back over half way plays again what had ended).
+    void gateNow (int hold, const int* down, int numDown);
+    void releaseScale (float m) { relScale = m; }       // (GATE: its lower half shortens RELEASE, its upper half lengthens it, up to eight times: Instrument.h, gateShape)
+    bool keySounding (int key, int part) const;
     int indexOf (const char* id) const;
 
     // ---- the display (message thread): 544 by 156, as SAMPLE's
@@ -118,11 +125,12 @@ public:
     static Block blockOf (const Ids& ids, const std::function<float (int)>& P);
 
 private:
+    float relScale = 1.0f;
     struct Mode { float c = 0, r = 0, w = 0, y1 = 0, y2 = 0; };
     struct Voice
     {
-        bool on = false, releasing = false, held = true, choked = false, accent = false, slid = false;
-        int key = -1, gen = 0, part = 0, os = 2, holdLeft = -1, age = 0, slot = 0;
+        bool on = false, releasing = false, held = true, choked = false, accent = false, slid = false, gated = false;
+        int key = -1, gen = 0, part = 0, os = 2, holdLeft = -1, age = 0, slot = 0, lived = 0;     // (lived: its samples, at its own rate)
         uint32_t order = 0;
         float pitch = 60.0f;          // the note it sounds (a chord's note), TUNE not in it
         float freq = 0.0f, target = 0.0f, slideK = 0.0f;

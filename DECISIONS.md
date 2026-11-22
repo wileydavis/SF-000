@@ -6352,7 +6352,97 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the Forge on PERC the kick's Forge; sixteen voices' cost on a core; the patches' levels; a
      snapshot of lists 5 read on the lists of now; and a standing print (`--synthprint`).
 
+## Every lane one instrument: SAMPLE, SYNTH and KICK FORGE and nothing else (Nov 21, 22:25): the hundred and third build
+
+785. **You**, Nov 21, 22:21 (your clock): "on the synth, what does tha page 1 config attack knob do?";
+     22:25, "build it as if the only engines are the three (forge, sampler, and synth). Create the config
+     panel layouts to be optimized only for these.  strip out anything that isn't needed for these. and
+     design the control layouts to minimize page switching, so grouping parameters together into
+     functional units. I don't have anything using the olde engines I can't recreate easily, so let's
+     make the leap now and clean up the ui and backend now."; 22:25, "every lane gets the three models
+     and nothing else"; 22:26, "i'll use smpler vor vocal elements"; 23:09, "i assume with this that
+     every lane will have the same control layouts for a given engine, correct?" (Yes: answered then.)
+     **Built.**
+     - **One instrument for every lane** (`suite/modules/Lane.cpp`), its role the only difference:
+       whether it plays notes (GATE) or hits (DECAY), whether it ducks under the kick (a pocket:
+       BASS, RUMBLE, LEAD, CHORD, PAD, VOICE), whether the kick's hits strike it (RUMBLE, with
+       SOURCE), whether its hits are the ones the pockets follow (KICK). MODEL and LAYER MODEL are
+       SAMPLE, SYNTH, KICK FORGE. The kicks of before, the hats' circuits, PERC's objects, the
+       synths' models, WAVETABLE, FM 4-OP, GRANULAR, VOICE's phrase models and RUMBLE's room are
+       gone, code and all (`Drums.cpp`, `Strike.cpp`, `Synth.cpp`, `Voice.cpp`; the presets).
+       The ATTACK on page 1 you asked about (22:21) was the old synth lanes' own, in the SOUND grid:
+       it shaped their own models' notes and never reached SYNTH, which has its own. It is gone with
+       them; SYNTH's ATTACK is in FILTER AND ENVELOPES.
+     - **The panel**: places 1 to 8 the model's own eight, the same on every lane; 9 to 12 the
+       lane's (DECAY or GATE, DENSITY, FILTER, LEVEL).
+     - **CONFIG, a unit a grid, a row a job.** View 1: LANE (MODEL, LAYER MODEL, LAYER, SPLIT /
+       KEY FOLLOW, VEL SENS, MONO, SPLIT HZ / ECHO PROB, ECHO SPACE, ECHO SWING, FILTER RES /
+       POCKET DEPTH, POCKET SHAPE, AFTER FX, SOURCE) and MOTION beside it. Then the model's
+       engine from view 2: SYNTH's four (OSCILLATORS and WAVE MOTION; FILTER AND ENVELOPES and
+       VOICE AND BODY), SAMPLE's two (SOURCE, PLAY), KICK FORGE's two (BODY, IMPACT AND GROUND).
+       Then the layer's, in the same cells, each called LAYER. A lane on SYNTH has three views,
+       on SAMPLE or KICK FORGE two; the old SOUND grid and the views kept for what one engine had
+       beside another are gone. `--cfgcheck` holds every control to one cell of its unit, on every
+       lane, model and layer (52 pages, 11,856 settings).
+     - **GATE**, on a lane that plays notes, follows the hand on a sounding note on every engine
+       (its lower half ends it where it now says; back over half way a key still held plays
+       again), and its upper half lengthens the engine's RELEASE up to eight times (it did
+       nothing on SAMPLE and SYNTH).
+     *Mine:* **the lanes open on** KICK FORGE (KICK: TUNE -1, PUNCH 45, CLICK 35, DRIVE 12, the kick
+     it was on the Forge, to the bit: `--forgeprint`); SYNTH on the hats, CLAP and PERC (HAT 909,
+     OPEN HAT, CLAP, MEMBRANE) and on BASS, LEAD, CHORD, PAD (BASS LADDER, ACID 303, STAB DUB, DUB
+     WASH); KICK FORGE on RUMBLE, struck by the kick, its GROUND up and long and its IMPACT down;
+     SAMPLE on VOICE (your 22:26), silent until a file is dropped on it.
+     *Mine:* **the layer's engine is listed while LAYER is up** and LAYER MODEL another engine; at
+     nought nothing of it is heard, and its views would be pages to step over. Its controls keep
+     what they were set to while they are put away.
+     *Mine:* **SAMPLE's SOUND grid (its panel eight) is only for the layer**: as the model they
+     are on the panel, and a view of rings and nothing to turn is a page switch for nothing.
+     *Mine:* **GATE opens in the middle** (as played, RELEASE the engine's own), where it opened at
+     60 on the old instruments: with its upper half now lengthening RELEASE, 60 would have put
+     every SYNTH patch's tail at two and a half times what it was set to.
+     *Mine:* **RUMBLE's SAMPLE plays the file at its own pitch** (TUNE moves it), as a drum lane's
+     does; its SYNTH and KICK FORGE take the kick's note.
+     *Mine:* **snapshots from before** (lists 6 and under) open each lane as a new lane opens, on
+     its own model and patch, keeping what they name that the lane still has by the same name
+     and meaning (the engines' own, LAYER, SPLIT, the echoes, the key, the pocket, DENSITY,
+     FILTER, LEVEL, DECAY); a synth lane's old RES is not read, RUMBLE's PUMP is its POCKET DEPTH,
+     the panel's first eight places of then are not read, and MOTION on a lane moves nothing.
+     Lists 7. The built-in snapshots and the four macro knobs push the new engines' knobs by how
+     far from where each lane opens (ENERGY: the synths' CUTOFF and ENV AMT, the kick's IMPACT;
+     ACID: LEAD's RES, ENV AMT, DRIVE, ACCENT, ENV DECAY and BASS's; DIST: every lane's DRIVE;
+     WARP: SHAPE and TUNE, RUMBLE's GROUND). A session's own snapshots are not touched.
+     *Mine:* **the checks** that were of the old instruments are gone with them (WAVETABLE's,
+     GRANULAR's, the lists' growth, the 303's MONO, RELEASE per model); the rest are on the three
+     engines. Bounds moved, each said where it is: the kick is KICK FORGE, a tight one (55 ms),
+     so a pocket made on all of its length is checked where a quarter was, the reverb's DUCK
+     with the kick's DECAY up, the drum bus's DRIVE peak +1.9 dB (under 2.5, was 1.5), the
+     pockets' AUTO placing the closed hat at 2.8 kHz (over 2, was 4: SYNTH's HAT 909 is darker
+     than the hat it was), PAD giving 5.0 dB to POCKETS (under 6, was 5), the kick's profile
+     brighter (0.58, under 0.7) and not tonal, the kick on the E16's map darker than the hats
+     where it was at the dark edge. The MIDI timing checks time a KICK FORGE hit with no
+     VARIATION, begun at the top of its wave (the hats' noise is another noise every hit, and
+     where a soft start crosses a line is not where the hit is): the hit itself is placed to the
+     sample, checked at two places in a block. `--forgeprint` and `--sampleprint` are the same to
+     the bit as the hundred and second build's; `--synthprint` is for SYNTH and is made again:
+     its two KICK FORGE settings off the kick are 1.2 and 1.6 dB louder, VEL SENS now acting on
+     the Forge as on every engine and the old lanes' own level for it gone.
+     INFO's word for when a control is heard is held to what is heard (`--test`'s walk of all 1,432):
+     SYNTH's GLIDE and SYNC and its MONO say FROM THE NEXT NOTE, and LAYER MODEL on a drum lane
+     from the next hit (each said AT ONCE and was not).
+     **Also mended on the way:** GATE's upper half did nothing on SAMPLE and SYNTH (it lengthens
+     RELEASE now, as it did on the old synths), and GATE turned on a held note did nothing on
+     them either (it follows now).
+     **Open:** KICK FORGE's loudness across CHARACTER on a kick every beat spreads 1.83 dB where
+     the old kick's spread 1.5 (the hit alone is the same to the bit: something about hits that
+     overlap is not as it was). Checked under 2; I will find it.
+
 ## Not verified
+
+- **The hundred and third build (785) has not been heard.** Every lane's sound as it opens is a
+  patch or the Forge measured here; whether HAT 909, OPEN HAT, CLAP and MEMBRANE stand in for the
+  hats and PERC you had, and whether RUMBLE on the Forge's ground is a rumble you want, are
+  yours to say. VOICE is silent until a file is on it.
 
 - **The hundred and second build (784): SYNTH, its wavetables from a recording and the Forge
   on every lane are measured, not heard.** Worth your ears first: a vocal on TABLE SAMPLE and

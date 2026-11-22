@@ -361,7 +361,7 @@ public:
     // (a stack's snapshot has one key more than the parts of the rig: N, whether it brings its notes. kAllKeys: all of them as kept)
     // Which lists of models, and which knobs of theirs, a snapshot is written on ("lists" in it; absent: 1, every build
     // before the seventy-ninth). Session.cpp, fromListsBefore.
-    static constexpr int kListsNow = 6;       // (3: the PERC lane has SAMPLE after its objects. 4: WAVETABLE has POSITION and TWIST in the first two places of BASS, LEAD, CHORD and PAD. 5: TABLE SAMPLE's LEVELS has two choices where FROM SAMPLE had three. 6: SYNTH is last on every lane's list of models, and KICK FORGE after it on every lane but KICK, the hundred and second build)
+    static constexpr int kListsNow = 7;       // (3: the PERC lane has SAMPLE after its objects. 4: WAVETABLE has POSITION and TWIST in the first two places of BASS, LEAD, CHORD and PAD. 5: TABLE SAMPLE's LEVELS has two choices where FROM SAMPLE had three. 6: SYNTH is last on every lane's list of models, and KICK FORGE after it on every lane but KICK, the hundred and second build. 7: every lane is one instrument, SAMPLE, SYNTH and KICK FORGE its only models, the hundred and third)
     static constexpr juce::uint32 kNotesKey = MacroKnob::kNotes, kBlendKey = MacroKnob::kBlend, kAllKeys = kAllLanes | kNotesKey | kBlendKey;
     static Scope scopeOf (juce::uint32 lanes);
     static int mixCellOf (int type);                        // an effect's MIX among its eight knobs, or -1 (effects(): Rig.h)

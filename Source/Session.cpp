@@ -2126,8 +2126,7 @@ Session::SampleSays Session::sampleSays (int lane) const
     if (lane < 0 || lane >= kLanes || engine.laneFile (lane).isEmpty()) return out;
     // (the sample as the lane's module holds it: read once, and shared)
     // (as much of it as the lane's module reads: the drums a minute, the others five)
-    const juce::String module (lanes()[(size_t) lane].module);
-    const double most = module == "KICK" || module == "PERC" || module == "RUMBLE" ? 60.0 : 300.0;
+    const double most = 300.0;     // (every lane reads five minutes of it: Lane.cpp)
     if (const auto smp = sf::loadSampleFile (juce::File (engine.laneFile (lane)), engine.sampleRate(), most))
     {
         out.has = true;
@@ -2216,23 +2215,15 @@ juce::String Session::samplePlain (int lane)
     {
         if (const auto* sp = setupOf (ps, id)) if (const int at = sp->choices.indexOf (name); at >= 0) engine.setSetup (t, id, (float) at / (float) std::max (1, sp->choices.size() - 1));
     };
-    // What shapes a sample, each where it does nothing (measured, lane by lane, against the file: --samplecheck).
-    const bool synth = has ("cutoff");              // BASS, LEAD, CHORD, PAD: a filter, an envelope, a layer; the note is the pitch
-    put ("tune", 0.5f);
-    put ("drive", 0.0f); put ("filter", 0.5f); put ("density", 0.0f);
+    // What shapes a sample, each where it does nothing (measured, lane by lane, against the file: --samplecheck). (The
+    // hundred and third build: every lane is one instrument, and this is all of the lane's that stands between the file
+    // and what is heard.)
+    const bool synth = lanes()[(size_t) lane].pitched;        // (a lane that plays notes: the note is the pitch)
+    put ("filter", 0.5f); put ("density", 0.0f);
     put ("layer", 0.0f); put ("split", 0.5f);       // (the crossover takes the model's lows out even with LAYER at nought)
-    put ("gate", 1.0f); put ("pocket_depth", 0.0f);
-    if (synth)
-    {
-        put ("cutoff", 1.0f); put ("res", 0.0f); put ("env_amt", 0.0f); put ("glide", 0.0f); put ("attack", 0.0f);
-        put ("acid", 0.0f); put ("warp", 0.0f); put ("drift", 0.0f);
-        choose ("chord", "NONE");
-        choose ("smp_play", "THROUGH");             // (a note plays it to its end, however short the step)
-        // (KNOBS on: every knob of the lane acts on the sample, and each is put where it does nothing)
-        put ("smp_env", 1.0f); put ("decay", 1.0f); put ("detune", 0.0f); put ("space", 0.0f); put ("color", 0.5f);
-    }
-    else { put ("decay", 1.0f); put ("click", 0.0f); put ("key_track", 0.0f); put ("echo", 0.0f); put ("tone", 0.5f); put ("signal", 1.0f); }      // (the drums: DECAY is how much of it plays; TONE tilts a sample about its centre)
-    choose ("slice_mode", "WHOLE");                 // (VOICE: any note is the whole phrase, at its own pitch)
+    put ("pocket_depth", 0.0f);
+    if (synth) put ("gate", 0.5f);                  // (as played: PLAY THROUGH plays it to its end, and its RELEASE as SAMPLE has it)
+    else put ("decay", 1.0f);                       // (a drum: DECAY is how much of it plays)
     // (the hundredth build) SAMPLE, the engine every lane has: each of its own where it leaves the file as it is
     for (const char* id : { "sp_pos", "sp_spread", "sp_attack", "sp_drive", "sp_start", "sp_fin", "sp_fout", "sp_norm", "sp_rev", "sp_loop", "sp_vels" }) put (id, 0.0f);
     for (const char* id : { "sp_size", "sp_end" }) put (id, 1.0f);
@@ -4872,158 +4863,49 @@ std::vector<std::pair<juce::int64, juce::uint32>> lit;       // (and nothing of 
     return line;
 }
 
-// A snapshot written before the seventy-ninth build, made to mean on this one what it meant on that. Two things moved:
-//   - the lists of models grew (GRANULAR on BASS and on LEAD and CHORD, the new kick on KICK), and a model is kept as
-//     its place on its list, of 0 to 1: its place is found on the list of before and put on the list of now. (The lists
-//     had grown once already, BASS from 8 and LEAD from 10, told then by where a value fell: that is done first.)
-//   - GRANULAR has sound knobs of its own (Rig.h, ModelKnobs). On PAD, where it already was, the places held DETUNE,
-//     COLOR, RES, POCKET DEPTH, DECAY and ATTACK: those go into the lane's CONFIG as they stood, and the places become
-//     POSITION at the start of the source, SCAN at the pace the grains drifted at, SIZE from COLOR, four GRAINS at once,
-//     SPRAY and PITCH from DETUNE: what GRANULAR did with those two knobs, so it sounds as it did.
+// A lane of a snapshot from before the hundred and third build (lists 7), when each lane was its own instrument with its
+// own models. Every lane is one instrument now, playing SAMPLE, SYNTH or KICK FORGE (Wiley, Nov 21: "I don't have anything
+// using the olde engines I can't recreate easily, so let's make the leap now"): such a lane opens on its own model and
+// layer, as a new lane does. What it names that the lane still has, by the same name and meaning, stays: the engines' own
+// (sp_, sy_, fg_), LAYER and SPLIT, the echoes, the key, the pocket. A synth lane's RES was its own filter's and RUMBLE's
+// PUMP was its pocket: RES goes, PUMP is POCKET DEPTH. The panel's first eight places were the old instrument's and are
+// not read (Snapshot's values are by id); its MOTION moves nothing (Engine::motionRead).
 static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int, kLanes>& taken)
 {
-    static std::array<int, kLanes> counts {};       // (how many models each lane has now: the same for as long as this runs)
-    static std::array<int, kLanes> wtAt {};         // (and where WAVETABLE is among them; -1: it has none)
-    if (counts[0] == 0)
-        for (int l = 0; l < kLanes; ++l)
-        {
-            counts[(size_t) l] = 1; wtAt[(size_t) l] = -1;
-            for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model") { counts[(size_t) l] = std::max (1, sp.choices.size()); wtAt[(size_t) l] = sp.choices.indexOf ("WAVETABLE"); }
-        }
+    if (! s.hasSetup) return;
     for (int l = 0; l < kLanes; ++l)
     {
-        const juce::String module (lanes()[(size_t) l].module);
         if (taken[(size_t) l] >= Session::kListsNow) continue;         // (this lane is of now)
-        // (lists 2, the seventy-ninth build: BASS, LEAD, KICK and PAD grew. Lists 3: the PERC lane's STRIKE has SAMPLE
-        // after its six objects.)
-        const bool first = taken[(size_t) l] < 2;
-        // (STRIKE's list grew at lists 3: a lane of lists 3, which lists 4 now lets in here, is already on the longer one)
-        const int before = module == "STRIKE" ? (taken[(size_t) l] < 3 ? 6 : 0) : ! first ? 0 : module == "BASS" ? 10 : module == "LEAD" ? 12 : module == "KICK" ? 7 : module == "PAD" ? 9 : 0, now = counts[(size_t) l];
-        // (what this build added, where it changes nothing: the lane is not left with what the snapshot before it set)
-        if (s.hasSetup && first)
-            for (auto& d : e.newerOff ({ 0, l, 0 }))
-            {
-                bool named = false;
-                for (auto& kv : s.setup[(size_t) l]) named = named || kv.first == d.first;
-                if (! named) s.setup[(size_t) l].push_back (d);
-            }
-        if (before != 0)
+        const juce::String module (lanes()[(size_t) l].module);
+        auto& st = s.setup[(size_t) l];
+        for (auto it = st.begin(); it != st.end();)
         {
-        int model = -1;
-        for (auto& kv : s.setup[(size_t) l])
-        {
-            if (kv.first != "model" && kv.first != "layer_model") continue;
-            float v = kv.second;
-            if (module == "BASS" || module == "LEAD")
-            {
-                // (the growth before this one, as Engine's grownPlace told it while the lists were that long)
-                const float was = v * (float) (before - 2);
-                const int k = (int) std::lround (was);
-                if (std::abs (was - (float) k) <= 0.02f && k > 0 && k < before - 2) v = (float) k / (float) (before - 1);
-            }
-            const int at = juce::jlimit (0, before - 1, (int) std::lround (v * (float) (before - 1)));
-            kv.second = (float) at / (float) std::max (1, now - 1);
-            if (kv.first == "model") model = at;
+            if (it->first == "res" && (module == "BASS" || module == "LEAD" || module == "PAD")) { it = st.erase (it); continue; }
+            if (it->first == "pump" && module == "RUMBLE") it->first = "pocket_depth";
+            ++it;
         }
-        if (module == "PAD" && model == 3 && s.hasSetup)
+        auto put = [&] (const juce::String& id, float v) { if (v < 0.0f) return; for (auto& kv : st) if (kv.first == id) { kv.second = v; return; } st.push_back ({ id, v }); };
+        for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model" || sp.id == "layer_model") put (sp.id, sp.def);
+        // (and its model as the lane opens on it: a hat's SYNTH on HAT 909, RUMBLE's KICK FORGE on its ground. Not the
+        // panel's last four, which are the snapshot's.)
+        const auto& d = lanes()[(size_t) l];
+        for (auto& f : d.fixed)
         {
-            auto at = [&] (int k) -> float& { return s.values[(size_t) cx::lane (l, k)]; };
-            auto put = [&] (const char* id, float v)
-            {
-                if (v < 0.0f) return;
-                for (auto& kv : s.setup[(size_t) l]) if (kv.first == id) { kv.second = v; return; }
-                s.setup[(size_t) l].push_back ({ id, v });
-            };
-            const float det = at (0) >= 0.0f ? at (0) : 0.5f, color = at (1) >= 0.0f ? at (1) : 0.5f;
-            put ("detune", at (0)); put ("color", at (1)); put ("res", at (2)); put ("pocket_depth", at (3)); put ("decay", at (4)); put ("attack", at (5));
-            at (0) = 0.0f;                                                              // POSITION
-            at (1) = 0.5f + 0.5f * 0.1581139f;                                          // SCAN: a twentieth of the source's pace
-            at (2) = std::log ((30.0f + 250.0f * color) / 5.0f) / std::log (100.0f);    // SIZE: 30 to 280 ms, as COLOR had it
-            at (3) = 0.75f;                                                             // GRAINS: four at once
-            at (4) = std::sqrt (0.3f * det);                                            // SPRAY: three tenths of the source at DETUNE's top
-            at (5) = 0.5f * det;                                                        // PITCH: a hundredth either way at DETUNE's top
-        }
-        }
-        // (lists 5, the eighty-seventh build: TABLE SAMPLE has sixty-four frames and no other number, and LEVELS says
-        // whether they keep the level the recording had: EVEN, AS RECORDED. Before, FROM SAMPLE had three: 8 FRAMES,
-        // 64 FRAMES, 64 WITH LEVEL. The first two are EVEN.)
-        // (and where such a lane was on TABLE SAMPLE with the eight frames it then had, they were along the whole file and
-        // START and END did nothing for them: the sixty-four are read between START and END, so those are put at the
-        // file's ends and POSITION is the place in the file it was. Not where the lane's LAYER is up, which may be playing
-        // the part between them.)
-        // (lists 6, the hundred and second build: SYNTH is last on every lane's list of models, and on KICK's and the synths'
-        // lists of LAYER MODEL; and KICK FORGE after it on every lane but KICK, which had it. A lane whose list the growths
-        // above did not already put on the list of now has its model and its layer's at their places on the list that
-        // was: each to the same place on this one.)
-        if (before == 0 && taken[(size_t) l] < 6)
-        {
-            const int was = now - (module == "KICK" ? 1 : 2);
-            if (was > 1)
-                for (auto& kv : s.setup[(size_t) l])
-                    if (kv.first == "model" || kv.first == "layer_model")
-                        kv.second = (float) juce::jlimit (0, was - 1, (int) std::lround (kv.second * (float) (was - 1))) / (float) (now - 1);
-        }
-        if (s.hasSetup && wtAt[(size_t) l] >= 0 && taken[(size_t) l] < 5)     // (lists 5's own: not a lane of lists 5)
-        {
-            float mv = -1.0f, table = 0.0f, from = 0.0f, layer = 0.0f;
-            for (auto& kv : s.setup[(size_t) l]) { if (kv.first == "model") mv = kv.second; else if (kv.first == "table") table = kv.second; else if (kv.first == "wt_from") from = kv.second; else if (kv.first == "layer") layer = kv.second; }
-            // (on BASS a snapshot from before lists 4 has LAYER in the lane's second place still: it is moved to CONFIG below)
-            if (taken[(size_t) l] < 4 && juce::String (lanes()[(size_t) l].slug) == "bass") layer = std::max (0.0f, s.values[(size_t) cx::lane (l, 1)]);
-            if (mv >= 0.0f && (int) std::lround (mv * (float) std::max (1, counts[(size_t) l] - 1)) == wtAt[(size_t) l] && table > 0.96f && from < 0.25f && layer < 0.001f)
-            {
-                auto put = [&] (const char* id, float v) { for (auto& kv : s.setup[(size_t) l]) if (kv.first == id) { kv.second = v; return; } s.setup[(size_t) l].push_back ({ id, v }); };
-                put ("smp_start", 0.0f); put ("smp_end", 1.0f);
-            }
-        }
-        if (taken[(size_t) l] == 4)
-            for (auto& kv : s.setup[(size_t) l]) if (kv.first == "wt_from") kv.second = kv.second < 0.75f ? 0.0f : 1.0f;
-        // (lists 4, the eighty-fifth build: WAVETABLE has two knobs of its own on BASS, LEAD, CHORD and PAD, POSITION
-        // and TWIST, in the lane's first two places. A snapshot from before whose lane is on WAVETABLE: what those two
-        // places held goes to CONFIG under its own name, POSITION is where COLOR was, and TWIST is at nought. On LEAD
-        // the fourth place was COLOR and is POS ENV, in the middle. So it sounds as it did.)
-        if (taken[(size_t) l] < 4 && s.hasSetup && (module == "BASS" || module == "LEAD" || module == "PAD") && wtAt[(size_t) l] >= 0)
-        {
-            float mv = -1.0f;
-            for (auto& kv : s.setup[(size_t) l]) if (kv.first == "model") mv = kv.second;
-            if (mv >= 0.0f && (int) std::lround (mv * (float) std::max (1, counts[(size_t) l] - 1)) == wtAt[(size_t) l])
-            {
-                auto at = [&] (int k) -> float& { return s.values[(size_t) cx::lane (l, k)]; };
-                auto put = [&] (const char* id, float v)
-                {
-                    if (v < 0.0f) return;
-                    for (auto& kv : s.setup[(size_t) l]) if (kv.first == id) { kv.second = v; return; }
-                    s.setup[(size_t) l].push_back ({ id, v });
-                };
-                auto take = [&] (const char* id)
-                {
-                    auto& st = s.setup[(size_t) l];
-                    float v = 0.5f;
-                    for (auto it = st.begin(); it != st.end(); ++it) if (it->first == id) { v = it->second; st.erase (it); break; }
-                    return v;
-                };
-                const juce::String slug (lanes()[(size_t) l].slug);
-                if (slug == "bass")       { put ("glide", at (0)); put ("layer", at (1)); at (0) = take ("color"); at (1) = 0.0f; }
-                else if (slug == "lead")  { put ("tune", at (0)); put ("accent", at (1)); at (0) = at (3) >= 0.0f ? at (3) : 0.5f; at (1) = 0.0f; at (3) = 0.5f; }
-                else if (slug == "chord") { put ("detune", at (0)); put ("attack", at (1)); at (0) = take ("color"); at (1) = 0.0f; }
-                else if (slug == "pad")   { put ("detune", at (0)); at (0) = at (1) >= 0.0f ? at (1) : 0.5f; at (1) = 0.0f; }
-            }
+            bool panel = false;
+            for (int k = kSoundKnobs; k < kLaneKnobs; ++k) panel = panel || juce::String (f.param) == d.knobs[k].param;
+            if (! panel) put (f.param, e.plainPlace ({ 0, l, 0 }, f.param, f.value));
         }
     }
 }
 
 // What has come since a snapshot was taken, where it names none of it: each where it changes nothing (Engine::laterOff).
-// WAVETABLE's WANDER is as it was before the eighty-fifth build (15 %) where the state's lane is on WAVETABLE, which is
-// what it then sounded like; on any other lane it is as it now opens (none), so that choosing WAVETABLE there afterwards
-// is the wavetable of now.
 static void fillLater (const Engine& engine, Engine::Target t, Engine::SetupState& st)
 {
-    const bool onTable = t.kind == 0 && engine.setupPlays (t, st, "WAVETABLE");
     for (auto d : engine.laterOff (t))
     {
         bool named = false;
         for (auto& kv : st) named = named || kv.first == d.first;
         if (named) continue;
-        if (! onTable && d.first == "wt_wander") d.second = 0.0f;
         st.push_back (d);
     }
 }
@@ -5728,7 +5610,11 @@ void Session::makeFactory()
     init.name = "INIT";
     init.id = 1000;
     library.push_back (init);
-    struct Mod { const char* id; float v; };
+    // (SF-000, the hundred and third build) A lane's first eight places are its model's own knobs, kept by the place's id
+    // (Rig.h: SYNTH's, sy_cutoff for the third, which is IMPACT on KICK FORGE and SIZE on SAMPLE). Those are pushed by how
+    // far, `by`, from where the lane opens on its model; what means what it always did (DENSITY, FILTER, the sends, the
+    // returns) is put where it was.
+    struct Mod { const char* id; float v; bool by = false; };
     auto derive = [&] (juce::int64 id, const char* name, std::initializer_list<Mod> mods)
     {
         Snapshot s = init;
@@ -5737,24 +5623,24 @@ void Session::makeFactory()
         {
             const int i = engine.find (m.id);
             jassert (i >= 0);
-            if (i >= 0) s.values[(size_t) i] = m.v;
+            if (i >= 0) s.values[(size_t) i] = m.by ? juce::jlimit (0.0f, 1.0f, init.values[(size_t) i] + m.v) : m.v;
         }
         library.push_back (s);
     };
     derive (1001, "ENERGY UP", { { "closed_hat.density", .45f }, { "closed_hat.decay", .45f }, { "closed_hat.level", .64f }, { "open_hat.density", .3f },
-                                 { "perc.density", .4f }, { "bass.cutoff", .5f }, { "bass.env_amt", .6f }, { "lead.cutoff", .55f }, { "lead.density", .3f },
-                                 { "chord.cutoff", .6f }, { "kick.punch", .6f }, { "clap.send_b", .5f }, { "rumble.level", .68f } });
+                                 { "perc.density", .4f }, { "bass.sy_cutoff", .12f, true }, { "bass.sy_envamt", .15f, true }, { "lead.sy_cutoff", .15f, true }, { "lead.density", .3f },
+                                 { "chord.sy_cutoff", .15f, true }, { "kick.sy_cutoff", .15f, true }, { "clap.send_b", .5f }, { "rumble.level", .68f } });
     derive (1002, "BUILD TOP", { { "closed_hat.filter", .7f }, { "open_hat.filter", .7f }, { "clap.filter", .66f }, { "perc.filter", .7f }, { "bass.filter", .74f },
                                  { "rumble.filter", .78f }, { "lead.filter", .68f }, { "chord.filter", .68f }, { "pad.filter", .68f }, { "voice.filter", .66f },
                                  { "kick.filter", .62f }, { "lead.send_a", .6f }, { "chord.send_b", .6f }, { "clap.send_b", .6f }, { "closed_hat.density", .6f },
                                  { "ret.space_decay", .62f }, { "ret.dub_feedback", .68f } });
-    derive (1003, "ACID OPEN", { { "lead.res", .92f }, { "lead.env_amt", .85f }, { "lead.cutoff", .55f }, { "lead.drive", .45f }, { "lead.accent", .9f },
-                                 { "lead.decay", .65f }, { "bass.res", .6f }, { "bass.env_amt", .65f } });
-    derive (1004, "DIST HOT",  { { "kick.drive", .6f }, { "bass.drive", .55f }, { "lead.drive", .7f }, { "perc.power", .8f }, { "closed_hat.drive", .5f },
-                                 { "open_hat.drive", .5f }, { "clap.drive", .5f }, { "rumble.grit", .7f }, { "voice.drive", .6f }, { "ret.dub_drive", .7f } });
-    derive (1005, "WARP FAR",  { { "pad.detune", 1.0f }, { "pad.color", .9f }, { "chord.detune", .9f }, { "perc.size", .12f }, { "perc.tension", .9f },
-                                 { "perc.material", .85f }, { "lead.color", .9f }, { "kick.pitch_time", .95f }, { "kick.tune", .3f }, { "closed_hat.tune", .2f },
-                                 { "open_hat.tune", .75f }, { "voice.tune", .25f }, { "rumble.size", 1.0f }, { "bass.glide", .7f } });
+    derive (1003, "ACID OPEN", { { "lead.sy_res", .35f, true }, { "lead.sy_envamt", .3f, true }, { "lead.sy_drive", .3f, true }, { "lead.sy_accent", .3f, true },
+                                 { "lead.sy_decay", .15f, true }, { "bass.sy_res", .3f, true }, { "bass.sy_envamt", .25f, true } });
+    derive (1004, "DIST HOT",  { { "kick.sy_drive", .45f, true }, { "bass.sy_drive", .4f, true }, { "lead.sy_drive", .5f, true }, { "perc.sy_drive", .5f, true }, { "closed_hat.sy_drive", .4f, true },
+                                 { "open_hat.sy_drive", .4f, true }, { "clap.sy_drive", .4f, true }, { "rumble.sy_drive", .5f, true }, { "voice.sy_drive", .5f, true }, { "ret.dub_drive", .7f } });
+    derive (1005, "WARP FAR",  { { "pad.sy_shape", .35f, true }, { "chord.sy_shape", .3f, true }, { "perc.sy_shape", .35f, true }, { "lead.sy_shape", .35f, true }, { "bass.sy_shape", .2f, true },
+                                 { "kick.sy_tune", -.2f, true }, { "closed_hat.sy_tune", -.3f, true }, { "open_hat.sy_tune", .25f, true }, { "voice.sy_tune", -.25f, true },
+                                 { "rumble.sy_envamt", .3f, true } });
     // The four macro knobs: each tied to the knobs one of those snapshots moves, by how far it moves them from the clean
     // slate. The first stack knob (5): the five of them in a row, to sweep through or to choose from with CUE lit.
     static const char* const names[] = { "ENERGY", "BUILD", "ACID", "DIST" };

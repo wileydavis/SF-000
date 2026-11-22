@@ -99,6 +99,10 @@ public:
     void render (const Ctx& c, float* L, float* R, int n, float layerGain = 1.0f);
     bool sounding() const { return active > 0; }
     bool holds() const { return holdsNow; }
+    // (SF-000, the hundred and third build) GATE turned as notes sound: as SynthEngine's
+    void gateNow (int hold, const int* down, int numDown);
+    void releaseScale (float m) { relScale = m; }       // (GATE: its lower half shortens RELEASE, its upper half lengthens it, up to eight times: Instrument.h, gateShape)
+    bool keySounding (int key, int part) const;
     int indexOf (const char* id) const;
 
     // ---- the display (message thread): 544 by 156
@@ -129,6 +133,7 @@ public:
     } ids;
 
 private:
+    float relScale = 1.0f;
     struct Voice
     {
         bool on = false, releasing = false, choked = false, looping = false, held = true;
@@ -145,6 +150,8 @@ private:
         double fed = 0.0;           // STRETCH: the next of the file's samples it is given
         int holdLeft = -1;          // samples until it is let go (-1: until its key is)
         int age = 0;
+        int lived = 0;              // (its samples since it began)
+        bool gated = false;         // (its length is GATE's, or its key's: not PLAY THROUGH's, not a drum's DECAY)
         double grainClock = 0.0;
         float stopGain = 1.0f;      // its end reached: down over 3 ms
         double lastToEnd = 1.0e30;  // REPITCH: how far it was from its end a sample ago

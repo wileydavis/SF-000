@@ -26,7 +26,10 @@ public:
     void reset();
     // Each block: begin, the notes (each at its sample in the block), render.
     // decayKnob: the lane's DECAY or GATE; keyShift: KEY FOLLOW's semitones (a lane that plays notes).
-    void begin (const Ctx& c, float decayKnob, const SampleData* smp, int keyShift = 0);
+    void begin (const Ctx& c, float decayKnob, const SampleData* smp, int keyShift = 0, int keyRoot = -1);
+    // (the hundred and third build) what a hit struck now at this pitch would be, for the kick's bus (the pockets and RUMBLE
+    // follow it): the pitch it falls from and to, how fast, how long
+    void shapeOf (float pitch, int gen, float& f0, float& f1, float& tau, float& decay) const;
     // pitch: the note (MIDI); part: 0 MODEL (it rings the ground), 1 LAYER.
     void noteOn (int offset, float pitch, float vel, float gain, int gen, int part);
     void render (float* L, float* R, int n, float layerGain = 1.0f);
@@ -42,6 +45,7 @@ private:
     };
     struct Pending { int offset; float pitch, vel, gain; int gen, part; };
     void start (const Pending& p, int at);
+    float hzOf (float pitch) const;
     float tick (Voice& v, float& side);
 
     static constexpr int kVoices = 8;
@@ -51,7 +55,7 @@ private:
     forge::GroundUnit ground;
     forge::Knobs k;
     float groundIn = 0.0f, tune = 0.0f, bend = 0.0f, cal = 1.0f;
-    int keyShift = 0, sideLive = 0;
+    int keyShift = 0, keyRoot = -1, sideLive = 0;
     bool pitched = true, solo = false;
     const SampleData* smp = nullptr;
     SampleRegion whole;

@@ -327,6 +327,31 @@ void SampleEngine::noteOff (int offset, int key, int gen)
     pending[(size_t) numPending++] = { offset, key, 0.0f, 0.0f, 0.0f, gen, 0, -1, false };
 }
 
+void SampleEngine::gateNow (int hold, const int* down, int numDown)
+{
+    for (auto& v : voices)
+    {
+        if (! v.on || v.releasing || v.choked || ! v.gated) continue;
+        if (hold >= 0)
+        {
+            const int left = hold - v.lived;
+            if (left <= 0) release (v); else { v.holdLeft = left; v.held = false; }
+        }
+        else
+        {
+            bool isDown = false;
+            for (int k = 0; k < numDown; ++k) isDown = isDown || down[k] == v.key;
+            if (isDown) { v.holdLeft = -1; v.held = true; }
+        }
+    }
+}
+
+bool SampleEngine::keySounding (int key, int part) const
+{
+    for (auto& v : voices) if (v.on && ! v.releasing && ! v.choked && v.key == key && v.part == part) return true;
+    return false;
+}
+
 void SampleEngine::release (Voice& v)
 {
     if (v.releasing) return;
@@ -416,8 +441,10 @@ void SampleEngine::start (const Pending& p)
     if (v.from > v.a + 0.5 && v.from < v.b - 0.5) v.fadeIn = std::max (v.fadeIn, ms);     // (a start inside the part is never a click)
     // how long it is let sound
     const double playSec = std::max (0.01, (len - off) / s->sr);
+    v.lived = 0; v.gated = false;
     if (b.play == 1) v.holdLeft = -1, v.held = false;          // THROUGH: to its end, whatever its key does
-    else if (p.hold >= 0) v.holdLeft = p.hold;
+    else if (p.hold >= 0) v.holdLeft = p.hold, v.gated = ends == Ends::keys;
+    else if (ends == Ends::keys) v.gated = true;
     else if (ends == Ends::hits)
     {
         const float g = sampleGateSeconds (decayKnob, (float) playSec, p.gen);
@@ -494,10 +521,11 @@ void SampleEngine::start (const Pending& p)
 
 float SampleEngine::envTick (Voice& v)
 {
+    ++v.lived;
     if (v.holdLeft > 0 && --v.holdLeft == 0) release (v);
     if (v.releasing)
     {
-        const float rs = std::max (0.001f, blk.release * 0.001f) * (float) sr;
+        const float rs = std::max (0.001f, blk.release * relScale * 0.001f) * (float) sr;
         v.env *= std::exp (-6.9f / rs);
         if (v.env < 1.0e-4f) v.on = false;
     }

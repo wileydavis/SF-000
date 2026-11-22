@@ -82,7 +82,7 @@ bool ForgeEngine::sounding() const
     return false;
 }
 
-void ForgeEngine::begin (const Ctx& c, float decayKnob, const SampleData* s, int shift)
+void ForgeEngine::begin (const Ctx& c, float decayKnob, const SampleData* s, int shift, int root)
 {
     auto v = [&c] (int i, float d) { return i >= 0 ? c.v (i) : d; };
     k.ch = v (ids.ch, 0.3f); k.tone = v (ids.tone, 0.5f); k.punch = v (ids.punch, 0.5f); k.ptime = v (ids.ptime, 0.5f); k.decay = clamp01 (decayKnob);
@@ -91,7 +91,7 @@ void ForgeEngine::begin (const Ctx& c, float decayKnob, const SampleData* s, int
     k.hold = v (ids.hold, 0.0f); k.hdec = v (ids.hdec, 0.5f); k.phase = v (ids.phase, 0.0f); k.flip = v (ids.flip, 0.0f) > 0.5f;
     k.ilen = v (ids.ilen, 0.5f); k.ipitch = v (ids.ipitch, 0.0f); k.icut = v (ids.icut, 0.5f); k.iwidth = v (ids.iwidth, 0.5f); k.vary = v (ids.vary, 0.5f);
     k.solo = v (ids.solo, 0.0f); k.gdark = v (ids.gdark, 0.5f); k.gduck = v (ids.gduck, 0.5f); k.grec = v (ids.grec, 0.5f); k.gwidth = v (ids.gwidth, 0.0f);
-    tune = v (ids.tune, 0.0f); bend = c.bend; keyShift = shift; solo = k.solo > 0.5f;
+    tune = v (ids.tune, 0.0f); bend = c.bend; keyShift = shift; keyRoot = root; solo = k.solo > 0.5f;
     smp = s;
     if (s != nullptr) { whole = SampleRegion(); whole.start = 0.0; whole.end = (double) s->length(); }
     // a ground that is ringing, and every hit that is sounding, follow the knobs as they stand (as on KICK)
@@ -121,11 +121,27 @@ void ForgeEngine::start (const Pending& p, int at)
     v = Voice();
     v.active = true; v.part = p.part; v.startedAt = at;
     v.vel = p.vel; v.mix = p.gain;
-    // the note it lands on: the note played (a lane that plays notes), else the kick's resting note, G1
-    const float st = tune + bend;
-    const float hz = pitched ? 440.0f * std::pow (2.0f, (p.pitch + (float) keyShift - 69.0f) / 12.0f) * semis (st) : 49.0f * semis (st);
-    v.f1 = juce::jlimit (16.0f, (float) (0.2 * osr), hz);
+    v.f1 = hzOf (p.pitch);
     forge::start (k, v, p.gen, smp, smp != nullptr ? &whole : nullptr, p.part == 0, rng, osr, ground);
+}
+
+// the note it lands on: the note played (a lane that plays notes), else the kick's resting note, G1; on a drum lane with KEY
+// FOLLOW, moved to the nearest note of the key (as the kick's always was)
+float ForgeEngine::hzOf (float pitch) const
+{
+    const float st = tune + bend;
+    float hz = pitched ? 440.0f * std::pow (2.0f, (pitch + (float) keyShift - 69.0f) / 12.0f) * semis (st) : 49.0f * semis (st);
+    if (! pitched && keyRoot >= 0) hz *= semis (keySnap (hz, keyRoot));
+    return juce::jlimit (16.0f, (float) (0.2 * osr), hz);
+}
+
+void ForgeEngine::shapeOf (float pitch, int gen, float& f0, float& f1, float& tau, float& decay) const
+{
+    const forge::ForgeShape f = forge::forgeAt (k.ch);
+    f1 = hzOf (pitch);
+    f0 = f1 * (1.0f + (f.ratio - 1.0f) * std::pow (2.0f, (k.punch - 0.5f) * 2.0f));
+    tau = f.tau * std::pow (2.0f, (k.ptime - 0.5f) * 3.0f);
+    decay = f.decay * std::pow (2.0f, (k.decay - 0.5f) * 4.0f) * std::pow (0.6f, (float) gen);
 }
 
 float ForgeEngine::tick (Voice& v, float& side)

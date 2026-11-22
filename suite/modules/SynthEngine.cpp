@@ -28,7 +28,7 @@ std::vector<ParamSpec> params()
     add (knob ("sy_fine_b", "FINE B", -50.0f, 50.0f, 0.0f, "ct"));
     add (pct ("sy_mix", "MIX", 0.0f));
     add (pct ("sy_fm", "FM", 0.0f));
-    add (toggle ("sy_sync", "SYNC"));
+    add (toggle ("sy_sync", "SYNC").next());        // (a struck sound that is ringing keeps how it began: the next note)
     add (pct ("sy_sub", "SUB", 0.0f));
     add (pct ("sy_noise", "NOISE", 0.0f));
     add (pct ("sy_color", "COLOR", 0.0f));
@@ -46,7 +46,7 @@ std::vector<ParamSpec> params()
     add (knob ("sy_burst_gap", "BURST GAP", 3.0f, 40.0f, 10.0f, "ms").next());
     // VOICE AND BODY
     add (knob ("sy_voices", "VOICES", 1.0f, (float) kVoices, 8.0f, "").next().noGlide());
-    add (pct ("sy_glide", "GLIDE", 0.0f));
+    add (pct ("sy_glide", "GLIDE", 0.0f).next());       // (how the next note comes in: a held note has nothing to glide to)
     add (pct ("sy_slide", "SLIDE", 0.3f));
     add (choice ("sy_chord", "CHORD", { "NONE", "MIN", "MAJ", "MIN7", "MAJ7", "MIN9", "SUS4", "5TH", "OCT" }, 0).next());
     add (knob ("sy_unison", "UNISON", 1.0f, (float) kUnison, 1.0f, "").noGlide());
@@ -437,6 +437,31 @@ void SynthEngine::noteOff (int offset, int key, int gen)
     pending[(size_t) numPending++] = { offset, key, 0.0f, 0.0f, 0.0f, gen, 0, -1, false };
 }
 
+void SynthEngine::gateNow (int hold, const int* down, int numDown)
+{
+    for (auto& v : voices)
+    {
+        if (! v.on || v.releasing || v.choked || ! v.gated) continue;
+        if (hold >= 0)
+        {
+            const int left = hold * v.os - v.lived;
+            if (left <= 0) release (v); else { v.holdLeft = left; v.held = false; }
+        }
+        else
+        {
+            bool isDown = false;
+            for (int k = 0; k < numDown; ++k) isDown = isDown || down[k] == v.key;
+            if (isDown) { v.holdLeft = -1; v.held = true; }
+        }
+    }
+}
+
+bool SynthEngine::keySounding (int key, int part) const
+{
+    for (auto& v : voices) if (v.on && ! v.releasing && ! v.choked && v.key == key && v.part == part) return true;
+    return false;
+}
+
 void SynthEngine::release (Voice& v)
 {
     if (v.releasing) return;
@@ -494,9 +519,10 @@ void SynthEngine::start (const Pending& p)
             cur->slideK = glideS > 0.0f ? 1.0f - std::exp (-1.0f / (glideS * (float) (sr * cur->os))) : 1.0f;
             cur->holdLeft = p.hold >= 0 ? p.hold * cur->os : -1;
             if (ends == Ends::hits && p.hold < 0) cur->holdLeft = (int) (std::min (8.0f, 0.02f * std::pow (100.0f, clamp01 (decayKnob))) * (float) (sr * cur->os));
-            cur->held = cur->holdLeft < 0;
+            cur->held = cur->holdLeft < 0; cur->gated = ends == Ends::keys;
             if (! cur->slid)
             {
+                cur->lived = 0;
                 cur->releasing = false; cur->ampStage = 0; cur->modStage = 0; cur->meg = 1.0f; cur->tRel = -1.0; cur->t = 0.0; cur->scanPos = 0.0f; cur->wStage = 0; cur->wT = 0.0f; cur->wFrom = cur->wNow = shapePlace (blk.shape);
                 cur->pitchEnvSt = blk.pitchEnv;
                 setBody (*cur);
@@ -536,7 +562,7 @@ void SynthEngine::start (const Pending& p)
     v.slideK = blk.glide > 0.001f ? 1.0f - std::exp (-1.0f / ((0.005f + 0.5f * blk.glide) * (float) (sr * v.os))) : 1.0f;
     v.holdLeft = p.hold >= 0 ? p.hold * v.os : -1;
     if (ends == Ends::hits && p.hold < 0) v.holdLeft = (int) (std::min (8.0f, 0.02f * std::pow (100.0f, clamp01 (decayKnob))) * (float) (sr * v.os));
-    v.held = v.holdLeft < 0;
+    v.held = v.holdLeft < 0; v.gated = ends == Ends::keys; v.lived = 0;
     v.meg = 1.0f;
     v.pitchEnvSt = blk.pitchEnv;
     v.wFrom = v.wNow = shapePlace (blk.shape);        // (the wave envelope starts where SHAPE is)
@@ -609,7 +635,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
     const float decK = std::exp (-3.0f / (decaySeconds (b.decay) * (float) vr));
     // (the 303's: an accented note's envelope falls in 0.2 s, whatever ENV DECAY says, as the 303's accent switches its decay out)
     const float megK = std::exp (-3.0f / ((v.accent ? 0.2f : decaySeconds (b.decay)) * (float) vr));
-    const float relK = std::exp (-6.9f / (std::max (0.001f, b.release * 0.001f) * (float) vr));
+    const float relK = std::exp (-6.9f / (std::max (0.001f, b.release * relScale * 0.001f) * (float) vr));
     const float mattK = 1.0f / std::max (1.0f, b.mattack * 0.001f * (float) vr);
     const float pitchK = std::exp (-3.0f / (std::max (0.001f, b.pitchTime * 0.001f) * (float) vr));
     const float sus = b.sustain;
@@ -658,6 +684,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
         else v.mod *= v.accent ? std::sqrt (decK) * decK : decK;
         v.meg *= megK;
         if (v.ampStage == 4 && (v.nModes == 0 || v.bodyEnergy < 1.0e-6f)) { v.on = false; return; }
+        ++v.lived;
         if (v.holdLeft > 0 && --v.holdLeft == 0) release (v);
         float g = v.amp;
         if (v.choked) { v.chokeGain -= 1.0f / (0.003f * (float) vr); if (v.chokeGain <= 0.0f) { v.on = false; return; } g *= v.chokeGain; }

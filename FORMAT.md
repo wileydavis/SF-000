@@ -138,7 +138,7 @@ this build does not have is written back as it was read.
   "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
   "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
-  "lists": 6,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
+  "lists": 7,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
 }
 ```
 
@@ -281,6 +281,19 @@ this build does not have is written back as it was read.
   KICK's and the synths' LAYER MODEL), and KICK FORGE after it on every lane but KICK. A lane's
   `model` and `layer_model` of `lists` 2 to 5 are places on the lists one shorter (KICK) or two
   shorter (the rest), and are read there.
+- **`lists` 7** (hundred and third build): every lane is one instrument and its `model` and
+  `layer_model` are places on one list of three, SAMPLE, SYNTH, KICK FORGE (0, 0.5, 1). A lane's
+  setup holds the lane's own (`layer`, `split`, `split_hz`, `res`, `echo_prob`, `echo_space`,
+  `echo_swing`, `vel_sens`, `key_follow`, `mono`, `pocket_depth`, `pocket_shape`, `pocket_post`
+  and RUMBLE's `source`) and the three engines' (`sp_`, `sy_`, `fg_`). In `values` a lane's first
+  eight are kept by the place's id, SYNTH's (`.sy_tune`, `.sy_shape`, `.sy_cutoff`, `.sy_res`,
+  `.sy_envamt`, `.sy_decay`, `.sy_accent`, `.sy_drive`), whichever model the lane is on: each is
+  that model's knob in that place. The last four are `.decay` (a drum) or `.gate`, `.density`,
+  `.filter`, `.level`. **A lane of `lists` under 7** is read as a new lane opens: its `model` and
+  `layer_model` its own, the patch it opens on, and what it names that the lane still has by
+  the same name and meaning kept (a synth lane's old `res`, its own filter's, is not; RUMBLE's
+  `pump` is its `pocket_depth`). Its first eight places of then are not read (their ids are
+  not a place's now), and its MOTION on the lane moves nothing.
 - **A lane's EQ** (eightieth build) is in its `setup`: `eq1_type`, `eq1_hz`, `eq1_gain`, `eq1_q` ...
   `eq8_q`, each a place from 0 to 1. `type`: OFF, BELL, LOW SHELF, HIGH SHELF, LOW CUT, HIGH
   CUT, NOTCH along 0 to 1 (sixths). `hz`: 20 Hz · 1000^v. `gain`: -18 dB + 36 v. `q`:

@@ -55,254 +55,178 @@ struct FxDef
 
 inline const std::vector<LaneDef>& lanes()
 {
+    // (SF-000, the hundred and third build) Every lane plays one instrument (suite/modules/Lane.cpp) whose MODEL and LAYER
+    // MODEL are each SAMPLE, SYNTH or KICK FORGE, and nothing else (Wiley, Nov 21: "every lane gets the three models and
+    // nothing else"). Each has its own eight knobs, the same on every lane; the last four places are the lane's: DECAY (a
+    // drum lane) or GATE (a lane that plays notes), DENSITY, FILTER, LEVEL. A lane that opens on SYNTH opens on its own
+    // patch (its values below, as PATCH chosen by hand puts them); the first eight places' ids are SYNTH's, which no model
+    // ever leaves standing (every model has its own).
     static const std::vector<LaneDef> L = {
         { "KICK", "kick", "KICK", false, 3,
-          // a round 909 with an 808's body underneath, brought in by LAYER (the 808 plays the lows)
-          { { "model", 0 }, { "layer_model", 1 }, { "split", 1.0f }, { "split_hz", 110 }, { "layer", 0.3f }, { "tune", -1 }, { "decay", 0.5f },
-            { "punch", 0.45f }, { "click", 0.35f }, { "drive", 0.12f }, { "level", -3 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "LAYER", "layer", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
-            { "PITCH TIME", "pitch_time", 'u' }, { "PUNCH", "punch", 'u' }, { "CLICK", "click", 'u' }, { "DRIVE", "drive", 'u' },
+          { { "model", 2 }, { "fg_tune", -1.0f }, { "fg_punch", 0.45f }, { "fg_click", 0.35f }, { "fg_drive", 0.12f }, { "level", -3 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // KICK FORGE's own sound knobs: one that takes it from mellow to distorted, its three parts, where its impact is
-          // from, its tone. TUNE and DRIVE stay where they are; LAYER, the echo's two, PITCH TIME, PUNCH and CLICK are in CONFIG.
-          { { "KICK FORGE", { { "TUNE", "tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
-                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
-            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
                          { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } } } },
+              {} },
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
 
         { "CLOSED HAT", "closed_hat", "PERC", false, 3,
-          { { "model", 0 }, { "decay", 0.28f }, { "tone", 0.55f }, { "spread", 0.3f }, { "level", -13 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "ECHO PROB", "echo_prob", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
-            { "SPREAD", "spread", 'u' }, { "ACCENT", "accent", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
+          { { "model", 1 }, { "sy_patch", 21.0f }, { "sy_noise", 1.0f }, { "sy_color", 0.85f }, { "sy_circuit", 2.0f }, { "sy_res", 0.15f }, { "sy_envamt", 0.0f }, { "sy_keytrack", 0.0f }, { "sy_attack", 0.5f }, { "sy_sustain", 0.0f }, { "sy_release", 30.0f }, { "sy_voices", 4.0f }, { "level", -13 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
               {}, 0xff5A1418u } } },
 
         { "OPEN HAT", "open_hat", "PERC", false, 3,
-          { { "model", 0 }, { "decay", 0.72f }, { "tone", 0.5f }, { "spread", 0.4f }, { "level", -15 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "ECHO PROB", "echo_prob", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
-            { "SPREAD", "spread", 'u' }, { "ACCENT", "accent", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
+          { { "model", 1 }, { "sy_patch", 24.0f }, { "sy_noise", 1.0f }, { "sy_color", 0.85f }, { "sy_circuit", 2.0f }, { "sy_res", 0.15f }, { "sy_envamt", 0.0f }, { "sy_keytrack", 0.0f }, { "sy_attack", 0.5f }, { "sy_sustain", 0.0f }, { "sy_release", 120.0f }, { "sy_voices", 4.0f }, { "level", -15 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
               {}, 0xff5A1418u } } },
 
         { "CLAP", "clap", "PERC", false, 3,
-          { { "model", 5 }, { "decay", 0.4f }, { "tone", 0.5f }, { "spread", 0.5f }, { "level", -11 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "ECHO PROB", "echo_prob", 'u' }, { "ECHO SPACE", "echo_space", 'm' }, { "ECHO SWING", "echo_swing", 'u' },
-            { "SPREAD", "spread", 'u' }, { "ACCENT", "accent", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
+          { { "model", 1 }, { "sy_patch", 27.0f }, { "sy_noise", 1.0f }, { "sy_color", 0.0f }, { "sy_circuit", 1.0f }, { "sy_res", 0.25f }, { "sy_envamt", 0.0f }, { "sy_keytrack", 0.0f }, { "sy_attack", 0.5f }, { "sy_sustain", 0.0f }, { "sy_release", 60.0f }, { "sy_bursts", 3.0f }, { "sy_burst_gap", 11.0f }, { "sy_voices", 4.0f }, { "level", -11 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
               {}, 0xff5A1418u } } },
 
         { "PERC", "perc", "STRIKE", false, 3,
-          // a struck membrane: SIZE, TENSION and MATERIAL take it from a tom to a pipe to a sheet of glass
-          { { "model", 4 }, { "size", 0.55f }, { "material", 0.3f }, { "decay", 0.35f }, { "tension", 0.4f }, { "power", 0.45f }, { "distance", 0.25f },
-            { "level", -14 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "SIZE", "size", 'u' }, { "POSITION", "position", 'u' }, { "DISTANCE", "distance", 'u' },
-            { "SPREAD", "spread", 'u' }, { "TENSION", "tension", 'u' }, { "MATERIAL", "material", 'u' }, { "POWER", "power", 'u' },
+          { { "model", 1 }, { "sy_patch", 32.0f }, { "sy_shape", 0.0f }, { "sy_noise", 0.5f }, { "sy_color", 0.5f }, { "sy_circuit", 0.0f }, { "sy_res", 0.0f }, { "sy_envamt", 0.0f }, { "sy_attack", 0.5f }, { "sy_sustain", 0.0f }, { "sy_release", 10.0f }, { "sy_body", 1.0f }, { "sy_body_mix", 0.9f }, { "sy_body_decay", 0.45f }, { "sy_body_tone", 0.45f }, { "sy_voices", 4.0f }, { "sy_phase", 1.0f }, { "level", -14 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine). The object's are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
               {}, 0xff5A1418u } } },
 
         { "BASS", "bass", "BASS", true, 1,
-          // a rolling ladder bass with a sine sub under it (LAYER); the kick's pocket is cut for it
-          { { "model", 0 }, { "layer_model", 5 }, { "layer", 0.5f }, { "split", 1.0f }, { "split_hz", 120 }, { "cutoff", 0.3f }, { "res", 0.35f },
-            { "env_amt", 0.45f }, { "gate", 0.4f }, { "decay", 0.4f }, { "pocket_depth", 0.7f }, { "level", -7 }, { "alloc", 0 } },
-          { { "GLIDE", "glide", 'u' }, { "LAYER", "layer", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-            { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
+          { { "model", 1 }, { "sy_patch", 1.0f }, { "sy_shape", 0.5f }, { "sy_shape_b", 0.5f }, { "sy_mix", 0.44f }, { "sy_fine_b", 8.0f }, { "sy_sub", 0.4f }, { "sy_circuit", 3.0f }, { "sy_cutoff", 0.38f }, { "sy_res", 0.25f }, { "sy_envamt", 0.4f }, { "sy_sustain", 0.8f }, { "sy_release", 80.0f }, { "sy_voices", 1.0f }, { "sy_phase", 1.0f }, { "sy_drift", 0.05f }, { "level", -7 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
-          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
-          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
-          // it; the rest of the row and the row under it as the lane has them (GLIDE and LAYER are in CONFIG)
-            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
-            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
                          { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
+              {}, 0xff5A1418u } } },
 
         { "RUMBLE", "rumble", "RUMBLE", false, 3,
-          // made from the kick itself (and from its own steps, if any are lit)
-          { { "model", 0 }, { "source", 2 }, { "size", 0.7f }, { "dark", 0.68f }, { "grit", 0.25f }, { "pump", 0.78f }, { "level", -10 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "SIZE", "size", 'u' }, { "POCKET SHAPE", "pocket_shape", 'u' }, { "PUMP", "pump", 'u' },
-            { "WIDTH", "width", 'u' }, { "PREDELAY", "predelay", 'm' }, { "DARK", "dark", 'u' }, { "GRIT", "grit", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
+          { { "model", 2 }, { "fg_ground", 0.9f }, { "fg_glen", 0.85f }, { "fg_gdark", 0.7f }, { "fg_impact", 0.1f }, { "fg_char", 0.15f }, { "level", -10 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
+            { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
               {}, 0xff5A1418u } } },
 
         { "LEAD", "lead", "LEAD", true, 3,
-          // the 303 circuit: a gate that reaches the next step slides, a hard step is the accent
-          { { "model", 0 }, { "cutoff", 0.35f }, { "res", 0.75f }, { "env_amt", 0.6f }, { "accent", 0.7f }, { "gate", 0.5f }, { "level", -12 }, { "alloc", 0 }, { "detune", 0.0f }, { "space", 0.0f } },
-          { { "TUNE", "tune", 'b' }, { "ACCENT", "accent", 'u' }, { "RES", "res", 'u' }, { "COLOR", "color", 'u' },
-            { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' },
+          { { "model", 1 }, { "sy_patch", 6.0f }, { "sy_shape", 0.5f }, { "sy_circuit", 4.0f }, { "sy_cutoff", 0.35f }, { "sy_res", 0.75f }, { "sy_envamt", 0.6f }, { "sy_accent", 0.7f }, { "sy_attack", 3.0f }, { "sy_sustain", 1.0f }, { "sy_release", 8.0f }, { "sy_voices", 1.0f }, { "sy_slide", 0.22f }, { "sy_space", 0.1f }, { "level", -12 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
             { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
-          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
-          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
-          // it; the rest of the row and the row under it as the lane has them (its fourth is POS ENV, where COLOR was; TUNE and ACCENT are in CONFIG)
-            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POS ENV", "wt_env", 'b' },
-                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "DRIVE", "drive", 'u' } } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
-            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
-            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
-            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
-                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
-
-        { "CHORD", "chord", "LEAD", true, 3,
-          // the dub stab: one note plays the chord
-          { { "model", 3 }, { "cutoff", 0.4f }, { "res", 0.3f }, { "env_amt", 0.5f }, { "space", 0.6f }, { "gate", 0.5f }, { "level", -15 }, { "alloc", 0 } },
-          { { "DETUNE", "detune", 'u' }, { "ATTACK", "attack", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-            { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
-          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
-          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
-          // it; the rest of the row and the row under it as the lane has them (DETUNE and ATTACK are in CONFIG)
-            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-                             { "DECAY", "decay", 'u' }, { "ENV AMT", "env_amt", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
-            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
-            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
-            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
-                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
-
-        { "PAD", "pad", "PAD", true, 3,
-          // a drifting dub wash that plays a minor seventh from one note
-          { { "model", 4 }, { "chord", 2 }, { "cutoff", 0.4f }, { "space", 0.7f }, { "drift", 0.6f }, { "attack", 0.35f }, { "level", -15 }, { "alloc", 0 } },
-          { { "DETUNE", "detune", 'u' }, { "COLOR", "color", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-            { "DECAY", "decay", 'u' }, { "ATTACK", "attack", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // GRANULAR's own six, then CUTOFF and the lane's eighth where they were
-          { { "GRANULAR", { { "POSITION", "gr_pos", 'u' }, { "SCAN", "gr_scan", 'b' }, { "SIZE", "gr_size", 'u' }, { "GRAINS", "gr_dens", 'u' },
-                            { "SPRAY", "gr_spray", 'u' }, { "PITCH", "gr_pitch", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
-          // WAVETABLE's own two (eighty-fifth build): POSITION, the place in the table, and TWIST, first on every lane that has
-          // it; the rest of the row and the row under it as the lane has them (DETUNE is in CONFIG)
-            { "WAVETABLE", { { "POSITION", "color", 'u' }, { "TWIST", "wt_twist", 'u' }, { "RES", "res", 'u' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-                             { "DECAY", "decay", 'u' }, { "ATTACK", "attack", 'u' }, { "CUTOFF", "cutoff", 'u' }, { "SPACE", "space", 'u' } } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
-            { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
-            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
-            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
-                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
-
-        { "VOICE", "voice", "VOICE", true, 3,
-          // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,
-          // SIGNAL and GATE have nothing to act on); drop an audio file on the lane to give it a phrase
-          { { "model", 1 }, { "signal", 0.7f }, { "echo", 0.3f }, { "echo_fb", 0.55f }, { "level", -14 }, { "alloc", 0 } },
-          { { "TUNE", "tune", 'b' }, { "SIGNAL", "signal", 'u' }, { "ECHO TIME", "echo_time", 'm' }, { "POCKET DEPTH", "pocket_depth", 'u' },
-            { "ECHO FDBK", "echo_fb", 'u' }, { "ECHO", "echo", 'u' }, { "TONE", "tone", 'u' }, { "DRIVE", "drive", 'u' },
-            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
-          // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
-          // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
-            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
-            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
             { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
-                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
-            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
             { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
                               { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
               {}, 0xff5A1418u } } },
+
+        { "CHORD", "chord", "LEAD", true, 3,
+          { { "model", 1 }, { "sy_patch", 13.0f }, { "sy_shape", 0.5f }, { "sy_shape_b", 0.75f }, { "sy_mix", 0.33f }, { "sy_fine_b", 6.0f }, { "sy_circuit", 0.0f }, { "sy_cutoff", 0.45f }, { "sy_res", 0.25f }, { "sy_envamt", 0.4f }, { "sy_chord", 3.0f }, { "sy_sustain", 0.0f }, { "sy_release", 150.0f }, { "sy_voices", 12.0f }, { "sy_space", 0.15f }, { "level", -15 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
+
+        { "PAD", "pad", "PAD", true, 3,
+          { { "model", 1 }, { "sy_patch", 18.0f }, { "sy_shape", 0.5f }, { "sy_shape_b", 0.75f }, { "sy_mix", 0.28f }, { "sy_fine_b", 5.0f }, { "sy_circuit", 0.0f }, { "sy_cutoff", 0.45f }, { "sy_res", 0.2f }, { "sy_envamt", 0.25f }, { "sy_chord", 3.0f }, { "sy_attack", 50.0f }, { "sy_sustain", 0.6f }, { "sy_release", 1500.0f }, { "sy_voices", 16.0f }, { "sy_space", 0.25f }, { "level", -15 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
+
+        { "VOICE", "voice", "VOICE", true, 3,
+          { { "model", 0 }, { "level", -14 } },
+          { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+            { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' },
+            { "GATE", "gate", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
+          { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              {} },
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              {} },
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } }
+
     };
     return L;
 }

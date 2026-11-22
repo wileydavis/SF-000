@@ -270,3 +270,16 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   (KICK, PERC, RUMBLE), `Synth.cpp`, `Voice.cpp`: SYNTH and KICK FORGE last on each list, wired as
   SAMPLE is. `modules/SampleDisplay.cpp`: the view zooms only by the wheel. All marked
   `(SF-000, the hundred and second build)`; none of it is in the suite (DECISIONS 784).
+
+- **The hundred and third build: every lane one instrument.** `modules/Lane.cpp` (new): the
+  instrument of all eleven lanes, one `LaneModule` keyed by its role (whether it plays notes,
+  ducks under the kick, follows the kick's hits, is the kick), its models SAMPLE, SYNTH and KICK
+  FORGE and nothing else. `modules/Drums.cpp`, `Strike.cpp`, `Synth.cpp` and `Voice.cpp` are
+  gone from SF-000's copy, and with them every model of their own; `modules/Presets.cpp` has no
+  instrument presets. `modules/ForgeEngine.h`, `.cpp`: `begin` takes the key's root (a drum
+  lane's KEY FOLLOW), `shapeOf` says the kick a hit makes for the bus, `hzOf` where it lands.
+  `modules/SynthEngine.h`, `.cpp` and `modules/SampleEngine.h`, `.cpp`: `gateNow` and
+  `keySounding` (GATE turned as notes sound, and a key still held played again), and
+  `releaseScale` (GATE's lower half shortens RELEASE, its upper half lengthens it). All marked
+  `(SF-000, the hundred and third build)`. The suite keeps its own instruments: nothing of this
+  goes back to it (DECISIONS 785).
