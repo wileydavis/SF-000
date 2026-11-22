@@ -440,6 +440,17 @@ Four for each lane, beside its map:
 - Its cost on the machine this was written on (a slow one): 2 % of a core to look at all thirteen
   parts, 5 % with two hundred bells cutting at once, which is every lane giving way all over.
 
+### What the manual found (hundred and fourth build)
+
+Wiley, Nov 22: "fix the bugs". A bipolar knob that is no filter says its own sides (KICK FORGE's
+GROUND LENGTH reads SHORT 40, MIDDLE, LONG 40; SCAN SLOW / FAST on SAMPLE, BACK / FWD on SYNTH;
+W VEL and W KEY -40 / OFF / +40), not LP and HP. SAMPLE's POSITION moves a held GRAIN cloud at
+once. SYNTH's SYNC, BURSTS and BURST GAP are kept by the note (they say NEXT); W VEL and W KEY
+are heard at once (they say so). KICK FORGE never holds a note, so a long step strikes again.
+STRETCH with LOOP lets a note played THROUGH end. DIODE hears MOD ATTACK and KEY TRACK (ACID 303
+has KEY TRACK at nought); ACCENT at nought is none of it; CLEAN BP and HP keep the unison's
+width. DECISIONS 786.
+
 ### Every lane is one instrument: SAMPLE, SYNTH and KICK FORGE (hundred and third build)
 
 Wiley, Nov 21: "build it as if the only engines are the three (forge, sampler, and synth)";

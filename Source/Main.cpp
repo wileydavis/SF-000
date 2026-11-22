@@ -2565,7 +2565,7 @@ static void motionTargetsTest (int& bad)
     Engine e; e.prepare (48000.0, 256);
     Session ses (e, false);
     auto motion = [] (const juce::String& id) { return id.startsWith ("m1_") || id.startsWith ("m2_"); };
-    auto find = [&] (Engine::Target t, const char* id) { for (auto& sp : e.setupParams (t)) if (sp.id == id) return sp; return Engine::SetupParam(); };
+    auto find = [&] (Engine::Target t, const char* id) { for (auto& sp : e.setupParams (t)) if (sp.id == id) return sp; return Engine::SetupParam {}; };
     auto choose = [&] (Engine::Target t, const char* id, const juce::String& name)
     {
         for (auto& sp : e.setupParams (t)) if (sp.id == id) if (const int at = sp.choices.indexOf (name); at >= 0) { e.setSetup (t, id, (float) at / (float) std::max (1, sp.choices.size() - 1)); return true; }
@@ -3110,6 +3110,37 @@ static void reachTest (int& bad)
         choose ("SYNTH");
         const bool synth = e.reachOf (kick, "sy_bursts") == sf::Reach::Next && e.reachOf (kick, "filter") == sf::Reach::Live && e.reachOf (kick, "sy_cutoff") == sf::Reach::Live;
         check (forge && synth, "the lane says it of the model it has: on KICK FORGE, TONE, LOW PRESERVE and DRIVE are heard on a hit that is sounding and CHARACTER and TUNE from the next; on SYNTH, BURSTS from the next and FILTER and CUTOFF at once");
+    }
+    {
+        // (the hundred and fourth build) a bipolar knob that is no filter says its own sides, not LP and HP; SAMPLE's POSITION is
+        // heard at once in GRAIN and from the next note in REPITCH; SYNTH's W VEL and W KEY at once, SYNC from the next note
+        using namespace sf0;
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        int kick = 0;
+        for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "kick") kick = l;
+        const Engine::Target at { 0, kick, 0 };
+        auto find = [&] (const char* id) { for (auto& sp : e.setupParams (at)) if (sp.id == id) return sp; return Engine::SetupParam {}; };
+        auto choose = [&] (const char* id, const char* name) { const auto sp = find (id); if (const int i = sp.choices.indexOf (name); i >= 0) e.setSetup (at, id, (float) i / (float) std::max (1, sp.choices.size() - 1)); };
+        choose ("model", "KICK FORGE");
+        e.setSetup (at, "fg_glen", 0.3f); const auto shortText = find ("fg_glen").text;
+        e.setSetup (at, "fg_glen", 0.5f); const auto midText = find ("fg_glen").text;
+        e.setSetup (at, "fg_grec", 0.8f); const auto slowText = find ("fg_grec").text;
+        const bool words = shortText == "SHORT 40" && midText == "MIDDLE" && slowText == "SLOW 60";
+        choose ("model", "SAMPLE");
+        choose ("sp_method", "REPITCH"); const bool repitchNext = e.reachOf (kick, "sp_pos") == sf::Reach::Next;
+        choose ("sp_method", "GRAIN");   const bool grainLive = e.reachOf (kick, "sp_pos") == sf::Reach::Live;
+        // (SAMPLE's SCAN is on the panel while it is the model: its CONFIG place is the layer's)
+        choose ("model", "KICK FORGE"); choose ("layer_model", "SAMPLE"); e.setSetup (at, "layer", 1.0f);
+        e.setSetup (at, "sp_scan", 0.25f); const auto scanText = find ("sp_scan").text;
+        e.setSetup (at, "layer", 0.0f);
+        choose ("model", "SYNTH");
+        e.setSetup (at, "sy_wvel", 0.3f); const auto velText = find ("sy_wvel").text;
+        const bool synth = e.reachOf (kick, "sy_wvel") == sf::Reach::Live && e.reachOf (kick, "sy_wkey") == sf::Reach::Live && e.reachOf (kick, "sy_sync") == sf::Reach::Next;
+        check (words && repitchNext && grainLive && scanText == "SLOW 50" && velText == "-40" && synth,
+               "a bipolar knob that is no filter says its sides (GROUND LENGTH " + shortText + ", " + midText + "; GROUND RECOVER " + slowText + "; SAMPLE SCAN " + scanText
+                   + "; W VEL " + velText + "); POSITION is heard at once in GRAIN and from the next note in REPITCH; W VEL and W KEY at once, SYNC from the next note"
+                   + (repitchNext && grainLive && synth ? juce::String() : " [reach: REPITCH " + juce::String ((int) repitchNext) + ", GRAIN " + juce::String ((int) grainLive) + ", SYNTH " + juce::String ((int) synth) + "]"));
     }
     check (! rows.empty() && broken == 0,
            "every parameter keeps to what it says of itself (Module.h, Reach): of " + juce::String ((int) rows.size()) + " on the lanes' instruments and their models, "
@@ -4524,7 +4555,7 @@ static void synthEngineTest (int& bad)
         Engine e; e.prepare (48000.0, 256);
         Session ses (e, false);
         const Engine::Target t { 0, bass, 0 };
-        auto sp = [&] (const char* id) { for (auto& x : e.setupParams (t)) if (x.id == id) return x; return Engine::SetupParam(); };
+        auto sp = [&] (const char* id) { for (auto& x : e.setupParams (t)) if (x.id == id) return x; return Engine::SetupParam {}; };
         auto chooseModel = [&] (const char* name) { const auto m = sp ("model"); e.setSetup (t, "model", (float) m.choices.indexOf (name) / (float) std::max (1, m.choices.size() - 1)); };
         chooseModel ("SYNTH");
         const bool opened = sp ("sy_patch").text.toUpperCase() == "BASS LADDER" && sp ("sy_circuit").text.toUpperCase() == "LADDER";
@@ -6612,7 +6643,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
             {
                 Engine e; e.prepare (SR2, 256);
                 Session ses (e, false);
-                auto sp = [&] (int l, const char* id) { for (auto& x : e.setupParams ({ 0, l, 0 })) if (x.id == id) return x; return Engine::SetupParam(); };
+                auto sp = [&] (int l, const char* id) { for (auto& x : e.setupParams ({ 0, l, 0 })) if (x.id == id) return x; return Engine::SetupParam {}; };
                 auto name = [&] (int l, const char* id) { const auto x = sp (l, id); return x.choices[(int) std::lround (x.value * (float) (x.choices.size() - 1))].toUpperCase(); };
                 int oldN = 0;
                 juce::AudioBuffer<float> ob (2, 256);
@@ -7161,7 +7192,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                     auto* pr = e7.processorFor (bass);
                     const int cutoff = pr->paramIndex ("sy_cutoff");
                     auto params = [&] { return e7.setupParams (bass); };
-                    auto find = [&] (const juce::String& id) { for (auto& sp : params()) if (sp.id == id) return sp; return Engine::SetupParam(); };
+                    auto find = [&] (const juce::String& id) { for (auto& sp : params()) if (sp.id == id) return sp; return Engine::SetupParam {}; };
                     auto choose = [&] (const juce::String& id, const juce::String& name)
                     {
                         const auto sp = find (id);
@@ -7213,7 +7244,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                         auto* fp = e7.processorFor (fx);
                         const auto& cell = effects()[0].cells[1];
                         const int pi = fp->paramIndex (cell.param);
-                        auto fxFind = [&] (const juce::String& id) { for (auto& sp : e7.setupParams (fx)) if (sp.id == id) return sp; return Engine::SetupParam(); };
+                        auto fxFind = [&] (const juce::String& id) { for (auto& sp : e7.setupParams (fx)) if (sp.id == id) return sp; return Engine::SetupParam {}; };
                         auto fxChoose = [&] (const juce::String& id, const juce::String& name)
                         {
                             const auto sp = fxFind (id);
@@ -12323,7 +12354,7 @@ static int uiTest()
         const int lane = 5;
         const Engine::Target t { 0, lane, 0 };
         auto knobOf = [&] (const char* id) { for (int k = 0; k < kLaneKnobs; ++k) if (e17.control (cx::lane (lane, k)).id == juce::String ("bass.") + id) return e17.target (cx::lane (lane, k)); return -1.0f; };
-        auto setupOf = [&] (const char* id) { for (auto& sp : e17.setupParams (t)) if (sp.id == id) return sp; return Engine::SetupParam(); };
+        auto setupOf = [&] (const char* id) { for (auto& sp : e17.setupParams (t)) if (sp.id == id) return sp; return Engine::SetupParam {}; };
         sc17.showConfig (t); draw17();
         const bool notYet = plainAt().x < 0.0f && ! s17.playsSample (lane);            // (it plays a synth model, and holds no file)
         for (auto& sp : e17.setupParams (t)) if (sp.id == "model") e17.setSetup (t, "model", (float) sp.choices.indexOf ("SAMPLE") / (float) std::max (1, sp.choices.size() - 1));

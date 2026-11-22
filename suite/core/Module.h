@@ -50,6 +50,8 @@ struct ParamSpec
                                     // way there (SAMPLE's SIZE and END: a note they cut is let go over 3 ms)
     std::vector<std::string> liveIn;    // (SF-000) the models on which a NEXT one is in fact heard at once (GRANULAR reads its region as it plays)
     std::vector<std::string> nextIn;    // (SF-000, the hundredth build) and those on which a LIVE one is heard only from the next note (SAMPLE: what only the layer hears)
+    std::string lo, hi;             // (SF-000, the hundred and fourth build) a "BIP" knob that is no filter: what its two sides are
+                                    // called ("SHORT 40", "LONG 40", MIDDLE between). "-" and "+": a signed depth, OFF between
 
     ParamSpec& prim()           { primary = true; return *this; }
     ParamSpec& dir (int d)      { macroDir = d; return *this; }
@@ -70,6 +72,7 @@ struct ParamSpec
     ParamSpec& quickly()        { quick = true; return *this; }            // (SF-000)
     ParamSpec& liveOn (const char* model) { liveIn.push_back (model); return *this; }      // (SF-000)
     ParamSpec& nextOn (const char* model) { nextIn.push_back (model); return *this; }      // (SF-000)
+    ParamSpec& ends (const char* l, const char* h) { lo = l; hi = h; return *this; }      // (SF-000)
     Reach reachIn (const std::string& model) const { for (auto& m : liveIn) if (m == model) return Reach::Live; for (auto& m : nextIn) if (m == model) return Reach::Next; return reach; }
 };
 

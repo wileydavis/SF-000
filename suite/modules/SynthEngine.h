@@ -145,6 +145,7 @@ private:
         float pitchEnvSt = 0.0f;
         // the filter
         Svf svf, svf2; Ladder ladder; DiodeLadder303 dl;
+        Svf svfS;                       // (SF-000, the hundred and fourth build) CLEAN BP and HP on the side too: the unison's width stays, filtered
         float cutNow = 1000.0f, sideK = 1.0f;
         bool driveOn = false;
         // noise
@@ -153,6 +154,7 @@ private:
         Mode modes[syn::kModes]; int nModes = 0; float bodyEnergy = 0.0f;
         // DRIFT: this slot's own
         float driftTune = 0.0f, driftCut = 0.0f, driftPh = 0.0f, driftRate = 1.0f;
+        bool sync = false; int bursts = 1; float burstGap = 10.0f;     // (SF-000, the hundred and fourth build) SYNC, BURSTS and BURST GAP as the note began: they are NEXT
         float scanPos = 0.0f;           // SCAN: how far it has moved along the tables from SHAPE since it began
         int wStage = 0; float wT = 0.0f, wFrom = 0.5f, wNow = 0.5f;      // the wave envelope: its stage, the time into it, where it set out from, where it is
     };

@@ -144,7 +144,10 @@ public:
         int autoOff = -1; float relMul = 1.0f;
         if (role.pitched) gateShape (hold, c.samplesPerBeat(), autoOff, relMul);
         eng.releaseScale (relMul); sy.releaseScale (relMul);
-        holds.store (mA == kSample ? eng.holds() : true);
+        // (SF-000, the hundred and fourth build) KICK FORGE is struck, never held: a lane holds its notes only where an engine
+        // that sounds holds them (a step longer than its sequence ties on into a drone only then; KICK FORGE strikes again)
+        const auto holdsOn = [&] (int e) { return e == kSample ? eng.holds() : e == kSynth; };
+        holds.store (holdsOn (mA) || (layerOn && holdsOn (mB)));
         // MODEL or LAYER MODEL changed (or LAYER brought up or down): what sounds on the old one lets go, and the keys still
         // down start again on the new, each at its own velocity (a held chord goes on in the new sound)
         if (lastA < 0) { lastA = mA; lastB = mB; layerWas = layerOn; }

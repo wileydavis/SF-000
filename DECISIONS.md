@@ -6437,8 +6437,50 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      the old kick's spread 1.5 (the hit alone is the same to the bit: something about hits that
      overlap is not as it was). Checked under 2; I will find it.
 
+## What the manual found (Nov 22, 09:46): the hundred and fourth build
+
+786. **You**, Nov 22 (your clock): "I had chatgpt create a manual. please review."; 09:46, "fix the
+     bugs then give me a prompt i can give to chtgpt to revise the manual". **Built.** The manual
+     (Build 103, 191 pages) is right where it was checked against the code; its behaviour notes
+     (its chapter 70) found these, each confirmed in the code and mended:
+     - **A knob that is no filter read LP / OFF / HP.** KICK FORGE's GROUND LENGTH, CURVE, HARM DECAY,
+       IMPACT LENGTH, IMPACT CUT, IMPACT WIDTH, GROUND DARK, GROUND RECOVER, and SCAN on SAMPLE and
+       SYNTH, took the DJ filter's words. Each says its own sides now (SHORT 40 / MIDDLE / LONG 40;
+       EARLY, LATE; FULL, THIN; NARROW, WIDE; BRIGHT, DARK; FAST, SLOW; SAMPLE's SCAN SLOW, FAST;
+       SYNTH's BACK, FWD), and SYNTH's W VEL and W KEY a signed depth (-40 / OFF / +40). The
+       lanes' and effects' FILTER knobs keep LP and HP: they are filters.
+     - **SAMPLE's POSITION did nothing to a held GRAIN cloud**, though its help said "at once": the
+       grains were read about where the note began. A turn now moves the cloud by as much of the
+       part as it turns, from wherever SCAN has taken it (NOTES on PITCH; on SLICES it still picks
+       the next note's slice). INFO says AT ONCE for it in GRAIN.
+     - **SYNTH's SYNC, BURSTS and BURST GAP said FROM THE NEXT NOTE and were heard at once**: a
+       sounding note took them up, SYNC without the four times the rate it needs (chosen as the
+       note began). Each note keeps them now, as INFO says.
+       *Mine:* **W VEL and W KEY the other way**: they were heard at once and said NEXT; they say AT
+       ONCE now. A held pad moving along its table as they turn is a knob heard.
+     - **KICK FORGE on a lane that plays notes said it held them**, so a lone step longer than its
+       sequence tied into the next pass and was not struck again. A lane holds its notes only where
+       SAMPLE (as before) or SYNTH sounds, the model or an active layer.
+     - **SAMPLE STRETCH with LOOP on went round for ever on a note played THROUGH** (until the
+       transport stopped). It loops only while something will let it go, as REPITCH does.
+     - **DIODE did not hear MOD ATTACK or KEY TRACK.** Its envelope rises over MOD ATTACK now (at
+       nought, at its top from the first sample as before), and KEY TRACK moves its cutoff as on the
+       other circuits. *Mine:* ACID 303 sets KEY TRACK to nought (the 303 had none), so it is as
+       it was; a snapshot of yours saved since yesterday with DIODE and KEY TRACK left at 50 now
+       follows the key.
+     - **ACCENT at nought was not none of it**: a hard note's envelope still fell in 0.2 s and its
+       filter faster. At nought a hard note is a loud note and nothing more, as the help says.
+     - **CLEAN BP and HP threw the unison's width away** (WIDTH went unheard on them). The side goes
+       through the same filter now.
+     *Mine:* **not mended**: CROSSFADE is REPITCH's only (STRETCH and GRAIN join their own way; the
+     help says so now), STRETCH's display not zooming as the others do, a mono SYNTH voice played
+     again keeping its oscillators' phase with PHASE on RESET, and released tails counting past
+     VOICES for a moment. None of them is a knob that does nothing.
+
 ## Not verified
 
+- **The hundred and fourth build (786) has not been heard**: the mended knobs are checked here,
+  not by ear.
 - **The hundred and third build (785) has not been heard.** Every lane's sound as it opens is a
   patch or the Forge measured here; whether HAT 909, OPEN HAT, CLAP and MEMBRANE stand in for the
   hats and PERC you had, and whether RUMBLE on the Forge's ground is a rumble you want, are

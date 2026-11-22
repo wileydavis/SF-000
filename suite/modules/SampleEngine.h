@@ -153,6 +153,7 @@ private:
         int lived = 0;              // (its samples since it began)
         bool gated = false;         // (its length is GATE's, or its key's: not PLAY THROUGH's, not a drum's DECAY)
         double grainClock = 0.0;
+        float posAt = 0.0f;         // (SF-000, the hundred and fourth build) GRAIN: POSITION as the note began, so a turn of it moves the cloud from there
         float stopGain = 1.0f;      // its end reached: down over 3 ms
         double lastToEnd = 1.0e30;  // REPITCH: how far it was from its end a sample ago
         bool stopping = false;

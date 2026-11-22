@@ -283,3 +283,13 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   `releaseScale` (GATE's lower half shortens RELEASE, its upper half lengthens it). All marked
   `(SF-000, the hundred and third build)`. The suite keeps its own instruments: nothing of this
   goes back to it (DECISIONS 785).
+
+- **The hundred and fourth build: what the manual found.** `core/Module.h`: `ParamSpec::lo`, `hi`
+  and `ends()`, a "BIP" knob's two sides by name; `core/Processor.cpp` says them (and "-" / "+"
+  a signed depth) where it said LP and HP. `modules/ForgeEngine.cpp`: its eight bipolar knobs
+  named. `modules/SampleEngine.h`, `.cpp`: GRAIN's POSITION heard at once (`posAt`); STRETCH
+  loops only what will be let go; SCAN named. `modules/SynthEngine.h`, `.cpp`: SYNC, BURSTS and
+  BURST GAP kept by the note; W VEL and W KEY live and signed; DIODE hears MOD ATTACK and KEY
+  TRACK (ACID 303's KEY TRACK nought); ACCENT at nought is nothing; CLEAN BP and HP filter the
+  side (`svfS`). `modules/Lane.cpp`: a lane holds its notes only where SAMPLE or SYNTH sounds.
+  All marked `(SF-000, the hundred and fourth build)` (DECISIONS 786).

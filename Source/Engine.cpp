@@ -1489,6 +1489,13 @@ sf::Reach Engine::reachOf (int lane, const juce::String& id) const
         const int at = juce::roundToInt (p->param (mi)->convertFrom0to1 (p->param (mi)->getValue()));
         if (at >= 0 && at < (int) ch.size()) model = ch[(size_t) at];
     }
+    // (the hundred and fourth build) SAMPLE's POSITION is a note's start in REPITCH and STRETCH, but in GRAIN (with NOTES on
+    // PITCH) it moves the place the grains are read about at once
+    if (id == "sp_pos")
+    {
+        const auto text = [p] (const char* pid) { const int k = p->paramIndex (pid); return k >= 0 ? p->param (k)->getCurrentValueAsText().toUpperCase() : juce::String(); };
+        if (text ("sp_method") == "GRAIN" && text ("sp_notes") == "PITCH") return sf::Reach::Live;
+    }
     return p->allSpecs()[(size_t) i].reachIn (model);
 }
 

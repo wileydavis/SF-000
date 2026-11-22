@@ -15,7 +15,7 @@ std::vector<ParamSpec> params()
     add (knob ("sp_tune", "TUNE", -24.0f, 24.0f, 0.0f, "st"));
     add (pct ("sp_pos", "POSITION", 0.0f).next());
     add (pct ("sp_size", "SIZE", 1.0f).quickly());      // (a note it cuts is let go over 3 ms: no ease of 30 ms on top)
-    add (knob ("sp_scan", "SCAN", 0.0f, 1.0f, 0.5f, "BIP"));
+    add (knob ("sp_scan", "SCAN", 0.0f, 1.0f, 0.5f, "BIP").ends ("SLOW", "FAST"));      // (SF-000: no filter, its sides by name)
     add (pct ("sp_spread", "SPREAD", 0.0f).next());
     add (knob ("sp_attack", "ATTACK", 0.0f, 2000.0f, 0.0f, "ms", 100.0f));
     add (knob ("sp_release", "RELEASE", 1.0f, 4000.0f, 30.0f, "ms", 300.0f));
@@ -503,7 +503,7 @@ void SampleEngine::start (const Pending& p)
     }
     else if (b.method == kGrain)
     {
-        v.pos = v.from; v.grainClock = 0.0;
+        v.pos = v.from; v.grainClock = 0.0; v.posAt = b.pos;
         for (auto& g : vg[(size_t) vi].g) g.on = false;
     }
     else
@@ -624,7 +624,9 @@ void SampleEngine::renderStretch (Voice& v, float* L, float* R, int n)
     if (std::abs (semisNow - st.lastSt) > 0.001f) { st.lastSt = semisNow; st.s.setTransposeSemitones (semisNow); }
     // SIZE: how much of what was ahead of it plays
     const double endBeat = v.from + (v.tail - v.from) * (double) clamp01 (b.size);
-    const bool loop = b.loop && b.notes == 0 && v.dir > 0;
+    // (SF-000, the hundred and fourth build) as REPITCH's: a loop only where something will let it go (a key held, a gate,
+    // its release). A note played THROUGH with LOOP on went round until the transport stopped
+    const bool loop = b.loop && b.notes == 0 && v.dir > 0 && (v.held || v.holdLeft > 0 || v.releasing);
     const double la = m.beatAt (b.loopA), lb = m.beatAt (b.loopB);
     // what to give it: enough that what comes out now is where the beat is (as DECK keeps its decks)
     const double rate = std::max (0.0, m.slopeAt (v.pos) * std::abs (dBeat));
@@ -700,7 +702,15 @@ void SampleEngine::renderGrain (Voice& v, int vi, float* L, float* R, int n, int
                     g.st = v.pitchSt + b.tune + v.varySt + b.pspread * 12.0f * v.rng.next();
                     g.step = (double) semis (g.st) * v.dir;
                     const double room = std::abs (g.step) * glen;
-                    double p0 = v.pos + scatter;
+                    // (SF-000, the hundred and fourth build) POSITION is heard at once in GRAIN, as its help says: a turn moves the
+                    // place the grains are read about by as much of the part as it turns, from wherever SCAN has taken it (round the part)
+                    double centre = v.pos;
+                    if (b.notes == 0 && span > 1.0)
+                    {
+                        centre += (double) (b.pos - v.posAt) * span * (double) v.dir;
+                        centre = v.a + std::fmod (std::fmod (centre - v.a, span) + span, span);
+                    }
+                    double p0 = centre + scatter;
                     p0 = juce::jlimit (v.a + ms, std::max (v.a + ms, v.b - room - ms), p0);
                     if (v.dir < 0) p0 = juce::jlimit (v.a + room + ms, std::max (v.a + room + ms, v.b - ms), p0);
                     g.pos = p0;

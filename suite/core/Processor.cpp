@@ -276,7 +276,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout SFProcessor::makeLayout()
                 juce::NormalisableRange<float> r (s.min, s.max);
                 if (! std::isnan (s.centre) && s.centre > s.min && s.centre < s.max) r.setSkewForCentre (s.centre);
                 const auto unit = s.unit;
-                auto toText = [unit] (float v, int)
+                const auto lo = s.lo, hi = s.hi;       // (SF-000) a bipolar knob's own two sides
+                auto toText = [unit, lo, hi] (float v, int)
                 {
                     if (unit == "%")   return juce::String (juce::roundToInt (v * 100.0f)) + " %";
                     if (unit == "SLOT") return std::abs (v - 0.5f) < 0.04f ? juce::String ("AUTO")
@@ -284,6 +285,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout SFProcessor::makeLayout()
                                                         : "HAND " + juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f, (v - 0.54f) / 0.46f) * 100.0f)) + " %";
                     if (unit == "SPLIT") return std::abs (v - 0.5f) < 0.02f ? juce::String ("OFF")
                                               : (v < 0.5f ? "MODEL LOWS " : "LAYER LOWS ") + juce::String (juce::roundToInt (std::min (1.0f, (std::abs (v - 0.5f) - 0.02f) / 0.48f) * 100.0f)) + " %";
+                    if (unit == "BIP" && lo == "-")         // (SF-000) a signed depth: -40, OFF, +40
+                        return std::abs (v - 0.5f) < 0.02f ? juce::String ("OFF") : (v < 0.5f ? "-" : "+") + juce::String (juce::roundToInt (std::abs (v - 0.5f) * 200.0f));
+                    if (unit == "BIP" && ! lo.empty())      // (SF-000) no filter: its sides by name, MIDDLE where it does nothing of its own
+                        return std::abs (v - 0.5f) < 0.02f ? juce::String ("MIDDLE") : juce::String (v < 0.5f ? lo : hi) + " " + juce::String (juce::roundToInt (std::abs (v - 0.5f) * 200.0f));
                     if (unit == "BIP") return std::abs (v - 0.5f) < 0.02f ? juce::String ("OFF") : (v < 0.5f ? "LP " : "HP ") + juce::String (juce::roundToInt (std::abs (v - 0.5f) * 200.0f));
                     if (unit == "Hz")  return v >= 1000.0f ? juce::String (v / 1000.0f, 2) + " kHz" : juce::String (juce::roundToInt (v)) + " Hz";
                     if (unit == "ms")  return v >= 1000.0f ? juce::String (v / 1000.0f, 2) + " s" : juce::String (v, v < 10.0f ? 1 : 0) + " ms";

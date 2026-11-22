@@ -65,7 +65,7 @@ std::vector<ParamSpec> params()
     // and MOTION move it); right, forward, from a sixteenth of the recording's own pace to four times it; left, backward.
     // On SAMPLE and RECORDING the pace is the recording's (at 1x a note goes through it as it was spoken or played); on
     // the other tables one whole table a second at 1x. At an end it stays there. Last: appended, never moved.
-    add (knob ("sy_scan", "SCAN", 0.0f, 1.0f, 0.5f, "BIP"));
+    add (knob ("sy_scan", "SCAN", 0.0f, 1.0f, 0.5f, "BIP").ends ("BACK", "FWD"));      // (SF-000: no filter, its sides by name)
     // WAVE MOTION (Wiley, Nov 21: "By moving through the table at varying speeds or lingering in a section ... Similar to
     // the 3rd wave synth"): what SCAN does at an end; the frames crossfaded or stepped (the PPG's and the 3rd Wave's);
     // a wave envelope of four stages, each a time and a place along the tables, travelled from SHAPE (W DEPTH: how much
@@ -80,8 +80,8 @@ std::vector<ParamSpec> params()
         add (pct (pi.c_str(), pn.c_str(), 0.25f * (float) k));
     }
     add (choice ("sy_wloop", "W LOOP", { "OFF", "3-4", "2-4", "1-4" }, 0));
-    add (knob ("sy_wvel", "W VEL", 0.0f, 1.0f, 0.5f, "BIP").next());
-    add (knob ("sy_wkey", "W KEY", 0.0f, 1.0f, 0.5f, "BIP").next());
+    add (knob ("sy_wvel", "W VEL", 0.0f, 1.0f, 0.5f, "BIP").ends ("-", "+"));      // (SF-000, the hundred and fourth build: heard at once, as it always was; a depth, signed)
+    add (knob ("sy_wkey", "W KEY", 0.0f, 1.0f, 0.5f, "BIP").ends ("-", "+"));
     jassert ((int) v.size() == kParamCount);
     return v;
 }
@@ -130,7 +130,7 @@ const std::vector<Patch>& patches()
                         { "sy_decay", decayKnob (0.5f) }, { "sy_sustain", 0.7f }, { "sy_release", 60.0f }, { "sy_voices", 1 }, { "sy_phase", 1 }, { "sy_gain", -2.8f } } },
         { "OFFBEAT", { { "sy_shape", 0.75f }, { "sy_shape_b", 0.5f }, { "sy_mix", 0.37f }, { "sy_fine_b", 5.0f }, { "sy_circuit", 3 }, { "sy_cutoff", 0.4f }, { "sy_res", 0.4f },
                        { "sy_envamt", 0.6f }, { "sy_decay", decayKnob (0.15f) }, { "sy_sustain", 0.0f }, { "sy_release", 60.0f }, { "sy_voices", 1 }, { "sy_gain", 13.5f } } },
-        { "ACID 303", { { "sy_shape", 0.5f }, { "sy_circuit", 4 }, { "sy_cutoff", 0.35f }, { "sy_res", 0.75f }, { "sy_envamt", 0.6f }, { "sy_decay", decayKnob (0.71f) },
+        { "ACID 303", { { "sy_shape", 0.5f }, { "sy_circuit", 4 }, { "sy_keytrack", 0.0f }, { "sy_cutoff", 0.35f }, { "sy_res", 0.75f }, { "sy_envamt", 0.6f }, { "sy_decay", decayKnob (0.71f) },
                         { "sy_accent", 0.7f }, { "sy_attack", 3.0f }, { "sy_sustain", 1.0f }, { "sy_release", 8.0f }, { "sy_voices", 1 }, { "sy_slide", 0.22f }, { "sy_space", 0.1f }, { "sy_gain", 4.2f } } },
         { "FM BASS", { { "sy_shape", 0.0f }, { "sy_shape_b", 0.0f }, { "sy_fm", 0.45f }, { "sy_circuit", 0 }, { "sy_cutoff", 0.55f }, { "sy_res", 0.1f }, { "sy_envamt", 0.3f },
                        { "sy_decay", decayKnob (0.3f) }, { "sy_sustain", 0.7f }, { "sy_release", 80.0f }, { "sy_voices", 1 }, { "sy_phase", 1 }, { "sy_gain", 2.8f } } },
@@ -553,9 +553,10 @@ void SynthEngine::start (const Pending& p)
     v.on = true; v.key = p.key; v.gen = p.gen; v.part = p.part; v.order = orderNext++;
     v.pitch = tunedPitch;
     v.vel = lerp (1.0f, clamp01 (p.vel), 0.6f); v.gain = p.gain;
-    v.accent = p.vel > 0.85f && p.gen == 0;
+    v.accent = p.vel > 0.85f && p.gen == 0 && blk.accent > 0.001f;      // (SF-000, the hundred and fourth build: ACCENT at nought is none of it, its faster fall too)
     // 4x: the driven ladders, the 303's filter, the MS-20, FM and hard sync; 2x else
     v.os = (blk.circuit >= kLadder || blk.fm > 0.001f || blk.sync) ? 4 : 2;
+    v.sync = blk.sync; v.bursts = blk.bursts; v.burstGap = blk.burstGap;      // (SF-000) kept for the note, as their NEXT says (SYNC chose its 4x here)
     const float target = noteHz (v.pitch + blk.tune + bendNow + (float) keyShiftNow);
     v.target = target;
     v.freq = blk.glide > 0.001f && fromHz > 0.0f ? fromHz : target;
@@ -598,7 +599,8 @@ void SynthEngine::voiceControls (Voice& v, int n)
     const double vr = sr * v.os;
     switch (blk.circuit)
     {
-        case kCleanLP: case kCleanBP: case kCleanHP: v.svf.set (v.cutNow, 0.6f + blk.res * 9.4f, vr); break;
+        case kCleanLP: v.svf.set (v.cutNow, 0.6f + blk.res * 9.4f, vr); break;
+        case kCleanBP: case kCleanHP: v.svf.set (v.cutNow, 0.6f + blk.res * 9.4f, vr); v.svfS.set (v.cutNow, 0.6f + blk.res * 9.4f, vr); break;
         case kLadder: v.ladder.set (v.cutNow, blk.res * 0.98f, vr); break;
         case kMs20: v.svf.set (v.cutNow, 0.6f + blk.res * 12.0f, vr); v.svf2.set (std::max (20.0f, v.cutNow * 0.08f), 0.7f + blk.res * 3.0f, vr); break;
         default: break;            // DIODE: each sample
@@ -626,7 +628,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
     const int nA = ta->frames(), nB = tb->frames();
     const bool levA = b.tableA == kTableRecording && ta != basic.get(), levB = b.tableB == kTableRecording && tb != basic.get();
     const int U = b.unison;
-    const bool useB = b.mix > 0.001f || b.fm > 0.001f || b.sync;
+    const bool useB = b.mix > 0.001f || b.fm > 0.001f || v.sync;
     const float wk = b.warp > 0.001f ? warpK (b.warpAs, b.warp) : 1.0f, foldIn = std::min (1.0f, b.warp * 10.0f);
     const bool warpOn = b.warp > 0.001f;
     const float ratioB = semis (b.pitchB + b.fineB * 0.01f);
@@ -654,12 +656,15 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
     const float driftSt = b.drift * (0.05f * v.driftTune + 0.04f * std::sin (kTwoPi * (0.071f * (float) v.t * v.driftRate + v.driftPh)));
     // the noise's colour: white to pink to metal
     const float cWhite = clamp01 (1.0f - 2.0f * b.color), cMetal = clamp01 (2.0f * b.color - 1.0f), cPink = 1.0f - cWhite - cMetal;
-    const float burstGap = b.burstGap * 0.001f;
-    const float burstEnd = (float) (b.bursts - 1) * burstGap;
+    const float burstGap = v.burstGap * 0.001f;
+    const float burstEnd = (float) (v.bursts - 1) * burstGap;
     // DIODE: the 303's cutoff law (an x0xb0x's, as ACID 303-TYPE has it), its feedback and the level it makes up
     const float accentK = v.accent ? b.accent : 0.0f;
-    const float acidL0 = 5.2262f + 1.7042f * b.cutoff - 0.6838f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut;
-    const float acidL1 = 5.5592f + 2.1779f * b.cutoff + 1.9922f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut;
+    // (SF-000, the hundred and fourth build) and KEY TRACK, as the other circuits have it: an octave of cutoff for an octave of
+    // key at full, from middle C. (The 303 had none: ACID 303 sets it to nought.)
+    const float acidKey = 0.6931f * b.keytrack * (v.pitch + b.tune + bendNow + (float) keyShiftNow - 60.0f) / 12.0f;
+    const float acidL0 = 5.2262f + 1.7042f * b.cutoff - 0.6838f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut + acidKey;
+    const float acidL1 = 5.5592f + 2.1779f * b.cutoff + 1.9922f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut + acidKey;
     const float acidSweep = 0.6931f * (1.0f + 2.0f * b.res), acidFbK = 0.96f * std::pow (b.res, 0.7f);
     const float acidComp = std::pow (1.0f + 16.3f * std::pow (b.res, 0.7f), 0.7f);
     const float capC = 1.0f - std::exp (-1.0f / (0.02f * (float) vr)), capD = std::exp (-1.0f / ((0.15f + 0.35f * b.res) * (float) vr));
@@ -688,7 +693,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
         if (v.holdLeft > 0 && --v.holdLeft == 0) release (v);
         float g = v.amp;
         if (v.choked) { v.chokeGain -= 1.0f / (0.003f * (float) vr); if (v.chokeGain <= 0.0f) { v.on = false; return; } g *= v.chokeGain; }
-        if (b.bursts > 1 && v.t < (double) burstEnd) { const float ph = std::fmod ((float) v.t, burstGap); g *= std::exp (-ph / (burstGap * 0.3f)) * 0.85f + 0.15f; }
+        if (v.bursts > 1 && v.t < (double) burstEnd) { const float ph = std::fmod ((float) v.t, burstGap); g *= std::exp (-ph / (burstGap * 0.3f)) * 0.85f + 0.15f; }
         // where along the tables (SHAPE, and how far SCAN has taken it: it stays at an end)
         if (scanStep != 0.0f) { v.scanPos += scanStep; if (b.scanEnd == 0) v.scanPos = juce::jlimit (-1.0f, 1.0f, v.scanPos); else if (v.scanPos > 2.0f || v.scanPos < -2.0f) v.scanPos -= 2.0f * std::floor (v.scanPos * 0.5f); }
         // the wave envelope: from where SHAPE was at the note, to each stage's place in its time
@@ -741,7 +746,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
             const float av = (warpOn ? warped (*ta, pA, octA0 >= Mipmap::kOct ? octA0 : octAW, pr, b.warpAs, wk, foldIn)
                                      : ta->at (pA, octA0, pr)) * gA;
             v.pa[u] += ia;
-            if (v.pa[u] >= 1.0) { v.pa[u] -= 1.0; if (b.sync) v.pb[u] = v.pa[u] * ratioB; }
+            if (v.pa[u] >= 1.0) { v.pa[u] -= 1.0; if (v.sync) v.pb[u] = v.pa[u] * ratioB; }
             const float s = av * (1.0f - b.mix) + bv * b.mix;
             l += s * panL[u]; r += s * panR[u];
         }
@@ -787,14 +792,20 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
             case kMs20: y = fastTanh (v.svf2.tickHP (v.svf.tickLP (mid)) * 1.5f); break;
             default:
             {
-                if (! v.releasing) { const float in = accentK * v.meg; cap = in > cap ? cap + (in - cap) * capC : cap * capD; }
-                const float cutHz = std::min (16000.0f, 87.5f + std::exp (acidL0 + (acidL1 - acidL0) * v.meg + acidSweep * cap));
+                // (SF-000, the hundred and fourth build) MOD ATTACK: the envelope rises over it, as the MOD envelope does (at
+                // nought it is at its top from the first sample, the 303's own)
+                const float meg = v.modStage == 0 ? v.meg * v.mod : v.meg;
+                if (! v.releasing) { const float in = accentK * meg; cap = in > cap ? cap + (in - cap) * capC : cap * capD; }
+                const float cutHz = std::min (16000.0f, 87.5f + std::exp (acidL0 + (acidL1 - acidL0) * meg + acidSweep * cap));
                 v.dl.set (cutHz, vr);
                 y = v.dl.tick (mid, acidFbK * DiodeLadder303::oscillatesAt (cutHz)) * acidComp;
                 v.cutNow = cutHz;
             }
         }
-        if (b.circuit == kCleanHP || b.circuit == kCleanBP) side *= 0.0f;
+        // (SF-000, the hundred and fourth build) the side through the same filter on CLEAN BP and HP (it was let out: UNISON's
+        // WIDTH went unheard on them). On the others it is let through as the cutoff opens, as before
+        if (b.circuit == kCleanHP) side = v.svfS.tickHP (side);
+        else if (b.circuit == kCleanBP) side = v.svfS.tickBP (side) * (0.6f + b.res * 2.0f);
         else side *= v.sideK;
         float outM = y * g, outS = side * g;
         // BODY: rung by what the envelope lets through, and ringing on after it
