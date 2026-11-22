@@ -259,3 +259,14 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   `ParamSpec::nextOn` and `quick` (`quickly()`: taken as set, with no 30 ms ease;
   `core/Processor.cpp` honours it). All marked `(SF-000, the hundredth build)`. Nothing of it is
   in the suite, and it would need SF-000's engine for its clock and steps (DECISIONS 780).
+- **The hundred and second build: SYNTH and KICK FORGE on every lane.** `modules/SynthEngine.h`,
+  `.cpp`, `SynthDisplay.cpp` (new): the SYNTH engine, appended last (`sy_` ids, `syn::with`) to
+  every lane module, its notes sent to it as SAMPLE's are. `modules/Forge.h` (new): KICK FORGE's
+  sound, moved out of `Drums.cpp`'s KICK unchanged (the kick's `Voice` is a `forge::Hit` now, its
+  ground a `forge::GroundUnit`; `--forgeprint` the same to the bit), and `modules/ForgeEngine.h`,
+  `.cpp` (new): the Forge for every other lane (`fg_` ids, `frg::with`). `core/SampleTables.h`
+  (new): WAVETABLE's frames from a recording, moved out of `Synth.cpp` unchanged, with `scan`
+  (a frame a hundredth of a second, for SYNTH) beside them. `modules/Strike.cpp`, `Drums.cpp`
+  (KICK, PERC, RUMBLE), `Synth.cpp`, `Voice.cpp`: SYNTH and KICK FORGE last on each list, wired as
+  SAMPLE is. `modules/SampleDisplay.cpp`: the view zooms only by the wheel. All marked
+  `(SF-000, the hundred and second build)`; none of it is in the suite (DECISIONS 784).

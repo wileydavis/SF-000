@@ -764,7 +764,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             midi = sp.kind == Kind::Hold ? String ("KEPT IN SNAPSHOTS. A KEY THAT IS HELD: NOT ON THE E16.")
                  : h.a < e16::kCfgPer * e16::kCfgPages ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE CFG " + String (h.a / e16::kCfgPer + 1) + ", KNOB " + String (h.a % e16::kCfgPer + 1)
                                                              + " (CHANNEL " + String ((int) e16::kFxChannel) + ", CC " + String (e16::cfgCc (h.a)) + ")."
-                                                       : h.a < e16::kCfgPer * 8 ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE + PAST CFG 3, TO PAGE " + String (h.a / e16::kCfgPer + 1) + ", WHICH STANDS ON CFG 3'S KNOBS: KNOB " + String (h.a % e16::kCfgPer + 1) + "."
+                                                       : h.a < e16::kCfgPer * 16 ? "KEPT IN SNAPSHOTS. ON THE E16 WHILE CONFIG IS OPEN: PAGE + PAST CFG 3, TO PAGE " + String (h.a / e16::kCfgPer + 1) + ", WHICH STANDS ON CFG 3'S KNOBS: KNOB " + String (h.a % e16::kCfgPer + 1) + "."
                                                        : String ("KEPT IN SNAPSHOTS. NOT ON THE E16: ITS CONFIG HOLDS THE FIRST 96.");
             below = true;
             break;
@@ -954,7 +954,9 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aCfgView1, "CONFIG 1", "THE FIRST OF CONFIG'S THREE VIEWS, TWO GRIDS OF FOUR BY FOUR. A LANE: LANE (ITS MODEL AND LAYER, THE KEY, ITS POCKET AND ECHO) AND SOUND. AN EFFECT: ITS OWN CONTROLS, AND TIME (WHAT THE DELAYS AND REVERBS SHARE). EVERY CONTROL HAS ONE CELL, THE SAME ON EVERY PAGE THAT HAS IT; A CELL DRAWN EMPTY IS KEPT FOR A CONTROL THAT IS ON THE PANEL FOR NOW, OR THAT THIS MODEL HAS NOT GOT." },
                 { aCfgView2, "CONFIG 2", "THE SECOND VIEW, A LANE'S ENGINES: WHAT ITS MODEL HAS OF ITS OWN ON THE LEFT, WHAT ITS LAYER'S MODEL HAS ON THE RIGHT. AN EFFECT HAS NONE." },
                 { aLufsReset, "LOUDNESS", "THE WHOLE MIX AS IT LEAVES, IN LUFS: M, OVER THE LAST 0.4 S; S, OVER THE LAST 3 S (THE MASTER PANEL'S FIGURE); I, INTEGRATED, OVER ALL THAT HAS PLAYED SINCE RUN WAS PRESSED. PRESS IT AND I STARTS AGAIN FROM NOW. UNDER THEM: THE HIGHEST PEAK NOW, AND WHAT THE LIMITER AND ITS CLIPPER ARE TAKING OFF." },
-                { aCfgView4, "CONFIG 4", "THE FOURTH VIEW, ONLY ON KICK WITH SAMPLE AND KICK FORGE BOTH PLAYING: SAMPLE'S SOURCE AND PLAY (THE FORGE HAS THE SECOND VIEW)." },
+                { aCfgView4, "CONFIG 4", "THE FOURTH VIEW, ONLY WHERE IT HAS SOMETHING: SYNTH'S VOICE AND BODY; WHAT THE OTHER MODEL HAS OF ITS OWN BESIDE SAMPLE; OR, WHERE SAMPLE AND SYNTH BOTH PLAY, SYNTH'S OSCILLATORS AND WAVE MOTION." },
+                { aCfgView5, "CONFIG 5", "THE FIFTH VIEW, ONLY WHERE IT HAS SOMETHING: WHAT THE OTHER MODEL HAS OF ITS OWN BESIDE SYNTH, OR, WHERE SAMPLE AND SYNTH BOTH PLAY, SYNTH'S FILTER AND ENVELOPES AND ITS VOICE AND BODY." },
+                { aCfgView6, "CONFIG 6", "THE SIXTH VIEW, ONLY WHERE SAMPLE AND SYNTH BOTH PLAY AND THE LANE HAS THE OLD SAMPLE CONTROLS (VOICE'S PHRASE): THOSE." },
                 { aCfgView3, "CONFIG 3", "THE THIRD VIEW: A LANE'S SAMPLE CONTROLS (A CONVOLUTION'S BANDS) ON THE LEFT, AND MOTION ON THE RIGHT, ON EVERY PAGE." },
                 { aClipReset, "CLIP LAMPS", "RED: THE OUTPUT REACHED FULL SCALE. CLICK TO CLEAR." },
                 { aRecallCue, "RECALL", "TAKES THE SNAPSHOT IN THE HEADPHONES (OR THE ONE CHOSEN) TO THE SET." },
@@ -1566,7 +1568,7 @@ void Screen::drawConfig (G& g, R r)
         for (int v = 0; v < kCfgViews; ++v)
         {
             const bool there = cfgPage.hasView (v), up = v == view;
-            if (v == 3 && ! there) continue;         // (the fourth: only where a page has it)
+            if (v >= 3 && ! there) continue;         // (the fourth and fifth: only where a page has them)
             const R kr (kx, y0 + 1, 26, 24);
             key (g, kr, ! there ? col::putty : up ? col::yellow : col::white, pressed (aCfgView1 + v) ? 6.0f : 2.0f, up);
             text (g, String (v + 1), kr, fLbl, col::black);
@@ -4603,7 +4605,7 @@ void Screen::act (int a)
             break;
         case aLoadUp:   if (loadDir.getParentDirectory() != loadDir) { loadDir = loadDir.getParentDirectory(); loadScroll = 0; readLoad(); } repaint(); break;
         case aCfgClose: cfgOpen = false; break;
-        case aCfgView1: case aCfgView2: case aCfgView3: case aCfgView4: cfgView = a - aCfgView1; repaint(); break;
+        case aCfgView1: case aCfgView2: case aCfgView3: case aCfgView4: case aCfgView5: case aCfgView6: cfgView = a - aCfgView1; repaint(); break;
         case aLufsReset: eng.lufsReset(); dirty (cfgRect); break;
         case aClipReset: eng.clipL = false; eng.clipR = false; break;
         case aSnapshot: selSnap = ses.take(); break;

@@ -72,6 +72,11 @@ inline const std::vector<LaneDef>& lanes()
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
             { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
               { { "layer", 0.0f }, { "split", 0.5f } } } } },
 
         { "CLOSED HAT", "closed_hat", "PERC", false, 3,
@@ -82,7 +87,15 @@ inline const std::vector<LaneDef>& lanes()
           // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
 
         { "OPEN HAT", "open_hat", "PERC", false, 3,
           { { "model", 0 }, { "decay", 0.72f }, { "tone", 0.5f }, { "spread", 0.4f }, { "level", -15 }, { "alloc", 0 } },
@@ -92,7 +105,15 @@ inline const std::vector<LaneDef>& lanes()
           // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
 
         { "CLAP", "clap", "PERC", false, 3,
           { { "model", 5 }, { "decay", 0.4f }, { "tone", 0.5f }, { "spread", 0.5f }, { "level", -11 }, { "alloc", 0 } },
@@ -102,7 +123,15 @@ inline const std::vector<LaneDef>& lanes()
           // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
 
         { "PERC", "perc", "STRIKE", false, 3,
           // a struck membrane: SIZE, TENSION and MATERIAL take it from a tom to a pipe to a sheet of glass
@@ -113,7 +142,15 @@ inline const std::vector<LaneDef>& lanes()
             { "DECAY", "decay", 'u' }, { "DENSITY", "density", 'u' }, { "FILTER", "filter", 'b' }, { "LEVEL", "level", 'u' } },
           // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine). The object's are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
 
         { "BASS", "bass", "BASS", true, 1,
           // a rolling ladder bass with a sine sub under it (LAYER); the kick's pocket is cut for it
@@ -133,7 +170,16 @@ inline const std::vector<LaneDef>& lanes()
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
             { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } } } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
 
         { "RUMBLE", "rumble", "RUMBLE", false, 3,
           // made from the kick itself (and from its own steps, if any are lit)
@@ -144,7 +190,15 @@ inline const std::vector<LaneDef>& lanes()
           // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
 
         { "LEAD", "lead", "LEAD", true, 3,
           // the 303 circuit: a gate that reaches the next step slides, a hard step is the accent
@@ -163,7 +217,16 @@ inline const std::vector<LaneDef>& lanes()
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
             { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } } } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
 
         { "CHORD", "chord", "LEAD", true, 3,
           // the dub stab: one note plays the chord
@@ -182,7 +245,16 @@ inline const std::vector<LaneDef>& lanes()
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
             { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } } } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
 
         { "PAD", "pad", "PAD", true, 3,
           // a drifting dub wash that plays a minor seventh from one note
@@ -201,7 +273,16 @@ inline const std::vector<LaneDef>& lanes()
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
             { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
                           { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } },
-              { { "layer", 0.0f }, { "split", 0.5f } } } } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              { { "layer", 0.0f }, { "split", 0.5f } }, 0xff5A1418u } } },
 
         { "VOICE", "voice", "VOICE", true, 3,
           // a voice over a bad radio link. With no phrase loaded it sings a formant choir from the notes (and TUNE,
@@ -213,7 +294,15 @@ inline const std::vector<LaneDef>& lanes()
           // (SF-000, the hundredth build) SAMPLE's own eight, the same on every lane (SampleEngine): where in the file, how much,
           // how fast it goes by, how far a note strays, the note's two ends, DRIVE. The lane's usual knobs are in CONFIG.
           { { "SAMPLE", { { "TUNE", "sp_tune", 'b' }, { "POSITION", "sp_pos", 'u' }, { "SIZE", "sp_size", 'u' }, { "SCAN", "sp_scan", 'b' },
-                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } } } },
+                          { "SPREAD", "sp_spread", 'u' }, { "ATTACK", "sp_attack", 'u' }, { "RELEASE", "sp_release", 'u' }, { "DRIVE", "sp_drive", 'u' } } },
+            // (SF-000, the hundred and second build) SYNTH's own eight, the same on every lane (SynthEngine): the note, where
+            // along the table, the filter and its envelope as on a 303, DRIVE. The rest of it is in CONFIG.
+            { "SYNTH", { { "TUNE", "sy_tune", 'b' }, { "SHAPE", "sy_shape", 'u' }, { "CUTOFF", "sy_cutoff", 'u' }, { "RES", "sy_res", 'u' },
+                         { "ENV AMT", "sy_envamt", 'u' }, { "ENV DECAY", "sy_decay", 'u' }, { "ACCENT", "sy_accent", 'u' }, { "DRIVE", "sy_drive", 'u' } } },
+            // (and KICK FORGE's, the same on every lane: the kick's own eight, its TUNE and DRIVE its own here)
+            { "KICK FORGE", { { "TUNE", "fg_tune", 'b' }, { "CHARACTER", "fg_char", 'u' }, { "IMPACT", "fg_impact", 'u' }, { "BODY", "fg_body", 'u' },
+                              { "GROUND", "fg_ground", 'u' }, { "POSITION", "fg_pos", 'u' }, { "TONE", "fg_tone", 'u' }, { "DRIVE", "fg_drive", 'u' } },
+              {}, 0xff5A1418u } } },
     };
     return L;
 }

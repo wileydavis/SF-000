@@ -1570,7 +1570,7 @@ void Midi::motionPressed()
 // the third stand on the third page's knobs, as POCKETS' fourth does, and PAGE + goes on to them: up to eight in all.)
 int Midi::cfgPagesNow()
 {
-    const int most = ses.pocketsUp() ? (int) e16::kCfgPages + 1 : ses.macrosUp() ? (int) e16::kCfgPages : 8;
+    const int most = ses.pocketsUp() ? (int) e16::kCfgPages + 1 : ses.macrosUp() ? (int) e16::kCfgPages : 16;     // (sixteen: SYNTH with SAMPLE beside it lists over a hundred and sixty, the hundred and second build; eight until then)
     return juce::jlimit (1, most, ((int) cfgCache.size() + e16::kCfgPer - 1) / e16::kCfgPer);
 }
 

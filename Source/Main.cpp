@@ -12,6 +12,7 @@
 #include "core/Bus.h"
 #include "core/Sample.h"
 #include "modules/SampleEngine.h"
+#include "modules/SynthEngine.h"
 #include "Screen.h"
 #include "Midi.h"
 #include "Recorder.h"
@@ -2285,6 +2286,7 @@ static void wavetableTest (int& bad)
                         // (the bass on TABLE SAMPLE with 8 FRAMES, START and END narrowed, no LAYER; the chord's FROM SAMPLE at 64 FRAMES; the lead's at 64 WITH LEVEL)
                         auto* bs = sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[bass].getDynamicObject();
                         bs->setProperty ("wt_from", 0.0); bs->setProperty ("table", 1.0); bs->setProperty ("smp_start", 0.2); bs->setProperty ("smp_end", 0.4); bs->setProperty ("layer", 0.0);
+                        bs->setProperty ("model", 8.0 / 10.0);      // (WAVETABLE on the bass's list of then, eleven long: the hundred and second build put SYNTH and KICK FORGE after it)
                         sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[laneOf ("chord")].getDynamicObject()->setProperty ("wt_from", 0.5);
                         sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[lead].getDynamicObject()->setProperty ("wt_from", 1.0);
                     }
@@ -2309,7 +2311,12 @@ static void wavetableTest (int& bad)
             const juce::String name3 = s3.findSnap (id3)->name;
             const juce::var st3 = s3.stateVar();
             if (auto* lib = st3.getProperty ("library", juce::var()).getArray())
-                for (auto& sn : *lib) if (sn.getProperty ("name", "").toString() == name3) { sn.getDynamicObject()->setProperty ("lists", 3); sn.getDynamicObject()->removeProperty ("listsBy"); }
+                for (auto& sn : *lib) if (sn.getProperty ("name", "").toString() == name3)
+                {
+                    sn.getDynamicObject()->setProperty ("lists", 3); sn.getDynamicObject()->removeProperty ("listsBy");
+                    // (its place on the PERC lane's list of then: six objects and SAMPLE, the last of seven)
+                    if (auto* ls = sn.getProperty ("setup", juce::var()).getProperty ("lanes", juce::var())[perc].getDynamicObject()) ls->setProperty ("model", 1.0);
+                }
             Engine e4; e4.prepare (48000.0, 256);
             Session s4 (e4, false);
             s4.takeState (st3);
@@ -3526,7 +3533,7 @@ static std::vector<ReachRow> reachWalk (const juce::String& only)
                 const juce::String id (sp.id);
                 if (id == "model" || (id.startsWith ("smp_cut")) || id.startsWith ("sp_cut") || id.startsWith ("sp_ws") || id.startsWith ("sp_wd") || id.startsWith ("m1_") || id.startsWith ("m2_") || sp.type == sf::PType::Momentary) continue;
                 // (one model's own knobs are no other's)
-                if (const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : id.startsWith ("gr_") ? "GRANULAR" : id.startsWith ("fg_") ? "KICK FORGE" : id.startsWith ("sp_") ? "SAMPLE" : nullptr)
+                if (const char* fam = id.startsWith ("fm_") ? "FM 4-OP" : id == "table" || id.startsWith ("wt_") ? "WAVETABLE" : id.startsWith ("gr_") ? "GRANULAR" : id.startsWith ("fg_") ? "KICK FORGE" : id.startsWith ("sp_") ? "SAMPLE" : id.startsWith ("sy_") ? "SYNTH" : nullptr)
                     if (model != fam) continue;
                 if (const char* only1 = std::getenv ("SF000_REACH_ID"); only1 != nullptr && id != only1) continue;
                 ReachRow row; row.lane = lane.slug; row.module = lane.module; row.model = model; row.id = id; row.says = sp.reachIn (model.toStdString());
@@ -4820,6 +4827,216 @@ static void sampleEngineTest (int& bad)
     }
 }
 
+// (SF-000, the hundred and second build) SYNTH and KICK FORGE, the two other engines every lane has, through each lane's own
+// instrument: a lane, a model by name, settings by id in their own units, notes; what comes out (left).
+namespace synthcheck
+{
+struct Note { int at; int key; float vel; bool on; };
+static std::vector<float> play (int laneIdx, const char* modelName, const std::vector<std::pair<const char*, float>>& set, const std::vector<Note>& notes, double seconds, const juce::File* file = nullptr, std::vector<float>* right = nullptr, double* cpu = nullptr)
+{
+    using namespace sf0;
+    const auto& lane = lanes()[(size_t) laneIdx];
+    SFProcessor q (sf::makeModule (lane.module));
+    auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+    for (auto& f : lane.fixed) setPlain (f.param, f.value);
+    if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == modelName) setPlain ("model", (float) k); }
+    setPlain ("layer", 0.0f); setPlain ("density", 0.0f);
+    if (const int i = q.paramIndex ("source"); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (1.0f));        // (RUMBLE: from its notes)
+    for (auto& kv : set) setPlain (kv.first, kv.second);
+    q.setRateAndBufferSizeDetails (48000.0, 64); q.prepareToPlay (48000.0, 64);
+    if (file != nullptr) { q.mod().loadFiles (juce::StringArray (file->getFullPathName())); sf::tables::waitForScans(); }
+    std::vector<float> L; if (right) right->clear();
+    juce::AudioBuffer<float> b (2, 64);
+    const int blocks = (int) (seconds * 48000.0 / 64.0);
+    const auto t0 = juce::Time::getHighResolutionTicks();
+    for (int i = 0; i < blocks; ++i)
+    {
+        juce::MidiBuffer midi;
+        for (auto& n : notes) if (n.at / 64 == i) midi.addEvent (n.on ? juce::MidiMessage::noteOn (1, n.key, n.vel) : juce::MidiMessage::noteOff (1, n.key), n.at % 64);
+        b.clear(); q.processBlock (b, midi);
+        for (int k = 0; k < 64; ++k) { L.push_back (b.getSample (0, k)); if (right) right->push_back (b.getSample (1, k)); }
+    }
+    if (cpu) *cpu = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0) / seconds;
+    return L;
+}
+static double dbOf (const std::vector<float>& x, double from, double to)
+{
+    double e = 0.0; size_t n = 0;
+    for (size_t i = (size_t) (from * 48000.0); i < std::min (x.size(), (size_t) (to * 48000.0)); ++i) { e += (double) x[i] * x[i]; ++n; }
+    return 10.0 * std::log10 (e / (double) std::max<size_t> (1, n) + 1.0e-30);
+}
+// the first twelve harmonics of f0 over a window, each in dB against the loudest of them: what the wave is, whatever its level
+static std::vector<double> shapeOf (const std::vector<float>& x, double from, double len, double f0)
+{
+    std::vector<double> h;
+    const size_t a = (size_t) (from * 48000.0), n = (size_t) (len * 48000.0);
+    double top = 1.0e-30;
+    for (int k = 1; k <= 12; ++k)
+    {
+        double re = 0.0, im = 0.0;
+        for (size_t i = 0; i < n && a + i < x.size(); ++i) { const double w = 0.5 - 0.5 * std::cos (6.283185307179586 * (double) i / (double) n), ph = 6.283185307179586 * k * f0 * (double) i / 48000.0; re += w * x[a + i] * std::cos (ph); im += w * x[a + i] * std::sin (ph); }
+        h.push_back (re * re + im * im); top = std::max (top, re * re + im * im);
+    }
+    for (auto& v : h) v = 10.0 * std::log10 (v / top + 1.0e-12);
+    return h;
+}
+static double shapeApart (const std::vector<double>& a, const std::vector<double>& b) { double d = 0.0; for (size_t k = 0; k < a.size(); ++k) d = std::max (d, std::abs (std::max (a[k], -60.0) - std::max (b[k], -60.0))); return d; }
+// a recording of two sounds, a buzz and a hollow one, with a breath of near-silence between them (SAMPLE, RECORDING, SCAN)
+static juce::File twoSounds (const juce::File& dir)
+{
+    const auto f = dir.getChildFile ("two.wav");
+    juce::AudioBuffer<float> b (1, 144000);
+    for (int n = 0; n < 144000; ++n)
+    {
+        const double t = n / 48000.0, ph = std::fmod (220.0 * t, 1.0);
+        const double saw = 2.0 * ph - 1.0, sine = std::sin (6.283185307179586 * 220.0 * t);
+        const double gap = t > 1.4 && t < 1.6 ? 0.03 : 1.0;
+        b.setSample (0, n, (float) (0.5 * gap * (t < 1.5 ? saw : sine)));
+    }
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (f), 48000.0, 1, 24, {}, 0) };
+    if (w) w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+    return f;
+}
+}
+
+static void synthEngineTest (int& bad)
+{
+    using namespace synthcheck;
+    using namespace sf0;
+    std::printf ("SYNTH and KICK FORGE, the engines every lane has with SAMPLE (the hundred and second build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    int bass = 0, lead = 0, kick = 0;
+    for (int l = 0; l < kLanes; ++l) { const juce::String s (lanes()[(size_t) l].slug); if (s == "bass") bass = l; if (s == "lead") lead = l; if (s == "kick") kick = l; }
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-synthcheck");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto two = twoSounds (dir);
+    // 1. every lane's instrument has both, and a note on each sounds; nothing comes out that is not a number
+    {
+        juce::StringArray heard, silent;
+        for (int l = 0; l < kLanes; ++l)
+            for (const char* m : { "SYNTH", "KICK FORGE" })
+            {
+                const auto x = play (l, m, {}, { { 3200, 48, 0.8f, true }, { 40000, 48, 0.0f, false } }, 1.5, &two);
+                bool finite = true; for (auto v : x) finite = finite && std::isfinite (v);
+                const double d = dbOf (x, 0.06, 1.5);
+                (d > -60.0 && finite ? heard : silent).add (juce::String (lanes()[(size_t) l].slug) + " " + m + " " + juce::String (d, 0));
+            }
+        check (silent.isEmpty() && heard.size() == 2 * kLanes, "every lane plays SYNTH and KICK FORGE (dB over the note): " + heard.joinIntoString (", ") + (silent.isEmpty() ? juce::String() : "; NOT: " + silent.joinIntoString (", ")));
+    }
+    // 2. SAMPLE's frames: SHAPE is where in the recording; RECORDING keeps its levels; SCAN goes through it; STEPPED steps
+    {
+        const std::vector<Note> held { { 0, 57, 0.7f, true } };
+        const std::vector<std::pair<const char*, float>> base { { "sy_table_a", 13.0f }, { "sy_cutoff", 1.0f }, { "sy_envamt", 0.0f }, { "sy_sustain", 1.0f }, { "sy_drift", 0.0f }, { "sy_voices", 1.0f }, { "gate", 1.0f } };       // (GATE full: the note held for as long as its key is)
+        auto with = [&] (std::vector<std::pair<const char*, float>> more) { auto v = base; v.insert (v.end(), more.begin(), more.end()); return v; };
+        const auto early = play (bass, "SYNTH", with ({ { "sy_shape", 0.2f } }), held, 1.0, &two), late = play (bass, "SYNTH", with ({ { "sy_shape", 0.85f } }), held, 1.0, &two);
+        const double places = shapeApart (shapeOf (early, 0.3, 0.2, 220.0), shapeOf (late, 0.3, 0.2, 220.0));
+        const auto mid = play (bass, "SYNTH", with ({ { "sy_shape", 0.5f } }), held, 1.0, &two), midRec = play (bass, "SYNTH", with ({ { "sy_shape", 0.5f }, { "sy_table_a", 14.0f } }), held, 1.0, &two);
+        const double rec = dbOf (mid, 0.3, 0.8) - dbOf (midRec, 0.3, 0.8);
+        // (the recording is three seconds; SCAN at its own pace, from its start: at 0.4 s the buzz, at 2.4 s the hollow sound;
+        // SCAN at the middle stays where SHAPE is)
+        const float one = 0.5f + 0.5f * (0.02f + 0.98f * (float) (std::log (16.0) / std::log (64.0)));
+        const auto scanned = play (bass, "SYNTH", with ({ { "sy_shape", 0.0f }, { "sy_scan", one } }), held, 3.0, &two), still = play (bass, "SYNTH", with ({ { "sy_shape", 0.0f } }), held, 3.0, &two);
+        const double moved = shapeApart (shapeOf (scanned, 0.3, 0.2, 220.0), shapeOf (scanned, 2.3, 0.2, 220.0)), stayed = shapeApart (shapeOf (still, 0.3, 0.2, 220.0), shapeOf (still, 2.3, 0.2, 220.0));
+        // (STEPS: between BASIC's triangle and saw, SMOOTH is a blend of the two and STEPPED is the one it is nearer)
+        const auto smoothB = play (bass, "SYNTH", { { "sy_shape", 0.42f }, { "sy_cutoff", 1.0f }, { "sy_envamt", 0.0f }, { "sy_sustain", 1.0f }, { "sy_drift", 0.0f }, { "sy_circuit", 0.0f }, { "gate", 1.0f } }, held, 0.8, nullptr);
+        const auto steppedB = play (bass, "SYNTH", { { "sy_shape", 0.42f }, { "sy_steps", 1.0f }, { "sy_cutoff", 1.0f }, { "sy_envamt", 0.0f }, { "sy_sustain", 1.0f }, { "sy_drift", 0.0f }, { "sy_circuit", 0.0f }, { "gate", 1.0f } }, held, 0.8, nullptr);
+        const auto sawB = play (bass, "SYNTH", { { "sy_shape", 0.5f }, { "sy_cutoff", 1.0f }, { "sy_envamt", 0.0f }, { "sy_sustain", 1.0f }, { "sy_drift", 0.0f }, { "sy_circuit", 0.0f }, { "gate", 1.0f } }, held, 0.8, nullptr);
+        const double stepApart = shapeApart (shapeOf (smoothB, 0.3, 0.3, 220.0), shapeOf (steppedB, 0.3, 0.3, 220.0)), stepIsSaw = shapeApart (shapeOf (sawB, 0.3, 0.3, 220.0), shapeOf (steppedB, 0.3, 0.3, 220.0));
+        // (and made on a thread of their own, as the instrument makes them while it plays: the same frames)
+        sf::tables::asyncScans = true;
+        const auto lateAsync = play (bass, "SYNTH", with ({ { "sy_shape", 0.85f } }), held, 1.0, &two);
+        sf::tables::asyncScans = false;
+        const double async = shapeApart (shapeOf (late, 0.3, 0.2, 220.0), shapeOf (lateAsync, 0.3, 0.2, 220.0));
+        check (async < 0.01, "SAMPLE's frames made on a thread of their own, as while it plays, are the frames made at once (" + juce::String (async, 3) + " dB)");
+        check (places > 10.0 && rec > 10.0 && moved > 10.0 && stayed < 1.0 && stepApart > 3.0 && stepIsSaw < 0.5,
+               "TABLE SAMPLE: SHAPE at a fifth and at near the end are the recording's two sounds (" + juce::String (places, 1) + " dB apart in their harmonics); RECORDING is "
+               + juce::String (rec, 1) + " dB quieter than SAMPLE where the recording breathes; SCAN at its own pace goes from the one to the other in a held note (" + juce::String (moved, 1)
+               + " dB), and at its middle stays (" + juce::String (stayed, 2) + "); between BASIC's triangle and saw STEPPED is the saw (" + juce::String (stepIsSaw, 2) + " dB from it) where SMOOTH is a blend (" + juce::String (stepApart, 1) + " dB from STEPPED)");
+        // the wave envelope: at W DEPTH nought nothing moves; at full, to PLACE 1 in TIME 1 and staying there
+        const auto envOff = play (bass, "SYNTH", with ({ { "sy_shape", 0.0f }, { "sy_wp1", 1.0f }, { "sy_wt1", 800.0f } }), held, 2.0, &two);
+        const auto envOn = play (bass, "SYNTH", with ({ { "sy_shape", 0.0f }, { "sy_wp1", 1.0f }, { "sy_wt1", 800.0f }, { "sy_wdepth", 1.0f }, { "sy_wp2", 1.0f }, { "sy_wp3", 1.0f }, { "sy_wp4", 1.0f } }), held, 2.0, &two);      // (and on there: the later stages at the same place)
+        const double offMoves = shapeApart (shapeOf (envOff, 0.05, 0.1, 220.0), shapeOf (envOff, 1.5, 0.2, 220.0)), onMoves = shapeApart (shapeOf (envOn, 0.05, 0.1, 220.0), shapeOf (envOn, 1.5, 0.2, 220.0));
+        const double onSame = shapeApart (shapeOf (envOn, 1.2, 0.2, 220.0), shapeOf (envOn, 1.7, 0.2, 220.0));
+        check (offMoves < 1.0 && onMoves > 10.0 && onSame < 1.0, "the wave envelope: off, a held note stays where SHAPE is (" + juce::String (offMoves, 2) + " dB); at full it travels to PLACE 1 in TIME 1 ("
+               + juce::String (onMoves, 1) + " dB) and stays there (" + juce::String (onSame, 2) + ")");
+    }
+    // 3. BASIC's pure waves at SHAPE's quarters: the sine has no harmonics; the saw has them all, falling as 1/n
+    {
+        const std::vector<std::pair<const char*, float>> clean { { "sy_cutoff", 1.0f }, { "sy_envamt", 0.0f }, { "sy_sustain", 1.0f }, { "sy_drift", 0.0f }, { "sy_circuit", 0.0f } };
+        auto at = [&] (float shape) { auto v = clean; v.push_back ({ "sy_shape", shape }); return shapeOf (play (lead, "SYNTH", v, { { 0, 57, 0.7f, true } }, 0.8, nullptr), 0.3, 0.3, 220.0); };
+        const auto sine = at (0.0f), saw = at (0.5f);
+        double sineRest = -200.0; for (size_t k = 1; k < sine.size(); ++k) sineRest = std::max (sineRest, sine[k]);
+        const double sawThird = saw[2], sawTenth = saw[9];
+        check (sineRest < -50.0 && std::abs (sawThird + 9.5) < 2.0 && std::abs (sawTenth + 20.0) < 3.0, "BASIC at SHAPE's quarters: the sine's harmonics are " + juce::String (sineRest, 1) + " dB under it; the saw's third is "
+               + juce::String (sawThird, 1) + " dB and its tenth " + juce::String (sawTenth, 1) + " dB (1/n: -9.5 and -20)");
+    }
+    // 4. a patch chosen by hand puts every control where it has it; SYNTH chosen by hand opens on the lane's own patch
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        const Engine::Target t { 0, bass, 0 };
+        auto sp = [&] (const char* id) { for (auto& x : e.setupParams (t)) if (x.id == id) return x; return Engine::SetupParam(); };
+        auto chooseModel = [&] (const char* name) { const auto m = sp ("model"); e.setSetup (t, "model", (float) m.choices.indexOf (name) / (float) std::max (1, m.choices.size() - 1)); };
+        chooseModel ("SYNTH");
+        const bool opened = sp ("sy_patch").text.toUpperCase() == "BASS LADDER" && sp ("sy_circuit").text.toUpperCase() == "LADDER";
+        const auto patches = sf::syn::patchNames();
+        e.setSetup (t, "sy_patch", (float) sf::syn::patchIndex ("ACID 303") / (float) (patches.size() - 1));
+        const bool acid = sp ("sy_circuit").text.toUpperCase() == "DIODE" && sp ("sy_patch").text.toUpperCase() == "ACID 303";
+        check (opened && acid, "SYNTH chosen by hand on BASS opens on BASS LADDER (its CIRCUIT LADDER); PATCH ACID 303 chosen by hand puts the 303's DIODE in (" + sp ("sy_circuit").text + ")");
+    }
+    // 5. the transport stopped: every lane on SYNTH and on KICK FORGE, its pattern playing, is silent eight seconds after
+    {
+        juce::StringArray still;
+        int tried = 0;
+        for (int l = 0; l < kLanes; ++l)
+            for (const char* m : { "SYNTH", "KICK FORGE" })
+            {
+                Engine e; e.prepare (48000.0, 256);
+                const Engine::Target t { 0, l, 0 };
+                for (auto& sp : e.setupParams (t)) if (sp.id == "model" && sp.choices.contains (m)) e.setSetup (t, "model", (float) sp.choices.indexOf (m) / (float) std::max (1, sp.choices.size() - 1));
+                for (auto& sp : e.setupParams (t)) if (sp.id == "density") e.setSetup (t, "density", 0.0f);
+                for (int k : { cx::kSendA, cx::kSendB }) e.set (cx::lane (l, k), 0.0f);
+                e.solo = l; e.setRunning (true);
+                juce::AudioBuffer<float> b (2, 256);
+                double during = 0.0, after = 0.0;
+                for (int i = 0; i < (int) (3.0 * 48000.0 / 256); ++i) { e.render (b); for (int k = 0; k < 256; ++k) during += (double) b.getSample (0, k) * b.getSample (0, k); }
+                e.setRunning (false);
+                for (int i = 0; i < (int) (10.0 * 48000.0 / 256); ++i) { e.render (b); if (i > (int) (8.0 * 48000.0 / 256)) for (int k = 0; k < 256; ++k) after += (double) b.getSample (0, k) * b.getSample (0, k); }
+                ++tried;
+                const double a = 10.0 * std::log10 (after / (2.0 * 48000.0) + 1.0e-30);
+                if (during > 1.0e-6 && a > -100.0) still.add (juce::String (lanes()[(size_t) l].slug) + " " + m + " " + juce::String (a, 1) + " dB");
+            }
+        check (tried == 2 * kLanes && still.isEmpty(), "every lane on SYNTH and on KICK FORGE, its pattern played and the transport stopped, is silent eight seconds after (under -100 dB; "
+               + juce::String (tried) + " tried" + (still.isEmpty() ? juce::String() : "; still sounding: " + still.joinIntoString (", ")) + ")");
+    }
+    // 6. KICK FORGE is one Forge: on PERC's lane, played as the kick plays it (G1, the same settings), it is the kick's hit
+    {
+        int perc = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "perc") perc = l;
+        const std::vector<Note> hit { { 1000, 36, 1.0f, true } };
+        // (the kick lane's own TUNE, PUNCH, CLICK, DRIVE and PITCH TIME, which it starts away from, put where the Forge's own start)
+        const auto k = play (kick, "KICK FORGE", { { "fg_vary", 0.0f }, { "fg_impact", 0.0f }, { "vel_sens", 0.0f }, { "key_follow", 0.0f }, { "filter", 0.5f }, { "tune", 0.0f }, { "punch", 0.5f }, { "click", 0.5f },
+                                                   { "drive", 0.2f }, { "pitch_time", 0.5f }, { "decay", 0.5f }, { "split", 0.5f } }, hit, 1.0);      // (SPLIT off: as KICK FORGE chosen by hand has it; the lane's own has the model's lows under the layer's)
+        const auto p = play (perc, "KICK FORGE", { { "fg_vary", 0.0f }, { "fg_impact", 0.0f }, { "key_follow", 0.0f }, { "filter", 0.5f }, { "decay", 0.5f } }, hit, 1.0);
+        const auto ks = shapeOf (k, 0.12, 0.25, 49.0), ps = shapeOf (p, 0.12, 0.25, 49.0);
+        if (std::getenv ("SF000_DEBUG") != nullptr)
+        {
+            std::printf ("    kick %.1f dB, perc %.1f dB; harmonics:", dbOf (k, 0.0, 1.0), dbOf (p, 0.0, 1.0));
+            for (size_t i = 0; i < ks.size(); ++i) std::printf (" %.0f/%.0f", ks[i], ps[i]);
+            std::printf ("\n    first 40 ms kick %.1f perc %.1f; 0.3-0.6 s kick %.1f perc %.1f\n", dbOf (k, 0.02, 0.06), dbOf (p, 0.02, 0.06), dbOf (k, 0.3, 0.6), dbOf (p, 0.3, 0.6));
+        }
+        check (shapeApart (ks, ps) < 3.0, "KICK FORGE on the PERC lane, at the kick's settings, is the kick's Forge: its body's harmonics within " + juce::String (shapeApart (ks, ps), 1) + " dB of KICK's (under 3)");
+    }
+    // 7. its cost: sixteen held notes on LADDER, two oscillators, at 48 kHz
+    {
+        std::vector<Note> chord; for (int k = 0; k < 16; ++k) chord.push_back ({ 0, 40 + 2 * k, 0.7f, true });
+        double cpu = 0.0;
+        play (lead, "SYNTH", { { "sy_voices", 16.0f }, { "sy_mix", 0.5f }, { "sy_circuit", 3.0f }, { "sy_sustain", 1.0f } }, chord, 4.0, nullptr, nullptr, &cpu);
+        check (cpu < 0.5, "sixteen held notes on SYNTH (LADDER, two oscillators, four times oversampled) take " + juce::String (cpu * 100.0, 1) + " % of one core here");
+    }
+    dir.deleteRecursively();
+}
+
 static void forgeFinishTest (int& bad)
 {
     using namespace sf0;
@@ -5599,7 +5816,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') reachTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'g') granularTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 't') wavetableTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') reachTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
     {
@@ -7014,12 +7231,14 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 // build put GRANULAR last on these lists and reads a snapshot's places by the lists it was taken on.)
                 int oldN = 0;
                 juce::AudioBuffer<float> ob (2, 256);
-                auto old = [&] (int l, const char* id, int i, int was)
+                auto old = [&] (int l, const char* id, int i, int was, int listsMark = 0)
                 {
                     juce::var v = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (ses.take())), true));
                     if (auto* o = v.getDynamicObject())
                     {
-                        o->removeProperty ("lists"); o->setProperty ("uid", "sf0testlists-" + juce::String (++oldN)); o->setProperty ("id", 0);
+                        o->removeProperty ("lists");
+                        if (listsMark > 0) o->setProperty ("lists", listsMark);         // (the hundred and second build: one of lists 5, before SYNTH and KICK FORGE were on them)
+                        o->setProperty ("uid", "sf0testlists-" + juce::String (++oldN)); o->setProperty ("id", 0);
                         if (auto* ls = v["setup"]["lanes"][l].getDynamicObject()) ls->setProperty (id, (double) i / (double) (was - 1));
                     }
                     ses.recall (ses.takeFromLibrary (v, "OLD " + juce::String (oldN), juce::var()));
@@ -7027,8 +7246,13 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                     e.tidy();
                     return name (l, id);
                 };
-                const bool lists = sp (5, "model").choices.size() == 11 && sp (7, "model").choices.size() == 13 && sp (8, "model").choices.size() == 13
-                                   && sp (5, "model").choices[8] == "WAVETABLE" && sp (7, "model").choices[10] == "WAVETABLE" && sp (5, "model").choices[10] == "GRANULAR" && sp (7, "model").choices[12] == "GRANULAR";
+                // (the hundred and second build: SYNTH and KICK FORGE after GRANULAR, last)
+                const bool lists = sp (5, "model").choices.size() == 13 && sp (7, "model").choices.size() == 15 && sp (8, "model").choices.size() == 15
+                                   && sp (5, "model").choices[8] == "WAVETABLE" && sp (7, "model").choices[10] == "WAVETABLE" && sp (5, "model").choices[10] == "GRANULAR" && sp (7, "model").choices[12] == "GRANULAR"
+                                   && sp (5, "model").choices[11] == "SYNTH" && sp (5, "model").choices[12] == "KICK FORGE" && sp (7, "model").choices[13] == "SYNTH" && sp (7, "model").choices[14] == "KICK FORGE";
+                // a snapshot of lists 5 (the hundred and first build's): its places are on the lists without the two
+                const bool fiveOk = old (5, "model", 10, 11, 5) == "GRANULAR" && old (5, "model", 0, 11, 5) == "BASS LADDER" && old (7, "model", 12, 13, 5) == "GRANULAR"
+                                    && old (5, "layer_model", 5, 11, 5) == "SINE SUB" && old (0, "model", 7, 8, 5) == "KICK FORGE" && old (0, "layer_model", 6, 8, 5) == "SAMPLE";
                 // the lists of nine and eleven (before WAVETABLE), and of ten and twelve (before GRANULAR)
                 const bool bassOld = old (5, "model", 0, 9) == "BASS LADDER" && old (5, "model", 1, 9) == "MONO 101-TYPE" && old (5, "model", 5, 9) == "SINE SUB" && old (5, "model", 7, 9) == "SAMPLE"
                                      && old (5, "model", 8, 9) == "FM 4-OP" && old (5, "layer_model", 5, 9) == "SINE SUB"
@@ -7036,16 +7260,16 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 const bool leadOld = old (7, "model", 3, 11) == "STAB DUB" && old (7, "model", 9, 11) == "SAMPLE" && old (7, "model", 10, 11) == "FM 4-OP" && old (8, "model", 4, 11) == "STAB DETROIT"
                                      && old (7, "model", 10, 12) == "WAVETABLE" && old (7, "model", 11, 12) == "FM 4-OP" && old (8, "model", 9, 12) == "SAMPLE";
                 bool nowOk = true;
-                for (int i = 0; i < 11; ++i) { e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), (float) i / 10.0f } }); nowOk = nowOk && (int) std::lround (sp (5, "model").value * 10.0f) == i; }
-                for (int i = 0; i < 13; ++i) { e.applySetup ({ 0, 7, 0 }, { { juce::String ("model"), (float) i / 12.0f } }); nowOk = nowOk && (int) std::lround (sp (7, "model").value * 12.0f) == i; }
+                for (int i = 0; i < 13; ++i) { e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), (float) i / 12.0f } }); nowOk = nowOk && (int) std::lround (sp (5, "model").value * 12.0f) == i; }
+                for (int i = 0; i < 15; ++i) { e.applySetup ({ 0, 7, 0 }, { { juce::String ("model"), (float) i / 14.0f } }); nowOk = nowOk && (int) std::lround (sp (7, "model").value * 14.0f) == i; }
                 // a snapshot from before, recalled over a bass playing something else: its bass says 5 of 8 (SINE SUB then)
-                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 2.0f / 10.0f } });
+                e.applySetup ({ 0, 5, 0 }, { { juce::String ("model"), 2.0f / 12.0f } });
                 const bool bySnap = old (5, "model", 5, 9) == "SINE SUB";
                 // it sounds: the bass lane's own pattern, with the built-in waves and with the sample's
                 auto plays = [&] (bool fromSample)
                 {
                     Engine e2; e2.prepare (SR2, 256);
-                    e2.setSetup ({ 0, 5, 0 }, "model", 8.0f / 10.0f);
+                    e2.setSetup ({ 0, 5, 0 }, "model", 8.0f / 12.0f);
                     e2.loadFile (5, wavFile);
                     e2.setSetup ({ 0, 5, 0 }, "table", fromSample ? 1.0f : 0.0f);
                     e2.solo = 5; e2.setRunning (true);
@@ -7057,10 +7281,10 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 double sb = 0.0, sd = 0.0;
                 for (size_t i = 0; i < built.size(); ++i) { sb += (double) built[i] * built[i]; sd += (double) (built[i] - fromSmp[i]) * (built[i] - fromSmp[i]); }
                 wtBuilt = 10.0 * std::log10 (sb / (double) built.size() + 1e-20); wtDiffers = 10.0 * std::log10 ((sd + 1e-20) / (sb + 1e-20));
-                wavesOk = lists && bassOld && leadOld && nowOk && bySnap && wtBuilt > -40.0 && wtDiffers > -30.0;
-                if (! wavesOk) std::printf ("    (lists %d bass %d lead %d now %d by a snapshot %d)\n", (int) lists, (int) bassOld, (int) leadOld, (int) nowOk, (int) bySnap);
+                wavesOk = lists && bassOld && leadOld && nowOk && bySnap && fiveOk && wtBuilt > -40.0 && wtDiffers > -30.0;
+                if (! wavesOk) std::printf ("    (lists %d bass %d lead %d now %d by a snapshot %d lists 5 %d)\n", (int) lists, (int) bassOld, (int) leadOld, (int) nowOk, (int) bySnap, (int) fiveOk);
             }
-            std::printf ("  %s: WAVETABLE is a model of BASS, LEAD and CHORD, before FM 4-OP, and GRANULAR is last; a model's place in a snapshot from before either was there is the same model, and one kept now is itself; "
+            std::printf ("  %s: WAVETABLE is a model of BASS, LEAD and CHORD, before FM 4-OP, then GRANULAR, then SYNTH and KICK FORGE last; a model's place in a snapshot from before any of them was there (lists 1, lists 5) is the same model, and one kept now is itself; "
                          "the bass plays it at %.1f dB, and with the sample's waves it is another sound (%.1f dB apart)\n", wavesOk ? "ok  " : "FAIL", wtBuilt, wtDiffers);
             if (! wavesOk) ++bad;
             const bool gainOk = std::abs ((louder.early - base.early) - 6.0) < 0.2 && std::abs ((normal.early - base.early) + peakDb) < 0.2 && peakDb < -1.0;
@@ -8048,6 +8272,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     reachTest (bad);
     forgeMoreTest (bad);
     forgeFinishTest (bad);
+    synthEngineTest (bad);              // (the hundred and second build)
 
     {
         // GRANULAR above its source's pitch: the grains' read (grainCheck)
@@ -9116,10 +9341,11 @@ static int sampleCheck (const juce::StringArray& args, const juce::String& path)
     const Engine::Target t { 0, lane, 0 };
     auto* p = e.processorFor (t);
     if (p == nullptr) return 2;
-    // MODEL: SAMPLE
+    // MODEL: SAMPLE (or --model NAME: SYNTH, KICK FORGE, any on the lane's list)
+    const juce::String modelName = arg ("--model", "SAMPLE");
     bool isSample = false;
-    for (auto& sp : e.setupParams (t)) if (sp.id == "model") { const int at = sp.choices.indexOf ("SAMPLE"); if (at >= 0) { e.setSetup (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1)); isSample = true; } }
-    if (! isSample) std::printf ("lane %d has no SAMPLE model\n", lane + 1);
+    for (auto& sp : e.setupParams (t)) if (sp.id == "model") { const int at = sp.choices.indexOf (modelName); if (at >= 0) { e.setSetup (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1)); isSample = true; } }
+    if (! isSample) std::printf ("lane %d has no %s model\n", lane + 1, modelName.toRawUTF8());
     const bool loaded = e.loadFile (lane, f);
     if (args.contains ("--plain")) std::printf ("PLAIN said: %s\n", ses.samplePlain (lane).toRawUTF8());            // (as the PLAIN key in CONFIG; before any --set, which then moves one thing from there)
     for (int i = 0; i < args.size() - 1; ++i)
@@ -17963,6 +18189,9 @@ public:
     void initialise (const juce::String& cmd) override
     {
         const auto args = juce::StringArray::fromTokens (cmd, true);
+        // (the hundred and second build: SYNTH's frames of a recording are made on a thread of their own while the instrument
+        // plays; the cue's rig, the checks and every tool on the command line make them at once, so what they render is whole)
+        if (sf0::CueWorker::wanted (cmd) || cmd.contains ("--")) sf::tables::asyncScans = false;
         if (sf0::CueWorker::wanted (cmd))
         {
             // The cue's rig (CueRig.h): started by the instrument, with no window, no audio device and nothing written
@@ -18395,6 +18624,52 @@ public:
                 total += (long) L.size();
             }
             std::printf ("wrote %ld samples a side, nine settings\n", total);
+            std::fflush (stdout);
+            os.flush();
+            quit(); return;
+        }
+        if (args.contains ("--synthprint"))
+        {
+            // (--synthprint OUT.raw: SYNTH on a lane that plays notes, over a range of patches and settings (a 303 line with slides
+            // and accents, a chord, FM, the noise's metal, BODY, TABLE SAMPLE scanned and the wave envelope), and KICK FORGE off
+            // KICK, its output written as raw floats. Two builds that write the same file play the same, to the sample.)
+            using namespace sf0;
+            using synthcheck::Note;
+            juce::File out (args[args.indexOf ("--synthprint") + 1]);
+            out.deleteFile();
+            juce::FileOutputStream os (out);
+            const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-synthprint");
+            dir.deleteRecursively(); dir.createDirectory();
+            const auto two = synthcheck::twoSounds (dir);
+            int lead = 0, perc = 0, bassL = 0;
+            for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "lead") lead = l; if (sl == "perc") perc = l; if (sl == "bass") bassL = l; }
+            const std::vector<Note> line { { 0, 45, 0.9f, true }, { 6000, 45, 0.0f, false }, { 5900, 48, 0.6f, true }, { 12000, 48, 0.0f, false }, { 11900, 52, 0.95f, true }, { 20000, 52, 0.0f, false },
+                                           { 24000, 57, 0.7f, true }, { 30000, 60, 0.7f, true }, { 30000, 64, 0.7f, true }, { 60000, 57, 0.0f, false }, { 60000, 60, 0.0f, false }, { 60000, 64, 0.0f, false } };
+            struct Set { int lane; const char* model; std::vector<std::pair<const char*, float>> knobs; bool file; };
+            const auto pi = [] (const char* n) { return (float) sf::syn::patchIndex (n); };
+            const std::vector<Set> sets {
+                { lead, "SYNTH", { { "sy_drift", 0.0f } }, false },
+                { lead, "SYNTH", { { "sy_patch", pi ("ACID 303") }, { "sy_drift", 0.0f } }, false },
+                { lead, "SYNTH", { { "sy_patch", pi ("FM BELL") }, { "sy_drift", 0.0f } }, false },
+                { lead, "SYNTH", { { "sy_noise", 1.0f }, { "sy_color", 1.0f }, { "sy_body", 2.0f }, { "sy_unison", 5.0f }, { "sy_drift", 0.0f }, { "sy_circuit", 5.0f } }, false },
+                { lead, "SYNTH", { { "sy_table_a", 13.0f }, { "sy_scan", 0.9f }, { "sy_steps", 1.0f }, { "sy_drift", 0.0f } }, true },
+                { lead, "SYNTH", { { "sy_table_a", 14.0f }, { "sy_wdepth", 1.0f }, { "sy_wt1", 300.0f }, { "sy_wp1", 0.9f }, { "sy_wloop", 3.0f }, { "sy_drift", 0.0f } }, true },
+                { perc, "KICK FORGE", { { "fg_vary", 0.0f }, { "fg_char", 0.6f } }, true },
+                { bassL, "KICK FORGE", { { "fg_vary", 0.0f }, { "fg_ground", 0.9f } }, false } };
+            long total = 0;
+            for (const auto& st : sets)
+            {
+                // (a patch is put first, as PATCH chosen by hand does: the Engine's, here by its own values)
+                std::vector<std::pair<const char*, float>> knobs;
+                for (auto& kv : st.knobs) if (juce::String (kv.first) == "sy_patch") for (auto& pv : sf::syn::patches()[(size_t) kv.second].values) knobs.push_back (pv);
+                for (auto& kv : st.knobs) if (juce::String (kv.first) != "sy_patch") knobs.push_back (kv);
+                std::vector<float> R;
+                const auto L = synthcheck::play (st.lane, st.model, knobs, line, 2.0, st.file ? &two : nullptr, &R);
+                os.write (L.data(), L.size() * sizeof (float)); os.write (R.data(), R.size() * sizeof (float));
+                total += (long) L.size();
+            }
+            dir.deleteRecursively();
+            std::printf ("wrote %ld samples a side, eight settings\n", total);
             std::fflush (stdout);
             os.flush();
             quit(); return;

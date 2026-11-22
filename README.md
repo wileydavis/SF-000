@@ -242,7 +242,8 @@ back at the other. The sequencer stays where it is.
 - **The controls stand in grids of four by four, two side by side, and CONFIG has three such
   views** (ninety-fourth build; the keys **1 2 3** beside CONFIG's name choose which), and a
   lane a fourth (key **4**, hundredth build) only while SAMPLE and another engine with controls
-  of its own are both chosen on it:
+  of its own are both chosen on it; with SYNTH, a fourth and a fifth, and with SAMPLE and SYNTH
+  both, up to a sixth (keys **4 5 6**, hundred and second build), each only where it has something:
 
   | view | a lane, left | a lane, right | an effect or a return, left | right |
   |---|---|---|---|---|
@@ -251,6 +252,11 @@ back at the other. The sequencer stays where it is.
   | **2 with SAMPLE** (the model or the layer; hundredth build) | **SOURCE**: START, END, FADE IN, FADE OUT / GAIN, NORMALISE, REVERSE, ROOT / LOOP, LOOP START, LOOP END, CROSSFADE / SLICE BY, COUNT, SENSITIVITY, BASE NOTE | **PLAY**: METHOD, NOTES, PLAY, CHOKE / CYCLE, VEL START, VARIATION, RATE / PITCH SPREAD, GRAIN SHAPE, SYNC, BARS / WARP, LOCK | | |
   | **3** | **SAMPLE** (GRANULAR's and a phrase model's file): START, END, FADE IN, FADE OUT / GAIN, NORMALISE, MARKERS, LOOP / PLAY, NOTES, KNOBS, CROSSFADE / VEL START, RANDOM START, SLICE, CYCLE. **With SAMPLE**: its panel eight, as rings marked ON PANEL | **MOTION**: 1 above, 2 below | **BANDS** (a convolution's): the switch and the two crossovers, then a row a band | **MOTION** |
   | **4** (with SAMPLE) | what the other model has of its own (KICK FORGE's BODY; WAVETABLE's, FM 4-OP's, GRANULAR's) | KICK FORGE's IMPACT AND GROUND, or the file's box of a GRANULAR or phrase model | | |
+  | **2 with SYNTH** (the model or the layer; hundred and second build) | **OSCILLATORS**: TABLE A, SHAPE, WARP, WARP AS / TABLE B, SHAPE B, PITCH B, FINE B / MIX, FM, SYNC, TUNE / SUB, NOISE, COLOR, PHASE | **WAVE MOTION**: SCAN, SCAN END, STEPS, W DEPTH / W TIME 1, W PLACE 1, W TIME 2, W PLACE 2 / W TIME 3, W PLACE 3, W TIME 4, W PLACE 4 / W LOOP, W VEL, W KEY | | |
+  | **3 with SYNTH** | **FILTER AND ENVELOPES**: CIRCUIT, CUTOFF, RES, KEY TRACK / ENV AMT, ENV DECAY, MOD ATTACK, DRIVE / ATTACK, SUSTAIN, RELEASE, ACCENT / PITCH ENV, PITCH TIME, BURSTS, BURST GAP | **MOTION** | | |
+  | **4 with SYNTH** | **VOICE AND BODY**: VOICES, GLIDE, SLIDE, CHORD / UNISON, DETUNE, WIDTH, DRIFT / BODY, BODY MIX, BODY DECAY, BODY TONE / PATCH, SPACE, GAIN | the old sample controls, where the lane has them | | |
+  | **5 with SYNTH** | what the other model has of its own (KICK FORGE's BODY, or WAVETABLE's and the rest) | KICK FORGE's IMPACT AND GROUND | | |
+  | **4 to 6 with SAMPLE and SYNTH** | SYNTH's four grids on 4 and 5 (SAMPLE keeps 2 and 3); 6, VOICE's old phrase controls | | | |
 
   The compressor's eleven are one grid (the same cells on the master and as an insert); the
   drum bus has BUS and LANES. The lane EQ stays as it was, at the foot.
@@ -262,8 +268,8 @@ back at the other. The sequencer stays where it is.
   model of the lane's own, a band's with BANDS off). So no control moves, whatever is turned,
   MODEL and LAYER MODEL included; MODEL and LAYER MODEL are on view 1 and what they bring is
   on view 2, under each one's name. The view is kept from one page to the next, so MOTION is
-  the right of 3 everywhere. `--cfgcheck` holds every page to it (142 pages, every model
-  under every layer model, every switch and menu through all it has: 318 controls, each in
+  the right of 3 everywhere. `--cfgcheck` holds every page to it (164 pages, every model
+  under every layer model, every switch and menu through all it has: 665 controls, each in
   one cell).
 - **MOTION** moves one of the instrument's knobs by itself (an effect's and a return's CONFIG has
   the same two, moving that effect's knobs, with INPUT, the level coming in, in place of NOTES).
@@ -498,7 +504,8 @@ chosen.
 of the whole file to pan along, tabs a slice (a click plays it), the wave in the file's lows,
 mids and highs as bands with clipping in red, the steps that play each slice under it, the
 playheads as notes sound, GRAIN's grains, START, END, the loop's ends and the markers. The
-wheel zooms. **START and END** snap to a zero crossing. **Double-click** puts a marker in, or
+wheel zooms, and nothing else does: dragging END (or any marker) leaves the view where it is
+(the hundred and second build). **START and END** snap to a zero crossing. **Double-click** puts a marker in, or
 takes one out; on a file sliced by ONSETS, EQUAL or BEATS the first double-click turns its cuts
 into markers (SLICE BY goes to MARKERS) for you to move. Up to 32, kept in the snapshot.
 
@@ -511,6 +518,65 @@ to take it out.
 **PLAIN** sets SAMPLE's own to rest as well (PLAY THROUGH, ROOT the lane's first step's note on a
 lane that plays notes) and says what it did. A snapshot from before this build on SAMPLE comes
 back with SAMPLE's controls at rest.
+
+### SYNTH and KICK FORGE: the other two engines every lane has (hundred and second build)
+
+Every lane now offers **SAMPLE, SYNTH and KICK FORGE**, each the same engine with the same
+panel wherever it stands, last on every list of models (so no snapshot's model moves). The
+lane's own models stay until you say they go.
+
+**SYNTH** is one polyphonic engine. Each voice has two wavetable oscillators (A and B), a sub
+an octave under A, NOISE from white through pink to the 808's metal, DRIVE, one filter in six
+circuits (CLEAN LP, BP, HP; LADDER; DIODE, the 303's; MS-20), an amp envelope, a MOD envelope
+that opens the filter, a PITCH ENV, BURSTS, and BODY: PERC's struck objects, tuned to the note
+and ringing on after it (about as loud as what strikes it, at any note). ACCENT and SLIDE work
+on any sound. VOICES 1 to 16; UNISON to 7.
+
+| panel | |
+|---|---|
+| TUNE | two octaves either way |
+| SHAPE | where along TABLE A. On BASIC the sine, triangle, saw, square and pulse are at its quarters, pure |
+| CUTOFF, RES | the filter |
+| ENV AMT, ENV DECAY | how far each note opens it, and how long both envelopes fall (as on a 303) |
+| ACCENT | what a hard note (over 85 %) does: louder, the filter further open and faster closed |
+| DRIVE | before the filter |
+
+**Tables.** BASIC, the instrument's eleven, **FILE** (the lane's file as a Serum or Vital
+wavetable), **SAMPLE** (the lane's recording as a frame every hundredth of a second, up to 1024,
+each pitch-tracked and at one loudness: SHAPE is where in the recording) and **RECORDING** (the
+same frames at the recording's own levels: a breath quiet, a vowel loud). A voice on SAMPLE
+keeps a vowel a vowel at any note; its formants move with the pitch, as a wavetable's do. The
+frames are made on a thread of their own when a file comes in (a 30-second file: about 0.6 s
+on the build machine); a note played before then plays BASIC, and the display says so.
+
+**WAVE MOTION** (after the 3rd Wave): **SCAN** moves each note through its tables from where
+SHAPE is: middle, it stays; right, forward from a sixteenth of the recording's pace to four
+times it; left, backward. **SCAN END**: HOLD, LOOP, BOUNCE. **STEPS**: SMOOTH, or STEPPED from
+frame to frame as the PPG. A **wave envelope** of four stages, a TIME and a PLACE each (W DEPTH
+how much of it; none as it opens; W LOOP round its last stages), so a note can hurry through one
+part of a recording and linger in another. **W VEL** and **W KEY** move the place by velocity
+and by the note. MOTION reaches all of it.
+
+**Patches.** PATCH puts every control where a patch has it: today's synth models (BASS LADDER,
+MONO 101, ACID 303, FM BASS, FM BELL, FM 4-OP, MS-20, SYNC LEAD, HOOVER, the stabs, ORGAN M1,
+the pads), the hats, ride, crash, clap, shaker, rim, cowbell, clave, and PERC's six objects.
+Each is as loud as the model it is made from (measured: within a fifth of a dB; a struck
+object's GAIN is 20 to 30 dB up, its BODY ringing from a short strike); how near it sounds is
+for your ears. **SYNTH chosen by hand** opens on the lane's
+own: BASS LADDER on BASS, ACID 303 on LEAD, STAB DUB on CHORD, DUB WASH on PAD, HAT 909 on
+CLOSED HAT, OPEN HAT, CLAP, MEMBRANE on PERC, INIT elsewhere. Your own sounds are snapshots.
+
+**The display** (544 by 156): the wave at SHAPE, the filter's curve, the envelopes, a cell a
+voice, the steps. Drag the wave for SHAPE, the filter's point for CUTOFF and RES, the envelope
+for ENV DECAY and SUSTAIN; the wheel moves what is under it.
+
+**KICK FORGE** is the kick's Forge, moved out of the kick into one piece of code (`Forge.h`)
+that KICK plays as it always did (its standing render is the same to the bit) and every other
+lane plays through `ForgeEngine`: one hit a note, at the note's pitch on a lane that plays
+notes, at the kick's G1 on a drum lane, its ground ringing between hits. Its panel is the
+kick's eight (TUNE, CHARACTER, IMPACT, BODY, GROUND, POSITION, TONE, DRIVE); off KICK its TUNE,
+DRIVE, PUNCH, PITCH TIME and CLICK are its own, in CONFIG's BODY grid, and the lane's DECAY (or
+GATE) is its DECAY. Its IMPACT is taken from the lane's file.
 
 ### A sample as it was recorded
 
@@ -2163,9 +2229,10 @@ Open SETUP to see what is connected. Nothing needs choosing.
 
 ```
 ./build.sh test                                   # build, then the offline audio and timing checks
-SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice and warp markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's controls in CONFIG (GROUND LENGTH, LOW PRESERVE and the ninety-ninth build's sixteen), P SAMPLE, the engine every lane has (twelve checks: transparency, folding, clicks, timing, STRETCH, WARP, GRAIN, LOOP, REVERSE, its cost, every lane), f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
+SF000_TEST_NEW=1 build/.../SF-000 --test          # only one of the newest blocks, for when that is what is being worked on: 1 POCKETS and the convolution's BANDS, b BANDS alone, m MOTION on the snapshot knobs, a the arrangement, q the lane EQ, c the pocket as the kick's own curve, g GRANULAR's own knobs and a snapshot from before them, p a sample's slices, loop, starts and RESAMPLE, w stereo samples, LOOP and PERC's SAMPLE, n GAIN and a recall's notes at the end of its glide, x slice and warp markers by hand, e the pitch wheel, r the Airwindows effects, y the controls on a sounding note, u the same engine on any lane, i a lone step in a short sequence and LEVEL's lowest end, o the mix and what PLAIN says, d the parameter contract (every parameter of every lane's instrument: seven minutes), j KICK FORGE's controls in CONFIG (GROUND LENGTH, LOW PRESERVE and the ninety-ninth build's sixteen), P SAMPLE, the engine every lane has (twelve checks: transparency, folding, clicks, timing, STRETCH, WARP, GRAIN, LOOP, REVERSE, its cost, every lane), Y SYNTH and KICK FORGE on every lane (TABLE SAMPLE, RECORDING, SCAN, STEPS, the wave envelope, BASIC's pure waves, patches, the transport stopped, the Forge off KICK being the kick's, the cost), f KICK FORGE (it prints the kick's loudness at eleven places on CHARACTER; SF000_FORGE_DEBUG=1 also writes each as /tmp/forge-cN.wav)
 build/.../SF-000 --test --wav out.wav             # the same, keeping 16 bars of the full rig
 build/.../SF-000 --sampleprint out.raw            # SAMPLE alone in nine settings, as raw floats: two builds that write the same file play the same
+build/.../SF-000 --synthprint out.raw             # SYNTH in six settings and KICK FORGE off KICK in two, as raw floats: the same
 ./build.sh perf                                   # the engine's share of real time and what the screen costs, on this machine
 build/.../SF-000 --audit                          # does every lane knob change the sound? (slow)
 build/.../SF-000 --follow pad                     # a key held on a lane, and LEVEL then FILTER thrown to the bottom: the level every 50 ms after (as the rig stands; its sends at nothing; its inserts out too)
@@ -2179,7 +2246,7 @@ build/.../SF-000 --printbus                       # what a print leaves: prints 
 python3 tools/master_probe.py probe.wav           # a test signal for measuring what a mix-bus processor does: sweeps and noise at stepped levels, tone steps, sides alone (bounce it through the processor)
 build/.../SF-000 --finishcheck in.wav out.wav     # a file through FINISH alone, as 32-bit float (--amount 0 to 1, --input dB, --auto 1: finding its own level, --says: where it puts it; --limit -1 [--gain dB]: the master's limiter after it)
 build/.../SF-000 --finishrig dir                  # the rig as it opens rendered with FINISH off and at 100, as two files to set side by side (--seconds N, --amount A, --target LUFS: the LIMIT knob, --bare: the limiter out of the way)
-build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value)
+build/.../SF-000 --samplecheck f.wav --lane 6 --out dir   # what a lane makes of a sample: plays it and writes the lane and the outputs as WAVs, with every setting of the lane (--plain: after PLAIN; --note N; --set id=value; --model NAME: another model than SAMPLE, SYNTH or KICK FORGE say)
 build/.../SF-000 --printsession session.json dir   # a session file opened as the instrument opens it (a copy: the file is not written; its samples go in dir/session/samples) and its arrangement printed into dir (--parts A B: only those; --finish 0 to 4; --rate HZ)
 build/.../SF-000 --printsession session.json dir --load   # no print: what each part asks of the processor on this machine, by lane (instrument + effects), the returns and the master (--time: bar by bar, through the morphs)
 build/.../SF-000 --livesession session.json dir --from 7 --to 10   # the arrangement played as it is played live (the device's callback on its own thread, the timer bringing the parts; --single: both from one thread), written to dir/live.wav with how long each buffer took (live.csv); --buffer N

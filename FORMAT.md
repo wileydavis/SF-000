@@ -138,7 +138,7 @@ this build does not have is written back as it was read.
   "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
   "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
-  "lists": 4,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
+  "lists": 6,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
 }
 ```
 
@@ -261,6 +261,26 @@ this build does not have is written back as it was read.
   no markers. **The `smp_` ids above no longer reach SAMPLE**: they are GRANULAR's, TABLE
   SAMPLE's and VOICE's phrase models' file; a snapshot from before the hundredth build on SAMPLE
   is read with SAMPLE at rest (its old `smp_` values kept, unused).
+- **SYNTH's own** (hundred and second build) are in a lane's `setup` under `sy_` ids, the same on
+  every lane, each in its own units as a place 0 to 1 as every control is: the panel's eight
+  (`sy_tune`, `sy_shape`, `sy_cutoff`, `sy_res`, `sy_envamt`, `sy_decay`, `sy_accent`, `sy_drive`),
+  OSCILLATORS (`sy_table_a`, `sy_warp`, `sy_warp_as`, `sy_table_b`, `sy_shape_b`, `sy_pitch_b`,
+  `sy_fine_b`, `sy_mix`, `sy_fm`, `sy_sync`, `sy_sub`, `sy_noise`, `sy_color`, `sy_phase`), FILTER
+  AND ENVELOPES (`sy_circuit`, `sy_keytrack`, `sy_mattack`, `sy_attack`, `sy_sustain`,
+  `sy_release`, `sy_pitch_env`, `sy_pitch_time`, `sy_bursts`, `sy_burst_gap`), VOICE AND BODY
+  (`sy_voices`, `sy_glide`, `sy_slide`, `sy_chord`, `sy_unison`, `sy_detune`, `sy_width`,
+  `sy_drift`, `sy_body`, `sy_body_mix`, `sy_body_decay`, `sy_body_tone`, `sy_patch`, `sy_space`,
+  `sy_gain`) and WAVE MOTION (`sy_scan`, `sy_scan_end`, `sy_steps`, `sy_wdepth`, `sy_wt1` ...
+  `sy_wt4`, `sy_wp1` ... `sy_wp4`, `sy_wloop`, `sy_wvel`, `sy_wkey`). `sy_table_a` and `sy_table_b`
+  are places on BASIC, CLASSIC, HARMONIC, PWM, SYNC, FORMANT, FM, FOLD, DIGITAL, ORGAN, BASS, COMB,
+  FILE, SAMPLE, RECORDING (appended, never moved). `sy_patch` names the patch last chosen; the
+  values are what play. **KICK FORGE's** `fg_` ids (as on KICK) are on every other lane too, with
+  five that on KICK are the lane's: `fg_tune`, `fg_drive`, `fg_punch`, `fg_ptime`, `fg_click`. A
+  setup that names none of them is read with each where it starts.
+- **`lists` 6** (hundred and second build): SYNTH is last on every lane's list of models (and on
+  KICK's and the synths' LAYER MODEL), and KICK FORGE after it on every lane but KICK. A lane's
+  `model` and `layer_model` of `lists` 2 to 5 are places on the lists one shorter (KICK) or two
+  shorter (the rest), and are read there.
 - **A lane's EQ** (eightieth build) is in its `setup`: `eq1_type`, `eq1_hz`, `eq1_gain`, `eq1_q` ...
   `eq8_q`, each a place from 0 to 1. `type`: OFF, BELL, LOW SHELF, HIGH SHELF, LOW CUT, HIGH
   CUT, NOTCH along 0 to 1 (sixths). `hz`: 20 Hz · 1000^v. `gain`: -18 dB + 36 v. `q`:

@@ -117,12 +117,9 @@ void SampleEngine::paint (juce::Graphics& g, juce::Rectangle<float> r, const Mod
     const float bpm = seen.bpm.load(), bpb = std::max (1.0f, seen.beatsPerBar.load());
     const View v = viewOf (*this, m, *s, bpm, bpb);
     const double n = (double) s->length();
-    // the part shown: the region (and a little either side), unless zoomed by hand
-    if (! zoomed)
-    {
-        const double a = v.reg.start / n, b = v.reg.end / n, pad = (b - a) * 0.02;
-        zoomA = (float) std::max (0.0, a - (a > 1.0e-6 ? pad : 0.0)); zoomB = (float) std::min (1.0, b + (b < 0.999999 ? pad : 0.0));
-    }
+    // the part shown: the whole file, unless zoomed by hand with the wheel. (It followed START and END until the hundred and
+    // second build, so dragging END in zoomed the wave right in. Wiley, Nov 21: "Zoom should be a manual intentional zoom.")
+    if (! zoomed) { zoomA = 0.0f; zoomB = 1.0f; }
     Across ac { r, zoomA, zoomB, n, &v };
     const float X = r.getX(), Y = r.getY();
     const juce::Rectangle<float> wave (X + kX, Y + kWave, kW, kWaveH);
@@ -130,7 +127,7 @@ void SampleEngine::paint (juce::Graphics& g, juce::Rectangle<float> r, const Mod
     static const char* const bys[] = { "MARKERS", "ONSETS", "EQUAL", "BEATS" };
     // ---- header
     {
-        juce::String h = "SAMPLE \xc2\xb7 " + juce::String (methods[juce::jlimit (0, 2, v.method)]) + " \xc2\xb7 NOTES: " + (v.notes == 1 ? "SLICES" : "PITCH");
+        juce::String h = juce::String (juce::CharPointer_UTF8 ("SAMPLE \xc2\xb7 ")) + juce::String (      /* (the hundred and second build: read as UTF-8; it drew as two letters) */methods[juce::jlimit (0, 2, v.method)]) + " \xc2\xb7 NOTES: " + (v.notes == 1 ? "SLICES" : "PITCH");
         if (v.notes == 1) h << " \xc2\xb7 BY " << bys[juce::jlimit (0, 3, v.sliceBy)];
         if (v.method == kStretch) h << " \xc2\xb7 " << juce::String (v.bars, v.bars < 1.0 ? 2 : 0) << (v.bars == 1.0 ? " BAR" : " BARS") << (v.warp ? " \xc2\xb7 WARP" : "");
         if (v.loop) h << " \xc2\xb7 LOOP";

@@ -385,6 +385,9 @@ public:
     // place whose meaning changed starts where that control starts (a model chosen by hand); else every place keeps the
     // value it has (a snapshot or a file is being put back, and brings its own). True if the knobs changed.
     bool remapLane (int lane, bool fresh);
+    // (SF-000, the hundred and second build) a SYNTH patch put on a lane's instrument: every sy_ control as it opens, then
+    // the patch's, and the panel's knobs where SYNTH is the model and they reach them
+    void synthPatch (int lane, SFProcessor& p, int patch);
     // A lane held between two instruments (a stack knob standing between two snapshots whose lane is another model or
     // another sample): the one playing carries on as it is, a copy takes its place to be changed, as forkVoice; but
     // nothing fades by the clock. Both sound, played the same notes, mixed as blendVoice says (how much of the one
@@ -462,7 +465,7 @@ public:
     // A cell whose control is not on the page now: on the main panel for the time being (onMain), or not this model's or
     // this setting's (a sample's with no sample playing, a band's with BANDS off). Drawn, not turned: its place is kept.
     struct SetupGhost { int grid = 0, cell = 0; juce::String id, name; Kind kind = Kind::Knob; bool onMain = false; };
-    static constexpr int kCfgGrids = 8;      // (the hundredth build: a fourth view, only where SAMPLE and KICK FORGE both play on KICK)
+    static constexpr int kCfgGrids = 12;     // (the hundredth build: a fourth view, only where SAMPLE and KICK FORGE both play on KICK; the hundred and second: up to a sixth, SYNTH having four grids, each view only where it has something)
     // A CONFIG page whole. list: what setupParams gives, the live controls a grid at a time and then the EQ's. title: each
     // grid's name (none: the page has no such grid); says: what stands beside it (the model a MODEL grid is of); rowTag:
     // a word at the left of a row that needs one (MOTION's 1 and 2, a convolution's LOW, MID and HIGH).

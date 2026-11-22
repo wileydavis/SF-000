@@ -6253,7 +6253,115 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      SAMPLE); patches of your own, or snapshots only; FM 4-OP covered or kept as a mode; one
      build or stages.
 
+## SYNTH and the three engines on every lane (Nov 21, 15:36): the hundred and second build
+
+783. **You**, Nov 21, answering 782: "1. Env decay accent 2. Up to you 3. Cover it's sounds 4. All at
+     once  Question: you saw sound sources are two wave tables, just want to make sure we have the two
+     refillable oscillators as well that can generate sine triangle and saw waves." Then: "Where the wave
+     table?"; to two oscillators, four, or a switch between: "[No preference]"; "Gotcha. I guess when I
+     think of wavetabkw synthesis I think of a table consisting of hundreds of waves (often from an audio
+     file) that you use something like an lfo to scan through. So I thought you meant the synth could be
+     used as a wave table synth as well."; "Sounds good. Also: ui bug in the sampler: when I drag the end
+     marker to the left (from its start position full right) the waveform display zooms way in. Zoom
+     should be a manual intentional zoom."; 15:30, "Remember every lane gets all three of these engines
+     (forge,sample,synth)"; 15:33, "I want to use wave tables to mimic samples I can move through."; 15:34,
+     "Will be fun for vocals especially."; 15:35, "By moving through the table at varying speeds or
+     lingering in a section. So we need enough resolution for that"; 15:36, "Similar to the 3rd wave
+     synth". And 19:29 (your clock), "make sure the display screens for the synth has high contrast labeling
+     against the black of the display portion."
+     *Mine, from your 2:* your own sounds are snapshots; SYNTH's patches are the ones it comes with.
+     *Mine, from "[No preference]":* two oscillators, A and B, each reading any table, BASIC's sine,
+     triangle, saw, square and pulse pure at SHAPE's quarters. **And from 15:30, said back to you then:**
+     KICK FORGE was the kick's alone; it is on every lane in this build too.
+
+784. **Built: SYNTH, and KICK FORGE and SAMPLE beside it, on every lane.** All eleven lanes have
+     SAMPLE, SYNTH and KICK FORGE, last on their lists (SYNTH, then KICK FORGE, except on KICK, which
+     had the Forge): no snapshot's model moves (lists 6).
+     - **SYNTH** (`suite/modules/SynthEngine`): per voice two wavetable oscillators (SHAPE, SHAPE B,
+       WARP and WARP AS, PITCH B, FINE B, MIX, FM of B into A, SYNC), a sub, NOISE from white
+       through pink to the 808's metal (COLOR), DRIVE, one filter in six circuits (CLEAN LP, BP,
+       HP, LADDER, DIODE the 303's with its accent sweep, MS-20), the amp envelope, a MOD envelope
+       on the filter with ENV DECAY shared (your 1: the panel's 6 and 7 are ENV DECAY and ACCENT),
+       PITCH ENV, BURSTS, BODY (PERC's six objects, tuned to the note, ringing on after it);
+       ACCENT and SLIDE on any sound; VOICES 1 to 16, UNISON to 7, CHORD, GLIDE, DRIFT, SPACE.
+       The panel: TUNE, SHAPE, CUTOFF, RES / ENV AMT, ENV DECAY, ACCENT, DRIVE.
+     - **Wavetables from a recording** (your 15:33 to 15:36): TABLE SAMPLE is the lane's recording
+       as a frame every hundredth of a second, up to 1024, each pitch-tracked (so a vowel stays a
+       vowel) and at one loudness; **RECORDING** the same frames at the recording's own levels.
+       **WAVE MOTION**, after the 3rd Wave: SCAN (each note travels through its tables from SHAPE,
+       a sixteenth of the recording's pace to four times it, either way), SCAN END (HOLD, LOOP,
+       BOUNCE), STEPS (SMOOTH or STEPPED, as the PPG), a four-stage wave envelope (a TIME and a
+       PLACE each, W DEPTH, W LOOP), W VEL, W KEY. MOTION reaches all of it. TABLE FILE reads a
+       Serum or Vital wavetable file.
+     - **Patches** (your 3): today's synth models, the hats, ride, crash, clap, shaker, rim,
+       cowbell, clave and PERC's six objects, 37 and INIT. Each made from its model's settings
+       and **its level measured against that model's on its own lane** (the loudest tenth of a
+       second, the same note): within a fifth of a dB of every one. GAIN reaches 36 dB up: a
+       struck object's patch needs 20 to 30, its BODY rung by a strike of a few hundredths of a
+       second.
+       SYNTH chosen by hand opens on the lane's own (BASS LADDER, ACID 303, STAB DUB, DUB WASH,
+       HAT 909, OPEN HAT, CLAP, MEMBRANE; INIT on KICK, RUMBLE, VOICE); PATCH chosen puts every
+       control where the patch has it.
+     - **KICK FORGE** (your 15:30): its sound moved out of KICK into one piece of code
+       (`Forge.h`), which KICK plays as it did (its standing render, `--forgeprint`, the same to
+       the bit) and every other lane plays through `ForgeEngine`: a hit a note, at the note's
+       pitch on a lane of notes and the kick's G1 on a drum lane, its ground ringing between. Its
+       panel is the kick's eight everywhere.
+     - **CONFIG**: SYNTH is four grids, OSCILLATORS and WAVE MOTION on view 2, FILTER AND
+       ENVELOPES on 3's left beside MOTION, VOICE AND BODY on 4's left; its panel eight are
+       rings marked ON PANEL in their own cells (CUTOFF over ENV AMT, RES over ENV DECAY, as on a
+       303). With SAMPLE as well, SYNTH is on views 4 and 5; what another model has of its own,
+       beside SYNTH, on 5. Views appear only where they have something (keys 4, 5, 6).
+     - **The sampler's zoom** (781's display): dragging END, or any marker, no longer zooms; the
+       wheel alone does.
+     - **SYNTH's display** (your 19:29): every word on it near white and bold (the header, the three
+       panes' names, the footer), the filter's scale light grey; only its lines stay dark. Its pane
+       names drew the dot between words as two letters; so did SAMPLE's title: both mended.
+     *Mine:*
+     - Two oscillators, one wave envelope a voice moving both from where each one's SHAPE is
+       (the 3rd Wave has three oscillators and an envelope each).
+     - SCAN's pace on SAMPLE and RECORDING is the recording's own; on any other table, one whole
+       table a second at 1x.
+     - The recording's frames are taken from the whole file, not between SAMPLE's START and END,
+       and are made on a thread of their own when the file comes in (a 30-second file: 0.6 s
+       here), so the screen does not stop for them; a note played before they are in plays
+       BASIC, and the display says MAKING ITS FRAMES. The checks and the cue's rig make them at
+       once.
+     - BODY's modes are each brought to about the level of what strikes them at their own
+       frequency (measured: a held saw through any object, at any of three octaves, within 4 dB
+       of the saw alone); before that a low note's object rang some 30 dB over it.
+     - The E16 reaches sixteen pages of CONFIG (from eight): SYNTH beside SAMPLE lists more
+       than eight pages hold.
+     - VOICE's GATE on SYNTH and on KICK FORGE says NEXT, as on SAMPLE: each reads it as a note
+       or a hit starts.
+     - BODY rings after the amp envelope, so a note's object sounds on after the note.
+     - On RUMBLE, SYNTH and KICK FORGE are struck at the note the thump falls to.
+     - The metal noise moves with the note (205 Hz at C4, as the 808's).
+     - KICK FORGE off KICK: a new hit lets what rings go over 3 ms as on the kick, but not a
+       hit struck at the same moment, so a chord's notes ring together; a note's length is not
+       heard; the lane's CHORD is not its own (a hit a note).
+     - The wave envelope's stages move from where the last left off, in a straight line; with W
+       LOOP the way back from PLACE 4 is the looped stage's own TIME.
+     - A snapshot from before this build has SYNTH's and (off KICK) the Forge's controls where
+       they open.
+     **Checked**: the kick's Forge render the same to the bit after the move; CONFIG's layout
+     check over 164 panels; SYNTH and KICK FORGE heard on every lane with nothing not a number;
+     TABLE SAMPLE's two places, RECORDING's level, SCAN, STEPS and the wave envelope each heard
+     on a held note; BASIC's sine and saw as their arithmetic says; a patch chosen by hand and the
+     lane's own patch; every lane on SYNTH and on KICK FORGE silent after the transport stops;
+     the Forge on PERC the kick's Forge; sixteen voices' cost on a core; the patches' levels; a
+     snapshot of lists 5 read on the lists of now; and a standing print (`--synthprint`).
+
 ## Not verified
+
+- **The hundred and second build (784): SYNTH, its wavetables from a recording and the Forge
+  on every lane are measured, not heard.** Worth your ears first: a vocal on TABLE SAMPLE and
+  RECORDING with SCAN and the wave envelope (the frames are pitch-tracked; unvoiced parts,
+  breaths and esses, have no pitch to track and come out as a buzz of their own); whether the
+  patches sound like the models they are made from (only their levels are measured); the
+  DIODE circuit against ACID 303-TYPE; KICK FORGE on the synth lanes as a kick-bass. The
+  display is checked drawn, not used. CONFIG with SYNTH was drawn and looked at on BASS (views 2,
+  3 and 4); with SAMPLE beside it (views 4 to 6) it is held only by the layout check.
 
 - **The hundredth build (780): SAMPLE is measured, not heard, and not seen on the Mac.**
   Worth your ears first: STRETCH on a drum loop (the Signalsmith stretcher's transients), WARP

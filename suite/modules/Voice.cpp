@@ -6,6 +6,8 @@
 // their own pitch; TUNE moves them).
 #include "Kit.h"
 #include "SampleEngine.h"
+#include "SynthEngine.h"
+#include "ForgeEngine.h"
 #include "../core/BandLimited.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
@@ -25,13 +27,13 @@ public:
     {
         auto p = withCuts (withSampleGain (withRegion ({ pct ("signal", "SIGNAL", 0.6f).prim().dir (1),
                  pct ("tone", "TONE", 0.5f).prim(),
-                 pct ("gate", "GATE", 0.6f).prim().nextOn ("SAMPLE"),        // (SF-000, the hundredth build: on SAMPLE it sets how long a hit is held, as it starts)
+                 pct ("gate", "GATE", 0.6f).prim().nextOn ("SAMPLE").nextOn ("SYNTH").nextOn ("KICK FORGE"),        // (SF-000, the hundredth build: on SAMPLE it sets how long a hit is held, as it starts; the hundred and second: on SYNTH how long a note is, as it starts, and on KICK FORGE its DECAY, read as a hit starts)
                  pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  pct ("echo", "ECHO", 0.2f).prim().dir (1),
                  pct ("drive", "DRIVE", 0.1f).prim(),
                  levelParam (-6.0f).prim(),
-                 choice ("model", "MODEL", { "SAMPLE", "RADIO", "VOCODER", "ROBOT", "CHOIR", "STUTTER" }, 1),
+                 choice ("model", "MODEL", { "SAMPLE", "RADIO", "VOCODER", "ROBOT", "CHOIR", "STUTTER", "SYNTH", "KICK FORGE" }, 1),
                  choice ("slice_mode", "SLICE MODE", { "AUTO", "EQUAL 8", "EQUAL 16", "WHOLE" }, 0).next(),
                  knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").slow(),
                  choice ("echo_time", "ECHO TIME", divisionNames (divIndex ("1 BAR"), divIndex ("1/16")), divIndex ("1/4D") - divIndex ("1 BAR")),
@@ -42,13 +44,13 @@ public:
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() })));
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
-        return smp::with (std::move (p));        // (SF-000, the hundredth build) SAMPLE's own, last
+        return frg::with (syn::with (smp::with (std::move (p))));        // (SF-000, the hundredth build) SAMPLE's own, last; (the hundred and second) SYNTH's after
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP PHRASE (C3 = SLICE 1)"; }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); sy.fileChanged (sample.get()); } }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
-    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); sy.fileChanged (sample.get()); }
 
     void prepare (double rate, int mb) override
     {
@@ -57,6 +59,11 @@ public:
         out.prepare (rate, mb, ROLE_VOICE, "VOICE", true);
         eng.bind (params(), true, SampleEngine::Ends::keys);       // (SF-000, the hundredth build)
         eng.prepare (rate, mb);
+        sy.bind (params(), true, SynthEngine::Ends::keys);        // (SF-000, the hundred and second build)
+        sy.prepare (rate, mb);
+        sy.fileChanged (sample.get());
+        fg.bind (params(), true);                 // (and KICK FORGE, at the note's pitch)
+        fg.prepare (rate, mb);
         events.reserve (2048);
         for (auto& d : echoLine) d.prepare ((int) (rate * 9));
         for (int b = 0; b < kVb; ++b)
@@ -72,6 +79,8 @@ public:
     {
         out.reset();
         eng.reset();            // (SF-000, the hundredth build)
+        sy.reset();
+        fg.reset();
         echoes.reset();
         play = {};
         for (auto& v : choir) { v.active = false; for (auto& f : v.fm) f.reset(); }
@@ -95,7 +104,11 @@ public:
         // (SF-000, the hundredth build) SAMPLE is the engine every lane has: it has the notes, and what it makes goes to the
         // lane's output beside what the other models make of the phrase
         const bool engModel = model == 0;
+        const bool synModel = model == 6;       // (SF-000, the hundred and second build) SYNTH
         eng.begin (c, smp, c.v (GATE), false, c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);
+        sy.begin (c, c.v (GATE), false, c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);
+        const bool forgeModel = model == 7;     // (and KICK FORGE)
+        fg.begin (c, c.v (GATE), smp, c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);
         // (SF-000) GATE on the phrase that is playing: how long it is let sound, counted from when it began, and how long
         // its release, as GATE now stands (a phrase GATE has outlived is let go now). Where GATE has not moved this is
         // what it was, to the sample.
@@ -144,9 +157,11 @@ public:
             while (e < events.size() && events[e].offset <= i)
             {
                 const auto& ev = events[e++];
-                if (ev.on && engModel) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0, autoOff);
+                if (ev.on && synModel) sy.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0, autoOff);
+                else if (ev.on && forgeModel) fg.noteOn (i, (float) ev.note, ev.vel, ev.gain, ev.gen, 0);
+                else if (ev.on && engModel) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0, autoOff);
                 else if (ev.on) noteOn (ev, smp, c.ci (SLICEMODE), autoOff, relMul, reg, smp != nullptr ? cutsFrom (c, SCUTS, *smp) : Cuts());
-                else { noteOff (ev.note, ev.gen); eng.noteOff (i, ev.note, ev.gen); }
+                else { noteOff (ev.note, ev.gen); eng.noteOff (i, ev.note, ev.gen); sy.noteOff (i, ev.note, ev.gen); }
             }
             float x = 0.0f, sd = 0.0f;
             if (smp != nullptr)
@@ -219,6 +234,8 @@ public:
             R[i] = xr + yr * 0.9f;
         }
         if (engModel || eng.sounding()) eng.render (c, L, R, c.n);
+        if (synModel || sy.sounding()) sy.render (c, L, R, c.n);
+        if (forgeModel || fg.sounding()) fg.render (L, R, c.n);
         out.process (c, io, FILT, -1, c.b (PPOST) ? 0.0f : c.v (PDEPTH), c.v (PSHAPE), c.b (ALLOCON), LEVEL);
         dispSlice = play.active ? play.slice : -1;
     }
@@ -227,10 +244,12 @@ public:
     // drag over it.
     // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
     bool engShown() const { return getParam && (int) std::lround (getParam (MODEL)) == 0; }
-    int displayHeight() const override { return engShown() ? SampleEngine::kDisplayHeight : 110; }
-    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
+    bool synShown() const { return getParam && (int) std::lround (getParam (MODEL)) == 6; }       // (SF-000, the hundred and second build)
+    int displayHeight() const override { return synShown() ? SynthEngine::kDisplayHeight : engShown() ? SampleEngine::kDisplayHeight : 110; }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { if (synShown()) return sy.wheel (p, r, dy, *this); return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (synShown()) { sy.paint (g, r, *this, true); return; }
         if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         ui::frame (g, r, "PHRASE", ui::kWords);        // (SF-000) its wording bright enough to read
         auto in = r.reduced (8, 18);
@@ -257,6 +276,7 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (synShown()) { sy.mouse (p, r, down, *this); return; }
         if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr)
         {
@@ -266,15 +286,18 @@ public:
         }
         else if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); sy.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (synShown()) return;
         if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { double a[65]; const int n = startsNow (*smp, a); SampleStrip::doubleClick (p, r.reduced (8, 18), *this, SCUTS, *smp, a, n); }
     }
 
 private:
     SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    SynthEngine sy;                     // (SF-000, the hundred and second build) SYNTH, as every lane has it
+    ForgeEngine fg;                     // (and KICK FORGE)
     static constexpr int kVb = 16;
     float tiltLp = 0.0f;        // (SF-000) TONE's tilt on the phrase: its low part
     float sigLo = 0.0f, sigHi = 0.0f;       // (SF-000) SIGNAL's band on the phrase: what is under it, and what is left

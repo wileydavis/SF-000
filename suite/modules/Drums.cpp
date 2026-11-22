@@ -4,6 +4,9 @@
 // GRIT runs 2x oversampled. Sample models read with 4-point Hermite interpolation.
 #include "Kit.h"
 #include "SampleEngine.h"
+#include "SynthEngine.h"
+#include "Forge.h"
+#include "ForgeEngine.h"
 #include "../core/BandLimited.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
@@ -28,66 +31,14 @@ static const KickModel kKickModels[] = {
     { "SAMPLE",           50.0f, 1.0f, 0.010f, 0.50f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f },
     // (SF-000) KICK FORGE (see ForgeShape, and forgeVoice): of this row only the resting pitch (G1, where a key moves it
     // from) and the gain are read. After SAMPLE: a model's number never moves.
-    { "KICK FORGE",       49.0f, 3.0f, 0.012f, 0.40f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f } };
-static constexpr int kNumKickModels = 8;
-static constexpr int kKickSample = 6, kKickForge = 7;
+    { "KICK FORGE",       49.0f, 3.0f, 0.012f, 0.40f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f },
+    // (SF-000, the hundred and second build) SYNTH, the engine every lane has (SynthEngine): none of this row is read
+    { "SYNTH",            49.0f, 3.0f, 0.012f, 0.40f, 0.00f, 2000.0f, 0.00f, 0.00f, 20000.0f, 0.00f, 1.0f } };
+static constexpr int kNumKickModels = 9;
+static constexpr int kKickSample = 6, kKickForge = 7, kKickSynth = 8;
 
-// (SF-000) KICK FORGE. One kick made of three parts that are tied to each other, and one knob, CHARACTER, that takes all
-// of them through four kicks with no step between: mellow and dubby, punchy and tight, boomy, distorted.
-//   IMPACT  the front of the hit, up to nine hundredths of a second dying away: a piece of the lane's own file (a field
-//           recording: a door, a stone, a tool), from POSITION, with its lows under the body taken out and brought to one
-//           strength wherever it is from, so that another place in the file is another thing struck. With no file, a
-//           burst of noise in a band POSITION places. This is the one part that is not the same hit after hit.
-//   BODY    a sine that starts at the same point of its wave every hit (the low end is the same every time), falling from
-//           above onto the kick's note (the key's root with KEY FOLLOW); for its first thirtieth of a second it bends
-//           its own pitch with its own output, which is where the knock is; harmonics that die sooner than the
-//           fundamental; its lows (under 120 Hz) kept clean and its mids driven
-//   GROUND  the body's own tail, held in a small room of delays under 150 Hz, rung at the kick's note, and held down
-//           while the body sounds: what is heard between the kicks
-// and a soft clipper over the impact and the body, which is what makes them one sound when driven.
-// What CHARACTER sets, at its four kicks (in between: a smooth curve through them). The lane's own knobs move from there.
-struct ForgeShape { float ratio, tau, decay, fm, harm, drive, impact, impTau, impHp, ground, groundT, lp, clip, sub; };
-static const ForgeShape kForge[4] = {
-    //  ratio  tau     decay  fm    harm  drive impact impTau  impHp   ground groundT lp       clip  sub
-    {   1.7f,  0.034f, 0.170f, 0.00f, 0.00f, 0.00f, 0.25f, 0.012f, 1200.0f, 0.45f, 0.55f,   700.0f, 0.8f, 1.00f },    // mellow, dubby
-    {   5.2f,  0.007f, 0.055f, 0.55f, 0.22f, 0.20f, 0.90f, 0.022f,  500.0f, 0.18f, 0.25f, 14000.0f, 1.2f, 0.90f },    // punchy, tight
-    {   3.0f,  0.018f, 0.240f, 0.25f, 0.12f, 0.30f, 0.65f, 0.035f,  350.0f, 0.90f, 0.95f,  5000.0f, 1.4f, 1.15f },    // boomy
-    {   6.5f,  0.011f, 0.130f, 1.30f, 0.80f, 1.00f, 1.00f, 0.045f,  250.0f, 0.60f, 0.70f, 16000.0f, 2.2f, 1.00f } };  // distorted
-// The shape at a place on CHARACTER: a curve through the four that passes each of them (Catmull-Rom), so the way from
-// one to the next has no corner in it. Never below a tenth of the smallest of them (a curve can dip under its points).
-static ForgeShape forgeAt (float c)
-{
-    const float x = std::min (std::max (c, 0.0f), 1.0f) * 3.0f;
-    const int i = std::min (2, (int) x);
-    const float t = x - (float) i;
-    const ForgeShape& p0 = kForge[std::max (0, i - 1)], & p1 = kForge[i], & p2 = kForge[i + 1], & p3 = kForge[std::min (3, i + 2)];
-    auto cr = [t] (float a, float b, float c2, float d)
-    {
-        const float v = 0.5f * ((2.0f * b) + (-a + c2) * t + (2.0f * a - 5.0f * b + 4.0f * c2 - d) * t * t + (-a + 3.0f * b - 3.0f * c2 + d) * t * t * t);
-        const float lo = std::min (b, c2), hi = std::max (b, c2), over = 0.15f * (hi - lo);      // (a curve may pass a little beyond its two points; never below nought)
-        return std::min (std::max (v, std::max (0.0f, lo - over)), hi + over);
-    };
-    ForgeShape o;
-    o.ratio = cr (p0.ratio, p1.ratio, p2.ratio, p3.ratio);          o.tau = cr (p0.tau, p1.tau, p2.tau, p3.tau);
-    o.decay = cr (p0.decay, p1.decay, p2.decay, p3.decay);          o.fm = cr (p0.fm, p1.fm, p2.fm, p3.fm);
-    o.harm = cr (p0.harm, p1.harm, p2.harm, p3.harm);               o.drive = cr (p0.drive, p1.drive, p2.drive, p3.drive);
-    o.impact = cr (p0.impact, p1.impact, p2.impact, p3.impact);     o.impTau = cr (p0.impTau, p1.impTau, p2.impTau, p3.impTau);
-    o.impHp = cr (p0.impHp, p1.impHp, p2.impHp, p3.impHp);          o.ground = cr (p0.ground, p1.ground, p2.ground, p3.ground);
-    o.groundT = cr (p0.groundT, p1.groundT, p2.groundT, p3.groundT);
-    o.lp = std::exp (cr (std::log (p0.lp), std::log (p1.lp), std::log (p2.lp), std::log (p3.lp)));
-    o.clip = cr (p0.clip, p1.clip, p2.clip, p3.clip);               o.sub = cr (p0.sub, p1.sub, p2.sub, p3.sub);
-    return o;
-}
-// CHARACTER holds its loudness: what each place on it is turned by, in dB, so that the kick is as loud at every one of
-// them, and 2 dB over KICK 909-TYPE alone (measured by SF-000's check of it, forgeTest, which prints the kick's loudest
-// tenth of a second at each of eleven places with the kick alone and under the master's limiter; straight lines between).
-static const float kForgeTrim[11] = { 0.0f, -0.1f, 0.7f, 2.0f, 0.6f, -1.2f, -2.1f, -2.5f, -2.4f, -2.2f, -2.1f };
-static float forgeTrim (float c)
-{
-    const float x = std::min (std::max (c, 0.0f), 1.0f) * 10.0f;
-    const int i = std::min (9, (int) x);
-    return std::pow (10.0f, (kForgeTrim[i] + (kForgeTrim[i + 1] - kForgeTrim[i]) * (x - (float) i)) / 20.0f);
-}
+// (SF-000) KICK FORGE: what makes its sound is in Forge.h now (the hundred and second build), shared with every lane.
+using forge::ForgeShape; using forge::forgeAt; using forge::forgeTrim;
 static std::vector<std::string> kickModelNames() { std::vector<std::string> v; for (auto& m : kKickModels) v.push_back (m.name); return v; }
 
 class KickModule : public Module
@@ -182,13 +133,13 @@ public:
         p.push_back (pct ("fg_gwidth", "GROUND WIDTH", 0.0f).slow().engineGroup());
         p = withCuts (std::move (p));        // (SF-000) the slice markers
         jassert ((int) p.size() == SCUTLAST + 1);
-        return smp::with (std::move (p));    // (SF-000, the hundredth build) SAMPLE's own, last
+        return syn::with (smp::with (std::move (p)));    // (SF-000, the hundredth build) SAMPLE's own, last; (the hundred and second) SYNTH's after them
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP A SAMPLE: FOR SAMPLE, OR FORGE'S IMPACT"; }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr)); }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr)); sy.fileChanged (sample.get()); } }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
-    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); sy.fileChanged (sample.get()); }
 
     void prepare (double rate, int mb) override
     {
@@ -201,7 +152,10 @@ public:
         split.prepare (rate);
         eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
         eng.prepare (rate, mb);
-        ground.prepare (osr);               // (SF-000)
+        sy.bind (params(), false, SynthEngine::Ends::hits);       // (SF-000, the hundred and second build)
+        sy.prepare (rate, mb);
+        sy.fileChanged (sample.get());
+        ground.g.prepare (osr);             // (SF-000)
         out.prepare (rate, mb, ROLE_KICK, "KICK", false);
         events.reserve (2048);
         reset();
@@ -210,156 +164,31 @@ public:
     {
         echoes.reset();
         eng.reset();            // (SF-000, the hundredth build)
+        sy.reset();
         for (auto& v : voices) v.active = false;
         dec.reset();
         decB.reset();
         decS.reset(); decSB.reset(); sideLive = 0; wasWide = false;     // (SF-000)
         split.reset();
-        ground.reset();
+        ground.g.reset();
         out.reset();
     }
 
-    // (SF-000) KICK FORGE's GROUND: the body's tail in four delays that feed each other (41 to 80 ms, each darker as it
-    // goes round, nothing over 150 Hz going in), then rung at the kick's note, and held down while the body sounds. The
-    // module's, not a hit's: it rings on from one kick into the next. Asleep, it costs nothing.
-    struct Ground
-    {
-        std::vector<float> d[4];
-        int len[4] = { 1, 1, 1, 1 }, w[4] = {}, live = 0;
-        float z[4] = {}, inLp = 0, inK = 0, damp = 0, fb = 0.4f, level = 0, levelTo = 0, levelK = 0, secNow = 0, feed = 1, darkNow = 1, depth = 1, sens = 1.6f, recNow = 1, width = 0, sideHp[4] = {}, sideK = 0, tilt = 0, tiltLp = 0, tiltK = 0, sign = 1, env = 0, rel = 0, dcX = 0, dcY = 0, dcR = 0;
-        Svf ring;
-        double rate = 96000.0;
-        void prepare (double r)
-        {
-            rate = r;
-            static const double ms[4] = { 41.3, 53.7, 67.1, 79.9 };
-            for (int i = 0; i < 4; ++i) { len[i] = std::max (8, (int) (ms[i] * 0.001 * r)); d[i].assign ((size_t) len[i], 0.0f); }
-            inK = 1.0f - std::exp (-kTwoPi * 150.0f / (float) r);
-            damp = 1.0f - std::exp (-kTwoPi * 420.0f / (float) r);
-            rel = std::exp (-1.0f / (0.07f * (float) r));
-            sideK = 1.0f - std::exp (-kTwoPi * 140.0f / (float) r);
-            tiltK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) r);
-            darkNow = recNow = 1.0f;
-            levelK = 1.0f - std::exp (-1.0f / (0.02f * (float) r));
-            dcR = 1.0f - kTwoPi * 28.0f / (float) r;
-            reset();
-        }
-        void reset()
-        {
-            for (auto& x : d) std::fill (x.begin(), x.end(), 0.0f);
-            for (auto& x : z) x = 0.0f;
-            inLp = env = dcX = dcY = tiltLp = 0.0f; live = 0;
-            for (auto& x : sideHp) x = 0.0f;
-            for (auto& x : w) x = 0;
-            ring.ic1 = ring.ic2 = 0.0f;
-        }
-        // A hit: how long it rings (seconds to 60 dB down), how much of it, and the note it is rung at.
-        // (feed: how much of the body goes in: less, for a ground drawn out longer, so that what it carries stays the same)
-        void hit (float seconds, float amount, float hz, float feedIn = 1.0f)
-        {
-            fb = std::pow (10.0f, -3.0f * 0.0605f / std::max (0.08f, seconds));
-            level = levelTo = amount; secNow = seconds; feed = feedIn;
-            ring.set (hz, 5.0f, rate);
-            live = (int) ((2.0 * (double) seconds + 1.0) * rate);
-        }
-        // While it rings: how long, and how much of it, as the knobs stand now (GROUND LENGTH and GROUND are heard on
-        // a ground that is already ringing). Its level goes there in a fiftieth of a second; where the knobs have not
-        // moved since the hit this changes nothing, to the bit.
-        void follow (float seconds, float amount, float feedIn = 1.0f)
-        {
-            levelTo = amount; feed = feedIn;
-            if (seconds == secNow) return;
-            secNow = seconds;
-            fb = std::pow (10.0f, -3.0f * 0.0605f / std::max (0.08f, seconds));
-            live = std::max (live, (int) ((2.0 * (double) seconds + 1.0) * rate));      // (its length has moved: what is ringing is given the whole of the new one to die in, so a ground made longer is not cut off where the shorter would have ended)
-        }
-        bool awake() const { return live > 0; }
-        // (SF-000, the ninety-ninth build) its colour and how it gives way to the body, as the knobs stand now. dark: its
-        // cut-offs (what goes in, what each pass round keeps) divided by it; duck: how far it is held down while the body
-        // sounds (0 to 1) and how readily (its follower's gain); recover: how long that follower takes to let go, times
-        // it; spread: its width above 100 Hz. Each is worked out again only when it moves: as they come, nothing changes.
-        void shade (float dark, float duckDepth, float duckSens, float recover, float spread)
-        {
-            if (dark != darkNow)
-            {
-                darkNow = dark;
-                tilt = -0.5f * std::log2 (dark);         // (and a tilt on what it gives, about 120 Hz: -1, only what is under it; +1, what is over it twice)
-                inK = 1.0f - std::exp (-kTwoPi * 150.0f / dark / (float) rate);
-                damp = 1.0f - std::exp (-kTwoPi * 420.0f / dark / (float) rate);
-            }
-            if (recover != recNow) { recNow = recover; rel = std::exp (-1.0f / (0.07f * recover * (float) rate)); }
-            depth = duckDepth; sens = duckSens; width = spread;
-        }
-        // One sample: in, the body as it is before its clipper; side, what it gives beside the middle (only with WIDTH).
-        float tick (float in, float& side)
-        {
-            side = 0.0f;
-            if (live <= 0) return 0.0f;
-            if (--live == 0) { reset(); return 0.0f; }
-            env = std::max (std::abs (in), env * rel);
-            inLp += inK * ((feed != 1.0f ? in * feed : in) - inLp);
-            float o[4], sum = 0.0f;
-            for (int i = 0; i < 4; ++i) { o[i] = d[i][(size_t) w[i]]; sum += o[i]; }
-            for (int i = 0; i < 4; ++i)
-            {
-                z[i] += damp * ((o[i] - 0.5f * sum) - z[i]);          // (each back into the others: a Householder turn; darker each time round)
-                d[i][(size_t) w[i]] = inLp * 0.25f + fb * z[i] + 1.0e-20f;
-                if (++w[i] >= len[i]) w[i] = 0;
-            }
-            ring.tick (sum);
-            const float y = 0.8f * sum + 2.0f * ring.bp;
-            dcY = y - dcX + dcR * dcY; dcX = y;
-            float out = dcY;
-            if (tilt != 0.0f) { tiltLp += tiltK * (dcY - tiltLp); out = dcY + tilt * (dcY - tiltLp); }
-            const float open = 1.0f - depth * std::min (1.0f, env * sens);
-            if (level != levelTo) { level += levelK * (levelTo - level); if (std::abs (levelTo - level) < 1.0e-6f) level = levelTo; }
-            if (width > 0.0f)
-            {
-                // (two of its four passes against the other two: they are apart in time, so apart in sound; four one-pole
-                // high-passes at 140 Hz, so that at the kick's note, about 50 Hz, it is 40 dB down: the floor stays in the middle)
-                float sd = 0.5f * ((o[0] + o[2]) - (o[1] + o[3]));
-                for (auto& h : sideHp) { h += sideK * (sd - h); sd -= h; }
-                side = 16.0f * sd * width * level * open * open * sign;
-            }
-            return sign != 1.0f ? -(out * level * open * open) : out * level * open * open;
-        }
-    };
-
-    struct Voice
+    // (SF-000, the hundred and second build) a Forge hit (forge::Hit: its time, phase, pitch, envelope, filter and the
+    // Forge's own), with what the other models need beside it
+    struct Voice : forge::Hit
     {
         bool active = false;
         int model = 0, layer = 0;           // layer: 0 MODEL's, 1 the LAYER MODEL's (LAYER SPLIT)
-        double t = 0.0, phase = 0.0;
-        float vel = 1, f0 = 200, f1 = 50, tau = 0.01f, decay = 0.3f, click = 0, clickHz = 3000, drive = 0, shape = 0, lp = 8000, fm = 0;
-        float fade = 1.0f, fadeStep = 0.0f, cal = 1.0f, mix = 1.0f;
+        float clickHz = 3000, shape = 0;
+        float fadeStep = 0.0f, cal = 1.0f;
         float lpZ = 0;
-        unsigned tick = 0;
-        Svf res;
         float srate = 1.0f, gate = 1.0e9f;
         SampleRegion reg;                   // SAMPLE: the part of the sample this hit plays
         // 909 and 808 circuits: accent (0..1), the 808's bridged-T, pulse shaper, tone low-pass and
         // the retrigger, the 909's click filters; both a DC blocker at the output.
         float accent = 1.0f, shift = 1.2f, sigh = 0.2f, sighTau = 0.1f, toneK = 1.0f, clickNz = 0.0f, clickLp = 0.0f, dcX = 0.0f, dcY = 0.0f, toneZ = 0.0f;
-        Svf bridgedT, clickBp;
-        // (SF-000) KICK FORGE: the fundamental's last value (it bends itself), harmonics, the body's and the impact's level,
-        // the sub's, the split's state and pace, the impact's place in the file, its two high-passes, its strength, how long
-        // it lasts, the clipper's drive and what it is turned by after, and whether it feeds the ground
-        float fgKeep = 0, fgKeepG = 1;      // (SF-000) LOW PRESERVE: how much, and the clean note's gain
-        float fgCh = 0, fgEcho = 1;         // (SF-000) CHARACTER and the echo's darkening as they were at the hit (forgeFollow)
-        // (SF-000, the ninety-ninth build) the body's shape (HANG, CURVE's power, HOLD, HARM DECAY's times, POLARITY's sign),
-        // the impact's (its end and where it starts fading, its read speed, IMPACT WIDTH's times, a hit that is the same
-        // every time and its own noise for that), IMPACT ONLY, and a moment of the impact behind it, for the width it is given
-        float fgHang = 0, fgCurve = 1, fgHold = 0, fgHdec = 1, fgSign = 1, fgImpEnd = 0.09f, fgImpFade0 = 0.07f, fgRate = 0.5f, fgIw = 1;
-        bool fgLock = false, fgSolo = false, fgSide = false;
-        Noise fgN;
-        float fgDly[64] {}; int fgDi = 0;
-        float fgPrev = 0, fgHarm = 0, fgBody = 1, fgImp = 0, fgSub = 1, fgLo = 0, fgLoK = 0, fgHpK = 0, fgHp1 = 0, fgHp2 = 0, fgImpTau = 0.006f, fgClip = 1, fgOut = 1, fgBright = 0;
-        double fgPos = -1.0;
-        float fgNoise = 1.0f;             // with no file: what the impact's noise, through its band, is turned by to be one strength
-        // (SF-000) a stereo file's impact: its left less its right (halved) has the high-passes and the tone's low-pass of
-        // its own, and takes the gain DRIVE and the clipper give the sum at each moment
-        float fgHpS1 = 0, fgHpS2 = 0; Svf resS; bool fgWide = false;
-        bool fgFeeds = false;
+        Svf bridgedT;
         float level() const { return active ? vel * std::exp (-(float) t / std::max (0.01f, decay)) : 0.0f; }
     };
 
@@ -451,7 +280,7 @@ public:
             v.toneK = 1.0f - std::exp (-kTwoPi * 120.0f * std::pow (58.0f, c.v (CLICK)) / (float) osr);
         }
         if (model == 0) { v.clickBp.set (4500.0f, 0.9f, osr); }
-        if (model == kKickForge) forgeStart (c, v, vel, gen, smp, publish);          // (SF-000)
+        if (model == kKickForge) forgeStart (c, v, smp, publish, gen);          // (SF-000)
         if (model == kKickSample)
             if (auto s = smp)
             {
@@ -555,247 +384,22 @@ public:
         return v.dcY;
     }
 
-    // (SF-000) KICK FORGE: a hit's settings, from CHARACTER and the lane's knobs (trigger has set the pitch it lands on,
-    // v.f1, and DECAY's and DENSITY's share of the decay is taken here).
-    void forgeStart (Ctx& c, Voice& v, float vel, int gen, const SampleData* smp, bool main)
+    // (SF-000) KICK FORGE's knobs as the kick has them: TUNE, DECAY, PUNCH, PITCH TIME, CLICK and DRIVE are the lane's
+    // (the hundred and second build: the Forge's sound is forge::, in Forge.h, the same on every lane)
+    forge::Knobs forgeKnobs (Ctx& c) const
     {
-        const float ch = c.v (FGCHAR);
-        const ForgeShape f = forgeAt (ch);
-        const float tone = c.v (FGTONE) * 2.0f - 1.0f;                           // -1 .. 1
-        const float echo = std::pow (0.6f, (float) gen);
-        v.fgCh = ch; v.fgEcho = echo;
-        v.f0 = v.f1 * (1.0f + (f.ratio - 1.0f) * std::pow (2.0f, (c.v (PUNCH) - 0.5f) * 2.0f));
-        v.tau = f.tau * std::pow (2.0f, (c.v (PTIME) - 0.5f) * 3.0f);
-        v.decay = f.decay * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 4.0f) * echo;
-        juce::ignoreUnused (tone);
-        // (the ninety-ninth build) the body's shape, built with the hit
-        v.fgHang = c.v (FGHANG);
-        v.fgCurve = std::pow (2.0f, (c.v (FGCURVE) - 0.5f) * 2.0f);
-        v.fgHold = 0.1f * c.v (FGHOLD) * c.v (FGHOLD);
-        v.fgHdec = std::pow (2.0f, (c.v (FGHDEC) - 0.5f) * 4.0f);
-        v.fgSign = c.b (FGFLIP) ? -1.0f : 1.0f;
-        v.phase = 0.25 * (double) c.v (FGPHASE);
-        v.fgSub = f.sub;
-        v.fgLoK = 1.0f - std::exp (-kTwoPi * 120.0f / (float) osr);
-        v.click = c.v (CLICK) * f.impact * 1.2f;            // (the pulse on the front of it: as much as the impact, so next to none on the mellow kick)
-        forgeFollow (c, v, f);
-        // the impact: from the lane's file at POSITION (ninety thousandths of a second of it, a little either side from hit
-        // to hit), brought to one strength; or noise. VARIATION: how far one hit's differs from the next's (at its middle,
-        // as it was; at nought not at all, the noise its own and the same every time; over the middle further in place
-        // and level, and in pitch)
-        const float vary = c.v (FGVARY), a = 2.0f * vary;
-        v.fgLock = vary <= 0.0f;
-        if (v.fgLock) v.fgN = Noise();
-        const float lvl = vary == 0.5f ? 0.9f + 0.2f * rng.uni() : v.fgLock ? 1.0f : 1.0f + a * (0.2f * rng.uni() - 0.1f);
-        v.fgImp = 2.0f * c.v (FGIMPACT) * f.impact * lvl;
-        // IMPACT LENGTH (its decay, and how long it is let sound: never less than as it was), PITCH, CUT
-        const float lenMul = std::pow (2.0f, (c.v (FGILEN) - 0.5f) * 4.0f);
-        v.fgImpTau = f.impTau * lenMul;
-        if (lenMul > 1.0f) { v.fgImpEnd = 0.09f * lenMul; v.fgImpFade0 = v.fgImpEnd - 0.02f * lenMul; }
-        float ip = c.v (FGIPITCH);
-        if (a > 1.0f) ip += (a - 1.0f) * 2.0f * rng.next();
-        const float ipMul = semis (ip);
-        v.fgRate = 0.5f * ipMul;
-        const float hp = f.impHp * std::pow (2.0f, (c.v (FGICUT) - 0.5f) * 4.0f);
-        v.fgHpK = 1.0f - std::exp (-kTwoPi * hp / (float) osr);
-        v.fgIw = 2.0f * c.v (FGIWIDTH);
-        v.fgPos = -1.0;
-        {
-            // with no file POSITION is the noise's colour, a band from a low knock (250 Hz) to a bright tick (10 kHz), so
-            // the knob is never one that does nothing
-            const float hz = std::min (0.45f * (float) osr, 250.0f * std::pow (40.0f, c.v (FGPOS)) * ipMul);
-            v.clickBp.set (hz, 1.6f, osr);
-            v.fgNoise = 0.4f / (0.577f * std::sqrt (1.9635f * hz / (float) osr));
-        }
-        if (smp != nullptr && smp->length() > 4096 && v.fgImp > 0.0f)
-        {
-            const auto reg = regionFrom (c, SSTART, *smp, SGAIN);
-            const double span = (lenMul > 1.0f || ipMul != 1.0f ? 0.09 * std::max (1.0f, lenMul) * ipMul : 0.09) * smp->sr, room = std::max (0.0, reg.end - reg.start - span - 8.0);
-            const double jit = vary == 0.5f ? (double) rng.next() * 0.0015 * smp->sr : v.fgLock ? 0.0 : (double) rng.next() * (a <= 1.0f ? 0.0015 * a : 0.0015 + 0.0185 * (a - 1.0f)) * smp->sr;
-            double at = reg.start + (double) c.v (FGPOS) * room + jit;
-            at = std::min (std::max (at, reg.start), reg.start + room);
-            // (its strength: the grain's own over what will sound of it, with its lows out as they will be when it plays)
-            double sum = 0.0;
-            const int n0 = (int) at, n1 = std::min (smp->length() - 2, n0 + (int) (0.03 * smp->sr));
-            const float* l = smp->buf.getReadPointer (0); const float* r = smp->buf.getReadPointer (smp->buf.getNumChannels() > 1 ? 1 : 0);
-            const float hk = 1.0f - std::exp (-kTwoPi * hp / (float) smp->sr);
-            float h1 = 0.0f, h2 = 0.0f;
-            for (int n = n0; n < n1; ++n)
-            {
-                float x = 0.5f * (l[n] + r[n]);
-                h1 += hk * (x - h1); x -= h1;
-                h2 += hk * (x - h2); x -= h2;
-                sum += (double) x * x;
-            }
-            const float rms = (float) std::sqrt (sum / (double) std::max (1, n1 - n0));
-            v.fgImp *= std::min (300.0f, 0.4f / std::max (rms, 1.0e-5f));        // (a quiet place in a recording is brought up as far as 50 dB)
-            v.fgPos = at;
-            v.fgWide = smp->wide;             // (SF-000) a stereo file: the impact keeps its left and right
-        }
-        v.fgSide = v.fgWide || v.fgIw > 1.0f;
-        v.fgFeeds = main;
-        if (main && gen == 0)
-        {
-            groundSec = f.groundT * std::pow (2.0f, (c.v (DECAY) - 0.5f) * 2.0f);
-            groundAmt = f.ground; groundTrim = forgeTrim (ch);
-            ground.hit (groundLen (c), 2.0f * c.v (FGGROUND) * groundAmt * groundTrim, v.f1, groundFor (c));
-            ground.sign = v.fgSign;
-        }
+        forge::Knobs k;
+        k.ch = c.v (FGCHAR); k.tone = c.v (FGTONE); k.punch = c.v (PUNCH); k.ptime = c.v (PTIME); k.decay = c.v (DECAY); k.click = c.v (CLICK); k.drive = c.v (DRIVE);
+        k.impact = c.v (FGIMPACT); k.body = c.v (FGBODY); k.ground = c.v (FGGROUND); k.pos = c.v (FGPOS); k.glen = c.v (FGGLEN); k.low = c.v (FGLOW);
+        k.hang = c.v (FGHANG); k.curve = c.v (FGCURVE); k.hold = c.v (FGHOLD); k.hdec = c.v (FGHDEC); k.phase = c.v (FGPHASE); k.flip = c.b (FGFLIP);
+        k.ilen = c.v (FGILEN); k.ipitch = c.v (FGIPITCH); k.icut = c.v (FGICUT); k.iwidth = c.v (FGIWIDTH); k.vary = c.v (FGVARY); k.solo = c.v (FGSOLO);
+        k.gdark = c.v (FGGDARK); k.gduck = c.v (FGGDUCK); k.grec = c.v (FGGREC); k.gwidth = c.v (FGGWIDTH);
+        return k;
     }
-    // (SF-000, the ninety-ninth build) the ground's colour and its give, as the knobs stand: DARK, DUCK, RECOVER, WIDTH
-    void groundShade (Ctx& c)
+    void forgeStart (Ctx& c, Voice& v, const SampleData* smp, bool main, int gen)
     {
-        const float duck = c.v (FGGDUCK);
-        ground.shade (std::pow (2.0f, (c.v (FGGDARK) - 0.5f) * 4.0f),
-                      duck <= 0.5f ? 2.0f * duck : 1.0f, duck <= 0.5f ? 1.6f : 1.6f * std::pow (4.0f, (duck - 0.5f) * 2.0f),
-                      std::pow (2.0f, (c.v (FGGREC) - 0.5f) * 6.0f), c.v (FGGWIDTH));
-    }
-    // (SF-000, the ninety-ninth build) the body's pitch as it falls, against its note: how far there is still to fall (1
-    // at the hit, 0 on the note). As it was, one curve; HANG keeps some of it in a stage eight times slower, CURVE bends it.
-    static float forgeFall (const Voice& v, float t)
-    {
-        if (v.fgHang == 0.0f && v.fgCurve == 1.0f) return std::exp (-t / v.tau);
-        const float x = v.fgCurve == 1.0f ? t / v.tau : std::pow (t / v.tau, v.fgCurve);
-        return (1.0f - v.fgHang) * std::exp (-x) + v.fgHang * std::exp (-x * 0.125f);
-    }
-    // (SF-000) how long the ground rings: what CHARACTER and DECAY made it at the hit, by GROUND LENGTH (an eighth to
-    // eight times; at its middle exactly that), twelve seconds at most
-    float groundLen (Ctx& c) const { return std::min (12.0f, groundSec * std::pow (2.0f, (c.v (FGGLEN) - 0.5f) * 6.0f)); }
-    // ...and a ground drawn out longer than that is fed less of the body (by how much longer: measured, it then carries
-    // about the same in all), so that GROUND LENGTH is how long and GROUND how much: a feedback that rings longer while it
-    // is fed builds up more. Shorter, it is fed as it was. What is ringing already rings on at the level it has.
-    float groundFor (Ctx& c) const { const float len = groundLen (c); return len > groundSec ? groundSec / len : 1.0f; }
-
-    // (SF-000) What shapes a Forge hit after it is struck: TONE (its filter, its harmonics, the knock's bend), DRIVE, BODY and
-    // LOW PRESERVE. Taken at the hit, and again every block while it sounds, so that a ringing kick follows them; from
-    // the same numbers the same values, so a hit whose knobs have not moved is the hit it always was. CHARACTER, PUNCH,
-    // PITCH TIME, DECAY, CLICK, IMPACT and POSITION build the hit when it is struck: they are heard from the next.
-    void forgeFollow (Ctx& c, Voice& v, const ForgeShape& f)
-    {
-        const float tone = c.v (FGTONE) * 2.0f - 1.0f;
-        v.fm = f.fm * (1.0f + 0.5f * tone);
-        v.fgHarm = std::max (0.0f, f.harm + 0.5f * tone * (0.25f + f.harm));
-        v.lp = std::min (18000.0f, f.lp * std::pow (4.0f, tone)) * v.fgEcho;
-        v.fgBright = std::min (6000.0f, v.lp * 2.0f);                           // (the filter opens on the hit and closes onto v.lp)
-        v.drive = clamp01 (f.drive * 0.7f + c.v (DRIVE) * 0.8f);
-        v.fgBody = 2.0f * c.v (FGBODY);
-        v.fgClip = f.clip * (1.0f + 1.5f * c.v (DRIVE));
-        v.fgOut = forgeTrim (v.fgCh) / fastTanh (std::min (v.fgClip, 8.0f)) * 0.8f;
-        v.fgKeep = c.v (FGLOW);
-        v.fgSolo = c.v (FGSOLO) > 0.5f;
-        // the clean note's gain: what the clipper gives the note at the moment its falling pitch comes to one and a half
-        // times the kick's note (halfway into LOW PRESERVE's crossing), so it comes in at the level it was leaving the
-        // clipper at (a sine driven a times over full scale into it leaves with a fundamental of about tanh a, rising
-        // to 4/pi of the clipper's ceiling as it squares off); from there it dies away as the body does, where the
-        // clipper would have held it up
-        if (v.fgKeep > 0.0f)
-        {
-            float tn = v.f0 > 1.5f * v.f1 ? v.tau * std::log ((v.f0 - v.f1) / (0.5f * v.f1)) : 0.0f;
-            if (tn > 0.0f && (v.fgHang != 0.0f || v.fgCurve != 1.0f))
-            {
-                // (HANG or CURVE: when the fall comes to one and a half times the note, found by halving)
-                const float want = 0.5f * v.f1 / (v.f0 - v.f1);
-                float lo = 0.0f, hi = 2.0f;
-                for (int k = 0; k < 24; ++k) { const float m = 0.5f * (lo + hi); (forgeFall (v, m) > want ? lo : hi) = m; }
-                tn = hi;
-            }
-            const float e = std::min (1.0f, tn / 0.0004f) * std::exp (-std::max (0.0f, tn - v.fgHold) / v.decay) * v.fgBody * v.fgSub * v.vel;
-            const float a = std::min (8.0f, v.fgClip * e);
-            v.fgKeepG = e > 1.0e-4f ? v.fgOut * fastTanh (a) * (1.0f + 0.2732f * a * a / (1.0f + a * a)) / e : v.fgClip * v.fgOut;
-        }
-    }
-
-    // One sample of it (at osr).
-    float forgeVoice (Voice& v, float t, const SampleData* s, float& side)
-    {
-        // BODY: the wave starts at nought, rising, every hit (or where PHASE has it)
-        const float f = v.f1 + (v.f0 - v.f1) * forgeFall (v, t);
-        const float w = kTwoPi * (float) v.phase;
-        const float bend = v.fm * std::exp (-t / 0.03f);
-        const float fund = std::sin (w + bend * v.fgPrev);
-        v.fgPrev = fund;
-        const float hE = v.fgHarm * std::exp (-t / ((0.22f * v.decay + 0.012f) * v.fgHdec));
-        float body = fund;
-        if (hE > 1.0e-4f) body += hE * (0.55f * std::sin (2.0f * w + 0.5f * bend * fund) + 0.30f * std::sin (3.0f * w));
-        const float bodyEnv = std::min (1.0f, t / 0.0004f) * std::exp (-(v.fgHold > 0.0f ? std::max (0.0f, t - v.fgHold) : t) / v.decay) * v.fgBody;
-        body *= bodyEnv;
-        if (v.fgFeeds) groundIn += body * v.fade * v.mix * v.vel;
-        // (SF-000) LOW PRESERVE: the share of the body's own note that goes round the mids' drive and the clipper, as the
-        // falling pitch nears the note. Taken out of the body before the body is split into its lows and mids (that split
-        // is gentle, and leaves a third of the note in the mids), and put back after the clipper. The ground has it all.
-        float clean = 0.0f;
-        if (v.fgKeep > 0.0f)
-        {
-            const float near = std::min (1.0f, std::max (0.0f, (2.5f - f / v.f1) / 1.5f));
-            const float part = v.fgKeep * near * fund * bodyEnv;
-            body -= part;
-            clean = part * v.fgSub * v.vel;
-        }
-        if (v.fgSolo) { body = 0.0f; clean = 0.0f; }          // (IMPACT ONLY: the body heard no more, though it still feeds the ground)
-        v.fgLo += v.fgLoK * (body - v.fgLo);
-        float mid = body - v.fgLo;
-        float sd = 0.0f;                    // (SF-000) a stereo file's impact: its left less its right, halved
-        // IMPACT
-        if (v.fgImp > 0.0f && t < v.fgImpEnd)
-        {
-            float x, xs = 0.0f;
-            if (v.fgPos >= 0.0 && s != nullptr && (int) v.fgPos + 3 < s->length())
-            {
-                const float a = s->read (0, v.fgPos, v.fgRate), b = v.fgWide ? s->read (1, v.fgPos, v.fgRate) : a;
-                x = 0.5f * (a + b);
-                v.fgPos += v.fgRate;
-                v.fgHp1 += v.fgHpK * (x - v.fgHp1); x -= v.fgHp1;       // (the file's lows are the body's to have)
-                v.fgHp2 += v.fgHpK * (x - v.fgHp2); x -= v.fgHp2;
-                if (v.fgWide)
-                {
-                    xs = 0.5f * (a - b);
-                    v.fgHpS1 += v.fgHpK * (xs - v.fgHpS1); xs -= v.fgHpS1;
-                    v.fgHpS2 += v.fgHpK * (xs - v.fgHpS2); xs -= v.fgHpS2;
-                }
-            }
-            else x = v.clickBp.tickBP (v.fgLock ? v.fgN.next() : rng.next()) * v.fgNoise;        // (the noise's band is its colour)
-            if (v.fgIw != 1.0f)
-            {
-                // IMPACT WIDTH: its own side, made wider or narrower; over the middle, one made beside a mono impact from the
-                // impact two thirds of a thousandth of a second before (it falls away in mono)
-                xs *= std::min (v.fgIw, 1.0f) * (v.fgWide ? std::max (v.fgIw, 1.0f) : 1.0f);
-                if (v.fgIw > 1.0f && ! v.fgWide) xs += (v.fgIw - 1.0f) * 0.5f * (x - v.fgDly[v.fgDi]);
-                v.fgDly[v.fgDi] = x; v.fgDi = (v.fgDi + 1) & 63;
-            }
-            const float tail = clamp01 ((t - v.fgImpFade0) / (v.fgImpEnd > 0.09f ? 0.02f * v.fgImpEnd / 0.09f : 0.02f));   // (and out by its end, whatever its decay)
-            const float e = std::min (1.0f, t / 0.0003f) * std::exp (-t / v.fgImpTau) * (1.0f - tail * tail * (3.0f - 2.0f * tail));
-            mid += x * e * v.fgImp;
-            sd = xs * e * v.fgImp;
-        }
-        if (v.click > 0.0f && t < 0.0003f) mid += v.click * 0.6f;
-        if (v.drive > 0.0f)
-        {
-            const float g = 1.0f + v.drive * 9.0f, u = mid * g, sat = fastTanh (u);
-            mid = sat / std::sqrt (g) * 1.25f;
-            if (sd != 0.0f) sd *= (std::abs (u) > 1.0e-4f ? sat / u : 1.0f) * g / std::sqrt (g) * 1.25f;
-        }
-        float y = (v.fgLo * v.fgSub + mid) * v.vel;
-        sd *= v.vel;
-        // the tone's low-pass: open on the hit, closing onto where TONE and CHARACTER have it
-        const bool sideOn = v.fgSide && t < (v.fgImpEnd > 0.09f ? v.fgImpEnd + 0.11f : 0.2f);    // (its low-pass rings a little past the impact's end)
-        if (v.lp < 15000.0f)
-        {
-            if ((v.tick++ & 15) == 0) { v.res.set (v.lp + v.fgBright * std::exp (-t / 0.03f), 0.7071f, osr); if (sideOn) { v.resS.g = v.res.g; v.resS.k = v.res.k; v.resS.a1 = v.res.a1; v.resS.a2 = v.res.a2; v.resS.a3 = v.res.a3; } }
-            y = v.res.tickLP (y);
-            if (sideOn) sd = v.resS.tickLP (sd);
-        }
-        {
-            const float u = y * v.fgClip, sat = fastTanh (u);
-            y = sat * v.fgOut;
-            if (clean != 0.0f) y += clean * v.fgKeepG;
-            side = sideOn ? sd * (std::abs (u) > 1.0e-4f ? sat / u : 1.0f) * v.fgClip * v.fgOut : 0.0f;
-        }
-        v.phase += f / osr;
-        if (v.phase > 1.0) v.phase -= 1.0;
-        v.t += 1.0 / osr;
-        if (t > v.decay * 9.0f + 0.06f + v.fgHold) v.active = false;
-        if (v.fgSign != 1.0f) { side = -side; return -y; }
-        return y;
+        const SampleRegion reg = smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion();
+        forge::start (forgeKnobs (c), v, gen, smp, &reg, main, rng, osr, ground);
     }
 
     // One sample at the oversampled rate (osr).
@@ -804,7 +408,7 @@ public:
         const float t = (float) v.t;
         float y = 0.0f;
         float side = 0.0f;                  // (SF-000) a stereo sample's left less its right, halved: y is their sum, halved, as it always was
-        if (v.model == kKickForge) y = forgeVoice (v, t, s, side);
+        if (v.model == kKickForge) { y = forge::voice (v, t, s, side, groundIn, rng, osr); if (forge::over (v, t)) v.active = false; }
         else if (v.model == kKickSample)
         {
             if (s == nullptr || (int) v.phase + 2 >= (v.reg.end > 0.0 ? std::min (s->length(), v.reg.last()) : s->length())) { v.active = false; return 0.0f; }
@@ -874,16 +478,18 @@ public:
         // and none still ringing, the kick is one channel exactly as it was.
         auto reads = [] (int m) { return m == kKickForge; };          // (the hundredth build: SAMPLE is the engine's, in stereo of its own)
         eng.begin (c, smp, c.v (DECAY), false);
+        sy.begin (c, c.v (DECAY), false);           // (SF-000, the hundred and second build) SYNTH
         const bool forgeSide = (model == kKickForge || (layer > 0.01f && layerModel == kKickForge)) && (c.v (FGIWIDTH) > 0.5f || c.v (FGGWIDTH) > 0.0f);     // (the ninety-ninth build: WIDTH made or kept)
         const bool wide = (smp != nullptr && smp->wide && (reads (model) || (layer > 0.01f && reads (layerModel)))) || sideLive > 0 || forgeSide;
         if (wide && ! wasWide) { decS.reset(); decSB.reset(); split.widen(); }
         wasWide = wide;
         // (SF-000) a ground that is ringing follows GROUND LENGTH and GROUND as they stand now, and a Forge hit that is
         // sounding its TONE, DRIVE, BODY and LOW PRESERVE
-        if (ground.awake()) ground.follow (groundLen (c), 2.0f * c.v (FGGROUND) * groundAmt * groundTrim, groundFor (c));       // (in the order the hit has it: the same numbers to the bit)
-        groundShade (c);
+        const forge::Knobs fk = forgeKnobs (c);
+        ground.follow (fk);
+        ground.shade (fk);
         const bool solo = c.v (FGSOLO) > 0.5f;
-        for (auto& v : voices) if (v.active && v.model == kKickForge) forgeFollow (c, v, forgeAt (v.fgCh));
+        for (auto& v : voices) if (v.active && v.model == kKickForge) forge::follow (fk, v, forgeAt (v.fgCh));
         for (int i = 0; i < c.n; ++i)
         {
             while (e < events.size() && events[e].offset <= i)
@@ -898,10 +504,12 @@ public:
                 // layered kick never peaks above the single one.
                 // (SF-000, the hundredth build) SAMPLE, the model or the layer: the engine every lane has plays it
                 if (model == kKickSample) { eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain / (1.0f + layer), ev.gen, 0); publishSample (c, vel * ev.gain, i, smp); }
+                else if (model == kKickSynth) sy.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain / (1.0f + layer), ev.gen, 0);
                 else trigger (c, model, vel, ev.gen, ev.note, ev.gain / (1.0f + layer), true, i, smp, ev.gain);
                 if (layer > 0.01f)
                 {
                     if (layerModel == kKickSample) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain * layer / (1.0f + layer), ev.gen, 1);
+                    else if (layerModel == kKickSynth) sy.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain * layer / (1.0f + layer), ev.gen, 1);
                     else trigger (c, layerModel, vel, ev.gen, ev.note, ev.gain * layer / (1.0f + layer), false, i, smp, ev.gain);
                 }
                 lastHit = 1.0f;
@@ -911,11 +519,11 @@ public:
             float y0 = 0.0f, y1 = 0.0f, b0 = 0.0f, b1 = 0.0f;
             groundIn = 0.0f; sideIn[0] = sideIn[1] = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b0 : y0) += renderVoice (v, smp);
-            if (ground.awake()) { float gs; const float g = ground.tick (groundIn, gs); if (! solo) { y0 += g; sideIn[0] += gs; } }      // (SF-000) KICK FORGE's ground, with MODEL's voices
+            if (ground.g.awake()) { float gs; const float g = ground.g.tick (groundIn, gs); if (! solo) { y0 += g; sideIn[0] += gs; } }      // (SF-000) KICK FORGE's ground, with MODEL's voices
             const float sa0 = sideIn[0], sb0 = sideIn[1];
             groundIn = 0.0f; sideIn[0] = sideIn[1] = 0.0f;
             for (auto& v : voices) if (v.active) (v.layer == 1 ? b1 : y1) += renderVoice (v, smp);
-            if (ground.awake()) { float gs; const float g = ground.tick (groundIn, gs); if (! solo) { y1 += g; sideIn[0] += gs; } }
+            if (ground.g.awake()) { float gs; const float g = ground.g.tick (groundIn, gs); if (! solo) { y1 += g; sideIn[0] += gs; } }
             const float ya = dec.down (y0, y1), yb = decB.down (b0, b1);
             if (wide)
             {
@@ -934,15 +542,19 @@ public:
             hist.push (std::fabs (y));
         }
         if (model == kKickSample || layerModel == kKickSample || eng.sounding()) eng.render (c, L, R, c.n);
+        if (model == kKickSynth || layerModel == kKickSynth || sy.sounding()) sy.render (c, L, R, c.n);
         out.process (c, io, FILT, RES, 0.0f, 0.0f, c.b (ALLOCON), LEVEL);
     }
     // OUTPUT; under it, with a sample loaded, the sample (its START and END to drag).
     // (SF-000, the hundredth build) with SAMPLE the model or the layer, SAMPLE's display
-    bool engShown() const { return getParam && ((int) std::lround (getParam (MODEL)) == kKickSample || (int) std::lround (getParam (LAYERMODEL)) == kKickSample); }
-    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
-    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
+    bool engShown() const { return getParam && ! synShown() && ((int) std::lround (getParam (MODEL)) == kKickSample || (int) std::lround (getParam (LAYERMODEL)) == kKickSample); }
+    // (SF-000, the hundred and second build) SYNTH's display: SYNTH the model, or the layer where the model is not SAMPLE
+    bool synShown() const { if (! getParam) return false; const int m = (int) std::lround (getParam (MODEL)); return m == kKickSynth || (m != kKickSample && (int) std::lround (getParam (LAYERMODEL)) == kKickSynth); }
+    int displayHeight() const override { if (synShown()) return SynthEngine::kDisplayHeight; if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { if (synShown()) return sy.wheel (p, r, dy, *this); return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (synShown()) { sy.paint (g, r, *this, true); return; }
         if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         auto s = sample.get();
         const auto st = SampleStrip::frameIn (r, kOwn);
@@ -964,18 +576,21 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (synShown()) { sy.mouse (p, r, down, *this); return; }
         if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); sy.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (synShown()) return;
         if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 private:
     SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    SynthEngine sy;                     // (SF-000, the hundred and second build) SYNTH, as every lane has it
     static constexpr int kOwn = 70;     // OUTPUT
     SampleStrip strip;
     struct DecimHist { std::atomic<float> v[512] {}; int w = 0, k = 0; float acc = 0; void push (float x) { acc = std::max (acc, x); if (++k >= 512) { v[w].store (std::min (1.0f, acc)); w = (w + 1) % 512; k = 0; acc = 0; } } };
@@ -985,8 +600,7 @@ private:
     float sideIn[2] = { 0.0f, 0.0f };   // (what the voices gave of it this sample)
     int sideLive = 0; bool wasWide = false;
     LayerSplit split;
-    float groundSec = 0.5f, groundAmt = 0.0f, groundTrim = 1.0f;       // (SF-000) the ground as the last hit made it, before GROUND LENGTH and GROUND
-    Ground ground; float groundIn = 0.0f;   // (SF-000) KICK FORGE's ground, and what the body gives it this sample
+    forge::GroundUnit ground; float groundIn = 0.0f;   // (SF-000) KICK FORGE's ground (and the last hit's making of it), and what the body gives it this sample
     static constexpr int kVoices = 8;
     std::array<Voice, kVoices> voices;
     EchoScheduler echoes;
@@ -1004,7 +618,7 @@ ModulePtr makeKICK() { return std::make_unique<KickModule>(); }
 // [Nov 10] The 808's hat and the 909's hats and cymbals as their circuits (P_HAT808, P_ROM909), and
 // the 808's and 909's snares and toms, appended after SAMPLE (a model's number never moves).
 enum PercType { P_METAL, P_CLAP, P_RIM, P_BELL, P_CLAVE, P_SHAKER, P_FM, P_MODAL, P_SAMPLE,
-                P_HAT808, P_ROM909, P_SN808, P_SN909, P_TOM808, P_TOM909 };
+                P_HAT808, P_ROM909, P_SN808, P_SN909, P_TOM808, P_TOM909, P_SYNTH, P_FORGE };
 struct PercModel { const char* name; PercType type; float freqMul, bpHz, hpHz, noise, decay; };
 // P_ROM909: noise is the sample's own decay in the ROM (seconds). P_SN*/P_TOM*: freqMul the body's pitch (Hz).
 static const PercModel kPercModels[] = {
@@ -1024,8 +638,10 @@ static const PercModel kPercModels[] = {
     { "SNARE 808-TYPE", P_SN808, 238.0f, 0.0f, 1500.0f, 0.00f, 0.12f },
     { "SNARE 909-TYPE", P_SN909, 185.0f, 0.0f, 1000.0f, 0.00f, 0.10f },
     { "TOM 808-TYPE",  P_TOM808, 100.0f, 0.0f,  200.0f, 0.00f, 0.30f },
-    { "TOM 909-TYPE",  P_TOM909, 110.0f, 0.0f,  300.0f, 0.00f, 0.30f } };
-static constexpr int kNumPercModels = 17;
+    { "TOM 909-TYPE",  P_TOM909, 110.0f, 0.0f,  300.0f, 0.00f, 0.30f },
+    { "SYNTH",         P_SYNTH,  1.00f,  1000.0f,   20.0f, 0.00f, 1.00f },        // (SF-000, the hundred and second build) SYNTH, the engine every lane has
+    { "KICK FORGE",    P_FORGE,  1.00f,  1000.0f,   20.0f, 0.00f, 1.00f } };      // (and KICK FORGE: none of these rows' figures is read for either)
+static constexpr int kNumPercModels = 19;
 static std::vector<std::string> percModelNames() { std::vector<std::string> v; for (auto& m : kPercModels) v.push_back (m.name); return v; }
 
 class PercModule : public Module
@@ -1037,7 +653,7 @@ public:
     bool instrument() const override { return true; }
     std::vector<ParamSpec> params() const override
     {
-        return smp::with (withCuts (withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").next().prim(),
+        return frg::with (syn::with (smp::with (withCuts (withLoop (withSlices (withSampleGain (withRegion ({ knob ("tune", "TUNE", -24.0f, 24.0f, 0.0f, "st").next().prim(),
                  pct ("decay", "DECAY", 0.5f).next().prim().dir (1),
                  pct ("tone", "TONE", 0.5f).next().prim(),
                  pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
@@ -1052,13 +668,13 @@ public:
                  toggle ("choke", "CHOKE", true),
                  pct ("spread", "SPREAD", 0.3f).slow(),
                  pct ("res", "FILTER RES", 0.1f),
-                 toggle ("alloc", "ALLOC", true).noPreset().forget() }))))));       // (SF-000, the hundredth build) SAMPLE's own, last
+                 toggle ("alloc", "ALLOC", true).noPreset().forget() }))))))));       // (SF-000, the hundredth build) SAMPLE's own, last; (the hundred and second) SYNTH's after
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP ONE-SHOT (MODEL: SAMPLE)"; }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr)); }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr)); sy.fileChanged (sample.get()); } }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
-    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); sy.fileChanged (sample.get()); }
     void prepare (double rate, int mb) override
     {
         if (auto s = sample.get(); s != nullptr && std::abs (s->sr - rate) > 1 && s->flac.getSize() > 0) sample.set (loadSampleFlac (s->flac, s->name, rate, s->flacGain));
@@ -1069,6 +685,11 @@ public:
         events.reserve (2048);
         eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
         eng.prepare (rate, mb);
+        sy.bind (params(), false, SynthEngine::Ends::hits);       // (SF-000, the hundred and second build)
+        sy.prepare (rate, mb);
+        sy.fileChanged (sample.get());
+        fg.bind (params(), false);                // (and KICK FORGE)
+        fg.prepare (rate, mb);
         reset();
     }
     void reset() override
@@ -1076,6 +697,8 @@ public:
         echoes.reset();
         lp.reset();                                 // (SF-000)
         eng.reset();
+        sy.reset();
+        fg.reset();
         for (auto& v : voices) v.active = false;
         for (auto& d : dec) d.reset();
         out.reset();
@@ -1382,6 +1005,10 @@ public:
         const bool loop = loopSetup (c, model, smp);
         const bool engModel = kPercModels[model].type == P_SAMPLE;      // (SF-000, the hundredth build) SAMPLE: the engine every lane has
         eng.begin (c, smp, c.v (DECAY), false);
+        const bool synModel = kPercModels[model].type == P_SYNTH;         // (SF-000, the hundred and second build) SYNTH
+        sy.begin (c, c.v (DECAY), false);
+        const bool forgeModel = kPercModels[model].type == P_FORGE;       // (and KICK FORGE)
+        fg.begin (c, c.v (DECAY), smp);
         size_t e = 0;
         auto* L = io.getWritePointer (0); auto* R = io.getWritePointer (1);
         for (int i = 0; i < c.n; ++i)
@@ -1390,7 +1017,9 @@ public:
             {
                 const auto& ev = events[e++];
                 if (! ev.on) continue;
-                if (engModel) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0);
+                if (synModel) sy.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0);
+                else if (forgeModel) fg.noteOn (i, (float) ev.note, ev.vel, ev.gain, ev.gen, 0);
+                else if (engModel) eng.noteOn (i, ev.note, (float) ev.note, ev.vel, ev.gain, ev.gen, 0);
                 else if (loop) loopHit (c, ev); else trigger (c, model, ev);
             }
             float l[2] {}, r[2] {};
@@ -1416,6 +1045,8 @@ public:
             R[i] = dec[1].down (r[0], r[1]) * 1.41f;
         }
         if (engModel || eng.sounding()) eng.render (c, L, R, c.n);
+        if (synModel || sy.sounding()) sy.render (c, L, R, c.n);
+        if (forgeModel || fg.sounding()) fg.render (L, R, c.n);
         out.process (c, io, FILT, RES, 0.0f, 0.0f, c.b (ALLOCON), LEVEL);
     }
     // (SF-000) LOOP. A sample on a hat or the clap is a hit: every step starts it again, and DECAY cuts it. With LOOP on
@@ -1438,27 +1069,33 @@ public:
     // No display of its own: with a sample loaded, the sample (its START and END to drag).
     // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
     bool engShown() const { return getParam && kPercModels[juce::jlimit (0, kNumPercModels - 1, (int) std::lround (getParam (MODEL)))].type == P_SAMPLE; }
-    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return sample.get() != nullptr ? SampleStrip::kHeight : 0; }
-    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
+    bool synShown() const { return getParam && kPercModels[juce::jlimit (0, kNumPercModels - 1, (int) std::lround (getParam (MODEL)))].type == P_SYNTH; }      // (SF-000, the hundred and second build)
+    int displayHeight() const override { if (synShown()) return SynthEngine::kDisplayHeight; if (engShown()) return SampleEngine::kDisplayHeight; return sample.get() != nullptr ? SampleStrip::kHeight : 0; }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { if (synShown()) return sy.wheel (p, r, dy, *this); return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (synShown()) { sy.paint (g, r, *this, true); return; }
         if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         if (auto s = sample.get()) strip.paint (g, SampleStrip::frameIn (r, 0), *s, *this, SSTART, SCUTS);
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (synShown()) { sy.mouse (p, r, down, *this); return; }
         if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, 0); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); sy.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (synShown()) return;
         if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, 0); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 private:
     SampleEngine eng;                       // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    ForgeEngine fg;                         // (and KICK FORGE)
+    SynthEngine sy;                         // (SF-000, the hundred and second build) SYNTH, as every lane has it
     SampleStrip strip;
     double sr = 48000.0, osr = 96000.0;
     std::shared_ptr<const WaveSet> waves;
@@ -1496,7 +1133,7 @@ public:
                  pct ("density", "DENSITY", 0.0f).next().prim().dir (1),
                  bip ("filter", "FILTER").prim(),
                  levelParam (-6.0f).prim(),
-                 choice ("model", "MODEL", { "REVERB", "DELAY", "SUB DRONE", "DISTORTED", "DUB BOOM", "SAMPLE" }, 0),
+                 choice ("model", "MODEL", { "REVERB", "DELAY", "SUB DRONE", "DISTORTED", "DUB BOOM", "SAMPLE", "SYNTH", "KICK FORGE" }, 0),
                  knob ("tune", "TUNE", -12.0f, 12.0f, 0.0f, "st").next().liveOn ("SAMPLE").slow(),
                  choice ("source", "SOURCE", { "KICK BUS", "MIDI", "BOTH" }, 0).noPreset().forget(),
                  choice ("predelay", "PREDELAY", { "0", "1/32", "1/16", "1/8" }, 1),
@@ -1506,13 +1143,13 @@ public:
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
                  toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() }))));
         p.push_back (toggle ("pocket_post", "AFTER FX", false).noPreset());        // (SF-000) the pocket left to the host, to make after the lane's effects
-        return smp::with (std::move (p));        // (SF-000, the hundredth build) SAMPLE's own, last
+        return frg::with (syn::with (smp::with (std::move (p))));        // (SF-000, the hundredth build) SAMPLE's own, last; (the hundred and second) SYNTH's after, then KICK FORGE's
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP RUMBLE ONE-SHOT (MODEL: SAMPLE)"; }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr)); }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr)); sy.fileChanged (sample.get()); } }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
-    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); sy.fileChanged (sample.get()); }
     void prepare (double rate, int mb) override
     {
         if (auto s = sample.get(); s != nullptr && std::abs (s->sr - rate) > 1 && s->flac.getSize() > 0) sample.set (loadSampleFlac (s->flac, s->name, rate, s->flacGain));
@@ -1520,6 +1157,11 @@ public:
         out.prepare (rate, mb, ROLE_RUMBLE, "RUMBLE", true);
         eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
         eng.prepare (rate, mb);
+        sy.bind (params(), false, SynthEngine::Ends::hits);       // (SF-000, the hundred and second build)
+        sy.prepare (rate, mb);
+        fg.bind (params(), true);                 // (and KICK FORGE, struck at the note the thump falls to)
+        fg.prepare (rate, mb);
+        sy.fileChanged (sample.get());
         fdn.prepare (rate);
         for (auto& d : dly) d.prepare ((int) (rate * 3));
         for (auto& d : pre) d.prepare ((int) (rate * 1));
@@ -1532,6 +1174,8 @@ public:
     {
         out.reset();
         eng.reset();            // (SF-000, the hundredth build)
+        sy.reset();
+        fg.reset();
         fdn.clear();
         for (auto& d : dly) d.clear();
         for (auto& d : pre) d.clear();
@@ -1583,7 +1227,11 @@ public:
         // (SF-000, the hundredth build) SAMPLE: the engine every lane has, struck as the thump is (the kick, or the notes);
         // what it makes goes through GRIT, DARK, the gate and the pump after it, as the rumble does, and not into the room
         engModel = model == 5;
+        synModel = model == 6;          // (SF-000, the hundred and second build) SYNTH, struck as SAMPLE is, at the kick's note
+        forgeModel = model == 7;        // (and KICK FORGE)
         eng.begin (c, smp, c.v (GATE), false);
+        sy.begin (c, c.v (GATE), false);
+        fg.begin (c, c.v (GATE), smp);
         float gates[Oversampler::kBlock];
         const int n = std::min (c.n, Oversampler::kBlock);
         for (int i = 0; i < n; ++i)
@@ -1686,6 +1334,8 @@ public:
             gates[i] = gateZ;
         }
         if (engModel || eng.sounding()) eng.render (c, L, R, n);
+        if (synModel || sy.sounding()) sy.render (c, L, R, n);
+        if (forgeModel || fg.sounding()) fg.render (L, R, n);
         // GRIT, 2x oversampled. Always through the oversampler (no delay switching in or out);
         // below 2 % the grit fades in from exactly clean.
         {
@@ -1706,10 +1356,12 @@ public:
     // The pocket; under it, with a sample loaded, the sample (its START and END to drag).
     // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
     bool engShown() const { return getParam && (int) std::lround (getParam (MODEL)) == 5; }
-    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
-    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
+    bool synShown() const { return getParam && (int) std::lround (getParam (MODEL)) == 6; }       // (SF-000, the hundred and second build)
+    int displayHeight() const override { if (synShown()) return SynthEngine::kDisplayHeight; if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { if (synShown()) return sy.wheel (p, r, dy, *this); return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (synShown()) { sy.paint (g, r, *this, true); return; }
         if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         const auto st = SampleStrip::frameIn (r, kOwn);
         if (auto s = sample.get(); s != nullptr && ! st.isEmpty()) strip.paint (g, st, *s, *this, SSTART, SCUTS);
@@ -1717,19 +1369,23 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (synShown()) { sy.mouse (p, r, down, *this); return; }
         if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); sy.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (synShown()) return;
         if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
 private:
     SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
-    bool engModel = false; int fireAt = 0;
+    SynthEngine sy;                     // (SF-000, the hundred and second build) SYNTH, as every lane has it
+    ForgeEngine fg;                     // (and KICK FORGE)
+    bool engModel = false, synModel = false, forgeModel = false; int fireAt = 0;
     static constexpr int kOwn = 80;     // the pocket
     SampleStrip strip;
     SampleRegion nextReg, sReg;         // SAMPLE: the part the next thump plays; the part this one plays
@@ -1737,6 +1393,8 @@ private:
     void fire (float f0, float f1, float tau, float vel, float tune, double tq, float dens, double space)
     {
         if (engModel) eng.noteOn (fireAt, 60, 60.0f, vel, 1.0f, tq > 0.0 ? 0 : 1, 0);
+        if (synModel) sy.noteOn (fireAt, 60, 69.0f + 12.0f * std::log2 (std::max (20.0f, f1 * tune) / 440.0f), vel, 1.0f, tq > 0.0 ? 0 : 1, 0);      // (at the note the thump falls to)
+        if (forgeModel) fg.noteOn (fireAt, 69.0f + 12.0f * std::log2 (std::max (20.0f, f1 * tune) / 440.0f), vel, 1.0f, tq > 0.0 ? 0 : 1, 0);
         thF0 = f0 * tune; thF1 = std::max (25.0f, f1 * tune); thTau = std::max (0.002f, tau);
         sReg = nextReg;
         if (sliceSmp != nullptr && (sliceAt > 0.001f || sliceCycle != 0))      // (SF-000) hitRegion's rule, with what the block read

@@ -7,6 +7,8 @@
 // modes split and detune, debris rattles, and the output saturates (2x oversampled).
 #include "Kit.h"
 #include "SampleEngine.h"
+#include "SynthEngine.h"
+#include "ForgeEngine.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
 
@@ -39,7 +41,9 @@ const ObjectModel kObjects[] = {
 constexpr int kNumObjects = 6;
 // (SF-000) SAMPLE, after the objects (a model's number never moves): a file, as a hit or as a loop on the rig's bars.
 constexpr int kStrikeSample = kNumObjects;
-std::vector<std::string> objectNames() { std::vector<std::string> v; for (auto& o : kObjects) v.push_back (o.name); v.push_back ("SAMPLE"); return v; }
+// (SF-000, the hundred and second build) SYNTH, after SAMPLE
+constexpr int kStrikeSynth = kNumObjects + 1, kStrikeForge = kNumObjects + 2;      // (the hundred and second build: SYNTH and KICK FORGE, last)
+std::vector<std::string> objectNames() { std::vector<std::string> v; for (auto& o : kObjects) v.push_back (o.name); v.push_back ("SAMPLE"); v.push_back ("SYNTH"); v.push_back ("KICK FORGE"); return v; }
 }
 
 class StrikeModule : public Module
@@ -53,7 +57,7 @@ public:
     double tailSeconds() const override { return 12.0; }
     std::vector<ParamSpec> params() const override
     {
-        return smp::with (withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).next().liveOn ("SAMPLE").prim().dir (1),
+        return frg::with (syn::with (smp::with (withCuts (withLoop (withSlices (withSampleGain (withRegion ({ pct ("power", "POWER", 0.4f).next().liveOn ("SAMPLE").prim().dir (1),
                  pct ("distance", "DISTANCE", 0.3f).next().prim(),
                  pct ("size", "SIZE", 0.5f).next().prim(),
                  pct ("material", "MATERIAL", 0.5f).next().liveOn ("SAMPLE").prim(),
@@ -72,14 +76,14 @@ public:
                  pct ("echo_swing", "ECHO SWING", 0.0f).next(),
                  pct ("vel_sens", "VEL SENS", 0.5f).next(),
                  toggle ("alloc", "ALLOC", true).noPreset().forget(),
-                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() }))))));      // (SF-000, the hundredth build) SAMPLE's own, last
+                 toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget() }))))))));      // (SF-000, the hundredth build) SAMPLE's own, last
     }
     // (SF-000) SAMPLE's file
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override { return "DROP A SAMPLE (MODEL: SAMPLE)"; }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); }
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); sy.fileChanged (sample.get()); } }
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
-    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); sy.fileChanged (sample.get()); }
     void prepare (double rate, int mb) override
     {
         if (auto s = sample.get(); s != nullptr && std::abs (s->sr - rate) > 1 && s->flac.getSize() > 0) sample.set (loadSampleFlac (s->flac, s->name, rate, s->flacGain));
@@ -88,6 +92,11 @@ public:
         os.prepare (rate, 2);
         eng.bind (params(), false, SampleEngine::Ends::hits);      // (SF-000, the hundredth build)
         eng.prepare (rate, mb);
+        sy.bind (params(), false, SynthEngine::Ends::hits);      // (SF-000, the hundred and second build)
+        sy.prepare (rate, mb);
+        sy.fileChanged (sample.get());
+        fg.bind (params(), false);                // (and KICK FORGE)
+        fg.prepare (rate, mb);
         events.reserve (2048);
         reset();
     }
@@ -98,6 +107,8 @@ public:
         for (auto& h : shots) h.active = false;     // (SF-000)
         lp.reset();
         eng.reset();
+        sy.reset();
+        fg.reset();
         out.reset();
         os.reset();
         fractureSm = 0.0f;
@@ -130,6 +141,10 @@ public:
         // (SF-000, the hundredth build) SAMPLE is the engine every lane has (SampleEngine): it has its notes and its own
         // DRIVE, and what it makes goes on through FRACTURE (nothing, with no object struck) and the lane's output
         eng.begin (c, smp, c.v (DECAY), false);
+        const bool synthModel = c.ci (MODEL) == kStrikeSynth;        // (SF-000, the hundred and second build) SYNTH
+        sy.begin (c, c.v (DECAY), false);
+        const bool forgeModel = c.ci (MODEL) == kStrikeForge;        // (and KICK FORGE)
+        fg.begin (c, c.v (DECAY), smp);
         const bool loop = lp.setup (c, c.ci (SBARS), false, smp, smp != nullptr ? regionFrom (c, SSTART, *smp, SGAIN) : SampleRegion(),
                                     sr, sCal * 1.41f, c.v (MATERIAL), c.v (DECAY), c.v (TUNE), width);
         const float sTilt = (c.v (MATERIAL) - 0.5f) * 2.0f, sTiltA = 1.0f - std::exp (-kTwoPi * 2000.0f / (float) sr),
@@ -141,6 +156,8 @@ public:
             {
                 const auto& ev = events[e++];
                 if (! ev.on) continue;
+                if (synthModel) { sy.noteOn (i, ev.note, (float) ev.note, ev.vel, std::pow (0.7f, (float) ev.gen) * ev.gain, ev.gen, 0); continue; }
+                if (forgeModel) { fg.noteOn (i, (float) ev.note, ev.vel, ev.gain, ev.gen, 0); continue; }
                 if (! sampleModel) { strike (c, ev); continue; }
                 eng.noteOn (i, ev.note, (float) ev.note, ev.vel, std::pow (0.7f, (float) ev.gen) * ev.gain, ev.gen, 0);
                 juce::ignoreUnused (loop);
@@ -172,6 +189,8 @@ public:
             L[i] = l; R[i] = r;
         }
         if (sampleModel || eng.sounding()) eng.render (c, L, R, c.n);
+        if (synthModel || sy.sounding()) sy.render (c, L, R, c.n);
+        if (forgeModel || fg.sounding()) fg.render (L, R, c.n);
         // FRACTURE: the object distorts (2x oversampled). The amount follows the fractured voices'
         // own envelopes (full at the blast, gone by the time they die), smoothed (2 ms up, 50 ms
         // down) and ramped across the chunk, and it is blended in from exactly clean at 0: no level
@@ -211,22 +230,26 @@ public:
     // (SF-000) under its own display, with a sample loaded: the sample (its START and END to drag)
     // (SF-000, the hundredth build) with SAMPLE the model, SAMPLE's display
     bool engShown() const { return getParam && (int) std::lround (getParam (MODEL)) == kStrikeSample; }
-    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
-    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
+    bool synShown() const { return getParam && (int) std::lround (getParam (MODEL)) == kStrikeSynth; }      // (SF-000, the hundred and second build)
+    int displayHeight() const override { if (synShown()) return SynthEngine::kDisplayHeight; if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { if (synShown()) return sy.wheel (p, r, dy, *this); return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool down) override
     {
+        if (synShown()) { sy.mouse (p, r, down, *this); return; }
         if (engShown()) { eng.mouse (p, r, down, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), down, *this, SSTART, SCUTS, *smp); return; } }
         if (down) strip.up();
     }
-    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); sy.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (synShown()) return;
         if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (synShown()) { sy.paint (g, r, *this, true); return; }
         if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         if (auto smp = sample.get())
             if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) strip.paint (g, st, *smp, *this, SSTART, SCUTS);
@@ -452,6 +475,8 @@ private:
     Noise rng;
     SampleSlot sample;                      // (SF-000) SAMPLE
     SampleEngine eng;                       // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    SynthEngine sy;                         // (SF-000, the hundred and second build) SYNTH, as every lane has it
+    ForgeEngine fg;                         // (and KICK FORGE)
     SampleStrip strip;
     static constexpr int kOwn = 110;
     std::array<Shot, 6> shots;

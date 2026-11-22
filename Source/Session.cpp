@@ -4951,7 +4951,19 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
         // START and END did nothing for them: the sixty-four are read between START and END, so those are put at the
         // file's ends and POSITION is the place in the file it was. Not where the lane's LAYER is up, which may be playing
         // the part between them.)
-        if (s.hasSetup && wtAt[(size_t) l] >= 0)
+        // (lists 6, the hundred and second build: SYNTH is last on every lane's list of models, and on KICK's and the synths'
+        // lists of LAYER MODEL; and KICK FORGE after it on every lane but KICK, which had it. A lane whose list the growths
+        // above did not already put on the list of now has its model and its layer's at their places on the list that
+        // was: each to the same place on this one.)
+        if (before == 0 && taken[(size_t) l] < 6)
+        {
+            const int was = now - (module == "KICK" ? 1 : 2);
+            if (was > 1)
+                for (auto& kv : s.setup[(size_t) l])
+                    if (kv.first == "model" || kv.first == "layer_model")
+                        kv.second = (float) juce::jlimit (0, was - 1, (int) std::lround (kv.second * (float) (was - 1))) / (float) (now - 1);
+        }
+        if (s.hasSetup && wtAt[(size_t) l] >= 0 && taken[(size_t) l] < 5)     // (lists 5's own: not a lane of lists 5)
         {
             float mv = -1.0f, table = 0.0f, from = 0.0f, layer = 0.0f;
             for (auto& kv : s.setup[(size_t) l]) { if (kv.first == "model") mv = kv.second; else if (kv.first == "table") table = kv.second; else if (kv.first == "wt_from") from = kv.second; else if (kv.first == "layer") layer = kv.second; }

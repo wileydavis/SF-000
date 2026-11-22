@@ -6,8 +6,11 @@
 // Halfband decimators bring the sums back down: no audible aliasing at any pitch.
 #include "Kit.h"
 #include "SampleEngine.h"
+#include "SynthEngine.h"
+#include "ForgeEngine.h"
 #include "../core/BandLimited.h"
 #include "../core/Wavetable.h"
+#include "../core/SampleTables.h"
 #include "../core/Oversample.h"
 #include "Calibration.h"
 
@@ -86,7 +89,7 @@ private:
     float w[kPhases + 1][kTaps];
 };
 
-enum Engine { E_SUB, E_ORGAN, E_FM, E_HOOVER, E_SYNC, E_NOISE, E_WAVETABLE, E_GRAIN, E_SAMPLE, E_FM4 };
+enum Engine { E_SUB, E_ORGAN, E_FM, E_HOOVER, E_SYNC, E_NOISE, E_WAVETABLE, E_GRAIN, E_SAMPLE, E_FM4, E_SYNTH, E_FORGE };     // (E_SYNTH: the hundred and second build's SynthEngine)
 
 // FM 4-OP [Nov 10]: four sine operators, A B C D, on one of eight algorithms (D's output can feed
 // itself back). Modulation only ever runs down the letters (D into C, B or A; C into B or A; B into
@@ -145,6 +148,8 @@ static SynthModel sharedModel (const std::string& n)
 {
     SynthModel x { "", E_SUB };
     if (n == "SAMPLE")          { x = SynthModel { "SAMPLE", E_SAMPLE }; x.filt = F_SVF; x.dec = 1.0f; x.sus = 1.0f; x.envMul = 0.0f; }
+    else if (n == "SYNTH")      { x = SynthModel { "SYNTH", E_SYNTH }; }
+    else if (n == "KICK FORGE") { x = SynthModel { "KICK FORGE", E_FORGE }; }   // (and KICK FORGE, the third: ForgeEngine)        // (SF-000, the hundred and second build) the engine every lane has: none of this is read
     else if (n == "WAVETABLE")  { x = SynthModel { "WAVETABLE", E_WAVETABLE }; x.gain = 1.4f * cal::gain (-2.0f); x.filt = F_SVF; x.att = 0.003f; x.dec = 0.5f; x.sus = 0.6f; x.rel = 0.2f; x.ensemble = 0.3f; x.detune = 0.12f; }
     else if (n == "FM 4-OP")    { x = SynthModel { "FM 4-OP", E_FM4 }; x.gain = cal::gain (1.06f); x.filt = F_SVF; x.att = 0.002f; x.dec = 1.0f; x.sus = 0.9f; x.rel = 0.3f; x.ensemble = 0.3f; }
     else if (n == "GRANULAR")   { x = SynthModel { "GRANULAR", E_GRAIN }; x.gain = 3.5f; x.filt = F_SVF; x.att = 0.01f; x.dec = 1.0f; x.sus = 0.8f; x.rel = 0.4f; x.envMul = 0.0f; x.ensemble = 0.3f; }
@@ -172,6 +177,8 @@ static std::vector<SynthModel> bassModels()
     m.push_back (sharedModel ("FM 4-OP"));
     // (SF-000) GRANULAR, as PAD has it, with a bass's envelope and one voice. Last on the list: every place before it is who it was.
     m.push_back (sharedModel ("GRANULAR"));
+    m.push_back (sharedModel ("SYNTH"));        // (SF-000, the hundred and second build: last, so no model's number moves)
+    m.push_back (sharedModel ("KICK FORGE"));   // (and KICK FORGE after it)
     return m;
 }
 static std::vector<SynthModel> leadModels()
@@ -192,6 +199,8 @@ static std::vector<SynthModel> leadModels()
     m.push_back (sharedModel ("FM 4-OP"));
     // (SF-000) GRANULAR (see BASS), last on the list.
     m.push_back (sharedModel ("GRANULAR"));
+    m.push_back (sharedModel ("SYNTH"));        // (SF-000, the hundred and second build: last, so no model's number moves)
+    m.push_back (sharedModel ("KICK FORGE"));   // (and KICK FORGE after it)
     return m;
 }
 static std::vector<SynthModel> padModels()
@@ -206,6 +215,8 @@ static std::vector<SynthModel> padModels()
     { SynthModel x { "NOISE BED", E_NOISE }; x.filt = F_SVF; x.att = 0.8f; x.dec = 1.0f; x.sus = 0.7f /* (SF-000) was 1: DECAY */; x.rel = 2.0f; x.envMul = 0.0f; x.ensemble = 0.3f /* (SF-000) SPACE */; m.push_back (x); }
     m.push_back (sharedModel ("SAMPLE"));
     m.push_back (sharedModel ("FM 4-OP"));
+    m.push_back (sharedModel ("SYNTH"));        // (SF-000, the hundred and second build: last, so no model's number moves)
+    m.push_back (sharedModel ("KICK FORGE"));   // (and KICK FORGE after it)
     return m;
 }
 
@@ -483,7 +494,7 @@ public:
             if (s.id == "smp_start" || s.id == "smp_end" || s.id == "smp_fade_in" || s.id == "smp_fade_out") s.liveOn ("GRANULAR");
             if (s.id == "smp_gain" || s.id == "smp_norm") s.liveOn ("GRANULAR");
         }
-        return smp::with (std::move (p));        // (SF-000, the hundredth build) SAMPLE's own, last
+        return frg::with (syn::with (smp::with (std::move (p))));        // (SF-000, the hundredth build) SAMPLE's own, last; (the hundred and second) SYNTH's after
     }
     bool acceptsFiles() const override { return true; }
     juce::String fileHint() const override
@@ -492,204 +503,15 @@ public:
         const bool grains = std::any_of (models.begin(), models.end(), [] (const SynthModel& m) { return m.engine == E_GRAIN; });
         return grains ? "DROP A SAMPLE: FOR SAMPLE, GRANULAR, WAVETABLE" : "DROP SAMPLE (MODEL OR LAYER MODEL: SAMPLE)";      // (SF-000) short enough to be read beside RESAMPLE and LOAD
     }
-    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); buildFrames(); } }      // (SF-000) five minutes of a file, as VOICE has (it was one): a field recording to cut slices and grains from
+    void loadFiles (const juce::StringArray& f) override { if (f.size() > 0) { sample.set (loadSampleFile (juce::File (f[0]), sr, 300.0)); buildFrames(); sy.fileChanged (sample.get()); } }      // (SF-000) five minutes of a file, as VOICE has (it was one): a field recording to cut slices and grains from
     void save (juce::ValueTree& t) const override { sample.save (t, "SAMPLE"); }
-    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); buildFrames(); }
+    void load (const juce::ValueTree& t) override { sample.load (t, "SAMPLE", sr); buildFrames(); sy.fileChanged (sample.get()); }
     bool hasWavetable() const { return std::any_of (models.begin(), models.end(), [] (const SynthModel& m) { return m.engine == E_WAVETABLE; }); }
 
-    // WAVETABLE's TABLE SAMPLE [Nov 10]: eight frames from the loaded sample, at the voices' rate,
-    // from evenly across it, start to end. Each frame is four periods of the sound where it is cut:
-    // the period measured there (normalised autocorrelation, 25 Hz-2 kHz, the shortest lag within
-    // 10 % of the best so an octave below isn't taken, refined between lags); where nothing is
-    // periodic enough, the sample's analysed root or 1024 samples at 48 kHz. Hann-windowed, read as
-    // harmonics (Mipmap::harmonicsOfCycles: a cycle that doesn't join up with itself doesn't buzz),
-    // turned so every frame's fundamental starts at the same phase (frames blend without
-    // cancelling), brought to one loudness; a frame 40 dB under the loudest (silence at an end)
-    // takes its neighbour's.
-    static double periodAt (const std::vector<float>& x, int t0, int w, double sr)
-    {
-        int n = 1; while (n < 2 * w) n <<= 1;
-        std::vector<std::complex<double>> X ((size_t) n);
-        for (int i = 0; i < w; ++i) X[(size_t) i] = x[(size_t) (t0 + i)];
-        Mipmap::transform (X, false);
-        for (auto& v : X) v = std::norm (v);
-        Mipmap::transform (X, true);
-        std::vector<double> c ((size_t) w + 1, 0.0);
-        for (int i = 0; i < w; ++i) c[(size_t) i + 1] = c[(size_t) i] + (double) x[(size_t) (t0 + i)] * x[(size_t) (t0 + i)];
-        const int lo = std::max (2, (int) (sr / 2000.0)), hi = std::min (w / 2, (int) (sr / 25.0));
-        if (hi <= lo + 2 || c[(size_t) w] < 1.0e-9) return 0.0;
-        std::vector<double> r ((size_t) hi + 2, 0.0);
-        double best = 0.0;
-        for (int lag = lo - 1; lag <= hi + 1; ++lag)
-        {
-            const double e = std::sqrt ((c[(size_t) (w - lag)] - c[0]) * (c[(size_t) w] - c[(size_t) lag])) + 1.0e-20;
-            r[(size_t) lag] = X[(size_t) lag].real() / (double) n / e;
-            if (lag >= lo && lag <= hi) best = std::max (best, r[(size_t) lag]);
-        }
-        if (best < 0.6) return 0.0;
-        for (int lag = lo; lag <= hi; ++lag)
-            if (r[(size_t) lag] >= 0.9 * best && r[(size_t) lag] >= r[(size_t) lag - 1] && r[(size_t) lag] >= r[(size_t) lag + 1])
-            {
-                const double a = r[(size_t) lag - 1], b = r[(size_t) lag], d = r[(size_t) lag + 1], den = a - 2.0 * b + d;
-                return lag + (std::abs (den) > 1.0e-12 ? 0.5 * (a - d) / den : 0.0);
-            }
-        return 0.0;
-    }
-    // (SF-000) Sixty-four frames from a recording (TABLE SAMPLE had eight until the eighty-seventh build): each four periods
-    // of the sound where it is cut, windowed, read as harmonics, every frame's fundamental at one phase, each brought to
-    // one loudness; at sixty-four places evenly along it, and how loud the recording was at each kept beside them (LEVELS).
-    static std::shared_ptr<const Wavetable> fineFrom (const SampleData& s, double voiceRate)
-    {
-        const int len = s.length(), chans = std::max (1, s.buf.getNumChannels());
-        constexpr int kF = 64, kN = 1024, kCycles = 4, kH = Wavetable::kMaxHarm;
-        const double fallback = s.rootHz > 20.0f ? s.sr / (double) s.rootHz : 1024.0 * s.sr / 48000.0;
-        const int win = (int) (0.085 * s.sr);
-        if (len < (int) (fallback * kCycles) + win + 8) return nullptr;
-        std::vector<float> mono ((size_t) len);
-        for (int i = 0; i < len; ++i) { float v = 0.0f; for (int ch = 0; ch < chans; ++ch) v += s.buf.getSample (ch, i); mono[(size_t) i] = v / (float) chans; }
-        auto at = [&mono, len] (double t)
-        {
-            const int i = juce::jlimit (1, len - 3, (int) t);
-            const float fr = (float) (t - i), xm1 = mono[(size_t) i - 1], x0 = mono[(size_t) i], x1 = mono[(size_t) i + 1], x2 = mono[(size_t) i + 2];
-            const float c1 = 0.5f * (x1 - xm1), c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2, c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
-            return (double) (((c3 * fr + c2) * fr + c1) * fr + x0);
-        };
-        std::vector<std::vector<float>> amps ((size_t) kF), phs ((size_t) kF);
-        std::vector<double> rms ((size_t) kF, 0.0), x ((size_t) (kN * kCycles));
-        const double usable = (double) len - 8.0 - win - fallback * kCycles;
-        // (the period is measured at every fourth frame and at the last, and taken from the two nearest between them: a
-        // recording's pitch does not move far in a sixty-fourth of its length, and the measuring is most of the work)
-        std::vector<double> period ((size_t) kF, -1.0);
-        for (int f = 0; f < kF; f = f < kF - 1 ? std::min (kF - 1, f + 4) : kF) period[(size_t) f] = periodAt (mono, (int) (2.0 + std::max (0.0, usable) * f / (kF - 1)), win, s.sr);
-        for (int f = 0; f < kF; ++f)
-        {
-            if (period[(size_t) f] >= 0.0) continue;
-            int a = f, b = f;
-            while (period[(size_t) a] < 0.0) --a;
-            while (period[(size_t) b] < 0.0) ++b;
-            const double pa = period[(size_t) a], pb = period[(size_t) b];
-            period[(size_t) f] = pa > 0.0 && pb > 0.0 ? pa + (pb - pa) * (double) (f - a) / (double) (b - a) : pa > 0.0 ? pa : pb > 0.0 ? pb : -2.0;
-        }
-        for (int f = 0; f < kF; ++f)
-        {
-            const double t0 = 2.0 + std::max (0.0, usable) * f / (kF - 1);
-            double per = period[(size_t) f];
-            if (per <= 0.0) per = fallback;
-            per = std::min (per, ((double) len - 8.0 - t0) / kCycles);
-            for (size_t i = 0; i < x.size(); ++i) x[i] = at (t0 + ((double) i + 0.5) * per / kN);
-            auto& amp = amps[(size_t) f]; auto& ph = phs[(size_t) f];
-            Mipmap::harmonicsOfCycles (x, kCycles, kH, amp, ph);
-            rms[(size_t) f] = Wavetable::rmsOf (amp);
-            const float p1 = ph[0];
-            for (size_t h = 0; h < ph.size(); ++h) ph[h] -= (float) (h + 1) * p1;
-        }
-        const double loud = *std::max_element (rms.begin(), rms.end());
-        if (loud < 1.0e-6) return nullptr;
-        std::vector<float> lev ((size_t) kF);
-        for (int f = 0; f < kF; ++f) lev[(size_t) f] = (float) (rms[(size_t) f] / loud);
-        // (a silent frame takes its nearest loud neighbour's wave, as the eight do; its own level is kept beside it)
-        for (int f = 0; f < kF; ++f)
-            if (rms[(size_t) f] < 0.01 * loud)
-                for (int d = 1; d < kF; ++d)
-                {
-                    const int k = f - d >= 0 && rms[(size_t) (f - d)] >= 0.01 * loud ? f - d : f + d < kF && rms[(size_t) (f + d)] >= 0.01 * loud ? f + d : -1;
-                    if (k >= 0) { amps[(size_t) f] = amps[(size_t) k]; phs[(size_t) f] = phs[(size_t) k]; break; }
-                }
-        for (auto& a : amps) Wavetable::toRms (a);
-        auto out = std::make_shared<Wavetable>();
-        out->build (amps, phs, voiceRate);
-        out->level = lev;
-        out->name = s.name;
-        return out;
-    }
-    // (SF-000) TABLE FILE: the loaded file is a wavetable, as Serum, Vital and Phase Plant write them: 2048 samples a
-    // frame, up to 256 frames. It is read from the file's own samples (the copy kept with the sample), not from the
-    // sample as it was brought to the rig's rate. A file of 4096 samples or fewer that is not a whole number of frames is
-    // one cycle; a file whose length is a multiple of 1024 and not of 2048 has 1024 a frame. The frames keep their levels
-    // against each other. What it made of the file, or why it could not, is `says`.
-    static std::shared_ptr<const Wavetable> fileFrom (const SampleData& s, double voiceRate, juce::String& says, bool& whole)
-    {
-        whole = false;
-        juce::AudioBuffer<float> raw;
-        if (s.flac.getSize() > 0)
-        {
-            juce::FlacAudioFormat fmt;
-            std::unique_ptr<juce::AudioFormatReader> r (fmt.createReaderFor (new juce::MemoryInputStream (s.flac, false), true));
-            if (r != nullptr && r->lengthInSamples > 0)
-            {
-                if (r->lengthInSamples > 256 * 2048) { says = "NOT A WAVETABLE FILE (LONGER THAN 256 FRAMES OF 2048): TABLE SAMPLE READS A RECORDING"; return nullptr; }
-                raw.setSize ((int) std::max (1u, std::min (2u, r->numChannels)), (int) r->lengthInSamples);
-                r->read (&raw, 0, (int) r->lengthInSamples, 0, true, true);
-            }
-        }
-        if (raw.getNumSamples() == 0)
-        {
-            if (s.length() > 256 * 2048) { says = "NOT A WAVETABLE FILE (LONGER THAN 256 FRAMES OF 2048): TABLE SAMPLE READS A RECORDING"; return nullptr; }
-            raw.makeCopyOf (s.buf);
-        }
-        const int n = raw.getNumSamples(), chans = raw.getNumChannels();
-        if (n < 16) { says = "NOT A WAVETABLE FILE (TOO SHORT)"; return nullptr; }
-        std::vector<double> mono ((size_t) n);
-        for (int i = 0; i < n; ++i) { double v = 0.0; for (int ch = 0; ch < chans; ++ch) v += raw.getSample (ch, i); mono[(size_t) i] = v / chans; }
-        int size = 2048, count = n / 2048;
-        bool one = false;
-        if (n % 2048 != 0)
-        {
-            if (n <= 4096) { one = true; count = 1; }
-            else if (n % 1024 == 0) { size = 1024; count = n / 1024; }
-        }
-        if (count < 1) { one = true; count = 1; }
-        whole = one ? n <= 4096 : n % size == 0;        // (a whole number of frames, or one short cycle: a file made as a wavetable)
-        const int H = std::min ((int) Wavetable::kMaxHarm, size / 2 - 1);
-        std::vector<std::vector<float>> amps ((size_t) count), phs ((size_t) count);
-        std::vector<double> cyc ((size_t) size);
-        double loud = 0.0;
-        for (int f = 0; f < count; ++f)
-        {
-            if (one)
-                // (one cycle of any length: read at 2048 even steps round it)
-                for (int i = 0; i < size; ++i)
-                {
-                    const double t = ((double) i + 0.5) * n / size - 0.5;
-                    const int i0 = (int) std::floor (t); const double fr = t - i0;
-                    auto v = [&] (int k) { return mono[(size_t) (((k % n) + n) % n)]; };
-                    const double xm1 = v (i0 - 1), x0 = v (i0), x1 = v (i0 + 1), x2 = v (i0 + 2);
-                    cyc[(size_t) i] = ((0.5 * (x2 - xm1) + 1.5 * (x0 - x1)) * fr + (xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2)) * fr * fr + 0.5 * (x1 - xm1) * fr + x0;
-                }
-            else
-                for (int i = 0; i < size; ++i) cyc[(size_t) i] = mono[(size_t) (f * size + i)];
-            Mipmap::harmonicsOf (cyc, H, amps[(size_t) f], phs[(size_t) f]);
-            loud = std::max (loud, Wavetable::rmsOf (amps[(size_t) f]));
-        }
-        if (loud < 1.0e-6) { says = "NOT A WAVETABLE FILE (IT IS SILENT)"; return nullptr; }
-        for (auto& a : amps) for (auto& v : a) v = (float) (v * 0.5 / loud);
-        auto out = std::make_shared<Wavetable>();
-        out->build (amps, phs, voiceRate);
-        out->name = s.name;
-        says = one ? juce::String ("ONE CYCLE OF ") + juce::String (n) + " SAMPLES"
-                   : juce::String (count) + (count == 1 ? " FRAME OF " : " FRAMES OF ") + juce::String (size) + (n % size != 0 ? " (" + juce::String (n % size) + " SAMPLES OVER, LEFT OUT)" : juce::String());
-        return out;
-    }
-    // What WAVETABLE can make of the loaded sample: its sixty-four frames, and the file read as a wavetable.
-    // Made once for a sample and a rate, and shared by every lane and voice that holds that sample.
-    struct SampleTables { std::shared_ptr<const Wavetable> fine, file; juce::String fileSays; bool fileWhole = false; };
-    static std::shared_ptr<const SampleTables> tablesFrom (const SamplePtr& s, double voiceRate)
-    {
-        struct Kept { std::weak_ptr<const SampleData> of; double rate = 0.0; std::weak_ptr<const SampleTables> made; };
-        static std::mutex lock;
-        static std::vector<Kept> kept;
-        {
-            const std::lock_guard<std::mutex> g (lock);
-            kept.erase (std::remove_if (kept.begin(), kept.end(), [] (const Kept& k) { return k.of.expired() || k.made.expired(); }), kept.end());
-            for (auto& k : kept) if (k.rate == voiceRate && k.of.lock() == s) if (auto m = k.made.lock()) return m;
-        }
-        auto t = std::make_shared<SampleTables>();
-        t->fine = fineFrom (*s, voiceRate);
-        t->file = fileFrom (*s, voiceRate, t->fileSays, t->fileWhole);
-        const std::lock_guard<std::mutex> g (lock);
-        kept.push_back ({ s, voiceRate, t });
-        return t;
-    }
+    // (SF-000, the hundred and second build) TABLE SAMPLE's and TABLE FILE's frames are made in core/SampleTables.h, shared
+    // with SYNTH.
+    using SampleTables = tables::SampleTables;
+    static std::shared_ptr<const SampleTables> tablesFrom (const SamplePtr& s, double voiceRate) { return tables::tablesFrom (s, voiceRate); }
     void buildFrames()
     {
         if (! hasWavetable()) return;
@@ -721,12 +543,19 @@ public:
         buildGrainSource();
         eng.bind (params(), true, SampleEngine::Ends::keys);       // (SF-000, the hundredth build)
         eng.prepare (rate, mb);
+        sy.bind (params(), true, SynthEngine::Ends::keys);        // (SF-000, the hundred and second build)
+        sy.prepare (rate, mb);
+        sy.fileChanged (sample.get());
+        fg.bind (params(), true);                 // (and KICK FORGE, at the note's pitch)
+        fg.prepare (rate, mb);
         reset();
     }
     void reset() override
     {
         echoes.reset();
         eng.reset();
+        sy.reset();
+        fg.reset();
         for (auto& v : voices) v.active = false;
         held.clear();
         numDown = 0;
@@ -827,7 +656,7 @@ public:
     void process (Ctx& c, juce::AudioBuffer<float>& io, juce::AudioBuffer<float>* side, juce::AudioBuffer<float>* extra, juce::MidiBuffer& midi) override
     {
         const float* p = c.p; const float* p0 = c.p0;
-        std::copy (p, p + kParams + smp::kParamCount, pushed); std::copy (p0, p0 + kParams + smp::kParamCount, pushed0);      // (and SAMPLE's, after them)
+        std::copy (p, p + kParams + smp::kParamCount + syn::kParamCount + frg::kParamCount, pushed); std::copy (p0, p0 + kParams + smp::kParamCount + syn::kParamCount + frg::kParamCount, pushed0);      // (and SAMPLE's and SYNTH's, after them)
         push (pushed); push (pushed0);
         c.p = pushed; c.p0 = pushed0;
         processVoices (c, io, side, extra, midi);
@@ -886,11 +715,13 @@ public:
         // (SF-000, the ninety-fourth build) a sample that is not looped plays once and is over: a held note of it does not go on (holdsNotes)
         // (the hundredth build: SAMPLE is the engine every lane has, and says so itself)
         eng.begin (c, smp, c.v (GATE), c.b (MONO), c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);
+        sy.begin (c, c.v (GATE), c.b (MONO), c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);        // (SF-000, the hundred and second build) SYNTH
+        fg.begin (c, c.v (GATE), smp, c.b (KEYFOLLOW) ? keyOffset (c.keyRoot) : 0);              // (and KICK FORGE)
         engAt = 0;
         holds.store (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SAMPLE ? eng.holds() : true);
         ensembleAmt = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].ensemble;
         if (const auto& ma = models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]; ma.shared)
-            ensembleAmt = centred (ma) || ma.engine == E_SAMPLE ? 0.0f : ma.ensemble;        // (the hundredth build: SAMPLE is as recorded; SPACE is not on it)      // (SF-000) SPACE on an engine every lane has: not with MONO on; on a sample, with KNOBS on
+            ensembleAmt = centred (ma) || ma.engine == E_SAMPLE || ma.engine == E_SYNTH || ma.engine == E_FORGE ? 0.0f : ma.ensemble;        // (the hundredth build: SAMPLE is as recorded; SPACE is not on it)      // (SF-000) SPACE on an engine every lane has: not with MONO on; on a sample, with KNOBS on
         const float layer = c.v (LAYER);
         int autoOff; float relMul;
         gateShape (c.v (GATE), c.samplesPerBeat(), autoOff, relMul);
@@ -914,6 +745,7 @@ public:
             lastModel = modelA;
             for (auto& v : voices) if (v.active) { v.amp.off(); v.fenv.off(); v.releasing = true; }
             eng.noteOff (0, -1, 0);         // (SF-000, the hundredth build) SAMPLE's too
+            sy.noteOff (0, -1, 0);          // (and SYNTH's)
             held.clear();
             // A mono model plays the newest key; the others go back on its stack (no slide through them).
             const bool monoA = monoOf (models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)]);
@@ -1091,6 +923,11 @@ public:
         // (SF-000, the hundredth build) SAMPLE, the model or the layer: the engine's sound, beside the voices
         if (eng.sounding() || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SAMPLE || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].engine == E_SAMPLE)
             eng.render (c, L, R, c.n, layer);
+        // (SF-000, the hundred and second build) SYNTH, the model or the layer
+        if (sy.sounding() || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_SYNTH || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].engine == E_SYNTH)
+            sy.render (c, L, R, c.n, layer);
+        if (fg.sounding() || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelA)].engine == E_FORGE || models[(size_t) juce::jlimit (0, (int) models.size() - 1, modelB)].engine == E_FORGE)
+            fg.render (L, R, c.n, layer);
         ens.process (L, R, c.n, ensembleAmt * c.v (SPACE) * 2.0f);
         split.monoLows (L, R, c.n, k0, k1);
         driftClock += (double) c.n / sr;
@@ -1103,15 +940,24 @@ public:
     // (SF-000, the hundredth build) with SAMPLE the model or the layer, SAMPLE's display
     bool engShown() const
     {
-        if (! getParam) return false;
+        if (! getParam || synShown()) return false;
         auto isS = [this] (int m) { return models[(size_t) juce::jlimit (0, (int) models.size() - 1, m)].engine == E_SAMPLE; };
         return isS ((int) std::lround (getParam (MODEL))) || (isS ((int) std::lround (getParam (LAYERMODEL))) && getParam (LAYER) > 0.01f);
     }
-    int displayHeight() const override { if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
-    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
+    // (SF-000, the hundred and second build) SYNTH's display: SYNTH the model, or the layer (sounding) where the model is not SAMPLE
+    bool synShown() const
+    {
+        if (! getParam) return false;
+        auto is = [this] (int m, Engine e) { return models[(size_t) juce::jlimit (0, (int) models.size() - 1, m)].engine == e; };
+        const int a = (int) std::lround (getParam (MODEL)), b = (int) std::lround (getParam (LAYERMODEL));
+        return is (a, E_SYNTH) || (is (b, E_SYNTH) && getParam (LAYER) > 0.01f && ! is (a, E_SAMPLE));
+    }
+    int displayHeight() const override { if (synShown()) return SynthEngine::kDisplayHeight; if (engShown()) return SampleEngine::kDisplayHeight; return kOwn + (sample.get() != nullptr ? SampleStrip::kHeight : 0); }
+    bool displayWheel (juce::Point<float> p, juce::Rectangle<float> r, float dy) override { if (synShown()) return sy.wheel (p, r, dy, *this); return engShown() && eng.wheel (p, r, dy, sample.get().get()); }
     bool holdsNotes() const override { return holds.load(); }
     void paint (juce::Graphics& g, juce::Rectangle<float> r) override
     {
+        if (synShown()) { sy.paint (g, r, *this, true); return; }
         if (engShown()) { eng.paint (g, r, *this, sample.get().get(), true); return; }
         auto s = sample.get();
         const auto st = SampleStrip::frameIn (r, kOwn);
@@ -1200,13 +1046,15 @@ public:
     }
     void displayMouse (juce::Point<float> p, juce::Rectangle<float> r, bool press) override
     {
+        if (synShown()) { sy.mouse (p, r, press, *this); return; }
         if (engShown()) { eng.mouse (p, r, press, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) { if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) { strip.mouseKit (p, SampleStrip::wave (st), press, *this, SSTART, SCUTS, *smp); return; } }
         if (press) strip.up();
     }
-    void displayMouseUp() override { strip.up(); eng.mouseUp(); }
+    void displayMouseUp() override { strip.up(); eng.mouseUp(); sy.mouseUp(); }
     void displayDouble (juce::Point<float> p, juce::Rectangle<float> r) override
     {
+        if (synShown()) return;
         if (engShown()) { eng.doubleClick (p, r, *this, sample.get().get()); return; }
         if (auto smp = sample.get(); smp != nullptr) if (const auto st = SampleStrip::frameIn (r, kOwn); ! st.isEmpty()) SampleStrip::doubleKit (p, SampleStrip::wave (st), *this, SSTART, SCUTS, *smp);
     }
@@ -1229,6 +1077,9 @@ private:
         int chordIdx = c.ci (CHORD);
         const auto& chord = chordIdx == 0 ? chordTable()[(size_t) m.chord] : chordTable()[(size_t) std::max (0, chordIdx - 1)];
         // (SF-000, the hundredth build) SAMPLE: the engine every lane has. A chord's notes each (MONO: the key alone).
+        // (SF-000, the hundred and second build) SYNTH: the engine every lane has; its own CHORD and MONO make the notes
+        if (m.engine == E_SYNTH) { sy.noteOn (engAt, ev.note, (float) ev.note, ev.vel, gain, ev.gen, layerId, autoOff); return; }
+        if (m.engine == E_FORGE) { fg.noteOn (engAt, (float) ev.note, ev.vel, gain, ev.gen, layerId); return; }      // (a hit a note: the lane's CHORD is not its)
         if (m.engine == E_SAMPLE)
         {
             if (monoOf (m)) eng.noteOn (engAt, ev.note, (float) ev.note, ev.vel, gain, ev.gen, layerId, autoOff);
@@ -1438,6 +1289,7 @@ private:
     {
         juce::ignoreUnused (relMul);
         eng.noteOff (engAt, note, gen);          // (SF-000, the hundredth build)
+        sy.noteOff (engAt, note, gen);           // (SF-000, the hundred and second build)
         if (note < 0) { for (auto& v : voices) { v.amp.off(); v.fenv.off(); v.releasing = true; } held.clear(); return; }
         if (gen == 0)
         {
@@ -2138,7 +1990,7 @@ private:
     // note of its charged or held it in this sub-block.
     float acidCap[2] {};
     bool acidOwned[2] {};
-    float pushed[kParams + smp::kParamCount] {}, pushed0[kParams + smp::kParamCount] {};    // the knobs as ACID and WARP push them (process)
+    float pushed[kParams + smp::kParamCount + syn::kParamCount + frg::kParamCount] {}, pushed0[kParams + smp::kParamCount + syn::kParamCount + frg::kParamCount] {};    // the knobs as ACID and WARP push them (process)
     double segPpq = 0.0;                              // (SF-000) the song's place where the part of the block being rendered starts
     static float acidDrainSeconds (float res) { return 0.15f + 0.35f * res; }
     EchoScheduler echoes;
@@ -2147,6 +1999,8 @@ private:
     Ensemble ens;
     SampleSlot sample;
     SampleEngine eng;                   // (SF-000, the hundredth build) SAMPLE, as every lane has it
+    SynthEngine sy;                     // (SF-000, the hundred and second build) SYNTH, as every lane has it
+    ForgeEngine fg;                     // (and KICK FORGE)
     int engAt = 0;                      // where in the block the notes being started are
     Noise rng;
     Noise warpRng { 0x2545F491u };
