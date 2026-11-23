@@ -6571,6 +6571,40 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      place. **Not built: PITCH** (the handoff's stage B): it needs a buffer, so a delay every lane would
      wait for; it comes with a decision on that.
 
+## What the Build 110 manual found (Nov 23): the hundred and eleventh build
+
+793. **You**, Nov 23, 08:54: the Build 110 manual's report (written elsewhere), with twelve code findings. Each was
+     traced here; mended:
+     - **SHIFT's repeats hung on the chunk's size** at TIME under a chunk (1 ms is 48 samples; a chunk is up to
+       64). TIME is 2 ms to a second now, and never under a chunk: blocks of 64 and 15 sound the same.
+     - **SYNTH's MONO voice begun again** kept the last note's SYNC, BURSTS and BURST GAP, and an accent with
+       ACCENT at nought: it takes them as a new voice does. Where SYNC now wants the faster rate the voice was
+       not started at, a new voice is begun (the old one let go over 3 ms); a slid note keeps all of it.
+     - **EDIT's KEEP did not see a change to a step's lock alone** (the part's keys and N stayed as they
+       were, so the change went unheard in the arrangement): a lock is a change of what plays now.
+     - **SAMPLE GRAIN on SYNC: RATE moved its level** (the grains' level went by RATE, which SYNC sets aside):
+       by SYNC's own pace there.
+     - **A double click on the wave with WARP off cleared the markers** and began again: it turns WARP back on
+       with them as they were (its help says so).
+     - **INFO said NEXT for SAMPLE's SPREAD in GRAIN and SYNTH's KEY FOLLOW**, both heard at once: it says
+       AT ONCE there. SYNTH's WARP help said both oscillators (A alone is bent); RESAMPLE's named GRANULAR and
+       a SYNC of bars, both gone.
+     - **The E16's lane pages were named for the old models**: the scenes are written again from this build
+       (ENV DCAY, SHAPE and the rest; the snapshot knobs' names as the rig comes). GALAXY's first SPACE knob
+       is named DTUN in a scene written while SPACE is GALAXY (a scene's names are fixed when it is written).
+       The engines' knobs are named by their ids without the engine's prefix.
+     - **PRINT's stems did not add up to MIX BEFORE THE MASTER, as its notes say**, where the drum bus's fader
+       or the master's EQ or GAIN were off their middle: the bus is taken after its fader, the mix before the
+       master's EQ and GAIN (none of the master on it, as the file's name says).
+     - **DIODE's KEY TRACK at full was not an octave for an octave** (it moved the curve, not the 303's fixed
+       87.5 Hz under it): a factor on the whole cutoff now. ACID 303 (KEY TRACK nought) is as it was.
+     - **SAMPLE played THROUGH with LOOP or GRAIN said it held its notes**, so a long lone step tied after the
+       sound had ended: a note played THROUGH holds nothing.
+     *Mine:* **not changed**: an unkept COPY left by PLAY or PRINT stays in the arrangement, as 787 decided
+     (DROP takes it out; the copy is then a part like the one it was made from). Say if you want PLAY to take
+     it out too. And **SYNTH's oversampling is chosen as a voice begins**: a CIRCUIT or FM turned up under a
+     sounding note runs at the rate it began with until the next (a rate changed under a voice would step).
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

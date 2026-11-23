@@ -1496,6 +1496,14 @@ sf::Reach Engine::reachOf (int lane, const juce::String& id) const
         const auto text = [p] (const char* pid) { const int k = p->paramIndex (pid); return k >= 0 ? p->param (k)->getCurrentValueAsText().toUpperCase() : juce::String(); };
         if (text ("sp_method") == "GRAIN" && text ("sp_notes") == "PITCH") return sf::Reach::Live;
     }
+    // (the hundred and eleventh build) SPREAD scatters each grain as it is made, so in GRAIN it is heard at once; and SYNTH
+    // reads the key every block, so on SYNTH KEY FOLLOW is heard at once (SAMPLE and KICK FORGE take it as a note begins)
+    if (id == "sp_spread")
+    {
+        const int k = p->paramIndex ("sp_method");
+        if (k >= 0 && p->param (k)->getCurrentValueAsText().toUpperCase() == "GRAIN") return sf::Reach::Live;
+    }
+    if (id == "key_follow" && model == "SYNTH") return sf::Reach::Live;
     return p->allSpecs()[(size_t) i].reachIn (model);
 }
 
@@ -3461,7 +3469,6 @@ void Engine::render (juce::AudioBuffer<float>& out)
         for (int ch = 0; ch < 2; ++ch) busDry.copyFrom (ch, 0, d2, ch, 0, n);
         if (pan) busProc->panic();
         busProc->processBlock (d2, noMidi);
-        if (recMore) rec->also (RecSink::kBusOut, d2.getReadPointer (0), d2.getReadPointer (1), n);
         // (its fader, as it goes into the mix: what the bus is recorded as doing has it too, so the stems still add up)
         {
             const float want = mixGainOf (mixPlace[(size_t) kMixBus].load (std::memory_order_relaxed));
@@ -3472,6 +3479,8 @@ void Engine::render (juce::AudioBuffer<float>& out)
             mixHold[kMixBus] = std::max (juce::Decibels::gainToDecibels (d2.getMagnitude (0, n), -100.0f), mixHold[kMixBus] - fall);
             mixDb[(size_t) kMixBus] = mixHold[kMixBus];
         }
+        // (the hundred and eleventh build: the bus as it goes into the mix, after its fader, so PRINT's stems add up to the mix)
+        if (recMore) rec->also (RecSink::kBusOut, d2.getReadPointer (0), d2.getReadPointer (1), n);
         for (int ch = 0; ch < 2; ++ch) m2.addFrom (ch, 0, d2, ch, 0, n);
         {
             for (int ch = 0; ch < 2; ++ch)
@@ -3550,6 +3559,9 @@ void Engine::render (juce::AudioBuffer<float>& out)
 
     float inPk = 0.0f;
     tr = clock();
+    // (the hundred and eleventh build) the mix with none of the master on it, its EQ and GAIN not either: PRINT's MIX BEFORE
+    // THE MASTER, which its stems add up to (it was taken after them)
+    if (recMore) rec->also (RecSink::kMasterIn, m2.getReadPointer (0), m2.getReadPointer (1), n);
     // The master's EQ (the ninety-fifth build): on the whole mix, before GAIN and the master's chain, so TAPE, COMP and
     // LIMIT are given what it has shaped and the limiter still has the last word. With no band in it does nothing at all.
     if (eqUpdate (masterEq, -1, snd.data()))
@@ -3565,7 +3577,6 @@ void Engine::render (juce::AudioBuffer<float>& out)
         if (g1 != 1.0f || mixGainWas != 1.0f) for (int ch = 0; ch < 2; ++ch) m2.applyGainRamp (ch, 0, n, mixGainWas, g1);
         mixGainWas = g1;
     }
-    if (recMore) rec->also (RecSink::kMasterIn, m2.getReadPointer (0), m2.getReadPointer (1), n);
     for (size_t k = 0; k < master.size(); ++k)
     {
         if (k + 1 == master.size()) { inPk = m2.getMagnitude (0, n); if (recMore) rec->also (RecSink::kLimiterIn, m2.getReadPointer (0), m2.getReadPointer (1), n); }

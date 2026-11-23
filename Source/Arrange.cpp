@@ -163,10 +163,17 @@ static bool samePattern (const Pattern& a, const Pattern& b)
     for (int i = 0; i < a.length && i < kMaxSteps; ++i)
     {
         const auto& x = a.steps[(size_t) i]; const auto& y = b.steps[(size_t) i];
-        if (x.on != y.on) return false;
+        if (x.on != y.on || x.lock != y.lock) return false;
         if (x.on && (x.vel != y.vel || x.gate != y.gate || x.ratchet != y.ratchet || x.note != y.note || x.octave != y.octave)) return false;
     }
-    return true;
+    // (the hundred and eleventh build) what the steps learnt too: a lock changed and nothing else is a change of what plays
+    auto within = [] (const Pattern& p, const Pattern& q)
+    {
+        for (auto& k : p.locks)
+            if (k.step < p.length && k.step < kMaxSteps && std::abs (lockOff (q, k.step, k.ctl) - k.off) > 1.0e-6f) return false;
+        return true;
+    };
+    return within (a, b) && within (b, a);
 }
 
 Snapshot Session::arrStateAt (int part, std::array<bool, kLanes>& notes) const

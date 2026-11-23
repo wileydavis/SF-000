@@ -554,6 +554,9 @@ void SampleEngine::doubleClick (juce::Point<float> p, juce::Rectangle<float> r, 
         // nearest within 20 ms, else where the file crosses nought), on the beat it is at now, so nothing moves until it is dragged.
         for (int k = 0; k < kWarps; ++k)
             if (v.warp && v.ws[k] > 0.0f && std::abs (ac.xOfBeat ((double) v.wd[k] * v.beats) - p.x) <= 5.0f) { m.setParam (ids.ws0 + k, 0.0f); m.setParam (ids.wd0 + k, 0.0f); return; }
+        // (SF-000, the hundred and eleventh build) WARP off with markers kept: a double click turns WARP back on with them as
+        // they were, and adds none (it cleared them, and began again)
+        if (! v.warp) { bool any = false; for (int k = 0; k < kWarps; ++k) any = any || v.ws[k] > 0.0f; if (any) { m.setParam (ids.warp, 1.0f); return; } }
         double src = ac.srcOfX (p.x);
         double best = 0.02 * s->sr; double at = -1.0;
         for (auto& h : s->hits) if (std::abs ((double) h.at - src) < best) { best = std::abs ((double) h.at - src); at = (double) h.at; }

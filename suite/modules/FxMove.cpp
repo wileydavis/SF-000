@@ -164,7 +164,7 @@ public:
                  pct ("mix", "MIX", 0.5f).prim().dir (1),
                  levelParam().prim(),
                  choice ("mode", "MODE", { "FREQ", "RING" }, 0),
-                 knob ("time", "TIME", 1.0f, 1000.0f, 120.0f, "ms", 120.0f),
+                 knob ("time", "TIME", 2.0f, 1000.0f, 120.0f, "ms", 120.0f),
                  knob ("lo_cut", "LO CUT", 20.0f, 600.0f, 80.0f, "Hz", 120.0f) };
     }
     void prepare (double rate, int) override
@@ -188,7 +188,9 @@ public:
         swap.want = juce::jlimit (0, 1, c.ci (MODE));
         if (swap.now < 0) swap.now = swap.want;
         const float loA = std::exp (-kTwoPi * c.v (LOCUT) / (float) sr);
-        const float delay = juce::jlimit (1.0f, (float) sr, c.v (TIME) * 0.001f * (float) sr);
+        // (the hundred and eleventh build) never shorter than a chunk: every repeat is read from before the chunk began, so
+        // what comes back does not hang on the chunk's size (2 ms is 88 samples at 44.1 kHz; a chunk is at most 64)
+        const float delay = juce::jlimit ((float) kChunkMax, (float) sr, c.v (TIME) * 0.001f * (float) sr);
         float* io2[2] = { io.getWritePointer (0), io.getWritePointer (1) };
         // the feedback, read for the whole chunk first (it is at least a millisecond back: a chunk is 64 samples), through
         // TONE and LO CUT

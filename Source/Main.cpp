@@ -2181,6 +2181,19 @@ static void moveFxTest (int& bad)
                    + juce::String (b750 - b1250, 1) + " dB over the other side; RING at 200 Hz makes 800 and 1200 Hz alike (" + juce::String (r800 - r1200, 2) + " dB) and the tone " + juce::String (r800 - r1000, 1) + " dB under them");
     }
     {
+        // (the hundred and eleventh build) SHIFT's repeats do not hang on the chunk's size: at its shortest TIME and FEEDBACK
+        // up, blocks of 64 and of 15 give the same sound
+        // (half a second of silence first, and the module begun again, so the knobs' own glide to where they were set, which
+        // goes by the block, is over and its oscillators start together)
+        auto in = music (48000.0, 1.5);
+        for (int ch = 0; ch < 2; ++ch) in.clear (ch, 0, 24000);
+        auto setup = [&] (SFProcessor& q) { set (q, "shift", 60.0f); set (q, "feedback", 0.9f); set (q, "time", 2.0f); set (q, "mix", 1.0f); };
+        auto again = [] (SFProcessor& q, int i, int) { if (i == 24000) q.mod().reset(); };
+        const auto big = run ("SHIFT", 48000.0, 64, in, setup, again), small = run ("SHIFT", 48000.0, 15, in, setup, again);
+        const float off = apart (big, small, 24100);
+        check (off < 1.0e-5f, "SHIFT: at TIME's shortest (2 ms) with FEEDBACK up, blocks of 64 and of 15 sound the same (" + juce::String (off, 7) + " at most apart): every repeat is read from before the chunk");
+    }
+    {
         // RESONATOR: noise in, KEY FOLLOW off, ROOT A (index 9) in the C3 octave (A3, 220 Hz), CHORD OCTAVES: it rings at 220 Hz
         // and not at 233 (a semitone up)
         juce::Random rnd (5);
@@ -3404,6 +3417,14 @@ static void reachTest (int& bad)
         choose ("model", "SYNTH");
         e.setSetup (at, "sy_wvel", 0.3f); const auto velText = find ("sy_wvel").text;
         const bool synth = e.reachOf (kick, "sy_wvel") == sf::Reach::Live && e.reachOf (kick, "sy_wkey") == sf::Reach::Live && e.reachOf (kick, "sy_sync") == sf::Reach::Next;
+        // (the hundred and eleventh build) SPREAD in GRAIN and KEY FOLLOW on SYNTH are heard at once, and INFO says so
+        choose ("model", "SAMPLE"); choose ("sp_method", "GRAIN");
+        const bool spreadLive = e.reachOf (kick, "sp_spread") == sf::Reach::Live;
+        choose ("sp_method", "REPITCH");
+        const bool spreadNext = e.reachOf (kick, "sp_spread") == sf::Reach::Next;
+        choose ("model", "SYNTH");
+        const bool followLive = e.reachOf (kick, "key_follow") == sf::Reach::Live;
+        check (spreadLive && spreadNext && followLive, "INFO: SAMPLE's SPREAD is heard at once in GRAIN and from the next note in REPITCH; on SYNTH, KEY FOLLOW is heard at once");
         check (words && repitchNext && grainLive && scanText == "SLOW 50" && velText == "-40" && synth,
                "a bipolar knob that is no filter says its sides (GROUND LENGTH " + shortText + ", " + midText + "; GROUND RECOVER " + slowText + "; SAMPLE SCAN " + scanText
                    + "; W VEL " + velText + "); POSITION is heard at once in GRAIN and from the next note in REPITCH; W VEL and W KEY at once, SYNC from the next note"

@@ -295,7 +295,7 @@ void SampleEngine::begin (const Ctx& c, const SampleData* smp, float decay, bool
     b.attack = c.v (ids.attack); b.release = c.v (ids.release); b.drive = c.v (ids.drive); b.sens = c.v (ids.sens);
     b.rate = c.v (ids.rate); b.pspread = c.v (ids.pspread); b.shape = c.v (ids.shape); b.vels = c.v (ids.vels); b.vary = c.v (ids.vary);
     b.xfade = c.v (ids.xfade); b.lstart = c.v (ids.lstart); b.lend = c.v (ids.lend);
-    holdsNow = b.loop || b.method == kGrain;
+    holdsNow = (b.loop || b.method == kGrain) && b.play != 1;      // (SF-000, the hundred and eleventh build: a note played THROUGH ends of itself: it holds nothing)
     if (smp == nullptr || smp->length() < 64) return;
     b.reg = SampleRegion::of (*smp, c.v (ids.start), c.v (ids.end), c.v (ids.fin), c.v (ids.fout));
     b.reg.level = dbToGain (c.v (ids.gain)) * (b.norm && smp->chanPeak > 1.0e-4f ? 1.0f / smp->chanPeak : 1.0f);
@@ -678,7 +678,10 @@ void SampleEngine::renderGrain (Voice& v, int vi, float* L, float* R, int n, int
     const double endAt = v.a + span * (double) std::max (0.02f, clamp01 (b.size));
     const int glen = std::max (16, (int) (grainSeconds (b.size) * (float) sr));
     const double interval = (double) sr / std::max (1.0f, b.rate);
-    const float amp = 1.0f / std::sqrt (std::max (1.0f, b.rate * (float) glen / (float) sr)) * b.reg.level * v.vel * v.gain * v.varyLevel;
+    // (SF-000, the hundred and eleventh build) how many grains overlap, so their level: by RATE where it plays them, by SYNC's
+    // own pace where SYNC does (RATE does nothing there, its level neither)
+    const float perSecond = b.gsync > 0 ? grainsPerSecond : b.rate;
+    const float amp = 1.0f / std::sqrt (std::max (1.0f, perSecond * (float) glen / (float) sr)) * b.reg.level * v.vel * v.gain * v.varyLevel;
     const float shape = b.shape;
     const float jitter = 0.5f * std::min (1.0f, b.vary * 2.0f);
     const bool wide = s->wide;
@@ -761,7 +764,13 @@ void SampleEngine::render (const Ctx& c, float* L, float* R, int n, float layerG
     std::stable_sort (pending.begin(), pending.begin() + numPending, [] (const Pending& x, const Pending& y) { return x.offset < y.offset; });
     const SampleData* s = smpNow;
     int syncAt = -1;
-    if (blk.gsync > 0) { static const double div[] = { 1.0, 1.0, 0.5, 0.25, 0.125 }; syncAt = c.nextGrid (div[juce::jlimit (0, 4, blk.gsync)]); }
+    if (blk.gsync > 0)
+    {
+        static const double div[] = { 1.0, 1.0, 0.5, 0.25, 0.125 };
+        const double beats = div[juce::jlimit (0, 4, blk.gsync)];
+        syncAt = c.nextGrid (beats);
+        grainsPerSecond = (float) (c.bpm / 60.0 / beats);        // (SF-000, the hundred and eleventh build: what SYNC plays, for the grains' level)
+    }
     float* part[2][2] = { { voiceBuf.getWritePointer (0), voiceBuf.getWritePointer (1) }, { voiceBuf.getWritePointer (2), voiceBuf.getWritePointer (3) } };
     n = std::min (n, voiceBuf.getNumSamples());
     for (int k = 0; k < 4; ++k) voiceBuf.clear (k, 0, n);

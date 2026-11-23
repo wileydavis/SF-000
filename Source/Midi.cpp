@@ -222,6 +222,8 @@ void naming (const KnobDef& k, String& name, String& abbr)
     static const std::map<std::string, const char*> shortName = {
         { "pitch_time", "PITCH T" }, { "echo_space", "ECHO SPC" }, { "echo_swing", "ECHO SWG" }, { "echo_prob", "ECHO PRB" },
         { "pocket_depth", "PCKT DEP" }, { "pocket_shape", "PCKT SHP" }, { "echo_time", "ECHO TME" }, { "echo_fb", "ECHO FBK" }, { "head_bump", "HD BUMP" } };
+    // (the hundred and eleventh build: SYNTH's ENV DECAY, by the name the lane gives it)
+    static const std::map<std::string, const char*> engineName = { { "sy_decay", "ENV DCAY" } };
     static const std::map<std::string, const char*> shortest = {
         { "cutoff", "CUT" }, { "res", "RES" }, { "env_amt", "ENV" }, { "gate", "GATE" }, { "density", "DENS" }, { "filter", "FILT" },
         { "drive", "DRV" }, { "level", "LVL" }, { "tune", "TUNE" }, { "decay", "DCY" }, { "punch", "PNCH" }, { "click", "CLCK" },
@@ -236,11 +238,18 @@ void naming (const KnobDef& k, String& name, String& abbr)
         // (the ninety-first build: the Airwindows effects' knobs)
         { "output", "OUT" }, { "square", "SQR" }, { "bright", "BRT" }, { "bassis", "BSIS" }, { "speed", "SPD" }, { "depth", "DPTH" },
         { "buffer", "BUF" }, { "regen", "RGEN" }, { "derez", "DRZ" }, { "input", "IN" }, { "shape", "SHP" }, { "flutter", "FLUT" },
-        { "head_bump", "BUMP" }, { "boost", "BST" }, { "ceiling", "CEIL" } };
-    const std::string id (k.param != nullptr ? k.param : "");
+        { "head_bump", "BUMP" }, { "boost", "BST" }, { "ceiling", "CEIL" },
+        // (the hundred and eleventh build: the three engines' and the new inserts')
+        { "envamt", "ENV" }, { "env_amt", "ENV" }, { "env_decay", "EDCY" }, { "edecay", "EDCY" }, { "shape", "SHP" }, { "character", "CHAR" },
+        { "low", "LOW" }, { "body", "BODY" }, { "impact", "IMPT" }, { "ground", "GRND" }, { "scan", "SCAN" }, { "pos", "POS" },
+        { "rate", "RATE" }, { "center", "CNTR" }, { "fine", "FINE" }, { "shift", "SHFT" }, { "mix", "MIX" } };
+    // (the hundred and eleventh build) the engines' own ids, sy_cutoff and the rest, by the name without the engine's prefix
+    std::string id (k.param != nullptr ? k.param : "");
+    for (const char* pre : { "sy_", "sp_", "fg_" }) if (id.rfind (pre, 0) == 0) { id = id.substr (3); break; }
     const String label (k.label != nullptr ? k.label : "-");
     const auto sn = shortName.find (id);
-    name = label.length() <= 8 ? cleaned (label, 8) : sn != shortName.end() ? String (sn->second) : cleaned (label, 8);
+    const auto en = engineName.find (k.param != nullptr ? k.param : "");
+    name = en != engineName.end() ? String (en->second) : label.length() <= 8 ? cleaned (label, 8) : sn != shortName.end() ? String (sn->second) : cleaned (label, 8);
     const auto sa = shortest.find (id);
     abbr = sa != shortest.end() ? String (sa->second) : cleaned (label.removeCharacters (" "), 4);
 }
@@ -487,7 +496,7 @@ String fxText (const Engine& eng, const juce::StringArray& snapNames)
         add ("INS " + String (sl + 1), kFxChannel, encs);
     }
     {
-        // (SPACE's four have the same names whichever reverb it is)
+        // (SPACE's four have the same names whichever reverb it is, but GALAXY's first: below)
         static const char* const names[8] = { "DUB TIME", "DUB FDBK", "DUB TONE", "DUB DRV", "SPC SIZE", "SPC DCAY", "SPC DARK", "SPC DUCK" };
         static const char* const abbrs[8] = { "DTIM", "DFBK", "DTON", "DDRV", "SIZE", "DCAY", "DARK", "DUCK" };
         std::vector<Enc> encs (16);
@@ -496,6 +505,9 @@ String fxText (const Engine& eng, const juce::StringArray& snapNames)
             Enc& e = encs[(size_t) (p - 1)];
             const int ctl = p <= 4 ? cx::kRet + (p - 1) : cx::space (eng.spaceModel(), p - 5);
             e.name = names[p - 1]; e.abbr = abbrs[p - 1];
+            // (the hundred and eleventh build) GALAXY's first is DETUNE, where the other two have SIZE: named as the reverb SPACE
+            // is when the scene is written
+            if (p == 5 && eng.spaceModel() == 2) { e.name = "SPC DTUN"; e.abbr = "DTUN"; }
             e.colour = p <= 4 ? kWhite : kLightBlue;
             e.channel = kSnapChannel; e.number = (p <= 4 ? ccx::kDub : ccx::kSpace) + (p - 1) % 4;
             e.def = to7 (eng.control (ctl), eng.control (ctl).def);

@@ -922,6 +922,17 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### What the Build 110 manual found (hundred and eleventh build)
+
+Ten mended (DECISIONS 793): SHIFT's TIME is 2 ms at its shortest, so its repeats never hang on the
+block size; SYNTH's MONO voice begun again takes SYNC, BURSTS, BURST GAP and ACCENT as a new voice
+does; EDIT's KEEP sees a change to a step's lock; SAMPLE GRAIN on SYNC keeps its level as RATE
+turns; a double click with WARP off turns it back on with its markers; INFO says AT ONCE for
+SAMPLE's SPREAD in GRAIN and SYNTH's KEY FOLLOW; the E16 scenes are written again with the three
+engines' names; PRINT's stems add up to MIX BEFORE THE MASTER whatever the drum bus's fader and
+the master's EQ and GAIN; DIODE's KEY TRACK is an octave for an octave at full; a SAMPLE note
+played THROUGH never ties a long step.
+
 ### DUB into SPACE (hundred and seventh build)
 
 **TO SPACE**, in DUB's CONFIG (its TIME grid, the last row's first cell): how much of what the
@@ -942,7 +953,7 @@ Three more inserts, at the end of the list. None has a delay of its own: the rig
 |---|---|---|
 | **RESONATOR** | DECAY, DAMP, SHIFT (whole semitones), SPREAD, DRIVE, FREEZE, MIX, LEVEL | CHORD, ROOT, OCTAVE, KEY FOLLOW, TONE |
 | **PHASER** | RATE (Hz, free), DEPTH, CENTER, FEEDBACK (either sign), SPREAD, OUTPUT, MIX, LEVEL | MODE (PHASER, FLANGER), STAGES (4, 6, 8, 12), SHAPE, LOW KEEP |
-| **SHIFT** | SHIFT (±2 kHz), FINE (±10 Hz), FEEDBACK, TONE, SPREAD (Hz), OUTPUT, MIX, LEVEL | MODE (FREQ, RING), TIME, LO CUT |
+| **SHIFT** | SHIFT (±2 kHz), FINE (±10 Hz), FEEDBACK, TONE, SPREAD (Hz), OUTPUT, MIX, LEVEL | MODE (FREQ, RING), TIME (2 ms to 1 s), LO CUT |
 
 - **RESONATOR** is the suite's (six tuned strings struck by the sound, on a chord in the rig's
   KEY when KEY FOLLOW is on), made ready for SF-000: its chord tables are made as it is prepared,

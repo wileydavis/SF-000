@@ -508,12 +508,16 @@ void SynthEngine::start (const Pending& p)
     {
         Voice* cur = nullptr;
         for (auto& v : voices) if (v.on && ! v.choked && v.part == p.part && (cur == nullptr || v.order > cur->order)) cur = &v;
+        // (the hundred and eleventh build) a note that begins again, not slid, where SYNC now wants the rate the voice was not
+        // started at: a new voice, the old one let go over 3 ms (the rate is chosen as a voice begins)
+        const int wantOs = (blk.circuit >= kLadder || blk.fm > 0.001f || blk.sync) ? 4 : 2;
+        if (cur != nullptr && ! (! cur->releasing && blk.slide > 0.001f) && blk.sync && cur->os != wantOs) { cur->choked = true; cur = nullptr; }
         if (cur != nullptr)
         {
             for (auto& v : voices) if (&v != cur && v.on && v.part == p.part && ! v.choked) v.choked = true;
             const bool tied = ! cur->releasing;
             cur->key = p.key; cur->gen = p.gen; cur->vel = lerp (1.0f, clamp01 (p.vel), 0.6f); cur->gain = p.gain;
-            cur->pitch = tunedPitch; cur->accent = p.vel > 0.85f && p.gen == 0;
+            cur->pitch = tunedPitch; cur->accent = p.vel > 0.85f && p.gen == 0 && blk.accent > 0.001f;      // (the hundred and eleventh build: as a new voice's)
             cur->slid = tied && blk.slide > 0.001f;
             const float glideS = cur->slid ? 0.005f + 0.25f * blk.slide : blk.glide > 0.001f ? 0.005f + 0.5f * blk.glide : 0.0f;
             cur->slideK = glideS > 0.0f ? 1.0f - std::exp (-1.0f / (glideS * (float) (sr * cur->os))) : 1.0f;
@@ -525,6 +529,7 @@ void SynthEngine::start (const Pending& p)
                 cur->lived = 0;
                 cur->releasing = false; cur->ampStage = 0; cur->modStage = 0; cur->meg = 1.0f; cur->tRel = -1.0; cur->t = 0.0; cur->scanPos = 0.0f; cur->wStage = 0; cur->wT = 0.0f; cur->wFrom = cur->wNow = shapePlace (blk.shape);
                 cur->pitchEnvSt = blk.pitchEnv;
+                cur->sync = blk.sync; cur->bursts = blk.bursts; cur->burstGap = blk.burstGap;      // (the hundred and eleventh build: a note begun again takes its NEXT ones, as a new voice does)
                 setBody (*cur);
             }
             else cur->releasing = false;
@@ -662,9 +667,11 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
     const float accentK = v.accent ? b.accent : 0.0f;
     // (SF-000, the hundred and fourth build) and KEY TRACK, as the other circuits have it: an octave of cutoff for an octave of
     // key at full, from middle C. (The 303 had none: ACID 303 sets it to nought.)
-    const float acidKey = 0.6931f * b.keytrack * (v.pitch + b.tune + bendNow + (float) keyShiftNow - 60.0f) / 12.0f;
-    const float acidL0 = 5.2262f + 1.7042f * b.cutoff - 0.6838f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut + acidKey;
-    const float acidL1 = 5.5592f + 2.1779f * b.cutoff + 1.9922f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut + acidKey;
+    // (the hundred and eleventh build: as a factor on the whole cutoff, so at full an octave of key is an octave of cutoff
+    // exactly; it was on the curve's moving part alone, under the 303's fixed 87.5 Hz)
+    const float acidKey = std::exp (0.6931f * b.keytrack * (v.pitch + b.tune + bendNow + (float) keyShiftNow - 60.0f) / 12.0f);
+    const float acidL0 = 5.2262f + 1.7042f * b.cutoff - 0.6838f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut;
+    const float acidL1 = 5.5592f + 2.1779f * b.cutoff + 1.9922f * b.envamt - 0.3466f * (float) v.gen - 0.1625f + 0.6931f * b.drift * 0.2f * v.driftCut;
     const float acidSweep = 0.6931f * (1.0f + 2.0f * b.res), acidFbK = 0.96f * std::pow (b.res, 0.7f);
     const float acidComp = std::pow (1.0f + 16.3f * std::pow (b.res, 0.7f), 0.7f);
     const float capC = 1.0f - std::exp (-1.0f / (0.02f * (float) vr)), capD = std::exp (-1.0f / ((0.15f + 0.35f * b.res) * (float) vr));
@@ -796,7 +803,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
                 // nought it is at its top from the first sample, the 303's own)
                 const float meg = v.modStage == 0 ? v.meg * v.mod : v.meg;
                 if (! v.releasing) { const float in = accentK * meg; cap = in > cap ? cap + (in - cap) * capC : cap * capD; }
-                const float cutHz = std::min (16000.0f, 87.5f + std::exp (acidL0 + (acidL1 - acidL0) * meg + acidSweep * cap));
+                const float cutHz = std::min (16000.0f, (87.5f + std::exp (acidL0 + (acidL1 - acidL0) * meg + acidSweep * cap)) * acidKey);
                 v.dl.set (cutHz, vr);
                 y = v.dl.tick (mid, acidFbK * DiodeLadder303::oscillatesAt (cutHz)) * acidComp;
                 v.cutNow = cutHz;

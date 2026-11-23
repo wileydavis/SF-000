@@ -300,3 +300,11 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   SF-000's own: `modules/FxMove.cpp`, PHASER (PHASER and FLANGER) and SHIFT (a Hilbert-pair
   frequency shifter and a ring modulator), registered in `core/Registry.cpp` and `.h`. All
   marked `(SF-000 ...)` (DECISIONS 790 to 792).
+
+- **The hundred and eleventh build: what the Build 110 manual found.** `modules/FxMove.cpp`: SHIFT's
+  TIME from 2 ms, its repeats never read from inside the chunk. `modules/SynthEngine.cpp`: a MONO
+  voice begun again takes SYNC, BURSTS, BURST GAP and ACCENT's guard (a new voice where SYNC wants
+  4x); DIODE's KEY TRACK a factor on the whole cutoff. `modules/SampleEngine.cpp`, `.h`: GRAIN on
+  SYNC levelled by SYNC's pace (`grainsPerSecond`); a note played THROUGH holds nothing.
+  `modules/SampleDisplay.cpp`: a double click with WARP off turns it on with its markers. All
+  marked `(SF-000, the hundred and eleventh build)` (DECISIONS 793).

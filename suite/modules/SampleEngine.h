@@ -199,6 +199,7 @@ private:
     std::array<Voice, smp::kVoices> voices;
     std::array<Pending, 64> pending;
     int numPending = 0, active = 0;
+    float grainsPerSecond = 8.0f;       // (SF-000, the hundred and eleventh build) SYNC's pace of grains, this block
     uint32_t orderNext = 1;
     int roundCount = 0;
     Noise rng { 0x5A17E5u };
