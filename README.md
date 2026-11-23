@@ -40,7 +40,7 @@ First run:
 | Click an insert's plate, the returns', the master's, the snapshot knobs', the sequencer strip's, off the controls | bring that module to the front: its name lights up, and the E16 turns to its page (see MIDI and the E16) |
 | **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it. It also shuts when another lane comes to the front (by any hand), or another module by a key or a controller: CONFIG is one module's, and the E16 is then on the page that was asked for |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
-| Click an insert's name | the list of what the slot can be, up in place of its knobs: EMPTY, DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO, and Airwindows' WEAVE, DEREZ, FILTER, ENSEMBLE, TAPE, CLIP. Click one. The name again puts the list away |
+| Click an insert's name | the list of what the slot can be, up in place of its knobs: EMPTY, DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION, COMPRESSOR, RADIO, and Airwindows' DEREZ, ENSEMBLE, TAPE, CLIP. Click one. The name again puts the list away |
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
 | Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note). The only lit step of a sequence, longer than the sequence, is tied to itself: struck once and held for good, a drone (the rig's pad is written so). **Not on a sample that plays once, nor on a drum** (ninety-fourth build): there it is struck every time the sequence comes round, where it used to play once and never again (a pad on SAMPLE went silent when its sequence was made shorter than its note). A sample with LOOP on is held, as a synth is |
@@ -903,6 +903,25 @@ and moved, MONO on and off, and with a layer under them.
   note follows it, and brought back over half way a key still held plays again. On a drum lane
   the same place is DECAY.
 
+### The insert effects (hundred and sixth build: eleven)
+
+Wiley, Nov 22: "Now that we've cleaned up the sound models, what effects do we really need?";
+"I actually really like derez, clip and galaxy"; "also, i need the ability to add reverb inserts.
+and delays"; "let's go with your recommendations there. I would like galaxy as an insert as well."
+A lane's three slots choose among eleven: DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION,
+COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
+
+- **GALAXY** is SPACE's third reverb on a lane of its own: DETUNE, DECAY, DARK and DUCK where
+  the other reverbs have SIZE, DECAY, DARK and DUCK, MIX seventh; DEREZ and BIGNESS in its
+  CONFIG, where SPACE has them (BIGNESS cannot change while it sounds).
+- **FILTER and WEAVE are gone as inserts**: every lane has its FILTER, and DISTORTION, TAPE and
+  CLIP saturate. (Their modules are still in the suite.)
+- **MIX is the seventh place of every insert, and LEVEL, where the effect has one, the eighth**
+  (the reverbs have THROW there, RADIO its RING, DELAY its WIDTH), so a slot's MIX is the same
+  knob whatever is in it, on the screen and on the E16. A snapshot from before is read with its
+  values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
+  empty (FORMAT.md, `lists` 8).
+
 ### Airwindows' effects
 
 Seven of Chris Johnson's [Airwindows](https://github.com/airwindows/airwindows) effects, in the
@@ -911,15 +930,13 @@ ninety-first build: six for a lane's insert slots and one more reverb for SPACE.
 
 | Effect | Airwindows' | Its knobs | In CONFIG |
 |---|---|---|---|
-| **WEAVE** | Weave | DRIVE (from as it came in to 20 dB hotter), OUTPUT, MIX, LEVEL | SMOOTH |
 | **DEREZ** | DeRez5 | RATE (nought: untouched; up: coarser), SQUARE, TRIM, BRIGHT, BASSIS, OUTPUT, MIX, LEVEL | |
-| **FILTER** | Dattorro | FREQ, RESO, OUTPUT, MIX, LEVEL | |
 | **ENSEMBLE** | TakeCare | SPEED, DEPTH, BUFFER, REGEN, DEREZ, OUTPUT, MIX, LEVEL | RANDO |
 | **TAPE** | ToTape9 | INPUT, TILT, SHAPE, FLUTTER, HEAD BUMP, OUTPUT, MIX, LEVEL | FLUTTER SPEED, BIAS, HEAD FREQ |
 | **CLIP** | ADClip9 | BOOST, CEILING, NOISE, MIX, LEVEL | MATCH, MODE (BOOST, MATCH, CLIP ONLY) |
-| **GALAXY** (SPACE's MODEL) | Galactic3 | SPACE DETUNE, SPACE DECAY, SPACE DARK, SPACE DUCK | DEREZ, BIGNESS, LO CUT, DUCK SHAPE |
+| **GALAXY** (SPACE's MODEL, and an insert) | Galactic3 | SPACE DETUNE, SPACE DECAY, SPACE DARK, SPACE DUCK | DEREZ, BIGNESS, LO CUT, DUCK SHAPE |
 
-- **OUTPUT, MIX and LEVEL are in the last three places of all six** (CLIP has no OUTPUT of
+- (WEAVE and FILTER were two more, to the hundred and sixth build.) **OUTPUT, MIX and LEVEL are in the last three places of all four** (CLIP has no OUTPUT of
   its own: that place is empty on it). OUTPUT is the effect's own level before MIX: how loud
   the effect is against the sound as it came in. MIX and LEVEL are SF-000's, not the effect's: MIX is one straight crossfade, the same
   for all six, and **at nought the effect is not in the sound at all** (the sound as it came in,

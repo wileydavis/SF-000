@@ -6498,6 +6498,36 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      *Mine:* **names as EDIT's do** (PEAK, PEAK 2, PEAK 3), whichever side the copy is on.
      The strip's note moves right to make room for the two keys.
 
+## Eleven insert effects, and what comes after them (Nov 22–23): the hundred and sixth build
+
+788. **You**, Nov 22, 23:03 (your clock): "let's look at the effects stack. Now that we've cleaned up the
+     sound models, what effects do we really need?"; 23:11, "I actually really like derez, clip and
+     galaxy."; 23:22, "also, i need the ability to add reverb inserts. and delays."; 23:30, "I just want
+     to make sure were not modifying anythng yet" (nothing was: what I had begun was put away); 23:50, a
+     handoff written elsewhere (nine work packages: return inserts and a DUB-to-SPACE send, RESONATOR,
+     REPEAT and GATE, dynamic EQ, SHIFT, PHASER/FLANGER, STEREO, a transient shaper, internal
+     sidechains), "thoughts?"; 23:56, "let's go with your recommendations there. I would like galaxy as
+     an insert as well. Separate builds is fine, but you can do them back to back. That way I can test
+     everything in the morning." My recommendations: DUB into SPACE with an insert on each return
+     (107), RESONATOR (108), PHASER and FLANGER (109), SHIFT's FREQ and RING (110); REPEAT and GATE,
+     dynamic EQ, the transient shaper, sidechains, STEREO and SHIFT's PITCH not now; FILTER and WEAVE
+     out; MIX and LEVEL in the same two places on every insert. **Built** (this one):
+     - **A lane's slots choose among eleven**: DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION,
+       COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE, CLIP. **GALAXY** is SPACE's on a lane (DETUNE, DECAY,
+       DARK, DUCK, MIX; DEREZ and BIGNESS in CONFIG, as on SPACE). **FILTER and WEAVE are gone as inserts**: every lane
+       has its FILTER (your Nov 10: "DUCK, REPEAT and FILTER are not needed as effects"); DISTORTION,
+       TAPE and CLIP saturate. Their modules stay in the suite: putting one back is a line.
+     - *Mine:* **MIX is the seventh place of every insert, LEVEL the eighth where the effect has one**
+       (the handoff's convention, which DELAY and the Airwindows four already had; I had offered the
+       other way round). It moved REVERB's, CONVOLUTION's and RADIO's MIX (THROW and RING to the
+       eighth), DISTORTION's and COMPRESSOR's. Your "consistent positions" over the handoff's "do not
+       move the current effects": the move is read into old snapshots, so nothing is lost.
+     - **A snapshot from before** (`lists` 8) has its slots' values and its steps' locks moved to the
+       new places as it is read; a slot that held FILTER or WEAVE opens empty (your Nov 19: old
+       snapshots may change). A LEARN knob pushing an insert's place by hand pushes the place: none is
+       converted.
+     - GALAXY's delay is the REVERB's (the pocket's): the rig's own delay is what it was.
+
 ## Not verified
 
 - **The hundred and fourth build (786) has not been heard**: the mended knobs are checked here,

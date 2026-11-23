@@ -131,14 +131,14 @@ this build does not have is written back as it was read.
   "values":  { "kick.tune": 0.4583, "lead.i1.c2": 0.55, ... },
   "patterns": [ { "len": 16, "steps": [ [step, velocity, gate, ratchet, note, octave], ... ],
                   "locks": [ [step, control, difference], ... ], "locked": [step, ...] } per lane ],
-  "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],          by name: DELAY, REVERB, CONVOLUTION, DISTORTION, COMPRESSOR, RADIO; from the ninety-first build also WEAVE, DEREZ, FILTER, ENSEMBLE, TAPE, CLIP. A name a build does not know is an empty slot there
+  "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],          by name: DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION, COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE, CLIP (the hundred and sixth build on; before it no GALAXY, and WEAVE and FILTER). A name a build does not know is an empty slot there
   "gen":      [ armed generator per lane, -1 none ],
   "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ], "bus": {..} },
   "insertFiles": [ { "lane", "slot", "files": [ { "place", "type", "files": [paths] } ] } ],
   "played":   { "seqMute": [0 or 1 per lane], "in": [ { "lane", "len", "steps", "notes" } ] },
   "laneFiles": [ path per lane, "" none ],
   "ext":   { "<tool>": anything }             other tools' notes: SF-000 carries them and never reads them
-  "lists": 7,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
+  "lists": 8,                                 which lists of models, and which knobs of theirs, it was taken on (seventy-ninth build on; absent: 1)
 }
 ```
 
@@ -174,6 +174,17 @@ this build does not have is written back as it was read.
   The lane's definition (`defs`) says which models these are, in `own`: `[ { "model", "knobs":
   [ 8, each under the id of the place it takes ], "with"?: { param: place } } ]`: a model's own
   knobs, and what choosing it by hand also set.
+  **`lists` 8** (hundred and sixth build): **every insert has MIX in its seventh place, and LEVEL,
+  where it has one, in its eighth.** Now: REVERB and CONVOLUTION (SIZE, DECAY, DARK, PREDELAY,
+  DUCK, FREEZE, MIX, THROW), RADIO (SIGNAL, BAND, WIDTH, NOISE, DROPOUT, SQUELCH, MIX, RING),
+  DISTORTION (DRIVE, CHARACTER, TONE, LOW KEEP, AUTO GAIN, empty, MIX, LEVEL), COMPRESSOR
+  (THRESHOLD, ATTACK, RELEASE, RATIO, SC HPF, MAKEUP, MIX, LEVEL); DELAY, DEREZ, ENSEMBLE, TAPE
+  and CLIP as they were. A lane taken with `lists` under 8 has its slots' `<lane>.iN.cM` values,
+  and its steps' locks on them, moved from the places of before (Session.cpp,
+  `insertCellsBefore`). **GALAXY** is a new name: DETUNE, DECAY, DARK, empty, DUCK, empty, MIX,
+  empty, and in its `setup` `derez`, `bigness`, `lo_cut`, `duck_shape` as SPACE's GALAXY has them. WEAVE
+  and FILTER are no longer inserts: a slot that names one is empty. Nothing else moved between
+  7 and 8.
 - **LOOP** (eighty-first build) is `smp_bars` in the `setup` of a lane that has it (the hats,
   the clap, PERC): a place among OFF, AUTO, 1, 2, 4, 8, 16, 32 BARS. PERC's `setup` also has a
   sample's ids from this build on (`smp_start`, `smp_end`, `smp_fade_in`, `smp_fade_out`,
@@ -205,7 +216,8 @@ this build does not have is written back as it was read.
   DEREZ (RATE, SQUARE, TRIM, BRIGHT, BASSIS, OUTPUT, MIX, LEVEL), FILTER (FREQ, RESO, three
   empty, OUTPUT, MIX, LEVEL), ENSEMBLE (SPEED, DEPTH, BUFFER, REGEN, DEREZ, OUTPUT, MIX, LEVEL),
   TAPE (INPUT, TILT, SHAPE, FLUTTER, HEAD BUMP, OUTPUT, MIX, LEVEL), CLIP (BOOST, CEILING,
-  NOISE, three empty, MIX, LEVEL). On all six the seventh place is MIX and the eighth LEVEL.
+  NOISE, three empty, MIX, LEVEL). On all six the seventh place is MIX and the eighth LEVEL
+  (and still are: see `lists` 8, below).
   What is not on the panel is in the insert's `setup` by name (`smooth`; `rando`;
   `flutter_speed`, `bias`, `head_freq`; `match`, `mode`). **SPACE has a third reverb**: the
   session's `"space": { "model" }` is 0 REVERB, 1 CONVOLUTION, 2 GALAXY, and so is `__model` in

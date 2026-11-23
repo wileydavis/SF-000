@@ -4875,7 +4875,7 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
     if (! s.hasSetup) return;
     for (int l = 0; l < kLanes; ++l)
     {
-        if (taken[(size_t) l] >= Session::kListsNow) continue;         // (this lane is of now)
+        if (taken[(size_t) l] >= 7) continue;         // (this lane is of the hundred and third build or after: one instrument)
         const juce::String module (lanes()[(size_t) l].module);
         auto& st = s.setup[(size_t) l];
         for (auto it = st.begin(); it != st.end();)
@@ -4894,6 +4894,52 @@ static void fromListsBefore (Snapshot& s, const Engine& e, const std::array<int,
             bool panel = false;
             for (int k = kSoundKnobs; k < kLaneKnobs; ++k) panel = panel || juce::String (f.param) == d.knobs[k].param;
             if (! panel) put (f.param, e.plainPlace ({ 0, l, 0 }, f.param, f.value));
+        }
+    }
+}
+
+// (the hundred and sixth build, lists 8) An insert's eight places as they were before MIX went to the seventh on every effect
+// and LEVEL, where it has one, to the eighth: what was at each place of the effect a snapshot from before has in a slot, moved
+// to where it is now, its values and its steps' locks. (DELAY and Airwindows' four were so already.)
+static const int* insertPlacesBefore (const juce::String& name)
+{
+    struct Was { const char* name; int from[kCells]; };      // the place, before, of what is now at each
+    static const Was was[] = {
+        { "REVERB",      { 0, 1, 2, 3, 4, 5, 7, 6 } },          // THROW and MIX traded, here and on the two after
+        { "CONVOLUTION", { 0, 1, 2, 3, 4, 5, 7, 6 } },
+        { "RADIO",       { 0, 1, 2, 3, 4, 5, 7, 6 } },          // RING and MIX
+        { "DISTORTION",  { 0, 1, 2, 3, 6, 7, 4, 5 } },          // AUTO GAIN fifth, MIX seventh, LEVEL last
+        { "COMPRESSOR",  { 0, 1, 2, 3, 4, 7, 5, 6 } } };        // MAKEUP sixth, MIX seventh, LEVEL last
+    for (auto& w : was) if (name == w.name) return w.from;
+    return nullptr;
+}
+
+static void insertCellsBefore (Snapshot& s, const std::array<int, kLanes>& taken)
+{
+    for (int l = 0; l < kLanes; ++l)
+    {
+        if (taken[(size_t) l] >= 8) continue;
+        for (int k = 0; k < kSlots; ++k)
+        {
+            const int t = s.inserts[(size_t) l][(size_t) k];
+            if (t < 0 || t >= (int) effects().size()) continue;
+            const int* from = insertPlacesBefore (effects()[(size_t) t].name);
+            if (from == nullptr) continue;
+            float old[kCells];
+            for (int c = 0; c < kCells; ++c) old[c] = s.values[(size_t) cx::ins (l, k, c)];
+            for (int c = 0; c < kCells; ++c) s.values[(size_t) cx::ins (l, k, c)] = old[from[c]];
+            // (a step's lock on one of them: by its place in the lane)
+            auto relock = [&] (Pattern& p)
+            {
+                for (auto& lk : p.locks)
+                {
+                    const int at = (int) lk.ctl - cx::kIns - k * kCells;
+                    if (lk.step == 255 || at < 0 || at >= kCells) continue;
+                    for (int c = 0; c < kCells; ++c) if (from[c] == at) { lk.ctl = (uint8_t) (cx::kIns + k * kCells + c); break; }
+                }
+            };
+            relock (s.patterns[(size_t) l]);
+            if (s.heardOn[(size_t) l]) relock (s.heard[(size_t) l]);
         }
     }
 }
@@ -5006,7 +5052,7 @@ static Snapshot snapFromVar (const var& v, const Engine& e)
             for (int l = 0; l < kLanes && l < by->size(); ++l) if ((*by)[l].isInt() || (*by)[l].isInt64()) taken[(size_t) l] = (int) (*by)[l];
         bool any = false;
         for (int t : taken) any = any || t < Session::kListsNow;
-        if (any) fromListsBefore (s, e, taken);
+        if (any) { insertCellsBefore (s, taken); fromListsBefore (s, e, taken); }
         // (and what has come since with no list changed: LOOP, the PERC lane's sample. A snapshot that does not name
         // them has them where they change nothing.)
         if (s.hasSetup) for (int l = 0; l < kLanes; ++l) fillLater (e, { 0, l, 0 }, s.setup[(size_t) l]);

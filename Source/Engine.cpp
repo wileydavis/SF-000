@@ -1672,7 +1672,7 @@ const CfgCell kBandCells[] = { { "bands", 0 }, { "bx_low", 1 }, { "bx_high", 2 }
                                { "b3_place", 12 }, { "b3_level", 13 }, { "b3_decay", 14 }, { "b3_size", 15 } };
 // the compressor, on the master and as an insert (where the first eight are its panel's)
 const CfgCell kCompCells[] = { { "threshold", 0 }, { "attack", 1 }, { "release", 2 }, { "ratio", 3 },
-                               { "sc_hpf", 4 }, { "mix", 5 }, { "level", 6 }, { "makeup", 7 },
+                               { "sc_hpf", 4 }, { "makeup", 5 }, { "mix", 6 }, { "level", 7 },       // (the hundred and sixth build: MIX and LEVEL where every insert has them)
                                { "knee", 8 }, { "auto", 9 }, { "start", 10 } };
 const CfgCell kBusCells[]  = { { "damp", 0 }, { "boom_tune", 1 }, { "boom_decay", 2 }, { "mix", 3 },
                                { "type", 4 }, { "comp", 5 }, { "to_key", 6 }, { "level", 7 } };

@@ -231,7 +231,11 @@ inline const std::vector<LaneDef>& lanes()
     return L;
 }
 
-// The insert effects, in the order a slot steps through them.
+// The insert effects, in the order a slot steps through them. (The hundred and sixth build: FILTER and WEAVE went, as every
+// lane has its FILTER and DISTORTION, TAPE and CLIP saturate; GALAXY came, SPACE's third reverb on a lane of its own. A file
+// names an insert by its name, and a name this build does not know is an empty slot. The two modules stay in the suite.)
+// On every one MIX is the seventh place, and LEVEL, where the effect has one, the eighth (the reverbs and RADIO have their
+// own there): Session.cpp's insertCellsBefore moves a snapshot's values there from where they were.
 inline const std::vector<FxDef>& effects()
 {
     static const std::vector<FxDef> F = {
@@ -240,34 +244,31 @@ inline const std::vector<FxDef>& effects()
             { "THROW", "throw", 'h' }, { "FREEZE", "freeze", 't' }, { "MIX", "mix", 'u' }, { "WIDTH", "width", 'u' } } },
         { "REVERB", "REVERB", {},
           { { "SIZE", "size", 'u' }, { "DECAY", "decay", 'u' }, { "DARK", "dark", 'u' }, { "PREDELAY", "predelay", 'm' },
-            { "DUCK", "duck", 'u' }, { "FREEZE", "freeze", 't' }, { "THROW", "throw", 'h' }, { "MIX", "mix", 'u' } } },
+            { "DUCK", "duck", 'u' }, { "FREEZE", "freeze", 't' }, { "MIX", "mix", 'u' }, { "THROW", "throw", 'h' } } },
         { "CONVOLUTION", "TERROIR", {},
           { { "SIZE", "size", 'u' }, { "DECAY", "decay", 'u' }, { "DARK", "dark", 'u' }, { "PREDELAY", "predelay", 'm' },
-            { "DUCK", "duck", 'u' }, { "FREEZE", "freeze", 't' }, { "THROW", "throw", 'h' }, { "MIX", "mix", 'u' } } },
+            { "DUCK", "duck", 'u' }, { "FREEZE", "freeze", 't' }, { "MIX", "mix", 'u' }, { "THROW", "throw", 'h' } } },
+        // (the hundred and sixth build) SPACE's GALAXY on a lane: its knobs where the other two reverbs have theirs (DETUNE in
+        // SIZE's place, DECAY, DARK, DUCK, MIX). DEREZ and BIGNESS are in its CONFIG, where they are on SPACE (BIGNESS cannot
+        // change while it sounds).
+        { "GALAXY", "AIRGALAXY", {},
+          { { "DETUNE", "detune", 'u' }, { "DECAY", "decay", 'u' }, { "DARK", "dark", 'u' }, { nullptr, nullptr, 'u' },
+            { "DUCK", "duck", 'u' }, { nullptr, nullptr, 'u' }, { "MIX", "mix", 'u' }, { nullptr, nullptr, 'u' } } },
         { "DISTORTION", "DRIVE", {},
           { { "DRIVE", "drive", 'u' }, { "CHARACTER", "character", 'u' }, { "TONE", "tone", 'b' }, { "LOW KEEP", "low_keep", 'u' },
-            { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' }, { "AUTO GAIN", "auto_gain", 't' }, { nullptr, nullptr, 'u' } } },
+            { "AUTO GAIN", "auto_gain", 't' }, { nullptr, nullptr, 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
         { "COMPRESSOR", "GLUE", {},
-          // (the ninetieth build: the compressor made again. THRESHOLD turns up for more, from out at 0 dB down to -60; the
-          // knobs are where the old one's were, with MAKEUP in the place that was empty)
+          // (the ninetieth build: the compressor made again. THRESHOLD turns up for more, from out at 0 dB down to -60)
           { { "THRESHOLD", "threshold", 'u', 1.0f, 0.0f }, { "ATTACK", "attack", 'u' }, { "RELEASE", "release", 'u' }, { "RATIO", "ratio", 'm' },
-            { "SC HPF", "sc_hpf", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' }, { "MAKEUP", "makeup", 'u' } } },
+            { "SC HPF", "sc_hpf", 'u' }, { "MAKEUP", "makeup", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
         { "RADIO", "RADIO", {},
           { { "SIGNAL", "signal", 'u' }, { "BAND", "band", 'u' }, { "WIDTH", "width", 'u' }, { "NOISE", "noise", 'u' },
-            { "DROPOUT", "dropout", 'u' }, { "SQUELCH", "squelch", 'u' }, { "RING", "ring", 'u' }, { "MIX", "mix", 'u' } } },
-        // (the ninety-first build) Six of Airwindows' (suite/modules/Airwindows.cpp). On all six the last three places
-        // are the same three: OUTPUT (the effect's own, before MIX: how loud the effect is against the sound as it
-        // came in; CLIP has none, and the place is empty on it), MIX and LEVEL. A file names an insert by its name,
-        // so these are added at the end.
-        { "WEAVE", "AIRWEAVE", {},
-          { { "DRIVE", "drive", 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' },
-            { nullptr, nullptr, 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+            { "DROPOUT", "dropout", 'u' }, { "SQUELCH", "squelch", 'u' }, { "MIX", "mix", 'u' }, { "RING", "ring", 'u' } } },
+        // (the ninety-first build) Airwindows' (suite/modules/Airwindows.cpp). OUTPUT is the effect's own, before MIX: how
+        // loud the effect is against the sound as it came in (CLIP has none, and the place is empty on it).
         { "DEREZ", "AIRDEREZ", {},
           { { "RATE", "rate", 'u' }, { "SQUARE", "square", 'u' }, { "TRIM", "trim", 'u' }, { "BRIGHT", "bright", 'u' },
             { "BASSIS", "bassis", 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
-        { "FILTER", "AIRFILTER", {},
-          { { "FREQ", "freq", 'u' }, { "RESO", "reso", 'u' }, { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' },
-            { nullptr, nullptr, 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
         { "ENSEMBLE", "AIRENSEMBLE", {},
           { { "SPEED", "speed", 'u' }, { "DEPTH", "depth", 'u' }, { "BUFFER", "buffer", 'u' }, { "REGEN", "regen", 'u' },
             { "DEREZ", "derez", 'b' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },

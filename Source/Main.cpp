@@ -23,6 +23,9 @@
 #include <set>
 #include <thread>
 
+// (the hundred and sixth build) an insert effect's place on the list, by its name: the list is shorter, so tests name what they mean
+static int fxType (const char* name) { for (int t = 0; t < (int) sf0::effects().size(); ++t) if (juce::String (sf0::effects()[(size_t) t].name) == name) return t; return -1; }
+
 static void dumpModules()
 {
     for (auto id : { "KICK", "PERC", "STRIKE", "RUMBLE", "BASS", "LEAD", "PAD", "VOICE", "DELAY", "REVERB", "TERROIR", "DRIVE", "GLUE", "RADIO", "LIMIT", "LOWEND", "TONE" })
@@ -1039,7 +1042,7 @@ static void convolutionBandsTest (int& bad)
     {
         Engine e; e.prepare (SR, 512);
         const Engine::Target t { 1, 7, 0 };
-        e.setInsertType (7, 0, 2);                      // CONVOLUTION, on the lead
+        e.setInsertType (7, 0, fxType ("CONVOLUTION"));       // CONVOLUTION, on the lead
         auto* p = e.processorFor (t);
         juce::AudioBuffer<float> b (2, 512);
         juce::MidiBuffer noMidi;
@@ -1967,9 +1970,9 @@ static void seeingTest (int& bad)
         const bool recalled = e.pocketNow (bass, 2) > 0.5f;
         // a reverb on the bass, all wet and long: with the pocket made in the instrument its tail rings through the kick;
         // made after the effects, the tail is held out of it too
-        e.setInsertType (bass, 0, 1);
+        e.setInsertType (bass, 0, fxType ("REVERB"));
         for (int k = 0; k < kCells; ++k)
-            if (const char* id = effects()[1].cells[k].param; id != nullptr)
+            if (const char* id = effects()[(size_t) fxType ("REVERB")].cells[k].param; id != nullptr)
             {
                 const juce::String s (id);
                 if (s == "mix") ses.userSet (cx::ins (bass, 0, k), 1.0f);
@@ -2131,9 +2134,7 @@ static void airwindowsTest (int& bad)
         int late;                                               // its delay, in samples
     };
     const std::vector<Fx> fxs = {
-        { "WEAVE", "AIRWEAVE", { "drive", "output" }, { { "drive", 0.6f } }, {}, "drive", 0 },
         { "DEREZ", "AIRDEREZ", { "rate", "square", "trim", "bright", "bassis", "output" }, { { "rate", 0.6f }, { "bright", 0.9f } }, {}, "rate", 1 },
-        { "FILTER", "AIRFILTER", { "freq", "reso", "output" }, {}, {}, "freq", 0 },
         { "ENSEMBLE", "AIRENSEMBLE", { "speed", "depth", "buffer", "regen", "derez", "output", "rando" }, { { "speed", 0.5f } }, {}, "buffer", 0 },
         { "TAPE", "AIRTAPE", { "input", "tilt", "shape", "flutter", "head_bump", "output", "flutter_speed", "bias", "head_freq" }, { { "input", 0.7f }, { "flutter", 0.6f }, { "head_bump", 0.7f } }, {}, "input", 1 },
         { "CLIP", "AIRCLIP", { "boost", "ceiling", "noise", "match" }, { { "boost", 0.6f } }, { { "mode", 3 } }, "boost", 1 },
@@ -2356,7 +2357,7 @@ static void airwindowsTest (int& bad)
         Session::stateFileForTests = tmp.getChildFile ("session.json");
         auto typeOf = [] (const char* name) { for (int t = 0; t < (int) effects().size(); ++t) if (juce::String (effects()[(size_t) t].name) == name) return t; return -1; };
         auto setupOf = [] (Engine& en, Engine::Target t, const char* id) { for (auto& sp : en.setupParams (t)) if (sp.id == id) return sp.value; return -1.0f; };
-        const int weave = typeOf ("WEAVE"), clip = typeOf ("CLIP"), ens = typeOf ("ENSEMBLE");
+        const int weave = typeOf ("TAPE"), clip = typeOf ("CLIP"), ens = typeOf ("ENSEMBLE");      // (TAPE where WEAVE was: the hundred and sixth build)
         const Engine::Target space { 2, 0, 1 };
         bool recalled = false, kept = false;
         {
@@ -2366,7 +2367,7 @@ static void airwindowsTest (int& bad)
             for (int i = 0; i < 4; ++i) e1.render (b);
             s1.userSet (cx::ins (5, 0, 0), 0.8f);
             s1.userSet (cx::ins (8, 2, 2), 0.35f);
-            s1.setupByHand ({ 1, 5, 0 }, "smooth", 0.2f);
+            s1.setupByHand ({ 1, 5, 0 }, "bias", 0.2f);
             s1.setupByHand ({ 1, 5, 1 }, "mode", 0.5f);
             e1.setSpaceModel (2);
             for (int i = 0; i < 4; ++i) e1.render (b);
@@ -2374,14 +2375,14 @@ static void airwindowsTest (int& bad)
             s1.userSet (cx::space (2, 1), 0.7f);
             const auto snap = s1.take(); s1.finishTakes (true);
             // moved away, then the snapshot called back
-            s1.userSet (cx::ins (5, 0, 0), 0.1f); s1.setInsert (5, 1, -1); s1.setInsert (8, 2, weave); s1.setupByHand ({ 1, 5, 0 }, "smooth", 0.9f);
+            s1.userSet (cx::ins (5, 0, 0), 0.1f); s1.setInsert (5, 1, -1); s1.setInsert (8, 2, weave); s1.setupByHand ({ 1, 5, 0 }, "bias", 0.9f);
             s1.userSet (cx::kGlide, 0.0f);
             s1.recall (snap);
             for (int i = 0; i < 40; ++i) e1.render (b);
             recalled = e1.insertType (5, 0) == weave && e1.insertType (5, 1) == clip && e1.insertType (8, 2) == ens && std::abs (e1.target (cx::ins (5, 0, 0)) - 0.8f) < 1.0e-4f && std::abs (e1.target (cx::ins (8, 2, 2)) - 0.35f) < 1.0e-4f
-                    && std::abs (setupOf (e1, { 1, 5, 0 }, "smooth") - 0.2f) < 1.0e-3f && std::abs (setupOf (e1, { 1, 5, 1 }, "mode") - 0.5f) < 1.0e-3f && e1.spaceModel() == 2;
+                    && std::abs (setupOf (e1, { 1, 5, 0 }, "bias") - 0.2f) < 1.0e-3f && std::abs (setupOf (e1, { 1, 5, 1 }, "mode") - 0.5f) < 1.0e-3f && e1.spaceModel() == 2;
             if (! recalled) std::printf ("    (after the recall: inserts %d %d %d, drive %.3f buffer %.3f smooth %.3f mode %.3f space %d)\n", e1.insertType (5, 0), e1.insertType (5, 1), e1.insertType (8, 2), (double) e1.target (cx::ins (5, 0, 0)),
-                                         (double) e1.target (cx::ins (8, 2, 2)), (double) setupOf (e1, { 1, 5, 0 }, "smooth"), (double) setupOf (e1, { 1, 5, 1 }, "mode"), e1.spaceModel());
+                                         (double) e1.target (cx::ins (8, 2, 2)), (double) setupOf (e1, { 1, 5, 0 }, "bias"), (double) setupOf (e1, { 1, 5, 1 }, "mode"), e1.spaceModel());
             s1.touch(); s1.save();
         }
         {
@@ -2391,15 +2392,15 @@ static void airwindowsTest (int& bad)
             e2.prepare (48000.0, 512);
             for (int i = 0; i < 8; ++i) e2.render (b);
             kept = e2.insertType (5, 0) == weave && e2.insertType (5, 1) == clip && e2.insertType (8, 2) == ens && std::abs (e2.target (cx::ins (5, 0, 0)) - 0.8f) < 1.0e-4f && std::abs (e2.target (cx::ins (8, 2, 2)) - 0.35f) < 1.0e-4f
-                && std::abs (setupOf (e2, { 1, 5, 0 }, "smooth") - 0.2f) < 1.0e-3f && std::abs (setupOf (e2, { 1, 5, 1 }, "mode") - 0.5f) < 1.0e-3f
+                && std::abs (setupOf (e2, { 1, 5, 0 }, "bias") - 0.2f) < 1.0e-3f && std::abs (setupOf (e2, { 1, 5, 1 }, "mode") - 0.5f) < 1.0e-3f
                 && e2.spaceModel() == 2 && std::abs (setupOf (e2, space, "bigness") - 1.0f / 3.0f) < 1.0e-3f && std::abs (e2.target (cx::space (2, 1)) - 0.7f) < 1.0e-4f;
             if (! kept) std::printf ("    (opened again: inserts %d %d %d, drive %.3f buffer %.3f smooth %.3f mode %.3f space %d bigness %.3f decay %.3f)\n", e2.insertType (5, 0), e2.insertType (5, 1), e2.insertType (8, 2), (double) e2.target (cx::ins (5, 0, 0)),
-                                      (double) e2.target (cx::ins (8, 2, 2)), (double) setupOf (e2, { 1, 5, 0 }, "smooth"), (double) setupOf (e2, { 1, 5, 1 }, "mode"), e2.spaceModel(), (double) setupOf (e2, space, "bigness"), (double) e2.target (cx::space (2, 1)));
+                                      (double) e2.target (cx::ins (8, 2, 2)), (double) setupOf (e2, { 1, 5, 0 }, "bias"), (double) setupOf (e2, { 1, 5, 1 }, "mode"), e2.spaceModel(), (double) setupOf (e2, space, "bigness"), (double) e2.target (cx::space (2, 1)));
         }
         Session::stateFileForTests.deleteFile();
         Session::stateFileForTests = juce::File();
         tmp.deleteRecursively();
-        check (recalled && kept, "WEAVE, CLIP and ENSEMBLE in a lane's slots and SPACE a GALAXY: a snapshot brings the slots, their knobs and their CONFIG back after they are changed, and the app opening again finds them, GALAXY's BIGNESS and DECAY too");
+        check (recalled && kept, "TAPE, CLIP and ENSEMBLE in a lane's slots and SPACE a GALAXY: a snapshot brings the slots, their knobs and their CONFIG back after they are changed, and the app opening again finds them, GALAXY's BIGNESS and DECAY too");
     }
 }
 
@@ -3083,6 +3084,109 @@ static std::vector<ReachRow> reachWalk (const juce::String& only)
     return rows;
 }
 static const char* reachName (sf::Reach r) { return r == sf::Reach::Live ? "LIVE" : r == sf::Reach::Eased ? "EASED" : "NEXT"; }
+// (the hundred and sixth build) Eleven insert effects, FILTER and WEAVE gone and GALAXY come; MIX the seventh place of each
+// and LEVEL, where it has one, the eighth; a snapshot from before (lists 7) read with its slots' values and its steps' locks
+// moved to where they are now, and a slot that held FILTER empty; GALAXY on a lane sounds, and is out at MIX nought
+static void insertsTest (int& bad)
+{
+    using namespace sf0;
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    juce::StringArray names;
+    bool places = true;
+    for (auto& f : effects())
+    {
+        names.add (f.name);
+        int level = -1, mix = -1;
+        for (int c = 0; c < kCells; ++c) if (f.cells[c].param != nullptr) { if (juce::String (f.cells[c].param) == "mix") mix = c; if (juce::String (f.cells[c].param) == "level") level = c; }
+        places = places && mix == 6 && (level < 0 || level == 7);
+    }
+    check (names.joinIntoString (" ") == "DELAY REVERB CONVOLUTION GALAXY DISTORTION COMPRESSOR RADIO DEREZ ENSEMBLE TAPE CLIP" && places,
+           "the inserts are eleven (" + names.joinIntoString (", ") + "), and on every one MIX is the seventh place and LEVEL, where it has one, the eighth");
+
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_inserts_106");
+    dir.deleteRecursively();
+    Session::stateFileForTests = dir.getChildFile ("session.json");
+    {
+        Engine e; e.prepare (48000.0, 512);
+        Session ses (e, true);
+        int bass = 0;
+        for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "bass") bass = l;
+        const juce::String slug (lanes()[(size_t) bass].slug);
+        // as the hundred and fifth build wrote it: a DELAY (as it is now), a FILTER, and a COMPRESSOR with MIX sixth, LEVEL
+        // seventh and MAKEUP eighth, and a step's lock on its MIX
+        const auto taken = ses.take();
+        juce::var old = juce::JSON::parse (juce::JSON::toString (ses.written (*ses.findSnap (taken)), true));
+        bool moved = false;
+        juce::String says;
+        if (auto* o = old.getDynamicObject())
+        {
+            o->setProperty ("lists", 7); o->setProperty ("uid", "sf0testinserts105-1"); o->setProperty ("id", 0);
+            juce::Array<juce::var> ins;
+            for (int l = 0; l < kLanes; ++l)
+            {
+                juce::Array<juce::var> row;
+                if (l == bass) { row.add ("DELAY"); row.add ("FILTER"); row.add ("COMPRESSOR"); }
+                else { row.add ("NONE"); row.add ("NONE"); row.add ("NONE"); }
+                ins.add (juce::var (row));
+            }
+            o->setProperty ("inserts", juce::var (ins));
+            if (auto* vals = old["values"].getDynamicObject())
+            {
+                auto put = [&] (int slot, int place, double v) { vals->setProperty (slug + ".i" + juce::String (slot) + ".c" + juce::String (place), v); };
+                put (1, 7, 0.31); put (1, 8, 0.82);                                  // DELAY: MIX, WIDTH (where they are now too)
+                put (3, 6, 0.21); put (3, 7, 0.64); put (3, 8, 0.47);                // COMPRESSOR: MIX, LEVEL, MAKEUP
+            }
+            if (auto* pat = old["patterns"][bass].getDynamicObject())
+            {
+                juce::Array<juce::var> lk, one;
+                one.add (2); one.add (cx::kIns + 2 * kCells + 5); one.add (0.125);   // step 3: the COMPRESSOR's MIX, as it was
+                lk.add (juce::var (one));
+                pat->setProperty ("locks", juce::var (lk));
+            }
+            const auto id = ses.takeFromLibrary (old, "BEFORE", juce::var());
+            if (const auto* sn = ses.findSnap (id))
+            {
+                auto at = [&] (int slot, int c) { return sn->values[(size_t) cx::ins (bass, slot, c)]; };
+                auto near = [] (float a, double b) { return std::abs ((double) a - b) < 1.0e-4; };
+                int lockAt = -1;
+                for (auto& k : sn->patterns[(size_t) bass].locks) if (k.step == 2) lockAt = (int) k.ctl - cx::kIns - 2 * kCells;
+                moved = sn->inserts[(size_t) bass][0] == fxType ("DELAY") && sn->inserts[(size_t) bass][1] == -1 && sn->inserts[(size_t) bass][2] == fxType ("COMPRESSOR")
+                        && near (at (0, 6), 0.31) && near (at (0, 7), 0.82) && near (at (2, 6), 0.21) && near (at (2, 7), 0.64) && near (at (2, 5), 0.47) && lockAt == 6;
+                says = "DELAY MIX " + juce::String (at (0, 6), 2) + " WIDTH " + juce::String (at (0, 7), 2) + "; COMPRESSOR MAKEUP " + juce::String (at (2, 5), 2) + " MIX " + juce::String (at (2, 6), 2) + " LEVEL " + juce::String (at (2, 7), 2)
+                       + "; the lock on place " + juce::String (lockAt + 1) + "; the FILTER's slot " + juce::String (sn->inserts[(size_t) bass][1]);
+            }
+        }
+        check (moved, "a snapshot from the hundred and fifth build is read with its slots' values and its steps' locks where they are now (" + says + ") and the slot that held a FILTER empty");
+    }
+    {
+        // GALAXY on the lead: its tail is heard after the lead stops, and at MIX nought it is not in the sound
+        Engine e; e.prepare (48000.0, 512);
+        Session ses (e, false);
+        const int lead = 7, g = fxType ("GALAXY");
+        juce::AudioBuffer<float> b (2, 512);
+        auto tailAfter = [&] (float mix)
+        {
+            for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (lead, sl, -1);
+            e.setInsertType (lead, 0, g);
+            for (int i = 0; i < 20; ++i) { b.clear(); e.render (b); }
+            ses.userSet (cx::ins (lead, 0, 6), mix);
+            ses.userSet (cx::ins (lead, 0, 1), 0.8f);
+            for (int i = 0; i < 20; ++i) { b.clear(); e.render (b); }
+            e.noteInAt (juce::MidiMessage::noteOn (lead + 1, 57, (juce::uint8) 127), 0);
+            for (int i = 0; i < 40; ++i) { b.clear(); e.render (b); }
+            e.noteInAt (juce::MidiMessage::noteOff (lead + 1, 57), 0);
+            for (int i = 0; i < 160; ++i) { b.clear(); e.render (b); }          // (1.7 s after: the lead's own release is long gone)
+            float peak = 0.0f;
+            for (int i = 0; i < 40; ++i) { b.clear(); e.render (b); peak = std::max (peak, b.getMagnitude (0, b.getNumSamples())); }
+            return juce::Decibels::gainToDecibels (peak, -120.0f);
+        };
+        const float wet = tailAfter (0.6f), dry = tailAfter (0.0f);
+        check (wet > dry + 20.0f && wet > -60.0f && ! e.fault.load(), "GALAXY on a lane: its tail is heard after the note (" + juce::String (wet, 1) + " dB), and at MIX nought it is not there (" + juce::String (dry, 1) + " dB)");
+    }
+    Session::stateFileForTests = juce::File();
+    dir.deleteRecursively();
+}
+
 static void reachTest (int& bad)
 {
     auto check = [&] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); if (! ok) ++bad; };
@@ -5228,7 +5332,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') reachTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -6773,20 +6877,20 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
 
         // -- effects: the lead comes with DELAY and RADIO; another state has DISTORTION in the delay's place and no radio
         const auto withDelay = ses.take();
-        e.setInsertType (7, 0, 3);
+        e.setInsertType (7, 0, fxType ("DISTORTION"));
         e.setInsertType (7, 1, -1);
         bars (0.5);
         const auto withDist = ses.take();
         ses.finishTakes (true);
         ses.recall (withDelay);
         bars (3.5); e.tidy(); bars (0.1); e.tidy();
-        const bool settled = e.leaving() == 0 && e.insertType (7, 0) == 0 && e.insertType (7, 1) == 5;
+        const bool settled = e.leaving() == 0 && e.insertType (7, 0) == 0 && e.insertType (7, 1) == fxType ("RADIO");
         Tap tap; tap.want = 1 + 7;
         e.setRecSink (&tap);
         bars (2.0);
         const size_t at = tap.x.size();
         ses.recall (withDist);
-        const bool both = e.leaving() == 2 && e.insertType (7, 0) == 3 && e.insertType (7, 1) == -1;
+        const bool both = e.leaving() == 2 && e.insertType (7, 0) == fxType ("DISTORTION") && e.insertType (7, 1) == -1;
         bars (1.25);
         const float mid = e.fadeShown (7, 0), midB = e.fadeShown (7, 1);
         bars (1.25);
@@ -7657,6 +7761,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     mixTest (bad);
     plainSaysTest (bad);
     reachTest (bad);
+    insertsTest (bad);
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)
@@ -10341,7 +10446,7 @@ static int uiTest()
                 {
                     // The effects in the racks are part of a sound: between two snapshots they are between them too.
                     // Four snapshots, by the bass's first slot: dry; a DELAY (feedback 0.2, MIX 0.6); the DELAY again (feedback 0.8, MIX 0.2); a REVERB (MIX 0.4).
-                    const int L = bassLane, dlyFb = cx::ins (L, 0, 1), dlyMix = cx::ins (L, 0, 6), revMix = cx::ins (L, 0, 7);
+                    const int L = bassLane, dlyFb = cx::ins (L, 0, 1), dlyMix = cx::ins (L, 0, 7), revMix = cx::ins (L, 0, 7);
                     auto rackTo = [&] (int type) { while (e2.insertType (L, 0) != type) s2.stepInsert (L, 0); };
                     auto mixNow = [&] { const int m = Session::mixCellOf (e2.insertType (L, 0)); return m < 0 ? -1.0f : e2.target (cx::ins (L, 0, m)); };
                     rackTo (-1);
@@ -12691,13 +12796,13 @@ static int uiTest()
         at = sc9.testConfigRect().getCentre();
         sc9.filesDropped (juce::StringArray (ir.getFullPathName()), (int) at.x, (int) at.y);
         check (e9.laneFile (s9.activeLane).isEmpty() && e9.heldFiles (space).size() == 1, "dropped on DUB's CONFIG it goes nowhere: the delay takes no file");
-        e9.setInsertType (7, 0, 2);       // CONVOLUTION as the lead's first insert
+        e9.setInsertType (7, 0, fxType ("CONVOLUTION"));       // CONVOLUTION as the lead's first insert
         s9.activeLane = 7;
         sc9.showConfig ({ 1, 7, 0 }); draw9();
         at = sc9.testConfigRect().getCentre();
         sc9.filesDropped (juce::StringArray (ir2.getFullPathName()), (int) at.x, (int) at.y);
         check (e9.heldFiles ({ 1, 7, 0 }).size() == 1 && e9.laneFile (7).isEmpty(), "dropped on a convolution insert's CONFIG it goes to that insert");
-        e9.setInsertType (7, 0, 0); e9.setInsertType (7, 0, 2);
+        e9.setInsertType (7, 0, 0); e9.setInsertType (7, 0, fxType ("CONVOLUTION"));
         check (e9.heldFiles ({ 1, 7, 0 }).size() == 1, "the insert's file is still held when the effect comes back to the slot");
         sc9.showConfig ({ 0, 10, 0 }); draw9();
         at = sc9.testConfigRect().getCentre();
@@ -12746,7 +12851,7 @@ static int uiTest()
             Session s10 (e10, true);
             e10.setRunning (true);
             snapInit = s10.take();                                   // the lead's first insert is the delay
-            e10.setInsertType (7, 0, 2);                             // now a convolution, with a place
+            e10.setInsertType (7, 0, fxType ("CONVOLUTION"));                             // now a convolution, with a place
             e10.loadFiles (leadIns, juce::StringArray (ir.getFullPathName()));
             { const auto got1 = placeNames (e10, leadIns, true).joinIntoString (",");
               check (got1.equalsIgnoreCase ("0:sf000_ir_test"), "a convolution insert on the lead takes an impulse response"); }
