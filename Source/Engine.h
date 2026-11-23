@@ -400,7 +400,7 @@ public:
     bool holding (int lane) const               { return heldLane[(size_t) lane]; }
     bool holdEnding (int lane) const            { return heldLane[(size_t) lane] && this->lane[(size_t) lane].holdEnd.load() != 0; }
     // Message thread, now and then: lets go of the effects and instruments that have finished leaving.
-    void tidy()                                 { collectRetired (false); }
+    void tidy()                                 { collectRetired (false); for (int l = 0; l < kLanes; ++l) playsMoved (l); }      // (and the ninth knobs named for PLAYS, whatever turned it)
     // How far a lane's fades have got: 1 when nothing is leaving. stage: 0 to kSlots - 1 an insert, kSlots the instrument.
     float fadeShown (int lane, int stage) const { return this->lane[(size_t) lane].fadeAt[stage].load(); }
     bool isPrepared() const                     { return prepared; }
@@ -539,6 +539,8 @@ public:
     // now (the suite's Module.h, Reach). Not the lane's instrument's (an effect's, the mix's): LIVE.
     sf::Reach reachOf (int lane, const juce::String& id) const;
     bool laneFollowsKey (int lane) const;       // its KEY FOLLOW, in CONFIG, is on (false: the lane has none, or it is off)
+    bool lanePlaysNotes (int lane) const;       // its PLAYS, in CONFIG, is NOTES: its steps' notes are played (the hundred and twelfth build; any thread)
+    void playsMoved (int lane);                 // PLAYS turned: the ninth knob is named for what it now is (DECAY, GATE)
     std::vector<SetupParam> setupParams (Target) const;
     void setSetup (Target, const juce::String& id, float v);
     SetupState getSetup (Target) const;
@@ -648,6 +650,7 @@ private:
         const Bind& bind (int k) const          { return maps[(size_t) map.load (std::memory_order_relaxed)][(size_t) k]; }
         // its pocket's switch (made after the lane's effects), depth and shape, where the instrument has a pocket
         std::atomic<float>* pkPost = nullptr; std::atomic<float>* pkDepth = nullptr; std::atomic<float>* pkShape = nullptr;
+        std::atomic<float>* plays = nullptr;       // (the hundred and twelfth build: PLAYS, 0 HITS, 1 NOTES)
         Voice();
         ~Voice();
     };

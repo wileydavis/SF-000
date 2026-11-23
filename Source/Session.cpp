@@ -1466,7 +1466,7 @@ bool Session::heardPattern (int l, Pattern& p, juce::var* raw) const
     const juce::int64 kFrom = std::max<juce::int64> (0, (juce::int64) std::ceil (heardFrom / kStepBeats - 1.0e-9));
     const int W = (int) juce::jlimit<juce::int64> (0, 2 * kMaxSteps, kEnd - kFrom);
     if (W < 1) return false;
-    const bool pitched = lanes()[(size_t) l].pitched;
+    const bool pitched = engine.lanePlaysNotes (l);
     struct Cell { bool on = false; int note = 0, vel = 0, ratchet = 1; double first = 0.0, last = 0.0, len = 0.0; };
     std::vector<Cell> win ((size_t) W);
     for (auto& e : log)
@@ -2218,7 +2218,7 @@ juce::String Session::samplePlain (int lane)
     // What shapes a sample, each where it does nothing (measured, lane by lane, against the file: --samplecheck). (The
     // hundred and third build: every lane is one instrument, and this is all of the lane's that stands between the file
     // and what is heard.)
-    const bool synth = lanes()[(size_t) lane].pitched;        // (a lane that plays notes: the note is the pitch)
+    const bool synth = engine.lanePlaysNotes (lane);        // (a lane that plays notes: the note is the pitch)
     put ("filter", 0.5f); put ("density", 0.0f);
     put ("layer", 0.0f); put ("split", 0.5f);       // (the crossover takes the model's lows out even with LAYER at nought)
     put ("pocket_depth", 0.0f);
@@ -2234,7 +2234,7 @@ juce::String Session::samplePlain (int lane)
     // Its pitch. A drum and a phrase play at their own whatever the note; the others at the note's, and at their own on their root.
     const auto says = sampleSays (lane);
     juce::String told = "PLAIN: THE SAMPLE AS IT WAS RECORDED";
-    if ((synth || (engineRoot && lanes()[(size_t) lane].pitched)) && says.has)       // (SAMPLE on VOICE too: its steps are notes)
+    if ((synth || (engineRoot && engine.lanePlaysNotes (lane))) && says.has)       // (SAMPLE on VOICE too: its steps are notes)
     {
         // TUNE, so that the lane's first lit step is that root (where TUNE reaches: two octaves either way)
         const auto pat = engine.pattern (lane);
@@ -2843,7 +2843,7 @@ void Session::regenerate (int l)
     generate (p, g);
     // (a step the generator lights that held nothing is a new step: on a lane that does not follow the key it is
     // written at the key's note, as one lit by hand is. A step that kept a note under the generator keeps it.)
-    if (const int k = keyRoot(); k > 0 && lanes()[(size_t) l].pitched && ! engine.laneFollowsKey (l))
+    if (const int k = keyRoot(); k > 0 && engine.lanePlaysNotes (l) && ! engine.laneFollowsKey (l))
     {
         const int oct = lanes()[(size_t) l].octave;
         for (int i = 0; i < p.length; ++i)
@@ -2879,8 +2879,8 @@ int Session::stepKnob (int which, int has) const
             return juce::jlimit (64, 127, 64 + (int) std::lround ((s.gate - 1.0f) / (most - 1.0f) * 63.0f));
         }
         case stRatchet: return shared (juce::jlimit (1, 4, s.ratchet) - 1, 4);
-        case stNote:    return lanes()[(size_t) activeLane].pitched ? shared (juce::jlimit (0, 11, s.note), 12) : -1;
-        case stOctave:  return lanes()[(size_t) activeLane].pitched ? shared (juce::jlimit (1, 5, s.octave) - 1, 5) : -1;
+        case stNote:    return engine.lanePlaysNotes (activeLane) ? shared (juce::jlimit (0, 11, s.note), 12) : -1;
+        case stOctave:  return engine.lanePlaysNotes (activeLane) ? shared (juce::jlimit (1, 5, s.octave) - 1, 5) : -1;
         default:        return -1;
     }
 }
@@ -2902,7 +2902,7 @@ void Session::setStepKnob (int which, int v7)
     const int i = selStep;
     if (i < 0 || i >= p.length) return;
     auto& s = p.steps[(size_t) i];
-    const bool pitched = lanes()[(size_t) l].pitched;
+    const bool pitched = engine.lanePlaysNotes (l);
     auto light = [&] { if (! s.on) lightStep (l, s); };
     switch (which)
     {
@@ -2942,7 +2942,7 @@ int Session::keyRoot() const { return (int) std::lround (value (cx::kKey) * 12.0
 int Session::keyMoves (int l) const
 {
     const int k = keyRoot();
-    if (k < 0 || ! lanes()[(size_t) l].pitched || ! engine.laneFollowsKey (l)) return 0;
+    if (k < 0 || ! engine.lanePlaysNotes (l) || ! engine.laneFollowsKey (l)) return 0;
     return k > 5 ? k - 12 : k;
 }
 
@@ -2955,7 +2955,7 @@ void Session::lightStep (int l, Step& s) const
     const bool locked = s.lock;         // (an unlit step may have learnt a lock: lit, it keeps it)
     clearStep (s, d.octave);
     s.on = true; s.lock = locked;
-    if (const int k = keyRoot(); k >= 0 && d.pitched && ! engine.laneFollowsKey (l))
+    if (const int k = keyRoot(); k >= 0 && engine.lanePlaysNotes (l) && ! engine.laneFollowsKey (l))
     {
         s.note = k;
         if (k > 5) s.octave = std::max (0, d.octave - 1);
@@ -2975,7 +2975,7 @@ juce::String Session::stepSays() const
     const auto& s = p.steps[(size_t) selStep];
     juce::String t (selStep + 1);
     if (! s.on) return t + " OUT";
-    if (lanes()[(size_t) activeLane].pitched) t << " " << noteSays (activeLane, s);
+    if (engine.lanePlaysNotes (activeLane)) t << " " << noteSays (activeLane, s);
     return t;
 }
 

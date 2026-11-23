@@ -25,7 +25,7 @@ struct LaneRole
 {
     const char* id;         // the module's name (the rig's lanes name these)
     int role;               // the bus's
-    bool pitched;           // its steps hold notes: GATE, and each engine plays the note's pitch
+    bool pitched;           // PLAYS as it opens: NOTES (GATE, and each engine plays the note's pitch), or HITS
     bool pocket;            // ducks under the kick (POCKET DEPTH, SHAPE, AFTER FX)
     bool publishes;         // tells the bus of its hits (KICK)
     bool follows;           // can be struck by the kick's hits (RUMBLE: SOURCE)
@@ -66,7 +66,14 @@ public:
             pct ("echo_swing", "ECHO SWING", 0.0f).next().slow(),
             pct ("vel_sens", "VEL SENS", role.pitched ? 1.0f : 0.5f).next(),
             toggle ("key_follow", "KEY FOLLOW", true).next().noPreset().forget(),
-            toggle ("mono", "MONO", role.role == ROLE_BASS).eased().nextOn ("SAMPLE").nextOn ("SYNTH").noPreset().forget() };      // (SYNTH: a chord that sounds keeps its voices)
+            toggle ("mono", "MONO", role.role == ROLE_BASS).eased().nextOn ("SAMPLE").nextOn ("SYNTH").noPreset().forget(),      // (SYNTH: a chord that sounds keeps its voices)
+            // (SF-000, the hundred and twelfth build) Wiley, Nov 23: "every lane gets exactyl the same engines, so that the same
+            // settings in any lane will produce the same sound". What a drum lane did and a pitched one did is a setting now,
+            // on every lane: HITS (each struck for the ninth knob's DECAY, the step's own note set aside; SAMPLE at its file's
+            // pitch, KEY FOLLOW moving it to the key's nearest note) or NOTES (held for GATE, at the note's pitch, KEY FOLLOW
+            // moving it with the key). Each lane opens as it was. The ninth knob is the same control either way, read as
+            // DECAY on HITS and GATE on NOTES.
+            choice ("plays", "PLAYS", { "HITS", "NOTES" }, role.pitched ? 1 : 0).next().noPreset() };
         if (role.pocket)
         {
             p.push_back (pct ("pocket_depth", "POCKET DEPTH", role.role == ROLE_BASS ? 0.35f : role.role == ROLE_RUMBLE ? 0.6f : 0.2f).slow());
@@ -93,10 +100,11 @@ public:
         MODEL = at ("model"); LAYERMODEL = at ("layer_model"); LAYER = at ("layer"); SPLIT = at ("split"); SPLITHZ = at ("split_hz");
         HOLD = role.pitched ? at ("gate") : at ("decay"); DENS = at ("density"); FILT = at ("filter"); RES = at ("res"); LEVEL = at ("level");
         EPROB = at ("echo_prob"); ESPACE = at ("echo_space"); ESWING = at ("echo_swing"); VELSENS = at ("vel_sens"); KEYFOLLOW = at ("key_follow");
-        MONO = at ("mono"); PDEPTH = at ("pocket_depth"); PSHAPE = at ("pocket_shape"); PPOST = at ("pocket_post"); SOURCE = at ("source");
+        MONO = at ("mono"); PLAYS = at ("plays"); PDEPTH = at ("pocket_depth"); PSHAPE = at ("pocket_shape"); PPOST = at ("pocket_post"); SOURCE = at ("source");
         // (RUMBLE's SYNTH and KICK FORGE are pitched by what strikes it, the kick's own note; its SAMPLE plays the file at
         // the file's pitch, TUNE moving it, as a drum lane's does: a recorded rumble taken two octaves down to G1 is a smear)
         const bool engPitched = role.pitched || role.follows;
+        notesNow = role.pitched;
         eng.bind (specs, role.pitched, role.pitched ? SampleEngine::Ends::keys : SampleEngine::Ends::hits);
         eng.prepare (rate, mb);
         sy.bind (specs, engPitched, role.pitched ? SynthEngine::Ends::keys : SynthEngine::Ends::hits);
@@ -115,6 +123,7 @@ public:
     {
         echoes.reset();
         eng.reset(); sy.reset(); fg.reset();
+        playsWas = -1;
         out.reset();
         numDown = 0; lastA = lastB = -1; layerWas = false; autoOffWas = -2;
         delayed.clear(); lastTrigPpq = -1.0e9;
@@ -132,17 +141,33 @@ public:
         juce::MidiBuffer followed;
         juce::MidiBuffer& midi = role.follows ? followed : midiIn;
         if (role.follows) gatherFollowed (c, midiIn, followed);
-        echoes.run (c, midi, events, c.v (DENS), echoSpaceBeats (c.ci (ESPACE)), c.v (ESWING), c.v (EPROB), role.pitched);
+        // PLAYS (the hundred and twelfth build): turned, what sounds lets go and the engines take it from the next note
+        const bool notes = PLAYS >= 0 ? c.ci (PLAYS) == 1 : role.pitched;
+        if (playsWas >= 0 && (playsWas == 1) != notes)
+        {
+            allOff (kSample, 0); allOff (kSynth, 0);
+            numDown = 0; autoOffWas = -2;
+        }
+        if (playsWas < 0 || (playsWas == 1) != notes)
+        {
+            notesNow = notes;
+            const bool engPitched = notes || role.follows;
+            eng.plays (notes, notes ? SampleEngine::Ends::keys : SampleEngine::Ends::hits);
+            sy.plays (engPitched, notes ? SynthEngine::Ends::keys : SynthEngine::Ends::hits);
+            fg.plays (engPitched);
+        }
+        playsWas = notes ? 1 : 0;
+        echoes.run (c, midi, events, c.v (DENS), echoSpaceBeats (c.ci (ESPACE)), c.v (ESWING), c.v (EPROB), notes);
         // the engines, for this block: the lane's ninth knob, MONO, and the key
         const bool keyOn = c.b (KEYFOLLOW) && c.keyRoot >= 0;
-        const int keyShift = role.pitched && keyOn ? keyOffset (c.keyRoot) : 0;
+        const int keyShift = notes && keyOn ? keyOffset (c.keyRoot) : 0;
         const float hold = c.v (HOLD);
         const bool mono = c.b (MONO);
         eng.begin (c, smp, hold, mono, keyShift);
         sy.begin (c, hold, mono, keyShift);
-        fg.begin (c, hold, smp, keyShift, keyOn && ! role.pitched ? c.keyRoot : -1);
+        fg.begin (c, hold, smp, keyShift, keyOn && ! notes ? c.keyRoot : -1);
         int autoOff = -1; float relMul = 1.0f;
-        if (role.pitched) gateShape (hold, c.samplesPerBeat(), autoOff, relMul);
+        if (notes) gateShape (hold, c.samplesPerBeat(), autoOff, relMul);
         eng.releaseScale (relMul); sy.releaseScale (relMul);
         // (SF-000, the hundred and fourth build) KICK FORGE is struck, never held: a lane holds its notes only where an engine
         // that sounds holds them (a step longer than its sequence ties on into a drone only then; KICK FORGE strikes again)
@@ -158,7 +183,7 @@ public:
             if (aChanged) allOff (lastA, 0);
             if (bChanged && layerWas) allOff (lastB, 1);
             lastA = mA; lastB = mB; layerWas = layerOn;
-            if (role.pitched)
+            if (notes)
                 for (int k = 0; k < numDown; ++k)
                 {
                     if (aChanged) strike (mA, 0, 0, down[(size_t) k].note, down[(size_t) k].vel, 1.0f, 0, autoOff, keyOn, c);
@@ -169,7 +194,7 @@ public:
         // half ends a sounding note where the knob now says, counted from where it began; brought back over half way each
         // note is its key's again, and a key still down whose note had ended plays again (Wiley, Nov 19: "it went away but
         // the sound didn't comr backl when i turned the gate up")
-        if (role.pitched && autoOff != autoOffWas)
+        if (notes && autoOff != autoOffWas)
         {
             int keys[16]; const int nk = std::min (numDown, 16);
             for (int k = 0; k < nk; ++k) keys[k] = down[(size_t) k].note;
@@ -188,7 +213,7 @@ public:
         const float velSens = c.v (VELSENS);
         for (const auto& ev : events)
         {
-            if (ev.gen == 0 && role.pitched)
+            if (ev.gen == 0 && notes)
             {
                 if (ev.on) keyDown (ev.note, ev.vel);
                 else if (ev.note < 0) numDown = 0;
@@ -289,7 +314,7 @@ private:
     void strike (int e, int offset, int part, int note, float vel, float gain, int gen, int autoOff, bool keyOn, const Ctx& c)
     {
         float pitch = (float) note;
-        if (! role.pitched && ! role.follows && keyOn && e != kForge) pitch += keySnap (440.0f * std::pow (2.0f, ((float) note - 69.0f) / 12.0f), c.keyRoot);
+        if (! notesNow && ! role.follows && keyOn && e != kForge) pitch += keySnap (440.0f * std::pow (2.0f, ((float) note - 69.0f) / 12.0f), c.keyRoot);
         if (e == kSample) eng.noteOn (offset, note, pitch, vel, gain, gen, part, autoOff);
         else if (e == kSynth) sy.noteOn (offset, note, pitch, vel, gain, gen, part, autoOff);
         else fg.noteOn (offset, pitch, vel, gain, gen, part);
@@ -366,7 +391,9 @@ private:
 
     const LaneRole role;
     int MODEL = -1, LAYERMODEL = -1, LAYER = -1, SPLIT = -1, SPLITHZ = -1, HOLD = -1, DENS = -1, FILT = -1, RES = -1, LEVEL = -1;
-    int EPROB = -1, ESPACE = -1, ESWING = -1, VELSENS = -1, KEYFOLLOW = -1, MONO = -1, PDEPTH = -1, PSHAPE = -1, PPOST = -1, SOURCE = -1;
+    int EPROB = -1, ESPACE = -1, ESWING = -1, VELSENS = -1, KEYFOLLOW = -1, MONO = -1, PDEPTH = -1, PSHAPE = -1, PPOST = -1, SOURCE = -1, PLAYS = -1;
+    int playsWas = -1;          // (PLAYS a block ago: 1 NOTES, 0 HITS, -1 not yet)
+    bool notesNow = true;
     double sr = 48000.0;
     SampleSlot sample;
     SampleEngine eng;

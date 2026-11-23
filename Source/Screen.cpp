@@ -634,7 +634,8 @@ bool Screen::describe (int ctl, String& where, String& label, const char*& what)
     const int l = ctl / cx::kPerLane, j = ctl % cx::kPerLane;
     const auto& d = lanes()[(size_t) l];
     where = String (l + 1) + " " + d.name;
-    if (j < kLaneKnobs) what = help::param (d.module, ses.engine.laneKnob (l, j).param);      // (the knob as the lane's model has it)
+    if (j == kSoundKnobs) what = help::param (d.module, ses.engine.lanePlaysNotes (l) ? "gate" : "decay");     // (the ninth: DECAY or GATE, as PLAYS has it)
+    else if (j < kLaneKnobs) what = help::param (d.module, ses.engine.laneKnob (l, j).param);      // (the knob as the lane's model has it)
     else if (j == cx::kSendA) what = help::param ("LANE", "send_a");
     else if (j == cx::kSendB) what = help::param ("LANE", "send_b");
     else if (j == cx::kEqLow) what = help::param ("LANE", "eq_low");
@@ -690,7 +691,7 @@ String Screen::midiOf (int ctl) const
 juce::String Screen::reachSays (int lane, const juce::String& id) const
 {
     const auto r = eng.reachOf (lane, id);
-    const bool drum = ! lanes()[(size_t) lane].pitched;
+    const bool drum = ! eng.lanePlaysNotes (lane);
     if (r == sf::Reach::Next) return drum ? " FROM THE NEXT HIT: ONE THAT IS SOUNDING KEEPS WHAT IT WAS STRUCK WITH."
                                           : " FROM THE NEXT NOTE: ONE THAT IS SOUNDING KEEPS WHAT IT BEGAN WITH.";
     if (r == sf::Reach::Eased) return " HEARD AT ONCE: THE KEYS THAT ARE DOWN ARE PLAYED AGAIN AS IT NOW STANDS.";
@@ -2460,8 +2461,8 @@ void Screen::drawSequencer (G& g, R r)
     actKey (g, aNudgeL, x0 + 58, ky, 56, "< NUDGE", col::yellow, 5);
     actKey (g, aNudgeR, x0 + 116, ky, 56, "NUDGE >", col::yellow, 5);
     actKey (g, aRatchet, x0 + 184, ky, 56, "RATCHET", col::yellow, 5);
-    actKey (g, aNote, x0 + 242, ky, 56, "NOTE", col::yellow, 5, d.pitched);
-    actKey (g, aOctave, x0 + 300, ky, 56, "OCTAVE", col::yellow, 5, d.pitched);
+    actKey (g, aNote, x0 + 242, ky, 56, "NOTE", col::yellow, 5, eng.lanePlaysNotes (l));
+    actKey (g, aOctave, x0 + 300, ky, 56, "OCTAVE", col::yellow, 5, eng.lanePlaysNotes (l));
 
     // the overview: eight pages of sixteen
     const float x1 = x0 + 372;
@@ -2563,7 +2564,7 @@ void Screen::drawSequencer (G& g, R r)
         const bool sel = in && i == ses.selStep;
         const R nb (sx, ky + 44, 40, 16);
         if (sel) { g.setColour (tone (col::black)); g.fillRect (nb); }
-        textRaw (g, d.pitched && on ? Session::noteSays (x, moves) : String (i + 1), nb, fLbl, sel ? (night() ? col::black : col::lit) : tone (col::black));
+        textRaw (g, eng.lanePlaysNotes (l) && on ? Session::noteSays (x, moves) : String (i + 1), nb, fLbl, sel ? (night() ? col::black : col::lit) : tone (col::black));
     }
 
     // generators
@@ -4805,7 +4806,7 @@ void Screen::act (int a)
             if (i < 0 || i >= p.length) break;
             auto& s = p.steps[(size_t) i];
             if (a == aRatchet) { if (! s.on) break; s.ratchet = s.ratchet % 4 + 1; s.gate = std::min (s.gate, 1.0f); }
-            else if (! lanes()[(size_t) l].pitched) break;
+            else if (! eng.lanePlaysNotes (l)) break;
             else if (a == aNote) s.note = (s.note + 1) % 12;
             else s.octave = s.octave >= 5 ? 1 : s.octave + 1;
             ses.setPattern (l, p);

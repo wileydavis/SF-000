@@ -246,7 +246,7 @@ back at the other. The sequencer stays where it is.
 
   | view | a lane, left | a lane, right | an effect or a return, left | right |
   |---|---|---|---|---|
-  | **1** | **LANE**: MODEL, LAYER MODEL, LAYER, SPLIT / KEY FOLLOW, VEL SENS, MONO, SPLIT HZ / ECHO PROB, ECHO SPACE, ECHO SWING, FILTER RES / POCKET DEPTH, POCKET SHAPE, AFTER FX, SOURCE | **MOTION**: 1 above, 2 below | **EFFECT**: what only that effect has | **TIME**: MODEL (SPACE's), THROW, FREEZE, MIX / WIDTH, LO CUT, INPUT, DRY / DUCK, DUCK SHAPE, DUCK FOR, PREDELAY |
+  | **1** | **LANE**: MODEL, LAYER MODEL, LAYER, SPLIT / KEY FOLLOW, VEL SENS, MONO, SPLIT HZ / ECHO PROB, ECHO SPACE, ECHO SWING, FILTER RES / POCKET DEPTH, POCKET SHAPE, AFTER FX, PLAYS | **MOTION**: 1 above, 2 below, RUMBLE's SOURCE in the last row | **EFFECT**: what only that effect has | **TIME**: MODEL (SPACE's), THROW, FREEZE, MIX / WIDTH, LO CUT, INPUT, DRY / DUCK, DUCK SHAPE, DUCK FOR, PREDELAY |
   | **2 and 3, SYNTH the model** | **OSCILLATORS**: TABLE A, SHAPE, WARP, WARP AS / TABLE B, SHAPE B, PITCH B, FINE B / MIX, FM, SYNC, TUNE / SUB, NOISE, COLOR, PHASE; then **FILTER AND ENVELOPES** (3, left): CIRCUIT, CUTOFF, RES, KEY TRACK / ENV AMT, ENV DECAY, MOD ATTACK, DRIVE / ATTACK, SUSTAIN, RELEASE, ACCENT / PITCH ENV, PITCH TIME, BURSTS, BURST GAP | **WAVE MOTION**: SCAN, SCAN END, STEPS, W DEPTH / W TIME 1, W PLACE 1, W TIME 2, W PLACE 2 / W TIME 3, W PLACE 3, W TIME 4, W PLACE 4 / W LOOP, W VEL, W KEY; then **VOICE AND BODY** (3, right): VOICES, GLIDE, SLIDE, CHORD / UNISON, DETUNE, WIDTH, DRIFT / BODY, BODY MIX, BODY DECAY, BODY TONE / PATCH, SPACE, GAIN | **BANDS** (3, a convolution's): the switch and the two crossovers, then a row a band | **MOTION** (3) |
   | **2, SAMPLE the model** | **SOURCE**: START, END, FADE IN, FADE OUT / GAIN, NORMALISE, REVERSE, ROOT / LOOP, LOOP START, LOOP END, CROSSFADE / SLICE BY, COUNT, SENSITIVITY, BASE NOTE | **PLAY**: METHOD, NOTES, PLAY, CHOKE / CYCLE, VEL START, VARIATION / RATE, PITCH SPREAD, GRAIN SHAPE, SYNC / BARS, WARP, LOCK | | |
   | **2, KICK FORGE the model** | **BODY**: CHARACTER, BODY, TONE, LOW PRESERVE / HANG, CURVE, HOLD, HARM DECAY / PHASE, POLARITY, PUNCH, PITCH TIME / CLICK, TUNE, DRIVE | **IMPACT AND GROUND**: IMPACT, POSITION, IMPACT LENGTH, IMPACT PITCH / IMPACT CUT, IMPACT WIDTH, VARIATION, IMPACT ONLY / GROUND, GROUND LENGTH, GROUND DARK, GROUND DUCK / GROUND RECOVER, GROUND WIDTH | | |
@@ -921,6 +921,28 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   knob whatever is in it, on the screen and on the E16. A snapshot from before is read with its
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
+
+### Every lane plays alike (hundred and twelfth build)
+
+Every lane has the same three engines and now plays them the same way: the same settings sound the
+same on any lane (DECISIONS 794). What a drum lane did and a pitched lane did is **PLAYS**, the
+LANE grid's last cell, on every lane:
+
+- **HITS**: each step is struck at C3 and rings for the ninth knob, **DECAY**; SAMPLE plays its
+  file at its own pitch; KEY FOLLOW moves it to the key's nearest note.
+- **NOTES**: each step plays its own note (NOTE and OCTAVE in EDIT) for the ninth knob, **GATE**;
+  SAMPLE plays at the note's pitch; KEY FOLLOW moves the part with the key.
+
+KICK, the hats, CLAP, PERC and RUMBLE open on HITS, the rest on NOTES, so every snapshot sounds
+as it did (one saved before PLAYS opens the lane as it always played). The ninth knob is one
+control, named DECAY or GATE as PLAYS has it, on the panel, in INFO and on an E16 scene written
+then. RUMBLE's SOURCE moved to the MOTION grid's last row to make room. What still differs by
+lane is its job in the rig, never its sound: KICK tells the bus of its hits, RUMBLE can be struck
+by them, and the lanes with a POCKET duck under the kick.
+
+SYNTH's wave display always shows the wave and SHAPE's yellow strip; NOISE is drawn under it at
+its level (it is added to the oscillators, never in place of them; past half NOISE the display
+used to hide the wave).
 
 ### What the Build 110 manual found (hundred and eleventh build)
 

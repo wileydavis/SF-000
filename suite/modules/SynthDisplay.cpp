@@ -103,7 +103,6 @@ void SynthEngine::paint (juce::Graphics& g, juce::Rectangle<float> r, const Modu
         const Wavetable* ta = tableFor (b.tableA);
         const Wavetable* tb = tableFor (b.tableB);
         const bool useB = b.mix > 0.001f;
-        const bool onlyNoise = b.noise > 0.5f && b.mix < 0.001f && b.sub < 0.001f;
         auto curve = [&] (std::function<float (double)> f, juce::Colour c, float thick)
         {
             juce::Path p;
@@ -112,7 +111,19 @@ void SynthEngine::paint (juce::Graphics& g, juce::Rectangle<float> r, const Modu
             for (int i = 0; i <= N; ++i) { const float y = cy - amp * f ((double) i / N) / peak; const float x = x0 + wd * (float) i / N; if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y); }
             g.setColour (c); g.strokePath (p, juce::PathStrokeType (thick));
         };
-        if (ta != nullptr && ! onlyNoise)
+        // NOISE, added at its level over the oscillators (it never stands in for them): drawn under the wave, as bright as
+        // it is loud. (SF-000, the hundred and twelfth build: the wave and SHAPE's strip were hidden past half NOISE, the
+        // oscillators sounding under it. Wiley, Nov 23: "the noise above 50% thing seems like a weird hidden switch")
+        if (b.noise > 0.001f)
+        {
+            Noise nz { 0x1234567u };
+            const float lvl = juce::jlimit (0.0f, 1.0f, b.noise);
+            juce::Path p;
+            constexpr int N = 96;
+            for (int i = 0; i <= N; ++i) { const float y = cy - amp * lvl * nz.next(); const float x = x0 + wd * (float) i / N; if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y); }
+            g.setColour (ui::kText.withAlpha (0.15f + 0.35f * lvl)); g.strokePath (p, juce::PathStrokeType (0.9f));
+        }
+        if (ta != nullptr)
         {
             const float pa = shapePlace (b.shape), pb = shapePlace (b.shapeB);
             if (useB && tb != nullptr)
@@ -132,11 +143,6 @@ void SynthEngine::paint (juce::Graphics& g, juce::Rectangle<float> r, const Modu
             }
             const float sx = x0 + wd * pa;
             g.setColour (kYellow); g.fillRect (sx - 0.8f, ty, 1.6f, 8.0f);
-        }
-        else
-        {
-            Noise nz { 0x1234567u };
-            curve ([&nz] (double) { return nz.next(); }, ui::kText, 1.1f);
         }
     }
     // ---- FILTER

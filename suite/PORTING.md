@@ -308,3 +308,9 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   SYNC levelled by SYNC's pace (`grainsPerSecond`); a note played THROUGH holds nothing.
   `modules/SampleDisplay.cpp`: a double click with WARP off turns it on with its markers. All
   marked `(SF-000, the hundred and eleventh build)` (DECISIONS 793).
+
+- **The hundred and twelfth build: every lane plays alike.** `modules/Lane.cpp`: PLAYS (HITS, NOTES) on every lane, read
+  each block, standing for what `LaneRole::pitched` decided (it is now only where each lane opens); the ninth knob read
+  as DECAY or GATE by it. `modules/SynthEngine.h`, `SampleEngine.h`, `ForgeEngine.h`: `pitched` and `ends` atomic, set
+  by `plays()` as the lane turns. `modules/SynthDisplay.cpp`: the wave and SHAPE's strip always drawn, NOISE under it at
+  its level. All marked `(SF-000, the hundred and twelfth build)` (DECISIONS 794).

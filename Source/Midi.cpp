@@ -346,6 +346,8 @@ String sceneText (const Engine& eng, const juce::StringArray& snapNames)
             if (p <= kLaneKnobs)
             {
                 naming (d.knobs[p - 1], e.name, e.abbr);
+                if (p == kSoundKnobs + 1 && eng.lanePlaysNotes (l) != d.pitched)       // (the ninth, as PLAYS has it when the scene is written)
+                { const KnobDef k9 { eng.lanePlaysNotes (l) ? "GATE" : "DECAY", eng.lanePlaysNotes (l) ? "gate" : "decay", 'u' }; naming (k9, e.name, e.abbr); }
                 e.colour = p <= 8 ? kWhite : p <= 11 ? kRed : kLightBlue;     // as the screen lights them: sound, shape, level
                 if (p == 1)
                 {

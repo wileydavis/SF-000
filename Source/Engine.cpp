@@ -184,6 +184,7 @@ void Engine::bindVoice (int l, Voice& v)
     v.map.store (mapOf (l, *v.proc));
     // its pocket, if it has one: the switch that leaves it to be made after the lane's effects, its depth, its shape
     auto raw = [&v] (const char* id) -> std::atomic<float>* { return id != nullptr && v.proc->paramIndex (id) >= 0 ? v.proc->apvts.getRawParameterValue (id) : nullptr; };
+    v.plays = raw ("plays");
     v.pkPost = raw ("pocket_post"); v.pkDepth = v.pkPost != nullptr ? raw (pocketDepthId (l)) : nullptr; v.pkShape = raw ("pocket_shape");
     // (SF-000, the hundredth build) the lane's steps, for a display that shows what each plays (SAMPLE's)
     v.proc->mod().stepsOf = [this, l] (sf::Module::StepsView& sv)
@@ -374,6 +375,7 @@ Engine::Engine()
         bindVoice (l, *first);
         first->map.store (0);
         remapLane (l, false);               // (a lane that starts on a model with knobs of its own)
+        playsMoved (l);
         named (cx::lane (l, cx::kSendA), slug + ".send_a", "SEND A", Kind::Knob, kSendDefaults[l][0], true, true);
         named (cx::lane (l, cx::kSendB), slug + ".send_b", "SEND B", Kind::Knob, kSendDefaults[l][1], true, true);
         named (cx::lane (l, cx::kEqLow), slug + ".eq_low", "LOW", Kind::Bipolar, 0.5f, true, true);
@@ -1608,11 +1610,14 @@ namespace
 struct CfgCell { const char* id; int cell; };
 // a lane, the first grid, LANE (SF-000, the hundred and third build: every lane is one instrument, Lane.cpp, and this is all
 // of it that is not an engine's). A row a job: what plays and how the two meet (SPLIT HZ under SPLIT); how it is played; the
-// echoes, and the lane filter's RES beside them (FILTER is on the panel); the pocket under the kick, and what strikes RUMBLE.
+// echoes, and the lane filter's RES beside them (FILTER is on the panel); the pocket under the kick, and PLAYS (the hundred
+// and twelfth build: HITS or NOTES, on every lane). RUMBLE's SOURCE, what strikes it, was there: it is the MOTION grid's
+// last row now (kSourceCell), the one control that moved, for PLAYS to be on LANE where every lane has it.
 const CfgCell kLaneCells[] = { { "model", 0 }, { "layer_model", 1 }, { "layer", 2 }, { "split", 3 },
                                { "key_follow", 4 }, { "vel_sens", 5 }, { "mono", 6 }, { "split_hz", 7 },
                                { "echo_prob", 8 }, { "echo_space", 9 }, { "echo_swing", 10 }, { "res", 11 },
-                               { "pocket_depth", 12 }, { "pocket_shape", 13 }, { "pocket_post", 14 }, { "source", 15 } };
+                               { "pocket_depth", 12 }, { "pocket_shape", 13 }, { "pocket_post", 14 }, { "plays", 15 } };
+constexpr int kSourceCell = 12;         // (RUMBLE's SOURCE: the second grid's, beside LANE)
 // (a lane's MOTION is the second grid, beside LANE; the engines follow, the model's from the third, the layer's after it)
 // KICK FORGE's own (the ninety-ninth build): two grids of it. Cells 0 to 15, the third grid, BODY: what is struck and
 // how its pitch and level fall; 16 to 31, the fourth, IMPACT AND GROUND: the front of the hit, then the floor under it.
@@ -1911,6 +1916,7 @@ Engine::SetupPage Engine::setupPage (Target t) const
             if (lane)
             {
                 if (const int c = cfgCellIn (kLaneCells, id); c >= 0) return { 0, c };
+                if (id == "source") return { 1, kSourceCell };
                 const juce::String e = engineOf (id);
                 const int base = e.isEmpty() ? -1 : e == model ? modelAt : layerShown && e == layerModel ? layerAt : -1;
                 if (const int c = base < 0 ? -1 : unitCell (e, id); c >= 0) return { base + c / 16, c % 16 };
@@ -1962,6 +1968,7 @@ Engine::SetupPage Engine::setupPage (Target t) const
         {
             // (a lane's cells kept: LANE's every one it has; an engine's, while it is listed, where its panel has them)
             for (auto& c : kLaneCells) if (has (c.id)) ghost (0, c.cell, c.id, isBound (c.id));
+            if (has ("source")) ghost (1, kSourceCell, "source", false);
             auto unitGhosts = [&] (const juce::String& e, int base, bool layer)
             {
                 if (base < 0 || e.isEmpty()) return;
@@ -2345,6 +2352,23 @@ Engine::SetupState Engine::laterOff (Target t) const
     return st;
 }
 
+bool Engine::lanePlaysNotes (int l) const
+{
+    if (l < 0 || l >= kLanes) return false;
+    if (auto* v = lane[(size_t) l].voice.load(); v != nullptr && v->plays != nullptr) return v->plays->load() >= 0.5f;
+    return lanes()[(size_t) l].pitched;
+}
+
+// (the hundred and twelfth build) the ninth knob is one control on every lane, the lane's DECAY or GATE: named for what PLAYS
+// makes it, so the panel, INFO and the controllers say what it does now
+void Engine::playsMoved (int l)
+{
+    if (l < 0 || l >= kLanes) return;
+    auto& c = controls[(size_t) cx::lane (l, kSoundKnobs)];
+    const juce::String name = lanePlaysNotes (l) ? "GATE" : "DECAY";
+    if (c.label != name) { c.label = name; stateMoved(); }
+}
+
 bool Engine::laneFollowsKey (int lane) const
 {
     if (auto* p = processorFor ({ 0, lane, 0 }))
@@ -2403,6 +2427,7 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
             v = p->param (i)->convertTo0to1 (at == 0 ? 0.0f : (float) order[(size_t) at - 1]);
         }
         p->param (i)->setValueNotifyingHost (v);
+        if (t.kind == 0 && id == "plays") playsMoved (t.lane);
         if (t.kind == 0 && id == "model" && remapLane (t.lane, true))    // (a model chosen by hand: its own knobs, where they start)
             if (const int now = mapOf (t.lane, *p); now > 0)
                 for (auto& w : lanes()[(size_t) t.lane].own[(size_t) now - 1].with)       // (and what it puts away)
@@ -2550,6 +2575,16 @@ void Engine::applySetup (Target t, const SetupState& st)
             remapLane (t.lane, false);
         }
         applySetupTo (*p, boundIds (t), st);
+        if (t.kind == 0)
+        {
+            // (a setup from before PLAYS, the hundred and twelfth build: the lane plays as it always did)
+            bool named = false;
+            for (auto& kv : st) named = named || kv.first == "plays";
+            if (! named && st.size() > 1)          // (a whole setup: the model alone, set ahead of the rest, says nothing of it)
+                if (const int i = p->paramIndex ("plays"); i >= 0 && i < p->numModuleParams())
+                    p->param (i)->setValueNotifyingHost (p->param (i)->getDefaultValue());
+            playsMoved (t.lane);
+        }
         updateLatency();
     }
     if (t.kind == 0)
@@ -3204,6 +3239,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // was holding ends now. Notes from outside still sound.
         const bool seqOff = snd[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
         if (seqOff && ! ln.seqOff) ln.player.stop (ln.midi, 0);
+        if (auto* v = ln.voice.load()) ln.player.pitched = v->plays != nullptr ? v->plays->load() >= 0.5f : lanes()[(size_t) l].pitched;     // (PLAYS: NOTES plays each step's note, HITS each at C3)
         if (auto* v = ln.voice.load()) ln.player.selfTie = ln.player.pitched && v->proc != nullptr && v->proc->mod().holdsNotes();     // (a lone step longer than its sequence: a drone, but not of a sample that plays once, nor of a drum)
         ln.seqOff = seqOff;
         if (run)

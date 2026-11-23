@@ -85,6 +85,8 @@ public:
     // drum's hit, DECAY its length (KICK, the hats, CLAP, PERC, RUMBLE).
     enum class Ends { keys, hits };
     void bind (const std::vector<ParamSpec>& specs, bool pitchedLane, Ends ends);
+    // (SF-000, the hundred and twelfth build) the lane's PLAYS turned: HITS or NOTES, from the next note
+    void plays (bool pitchedLane, Ends e) { pitched.store (pitchedLane); ends.store (e); }
     void prepare (double sr, int maxBlock);
     void reset();
 
@@ -191,8 +193,9 @@ private:
 
     const SampleData* smpNow = nullptr;
     double sr = 48000.0, spb = 24000.0;
-    bool pitched = true, holdsNow = false, monoNow = false, wasPlaying = false;
-    Ends ends = Ends::keys;
+    std::atomic<bool> pitched { true };     // (SF-000, the hundred and twelfth build: the lane's PLAYS, which can change as it plays)
+    bool holdsNow = false, monoNow = false, wasPlaying = false;
+    std::atomic<Ends> ends { Ends::keys };
     float decayKnob = 0.5f;
     int keyShiftNow = 0;
     std::vector<std::pair<std::string, int>> idList;

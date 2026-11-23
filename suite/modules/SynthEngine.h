@@ -64,6 +64,8 @@ class SynthEngine
 public:
     enum class Ends { keys, hits };
     void bind (const std::vector<ParamSpec>& specs, bool pitchedLane, Ends ends);
+    // (SF-000, the hundred and twelfth build) the lane's PLAYS turned: HITS or NOTES, from the next note
+    void plays (bool pitchedLane, Ends e) { pitched.store (pitchedLane); ends.store (e); }
     void prepare (double sr, int maxBlock);
     void reset();
     // The lane's recording, for TABLE FILE and TABLE SAMPLE (message thread: their frames are made here).
@@ -170,8 +172,9 @@ private:
     void publish();
 
     double sr = 48000.0;
-    bool pitched = true, monoNow = false, wasPlaying = false;
-    Ends ends = Ends::keys;
+    std::atomic<bool> pitched { true };     // (SF-000, the hundred and twelfth build: the lane's PLAYS, which can change as it plays)
+    bool monoNow = false, wasPlaying = false;
+    std::atomic<Ends> ends { Ends::keys };
     float decayKnob = 0.5f;
     int keyShiftNow = 0;
     float bendNow = 0.0f;

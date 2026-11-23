@@ -6605,6 +6605,36 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      it out too. And **SYNTH's oversampling is chosen as a voice begins**: a CIRCUIT or FM turned up under a
      sounding note runs at the rate it began with until the next (a rate changed under a voice would step).
 
+## Every lane plays alike (Nov 23): the hundred and twelfth build
+
+794. **You**, Nov 23, 10:14 to 10:29: "how come I can't change the waveform on the synth in clap lane?", "sorry, mrant closed
+     hat lane", "although clap is the same, no tabel A control for shape in the screen", then "but the lane shouldn't change
+     the character of the synth. If I want the clap lane to become a lead, i want to be able to modify the synth to do that.
+     And the lead lane has a yellow slider to change wave shape, but it disappears on other lanes and the shape knob doesn't
+     do anything to the waveform", "every lane gets exactyl the same engines, so that the same settings in any lane will
+     produce the same sound. th goal is that the engines are expressive enough to be able to make sounds relevant to that
+     lane, even though they can also make others.", and "the noise above 50% thing seems like a weird hidden switch. can we
+     not have the noise be added on a 0-100% level and still keep the waveform?"
+     - **The engines were the same; the lanes played them two ways.** A drum lane struck each step at C3 for DECAY (SAMPLE
+       at its file's pitch, KEY FOLLOW snapping to the key), a pitched lane held its notes for GATE (SAMPLE at the note's
+       pitch, KEY FOLLOW transposing), and only a pitched lane's steps held notes. That is now **PLAYS**, HITS or NOTES,
+       a setting on every lane (Lane.cpp), and the same settings give the same sound on any lane, checked sample for sample
+       on SYNTH, SAMPLE and KICK FORGE, HITS and NOTES, CLAP against LEAD.
+     - *Mine:* **each lane opens as it played**, the drum lanes on HITS, so every snapshot and the factory rig sound as they
+       did; a setup from before PLAYS puts the lane back on its own (a lane turned to NOTES does not carry into an old
+       snapshot). Turned, what sounds lets go.
+     - *Mine:* **the ninth knob stays one control** (its id, `decay` or `gate`, is the lane's as before, so snapshots, locks
+       and MOTION keep it): read as DECAY on HITS and GATE on NOTES, and named so on the panel, in INFO and on an E16 scene.
+       Two knobs, one hidden by PLAYS, would have been a second hidden switch.
+     - *Mine:* **PLAYS is the LANE grid's last cell**, beside the pocket; RUMBLE's SOURCE, which had it, is the MOTION grid's
+       last row. The one control that moved: PLAYS had to be where every lane has it.
+     - *Mine:* **what still differs by lane is its job in the rig, never its sound**: KICK tells the bus of its hits, RUMBLE
+       can be struck by them, and the lanes with a POCKET duck under the kick (a POCKET at nought is no difference).
+     - **The wave display hid the wave past half NOISE**, the oscillators sounding under it (NOISE is added, from nought to
+       full, and never stands in for them): it always draws the wave and SHAPE's yellow strip, the noise under it at its
+       level. TABLE A (the wave) is in CONFIG, OSCILLATORS, on every lane; the panel's SHAPE moves along it. On the hats and
+       the clap SHAPE is heard faintly: their patches are full NOISE through a narrow filter.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

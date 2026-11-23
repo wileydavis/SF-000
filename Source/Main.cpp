@@ -4767,6 +4767,114 @@ static juce::File twoSounds (const juce::File& dir)
 }
 }
 
+// (the hundred and twelfth build) Wiley, Nov 23: "every lane gets exactyl the same engines, so that the same settings in any
+// lane will produce the same sound". PLAYS, HITS or NOTES, on every lane: CLAP and LEAD given the same settings give the same
+// sound, on every engine and either way; the ninth knob is named for it; a snapshot from before it plays as it did; the
+// clap's steps play their notes on NOTES and C3 on HITS
+static void samePlaysTest (int& bad)
+{
+    using namespace synthcheck;
+    using namespace sf0;
+    std::printf ("PLAYS: the same settings, the same sound on any lane (the hundred and twelfth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    int clap = 0, lead = 0;
+    for (int l = 0; l < kLanes; ++l) { const juce::String sl (lanes()[(size_t) l].slug); if (sl == "clap") clap = l; if (sl == "lead") lead = l; }
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-playscheck");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto two = twoSounds (dir);
+    // what a lane is besides its sound, set alike on both (the lead's pocket at nought: no kick here to duck under)
+    const std::vector<std::pair<const char*, float>> alike { { "level", -8.0f }, { "vel_sens", 1.0f }, { "mono", 0.0f }, { "filter", 0.5f }, { "res", 0.1f },
+                                                             { "density", 0.0f }, { "pocket_depth", 0.0f }, { "decay", 0.4f }, { "gate", 0.4f } };
+    std::vector<std::pair<const char*, float>> leadSound;
+    for (auto& f : lanes()[(size_t) lead].fixed) if (juce::String (f.param).startsWith ("sy_")) leadSound.push_back ({ f.param, f.value });
+    const std::vector<Note> notes { { 3200, 69, 0.8f, true }, { 30000, 69, 0.0f, false }, { 36000, 64, 0.6f, true }, { 60000, 64, 0.0f, false } };
+    // the first sound in each, and how far apart they are from there (the lead's pocket looks ahead: its sound comes later)
+    auto apart = [] (const std::vector<float>& a, const std::vector<float>& b, double& peak)
+    {
+        auto first = [] (const std::vector<float>& x) { for (size_t i = 0; i < x.size(); ++i) if (std::abs (x[i]) > 1.0e-7f) return i; return x.size(); };
+        const size_t fa = first (a), fb = first (b);
+        double d = 0.0; peak = 0.0;
+        for (size_t i = 0; fa + i < a.size() && fb + i < b.size(); ++i) { d = std::max (d, (double) std::abs (a[fa + i] - b[fb + i])); peak = std::max (peak, (double) std::abs (a[fa + i])); }
+        return fa < a.size() && fb < b.size() ? d : 1.0;
+    };
+    for (int notesWay = 0; notesWay < 2; ++notesWay)
+        for (const char* m : { "SYNTH", "SAMPLE", "KICK FORGE" })
+        {
+            auto with = [&] (int lane)
+            {
+                auto v = alike;
+                if (juce::String (m) == "SYNTH") for (auto& kv : leadSound) v.push_back (kv);
+                v.push_back ({ "plays", (float) notesWay });
+                return play (lane, m, v, notes, 1.6, &two);
+            };
+            double peak = 0.0;
+            const double d = apart (with (clap), with (lead), peak);
+            check (d < 1.0e-5 && peak > 1.0e-3, juce::String ("on ") + (notesWay ? "NOTES" : "HITS") + ", " + m + ": CLAP and LEAD given the same settings sound the same (" + juce::String (d, 7)
+                   + " at most apart, at a peak of " + juce::String (peak, 3) + ")");
+        }
+    // on the rig: the ninth knob's name, a snapshot from before PLAYS, and the clap's steps
+    {
+        Engine e; e.prepare (48000.0, 256);
+        const Engine::Target at { 0, clap, 0 };
+        const bool startsHits = ! e.lanePlaysNotes (clap) && e.control (cx::lane (clap, kSoundKnobs)).label == "DECAY" && e.lanePlaysNotes (lead) && e.control (cx::lane (lead, kSoundKnobs)).label == "GATE";
+        e.setSetup (at, "plays", 1.0f);
+        const bool turned = e.lanePlaysNotes (clap) && e.control (cx::lane (clap, kSoundKnobs)).label == "GATE";
+        check (startsHits && turned, "CLAP opens on HITS, its ninth knob DECAY (LEAD on NOTES, GATE); turned to NOTES, the knob is GATE");
+        auto st = e.getSetup (at);
+        bool stored = false; for (auto& kv : st) stored = stored || (kv.first == "plays" && kv.second > 0.5f);
+        Engine::SetupState old; for (auto& kv : st) if (kv.first != "plays") old.push_back (kv);
+        e.applySetup (at, old);
+        const bool back = ! e.lanePlaysNotes (clap) && e.control (cx::lane (clap, kSoundKnobs)).label == "DECAY";
+        e.applySetup (at, st);
+        check (stored && back && e.lanePlaysNotes (clap), "PLAYS is kept with the lane's setup; a setup from before it puts the lane back on what it always played");
+        // a cell of its own on every lane's LANE grid, the same one; RUMBLE's SOURCE beside it, on the second grid
+        bool same = true; int cell = -1;
+        for (int l = 0; l < kLanes; ++l)
+            for (auto& sp : e.setupParams ({ 0, l, 0 }))
+                if (sp.id == "plays") { same = same && sp.grid == 0 && (cell < 0 || sp.cell == cell); cell = sp.cell; }
+        int rumble = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "rumble") rumble = l;
+        bool source = false; for (auto& sp : e.setupParams ({ 0, rumble, 0 })) if (sp.id == "source") source = sp.grid == 1 && sp.cell == 12;
+        check (same && cell == 15 && source, "CONFIG: PLAYS is the LANE grid's last cell on every lane; RUMBLE's SOURCE is on the second grid's last row");
+    }
+    {
+        // the clap's step at A4: on NOTES it plays A4, on HITS C3 (MIDI 60) as it always did. A plain sine on it, alone.
+        auto runAt = [&] (bool notesOn)
+        {
+            Engine e; e.prepare (48000.0, 256);
+            const Engine::Target at { 0, clap, 0 };
+            for (int l = 0; l < kLanes; ++l) if (l != clap) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+            e.setSetup (at, "plays", notesOn ? 1.0f : 0.0f);
+            auto norm = [&] (const char* id, float plain) { for (auto& sp : e.setupParams (at)) if (sp.id == id) { e.setSetup (at, id, sp.choices.size() > 1 ? plain / (float) (sp.choices.size() - 1) : plain); return; } };
+            norm ("sy_noise", 0.0f); norm ("sy_table_a", 0.0f); norm ("sy_bursts", 0.0f); norm ("sy_circuit", 0.0f);
+            for (int s2 = 0; s2 < kSlots; ++s2) e.set (cx::lane (clap, cx::kInsMS + s2 * 2), 1.0f, 0.0);      // (its inserts out of the way)
+            Pattern p; p.length = 16; p.steps[0].on = true; p.steps[0].note = 9; p.steps[0].octave = 3; p.steps[0].gate = 4.0f;
+            e.setPattern (clap, p);
+            juce::AudioBuffer<float> b (2, 256);
+            std::vector<float> x;
+            e.setRunning (true);
+            for (int i = 0; i < 400; ++i) { e.render (b); for (int k = 0; k < 256; ++k) x.push_back (b.getSample (0, k)); }
+            return x;
+        };
+        auto at = [] (const std::vector<float>& x, double hz)
+        {
+            double best = 0.0;
+            for (size_t from = 0; from + 4800 < x.size(); from += 2400)
+            {
+                double re = 0, im = 0;
+                for (size_t i = 0; i < 4800; ++i) { const double ph = 6.283185307179586 * hz * (double) i / 48000.0; re += x[from + i] * std::cos (ph); im += x[from + i] * std::sin (ph); }
+                best = std::max (best, re * re + im * im);
+            }
+            return 10.0 * std::log10 (best + 1.0e-30);
+        };
+        const auto onNotes = runAt (true), onHits = runAt (false);
+        if (std::getenv ("SF000_PLAYS_SAY")) for (double hz : { 220.0, 261.6256, 293.66, 329.63, 392.0, 440.0, 523.25, 880.0 }) std::printf ("    %.0f Hz: notes %.1f hits %.1f\n", hz, at (onNotes, hz), at (onHits, hz));
+        const double nA = at (onNotes, 440.0), nC = at (onNotes, 261.6256), hA = at (onHits, 440.0), hC = at (onHits, 261.6256);
+        check (nA > nC + 6.0 && hC > hA + 6.0 && nA > hA + 6.0, "CLAP's step at A4: on NOTES it is heard at A4 (" + juce::String (nA - nC, 0) + " dB over C), on HITS at C3, MIDI 60, as before ("
+               + juce::String (hC - hA, 0) + " dB over A)");
+    }
+    dir.deleteRecursively();
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5516,7 +5624,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -7947,6 +8055,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     reachTest (bad);
     insertsTest (bad);
     moveFxTest (bad);
+    samePlaysTest (bad);                // (the hundred and twelfth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)

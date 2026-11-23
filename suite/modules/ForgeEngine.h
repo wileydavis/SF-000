@@ -22,6 +22,7 @@ class ForgeEngine
 {
 public:
     void bind (const std::vector<ParamSpec>& specs, bool pitchedLane);
+    void plays (bool pitchedLane) { pitched.store (pitchedLane); }      // (SF-000, the hundred and twelfth build: the lane's PLAYS)
     void prepare (double sr, int maxBlock);
     void reset();
     // Each block: begin, the notes (each at its sample in the block), render.
@@ -56,7 +57,8 @@ private:
     forge::Knobs k;
     float groundIn = 0.0f, tune = 0.0f, bend = 0.0f, cal = 1.0f;
     int keyShift = 0, keyRoot = -1, sideLive = 0;
-    bool pitched = true, solo = false;
+    std::atomic<bool> pitched { true };     // (SF-000, the hundred and twelfth build: the lane's PLAYS)
+    bool solo = false;
     const SampleData* smp = nullptr;
     SampleRegion whole;
     Noise rng;
