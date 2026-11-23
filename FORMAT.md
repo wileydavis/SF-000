@@ -131,7 +131,7 @@ this build does not have is written back as it was read.
   "values":  { "kick.tune": 0.4583, "lead.i1.c2": 0.55, ... },
   "patterns": [ { "len": 16, "steps": [ [step, velocity, gate, ratchet, note, octave], ... ],
                   "locks": [ [step, control, difference], ... ], "locked": [step, ...] } per lane ],
-  "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],          by name: DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION, COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE, CLIP (the hundred and sixth build on; before it no GALAXY, and WEAVE and FILTER). A name a build does not know is an empty slot there
+  "inserts":  [ [ "DELAY", "RADIO", "NONE" ] per lane ],          by name: DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION, COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE, CLIP (the hundred and sixth build on; before it no GALAXY, and WEAVE and FILTER), RESONATOR (108th), PHASER (109th), SHIFT (110th). A name a build does not know is an empty slot there
   "gen":      [ armed generator per lane, -1 none ],
   "setup":    { "lanes": [ {param: 0..1} ], "inserts": [ [ {..} x 3 ] ], "returns": [ {..} x 2 ], "bus": {..} },
   "insertFiles": [ { "lane", "slot", "files": [ { "place", "type", "files": [paths] } ] } ],
@@ -185,6 +185,12 @@ this build does not have is written back as it was read.
   empty, and in its `setup` `derez`, `bigness`, `lo_cut`, `duck_shape` as SPACE's GALAXY has them. WEAVE
   and FILTER are no longer inserts: a slot that names one is empty. Nothing else moved between
   7 and 8.
+  **DUB's `to_space`** (hundred and seventh build) is in `setup.returns[0]`: TO SPACE, 0 to 1 (a
+  setup that does not name it has it at 0). It is the engine's, not the delay's. **RESONATOR**
+  (108th), **PHASER** (109th) and **SHIFT** (110th) are new insert names, each with its eight
+  places as README.md lists them and the rest in its `setup` by name (`chord`, `root`, `octave`,
+  `key_follow`, `tone`; `mode`, `stages`, `shape`, `low_keep`; `mode`, `time`, `lo_cut`).
+  RESONATOR's `shift` is a list of 25 (-12 to +12 semitones).
 - **LOOP** (eighty-first build) is `smp_bars` in the `setup` of a lane that has it (the hats,
   the clap, PERC): a place among OFF, AUTO, 1, 2, 4, 8, 16, 32 BARS. PERC's `setup` also has a
   sample's ids from this build on (`smp_start`, `smp_end`, `smp_fade_in`, `smp_fade_out`,

@@ -293,3 +293,10 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   TRACK (ACID 303's KEY TRACK nought); ACCENT at nought is nothing; CLEAN BP and HP filter the
   side (`svfS`). `modules/Lane.cpp`: a lane holds its notes only where SAMPLE or SYNTH sounds.
   All marked `(SF-000, the hundred and fourth build)` (DECISIONS 786).
+
+- **The hundred and eighth to tenth builds: three inserts.** `modules/Resonator.cpp`: its chord
+  tables made in `prepare` (they were first made on the audio thread); SHIFT a list of whole
+  semitones (`shiftNames`); a string the new chord has not fades over 30 ms (`fade`). New,
+  SF-000's own: `modules/FxMove.cpp`, PHASER (PHASER and FLANGER) and SHIFT (a Hilbert-pair
+  frequency shifter and a ring modulator), registered in `core/Registry.cpp` and `.h`. All
+  marked `(SF-000 ...)` (DECISIONS 790 to 792).

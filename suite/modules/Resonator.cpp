@@ -28,6 +28,7 @@ const std::vector<std::vector<int>>& resonatorChords()
     return t;
 }
 std::vector<std::string> resonatorChordNames() { return { "OCTAVES", "FIFTHS", "MIN", "MIN7", "MIN9", "SUS4", "MAJ", "MAJ7" }; }
+std::vector<std::string> shiftNames() { std::vector<std::string> v; for (int k = -12; k <= 12; ++k) v.push_back ((k > 0 ? "+" : "") + std::to_string (k) + " ST"); return v; }
 const char* const kNoteNames[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 }
 
@@ -38,13 +39,15 @@ public:
     static constexpr int kRes = 6;
 
     std::string id() const override { return "RESONATOR"; }
-    double tailSeconds() const override { return 10.0; }
+    double tailSeconds() const override { return 12.0; }
     std::vector<ParamSpec> params() const override
     {
         return { pct ("mix", "MIX", 0.5f).prim(),
                  knob ("decay", "DECAY", 0.2f, 10.0f, 2.0f, "s", 2.0f).prim().dir (1),
                  pct ("damp", "DAMP", 0.4f).prim(),
-                 knob ("shift", "SHIFT", -12.0f, 12.0f, 0.0f, "st").prim(),
+                 // (SF-000, the hundred and eighth build) SHIFT in whole semitones, a list: it was a knob of fractions that were
+                 // rounded away (the resonators glide to the new notes over 30 ms, as they always did)
+                 choice ("shift", "SHIFT", shiftNames(), 12).prim(),
                  pct ("spread", "SPREAD", 0.5f).prim(),
                  pct ("drive", "DRIVE", 0.0f).prim().dir (1),
                  bip ("tone", "TONE").prim(),
@@ -59,6 +62,7 @@ public:
     void prepare (double rate, int) override
     {
         sr = rate;
+        (void) resonatorChords();       // (SF-000, the hundred and eighth build: its tables made here, not on the first block played)
         for (auto& d : lines) d.prepare ((int) (rate / 15.0) + 8);
         tone.prepare (rate);
         dcA = std::exp (-kTwoPi * 12.0f / (float) rate);
@@ -68,7 +72,7 @@ public:
     void reset() override
     {
         for (auto& d : lines) d.clear();
-        for (int k = 0; k < kRes; ++k) { lp[k] = 0.0f; period[k] = -1.0f; }
+        for (int k = 0; k < kRes; ++k) { lp[k] = 0.0f; period[k] = -1.0f; fade[k] = 1.0f; }
         tone.reset();
         dcX = dcY = 0.0f; outX[0] = outX[1] = outY[0] = outY[1] = 0.0f;
         inGain = 1.0f;
@@ -80,7 +84,7 @@ public:
         rootPc = c.b (KEYFOLLOW) && c.keyRoot >= 0 ? c.keyRoot : c.ci (ROOT);
         const auto& ch = resonatorChords()[(size_t) juce::jlimit (0, (int) resonatorChords().size() - 1, c.ci (CHORD))];
         count = std::min (kRes, 3 * (int) ch.size());
-        const float root = (float) (12 * (c.ci (OCTAVE) + 2) + rootPc) + std::round (c.v (SHIFT));
+        const float root = (float) (12 * (c.ci (OCTAVE) + 2) + rootPc + c.ci (SHIFT) - 12);
         for (int k = 0; k < count; ++k) out[k] = root + (float) (ch[(size_t) k % ch.size()] + 12 * (k / (int) ch.size()));
     }
 
@@ -102,7 +106,17 @@ public:
         float target[kRes], g[kRes], inK[kRes];
         for (int k = 0; k < kRes; ++k)
         {
-            if (k >= count) { target[k] = -1.0f; g[k] = 0.0f; inK[k] = 0.0f; continue; }
+            // (SF-000, the hundred and eighth build) one the chord no longer has goes on ringing where it was, with
+            // nothing new going in, and fades out over 30 ms: a chord changed under a ringing line does not click
+            if (k >= count && period[k] < 0.0f) { target[k] = -1.0f; g[k] = 0.0f; inK[k] = 0.0f; continue; }
+            if (k >= count)
+            {
+                target[k] = period[k];
+                g[k] = std::pow (10.0f, -3.0f * (period[k] + 1.0f) / (t60 * (float) sr));
+                inK[k] = 0.0f;
+                continue;
+            }
+            fade[k] = 1.0f;
             const float hz = 440.0f * std::pow (2.0f, (note[k] - 69.0f) / 12.0f);
             const float w = kTwoPi * hz / (float) sr;
             const float ph = std::atan2 ((1.0f - a) * std::sin (w), 1.0f - (1.0f - a) * std::cos (w));   // the low-pass's phase lag
@@ -130,6 +144,7 @@ public:
         }
         const float m0 = c.v0 (MIX), m1 = c.v (MIX);
         const float freezeStep = 1.0f / (float) (0.03 * sr);
+        const float fadeStep = freezeStep;
         float peak = 0.0f;
         for (int i = 0; i < c.n; ++i)
         {
@@ -138,8 +153,9 @@ public:
             float x = 0.5f * (scratchL[i] + scratchR[i]) * inGain;
             dcY = x - dcX + dcA * dcY; dcX = x; x = dcY;
             float wl = 0.0f, wr = 0.0f;
-            for (int k = 0; k < count; ++k)
+            for (int k = 0; k < kRes; ++k)
             {
+                if (target[k] < 0.0f) continue;
                 if (period[k] < 0.0f) period[k] = target[k];
                 period[k] = target[k] + glide * (period[k] - target[k]);
                 // The output is the loop's delayed signal: what goes in comes out a period later, a
@@ -147,7 +163,9 @@ public:
                 const float back = lines[k].read (period[k]);
                 lp[k] += a * (back - lp[k]);
                 lines[k].push (fastTanh (drv * (x * inK[k] + g[k] * lp[k])) * drvInv);
-                wl += back * panL[k]; wr += back * panR[k];
+                float f = 1.0f;
+                if (k >= count) { fade[k] = std::max (0.0f, fade[k] - fadeStep); f = fade[k] * fade[k]; }
+                wl += back * panL[k] * f; wr += back * panR[k] * f;
             }
             // The wet's DC out (the loops pass it), then MIX.
             for (int ch = 0; ch < 2; ++ch)
@@ -160,8 +178,8 @@ public:
             R[i] = R[i] * (1.0f - mix) + outY[1] * mix;
             peak = std::max (peak, std::max (std::fabs (outY[0]), std::fabs (outY[1])));
         }
-        // Resonators no longer in the chord fall silent.
-        for (int k = count; k < kRes; ++k) if (period[k] >= 0.0f) { lines[k].clear(); lp[k] = 0.0f; period[k] = -1.0f; }
+        // Resonators no longer in the chord, once faded out, are emptied (SF-000: they faded, above).
+        for (int k = count; k < kRes; ++k) if (period[k] >= 0.0f && fade[k] <= 0.0f) { lines[k].clear(); lp[k] = 0.0f; period[k] = -1.0f; fade[k] = 1.0f; }
         float g0; const float g1 = levelDb (c, LEVEL, g0);
         applyGain (io, g0, g1);
         wetPk = std::max (peak, wetPk.load() * 0.9f);
@@ -184,7 +202,7 @@ public:
 private:
     double sr = 48000.0;
     DelayLine lines[kRes];
-    float lp[kRes] {}, period[kRes] {};
+    float lp[kRes] {}, period[kRes] {}, fade[kRes] { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
     DJFilter tone;
     float dcA = 0.999f, dcX = 0.0f, dcY = 0.0f, outX[2] {}, outY[2] {}, glide = 0.999f, inGain = 1.0f;
     static constexpr int kScratch = 1024;            // a chunk is at most 64 samples (Module.h)

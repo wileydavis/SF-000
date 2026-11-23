@@ -40,7 +40,7 @@ First run:
 | Click an insert's plate, the returns', the master's, the snapshot knobs', the sequencer strip's, off the controls | bring that module to the front: its name lights up, and the E16 turns to its page (see MIDI and the E16) |
 | **C** on a lane, an insert or a return | open its CONFIG panel (see below). **C** again, **X** or Esc closes it. It also shuts when another lane comes to the front (by any hand), or another module by a key or a controller: CONFIG is one module's, and the E16 is then on the page that was asked for |
 | **M**, **S** | mute and solo: a lane, an insert (M passes it by, S plays only what it adds), a return |
-| Click an insert's name | the list of what the slot can be, up in place of its knobs: EMPTY, DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION, COMPRESSOR, RADIO, and Airwindows' DEREZ, ENSEMBLE, TAPE, CLIP. Click one. The name again puts the list away |
+| Click an insert's name | the list of what the slot can be, up in place of its knobs: EMPTY, DELAY, REVERB, CONVOLUTION, GALAXY, DISTORTION, COMPRESSOR, RADIO, Airwindows' DEREZ, ENSEMBLE, TAPE, CLIP, and RESONATOR, PHASER, SHIFT. Click one. The name again puts the list away |
 | Click a step | unlit: light and select it (velocity 75, a whole step of gate). Lit: select it. Lit and selected: put it out, and it forgets everything it held |
 | Drag a step up or down | velocity |
 | Drag a step left or right | gate. It stops at the step's edge. Past the edge it runs on through unlit steps, and a little past the next lit step it is legato into it (a tie, on the same note). The only lit step of a sequence, longer than the sequence, is tied to itself: struck once and held for good, a drone (the rig's pad is written so). **Not on a sample that plays once, nor on a drum** (ninety-fourth build): there it is struck every time the sequence comes round, where it used to play once and never again (a pad on SAMPLE went silent when its sequence was made shorter than its note). A sample with LOOP on is held, as a synth is |
@@ -921,6 +921,41 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   knob whatever is in it, on the screen and on the E16. A snapshot from before is read with its
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
+
+### DUB into SPACE (hundred and seventh build)
+
+**TO SPACE**, in DUB's CONFIG (its TIME grid, the last row's first cell): how much of what the
+DUB delay sounds goes on into SPACE, with the lanes' SEND B, so the echoes ring in the reverb, the
+dub move. DUB's fader and MUTE come first (muted, nothing new goes in, and what SPACE already holds
+rings on); its SOLO does not (soloing SPACE still hears DUB in it). It goes in before POCKETS, so
+SPACE is not given a tail already carved. Nought, as it starts: SPACE is what it was. It is kept
+with DUB's setup, so in snapshots with the returns (a RETURNS-only recall brings it; a lane-only
+recall leaves it), and a snapshot from before has it at nought. That path is a few milliseconds
+later than a lane's own SEND B into SPACE (DUB's own pocket delay), which a reverb of an echo does
+not show. Not yet: an insert on each return (see DECISIONS 789).
+
+### RESONATOR, PHASER, SHIFT (hundred and eighth to tenth builds)
+
+Three more inserts, at the end of the list. None has a delay of its own: the rig's is what it was.
+
+| Effect | Its knobs | In CONFIG |
+|---|---|---|
+| **RESONATOR** | DECAY, DAMP, SHIFT (whole semitones), SPREAD, DRIVE, FREEZE, MIX, LEVEL | CHORD, ROOT, OCTAVE, KEY FOLLOW, TONE |
+| **PHASER** | RATE (Hz, free), DEPTH, CENTER, FEEDBACK (either sign), SPREAD, OUTPUT, MIX, LEVEL | MODE (PHASER, FLANGER), STAGES (4, 6, 8, 12), SHAPE, LOW KEEP |
+| **SHIFT** | SHIFT (±2 kHz), FINE (±10 Hz), FEEDBACK, TONE, SPREAD (Hz), OUTPUT, MIX, LEVEL | MODE (FREQ, RING), TIME, LO CUT |
+
+- **RESONATOR** is the suite's (six tuned strings struck by the sound, on a chord in the rig's
+  KEY when KEY FOLLOW is on), made ready for SF-000: its chord tables are made as it is prepared,
+  not on the first block it plays; SHIFT is a list of whole semitones (it was a knob whose
+  fractions were rounded away); a string the new chord does not have fades out over 30 ms
+  instead of stopping (a chord changed under a ringing line does not click). The strings are
+  struck by both sides together: at MIX nought the sound is in stereo, as it came.
+- **PHASER**: PHASER sweeps a chain of all-passes, FLANGER a short delay, each by its own wave
+  (free, in Hz: for one in time with the bars, DEPTH down and a MOTION on CENTER). LOW KEEP keeps
+  the lows under it out of the sweep. A change of MODE or STAGES goes out and back in over 10 ms.
+- **SHIFT**: FREQ is a true frequency shifter (a Hilbert pair: every part of the sound moved by
+  the same Hz, the other side 49 dB under); RING a ring modulator at SHIFT's size. FEEDBACK
+  brings what it made back after TIME, through TONE and LO CUT, shifted again each time.
 
 ### Airwindows' effects
 

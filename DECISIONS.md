@@ -6527,9 +6527,54 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        snapshots may change). A LEARN knob pushing an insert's place by hand pushes the place: none is
        converted.
      - GALAXY's delay is the REVERB's (the pocket's): the rig's own delay is what it was.
+     - The lead's DELAY and RADIO as the rig starts were named by their numbers on the list, and RADIO's
+       MIX by its place: both by name now (`effectIndex`), so the list can change without changing them.
+
+## DUB into SPACE (Nov 23): the hundred and seventh build
+
+789. **You**, Nov 22, 23:56 (788). **Built:** **TO SPACE** in DUB's CONFIG, the echoes into the reverb.
+     *Mine:* by DUB's fader and MUTE, not its SOLO; before POCKETS; nought as it starts and in every
+     snapshot from before; kept with DUB's setup (the RETURNS part of a recall). *Mine:* **in CONFIG,
+     not on the RETURNS panel**: the panel has four knobs a return and no room for a fifth without
+     moving the master column, and it is a setting more than a gesture; on the E16 it is on DUB's
+     CONFIG pages. *Mine:* the path is DUB's pocket delay later than a lane's own SEND B into SPACE
+     (a few milliseconds, in a reverb of an echo), not made up.
+     **Not built: an insert on each return.** I put it off, and say so here rather than make a lesser
+     one. The lane inserts' machinery (an effect leaving while another comes in over a recall's GLIDE,
+     eight cells as controls, their CONFIG and MOTION, the E16's pages, snapshots and arrangements) is
+     for lanes; giving the returns a slot each is that again, and it needs a place on the instrument:
+     the RETURNS panel has none. Your call where it lives (CONFIG, or a wider RETURNS module) first.
+
+## RESONATOR (Nov 23): the hundred and eighth build
+
+790. **Built** (788's list): the suite's RESONATOR as an insert. DECAY, DAMP, SHIFT, SPREAD, DRIVE, FREEZE,
+     MIX, LEVEL; CHORD, ROOT, OCTAVE, KEY FOLLOW (the rig's KEY), TONE in CONFIG. Mended for SF-000:
+     *Mine:* its chord tables made as it is prepared (they were made on the first block it played, on
+     the audio thread); SHIFT a list of whole semitones (it was a knob of fractions the strings rounded
+     away); a string the new chord has not fades over 30 ms (they stopped, a click). FREEZE is a face
+     switch kept with the snapshot, as DELAY's and REVERB's are.
+
+## PHASER and FLANGER (Nov 23): the hundred and ninth build
+
+791. **Built**: PHASER, one insert with MODE (PHASER, FLANGER) in CONFIG. RATE, DEPTH, CENTER, FEEDBACK,
+     SPREAD, OUTPUT, MIX, LEVEL; MODE, STAGES, SHAPE, LOW KEEP in CONFIG. *Mine:* **RATE free, in Hz**:
+     for a sweep in time with the bars, a MOTION on CENTER, which has every bar length already (one
+     wave system, not two). *Mine:* a change of MODE or STAGES goes out and back over 10 ms; the
+     flanger's line is fed in both modes, so coming in it reads what was played.
+
+## SHIFT (Nov 23): the hundred and tenth build
+
+792. **Built**: SHIFT, FREQ and RING (MODE in CONFIG). SHIFT (±2 kHz), FINE (±10 Hz), FEEDBACK, TONE,
+     SPREAD, OUTPUT, MIX, LEVEL; MODE, TIME, LO CUT in CONFIG. FREQ is a Hilbert pair (Niemitalo's all-
+     pass chains): measured, 1 kHz up 100 Hz is 1.1 kHz with 900 Hz 49 dB under. *Mine:* **RING's
+     carrier is SHIFT's size** (both are Hz; the sign does nothing in RING), not a second knob for one
+     place. **Not built: PITCH** (the handoff's stage B): it needs a buffer, so a delay every lane would
+     wait for; it comes with a decision on that.
 
 ## Not verified
 
+- **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,
+  TO SPACE, RESONATOR, PHASER, SHIFT. Nothing of them has been listened to.
 - **The hundred and fourth build (786) has not been heard**: the mended knobs are checked here,
   not by ear.
 - **The hundred and third build (785) has not been heard.** Every lane's sound as it opens is a

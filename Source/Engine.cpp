@@ -506,9 +506,9 @@ Engine::Engine()
     for (int l = 0; l < kLanes; ++l) initSetup[(size_t) l] = getSetup ({ 0, l, 0 });
 
     // To begin with the lead has a delay and a radio on it, as the design shows.
-    setInsertType (7, 0, 0);
-    setInsertType (7, 1, 5);
-    set (cx::ins (7, 1, 7), 0.35f);
+    setInsertType (7, 0, effectIndex ("DELAY"));
+    setInsertType (7, 1, effectIndex ("RADIO"));
+    set (cx::ins (7, 1, 6), 0.35f);      // (its MIX: the seventh place, the hundred and sixth build)
 }
 
 Engine::~Engine()
@@ -1832,6 +1832,15 @@ Engine::SetupPage Engine::setupPage (Target t) const
         }
     }
     boxes ({ "BANDS", "LOW BAND", "MID BAND", "HIGH BAND" }, 2);
+    // (the hundred and seventh build) DUB's TO SPACE: how much of what DUB sounds goes on into SPACE, the echoes into the
+    // reverb. The engine's own, not the delay's (an insert's DELAY has none)
+    if (t.kind == 2 && t.slot == 0)
+    {
+        SetupParam sp;
+        sp.id = kToSpaceId; sp.name = "TO SPACE"; sp.group = "TIME"; sp.kind = Kind::Knob;
+        sp.value = dubToSpace.load(); sp.def = 0.0f; sp.text = juce::String (juce::roundToInt (sp.value * 100.0f)) + "%";
+        out.push_back (sp);
+    }
     // the lane's EQ, a row a band (the screen draws them as a graph, and the E16 has them as its last pages)
     if (lane) eqList (t.lane, out);
     // MOTION's TARGET, what it can move: the panel's own knobs first, as the panel has them, then the rest of what this
@@ -1907,6 +1916,7 @@ Engine::SetupPage Engine::setupPage (Target t) const
                 return { 0, cfgCellIn (kBusCells, id) };
             }
             if (const int c = cfgCellIn (kTimeCells, id); c >= 0) return { 1, c };
+            if (id == kToSpaceId) return { 1, 12 };         // (DUB's: the TIME grid's last row, first)
             const auto it = std::find (own.begin(), own.end(), id);
             return { 0, it != own.end() && it - own.begin() < 16 ? (int) (it - own.begin()) : -1 };
         };
@@ -2338,6 +2348,7 @@ bool Engine::laneFollowsKey (int lane) const
 void Engine::setSetup (Target t, const juce::String& id, float v)
 {
     stateMoved();
+    if (t.kind == 2 && t.slot == 0 && id == kToSpaceId) { dubToSpace = juce::jlimit (0.0f, 1.0f, v); return; }
     if (t.kind == kMixPage)
     {
         // the mix: a fader, or a band of the master's EQ
@@ -2433,6 +2444,8 @@ Engine::SetupState Engine::getSetup (Target t) const
     {
         // SPACE's setup says which reverb it was read from: it is only ever put back on that one
         if (t.kind == 2 && t.slot == 1) st.push_back ({ kModelId, (float) spaceWant.load() });
+        // (DUB's TO SPACE, the engine's own, with DUB's setup: it is not SPACE's, so a snapshot from another reverb keeps it)
+        if (t.kind == 2 && t.slot == 0) st.push_back ({ kToSpaceId, dubToSpace.load() });
         const auto bound = boundIds (t);
         const auto& specs = p->allSpecs();
         for (int i = 0; i < p->numModuleParams(); ++i)
@@ -2505,6 +2518,13 @@ void Engine::applySetup (Target t, const SetupState& st)
         eqReset (kLanes);
         for (auto& kv : st) setSetup (t, kv.first, kv.second);
         return;
+    }
+    if (t.kind == 2 && t.slot == 0)
+    {
+        // DUB's TO SPACE: as the setup has it, and none where it says nothing of it (from before there was one)
+        float to = 0.0f;
+        for (auto& kv : st) if (kv.first == kToSpaceId) to = kv.second;
+        dubToSpace = juce::jlimit (0.0f, 1.0f, to);
     }
     if (auto* p = processorFor (t))
     {
@@ -3471,6 +3491,15 @@ void Engine::render (juce::AudioBuffer<float>& out)
     if (pan) { retA->panic(); space[(size_t) spaceNow]->panic(); }
     auto tr = clock();
     retA->processBlock (a2, noMidi);
+    {
+        // (the hundred and seventh build) DUB TO SPACE: what DUB sounds, by its fader and its MUTE (not its SOLO: soloing
+        // SPACE still hears DUB in it), on into SPACE with the lanes' sends: the echoes into the reverb. Before POCKETS, so
+        // what goes in is not a tail already carved. At nought nothing is added and SPACE is what it was.
+        const float want = snd[(size_t) cx::kRetMS] < 0.5f ? toSpaceGain (dubToSpace.load (std::memory_order_relaxed)) * mixGainOf (mixPlace[(size_t) kMixDub].load (std::memory_order_relaxed)) : 0.0f;
+        if (want > 0.0f || toSpaceWas > 0.0f)
+            for (int ch = 0; ch < 2; ++ch) bb2.addFromWithRamp (ch, 0, a2.getReadPointer (ch), n, toSpaceWas, want);
+        toSpaceWas = want;
+    }
     space[(size_t) spaceNow]->processBlock (bb2, noMidi);
     profRet += since (tr);
     {

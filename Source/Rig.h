@@ -4,6 +4,7 @@
 // once here; the main screen's twelve knobs per lane drive the rest. To swap a lane's sound,
 // change its line in lanes(); nothing else needs touching.
 #include <vector>
+#include <cstring>
 
 namespace sf0
 {
@@ -278,8 +279,29 @@ inline const std::vector<FxDef>& effects()
         { "CLIP", "AIRCLIP", {},
           { { "BOOST", "boost", 'u' }, { "CEILING", "ceiling", 'u' }, { "NOISE", "noise", 'u' }, { nullptr, nullptr, 'u' },
             { nullptr, nullptr, 'u' }, { nullptr, nullptr, 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        // (the hundred and eighth build) the suite's RESONATOR: tuned strings, struck by the sound. CHORD, ROOT, OCTAVE, KEY
+        // FOLLOW and TONE are in its CONFIG.
+        { "RESONATOR", "RESONATOR", {},
+          { { "DECAY", "decay", 'u' }, { "DAMP", "damp", 'u' }, { "SHIFT", "shift", 'm' }, { "SPREAD", "spread", 'u' },
+            { "DRIVE", "drive", 'u' }, { "FREEZE", "freeze", 't' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        // (the hundred and ninth build) PHASER and FLANGER, one effect (its MODE in CONFIG, with STAGES, SHAPE and LOW KEEP)
+        { "PHASER", "PHASER", {},
+          { { "RATE", "rate", 'u' }, { "DEPTH", "depth", 'u' }, { "CENTER", "center", 'u' }, { "FEEDBACK", "feedback", 'b' },
+            { "SPREAD", "spread", 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
+        // (the hundred and tenth build) SHIFT: a frequency shifter, or a ring modulator (MODE, TIME and LO CUT in CONFIG)
+        { "SHIFT", "SHIFT", {},
+          { { "SHIFT", "shift", 'b' }, { "FINE", "fine", 'b' }, { "FEEDBACK", "feedback", 'u' }, { "TONE", "tone", 'b' },
+            { "SPREAD", "spread", 'u' }, { "OUTPUT", "output", 'u' }, { "MIX", "mix", 'u' }, { "LEVEL", "level", 'u' } } },
     };
     return F;
+}
+
+// An insert effect's place on the list, by its name (-1: none such). (The hundred and sixth build: the list is not the
+// order it was, so nothing names an effect by its number.)
+inline int effectIndex (const char* name)
+{
+    for (size_t t = 0; t < effects().size(); ++t) if (std::strcmp (effects()[t].name, name) == 0) return (int) t;
+    return -1;
 }
 
 // The two returns every lane sends to: A is a dub delay, B a reverb. Wet only.

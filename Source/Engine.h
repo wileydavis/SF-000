@@ -808,6 +808,15 @@ private:
     static std::vector<int> shownParams (SFProcessor&, const std::vector<std::string>& bound, const std::vector<SetupParam>& listed);     // the instrument's controls the panel or CONFIG shows now
     std::vector<int> motionOrder (Target, SFProcessor&, const std::vector<int>& seen, int keep, juce::StringArray* names = nullptr) const;       // TARGET's choices as CONFIG lists them: the panel's own knobs first
     float dryMixWas = 1.0f, retGainWas[2] = { 1.0f, 1.0f };
+    // (the hundred and seventh build) DUB TO SPACE: how much of the DUB return goes on into SPACE, a place 0..1 (in DUB's
+    // CONFIG, kept in its setup, so in snapshots with the returns). The audio thread's own, as it last was.
+    std::atomic<float> dubToSpace { 0.0f };
+    float toSpaceWas = 0.0f;
+public:
+    static constexpr const char* kToSpaceId = "to_space";
+    static float toSpaceGain (float place)      { return place * place; }       // (0 dB at full: what DUB sounds is what SPACE gets)
+    float dubToSpacePlace() const               { return dubToSpace.load(); }
+private:
     float mixGainWas = 1.0f;            // GAIN, at the last block's end
     std::atomic<int> eqWatch { -1 }, lowWatch { -1 };
     std::atomic<float> eqCostDb { 0.0f };

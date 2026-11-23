@@ -2066,6 +2066,132 @@ static void seeingTest (int& bad)
 // SPACE has it): out at MIX nought to the sample; every knob heard; a number at every corner; the same at three rates,
 // in any block and twice running; quiet after PANIC; a list changed as it sounds without a click; a knob swept
 // without steps; and what it reports for its delay is its delay.
+// (the hundred and eighth to tenth builds) RESONATOR, PHASER and SHIFT, the three inserts that came after the eleven: at MIX
+// nought each is the sound as it came in, to the sample (none has a delay of its own); at work it changes it and stays finite
+// and bounded at its extremes; a change of MODE (or of the RESONATOR's chord) under a sounding note does not click. And
+// what each is said to do: SHIFT's FREQ moves a 1 kHz tone to 1.1 kHz with the other side kept out; RING makes the two
+// sides; the RESONATOR rings on its chord's root and not beside it.
+static void moveFxTest (int& bad)
+{
+    using namespace sf0;
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    auto set = [] (SFProcessor& q, const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+    using Setup = std::function<void (SFProcessor&)>;
+    using During = std::function<void (SFProcessor&, int at, int n)>;
+    auto run = [&] (const char* module, double rate, int block, const juce::AudioBuffer<float>& in, const Setup& setup, const During& during = {}, int* lat = nullptr)
+    {
+        SFProcessor p (sf::makeModule (module));
+        setup (p);
+        p.setRateAndBufferSizeDetails (rate, block); p.prepareToPlay (rate, block);
+        if (lat != nullptr) *lat = p.mod().latency();
+        juce::AudioBuffer<float> out; out.makeCopyOf (in);
+        juce::MidiBuffer midi;
+        const int n = in.getNumSamples();
+        for (int i = 0; i < n; i += block)
+        {
+            if (during) during (p, i, n);
+            juce::AudioBuffer<float> b (out.getArrayOfWritePointers(), 2, i, std::min (block, n - i));
+            p.processBlock (b, midi);
+        }
+        return out;
+    };
+    auto music = [] (double rate, double seconds)
+    {
+        juce::Random rnd (73);
+        juce::AudioBuffer<float> b (2, (int) (rate * seconds));
+        double ph = 0.0;
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const double t = (double) i / rate, at = std::fmod (t, 0.3);
+            ph += 110.0 / rate; ph -= std::floor (ph);
+            const float saw = (float) ((ph * 2.0 - 1.0) * 0.22 * (0.4 + 0.6 * std::exp (-at * 6.0)));
+            const float hat = (float) (0.15 * std::exp (-std::fmod (t, 0.125) * 60.0)) * (rnd.nextFloat() * 2.0f - 1.0f);
+            b.setSample (0, i, saw + hat); b.setSample (1, i, 0.9f * saw - hat * 0.7f);
+        }
+        return b;
+    };
+    auto tone = [] (double rate, double seconds, double hz, float amp = 0.3f)
+    {
+        juce::AudioBuffer<float> b (2, (int) (rate * seconds));
+        for (int i = 0; i < b.getNumSamples(); ++i) { const float v = amp * (float) std::sin (6.283185307 * hz * i / rate); b.setSample (0, i, v); b.setSample (1, i, v); }
+        return b;
+    };
+    // the level of one frequency in channel 0 from `from` on (Goertzel), in dB
+    auto at = [] (const juce::AudioBuffer<float>& a, double rate, double hz, int from)
+    {
+        const double w = 6.283185307 * hz / rate, cw = 2.0 * std::cos (w);
+        double s1 = 0.0, s2 = 0.0; int n = 0;
+        for (int i = from; i < a.getNumSamples(); ++i) { const double hann = 0.5 - 0.5 * std::cos (6.283185307 * (i - from) / (a.getNumSamples() - from - 1)); const double s0 = a.getSample (0, i) * hann + cw * s1 - s2; s2 = s1; s1 = s0; ++n; }
+        const double p = s1 * s1 + s2 * s2 - cw * s1 * s2;
+        return 10.0 * std::log10 (std::max (1.0e-20, p) / std::max (1, n * n));
+    };
+    auto finite = [] (const juce::AudioBuffer<float>& a, float& peak) { bool ok = true; peak = 0.0f; for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < a.getNumSamples(); ++i) { const float v = a.getSample (ch, i); if (! std::isfinite (v)) ok = false; else peak = std::max (peak, std::abs (v)); } return ok; };
+    auto jump = [] (const juce::AudioBuffer<float>& a, int from, int to) { float w = 0.0f; for (int ch = 0; ch < 2; ++ch) for (int i = std::max (1, from); i < std::min (to, a.getNumSamples()); ++i) w = std::max (w, std::abs (a.getSample (ch, i) - a.getSample (ch, i - 1))); return w; };
+    auto apart = [] (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int from) { float w = 0.0f; for (int ch = 0; ch < 2; ++ch) for (int i = from; i < a.getNumSamples(); ++i) w = std::max (w, std::abs (b.getSample (ch, i) - a.getSample (ch, i))); return w; };
+
+    struct Fx { const char* name; std::vector<std::pair<const char*, float>> busy, wild; const char* modeId; };
+    const std::vector<Fx> fxs = {
+        { "RESONATOR", { { "decay", 2.0f }, { "damp", 0.3f } }, { { "decay", 10.0f }, { "drive", 1.0f }, { "damp", 0.0f }, { "spread", 1.0f } }, "chord" },
+        { "PHASER", { { "depth", 0.8f }, { "rate", 0.5f } }, { { "feedback", 0.95f }, { "depth", 1.0f }, { "rate", 10.0f }, { "center", 1.0f }, { "output", 6.0f } }, "mode" },
+        { "SHIFT", { { "shift", 140.0f } }, { { "shift", 2000.0f }, { "feedback", 0.95f }, { "time", 1.0f }, { "spread", 50.0f }, { "output", 6.0f } }, "mode" },
+    };
+    for (auto& fx : fxs)
+    {
+        // 1. MIX nought, LEVEL nought: the sound as it came in, to the sample, at three rates; and no delay of its own
+        float out0 = 0.0f; int lat = 0;
+        for (double rate : { 44100.0, 48000.0, 96000.0 })
+        {
+            const auto in = music (rate, 1.0);
+            int l = 0;
+            const auto o = run (fx.name, rate, 512, in, [&] (SFProcessor& q) { for (auto& kv : fx.busy) set (q, kv.first, kv.second); set (q, "mix", 0.0f); set (q, "level", 0.0f); }, {}, &l);
+            out0 = std::max (out0, apart (in, o, (int) rate / 4));
+            lat = std::max (lat, l);
+        }
+        // 2. at work: it changes the sound
+        const auto in = music (48000.0, 3.0);
+        const auto busy = run (fx.name, 48000.0, 512, in, [&] (SFProcessor& q) { for (auto& kv : fx.busy) set (q, kv.first, kv.second); set (q, "mix", 1.0f); });
+        const float changed = apart (in, busy, 12000);
+        // 3. at its extremes, with its MODE (or chord) changed every half second under the sound: finite, bounded
+        const auto wild = run (fx.name, 48000.0, 64, in, [&] (SFProcessor& q) { for (auto& kv : fx.wild) set (q, kv.first, kv.second); set (q, "mix", 1.0f); },
+                               [&] (SFProcessor& q, int i, int) { if (i % 24000 < 64) set (q, fx.modeId, (float) ((i / 24000) % 2) * (juce::String (fx.name) == "RESONATOR" ? 5.0f : 1.0f)); });
+        float peak = 0.0f; const bool ok = finite (wild, peak);
+        // 4. a change of MODE under a steady tone: no step bigger than the tone's own (out over 10 ms and back)
+        const auto t = tone (48000.0, 1.0, 220.0);
+        const auto swapped = run (fx.name, 48000.0, 64, t, [&] (SFProcessor& q) { for (auto& kv : fx.busy) set (q, kv.first, kv.second); set (q, "mix", 1.0f); if (juce::String (fx.name) == "RESONATOR") set (q, "decay", 4.0f); },
+                                  [&] (SFProcessor& q, int i, int) { if (i == 24000) set (q, fx.modeId, juce::String (fx.name) == "RESONATOR" ? 6.0f : 1.0f); });
+        const float stepAt = jump (swapped, 23900, 25500), stepBefore = jump (swapped, 12000, 23900);
+        const bool smooth = stepAt < std::max (0.05f, 2.0f * stepBefore);
+        if (! smooth) { int wi = 0; float w = 0.0f; for (int i = 23900; i < 25500; ++i) { const float d = std::abs (swapped.getSample (0, i) - swapped.getSample (0, i - 1)); if (d > w) { w = d; wi = i; } } std::printf ("    (the biggest step at %d: %.4f, from %.4f to %.4f)\n", wi, (double) w, (double) swapped.getSample (0, wi - 1), (double) swapped.getSample (0, wi)); }
+        check (out0 < 1.0e-5f && lat == 0 && changed > 0.01f && ok && peak < 8.0f && smooth,
+               juce::String (fx.name) + ": at MIX nought the sound as it came in (worst sample " + juce::String (out0, 7) + ", at 44.1, 48 and 96 kHz; no delay of its own: " + juce::String (lat)
+                   + "); at work it changes it (" + juce::String (changed, 3) + "); at its extremes, " + juce::String (fx.modeId).toUpperCase() + " changed under it, finite and under " + juce::String (peak, 2)
+                   + "; a change of " + juce::String (fx.modeId).toUpperCase() + " under a tone steps " + juce::String (stepAt, 4) + " where the tone steps " + juce::String (stepBefore, 4));
+    }
+    {
+        // SHIFT FREQ: 1 kHz up 100 Hz is 1.1 kHz, the other side (900 Hz) and the tone itself kept out
+        const auto t = tone (48000.0, 1.0, 1000.0);
+        const auto up = run ("SHIFT", 48000.0, 512, t, [&] (SFProcessor& q) { set (q, "shift", 100.0f); set (q, "mix", 1.0f); });
+        const double a1100 = at (up, 48000.0, 1100.0, 4800), a900 = at (up, 48000.0, 900.0, 4800), a1000 = at (up, 48000.0, 1000.0, 4800);
+        const auto down = run ("SHIFT", 48000.0, 512, t, [&] (SFProcessor& q) { set (q, "shift", -250.0f); set (q, "mix", 1.0f); });
+        const double b750 = at (down, 48000.0, 750.0, 4800), b1250 = at (down, 48000.0, 1250.0, 4800);
+        const auto ring = run ("SHIFT", 48000.0, 512, t, [&] (SFProcessor& q) { set (q, "shift", 200.0f); set (q, "mode", 1.0f); set (q, "mix", 1.0f); });
+        const double r800 = at (ring, 48000.0, 800.0, 4800), r1200 = at (ring, 48000.0, 1200.0, 4800), r1000 = at (ring, 48000.0, 1000.0, 4800);
+        check (a1100 > a900 + 30.0 && a1100 > a1000 + 30.0 && b750 > b1250 + 30.0 && std::abs (r800 - r1200) < 1.0 && r800 > r1000 + 30.0,
+               "SHIFT: FREQ moves 1 kHz up 100 Hz to 1.1 kHz, the other side " + juce::String (a1100 - a900, 1) + " dB under and the tone " + juce::String (a1100 - a1000, 1) + " dB under; down 250 Hz to 750 Hz, "
+                   + juce::String (b750 - b1250, 1) + " dB over the other side; RING at 200 Hz makes 800 and 1200 Hz alike (" + juce::String (r800 - r1200, 2) + " dB) and the tone " + juce::String (r800 - r1000, 1) + " dB under them");
+    }
+    {
+        // RESONATOR: noise in, KEY FOLLOW off, ROOT A (index 9) in the C3 octave (A3, 220 Hz), CHORD OCTAVES: it rings at 220 Hz
+        // and not at 233 (a semitone up)
+        juce::Random rnd (5);
+        juce::AudioBuffer<float> noise (2, 48000 * 2);
+        for (int i = 0; i < noise.getNumSamples(); ++i) { const float v = 0.2f * (rnd.nextFloat() * 2.0f - 1.0f); noise.setSample (0, i, v); noise.setSample (1, i, v); }
+        const auto rang = run ("RESONATOR", 48000.0, 512, noise, [&] (SFProcessor& q) { set (q, "key_follow", 0.0f); set (q, "root", 9.0f); set (q, "octave", 1.0f); set (q, "chord", 0.0f); set (q, "decay", 3.0f); set (q, "damp", 0.2f); set (q, "mix", 1.0f); });
+        const double on = at (rang, 48000.0, 110.0, 24000), off = at (rang, 48000.0, 116.54, 24000);
+        check (on > off + 15.0, "RESONATOR: noise rings on the chord's root (A2, 110 Hz, " + juce::String (on - off, 1) + " dB over a semitone above it)");
+    }
+}
+
 static void airwindowsTest (int& bad)
 {
     using namespace sf0;
@@ -3100,8 +3226,8 @@ static void insertsTest (int& bad)
         for (int c = 0; c < kCells; ++c) if (f.cells[c].param != nullptr) { if (juce::String (f.cells[c].param) == "mix") mix = c; if (juce::String (f.cells[c].param) == "level") level = c; }
         places = places && mix == 6 && (level < 0 || level == 7);
     }
-    check (names.joinIntoString (" ") == "DELAY REVERB CONVOLUTION GALAXY DISTORTION COMPRESSOR RADIO DEREZ ENSEMBLE TAPE CLIP" && places,
-           "the inserts are eleven (" + names.joinIntoString (", ") + "), and on every one MIX is the seventh place and LEVEL, where it has one, the eighth");
+    check (names.joinIntoString (" ") == "DELAY REVERB CONVOLUTION GALAXY DISTORTION COMPRESSOR RADIO DEREZ ENSEMBLE TAPE CLIP RESONATOR PHASER SHIFT" && places,
+           "the inserts are fourteen (" + names.joinIntoString (", ") + "), and on every one MIX is the seventh place and LEVEL, where it has one, the eighth");
 
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000_inserts_106");
     dir.deleteRecursively();
@@ -3182,6 +3308,43 @@ static void insertsTest (int& bad)
         };
         const float wet = tailAfter (0.6f), dry = tailAfter (0.0f);
         check (wet > dry + 20.0f && wet > -60.0f && ! e.fault.load(), "GALAXY on a lane: its tail is heard after the note (" + juce::String (wet, 1) + " dB), and at MIX nought it is not there (" + juce::String (dry, 1) + " dB)");
+    }
+    {
+        // (the hundred and seventh build) DUB TO SPACE: the lead sends to DUB alone; with TO SPACE up SPACE rings with DUB's
+        // echoes, and at nought, or with DUB muted, it is as it was. A snapshot without it recalls it to nought.
+        Engine e; e.prepare (48000.0, 512);
+        Session ses (e, false);
+        const int lead = 7;
+        juce::AudioBuffer<float> b (2, 512);
+        for (int sl = 0; sl < kSlots; ++sl) e.setInsertType (lead, sl, -1);
+        ses.userSet (cx::lane (lead, cx::kSendA), 1.0f); ses.userSet (cx::lane (lead, cx::kSendB), 0.0f);
+        auto energy = [&] (float to, bool dubMuted)
+        {
+            e.setSetup ({ 2, 0, 0 }, Engine::kToSpaceId, to);
+            ses.userSet (cx::kRetMS, dubMuted ? 1.0f : 0.0f);
+            e.panic();
+            for (int i = 0; i < 100; ++i) { b.clear(); e.render (b); }
+            e.noteInAt (juce::MidiMessage::noteOn (lead + 1, 57, (juce::uint8) 127), 0);
+            for (int i = 0; i < 10; ++i) { b.clear(); e.render (b); }
+            e.noteInAt (juce::MidiMessage::noteOff (lead + 1, 57), 0);
+            double q = 0.0;
+            for (int i = 0; i < 300; ++i) { b.clear(); e.render (b); for (int ch = 0; ch < 2; ++ch) for (int k = 0; k < b.getNumSamples(); ++k) q += (double) b.getSample (ch, k) * b.getSample (ch, k); }
+            return 10.0 * std::log10 (q + 1.0e-12);
+        };
+        const double none = energy (0.0f, false), full = energy (1.0f, false), mutedNone = energy (0.0f, true), mutedFull = energy (1.0f, true);
+        e.setSetup ({ 2, 0, 0 }, Engine::kToSpaceId, 0.6f);
+        const auto st = e.getSetup ({ 2, 0, 0 });
+        bool named = false; for (auto& kv : st) named = named || (kv.first == Engine::kToSpaceId && std::abs (kv.second - 0.6f) < 1.0e-6f);
+        Engine::SetupState before;
+        for (auto& kv : st) if (kv.first != Engine::kToSpaceId) before.push_back (kv);
+        e.applySetup ({ 2, 0, 0 }, before);
+        const bool cleared = e.dubToSpacePlace() == 0.0f;
+        bool listed = false;
+        for (auto& sp : e.setupParams ({ 2, 0, 0 })) listed = listed || (sp.id == Engine::kToSpaceId && sp.name == "TO SPACE");
+        for (auto& sp : e.setupParams ({ 2, 0, 1 })) listed = listed && sp.id != Engine::kToSpaceId;
+        check (full > none + 1.0 && std::abs (mutedFull - mutedNone) < 0.25 && named && cleared && listed && ! e.fault.load(),
+               "DUB TO SPACE (in DUB's CONFIG, not SPACE's): up, SPACE rings with DUB's echoes (" + juce::String (full - none, 1) + " dB more over four seconds); with DUB muted it adds nothing ("
+                   + juce::String (mutedFull - mutedNone, 2) + " dB); it is kept in DUB's setup, and a setup that does not name it puts it at nought");
     }
     Session::stateFileForTests = juce::File();
     dir.deleteRecursively();
@@ -5332,7 +5495,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -7479,7 +7642,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
                 const int up = ses.indexOf (1001), last = (int) ses.library.size() - 1;
                 read = (int) ses.library.size() == n && up >= 0 && ses.library[(size_t) up].name == "ENERGY UP"
                        && std::abs (ses.library[(size_t) up].values[(size_t) ses.engine.find ("closed_hat.density")] - 0.45f) < 1.0e-6f
-                       && ses.library[(size_t) up].inserts[7][0] == 0 && ses.library[(size_t) up].inserts[7][1] == 5 && ses.library[(size_t) up].inserts[7][2] == -1
+                       && ses.library[(size_t) up].inserts[7][0] == fxType ("DELAY") && ses.library[(size_t) up].inserts[7][1] == fxType ("RADIO") && ses.library[(size_t) up].inserts[7][2] == -1
                        && ses.library[(size_t) last].name == old["library"][n - 1]["name"].toString() && ses.library[(size_t) last].profile.has
                        && std::abs (ses.library[(size_t) last].profile.weight - (float) (double) old["library"][n - 1]["profile"]["weight"]) < 1.0e-3f
                        && ses.notSavingWhy.isEmpty();
@@ -7762,6 +7925,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     plainSaysTest (bad);
     reachTest (bad);
     insertsTest (bad);
+    moveFxTest (bad);
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)
@@ -10446,7 +10610,7 @@ static int uiTest()
                 {
                     // The effects in the racks are part of a sound: between two snapshots they are between them too.
                     // Four snapshots, by the bass's first slot: dry; a DELAY (feedback 0.2, MIX 0.6); the DELAY again (feedback 0.8, MIX 0.2); a REVERB (MIX 0.4).
-                    const int L = bassLane, dlyFb = cx::ins (L, 0, 1), dlyMix = cx::ins (L, 0, 7), revMix = cx::ins (L, 0, 7);
+                    const int L = bassLane, dlyFb = cx::ins (L, 0, 1), dlyMix = cx::ins (L, 0, 6), revMix = cx::ins (L, 0, 6);
                     auto rackTo = [&] (int type) { while (e2.insertType (L, 0) != type) s2.stepInsert (L, 0); };
                     auto mixNow = [&] { const int m = Session::mixCellOf (e2.insertType (L, 0)); return m < 0 ? -1.0f : e2.target (cx::ins (L, 0, m)); };
                     rackTo (-1);
@@ -10460,7 +10624,7 @@ static int uiTest()
                     s2.finishTakes (true);
                     kn.clearSnaps();
                     for (auto id : { dry, d1, d2, rv }) s2.stackAdd (k, id);          // (their places: 0, a third, two thirds, the top)
-                    const bool mixes = Session::mixCellOf (0) == 6 && Session::mixCellOf (1) == 7 && Session::mixCellOf (-1) < 0;
+                    const bool mixes = Session::mixCellOf (0) == 6 && Session::mixCellOf (1) == 6 && Session::mixCellOf (-1) < 0;      // (the hundred and sixth build: MIX seventh on every insert)
                     auto pressAt = [&] (float v) { s2.setStackCue (true); s2.userSet (cx::kSnap + k, v); s2.pressSnapKnob (k); s2.setStackCue (false); };
                     // pressed between two (CUE lit, so that the turn to the place changes nothing by itself)
                     s2.recall (dry);
