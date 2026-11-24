@@ -18,6 +18,7 @@ juce::String Session::hashOf (const void* data, size_t bytes) { return juce::SHA
 Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 {
     genType.fill (-1);
+    engine.handSet = [this] (int ctl, float v) { userSet (ctl, v); };       // (a display's drag on a panel knob's control: as the knob turned by hand)
     for (auto& a : movedAt) a = 0;
     for (auto& b : movedBy) b = 0;
     base.resize ((size_t) cx::kCount);
@@ -39,6 +40,7 @@ Session::Session (Engine& e, bool disk) : engine (e), useDisk (disk)
 Session::~Session()
 {
     stopTimer();
+    engine.handSet = nullptr;
     // (a print still going when the app shuts: its rig and its part-made files go, and the bus has its clock back)
     if (print != nullptr) { onChange = nullptr; audioResume = nullptr; printCancel(); }
     finishTakes (true);

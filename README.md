@@ -922,6 +922,13 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### The display and the knobs, one (hundred and thirteenth build)
+
+Dragging SYNTH's display (SHAPE's strip, the filter's point, the envelope) turns the panel knob that
+reaches it (SHAPE, CUTOFF, RES, ENV DECAY), so the knob, the display and what a snapshot keeps always
+agree (DECISIONS 795). Before, the display moved the sound under a knob that stayed put, and a
+snapshot kept the knob.
+
 ### Every lane plays alike (hundred and twelfth build)
 
 Every lane has the same three engines and now plays them the same way: the same settings sound the

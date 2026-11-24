@@ -185,6 +185,32 @@ void Engine::bindVoice (int l, Voice& v)
     // its pocket, if it has one: the switch that leaves it to be made after the lane's effects, its depth, its shape
     auto raw = [&v] (const char* id) -> std::atomic<float>* { return id != nullptr && v.proc->paramIndex (id) >= 0 ? v.proc->apvts.getRawParameterValue (id) : nullptr; };
     v.plays = raw ("plays");
+    // (SF-000, the hundred and thirteenth build) Wiley, Nov 23: "I set the fileter envelop using the graphical curve in the
+    // display, and maybe because that has a cutof knob that doesn't move as you move the curve, it didn't get saved with
+    // the snapshot?" and "the knobs and the graphicl curves don't move with eachother but they probably should." A display
+    // set the parameter under the knob, the knob stood where it was, and a snapshot kept the knob: what a display moves
+    // that a panel knob reaches now turns the knob, and the knob sets it.
+    {
+        auto& mod = v.proc->mod();
+        auto own = mod.setParam;
+        Voice* vp = &v;
+        mod.setParam = [this, l, vp, own] (int i, float plain)
+        {
+            if (lane[(size_t) l].voice.load() == vp)
+            {
+                const int now = vp->map.load();
+                if (now >= 0 && now < (int) vp->maps.size())
+                    for (int k = 0; k < kLaneKnobs; ++k)
+                        if (const auto& b = vp->maps[(size_t) now][(size_t) k]; b.pi == i && b.n == 0 && b.param != nullptr)
+                        {
+                            const float place = juce::jlimit (0.0f, 1.0f, (b.param->convertTo0to1 (plain) - b.lo) / std::max (1e-6f, b.hi - b.lo));
+                            if (handSet) handSet (cx::lane (l, k), place); else set (cx::lane (l, k), place);
+                            return;
+                        }
+            }
+            if (own) own (i, plain);
+        };
+    }
     v.pkPost = raw ("pocket_post"); v.pkDepth = v.pkPost != nullptr ? raw (pocketDepthId (l)) : nullptr; v.pkShape = raw ("pocket_shape");
     // (SF-000, the hundredth build) the lane's steps, for a display that shows what each plays (SAMPLE's)
     v.proc->mod().stepsOf = [this, l] (sf::Module::StepsView& sv)

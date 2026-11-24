@@ -6635,6 +6635,19 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        level. TABLE A (the wave) is in CONFIG, OSCILLATORS, on every lane; the panel's SHAPE moves along it. On the hats and
        the clap SHAPE is heard faintly: their patches are full NOISE through a narrow filter.
 
+## The display and the knobs, one (Nov 23): the hundred and thirteenth build
+
+795. **You**, Nov 23, 18:15 to 18:19: "I just saved a snapshot made some others, then recalled it and the closed hh sounded
+     way more tonal. Not sure why", then "it might be that I set the fileter envelop using the graphical curve in the
+     display, and maybe because that has a cutof knob that doesn't move as you move the curve, it didn't get saved with the
+     snapshot?" and "the knobs and the graphicl curves don't move with eachother but they probably should."
+     - **That was it.** SYNTH's display (SHAPE's strip, the filter's point, the envelope's) set the parameters under the
+       panel's knobs, and the knobs stood where they were; a snapshot keeps the knobs, so it kept the sound from before the
+       drag, and a recall (or any turn of the knob) put it back. Every display now turns the knob where a panel knob reaches
+       what it moves (as a hand on the knob: LEARN and the snapshot knobs see it so), and the knob sets it; what no knob
+       reaches (SUSTAIN) is set as before and kept with the lane's setup. The knob already moved the display.
+     - Snapshots saved after such a drag hold the knob's place from before it: drag again and save over them.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

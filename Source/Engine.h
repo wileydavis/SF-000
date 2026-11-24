@@ -115,6 +115,11 @@ public:
     float handShown (int i) const               { return teaches (i) ? juce::jlimit (0.0f, 1.0f, target (i) + teachDiff[(size_t) (i % cx::kPerLane)].load()) : shown (i); }     // where a knob is drawn
     float stands (int i) const                  { return baseV[(size_t) i].load(); }      // where it stands or has travelled to: what sounds, less MOTION's push
     void set (int i, float v, double glideBeats = 0.0);
+    // (SF-000, the hundred and thirteenth build) A module's display dragged (SYNTH's SHAPE, its filter's point, its envelope):
+    // where what it moves is one of the panel's knobs, the knob is turned, by this (the session's hand: LEARN, the snapshot
+    // knobs and the rest see it as the knob turned), so the knob, the display and what a snapshot keeps are one. Unset,
+    // the knob is set here. Message thread.
+    std::function<void (int ctl, float v)> handSet;
     juce::String valueText (int i) const;
 
     // ---- transport

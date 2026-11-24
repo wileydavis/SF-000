@@ -4875,6 +4875,53 @@ static void samePlaysTest (int& bad)
     dir.deleteRecursively();
 }
 
+// (the hundred and thirteenth build) Wiley, Nov 23: "the knobs and the graphicl curves don't move with eachother but they
+// probably should." SYNTH's display dragged moves the panel knob it reaches, a snapshot keeps it, and the knob moves the
+// display's point; what no knob reaches (SUSTAIN) is set as it was, and kept with the lane's setup
+static void displayKnobTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("SYNTH's display and the panel's knobs, one (the hundred and thirteenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    int hat = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "closed_hat") hat = l;
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    ses.userSet (cx::kGlide, 0.0f);
+    juce::AudioBuffer<float> b (2, 256);
+    for (int i = 0; i < 20; ++i) e.render (b);
+    auto* p = e.processorFor ({ 0, hat, 0 });
+    if (p == nullptr) { check (false, "the closed hat's instrument"); return; }
+    auto& m = p->mod();
+    int cutK = -1, cutI = p->paramIndex ("sy_cutoff"), susI = p->paramIndex ("sy_sustain");
+    for (int k = 0; k < kLaneKnobs; ++k) if (juce::String (e.laneKnob (hat, k).param) == "sy_cutoff") cutK = k;
+    const int ctl = cx::lane (hat, std::max (0, cutK));
+    const float knobWas = e.target (ctl);
+    // the filter's point dragged to 600 Hz, as the display does
+    const float plain = p->param (cutI)->convertFrom0to1 (0.3f);
+    m.setParam (cutI, plain);
+    m.setParam (susI, 0.7f);
+    for (int i = 0; i < 4; ++i) e.render (b);
+    const float knobNow = e.target (ctl);
+    const bool moved = cutK >= 0 && std::abs (knobNow - knobWas) > 0.01f && std::abs (m.getParam (cutI) - plain) < 0.01f * std::max (1.0f, std::abs (plain));
+    check (moved, "the filter's point dragged: the CUTOFF knob moves with it (" + juce::String (knobWas, 3) + " to " + juce::String (knobNow, 3) + "), and what sounds is where it was dragged");
+    // a snapshot keeps it; the knob turned away; recalled, it is back, the display's point with it
+    const auto id = ses.take(); ses.finishTakes (true);
+    ses.userSet (ctl, 0.95f);
+    for (int i = 0; i < 4; ++i) e.render (b);
+    const float awayParam = m.getParam (cutI);
+    m.setParam (susI, 0.2f);
+    ses.recall (id);
+    for (int i = 0; i < 40; ++i) e.render (b);
+    for (int i = 0; i < 2000; ++i) e.render (b);
+    p = e.processorFor ({ 0, hat, 0 });         // (a recall can hand the lane a fresh instrument)
+    auto& m2 = *p;
+    auto at = [&m2] (int i) { return m2.apvts.getRawParameterValue (m2.param (i)->getParameterID())->load(); };
+    if (std::abs (at (cutI) - plain) > 0.01f) std::printf ("    (knob %.4f want %.4f, param %.4f want %.4f, away %.4f, sustain %.4f)\n", e.target (ctl), knobNow, at (cutI), plain, awayParam, at (susI));
+    check (std::abs (e.target (ctl) - knobNow) < 1.0e-4f && std::abs (at (cutI) - plain) < 0.01f * std::max (1.0f, std::abs (plain)) && std::abs (awayParam - plain) > 0.01f
+           && std::abs (at (susI) - 0.7f) < 1.0e-3f,
+           "a snapshot taken after the drag keeps it: the knob turned away and the snapshot recalled, the knob and the display's point are back where they were dragged (SUSTAIN, no knob's, with them)");
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5624,7 +5671,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8056,6 +8103,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     insertsTest (bad);
     moveFxTest (bad);
     samePlaysTest (bad);                // (the hundred and twelfth build)
+    displayKnobTest (bad);              // (the hundred and thirteenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)
