@@ -171,7 +171,7 @@ public:
         eng.releaseScale (relMul); sy.releaseScale (relMul);
         // (SF-000, the hundred and fourth build) KICK FORGE is struck, never held: a lane holds its notes only where an engine
         // that sounds holds them (a step longer than its sequence ties on into a drone only then; KICK FORGE strikes again)
-        const auto holdsOn = [&] (int e) { return e == kSample ? eng.holds() : e == kSynth; };
+        const auto holdsOn = [&] (int e) { return e == kSample ? eng.holds() : e == kSynth && sy.holds(); };      // (SYNTH: one that sustains, the hundred and fifteenth build)
         holds.store (holdsOn (mA) || (layerOn && holdsOn (mB)));
         // MODEL or LAYER MODEL changed (or LAYER brought up or down): what sounds on the old one lets go, and the keys still
         // down start again on the new, each at its own velocity (a held chord goes on in the new sound)

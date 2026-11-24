@@ -2457,6 +2457,11 @@ void Engine::setSetup (Target t, const juce::String& id, float v)
         }
         p->param (i)->setValueNotifyingHost (v);
         if (t.kind == 0 && id == "plays") playsMoved (t.lane);
+        // (the hundred and fifteenth build) heard from the next note (the chord, the voices, PLAYS turned elsewhere): a note
+        // held on through it, a drone above all, is struck again, or it would never be heard
+        if (t.kind == 0 && id != "model" && id != "layer_model" && id != "plays" && reachOf (t.lane, id) == sf::Reach::Next
+            && (dynamic_cast<juce::AudioParameterChoice*> (p->param (i)) != nullptr || dynamic_cast<juce::AudioParameterBool*> (p->param (i)) != nullptr))      // (a menu or a switch: a value dragged along would strike it over and over)
+            lane[(size_t) t.lane].restrike = true;
         if (t.kind == 0 && id == "model" && remapLane (t.lane, true))    // (a model chosen by hand: its own knobs, where they start)
             if (const int now = mapOf (t.lane, *p); now > 0)
                 for (auto& w : lanes()[(size_t) t.lane].own[(size_t) now - 1].with)       // (and what it puts away)
@@ -3233,10 +3238,11 @@ void Engine::render (juce::AudioBuffer<float>& out)
         auto& ln = lane[(size_t) l];
         juce::AudioBuffer<float> b2 (laneBuf.getArrayOfWritePointers() + 2 * l, 2, n);
         if (! run && ln.patWait.load()) { ln.patWait = false; ln.patDirty = true; }      // the clock stopped: nothing to wait for
+        bool edited = false;
         if (ln.patDirty.load())
         {
             const juce::SpinLock::ScopedTryLockType g (patLock);
-            if (g.isLocked()) { ln.player.pat = ln.shared; ln.patDirty = false; }
+            if (g.isLocked()) { ln.player.pat = ln.shared; ln.patDirty = false; edited = true; }
         }
         ln.midi.clear();
         if (stopping || pan || starting || again) ln.player.stop (ln.midi, 0);
@@ -3268,9 +3274,17 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // was holding ends now. Notes from outside still sound.
         const bool seqOff = snd[(size_t) cx::lane (l, cx::kSeqMute)] > 0.5f;
         if (seqOff && ! ln.seqOff) ln.player.stop (ln.midi, 0);
+        const bool pitchedWas = ln.player.pitched;
         if (auto* v = ln.voice.load()) ln.player.pitched = v->plays != nullptr ? v->plays->load() >= 0.5f : lanes()[(size_t) l].pitched;     // (PLAYS: NOTES plays each step's note, HITS each at C3)
         if (auto* v = ln.voice.load()) ln.player.selfTie = ln.player.pitched && v->proc != nullptr && v->proc->mod().holdsNotes();     // (a lone step longer than its sequence: a drone, but not of a sample that plays once, nor of a drum)
         ln.seqOff = seqOff;
+        // (the hundred and fifteenth build) a step edited in that reaches over now sounds now; PLAYS turned, or a setting
+        // heard from the next note changed, and what the pattern holds is struck again (a drone's next time round may be
+        // bars away)
+        {
+            const bool again2 = ln.restrike.exchange (false) || ln.player.pitched != pitchedWas;
+            if (run && ! starting && ! seqOff && ! ln.patWait.load() && (edited || again2)) ln.player.chase (ppq, again2, ln.midi);
+        }
         if (run)
         {
             // a recalled pattern is taken up on the bar line, to the sample: the block is rendered round it

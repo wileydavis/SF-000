@@ -4982,6 +4982,69 @@ static void idleWatchTest (int& bad)
     (void) line;
 }
 
+// (the hundred and fifteenth build) Wiley, Nov 24: a sustained note added while playing, PLAYS turned and back, the chord
+// turned: each heard at once on the chord lane, not when the clock next starts; and a lone long step on a patch that dies
+// away is struck each time round
+static void chaseTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("Notes held over now, struck now (the hundred and fifteenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    int chord = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "chord") chord = l;
+    const Engine::Target at { 0, chord, 0 };
+    auto rig = [&] (Engine& e, bool sustains)
+    {
+        e.prepare (48000.0, 256);
+        for (int l = 0; l < kLanes; ++l) e.setPattern (l, Pattern());
+        for (int l = 0; l < kLanes; ++l) if (l != chord) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+        e.set (cx::kRetMS, 1.0f, 0.0); e.set (cx::kRetMS + 2, 1.0f, 0.0);
+        for (auto& sp : e.setupParams (at)) if (sp.id == "sy_sustain") { e.setSetup (at, "sy_sustain", sustains ? 0.8f : 0.0f); }
+    };
+    auto drone = [] (float gate) { Pattern p; p.length = 16; p.steps[0].on = true; p.steps[0].note = 0; p.steps[0].octave = 3; p.steps[0].gate = gate; return p; };
+    juce::AudioBuffer<float> b (2, 256);
+    std::vector<float> x;
+    auto secs = [&] (Engine& e, double t) { x.clear(); for (int i = 0; i < (int) (t * 48000.0 / 256.0); ++i) { e.render (b); for (int k = 0; k < 256; ++k) x.push_back (b.getSample (0, k)); } };
+    auto db = [&] (size_t from, size_t to) { float m = 0; for (size_t i = from; i < std::min (to, x.size()); ++i) m = std::max (m, std::abs (x[i])); return 20.0 * std::log10 (m + 1e-12); };
+    auto tone = [&] (double hz) { double best = 0; for (size_t from = 0; from + 9600 <= x.size(); from += 4800) { double re = 0, im = 0; for (size_t i = 0; i < 9600; ++i) { const double ph = 6.283185307179586 * hz * (double) i / 48000.0; re += x[from + i] * std::cos (ph); im += x[from + i] * std::sin (ph); } best = std::max (best, re * re + im * im); } return 10.0 * std::log10 (best + 1e-30); };
+    // 1: added while playing, half way round (step 0 long past): heard at once
+    {
+        Engine e; rig (e, true);
+        e.setRunning (true); secs (e, 2.5);          // (120: 16 steps are 2 s; now half way round the second time)
+        const double before = db (0, x.size());
+        e.setPattern (chord, drone (20.0f));
+        secs (e, 0.25);
+        const double now = db (2400, x.size());
+        check (before < -90.0 && now > -40.0, "a sustained note added on the chord lane while it plays, its step past: heard at once (" + juce::String (now, 1) + " dB in the next quarter second, from "
+               + juce::String (juce::roundToInt (before)) + ")");
+        // 2: PLAYS to HITS and back, while it holds: it goes on
+        secs (e, 1.0);
+        e.setSetup (at, "plays", 0.0f); secs (e, 0.2);
+        e.setSetup (at, "plays", 1.0f); secs (e, 0.6);
+        const double after = db (9600, x.size());
+        check (after > -40.0, "PLAYS turned to HITS and back while the drone holds: it sounds again at once (" + juce::String (after, 1) + " dB), not at the next start");
+        // 3: the chord turned while it holds: heard at once
+        int maj = -1, n = 0; for (auto& sp : e.setupParams (at)) if (sp.id == "sy_chord") { n = (int) sp.choices.size(); for (int c = 0; c < n; ++c) if (sp.choices[(size_t) c] == "MAJ") maj = c; }
+        secs (e, 1.0);
+        const double minor0 = tone (311.13), major0 = tone (329.63);
+        e.setSetup (at, "sy_chord", (float) maj / (float) std::max (1, n - 1));
+        secs (e, 0.6);
+        const double minor1 = tone (311.13), major1 = tone (329.63);
+        check (maj >= 0 && minor0 > major0 && major1 > minor1, "the chord turned from MIN7 to MAJ while the drone holds: the major third is heard at once (" + juce::String (juce::roundToInt (major1 - minor1)) + " dB over the minor; it was "
+               + juce::String (juce::roundToInt (major0 - minor0)) + ")");
+    }
+    // 4: the chord lane as it comes (SUSTAIN at nought): a lone long step is struck each time round, not tied and lost
+    {
+        Engine e; rig (e, false);
+        e.setPattern (chord, drone (20.0f));
+        e.setRunning (true); secs (e, 1.8);
+        const double late = db (60000, 86000);
+        secs (e, 0.6);
+        const double again = db (0, x.size());
+        check (late < again - 12.0 && again > -40.0, "SUSTAIN at nought: a lone step longer than its sequence is struck again each time round (" + juce::String (juce::roundToInt (late)) + " dB as it dies, "
+               + juce::String (juce::roundToInt (again)) + " as it comes round)");
+    }
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5731,7 +5794,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8165,6 +8228,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     samePlaysTest (bad);                // (the hundred and twelfth build)
     displayKnobTest (bad);              // (the hundred and thirteenth build)
     idleWatchTest (bad);                // (the hundred and fourteenth build)
+    chaseTest (bad);                    // (the hundred and fifteenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)

@@ -922,6 +922,14 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### Held notes struck when they should sound (hundred and fifteenth build)
+
+A step edited in while the clock runs is heard at once where its note reaches over the playhead
+(a drone above all), not at its next time round; turning PLAYS, or a menu or switch heard from the
+next note (CHORD, VOICES), strikes what the pattern holds again at once. SYNTH ties a lone long step
+to itself as a drone only where its envelope sustains; with SUSTAIN at nought it is struck each time
+round (DECISIONS 797).
+
 ### GRAIN's POSITION, and the idle watch (hundred and fourteenth build)
 
 On SAMPLE's GRAIN, click or drag anywhere on the wave (away from START, END and the markers) to place

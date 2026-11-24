@@ -189,6 +189,42 @@ struct LanePlayer
         }
     }
 
+    // (SF-000, the hundred and fifteenth build) What the pattern holds over the moment ppq that is not sounding, struck now:
+    // a step that began before it and whose note reaches past it (a drone, above all, whose time round may be bars away).
+    // restrike: what sounds is let go first and struck again (the lane's PLAYS turned, or a setting heard from the next
+    // note changed under a held one). Wiley, Nov 24: "on the chord lane, while playing I added a sustained not but no
+    // sound played until i stopped and started transport", "also hapoens when I switch from notes to hits and back, sound
+    // stops playing on that lane", "and switching the chord mode while playing results in no change as well."
+    void chase (double ppq, bool restrike, juce::MidiBuffer& out)
+    {
+        if (restrike) stop (out, 0);
+        const int len = juce::jlimit (1, kMaxSteps, pat.length);
+        const double round = (double) len * kStepBeats;
+        std::array<bool, 128> held {};
+        for (int i = 0; i < len; ++i)
+        {
+            const Step& st = pat.steps[(size_t) i];
+            if (! st.on) continue;
+            const double at = (double) i * kStepBeats;
+            const double tq = std::floor ((ppq - at) / round + 1e-9) * round + at;      // (its last start at or before ppq)
+            const int note = pitched ? juce::jlimit (0, 127, 12 * (st.octave + 2) + st.note) : drumNote;
+            if (st.ratchet > 1) { if (tq < ppq + 1e-9 && ppq < tq + kStepBeats) held[(size_t) note] = true; continue; }
+            const int dist = stepsToNext (pat, i);
+            const bool reaches = (dist < len || selfTie) && st.gate >= (float) dist + kLegatoOver;
+            const double end = reaches ? tq + (dist + 0.12) * kStepBeats : tq + juce::jlimit (0.05, (double) dist, (double) st.gate) * kStepBeats;
+            if (end <= ppq + 1.0e-6 || tq < 0.0) continue;
+            held[(size_t) note] = true;
+            if (tq >= ppq - 1e-9) continue;                                            // (struck at its own time)
+            bool sounding = false;
+            for (auto& e : q) if (e.live && ! e.on && e.note == note && e.ppq > ppq) { sounding = true; break; }
+            if (sounding) continue;
+            push (ppq, note, juce::jlimit (1, 127, (int) std::lround (st.vel * 127.0f)), true);
+            push (end, note, 0, false, reaches);
+        }
+        // a note sounding that the pattern no longer holds here (its step taken out, or given another note) ends now
+        for (auto& e : q) if (e.live && ! e.on && e.ppq > ppq && ! held[(size_t) juce::jlimit (0, 127, e.note)]) { e.ppq = ppq; e.tieable = false; }
+    }
+
     // The events of [q0, q1), in a block of n samples at spb samples a beat that starts at block
     // (q0 itself, unless the block is rendered in two parts round a bar line).
     void render (double q0, double q1, double spb, int n, juce::MidiBuffer& out, double block)
@@ -223,10 +259,14 @@ struct LanePlayer
             const double end = reaches ? tq + (dist + 0.12) * kStepBeats
                                        : tq + juce::jlimit (0.05, (double) dist, (double) st.gate) * kStepBeats;
             // A tie: the note before reached this step and is the same note: it carries on.
+            // (the hundred and fifteenth build: not a lone step's own note come round, where it no longer holds as a drone: it
+            // was tied when the lane's sound sustained, and is struck again now that it dies away)
             bool tied = false;
-            for (auto& e : q)
-                if (e.live && ! e.on && e.tieable && e.note == note && e.ppq > tq) { e.ppq = end; e.tieable = reaches; tied = true; break; }
+            if (dist < len || selfTie)
+                for (auto& e : q)
+                    if (e.live && ! e.on && e.tieable && e.note == note && e.ppq > tq) { e.ppq = end; e.tieable = reaches; tied = true; break; }
             if (tied) continue;
+            for (auto& e : q) if (e.live && ! e.on && e.note == note && e.ppq > tq) { e.ppq = tq; e.tieable = false; }      // (the same note still held: it ends as this one strikes, not after)
             push (tq, note, vel, true);
             push (end, note, 0, false, reaches);
         }

@@ -6668,6 +6668,27 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        ("idle_sound": where from, how loud, and whether a note was played in from outside meanwhile), in the session's log
        (Library/Application Support/SF-000/log/, the month's .jsonl). The next pulse says where it came from.
 
+## Held notes struck when they should sound (Nov 24): the hundred and fifteenth build
+
+797. **You**, Nov 24, 13:47 to 14:12: "Bug. on the chord lane, while playing I added a sustained not but no sound played until
+     i stopped and started transport.", "also hapoens when I switch from notes to hits and back, sound stops playing on that
+     lane.", "and switching the chord mode while playing results in no change as well." and "also, changing the waveform in
+     synth mode on chord lane doesn't change the sound much."
+     - **A note was struck only at its own step**, and a lone step longer than its sequence was tied to itself for good (a
+       drone). So a step added behind the playhead waited for its time round, PLAYS turned let the held note go with
+       nothing to strike it again, and a setting heard from the next note (CHORD) never was. Now what the pattern holds over
+       the moment is struck at once: a step edited in while playing whose note reaches over now; and, the held notes let go
+       and struck again, when PLAYS turns or a menu or switch heard from the next note changes (a value dragged along would
+       strike over and over, so not those). A note the pattern no longer holds there (its step taken out or changed) ends.
+     - **The chord lane's patch has SUSTAIN at nought**: a note held dies away, and a drone tied to itself was heard once and
+       never again. *Mine:* SYNTH holds a note as a drone only where its envelope sustains; otherwise a lone long step is
+       struck each time round. And a note come round that is no longer tied ends as it strikes again, not 0.12 of a step
+       after (which cut the new one).
+     - **The waveform on the chord lane** does change it, but its patch hides it: oscillator B (MIX 33%, its own SHAPE B) is
+       under every chord and carries the top, and the filter (CUTOFF 0.45, ENV AMT 0.4, SUSTAIN nought) closes fast. Measured:
+       SHAPE across its range moves the top octaves 6 to 10 dB as it comes, 30 dB and more with MIX at nought or the filter
+       open. TABLE A and SHAPE are oscillator A's; MIX and SHAPE B are B's.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

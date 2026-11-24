@@ -719,6 +719,7 @@ private:
         std::atomic<int> delay { 0 };
         Pattern shared;                         // under patLock
         std::atomic<bool> patDirty { true }, patWait { false };    // patWait: taken up at the next bar line
+        std::atomic<bool> restrike { false };                       // (the hundred and fifteenth build: what the pattern holds struck again, next block)
         std::atomic<float> patAfter { 0.0f }; std::atomic<bool> patFresh { false }; double patDue = -1.0e18;      // (not before this bar line: setPattern's afterBeats)
         int insLat = 0;                         // what its inserts delay it by
         float lowZ[2] = { 0.0f, 0.0f }, lowAcc = 0.0f; int lowBin = -1;      // the low end across the bar: its low-pass, and the bin being filled
