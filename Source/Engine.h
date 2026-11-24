@@ -169,6 +169,14 @@ public:
     float mixFader (int fader) const            { return fader >= 0 && fader < kMixFaders ? mixPlace[(size_t) fader].load() : kMixUnity; }
     void setMixFader (int fader, float place)   { if (fader >= 0 && fader < kMixFaders) { mixPlace[(size_t) fader] = juce::jlimit (0.0f, 1.0f, place); stateMoved(); } }
     std::array<std::atomic<float>, kMixFaders> mixDb;   // each as it goes into the mix: its peak, held and let fall (dB; -100: nothing)
+    // (SF-000, the hundred and fourteenth build) THE IDLE WATCH. Wiley, Nov 24: "While sitting at idle, the sf-000
+    // occasionally omits a pulse of audio. I haven'y tracked down what lane/lanes its coming from". With the clock stopped
+    // for 20 s or more (every tail long gone), the loudest each lane, return, the drum bus and the whole mix reach,
+    // in dB (-100: nothing); the session reads them, logs what sounded, and puts them back to -100. idleMaster: the mix out.
+    std::array<std::atomic<float>, kMixFaders> idleDb;
+    std::atomic<float> idleMaster { -100.0f };
+    std::atomic<int> idleNotesIn { 0 };                      // notes played in from outside since the session last looked
+    static constexpr double kIdleSeconds = 20.0;
     // the master's loudness, with the short-term figure lufs is: momentary (400 ms) and integrated (since RUN, or since asked)
     std::atomic<float> lufsM { -70.0f }, lufsI { -70.0f };
     void lufsReset()                            { lufsResetAsk = true; }
@@ -599,6 +607,8 @@ public:
     std::atomic<juce::uint32> overAt { 0 };
     bool overLately() const                     { return overCount.load() > 0 && juce::Time::getMillisecondCounter() - overAt.load() < 3000; }
     std::array<std::atomic<float>, kLanes> laneDb;           // each lane's level as it reaches the mix (dB, falling)
+    double idleFor = 0.0;                                    // (seconds the clock has been stopped: audio thread)
+    void idleSaw (std::atomic<float>& a, float db)          { if (idleFor >= kIdleSeconds && db > a.load (std::memory_order_relaxed)) a.store (db, std::memory_order_relaxed); }
     std::array<double, kLanes> laneSq {};                    // sum of squares since the start (tests)
     std::array<float, kLanes> laneMax {};                    // highest sample since the start (tests)
     std::atomic<int> solo { -1 };                            // tests: only this lane reaches the mix

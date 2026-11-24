@@ -64,6 +64,7 @@ void Session::timerCallback()
     // (the log: the clock started or stopped. Seen when this looks, so to within three seconds)
     if (const bool run = engine.isRunning(); run != logRunWas) { logRunWas = run; logAction (run ? "run" : "stop", 0, { { "bpm", (double) engine.tempo() } }); }
     engine.tidy();
+    idleWatch();
     pullHeard();
     if (samplesMoved) { samplesMoved = false; sweepSamples(); }      // a sample was given: the one it replaced, if nothing holds it now, goes
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
@@ -71,6 +72,28 @@ void Session::timerCallback()
     pruneCues();
     if (arrOn || ! transPend.empty()) { if (useDisk) startTimer (15); }
     else if (waiting.empty()) { if (useDisk) startTimer (3000); else stopTimer(); }
+}
+
+// THE IDLE WATCH (the hundred and fourteenth build): what sounded with the clock stopped 20 s and more, logged with how loud
+// it was ("idle_sound": from, db, and the whole mix's db), so the log says which lane, return or bus a pulse came from.
+// Anything under -70 dB is let be.
+void Session::idleWatch()
+{
+    const int notesIn = engine.idleNotesIn.exchange (0);
+    if (engine.isRunning()) { for (auto& a : engine.idleDb) a.store (-100.0f); engine.idleMaster.store (-100.0f); return; }
+    const float mix = engine.idleMaster.exchange (-100.0f);
+    juce::StringArray from; float most = -100.0f;
+    for (int k = 0; k < Engine::kMixFaders; ++k)
+    {
+        const float db = engine.idleDb[(size_t) k].exchange (-100.0f);
+        if (db > -70.0f) { from.add (Engine::mixName (k) + " " + juce::String (db, 1)); most = std::max (most, db); }
+    }
+    if (mix > -70.0f || ! from.isEmpty())
+    {
+        idleSaid = "HEARD WHILE STOPPED: " + (from.isEmpty() ? juce::String ("THE MIX") : from.joinIntoString (", ")) + " (MIX " + juce::String (mix, 1) + " DB"
+                 + (notesIn > 0 ? ", " + juce::String (notesIn) + " NOTES PLAYED IN)" : ", NO NOTE PLAYED IN)");
+        logAction ("idle_sound", 0, { { "from", from.joinIntoString (", ") }, { "db", (double) most }, { "mix_db", (double) mix }, { "notes_in", notesIn } });
+    }
 }
 
 // ------------------------------------------------------------------------------------ FINISH

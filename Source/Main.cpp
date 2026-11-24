@@ -4920,6 +4920,66 @@ static void displayKnobTest (int& bad)
     check (std::abs (e.target (ctl) - knobNow) < 1.0e-4f && std::abs (at (cutI) - plain) < 0.01f * std::max (1.0f, std::abs (plain)) && std::abs (awayParam - plain) > 0.01f
            && std::abs (at (susI) - 0.7f) < 1.0e-3f,
            "a snapshot taken after the drag keeps it: the knob turned away and the snapshot recalled, the knob and the display's point are back where they were dragged (SUSTAIN, no knob's, with them)");
+    // (the hundred and fourteenth build) SAMPLE on GRAIN: a click on the wave places POSITION, and turns its knob
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-grainpos");
+        dir.deleteRecursively(); dir.createDirectory();
+        const auto file = synthcheck::twoSounds (dir);
+        const Engine::Target at { 0, hat, 0 };
+        auto choose = [&] (const char* id, const char* name)
+        {
+            for (auto& sp : e.setupParams (at))
+                if (sp.id == id) for (int c = 0; c < (int) sp.choices.size(); ++c) if (sp.choices[(size_t) c] == name) { e.setSetup (at, id, (float) c / (float) std::max (1, (int) sp.choices.size() - 1)); return true; }
+            return false;
+        };
+        const bool chosen = choose ("model", "SAMPLE");
+        for (int i = 0; i < 8; ++i) e.render (b);
+        auto* q = e.processorFor (at);
+        q->mod().loadFiles (juce::StringArray (file.getFullPathName()));
+        const bool grain = choose ("sp_method", "GRAIN");
+        for (int i = 0; i < 8; ++i) e.render (b);
+        int posK = -1; for (int k = 0; k < kLaneKnobs; ++k) if (juce::String (e.laneKnob (hat, k).param) == "sp_pos") posK = k;
+        const juce::Rectangle<float> r (0.0f, 0.0f, 544.0f, 156.0f);
+        q->mod().displayMouse ({ 8.0f + 528.0f * 0.75f, 84.0f }, r, true);
+        q->mod().displayMouse ({ 8.0f + 528.0f * 0.6f, 84.0f }, r, false);
+        q->mod().displayMouseUp();
+        for (int i = 0; i < 4; ++i) e.render (b);
+        const float knob = posK >= 0 ? e.target (cx::lane (hat, posK)) : -1.0f;
+        const float said = q->apvts.getRawParameterValue ("sp_pos")->load();
+        check (chosen && grain && posK >= 0 && std::abs (knob - 0.6f) < 0.02f && std::abs (said - 0.6f) < 0.02f,
+               "SAMPLE on GRAIN: the wave clicked and dragged places POSITION, and the POSITION knob turns with it (" + juce::String (knob, 3) + ", heard at " + juce::String (said, 3) + ")");
+        dir.deleteRecursively();
+    }
+}
+
+
+
+// (the hundred and fourteenth build) THE IDLE WATCH: nothing is logged from a rig that is quiet with the clock stopped; a sound
+// 20 s after it stopped is logged with where it came from
+static void idleWatchTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("THE IDLE WATCH (the hundred and fourteenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    juce::AudioBuffer<float> b (2, 256);
+    auto secs = [&] (double t) { for (int i = 0; i < (int) (t * 48000.0 / 256.0); ++i) e.render (b); };
+    auto said = [&] { int n = 0; for (auto& l : ses.logTail) if (l.contains ("\"idle_sound\"")) ++n; return n; };
+    e.setRunning (true); secs (8.0); e.setRunning (false);
+    secs (12.0); ses.idleWatch();
+    secs (30.0); ses.idleWatch();
+    const bool quiet = said() == 0;
+    // a note played in, the clock stopped
+    for (int ch = 1; ch <= 16; ++ch) e.noteInAt (juce::MidiMessage::noteOn (ch, 60, 0.9f), 0);
+    secs (0.3);
+    for (int ch = 1; ch <= 16; ++ch) e.noteInAt (juce::MidiMessage::noteOff (ch, 60), 0);
+    secs (1.0); ses.idleWatch();
+    juce::String line; for (auto& l : ses.logTail) if (l.contains ("\"idle_sound\"")) line = l;
+    check (quiet && said() == 1 && ses.idleSaid.isNotEmpty(), "quiet with the clock stopped, nothing is logged; a sound 20 s after it stopped is, with where it came from: " + ses.idleSaid);
+    e.setRunning (true); secs (1.0); ses.idleWatch(); e.setRunning (false); secs (5.0); ses.idleWatch();
+    check (said() == 1, "playing, and the first 20 s after the clock stops (the tails), are let be");
+    (void) line;
 }
 
 static void synthEngineTest (int& bad)
@@ -5671,7 +5731,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8104,6 +8164,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     moveFxTest (bad);
     samePlaysTest (bad);                // (the hundred and twelfth build)
     displayKnobTest (bad);              // (the hundred and thirteenth build)
+    idleWatchTest (bad);                // (the hundred and fourteenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)

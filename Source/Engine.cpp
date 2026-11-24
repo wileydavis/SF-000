@@ -369,6 +369,7 @@ Engine::Engine()
         ln.eqHzNow[b] = d.hz; ln.eqQNow[b] = d.q; ln.eqSet[b] = 99.0f; ln.eqTypeSet[b] = -1;
     }
     for (int k = 0; k < kMixFaders; ++k) { mixPlace[(size_t) k] = kMixUnity; mixNow[k] = mixWas[k] = 1.0f; mixHold[k] = -100.0f; mixDb[(size_t) k] = -100.0f; }
+    for (auto& a : idleDb) a = -100.0f;
     controls.resize ((size_t) cx::kCount);
     for (auto& c : controls) { c.used = false; c.snapshot = false; }
     auto named = [this] (int i, juce::String id, juce::String label, Kind k, float def, bool snap, bool morph) -> Control&
@@ -657,6 +658,7 @@ void Engine::setPattern (int l, const Pattern& p, bool onBarLine, double afterBe
 void Engine::noteIn (const juce::MidiMessage& m, double arrivedMs)
 {
     if (! m.isNoteOnOrOff() || m.getChannel() < 1 || m.getChannel() > kLanes) return;
+    if (m.isNoteOn()) idleNotesIn.fetch_add (1, std::memory_order_relaxed);      // (the idle watch: a note played in, not a sound of its own)
     NoteEv e;
     const auto* d = m.getRawData();
     e.b[0] = d[0]; e.b[1] = d[1]; e.b[2] = d[2];
@@ -669,6 +671,7 @@ void Engine::noteIn (const juce::MidiMessage& m, double arrivedMs)
 void Engine::noteInAt (const juce::MidiMessage& m, int sample)
 {
     if (! m.isNoteOnOrOff() || m.getChannel() < 1 || m.getChannel() > kLanes) return;
+    if (m.isNoteOn()) idleNotesIn.fetch_add (1, std::memory_order_relaxed);      // (the idle watch: a note played in, not a sound of its own)
     NoteEv e;
     const auto* d = m.getRawData();
     e.b[0] = d[0]; e.b[1] = d[1]; e.b[2] = d[2];
@@ -3454,6 +3457,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         laneDb[(size_t) l] = ln.hold;
         mixDb[(size_t) l] = ln.hold;                // (the mix page's meter: the same, after the fader)
         laneMax[(size_t) l] = std::max (laneMax[(size_t) l], lp);
+        idleSaw (idleDb[(size_t) l], juce::Decibels::gainToDecibels (lp, -100.0f));     // (THE IDLE WATCH)
         {
             // its loudness as it reaches the mix; and, while a lane's low end is being watched, every lane's level under
             // 200 Hz across the bar
@@ -3540,6 +3544,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
             mixWas[kMixBus] = mixNow[kMixBus];
             mixHold[kMixBus] = std::max (juce::Decibels::gainToDecibels (d2.getMagnitude (0, n), -100.0f), mixHold[kMixBus] - fall);
             mixDb[(size_t) kMixBus] = mixHold[kMixBus];
+            idleSaw (idleDb[(size_t) kMixBus], juce::Decibels::gainToDecibels (d2.getMagnitude (0, n), -100.0f));
         }
         // (the hundred and eleventh build: the bus as it goes into the mix, after its fader, so PRINT's stems add up to the mix)
         if (recMore) rec->also (RecSink::kBusOut, d2.getReadPointer (0), d2.getReadPointer (1), n);
@@ -3597,6 +3602,7 @@ void Engine::render (juce::AudioBuffer<float>& out)
         const float pk = (k == 0 ? a2 : bb2).getMagnitude (0, n) * rg[k];
         mixHold[kMixDub + k] = std::max (juce::Decibels::gainToDecibels (pk, -100.0f), mixHold[kMixDub + k] - fall);
         mixDb[(size_t) (kMixDub + k)] = mixHold[kMixDub + k];
+        idleSaw (idleDb[(size_t) (kMixDub + k)], juce::Decibels::gainToDecibels (pk, -100.0f));
     }
     for (int ch = 0; ch < 2; ++ch)
     {
@@ -3691,6 +3697,8 @@ void Engine::render (juce::AudioBuffer<float>& out)
         float* d = out.getWritePointer (ch);
         for (int i = 0; i < n; ++i) d[i] = std::isfinite (s[i]) ? juce::jlimit (-1.0f, 1.0f, s[i]) : 0.0f;
     }
+    idleSaw (idleMaster, juce::Decibels::gainToDecibels (out.getMagnitude (0, n), -100.0f));
+    idleFor = run ? 0.0 : idleFor + (double) n / sr;
     if (rec != nullptr) { rec->track (0, out.getReadPointer (0), out.getReadPointer (1), n); rec->end (n); }
     renderCue (n, run, ppq, beats);
     // the tape

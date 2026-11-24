@@ -4955,7 +4955,7 @@ void Screen::downOn (Hit on, juce::Point<float> p)
             }
             break;
         case hDisplay:
-            if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouse (p, cfgDisplay, true);
+            if (auto* pr = eng.processorFor (cfg)) { pr->mod().displayMouse (p, cfgDisplay, true); cfgStale = true; }      // (the cells it moves shown at once)
             ses.touch();
             break;
         case hInsHead:      // (the name: the list of effects up in the knobs' place, or put away again)
@@ -5244,7 +5244,7 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             }
             break;
         case hDisplay:
-            if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouse (p, cfgDisplay, false);
+            if (auto* pr = eng.processorFor (cfg)) { pr->mod().displayMouse (p, cfgDisplay, false); cfgStale = true; }
             dirty (cfgDisplay);
             break;
         case hDepth:

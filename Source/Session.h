@@ -286,6 +286,8 @@ public:
     // started or stopped. Written beside the session (log/<year>-<month>.jsonl) by a thread of its own and sent by ONLINE;
     // nothing here reads it. What ONLINE or a LOAD does to the library is not the player's, and is not logged.
     void logAction (const char* what, juce::int64 chip = 0, const juce::NamedValueSet& more = {});
+    void idleWatch();                           // (the idle watch: see Session.cpp)
+    juce::String idleSaid;                      // the last thing heard with the clock stopped 20 s, as INFO says it (empty: none)
     juce::File logDir() const;
     void waitForLog();                  // until what was logged is on the disk (tests; quitting)
     juce::StringArray logTail;          // (the last lines logged, the newest last: the checks read them)

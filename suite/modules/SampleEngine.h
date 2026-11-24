@@ -213,7 +213,7 @@ private:
     juce::AudioBuffer<float> inBuf, outBuf, voiceBuf;
 
     // ---- the display's own (message thread)
-    struct Drag { int what = 0; int index = -1; float grab = 0.0f; };       // what: 0 none, 1 START, 2 END, 3 a marker, 4 a warp marker, 5 the overview, 6 LOOP START, 7 LOOP END
+    struct Drag { int what = 0; int index = -1; float grab = 0.0f; };       // what: 0 none, 1 START, 2 END, 3 a marker, 4 a warp marker, 5 the overview, 6 LOOP START, 7 LOOP END, 8 GRAIN's POSITION
     Drag drag;
     float zoomA = 0.0f, zoomB = 1.0f;       // the part of the file the wave shows (fractions); 0..1 and FOLLOW: the region
     bool zoomed = false;

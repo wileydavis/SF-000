@@ -922,6 +922,14 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### GRAIN's POSITION, and the idle watch (hundred and fourteenth build)
+
+On SAMPLE's GRAIN, click or drag anywhere on the wave (away from START, END and the markers) to place
+POSITION, the yellow band; the POSITION knob turns with it. CONFIG's cells follow a display drag at
+once. With the clock stopped 20 s or more, anything that sounds over -70 dB is logged as
+`idle_sound` (which lane, return or bus, how loud, and whether a note came in from outside) in
+`~/Library/Application Support/SF-000/log/` (DECISIONS 796).
+
 ### The display and the knobs, one (hundred and thirteenth build)
 
 Dragging SYNTH's display (SHAPE's strip, the filter's point, the envelope) turns the panel knob that

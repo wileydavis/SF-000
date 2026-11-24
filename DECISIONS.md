@@ -6648,6 +6648,26 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        reaches (SUSTAIN) is set as before and kept with the lane's setup. The knob already moved the display.
      - Snapshots saved after such a drag hold the knob's place from before it: drag again and save over them.
 
+## GRAIN's POSITION on the wave, CONFIG beside the display, and the idle watch (Nov 24): the hundred and fourteenth build
+
+796. **You**, Nov 24: "While sitting at idle, the sf-000 occasionally omits a pulse of audio. I haven'y tracked down what
+     lane/lanes its coming from but figured I'd add it to your attention.", "does the position handle in the grain sampler
+     also get stored? it doesn't seem to move the knob?", and "what about where curves in the display aren't moving a knob in
+     config, but the config knobs move the curve (release and decay, for instance, in synth). Should these be two way and
+     are these getting recorded in the snapshot?"
+     - **GRAIN's handles were START and END** (the region, kept with the lane's setup); POSITION, the yellow band, could only
+       be turned. On GRAIN a click anywhere else on the wave places POSITION and drags it, turning the POSITION knob (795's
+       way), so a snapshot keeps it.
+     - **CONFIG's cells behind a display drag** were the sound already (the display sets the parameter the cell shows, and a
+       snapshot keeps the lane's setup as it sounds: SUSTAIN's drag, saved and recalled, is checked since 795), but the cells
+       were read again only every dozen paints: a drag reads them at once.
+     - **The pulse at idle was not found here.** The rig left stopped for ten minutes after a minute's play is silent to the
+       last sample (-200 dB), and so are twelve rigs of random inserts and settings, but for DUB at a FEEDBACK past 100%
+       (it holds its echo for ever, by design: its MUTE silences it, not its loop). *Mine:* **the idle watch**: with the
+       clock stopped 20 s and more, anything a lane, a return, the drum bus or the mix sounds over -70 dB is logged
+       ("idle_sound": where from, how loud, and whether a note was played in from outside meanwhile), in the session's log
+       (Library/Application Support/SF-000/log/, the month's .jsonl). The next pulse says where it came from.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

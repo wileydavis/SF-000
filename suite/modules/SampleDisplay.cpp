@@ -480,6 +480,10 @@ void SampleEngine::mouse (juce::Point<float> p, juce::Rectangle<float> r, bool d
             if (drag.what == 0 && v.sliceBy == kByMarkers)
                 for (int k = 0; k < kMarkers && drag.what == 0; ++k)
                     if (v.cuts[k] > 0.0f && near (ac.xOfSrc ((double) v.cuts[k] * n), 4.0f)) { drag.what = 3; drag.index = k; }
+            // (SF-000, the hundred and fourteenth build) GRAIN: anywhere else on the wave places POSITION, the yellow band, and
+            // drags it. Wiley, Nov 24: "does the position handle in the grain sampler also get stored? it doesn't seem to move
+            // the knob?" (the handles were START and END; POSITION could only be turned). It turns the POSITION knob.
+            if (drag.what == 0 && v.method == kGrain) drag.what = 8;
         }
         if (drag.what == 0) return;
     }
@@ -533,6 +537,12 @@ void SampleEngine::mouse (juce::Point<float> p, juce::Rectangle<float> r, bool d
             float f = (float) ((src - v.reg.start) / len);
             if (drag.what == 6) m.setParam (ids.lstart, juce::jlimit (0.0f, std::max (0.0f, m.getParam (ids.lend) - 0.01f), f));
             else m.setParam (ids.lend, juce::jlimit (std::min (1.0f, m.getParam (ids.lstart) + 0.01f), 1.0f, f));
+            break;
+        }
+        case 8:
+        {
+            const double len = std::max (1.0, v.reg.length());
+            m.setParam (ids.pos, juce::jlimit (0.0f, 1.0f, (float) ((juce::jlimit (v.reg.start, v.reg.end, ac.srcOfX (p.x)) - v.reg.start) / len)));
             break;
         }
         default: break;
