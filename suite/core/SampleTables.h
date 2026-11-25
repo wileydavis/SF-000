@@ -188,6 +188,84 @@ inline std::shared_ptr<const Wavetable> fileFrom (const SampleData& s, double vo
                : juce::String (count) + (count == 1 ? " FRAME OF " : " FRAMES OF ") + juce::String (size) + (n % size != 0 ? " (" + juce::String (n % size) + " SAMPLES OVER, LEFT OUT)" : juce::String());
     return out;
 }
+// (SF-000, the hundred and nineteenth build) CHOP: frames as Ableton's Wavetable makes them of a sample, its "Raw" off (its
+// own words, of what it does: "Any leading or trailing silence is ignored", "The edges of each wavetable are faded to zero to
+// avoid clicks", "The phase differences between neighboring wavetables are minimized", "The wavetables are normalized"):
+// slices of 1024 of the recording's samples one after another from where its sound begins, up to 256 (Live's own limits),
+// a silent slice passed over. No pitch is measured: a slice is rarely a whole number of the note's cycles, so each frame
+// has some grit of its own, and moving along them moves with the recording's rhythm, slice by slice. Each is faded at its
+// edges (64 samples), read as harmonics, turned round as a whole to lie closest to the one before (its phases, not its
+// sound: a cycle's start is anywhere), and brought to one loudness, its level as it was kept beside it (RECORDING).
+// seconds: how much of the recording the frames are; start: where in it they begin (SF-000, the display's strip).
+inline std::shared_ptr<const Wavetable> chopFrom (const SampleData& s, double voiceRate, double& seconds, double& start)
+{
+    constexpr int kSlice = 1024, kMost = 256, kFade = 64, kH = kSlice / 2 - 1;
+    const int len = s.length(), chans = std::max (1, s.buf.getNumChannels());
+    seconds = 1.0; start = 0.0;
+    if (len < 2 * kSlice) return nullptr;
+    std::vector<double> mono ((size_t) len);
+    double peak = 0.0;
+    for (int i = 0; i < len; ++i) { double v = 0.0; for (int ch = 0; ch < chans; ++ch) v += s.buf.getSample (ch, i); mono[(size_t) i] = v / chans; peak = std::max (peak, std::abs (mono[(size_t) i])); }
+    if (peak < 1.0e-6) return nullptr;
+    // where its sound begins and ends (-50 dB of its peak)
+    int from = 0, to = len;
+    while (from < len && std::abs (mono[(size_t) from]) < peak * 0.00316) ++from;
+    while (to > from && std::abs (mono[(size_t) to - 1]) < peak * 0.00316) --to;
+    const int count = std::min (kMost, (to - from) / kSlice);
+    if (count < 2) return nullptr;
+    start = (double) from / s.sr;
+    std::vector<std::vector<float>> amps, phs;
+    std::vector<double> rms;
+    std::vector<double> cyc ((size_t) kSlice);
+    double loud = 0.0;
+    std::vector<std::vector<double>> slices;
+    for (int f = 0; f < count; ++f)
+    {
+        double e = 0.0;
+        for (int i = 0; i < kSlice; ++i)
+        {
+            const double w = i < kFade ? 0.5 - 0.5 * std::cos (3.14159265358979323846 * (i + 0.5) / kFade)
+                           : i >= kSlice - kFade ? 0.5 - 0.5 * std::cos (3.14159265358979323846 * (kSlice - i - 0.5) / kFade) : 1.0;
+            cyc[(size_t) i] = mono[(size_t) (from + f * kSlice + i)] * w;
+            e += cyc[(size_t) i] * cyc[(size_t) i];
+        }
+        slices.push_back (cyc);
+        rms.push_back (std::sqrt (e / kSlice));
+        loud = std::max (loud, rms.back());
+    }
+    std::vector<float> lev;
+    for (size_t f = 0; f < slices.size(); ++f)
+    {
+        if (rms[f] < 0.01 * loud) continue;                // (silence passed over)
+        std::vector<float> a, ph;
+        Mipmap::harmonicsOf (slices[f], kH, a, ph);
+        // turned round to lie closest to the frame before: the shift whose harmonics agree with its the most
+        if (! amps.empty())
+        {
+            const auto& pa = amps.back(); const auto& pp = phs.back();
+            const int H = std::min (64, kH);
+            double best = -1.0e30, at = 0.0;
+            for (int k = 0; k < 256; ++k)
+            {
+                const double th = 2.0 * 3.14159265358979323846 * k / 256.0;
+                double c = 0.0;
+                for (int h = 1; h <= H; ++h) c += (double) a[(size_t) h - 1] * pa[(size_t) h - 1] * std::cos ((double) ph[(size_t) h - 1] + h * th - (double) pp[(size_t) h - 1]);
+                if (c > best) { best = c; at = th; }
+            }
+            for (int h = 1; h <= kH; ++h) ph[(size_t) h - 1] += (float) (h * at);
+        }
+        lev.push_back ((float) (rms[f] / loud));
+        Wavetable::toRms (a);
+        amps.push_back (std::move (a)); phs.push_back (std::move (ph));
+    }
+    if (amps.size() < 2) return nullptr;
+    auto out = std::make_shared<Wavetable>();
+    out->build (amps, phs, voiceRate);
+    out->level = lev;
+    out->name = s.name;
+    seconds = std::max (0.01, (double) (count * kSlice) / s.sr);
+    return out;
+}
 // (SF-000, the hundred and second build) SYNTH's frames along a recording: one each hundredth of a second, so that a note
 // moving slowly through it, or held at one place, has the sound that was there (a syllable, a breath); sixty-four at
 // least, 1024 at most (a recording over ten seconds has them further apart: about 30 ms in thirty seconds).
@@ -217,7 +295,7 @@ inline std::shared_ptr<const SampleTables> tablesFrom (const SamplePtr& s, doubl
 // A long recording's take a good part of a second (1024 frames: 0.6 s on the build machine), so SYNTH has them made on a
 // thread of their own (SynthEngine::fileChanged) unless asyncScans is off, as the checks and the command line have it: a
 // note played before they are ready plays BASIC.
-struct Scan { std::shared_ptr<const Wavetable> table; double seconds = 1.0; };
+struct Scan { std::shared_ptr<const Wavetable> table, chop; double seconds = 1.0, chopSeconds = 1.0, chopStart = 0.0; std::vector<float> overview; };      // (chop: CHOP's frames; overview: the recording's peak, 512 columns, for the display)
 inline std::atomic<bool> asyncScans { true };
 inline std::atomic<int> scansBuilding { 0 };
 inline std::shared_ptr<const Scan> scanFrom (const SamplePtr& s, double voiceRate)
@@ -233,6 +311,18 @@ inline std::shared_ptr<const Scan> scanFrom (const SamplePtr& s, double voiceRat
     auto t = std::make_shared<Scan>();
     t->table = fineFrom (*s, voiceRate, scanFrames (*s));
     t->seconds = std::max (0.01, (double) s->length() / s->sr);
+    t->chop = chopFrom (*s, voiceRate, t->chopSeconds, t->chopStart);
+    {
+        // the recording's peak, 512 columns of it (for SYNTH's display: where along it the frames are)
+        const int len = s->length(), chans = std::max (1, s->buf.getNumChannels());
+        t->overview.assign (512, 0.0f);
+        for (int i = 0; i < len; ++i)
+        {
+            float v = 0.0f; for (int ch = 0; ch < chans; ++ch) v = std::max (v, std::abs (s->buf.getSample (ch, i)));
+            auto& o = t->overview[(size_t) std::min (511, (int) ((long long) i * 512 / std::max (1, len)))];
+            o = std::max (o, v);
+        }
+    }
     const std::lock_guard<std::mutex> g (lock);
     kept.push_back ({ s, voiceRate, t });
     return t;

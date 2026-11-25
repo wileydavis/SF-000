@@ -314,3 +314,10 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   as DECAY or GATE by it. `modules/SynthEngine.h`, `SampleEngine.h`, `ForgeEngine.h`: `pitched` and `ends` atomic, set
   by `plays()` as the lane turns. `modules/SynthDisplay.cpp`: the wave and SHAPE's strip always drawn, NOISE under it at
   its level. All marked `(SF-000, the hundred and twelfth build)` (DECISIONS 794).
+
+- **The hundred and nineteenth build: SYNTH's table, to move through.** `modules/SynthEngine.h`, `.cpp`: SPAN, SCAN SYNC
+  and FRAMES appended (kParamCount 65); the place moves inside the section (`along`), SCAN SYNC on the song's beat
+  (`chunkBeat`, `syncB`); each voice's place published (`Seen::V::place`); `tableFor (which, chop)`; the display 230 tall.
+  `core/SampleTables.h`: `chopFrom` (Live's Raw-off slices) and the recording's overview, in `Scan`.
+  `modules/SynthDisplay.cpp`: rewritten round the table (the stack, HARMONICS, the strip), squeezed where given less than
+  230. All marked `(SF-000, the hundred and nineteenth build)` (DECISIONS 801).

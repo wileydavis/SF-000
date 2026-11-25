@@ -985,6 +985,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aPkAuto, "AUTO", "PLACES THE POCKETS FROM WHAT IS PLAYING. EVERY LANE HEARD IN THE LAST SECONDS IS GIVEN A HOME AND A WIDTH: THE LANES WITH MOST HOLD CHOOSE FIRST, EACH TAKING THE STRETCH THAT HAS MOST OF ITS OWN SOUND AND LEAST OF WHAT THOSE BEFORE IT TOOK. HOLD AND YIELD STAY AS THEY ARE. THE POCKETS TRAVEL THERE OVER THE GLIDE TIME." },
                 { aPkReset, "RESET", "EVERY LANE'S POCKET BACK TO WHERE THE RIG STARTS IT: HOME, WIDTH, HOLD AND YIELD. AMOUNT, CLEAR, SPEED AND RETURNS STAY." },
                 { aResample, "RESAMPLE", "THE LAST FOUR BARS THE RIG PLAYED BECOME THIS LANE'S SAMPLE: THE WHOLE OUTPUT, FROM A BAR LINE, WRITTEN INTO THE LIBRARY'S SAMPLES AS \"RESAMPLE\" AND THE TIME, AND LOADED AS LOAD WOULD. WHAT THE RIG JUST PLAYED IS THEN SOMETHING TO SLICE (SAMPLE, NOTES: SLICES), LOOP (SAMPLE, REPITCH), STRETCH TO THE TEMPO (STRETCH, BARS ON 4 BARS), OR MAKE GRAINS OF (GRAIN). THE LANE'S MODEL IS LEFT AS IT IS: ON SAMPLE IT IS HEARD." },
+                { aChop, "CHOP", "HOW SYNTH'S SAMPLE AND RECORDING TABLES CUT THEIR FRAMES FROM THIS LANE'S RECORDING. LIT: ABLETON'S WAY, SLICES OF 1024 SAMPLES ONE AFTER ANOTHER FROM WHERE ITS SOUND BEGINS (UP TO 256), SILENCE PASSED OVER, EDGES FADED, PHASES BROUGHT TOGETHER, EACH AS LOUD: NO PITCH MEASURED, SO EACH FRAME HAS THE RECORDING'S GRIT AND MOVING ALONG THEM FOLLOWS ITS RHYTHM. NOT LIT: FOUR PERIODS OF ITS PITCH WHERE EACH IS CUT, CLEAN AND IN TUNE. KEPT WITH THE LANE IN A SNAPSHOT." },
                 { aSamplePlain, "PLAIN", "SETS THIS LANE TO PLAY ITS SAMPLE AS IT WAS RECORDED: THE FILTER OPEN, NO LAYER AND NO CROSSOVER (SPLIT TAKES THE SAMPLE'S OWN LOWS OUT), THE WHOLE NOTE, NO DRIVE, THE LANE'S EQ FLAT. WHERE THE NOTE IS THE PITCH (BASS, LEAD, CHORD, PAD), TUNE IS SET SO THAT THE FIRST LIT STEP PLAYS IT AT ITS OWN. LEVEL, THE SENDS AND THE LANE'S INSERTS ARE LEFT AS THEY ARE. A SAMPLE IS AS LOUD AS ITS FILE: PEAK, HERE, SAYS HOW LOUD THAT IS." },
                 { aTransFire, "FIRE", "TRANSITION (T). SETS OFF A LEAD-IN THAT ENDS ON THE NEXT BAR LINE AND A HIT THAT LANDS ON IT, WHENEVER IT IS PRESSED: THE MACHINE KEEPS THE TIME. LINES ARE EVERY 4, 8 OR 16 BARS; UNDER A BEAT FROM ONE, IT IS THE ONE AFTER. WHILE IT IS ON ITS WAY THE KEY IS LIT AND SAYS THE BARS LEFT. WITH THE CLOCK STOPPED THE HIT PLAYS AT ONCE." },
                 { aTransArm, "ARM", "TRANSITION (G). LIT: THE NEXT RECALL, MUTE OR SOLO DOES NOT HAPPEN AT ONCE. IT SETS THE TRANSITION OFF AND HAPPENS ON THE LINE THE TRANSITION LANDS ON, WITH WHATEVER ELSE IS ASKED FOR MEANWHILE (THE NUMBER WAITING IS SHOWN). ARM THEN GOES OUT. PUT OUT BY HAND, WHAT WAITS HAPPENS AT ONCE." },
@@ -1426,7 +1427,11 @@ void Screen::drawConfig (G& g, R r)
     if (! mixPage)
     {
         auto& m = p->mod();
-        if (const int dh = juce::jmin (230, m.displayHeight()); dh > 0)
+        // (the hundred and nineteenth build: SYNTH's grew to 230 for its table. Over a lane's EQ that leaves its four rows of
+        // knobs too little, so a display is given no more than leaves them 75 each, under the line the module says of
+        // itself. SYNTH's gives up the room from its table's row; SAMPLE's 156 never needs to.)
+        const float roomFor = r.getBottom() - 6 - (eqPage() ? 286.0f : 0.0f) - y - 6.0f - 28.0f - 20.0f - 4.0f * 75.0f;
+        if (const int dh = juce::jmin (230, m.displayHeight(), std::max (sf::SampleEngine::kDisplayHeight, (int) std::floor (roomFor))); dh > 0)
         {
             // the module's own display: waveform, in and out points, cue points. It takes the mouse.
             cfgDisplay = R (x0, y, 544, (float) dh);
@@ -1474,6 +1479,13 @@ void Screen::drawConfig (G& g, R r)
             status = m.acceptsFiles() ? m.fileHint() + ", ONTO THIS PANEL" : String ("DROP AN IMPULSE RESPONSE ONTO THIS PANEL TO MAKE SPACE A CONVOLUTION REVERB");
         if (cfgNote.isNotEmpty()) status = cfgNote;
         const bool takesFile = eng.acceptsFiles (cfg);
+        // (the hundred and nineteenth build) CHOP: SYNTH's SAMPLE and RECORDING frames cut as Ableton cuts them, a key on this row
+        int chopAt = -1;
+        if (takesFile && ! plain && cfg.kind == 0)
+            if (const int fi = p->paramIndex ("sy_frames"); fi >= 0)
+                for (auto& sp : cfgParams)
+                    if (sp.id == "model" && sp.choices[juce::jlimit (0, std::max (0, sp.choices.size() - 1), (int) std::lround (sp.value * (float) std::max (1, sp.choices.size() - 1)))] == "SYNTH") chopAt = fi;
+        const bool chopKey = chopAt >= 0;
         if (status.isNotEmpty() || takesFile)
         {
             status = status.toUpperCase();
@@ -1481,7 +1493,7 @@ void Screen::drawConfig (G& g, R r)
             if (status.isNotEmpty())
             {
                 const bool resample = takesFile && cfg.kind == 0;         // (RESAMPLE: a lane only)
-                const float most = (plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f);
+                const float most = (plain ? 392.0f : takesFile ? 468.0f : 544.0f) - (resample ? 96.0f : 0.0f) - (chopKey ? 76.0f : 0.0f);     // (and CHOP: SYNTH's)
                 // (The ninety-sixth build: a line too long for its window runs on under the keys, the panel's width, as many
                 // lines as it needs up to three. It was cut off with dots, and what PLAIN says of what still colours a
                 // sample, its inserts and sends, was the part cut.)
@@ -1531,6 +1543,14 @@ void Screen::drawConfig (G& g, R r)
                     key (g, rr, col::white, pressed (aResample) ? 6.0f : 2.0f);
                     text (g, "RESAMPLE", rr, fLbl, col::black);
                     hit (rr.expanded (2), hAct, aResample, 0);
+                }
+                if (chopKey)
+                {
+                    const bool on = p->param (chopAt)->getValue() > 0.5f;
+                    const R cr (x0 + 302, y - 1, 70, 24);
+                    key (g, cr, on ? col::green : col::white, pressed (aChop) ? 6.0f : 2.0f, on);
+                    text (g, "CHOP", cr, fLbl, col::black);
+                    hit (cr.expanded (2), hAct, aChop, 0);
                 }
                 if (plain)
                 {
@@ -1584,8 +1604,8 @@ void Screen::drawConfig (G& g, R r)
     // the cells: four across in each grid at 64, the two grids a wider gap apart; the rows as tall as there is room for
     // between the display and the EQ (a sample's strip on the display takes some), the knobs smaller where they are short
     const float cellW = kCfgCell, gap = 544.0f - 8.0f * kCfgCell - 8.0f, gx0 = x0 + 4.0f, headH = 20.0f;
-    const float rowH = juce::jlimit (83.0f, 108.0f, std::floor ((floorY - y - headH) / 4.0f));
-    const float kd = rowH >= 92.0f ? 40.0f : 34.0f, top = rowH >= 100.0f ? 6.0f : 2.0f;
+    const float rowH = juce::jlimit (75.0f, 108.0f, std::floor ((floorY - y - headH) / 4.0f));
+    const float kd = rowH >= 92.0f ? 40.0f : rowH >= 83.0f ? 34.0f : 28.0f, top = rowH >= 100.0f ? 6.0f : rowH >= 83.0f ? 2.0f : 1.0f;       // (75 to 83: under SYNTH's big display)
     auto gridX = [&] (int side) { return gx0 + (float) side * (4.0f * cellW + gap); };
     auto cellAt = [&] (int grid, int cell) { return R (gridX (grid % 2) + (float) (cell % 4) * cellW, y + headH + (float) (cell / 4) * rowH, cellW, rowH); };
     // a control's name as its cell prints it: with its row's word where the row has one (MOTION's 1 and 2, a band's LOW, MID, HIGH)
@@ -4640,6 +4660,12 @@ void Screen::act (int a)
         case aAudio:    if (onAudioSetup) onAudioSetup(); break;
         case aFull:     if (onFullScreen) onFullScreen(); break;
         case aLoad:     if (loadOpen) loadOpen = false; else openLoad(); repaint(); break;
+        case aChop:
+            if (cfgOpen && cfg.kind == 0)
+                if (auto* pr = eng.processorFor (cfg))
+                    if (const int fi = pr->paramIndex ("sy_frames"); fi >= 0) { ses.setupByHand (cfg, "sy_frames", pr->param (fi)->getValue() > 0.5f ? 0.0f : 1.0f); cfgStale = true; }
+            repaint();
+            break;
         case aSamplePlain:
             if (cfgOpen && cfg.kind == 0)
             {
@@ -6529,7 +6555,7 @@ void Screen::refreshStage()
         // (the outline look keeps the EQ's colours: where its graph is, if it is up)
         { std::vector<juce::Rectangle<float>> boxes; if (page == pMain && cfgOpen && eqPage() && ! eqRect.isEmpty()) boxes.push_back (eqRect);
           // (SF-000, the hundredth build) and SAMPLE's display's (Wiley, Nov 21: "in the 3d outline look (all the 3d views) the display should have color, similar to how we keep color with the eq")
-          if (page == pMain && cfgOpen && ! cfgDisplay.isEmpty() && (int) cfgDisplay.getHeight() == sf::SampleEngine::kDisplayHeight) boxes.push_back (cfgDisplay);
+          if (page == pMain && cfgOpen && ! cfgDisplay.isEmpty() && (int) cfgDisplay.getHeight() >= sf::SampleEngine::kDisplayHeight) boxes.push_back (cfgDisplay);
           stage->keepColours (boxes); }
     }
     auto& img = stage->sheet();

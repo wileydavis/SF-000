@@ -922,6 +922,16 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### SYNTH's table, to move through (hundred and nineteenth build)
+
+SYNTH's display shows TABLE A's frames stacked, the section you move in lit, SHAPE yellow and each
+voice's frame white as it moves; beside it the harmonics of what is heard; under it a strip of the
+recording (SAMPLE, RECORDING) or the frames' brightness. Press the strip for SHAPE, drag its yellow
+tab for SPAN. **SPAN** keeps SCAN and the wave envelope in a section of the table from SHAPE.
+**SCAN SYNC** makes SCAN one pass through the section each note value, on the song's beat (LOOP,
+BOUNCE) or from each note (HOLD): rhythm from the wave, as from a filter. **CHOP**, beside the file,
+cuts SAMPLE's and RECORDING's frames as Ableton does with Raw off (DECISIONS 801).
+
 ### Each part's lead-in and hit at its own level (hundred and eighteenth build)
 
 Drag a part's IN or HIT plate up or down for its level in that part, -24 to +12 dB beside the

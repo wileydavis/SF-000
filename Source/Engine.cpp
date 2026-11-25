@@ -1691,10 +1691,13 @@ const CfgCell kSynCells[] = { { "sy_table_a", 0 }, { "sy_shape", 1 }, { "sy_warp
                               { "sy_table_b", 4 }, { "sy_shape_b", 5 }, { "sy_pitch_b", 6 }, { "sy_fine_b", 7 },
                               { "sy_mix", 8 }, { "sy_fm", 9 }, { "sy_sync", 10 }, { "sy_tune", 11 },
                               { "sy_sub", 12 }, { "sy_noise", 13 }, { "sy_color", 14 }, { "sy_phase", 15 },
-                              { "sy_scan", 16 }, { "sy_scan_end", 17 }, { "sy_steps", 18 }, { "sy_wdepth", 19 },
-                              { "sy_wt1", 20 }, { "sy_wp1", 21 }, { "sy_wt2", 22 }, { "sy_wp2", 23 },
-                              { "sy_wt3", 24 }, { "sy_wp3", 25 }, { "sy_wt4", 26 }, { "sy_wp4", 27 },
-                              { "sy_wloop", 28 }, { "sy_wvel", 29 }, { "sy_wkey", 30 },
+                              // (the hundred and nineteenth build: WAVE MOTION's first row the movement, SCAN, SCAN SYNC, SCAN END
+                              // and SPAN; STEPS and the wave envelope's depth, loop and VEL; its four stages below; W KEY last of
+                              // the instrument's cells)
+                              { "sy_scan", 16 }, { "sy_scan_sync", 17 }, { "sy_scan_end", 18 }, { "sy_span", 19 },
+                              { "sy_steps", 20 }, { "sy_wdepth", 21 }, { "sy_wloop", 22 }, { "sy_wvel", 23 },
+                              { "sy_wt1", 24 }, { "sy_wp1", 25 }, { "sy_wt2", 26 }, { "sy_wp2", 27 },
+                              { "sy_wt3", 28 }, { "sy_wp3", 29 }, { "sy_wt4", 30 }, { "sy_wp4", 31 },
                               { "sy_circuit", 32 }, { "sy_cutoff", 33 }, { "sy_res", 34 }, { "sy_keytrack", 35 },
                               { "sy_envamt", 36 }, { "sy_decay", 37 }, { "sy_mattack", 38 }, { "sy_drive", 39 },
                               { "sy_attack", 40 }, { "sy_sustain", 41 }, { "sy_release", 42 }, { "sy_accent", 43 },
@@ -1702,7 +1705,7 @@ const CfgCell kSynCells[] = { { "sy_table_a", 0 }, { "sy_shape", 1 }, { "sy_warp
                               { "sy_voices", 48 }, { "sy_glide", 49 }, { "sy_slide", 50 }, { "sy_chord", 51 },
                               { "sy_unison", 52 }, { "sy_detune", 53 }, { "sy_width", 54 }, { "sy_drift", 55 },
                               { "sy_body", 56 }, { "sy_body_mix", 57 }, { "sy_body_decay", 58 }, { "sy_body_tone", 59 },
-                              { "sy_patch", 60 }, { "sy_space", 61 }, { "sy_gain", 62 } };
+                              { "sy_patch", 60 }, { "sy_space", 61 }, { "sy_gain", 62 }, { "sy_wkey", 63 } };
 // an effect or a return, the second grid, TIME: what the delays and reverbs share
 const CfgCell kTimeCells[] = { { "__model", 0 }, { "throw", 1 }, { "freeze", 2 }, { "mix", 3 },
                                { "width", 4 }, { "lo_cut", 5 }, { "input", 6 }, { "dry", 7 },
@@ -1785,6 +1788,7 @@ Engine::SetupPage Engine::setupPage (Target t) const
         if (lane)
         {
             if (id.startsWith ("sp_cut") || id.startsWith ("sp_ws") || id.startsWith ("sp_wd")) return {};      // (SAMPLE's markers: the display's)
+            if (id == "sy_frames") return {};       // (SYNTH's FRAMES: the CHOP key beside the file, the hundred and nineteenth build)
             if (const juce::String e = engineOf (id); e.isNotEmpty()) return e == model ? "MODEL" : layerShown && e == layerModel ? "LAYER" : juce::String();
             return "LANE";
         }

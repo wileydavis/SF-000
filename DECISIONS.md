@@ -6730,6 +6730,43 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        is not nought ("IN -6", "HIT +3"), kept with the arrangement, and given to the engine with the firing, so a FIRE by
        hand is at the TRANSITION's LEVEL alone. A COPY of a part starts at nought, as its lead-in and hit are not copied.
 
+## SYNTH's table, to move through (Nov 25): the hundred and nineteenth build
+
+801. **You**, Nov 25: "let's optimize the wavetable creation. Also, making the synth screen more visual to aid in parameter
+     adjustment, especially for wavetables. as an example, i really like how this imported wavetable file is sounding."
+     (psy-glitchy-bass_150bpm_G_major.wav: 12.8 s, 8 bars at 150.) Asked what first: **"Big wavetable view, how does ableton
+     create a wavetable from a sample when not in raw mode?"** Then: "the goal is using the movement through a wavetable (or
+     a small section of it) to create movment and rythmic evolution in the synth parts, similar or in addition to what one
+     does with a filter."
+     - **The display, 230 tall** (it was 156): TABLE A's frames stacked front to back as they go along it (up to 24 drawn),
+       the far ones darker; the section the place moves in lit, SHAPE's frame yellow, each sounding voice's frame white and
+       moving. Beside it **HARMONICS**: the frame heard now (the loudest voice's, else SHAPE's), its first 40 in dB. Under
+       it a **strip**: for SAMPLE and RECORDING the recording itself, where along it the frames are (CHOP's few seconds lit),
+       the section, SHAPE and the voices; for the other tables how bright each frame is. FILTER and ENVELOPES below, each
+       half the width. The VOICES and STEPS rows are gone. *Mine:* the strip pressed puts SHAPE there; the section's right
+       edge (the yellow tab) dragged sets SPAN; the wheel over the strip is SPAN, over the table SHAPE; the table pressed
+       puts SHAPE across it.
+     - **SPAN** (new): the section of the table the place moves in, from SHAPE. SCAN, the wave envelope, VELOCITY and the
+       key move inside it, and at its ends it holds, loops or bounces as SCAN END says. Full is the whole table, as before.
+       *Mine:* near the table's end the section is moved back to fit, rather than made shorter.
+     - **SCAN SYNC** (new): FREE, or 1/32 to 4 BARS: one pass through the section each value, forward on SCAN's right half,
+       back on its left (SCAN's amount is then only its direction). *Mine:* on LOOP and BOUNCE it runs on the song's beat
+       (the play head's, or the internal clock when stopped), so every note on every lane is at the same place in its pass,
+       wherever it began: a filter-like movement locked to the groove. On HOLD each note makes its pass once from its own
+       start and stays at the end, like an envelope.
+     - **CHOP** (FRAMES, new; a key beside the file on CONFIG, lit green when on): SAMPLE's and RECORDING's frames cut as
+       Ableton cuts a sample with Raw off: slices of 1024 one after another from where the sound begins, up to 256 (5.9 s at
+       44.1 kHz), faint ones (under 1% of the loudest) passed over, the edges faded, each turned to lie closest to the one
+       before, each as loud (RECORDING keeps the levels). PITCH, as before, is four periods measured where each frame is
+       cut: in tune and clean. CHOP is grittier and moves with the recording's rhythm slice by slice. *Mine:* **a key, not
+       a cell**: it is in no CONFIG cell, so the E16's CONFIG pages are as they were; a snapshot keeps it.
+     - *Mine:* **WAVE MOTION's cells moved**: its first row is now SCAN, SCAN SYNC, SCAN END, SPAN; the second STEPS,
+       W DEPTH, W LOOP, W VEL; the four stages below as before; **W KEY is the instrument's last cell** (VOICE AND BODY's
+       sixteenth, after GAIN). The E16's CONFIG page for WAVE MOTION follows the cells, so its knobs there are in new places.
+     - *Mine:* **CONFIG's rows go down to 75** (their knobs 28 across) where the display is tall and a lane's EQ is under
+       it; a display is given no more height than leaves them that. SYNTH's then gives up the room from its table's row
+       (209 over a lane's EQ, 230 elsewhere). The status line is narrowed by the CHOP key's width.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

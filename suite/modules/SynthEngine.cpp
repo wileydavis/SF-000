@@ -82,6 +82,16 @@ std::vector<ParamSpec> params()
     add (choice ("sy_wloop", "W LOOP", { "OFF", "3-4", "2-4", "1-4" }, 0));
     add (knob ("sy_wvel", "W VEL", 0.0f, 1.0f, 0.5f, "BIP").ends ("-", "+"));      // (SF-000, the hundred and fourth build: heard at once, as it always was; a depth, signed)
     add (knob ("sy_wkey", "W KEY", 0.0f, 1.0f, 0.5f, "BIP").ends ("-", "+"));
+    // (SF-000, the hundred and nineteenth build) Wiley, Nov 25: "the goal is using the movement through a wavetable (or a
+    // small section of it) to create movment and rythmic evolution in the synth parts, similar or in addition to what one
+    // does with a filter." SPAN: the section SCAN, the wave envelope, velocity and the key move the place in, from SHAPE
+    // (full: the whole table, as it was); SCAN END says what it does at the section's ends. SCAN SYNC: SCAN in note values,
+    // one pass of the section a value, on the beat (HOLD: from each note, once); FREE as it was. FRAMES: how SAMPLE and
+    // RECORDING cut their frames from a recording: PITCH (four of its periods where each is cut, as it was) or CHOP
+    // (Ableton's way: its slices one after another, their edges faded, their phases brought together, each as loud).
+    add (pct ("sy_span", "SPAN", 1.0f));
+    add (choice ("sy_scan_sync", "SCAN SYNC", { "FREE", "1/32", "1/16", "1/8", "1/4", "1/2", "1 BAR", "2 BARS", "4 BARS" }, 0));
+    add (choice ("sy_frames", "FRAMES", { "PITCH", "CHOP" }, 0).hide());      // (CONFIG's CHOP key, beside the file)
     jassert ((int) v.size() == kParamCount);
     return v;
 }
@@ -321,6 +331,7 @@ void SynthEngine::bind (const std::vector<ParamSpec>& specs, bool pitchedLane, E
     ids.detune = at ("sy_detune"); ids.width = at ("sy_width"); ids.drift = at ("sy_drift");
     ids.body = at ("sy_body"); ids.bodyMix = at ("sy_body_mix"); ids.bodyDecay = at ("sy_body_decay"); ids.bodyTone = at ("sy_body_tone");
     ids.patch = at ("sy_patch"); ids.space = at ("sy_space"); ids.gain = at ("sy_gain"); ids.scan = at ("sy_scan");
+    ids.span = at ("sy_span"); ids.scanSync = at ("sy_scan_sync"); ids.frames = at ("sy_frames");
     ids.scanEnd = at ("sy_scan_end"); ids.steps = at ("sy_steps"); ids.wdepth = at ("sy_wdepth"); ids.wloop = at ("sy_wloop"); ids.wvel = at ("sy_wvel"); ids.wkey = at ("sy_wkey");
     for (int k = 0; k < 4; ++k) { ids.wt[k] = at (("sy_wt" + std::to_string (k + 1)).c_str()); ids.wp[k] = at (("sy_wp" + std::to_string (k + 1)).c_str()); }
 }
@@ -347,6 +358,7 @@ SynthEngine::Block SynthEngine::blockOf (const Ids& d, const std::function<float
     b.unison = juce::jlimit (1, kUnison, ci (d.unison, 1)); b.detune = v (d.detune, 0.3f); b.width = v (d.width, 0.5f); b.drift = v (d.drift, 0.1f);
     b.body = juce::jlimit (0, 6, ci (d.body, 0)); b.bodyMix = v (d.bodyMix, 0.6f); b.bodyDecay = v (d.bodyDecay, 0.5f); b.bodyTone = v (d.bodyTone, 0.5f);
     b.space = v (d.space, 0); b.gain = v (d.gain, 0); b.scan = v (d.scan, 0.5f);
+    b.span = v (d.span, 1.0f); b.scanSync = juce::jlimit (0, 8, ci (d.scanSync, 0)); b.frames = juce::jlimit (0, 1, ci (d.frames, 0));
     b.scanEnd = juce::jlimit (0, 2, ci (d.scanEnd, 0)); b.steps = ci (d.steps, 0) == 1; b.wdepth = v (d.wdepth, 0); b.wloop = juce::jlimit (0, 3, ci (d.wloop, 0));
     b.wvel = v (d.wvel, 0.5f); b.wkey = v (d.wkey, 0.5f);
     for (int k = 0; k < 4; ++k) { b.wt[k] = v (d.wt[k], 500.0f); b.wp[k] = v (d.wp[k], 0.25f * (float) (k + 1)); }
@@ -400,10 +412,14 @@ void SynthEngine::fileChanged (const SamplePtr& s)
 double SynthEngine::secondsOf (int which) const
 {
     if (which == kTableSample || which == kTableRecording)
+    {
+        if (const auto* t = scanState->slot.audio(); t != nullptr && blk.frames == 1 && t->chop != nullptr && t->chop->frames() > 0) return t->chopSeconds;
         if (const auto* t = scanState->slot.audio(); t != nullptr && t->table != nullptr && t->table->frames() > 0) return t->seconds;
+    }
     return 1.0;
 }
-const Wavetable* SynthEngine::tableFor (int which) const
+const Wavetable* SynthEngine::tableFor (int which) const { return tableFor (which, blk.frames == 1); }
+const Wavetable* SynthEngine::tableFor (int which, bool chop) const
 {
     if (which <= 0 || set == nullptr) return basic.get();
     if (which < kTableFile) return &set->t[which == 1 ? 0 : which];
@@ -411,8 +427,12 @@ const Wavetable* SynthEngine::tableFor (int which) const
     {
         if (const auto* t = fromFile.audio(); t != nullptr && t->file != nullptr && t->file->frames() > 0) return t->file.get();
     }
-    else if (const auto* t = scanState->slot.audio(); t != nullptr && t->table != nullptr && t->table->frames() > 0)
-        return t->table.get();       // (SAMPLE and RECORDING: the frames a hundredth of a second apart)
+    else if (const auto* t = scanState->slot.audio(); t != nullptr)
+    {
+        // (SAMPLE and RECORDING: the frames a hundredth of a second apart, or CHOP's slices)
+        if (chop && t->chop != nullptr && t->chop->frames() > 0) return t->chop.get();
+        if (! chop && t->table != nullptr && t->table->frames() > 0) return t->table.get();
+    }
     return basic.get();
 }
 
@@ -527,7 +547,7 @@ void SynthEngine::start (const Pending& p)
             if (! cur->slid)
             {
                 cur->lived = 0;
-                cur->releasing = false; cur->ampStage = 0; cur->modStage = 0; cur->meg = 1.0f; cur->tRel = -1.0; cur->t = 0.0; cur->scanPos = 0.0f; cur->wStage = 0; cur->wT = 0.0f; cur->wFrom = cur->wNow = shapePlace (blk.shape);
+                cur->releasing = false; cur->ampStage = 0; cur->modStage = 0; cur->meg = 1.0f; cur->tRel = -1.0; cur->t = 0.0; cur->scanPos = 0.0f; cur->syncB = 0.0; cur->wStage = 0; cur->wT = 0.0f; cur->wFrom = cur->wNow = shapePlace (blk.shape);
                 cur->pitchEnvSt = blk.pitchEnv;
                 cur->sync = blk.sync; cur->bursts = blk.bursts; cur->burstGap = blk.burstGap;      // (the hundred and eleventh build: a note begun again takes its NEXT ones, as a new voice does)
                 setBody (*cur);
@@ -557,6 +577,7 @@ void SynthEngine::start (const Pending& p)
     v.slot = keep.slot; v.driftTune = keep.driftTune; v.driftCut = keep.driftCut; v.driftPh = keep.driftPh; v.driftRate = keep.driftRate;
     v.on = true; v.key = p.key; v.gen = p.gen; v.part = p.part; v.order = orderNext++;
     v.pitch = tunedPitch;
+    v.syncB = 0.0;
     v.vel = lerp (1.0f, clamp01 (p.vel), 0.6f); v.gain = p.gain;
     v.accent = p.vel > 0.85f && p.gen == 0 && blk.accent > 0.001f;      // (SF-000, the hundred and fourth build: ACCENT at nought is none of it, its faster fall too)
     // 4x: the driven ladders, the 303's filter, the MS-20, FM and hard sync; 2x else
@@ -625,7 +646,15 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
     // a second a table), and RECORDING's levels
     const float scanD = (b.scan - 0.5f) * 2.0f, scanAbs = std::abs (scanD);
     const float scanSpeed = scanAbs < 0.02f ? 0.0f : std::copysign (0.0625f * std::pow (64.0f, (scanAbs - 0.02f) / 0.98f), scanD);
-    const float scanStep = scanSpeed / (float) secondsOf (b.tableA) * invVr;
+    // (the hundred and nineteenth build) SCAN SYNC: a pass of the section a note value, its way by SCAN's side (the middle:
+    // none); HOLD from the note, once; LOOP and BOUNCE on the song's beat. SPAN: the section from SHAPE.
+    static constexpr double kSyncBeats[9] = { 0.0, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 };
+    const bool synced = b.scanSync > 0 && scanAbs >= 0.02f;
+    const float span = juce::jlimit (0.0f, 1.0f, b.span);
+    const bool sectioned = span < 0.999f || synced;
+    const double syncLen = kSyncBeats[b.scanSync], beatPerS = bpmNow / 60.0 * (double) invVr;
+    if (synced && b.scanEnd != 0) v.syncB = chunkBeat;              // (on the song's beat: where this piece of it begins)
+    const float scanStep = synced ? 0.0f : scanSpeed / (float) secondsOf (b.tableA) * invVr;
     // the wave envelope's pace through its stage now, and where velocity and the key put the place
     const bool wEnv = b.wdepth > 0.001f;
     const float velRaw = (v.vel - 0.4f) / 0.6f;        // (the note's own velocity: v.vel is it at six tenths)
@@ -721,16 +750,38 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
             else v.wNow = b.wp[3];
             wOff = b.wdepth * (v.wNow - placeA);
         }
+        if (synced) v.syncB += beatPerS;
+        // (forward from the section's start; back from its end)
+        // (in the song's beats it can be thousands of passes: the part that counts taken in double, two passes' worth, as
+        // BOUNCE goes there and back in two)
+        const float syncPh = ! synced ? 0.0f : b.scanEnd == 0 ? (float) std::min (2.0, v.syncB / syncLen) : (float) (v.syncB / syncLen - 2.0 * std::floor (v.syncB / syncLen * 0.5));
+        const float syncOff = synced ? span * (scanD > 0.0f ? syncPh : 1.0f - syncPh) : 0.0f;
         auto along = [&] (float base, int frames)
         {
-            float p = base + wOff + placeVK + v.scanPos;
-            if (b.scanEnd == 1) p -= std::floor (p);                                            // LOOP
-            else if (b.scanEnd == 2) { p = std::fmod (std::abs (p), 2.0f); if (p > 1.0f) p = 2.0f - p; }     // BOUNCE
+            float p;
+            if (! sectioned)
+            {
+                p = base + wOff + placeVK + v.scanPos;
+                if (b.scanEnd == 1) p -= std::floor (p);                                            // LOOP
+                else if (b.scanEnd == 2) { p = std::fmod (std::abs (p), 2.0f); if (p > 1.0f) p = 2.0f - p; }     // BOUNCE
+            }
+            else
+            {
+                // the section: SPAN of the table from SHAPE (moved back to fit, at the end of the table); its ends as SCAN
+                // END says
+                const float len = std::max (1.0e-4f, span), lo = std::min (clamp01 (base), 1.0f - len);
+                float x = clamp01 (base) - lo + wOff + placeVK + v.scanPos + syncOff;
+                if (b.scanEnd == 1) x -= len * std::floor (x / len);
+                else if (b.scanEnd == 2) { x = std::fmod (std::abs (x), 2.0f * len); if (x > len) x = 2.0f * len - x; }
+                else x = juce::jlimit (0.0f, len, x);
+                p = lo + x;
+            }
             p = clamp01 (p);
             if (b.steps && frames > 1) p = std::round (p * (float) (frames - 1)) / (float) (frames - 1);       // STEPPED: one frame, then the next
             return p;
         };
         const float pA = along (placeA, nA), pB = useB ? along (placeB, nB) : 0.0f;
+        v.placeNow = pA;
         const float gA = levA ? ta->levelAt (pA) : 1.0f, gB = levB ? tb->levelAt (pB) : 1.0f;
         // pitch: the slide or glide to its note, the PITCH ENV falling away, DRIFT
         v.freq += (v.target - v.freq) * v.slideK;
@@ -840,6 +891,7 @@ void SynthEngine::renderVoice (Voice& v, float* L, float* R, int n, float partGa
 
 void SynthEngine::render (const Ctx& c, float* L, float* R, int n, float layerGain)
 {
+    bpmNow = c.bpm > 1.0 ? c.bpm : 120.0;
     const auto t0 = juce::Time::getHighResolutionTicks();
     std::stable_sort (pending.begin(), pending.begin() + numPending, [] (const Pending& x, const Pending& y) { return x.offset < y.offset; });
     n = std::min (n, (int) outL.size());
@@ -864,6 +916,7 @@ void SynthEngine::render (const Ctx& c, float* L, float* R, int n, float layerGa
         if (i0 >= n) break;
         const int i1 = e < numPending ? std::min (n, std::max (i0 + 1, pending[(size_t) e].offset)) : n;
         const int m = i1 - i0;
+        chunkBeat = c.ppq + (double) i0 * c.bpm / 60.0 / sr;       // (SCAN SYNC: where in the song this piece begins)
         bool any4 = false, any2 = false;
         for (auto& v : voices)
         {
@@ -940,6 +993,7 @@ void SynthEngine::publish()
         o.key.store ((int) std::lround (v.pitch)); o.part.store (v.part);
         o.level.store (v.amp * (v.choked ? v.chokeGain : 1.0f)); o.cutoff.store (v.cutNow);
         o.t.store ((float) v.t); o.rel.store ((float) v.tRel); o.accent.store (v.accent);
+        o.place.store (v.placeNow);
     }
     seen.voices.store (nv);
 }

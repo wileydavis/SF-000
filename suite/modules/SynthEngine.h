@@ -25,7 +25,7 @@ constexpr int kUnison = 7;
 constexpr int kModes = 16;          // BODY's resonators, at most
 enum Circuit { kCleanLP = 0, kCleanBP, kCleanHP, kLadder, kDiode, kMs20 };
 enum Table { kBasic = 0, kTableFile = 12, kTableSample = 13, kTableRecording = 14 };     // 1..11: the instrument's other tables (WavetableSet's, CLASSIC first)
-constexpr int kParamCount = 62;      // how many params() appends
+constexpr int kParamCount = 65;      // how many params() appends
 
 // The parameters, in the order they are appended (never moved: a snapshot is read by id, a session by place).
 std::vector<ParamSpec> params();
@@ -52,7 +52,7 @@ const char* lanePatch (const juce::String& laneSlug);
 // What the display sees: each voice, written by the audio every block, read whenever the screen draws.
 struct Seen
 {
-    struct V { std::atomic<int> key { -1 }, part { 0 }; std::atomic<float> level { 0.0f }, cutoff { 0.0f }, t { 0.0f }, rel { -1.0f }; std::atomic<bool> accent { false }; };
+    struct V { std::atomic<int> key { -1 }, part { 0 }; std::atomic<float> level { 0.0f }, cutoff { 0.0f }, t { 0.0f }, rel { -1.0f }, place { -1.0f }; std::atomic<bool> accent { false }; };
     V v[kSlots];
     std::atomic<int> voices { 0 };
     std::atomic<float> cost { 0.0f };          // of one core, the last blocks
@@ -95,7 +95,7 @@ public:
     int indexOf (const char* id) const;
 
     // ---- the display (message thread): 544 by 156, as SAMPLE's
-    static constexpr int kDisplayHeight = 156;
+    static constexpr int kDisplayHeight = 230;     // (the hundred and nineteenth build: 156 till the table grew)
     void paint (juce::Graphics& g, juce::Rectangle<float> r, const Module& m, bool lit);
     void mouse (juce::Point<float> p, juce::Rectangle<float> r, bool down, Module& m);
     void mouseUp() { drag = 0; }
@@ -112,6 +112,7 @@ public:
         int voices = -1, glide = -1, slide = -1, chord = -1, unison = -1, detune = -1, width = -1, drift = -1;
         int body = -1, bodyMix = -1, bodyDecay = -1, bodyTone = -1, patch = -1, space = -1, gain = -1, scan = -1;
         int scanEnd = -1, steps = -1, wdepth = -1, wloop = -1, wvel = -1, wkey = -1, wt[4] = { -1, -1, -1, -1 }, wp[4] = { -1, -1, -1, -1 };
+        int span = -1, scanSync = -1, frames = -1;           // (the hundred and nineteenth build)
         bool ok() const { return tune >= 0 && gain >= 0 && body >= 0; }
     } ids;
 
@@ -125,6 +126,7 @@ public:
         float keytrack = 0.5f, mattack = 0, attack = 1, sustain = 0.7f, release = 120, pitchEnv = 0, pitchTime = 60, burstGap = 10;
         float glide = 0, slide = 0.3f, detune = 0.3f, width = 0.5f, drift = 0.1f, bodyMix = 0.6f, bodyDecay = 0.5f, bodyTone = 0.5f, space = 0, gain = 0, scan = 0.5f;
         int scanEnd = 0, wloop = 0; bool steps = false;
+        float span = 1.0f; int scanSync = 0, frames = 0;
         float wdepth = 0, wvel = 0.5f, wkey = 0.5f, wt[4] = { 500, 500, 500, 500 }, wp[4] = { 0.25f, 0.5f, 0.75f, 1.0f };
     } blk;
     static Block blockOf (const Ids& ids, const std::function<float (int)>& P);
@@ -161,6 +163,8 @@ private:
         float driftTune = 0.0f, driftCut = 0.0f, driftPh = 0.0f, driftRate = 1.0f;
         bool sync = false; int bursts = 1; float burstGap = 10.0f;     // (SF-000, the hundred and fourth build) SYNC, BURSTS and BURST GAP as the note began: they are NEXT
         float scanPos = 0.0f;           // SCAN: how far it has moved along the tables from SHAPE since it began
+        double syncB = 0.0;             // SCAN SYNC: beats (from the note on HOLD, the song's else)
+        float placeNow = -1.0f;         // where along A's table it is now, as last rendered (for the display)
         int wStage = 0; float wT = 0.0f, wFrom = 0.5f, wNow = 0.5f;      // the wave envelope: its stage, the time into it, where it set out from, where it is
     };
     struct Pending { int offset; int key; float pitch, vel, gain; int gen, part, hold; bool on; };
@@ -172,6 +176,8 @@ private:
     void renderVoice (Voice& v, float* L, float* R, int n, float partGain);
     void setBody (Voice& v);
     const Wavetable* tableFor (int which) const;
+    const Wavetable* tableFor (int which, bool chop) const;      // (as FRAMES says: CHOP's slices for SAMPLE and RECORDING)
+    std::pair<float, float> stripCover (const Block& b) const;     // (where along the recording strip the frames begin, and how much of it they are: CHOP's are a few seconds of it)
     void publish();
 
     double sr = 48000.0;
@@ -193,6 +199,7 @@ private:
     SharedSlot<tables::SampleTables> fromFile;
     // SAMPLE's and RECORDING's frames, made on a thread of their own and put here when they are ready (the state is shared
     // with that thread, so the engine can go before it is done)
+    double chunkBeat = 0.0, bpmNow = 120.0;          // (SCAN SYNC: the song's beat where the piece being rendered begins, the tempo)
     struct ScanState { SharedSlot<tables::Scan> slot; std::atomic<int> gen { 0 }; };
     std::shared_ptr<ScanState> scanState = std::make_shared<ScanState>();
     // the sums, oversampled, and the way down

@@ -5212,6 +5212,176 @@ static void transLevelTest (int& bad)
            + " dB under, the lead-in as it was; kept with the arrangement, -24 to +12 dB");
 }
 
+// (the hundred and nineteenth build) Wiley, Nov 25: "the goal is using the movement through a wavetable (or a small section of
+// it) to create movment and rythmic evolution in the synth parts, similar or in addition to what one does with a filter."
+// SPAN keeps SCAN's movement in a section of the table; SCAN SYNC moves through it once a note value, on the song's beat,
+// wherever the note began; CHOP cuts the recording into Live's slices; the display's table and strip set SHAPE and SPAN
+static void wavetableTest (int& bad)
+{
+    using namespace synthcheck;
+    using namespace sf0;
+    std::printf ("SYNTH's table: SPAN, SCAN SYNC, CHOP and the big display (the hundred and nineteenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    int lead = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "lead") lead = l;
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-wavetable");
+    dir.deleteRecursively(); dir.createDirectory();
+    const auto file = twoSounds (dir);          // (a saw for 1.5 s, then a sine: the table's first half buzzes, its second is hollow)
+    const std::vector<std::pair<const char*, float>> plainVoice { { "sy_table_a", 13.0f }, { "sy_mix", 0.0f }, { "sy_noise", 0.0f }, { "sy_sub", 0.0f }, { "sy_cutoff", 1.0f }, { "sy_res", 0.0f },
+                                                                  { "sy_envamt", 0.0f }, { "sy_attack", 0.0f }, { "sy_sustain", 1.0f }, { "sy_shape", 0.0f }, { "sy_unison", 1.0f }, { "sy_drive", 0.0f } };
+    auto with = [&] (std::vector<std::pair<const char*, float>> more) { auto v = plainVoice; for (auto& kv : more) v.push_back (kv); return v; };
+    // how much it buzzes: the second harmonic of A3 against the first, over 40 ms (a saw: about -6 dB, a sine: far below)
+    auto buzz = [] (const std::vector<float>& x, double t) { const auto h = shapeOf (x, t, 0.04, 220.0); return h.size() > 1 ? h[1] - h[0] : -99.0; };
+    // 1. SCAN running free through the whole table finds the hollow half; with SPAN at 40% from the start it never leaves the buzz
+    {
+        const std::vector<Note> held { { 0, 57, 0.8f, true } };
+        const auto whole = play (lead, "SYNTH", with ({ { "sy_scan", 1.0f }, { "sy_scan_end", 1.0f } }), held, 4.0, &file);
+        const auto part = play (lead, "SYNTH", with ({ { "sy_scan", 1.0f }, { "sy_scan_end", 1.0f }, { "sy_span", 0.4f } }), held, 4.0, &file);
+        double wholeLo = 0.0, partLo = 0.0;
+        for (double t = 0.1; t < 3.9; t += 0.05) { wholeLo = std::min (wholeLo, buzz (whole, t)); partLo = std::min (partLo, buzz (part, t)); }
+        check (wholeLo < -25.0 && partLo > -14.0, "SPAN: SCAN through the whole table reaches its hollow half (second harmonic down to " + juce::String (wholeLo, 1)
+                                               + " dB); with SPAN at 40% from SHAPE it stays in the buzzing section (never below " + juce::String (partLo, 1) + " dB)");
+    }
+    // 2. SCAN SYNC at 1/4: through the table once a beat (120 to the minute: half a second), forwards, the buzz in each beat's
+    //    first half and the hollow in its second; a note begun between beats is on the same beat
+    {
+        for (const int startAt : { 0, (int) (0.23 * 48000.0) })
+        {
+            // (the song playing from its start at 120, as Live's play head says: beat k at k / 2 s)
+            struct Head : juce::AudioPlayHead
+            {
+                int64_t at = 0;
+                juce::Optional<PositionInfo> getPosition() const override
+                {
+                    PositionInfo p; p.setIsPlaying (true); p.setBpm (120.0); p.setTimeInSamples (at); p.setPpqPosition ((double) at / 24000.0);
+                    p.setPpqPositionOfLastBarStart (std::floor ((double) at / 24000.0 / 4.0) * 4.0); p.setTimeSignature (juce::AudioPlayHead::TimeSignature { 4, 4 });
+                    return p;
+                }
+            } head;
+            const auto& ln = lanes()[(size_t) lead];
+            SFProcessor q (sf::makeModule (ln.module));
+            auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+            for (auto& f : ln.fixed) if (! juce::String (f.param).startsWith ("sy_") && ! juce::String (f.param).startsWith ("fg_")) setPlain (f.param, f.value);
+            if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == "SYNTH") setPlain ("model", (float) k); }
+            setPlain ("layer", 0.0f); setPlain ("density", 0.0f);
+            for (auto& kv : with ({ { "sy_scan", 0.8f }, { "sy_scan_end", 1.0f }, { "sy_scan_sync", 4.0f } })) setPlain (kv.first, kv.second);
+            q.setPlayHead (&head);
+            q.setRateAndBufferSizeDetails (48000.0, 64); q.prepareToPlay (48000.0, 64);
+            q.mod().loadFiles (juce::StringArray (file.getFullPathName())); sf::tables::waitForScans();
+            std::vector<float> x;
+            juce::AudioBuffer<float> b (2, 64);
+            for (int i = 0; i < (int) (3.2 * 48000.0 / 64.0); ++i)
+            {
+                juce::MidiBuffer midi;
+                if (startAt / 64 == i) midi.addEvent (juce::MidiMessage::noteOn (1, 57, 0.8f), startAt % 64);
+                head.at = (int64_t) i * 64;
+                b.clear(); q.processBlock (b, midi);
+                for (int k = 0; k < 64; ++k) x.push_back (b.getSample (0, k));
+            }
+            q.setPlayHead (nullptr);
+            int right = 0, asked = 0; juce::String said;
+            for (int k = 1; k < 6; ++k)
+            {
+                const double early = buzz (x, k * 0.5 + 0.08), late = buzz (x, k * 0.5 + 0.36);
+                ++asked; if (early > -14.0 && late < -25.0) ++right;
+                said << juce::roundToInt (early) << "/" << juce::roundToInt (late) << " ";
+            }
+            check (right == asked, "SCAN SYNC 1/4: each beat buzzes in its first half and is hollow in its second, the note begun " + juce::String (startAt / 48000.0, 2) + " s in (" + said.trim() + " dB)");
+        }
+    }
+    // 3. CHOP: Live's slices of 1024 from where the sound begins, up to 256, faint ones passed by; FRAMES at CHOP plays them
+    {
+        auto data = [] (double secs, double sr, bool hole)
+        {
+            sf::SampleData d; d.sr = sr; d.buf.setSize (2, (int) (secs * sr));
+            for (int n = 0; n < d.buf.getNumSamples(); ++n)
+            {
+                const double t = n / sr; float v = (float) (0.5 * std::sin (6.283185307179586 * 110.0 * t) + 0.2 * std::sin (6.283185307179586 * 770.0 * t));
+                if (t < 0.25 || (hole && t > 1.0 && t < 2.0)) v = 0.0f;          // (silence at the start, and a second of it after one)
+                d.buf.setSample (0, n, v); d.buf.setSample (1, n, v);
+            }
+            return d;
+        };
+        double secs = 0.0, from = 0.0, secs2 = 0.0, from2 = 0.0;
+        const auto longOne = sf::tables::chopFrom (data (12.8, 44100.0, false), 48000.0, secs, from);
+        const auto holed = sf::tables::chopFrom (data (4.0, 44100.0, true), 48000.0, secs2, from2);
+        const int expectHoled = (int) ((4.0 - 0.25) * 44100.0 / 1024.0);
+        check (longOne != nullptr && longOne->frames() == 256 && std::abs (secs - 256.0 * 1024.0 / 44100.0) < 0.01 && std::abs (from - 0.25) < 0.01,
+               "CHOP: 12.8 s at 44.1 kHz makes 256 slices (" + juce::String (longOne ? longOne->frames() : 0) + "), 5.94 s of it (" + juce::String (secs, 2) + "), from where its sound begins (" + juce::String (from, 2) + " s)");
+        check (holed != nullptr && holed->frames() < expectHoled - 30 && holed->frames() > expectHoled - 60,
+               "CHOP passes a silent second by (" + juce::String (holed ? holed->frames() : 0) + " slices of " + juce::String (expectHoled) + ")");
+        const std::vector<Note> held { { 0, 57, 0.8f, true } };
+        const auto pitch = play (lead, "SYNTH", with ({ { "sy_shape", 0.2f } }), held, 1.0, &file);
+        const auto chop = play (lead, "SYNTH", with ({ { "sy_shape", 0.2f }, { "sy_frames", 1.0f } }), held, 1.0, &file);
+        const double apart = shapeApart (shapeOf (pitch, 0.5, 0.1, 220.0), shapeOf (chop, 0.5, 0.1, 220.0));
+        check (apart > 6.0 && dbOf (chop, 0.3, 0.9) > -40.0, "FRAMES at CHOP plays the slices: another sound from the same place (" + juce::String (apart, 1) + " dB apart), and a sound (" + juce::String (dbOf (chop, 0.3, 0.9), 1) + " dB)");
+    }
+    // 4. the display: 230 tall, the table and the strip; pressed on the strip SHAPE goes there, its section's right edge dragged
+    //    sets SPAN, the wheel over the strip moves SPAN; given less room it draws in it
+    {
+        const auto& ln = lanes()[(size_t) lead];
+        SFProcessor q (sf::makeModule (ln.module));
+        auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+        auto plainOf = [&q] (const char* id) { const int i = q.paramIndex (id); return i >= 0 ? q.param (i)->convertFrom0to1 (q.param (i)->getValue()) : -1.0f; };
+        if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == "SYNTH") setPlain ("model", (float) k); }
+        setPlain ("sy_table_a", 13.0f);
+        q.setRateAndBufferSizeDetails (48000.0, 64); q.prepareToPlay (48000.0, 64);
+        q.mod().loadFiles (juce::StringArray (file.getFullPathName())); sf::tables::waitForScans();
+        juce::AudioBuffer<float> b (2, 64); juce::MidiBuffer none;
+        for (int i = 0; i < 40; ++i) { b.clear(); q.processBlock (b, none); }
+        const int tall = q.mod().displayHeight();
+        const juce::Rectangle<float> r (0.0f, 0.0f, 544.0f, 230.0f);
+        // the strip: 8 to 536 across, 137 to 159 down
+        q.mod().displayMouse ({ 8.0f + 528.0f * 0.3f, 148.0f }, r, true); q.mod().displayMouseUp();
+        const float placed = sf::syn::shapePlace (plainOf ("sy_shape"));
+        const float spanWas = plainOf ("sy_span");
+        q.mod().displayMouse ({ 536.0f, 148.0f }, r, true); q.mod().displayMouse ({ 8.0f + 528.0f * 0.55f, 148.0f }, r, false); q.mod().displayMouseUp();
+        const float spanNow = plainOf ("sy_span"), shapeKept = sf::syn::shapePlace (plainOf ("sy_shape"));
+        q.mod().displayWheel ({ 300.0f, 148.0f }, r, 1.0f);
+        const float wheeled = plainOf ("sy_span");
+        // the table pressed: SHAPE across it
+        q.mod().displayMouse ({ 8.0f + 8.0f + 332.0f * 0.75f, 70.0f }, r, true); q.mod().displayMouseUp();
+        const float acrossTable = sf::syn::shapePlace (plainOf ("sy_shape"));
+        bool drew = true;
+        for (const float h : { 230.0f, 209.0f })
+        {
+            juce::Image img (juce::Image::ARGB, 544, (int) h, true);
+            juce::Graphics g (img);
+            setPlain ("sy_frames", 1.0f); q.mod().paint (g, { 0.0f, 0.0f, 544.0f, h });
+            setPlain ("sy_frames", 0.0f); q.mod().paint (g, { 0.0f, 0.0f, 544.0f, h });
+            int lit = 0; for (int y = 0; y < (int) h; y += 3) for (int x = 0; x < 544; x += 3) if (img.getPixelAt (x, y).getBrightness() > 0.3f) ++lit;
+            drew = drew && lit > 200;
+        }
+        check (tall == 230 && std::abs (placed - 0.3f) < 0.02f, "the display is 230 tall (" + juce::String (tall) + "), and the strip pressed at 30% puts SHAPE there (" + juce::String (placed, 3) + ")");
+        check (spanWas > 0.99f && std::abs (spanNow - 0.25f) < 0.02f && std::abs (shapeKept - placed) < 1.0e-4f && wheeled > spanNow + 0.01f,
+               "the section's right edge dragged from the table's end to 55% makes SPAN 25% (" + juce::String (spanNow, 3) + "), SHAPE where it was; the wheel over the strip lengthens it (" + juce::String (wheeled, 3) + ")");
+        check (std::abs (acrossTable - 0.75f) < 0.03f && drew, "the table pressed three quarters across puts SHAPE at 75% (" + juce::String (acrossTable, 3) + "); it draws at 230 and squeezed to 209, PITCH and CHOP");
+    }
+    // 5. CHOP is the key's, not a cell's (no CONFIG cell, the E16's pages as they were); a snapshot keeps it
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, 256);
+        for (int i = 0; i < 20; ++i) e.render (b);
+        const Engine::Target t { 0, lead, 0 };
+        for (auto& sp : e.setupParams (t)) if (sp.id == "model") if (const int at = sp.choices.indexOf ("SYNTH"); at >= 0) ses.setupByHand (t, "model", (float) at / (float) std::max (1, sp.choices.size() - 1));
+        for (int i = 0; i < 8; ++i) e.render (b);
+        bool listed = false; for (auto& sp : e.setupParams (t)) if (sp.id == "sy_frames") listed = true;
+        auto frames = [&] { for (auto& kv : e.getSetup (t)) if (kv.first == "sy_frames") return kv.second; return -1.0f; };
+        ses.setupByHand (t, "sy_frames", 1.0f);
+        for (int i = 0; i < 8; ++i) e.render (b);
+        const float on = frames();
+        const auto id = ses.take(); ses.finishTakes (true);
+        ses.setupByHand (t, "sy_frames", 0.0f);
+        for (int i = 0; i < 8; ++i) e.render (b);
+        const float off = frames();
+        ses.recall (id);
+        for (int i = 0; i < 2000; ++i) e.render (b);
+        const float back = frames();
+        check (! listed && on > 0.5f && off < 0.5f && back > 0.5f, "CHOP is a key's, in no cell of CONFIG (" + juce::String (listed ? "listed" : "not listed") + "); turned on (" + juce::String (on, 1) + ") and taken in a snapshot, turned off (" + juce::String (off, 1) + "), the snapshot recalled brings it back (" + juce::String (back, 1) + ")");
+    }
+    dir.deleteRecursively();
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5961,7 +6131,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else if (w == 'B') breakTest (bad); else if (w == 'V') transLevelTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else if (w == 'B') breakTest (bad); else if (w == 'V') transLevelTest (bad); else if (w == 'T') wavetableTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8399,6 +8569,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     arrMorphTest (bad);                 // (the hundred and sixteenth build)
     breakTest (bad);                    // (the hundred and seventeenth build)
     transLevelTest (bad);               // (the hundred and eighteenth build)
+    wavetableTest (bad);                // (the hundred and nineteenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)
