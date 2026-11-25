@@ -785,7 +785,7 @@ static void arrangementTest (int& bad)
         const bool atOnce = ses.baseId == A && std::abs (e.target (cut) - 0.20f) < 1.0e-6f && ses.arrPlaying() && ses.arrPart() == 0 && e.isRunning();
         float before8 = -1.0f, at9 = -1.0f, at10 = -1.0f, at12 = -1.0f, before16 = -1.0f, after16 = -1.0f, keyBefore8 = -1.0f, keyAfter8 = -1.0f, keyBefore12 = -1.0f, keyAfter12 = -1.0f;
         double recalledB = -1.0, recalledC = -1.0, stoppedAt = -1.0;
-        bool patB = false;
+        bool patB = false, patB8 = false;
         for (int i = 0; i < (int) (22.0 * spb / block) && (ses.arrPlaying() || i < 10); ++i)
         {
             const double p0 = e.songPos();
@@ -796,7 +796,7 @@ static void arrangementTest (int& bad)
             if (recalledC < 0.0 && ses.baseId == C) recalledC = p1;
             auto crossed = [&] (double at) { return p0 < at && p1 >= at; };
             if (crossed (7.97)) { before8 = e.shown (cut); keyBefore8 = e.shown (cx::kKey); }
-            if (crossed (8.1)) keyAfter8 = e.shown (cx::kKey);
+            if (crossed (8.1)) { keyAfter8 = e.shown (cx::kKey); patB8 = ses.pattern (0).steps[0].on; }
             if (crossed (11.9)) keyBefore12 = e.shown (cx::kKey);
             if (crossed (12.1)) keyAfter12 = e.shown (cx::kKey);
             if (crossed (9.0)) at9 = e.shown (cut);
@@ -806,13 +806,13 @@ static void arrangementTest (int& bad)
             if (crossed (16.2)) after16 = e.shown (cut);
             if (stoppedAt < 0.0 && ! e.isRunning()) stoppedAt = p1;
         }
-        const bool onTheBar = recalledB > 7.4 && recalledB < 8.0 && std::abs (before8 - 0.20f) < 0.004f && keyBefore8 == 0.0f && keyAfter8 == 0.0f && keyBefore12 == 0.0f && std::abs (keyAfter12 - 0.25f) < 1.0e-6f;      // (the key: with the notes, when the travel is over)
+        const bool onTheBar = recalledB > 7.4 && recalledB < 8.0 && std::abs (before8 - 0.20f) < 0.004f && keyBefore8 == 0.0f && std::abs (keyAfter8 - 0.25f) < 1.0e-6f && std::abs (keyBefore12 - 0.25f) < 1.0e-6f && std::abs (keyAfter12 - 0.25f) < 1.0e-6f && patB8;      // (the key: with the notes, on the part's own line: the hundred and sixteenth build)
         const bool travels = std::abs (at9 - 0.35f) < 0.012f && std::abs (at10 - 0.50f) < 0.012f && std::abs (at12 - 0.80f) < 1.0e-4f && patB;
         const bool cuts = recalledC > 15.4 && recalledC < 16.0 && std::abs (before16 - 0.80f) < 1.0e-4f && std::abs (after16 - 0.40f) < 1.0e-4f && ! ses.pattern (0).steps[0].on;
         const bool ends = ! ses.arrPlaying() && ! e.isRunning() && stoppedAt > 19.9 && stoppedAt < 20.0 + 1.0e-6 && ses.arrPart() == -1;
         say (atOnce && onTheBar && travels && cuts && ends,
              "PLAY from stopped brings its first part at once and starts the clock. The second is recalled inside the beat before its bar (at beat " + juce::String (recalledB, 2) + ") and nothing moves until the bar line: the filter is where it was at 7.97 ("
-                 + juce::String (before8, 3) + "), the filter travels its bar and the key goes over with the notes at its end (" + juce::String (at9, 3) + " a beat in, " + juce::String (at10, 3) + " at half, " + juce::String (at12, 3)
+                 + juce::String (before8, 3) + "), its notes and the key come in on its line and the filter travels its bar (" + juce::String (at9, 3) + " a beat in, " + juce::String (at10, 3) + " at half, " + juce::String (at12, 3)
                  + " when it is done). A part that cuts is there on its line (" + juce::String (before16, 3) + " before, " + juce::String (after16, 3) + " after). At its end the clock stops, short of the next bar (beat " + juce::String (stoppedAt, 3) + ")");
         if (! (atOnce && onTheBar && travels && cuts && ends)) std::printf ("        (at once %d, on the bar %d [B at %.3f, key %.3f then %.3f], travels %d [pattern %d], cuts %d [C at %.3f], ends %d)\n", atOnce, onTheBar, recalledB, keyBefore8, keyAfter8, travels, patB, cuts, recalledC, ends);
 
@@ -5045,6 +5045,87 @@ static void chaseTest (int& bad)
     }
 }
 
+// (the hundred and sixteenth build) Wiley, Nov 24: "when morphed in arrange wven with all lanes and notes selected, the
+// morph doesn't end sounding like the snapshot" ... "no morph cuts between snapshots seems to have the correct sounds. But
+// morphing iver 16 bars does not." Each part plays its own snapshot's notes from its own bar line, its sound morphing in
+// over MORPH; the sound at the morph's end is the snapshot's
+static void arrMorphTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("An arrangement's parts morphed: each with its own notes (the hundred and sixteenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    int bass = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "bass") bass = l;
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    ses.userSet (cx::kGlide, 0.0f);
+    juce::AudioBuffer<float> b (2, 256);
+    for (int l = 0; l < kLanes; ++l) e.setPattern (l, Pattern());
+    for (int i = 0; i < 8; ++i) e.render (b);
+    const int notes[3] = { 0, 4, 7 };
+    const float cut[3] = { 0.2f, 0.5f, 0.8f };
+    std::vector<juce::int64> ids;
+    int cutK = -1; for (int k = 0; k < kLaneKnobs; ++k) if (juce::String (e.laneKnob (bass, k).param) == "sy_cutoff") cutK = k;
+    for (int k = 0; k < 3; ++k)
+    {
+        Pattern p; p.length = 16; for (int i = 0; i < 16; i += 4) { p.steps[(size_t) i].on = true; p.steps[(size_t) i].note = notes[k]; p.steps[(size_t) i].octave = 2; p.steps[(size_t) i].gate = 1.0f; }
+        e.setPattern (bass, p);
+        e.set (cx::lane (bass, std::max (0, cutK)), cut[k], 0.0);
+        for (int i = 0; i < 8; ++i) e.render (b);
+        ids.push_back (ses.take()); ses.finishTakes (true);
+    }
+    ses.recall (ids[0]); for (int i = 0; i < 100; ++i) e.render (b);
+    for (int k = 0; k < 3; ++k) { ses.arrAdd (ids[(size_t) k]); ses.arrSet (k, 4, 11); }      // (MORPH at its longest: as long as the part, the case asked about)
+    { Engine::HeardNote hb[256]; while (e.takeHeardNotes (hb, 256) > 0) {} }
+    ses.arrPlay (0);
+    std::vector<std::pair<double, int>> heard;      // (bar, note: the loudest of the three, a beat at a time)
+    std::vector<float> beat; double beatAt = -1.0;
+    std::vector<std::pair<double, float>> knob;     // (bar, CUTOFF)
+    const double zero = e.songPos();
+    for (int i = 0; i < 20000 && (ses.arrPlaying() || i < 50); ++i)
+    {
+        e.render (b); ses.arrTick();
+        const double now = e.songPos() - zero;
+        if (beatAt < 0.0 || std::floor (now) != std::floor (beatAt))
+        {
+            if (beat.size() > 4096)
+            {
+                double best = -1.0; int which = -1;
+                for (int k = 0; k < 3; ++k)
+                {
+                    double pw = 0.0;
+                    for (int h = 1; h <= 3; ++h)
+                    {
+                        const double hz = 65.406 * std::pow (2.0, notes[k] / 12.0) * h;
+                        double re = 0, im = 0; for (size_t q = 0; q < beat.size(); ++q) { const double ph = 6.283185307179586 * hz * (double) q / 48000.0; re += beat[q] * std::cos (ph); im += beat[q] * std::sin (ph); }
+                        pw += re * re + im * im;
+                    }
+                    if (pw > best) { best = pw; which = notes[k]; }
+                }
+                float pk = 0; for (auto v : beat) pk = std::max (pk, std::abs (v));
+                if (pk > 1.0e-3f) heard.push_back ({ std::floor (beatAt) / 4.0, which });
+            }
+            beat.clear(); beatAt = now;
+        }
+        for (int k = 0; k < 256; ++k) beat.push_back (b.getSample (0, k));
+        if (i % 5 == 0) knob.push_back ({ (e.songPos() - zero) / 4.0, e.shown (cx::lane (bass, std::max (0, cutK))) });
+    }
+    // each part's notes, through the part
+    bool own = ! heard.empty();
+    juce::String said;
+    for (int part = 0; part < 3; ++part)
+    {
+        int right = 0, wrong = 0;
+        for (auto& h : heard) if (h.first >= part * 4.0 + 0.2 && h.first < part * 4.0 + 3.99) (h.second == notes[part] ? right : wrong)++;
+        own = own && right > 0 && wrong == 0;
+        said << " part " << (part + 1) << ": " << right << " of its own, " << wrong << " not;";
+    }
+    // the sound at each morph's end: the knob where the part's snapshot has it, by the next part's line
+    bool arrived = true;
+    for (int part = 1; part < 3; ++part)
+        for (auto& k : knob) if (k.first > part * 4.0 + 3.9 && k.first < part * 4.0 + 4.0) { arrived = arrived && std::abs (k.second - cut[part]) < 0.02f; if (std::getenv ("SF000_AM_SAY")) std::printf ("    bar %.3f: %.4f (want %.2f)\n", k.first, k.second, cut[part]); }
+    check (cutK >= 0 && own && arrived, "parts of 4 bars, MORPH as long as each: each plays its own snapshot's notes from its own bar line, and its sound has arrived by its end (" + said.trim() + ")");
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5794,7 +5875,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8229,6 +8310,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     displayKnobTest (bad);              // (the hundred and thirteenth build)
     idleWatchTest (bad);                // (the hundred and fourteenth build)
     chaseTest (bad);                    // (the hundred and fifteenth build)
+    arrMorphTest (bad);                 // (the hundred and sixteenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)

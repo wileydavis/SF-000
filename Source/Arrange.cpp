@@ -153,7 +153,9 @@ void Session::arrRecall (int part, double beats)
     // (printed, a part brings its notes whatever NOTES says: there is nothing outside to play them)
     // (its notes: as the part's own N key says, lit as a part starts. Not as the library's NOTES says: that one is for a recall
     // made by hand, and a switch on another page silently emptied every part of its notes.)
+    notesOnLine = true;
     recallOver (arrangement[(size_t) part].snap, beats, arrangement[(size_t) part].notes, arrangement[(size_t) part].lanes);
+    notesOnLine = false;
 }
 
 // ---- what came before
@@ -223,7 +225,9 @@ void Session::arrBring (int part, double beats)
     const Snapshot st = arrStateAt (part, notes);
     stacksLeft (-1);
     glideOver = std::max (0.0, beats);
+    notesOnLine = true;
     applySnapshot (st, recallGlide(), &notes);
+    notesOnLine = false;
     glideOver = -1.0;
     baseId = arrangement[(size_t) part].snap;
     selStep = -1;

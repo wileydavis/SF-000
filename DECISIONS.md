@@ -6689,6 +6689,20 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        SHAPE across its range moves the top octaves 6 to 10 dB as it comes, 30 dB and more with MIX at nought or the filter
        open. TABLE A and SHAPE are oscillator A's; MIX and SHAPE B are B's.
 
+## An arrangement's parts bring their notes on their own line (Nov 24): the hundred and sixteenth build
+
+798. **You**, Nov 24, 15:43 to 15:46: "Arrange is doign something weird. The snapshots recall corectly individually, but when
+     morphed in arrange wven with all lanes and notes selected, the morph doesn't end sounding like the snapshot.", "for
+     example, morphing from snapshots 167-171 in order." and "no morph cuts between snapshots seems to have the correct
+     sounds. But morphing iver 16 bars does not."
+     - **A recall that travels brings its notes at the travel's end** (the notes before play through the glide: a recall by
+       hand). An arrangement's part with MORPH as long as itself had its notes due on the next part's line, and the next
+       part's recall, made a moment before that line, put them off again for its own travel: the parts played the notes of
+       the part before, or the first part's, under their own sound. The knobs, the setups and the inserts all arrived (a
+       check of 3 rigs of random settings through 5 parts found them as a recall makes them).
+     - *Mine:* **an arrangement's part brings its notes on its own bar line, whatever its MORPH**, and its sound morphs in
+       over MORPH (FROM HERE's too). A recall made by hand is as it was.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

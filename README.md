@@ -922,6 +922,13 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### An arrangement's parts bring their notes on their own line (hundred and sixteenth build)
+
+A part of an arrangement brings its snapshot's notes on its own bar line, whatever its MORPH; its
+sound morphs in over MORPH. Before, a morphed part's notes waited for the morph's end, and with
+MORPH as long as the part they never came (DECISIONS 798). A recall by hand still brings the notes
+with the glide's end.
+
 ### Held notes struck when they should sound (hundred and fifteenth build)
 
 A step edited in while the clock runs is heard at once where its note reaches over the playhead
