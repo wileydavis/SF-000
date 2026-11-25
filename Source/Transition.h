@@ -26,6 +26,8 @@ struct Transition
     // (what this firing plays, if not what the two slots say: -1 the slot's; kOff; or kFile with the file here)
     std::atomic<int> askLeadKind { -1 }, askHitKind { -1 };
     std::atomic<const sf::SampleData*> askLead { nullptr }, askHit { nullptr };
+    // (the hundred and eighteenth build) and how loud, beside the TRANSITION's LEVEL: an arrangement's part's own (as gains)
+    std::atomic<float> askLeadGain { 1.0f }, askHitGain { 1.0f };
     // ---- said by the audio thread
     std::atomic<bool> busy { false };           // a line is waited for, or a hit is sounding
     std::atomic<bool> armed { false };          // (the session's ARM, for the MIDI thread: a mute or a solo that arrives there waits too)
@@ -41,6 +43,7 @@ struct Transition
             // what this firing plays, taken once: the slots as they stand now, or its own
             { const int k = askLeadKind.load(); curLeadKind = k >= 0 ? k : leadKind.load(); curLead = k == kFile ? askLead.load() : leadSmp.load(); }
             { const int k = askHitKind.load(); curHitKind = k >= 0 ? k : hitKind.load(); curHit = k == kFile ? askHit.load() : hitSmp.load(); }
+            curLeadGain = askLeadGain.load(); curHitGain = askHitGain.load();
             if (askNow.load()) { waiting = false; leadOn = false; startHit(); }
             else
             {
@@ -76,6 +79,7 @@ struct Transition
             float yl = 0.0f, yr = 0.0f;
             if (waiting && leadOn)
             {
+                const float lg = curLeadGain;
                 if (lk == kBuilt)
                 {
                     const float amp = x * x * 0.7f;
@@ -88,7 +92,7 @@ struct Transition
                         svf[ch][0] = 2.0f * v1 - svf[ch][0]; svf[ch][1] = 2.0f * v2 - svf[ch][1];
                         out[ch] = v1 * amp;
                     }
-                    yl = out[0]; yr = out[1];
+                    yl = out[0] * lg; yr = out[1] * lg;
                     x += dx;
                 }
                 else if (ls != nullptr)
@@ -103,7 +107,7 @@ struct Transition
                     }
                     if (leadPos >= 0.0 && leadPos + 2.0 < len)
                     {
-                        yl = ls->read (0, leadPos, step) * leadFade; yr = ls->read (1, leadPos, step) * leadFade;
+                        yl = ls->read (0, leadPos, step) * leadFade * lg; yr = ls->read (1, leadPos, step) * leadFade * lg;
                         leadPos += step;
                         leadFade = std::min (1.0f, leadFade + 1.0f / (0.01f * (float) sr));
                     }
@@ -114,7 +118,7 @@ struct Transition
                 if (hs != nullptr)
                 {
                     const double step = hs->sr / sr;
-                    if (hitPos + 2.0 < (double) hs->length()) { yl += hs->read (0, hitPos, step); yr += hs->read (1, hitPos, step); hitPos += step; }
+                    if (hitPos + 2.0 < (double) hs->length()) { yl += hs->read (0, hitPos, step) * curHitGain; yr += hs->read (1, hitPos, step) * curHitGain; hitPos += step; }
                     else hitOn = false;
                 }
                 else if (hitBuilt)
@@ -125,7 +129,7 @@ struct Transition
                     hitLp += 0.28f * (noise() - hitLp);
                     const float y = std::sin (juce::MathConstants<float>::twoPi * hitPh) * std::exp (-t / 0.7f) * 0.5f * std::min (1.0f, t / 0.002f)
                                     + hitLp * std::exp (-t / 0.16f) * 0.4f;
-                    yl += y; yr += y;
+                    yl += y * curHitGain; yr += y * curHitGain;
                     hitPos += 1.0;
                     if (t > 4.0f) hitOn = false;
                 }
@@ -154,6 +158,7 @@ private:
     float leadFade = 1.0f, hitPh = 0.0f, hitLp = 0.0f;
     float svf[2][2] {};
     int curLeadKind = kBuilt, curHitKind = kBuilt;              // (this firing's)
+    float curLeadGain = 1.0f, curHitGain = 1.0f;
     const sf::SampleData* curLead = nullptr; const sf::SampleData* curHit = nullptr;
     juce::uint32 rng = 0x2545F491u;
 };

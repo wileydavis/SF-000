@@ -88,6 +88,20 @@ void Session::arrSet (int part, int bars, int morph)
     touch();
 }
 
+// (the hundred and eighteenth build) Wiley, Nov 24: "and a way to adjust the levels for the transition samples (in and hit).
+// adustable for each snapshot in the arrnagement". Each part's lead-in and hit, louder or softer than the TRANSITION's LEVEL.
+void Session::arrTransDb (int part, int slot, int db)
+{
+    if (part < 0 || part >= (int) arrangement.size()) return;
+    auto& p = arrangement[(size_t) part];
+    int& v = slot == 0 ? p.inDb : p.hitDb;
+    const int to = juce::jlimit (-24, 12, db);
+    if (to == v) return;
+    v = to;
+    touch();
+    if (onChange) onChange();
+}
+
 // ---- BREAK (the hundred and seventeenth build). Wiley, Nov 24: "for arrangement, can you give me a "snapshot" block i can add
 // between snapshots that can be as short as 1/4 bar but are silent but with whatever reverb or delay or effect tails from what
 // came before it passed through. for dramatic beat pauses." Asked where a short one sits: "Ends on next bar" (it ends where
@@ -341,7 +355,7 @@ int Session::arrCopy (int part, bool after)
 {
     if (part < 0 || part >= (int) arrangement.size() || (int) arrangement.size() >= kArrMost || print != nullptr || arrangement[(size_t) part].isBreak()) return -1;
     ArrPart p = arrangement[(size_t) part];
-    p.transIn = 0; p.transHit = 0; p.inFile = {}; p.hitFile = {};      // (its lead-in and hit belong where they were put)
+    p.transIn = 0; p.transHit = 0; p.inFile = {}; p.hitFile = {}; p.inDb = p.hitDb = 0;      // (its lead-in and hit belong where they were put)
     p.edited = false;                                                   // (its snapshot is the part's: an EDIT of the copy makes its own)
     const int at = after ? part + 1 : part;
     arrangement.insert (arrangement.begin() + at, p);
@@ -520,7 +534,8 @@ void Session::arrTick()
         };
         int lk = -1, hk = -1; const sf::SampleData* ls = nullptr; const sf::SampleData* hs = nullptr;
         pick (np.transIn, np.inFile, lk, ls); pick (np.transHit, np.hitFile, hk, hs);
-        const double at = engine.transFireTo (arrZero + (double) arrBarsBefore (next) * 4.0, lk, ls, hk, hs);
+        const double at = engine.transFireTo (arrZero + (double) arrBarsBefore (next) * 4.0, lk, ls, hk, hs,
+                                              juce::Decibels::decibelsToGain ((float) np.inDb), juce::Decibels::decibelsToGain ((float) np.hitDb));
         if (at >= 0.0) transAt = at;
     }
     arrBreakAhead();
@@ -696,6 +711,8 @@ var Session::arrToVar() const
         if ((p.lanes & kAllLanes) != kAllLanes) po->setProperty ("lanes", (juce::int64) (p.lanes & kAllLanes));     // (absent: all of them)
         if (p.transIn != 0) po->setProperty ("transIn", p.transIn);                                                 // (absent: not)
         if (p.transHit != 0) po->setProperty ("transHit", p.transHit);
+        if (p.inDb != 0) po->setProperty ("inDb", p.inDb);                                                         // (absent: nought)
+        if (p.hitDb != 0) po->setProperty ("hitDb", p.hitDb);
         if (p.inFile.isNotEmpty()) po->setProperty ("inFile", refOf (p.inFile));                                   // (a copy in the library: from its folder down)
         if (p.hitFile.isNotEmpty()) po->setProperty ("hitFile", refOf (p.hitFile));
         if (p.edited) po->setProperty ("edited", true);                                                             // (absent: no)
@@ -733,8 +750,9 @@ void Session::arrFromVar (const var& v)
             for (int i = 0; i < 12; ++i) if (glideBarsFor ((float) i / 11.0f) <= mb + 1.0e-9) p.morph = i;      // the nearest length this build has, not over it
             if (auto* po = pv.getDynamicObject())
                 for (auto& q : po->getProperties())
-                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("break") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile") && q.name != juce::Identifier ("edited")) p.more.set (q.name, q.value);
+                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("break") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile") && q.name != juce::Identifier ("inDb") && q.name != juce::Identifier ("hitDb") && q.name != juce::Identifier ("edited")) p.more.set (q.name, q.value);
             p.transIn = juce::jlimit (0, 2, (int) pv.getProperty ("transIn", 0)); p.transHit = juce::jlimit (0, 2, (int) pv.getProperty ("transHit", 0));
+            p.inDb = juce::jlimit (-24, 12, (int) pv.getProperty ("inDb", 0)); p.hitDb = juce::jlimit (-24, 12, (int) pv.getProperty ("hitDb", 0));
             p.inFile = pathOf (pv.getProperty ("inFile", "").toString()); p.hitFile = pathOf (pv.getProperty ("hitFile", "").toString());
             p.notes = (bool) pv.getProperty ("notes", true);
             p.edited = (bool) pv.getProperty ("edited", false);

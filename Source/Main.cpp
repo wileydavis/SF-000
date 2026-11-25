@@ -5165,6 +5165,53 @@ static void breakTest (int& bad)
            + " dB); kept and read again as it was");
 }
 
+// (the hundred and eighteenth build) each part's lead-in and hit at its own level: -12 dB on the part is 12 dB under the same at
+// nought, IN and HIT each alone, and the level is kept with the arrangement
+static void transLevelTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("A part's lead-in and hit, each at its own level (the hundred and eighteenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    // the loudest of the lead-in's last bar and of the hit's first half bar, with the part's two levels
+    auto run = [] (int inDb, int hitDb, bool& kept)
+    {
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        ses.userSet (cx::kGlide, 0.0f);
+        juce::AudioBuffer<float> b (2, 256);
+        for (int l = 0; l < kLanes; ++l) e.setPattern (l, Pattern());
+        e.set (cx::kRetMS, 1.0f, 0.0); e.set (cx::kRetMS + 2, 1.0f, 0.0);
+        for (int i = 0; i < 8; ++i) e.render (b);
+        const auto A = ses.take(); ses.finishTakes (true);
+        ses.arrAdd (A); ses.arrSet (0, 2, 0);
+        ses.arrAdd (A); ses.arrSet (1, 2, 0);
+        ses.transBars = 1;
+        ses.arrTransSet (1, 1, 1);
+        ses.arrTransDb (1, 0, inDb); ses.arrTransDb (1, 1, hitDb);
+        ses.arrsCopy ("COPY"); ses.arrsLoad (0);
+        kept = ses.arrangement.size() == 2 && ses.arrangement[1].inDb == juce::jlimit (-24, 12, inDb) && ses.arrangement[1].hitDb == juce::jlimit (-24, 12, hitDb);
+        ses.arrPlay (0);
+        float lead = 0.0f, hit = 0.0f;
+        for (int i = 0; i < 1400 && ses.arrPlaying(); ++i)
+        {
+            e.render (b); ses.arrTick();
+            const double q = e.songPos();
+            const float m = std::max (b.getMagnitude (0, 0, 256), b.getMagnitude (1, 0, 256));
+            if (q > 6.5 && q < 8.0) lead = std::max (lead, m);
+            if (q > 8.02 && q < 10.0) hit = std::max (hit, m);
+        }
+        return std::make_pair (20.0 * std::log10 (lead + 1e-12), 20.0 * std::log10 (hit + 1e-12));
+    };
+    bool k0 = false, k1 = false, k2 = false;
+    const auto at0 = run (0, 0, k0), inDown = run (-12, 0, k1), hitDown = run (0, -12, k2);
+    bool kRange = false; run (-40, 30, kRange);
+    const double dIn = at0.first - inDown.first, dHit = at0.second - hitDown.second;
+    check (k0 && k1 && k2 && kRange && at0.first > -60.0 && at0.second > -40.0 && std::abs (dIn - 12.0) < 1.5 && std::abs (dHit - 12.0) < 1.5
+           && std::abs (inDown.second - at0.second) < 1.5 && std::abs (hitDown.first - at0.first) < 1.5,
+           "IN at -12 dB on the part: its lead-in " + juce::String (dIn, 1) + " dB under the same at nought, the hit as it was; HIT at -12: the hit " + juce::String (dHit, 1)
+           + " dB under, the lead-in as it was; kept with the arrangement, -24 to +12 dB");
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5914,7 +5961,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else if (w == 'B') breakTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else if (w == 'B') breakTest (bad); else if (w == 'V') transLevelTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8351,6 +8398,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     chaseTest (bad);                    // (the hundred and fifteenth build)
     arrMorphTest (bad);                 // (the hundred and sixteenth build)
     breakTest (bad);                    // (the hundred and seventeenth build)
+    transLevelTest (bad);               // (the hundred and eighteenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)
@@ -13661,7 +13709,7 @@ static int shot (const juce::StringArray& args)
         // an arrangement made of the snapshots it comes with, caught playing a little way into its third part
         static const int bars[] = { 8, 16, 8, 32, 16, 8, 16 }, morph[] = { 0, 5, 0, 7, 4, 0, 6 };
         for (int i = 0; i < 7 && i + 1 < (int) ses.library.size(); ++i) { ses.arrAdd (ses.library[(size_t) (1 + (i * 3) % ((int) ses.library.size() - 1))].id); ses.arrSet (i, bars[i], morph[i]); }
-        if (args.contains ("--breaks")) { ses.arrAddBreak (1, 1); ses.arrAddBreak (4, 6); }      // (--breaks: a BREAK of a quarter after the second part, one of a bar and a half after the fourth)
+        if (args.contains ("--breaks")) { ses.arrAddBreak (1, 1); ses.arrAddBreak (4, 6); ses.arrTransSet (3, 1, 1); ses.arrTransDb (3, 0, -6); ses.arrTransDb (3, 1, 3); ses.arrTransSet (4, 0, 1); ses.arrTransDb (4, 1, -12); }      // (--breaks: a BREAK of a quarter after the second part, one of a bar and a half after the fourth)
         ses.arrPlay (2);
         const int blocks = (int) ((14.0 * 60.0 / e.tempo()) * 48000.0 / 512.0);
         for (int i = 0; i < blocks; ++i) { e.render (b); ses.arrTick(); }

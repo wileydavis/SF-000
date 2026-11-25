@@ -922,6 +922,12 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### Each part's lead-in and hit at its own level (hundred and eighteenth build)
+
+Drag a part's IN or HIT plate up or down for its level in that part, -24 to +12 dB beside the
+TRANSITION's LEVEL; the plate says it ("IN -6", "HIT +3"). A press still steps what it plays
+(DECISIONS 800).
+
 ### BREAK, in an arrangement (hundred and seventeenth build)
 
 **BREAK** puts a silent part after the chosen one: from a quarter of a bar to 16 bars (drag its

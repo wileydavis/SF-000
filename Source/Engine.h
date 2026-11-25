@@ -545,7 +545,8 @@ public:
     double transFire (int bars);
     // The same, for a line that is given (the arrangement's: a part's own bar line), and with what it plays if that is not what
     // the two slots say (a kind of -1: the slot's; Transition::kOff; or kFile with a file from transAsset).
-    double transFireTo (double atPpq, int leadKind = -1, const sf::SampleData* lead = nullptr, int hitKind = -1, const sf::SampleData* hit = nullptr);
+    double transFireTo (double atPpq, int leadKind = -1, const sf::SampleData* lead = nullptr, int hitKind = -1, const sf::SampleData* hit = nullptr,
+                        float leadGain = 1.0f, float hitGain = 1.0f);      // (gains: an arrangement's part's own levels, the hundred and eighteenth build)
     const sf::SampleData* transAsset (const juce::String& path);       // a file read once and held (an arrangement part's own lead-in or hit); nullptr: it cannot be read
     // A control set on a line of the song, made by the audio thread a block or two before the one the line falls in (ARM's
     // mutes and solos: on time whatever the screen's thread is doing). A few at a time: false, there was no room. With the

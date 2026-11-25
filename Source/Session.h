@@ -482,6 +482,8 @@ public:
         // part (transHit). Each: 0 not, 1 with what the bar's plates say, 2 with a file of the part's own (inFile, hitFile).
         int transIn = 0, transHit = 0;
         juce::String inFile, hitFile;
+        // (the hundred and eighteenth build) how loud each is, beside the TRANSITION's LEVEL: dB, -24 to +12 (nought: as it is)
+        int inDb = 0, hitDb = 0;
         bool notes = true;              // it brings its snapshot's notes (its own key, N: not the library's NOTES, which is for recalls made by hand)
         bool edited = false;            // its snapshot was made for it by EDIT (and is written over by the next, if nothing else uses it)
         // (the hundred and seventeenth build) a BREAK: no snapshot, its length in quarters of a bar. Nothing of the lanes' steps is
@@ -507,6 +509,7 @@ public:
     void arrNotes (int part, bool on);                  // a part that brings its snapshot's notes, or leaves the sequencers as they are
     void arrSet (int part, int bars, int morph);        // (either below 0: as it is)
     void arrLanes (int part, juce::uint32 lanes);       // the parts of the rig it takes from its snapshot
+    void arrTransDb (int part, int slot, int db);       // a part's lead-in (slot 0) or hit (1) made louder or softer: dB, -24 to +12
     int arrAddBreak (int after, int quarters = 1);      // a BREAK after that part (-1: at the end); its place, or -1: no room
     void arrSetBreak (int part, int quarters);          // a BREAK's length, in quarters of a bar (1 to 64)
     static juce::String breakName (int quarters);       // "1/4 BAR", "1 1/2 BARS"

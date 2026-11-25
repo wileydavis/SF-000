@@ -6720,6 +6720,16 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - *Mine:* **a BREAK has no chip**: EDIT and COPY are not lit on one, and TO STACK leaves it out. In the line it is a dark
        block over the end of what it takes from; its card says where it ends and what it takes.
 
+## Each part's lead-in and hit at its own level (Nov 24): the hundred and eighteenth build
+
+800. **You**, Nov 24, 21:36: "and a way to adjust the levels for the transition samples (in and hit). adustable for each
+     snapshot in the arrnagement"
+     - Each part's IN and HIT has a level of its own, -24 to +12 dB, beside the TRANSITION's LEVEL (which still sets them
+       all). *Mine:* **dragged on the plate itself**, up or down, four points to a dB; pressed and let go, the plate steps
+       what it plays as before (now as the hand comes off, so a drag is not a press). The level is said on the plate when it
+       is not nought ("IN -6", "HIT +3"), kept with the arrangement, and given to the engine with the firing, so a FIRE by
+       hand is at the TRANSITION's LEVEL alone. A COPY of a part starts at nought, as its lead-in and hit are not copied.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

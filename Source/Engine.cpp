@@ -2255,12 +2255,13 @@ const sf::SampleData* Engine::transAsset (const juce::String& path)
     return smp.get();
 }
 
-double Engine::transFireTo (double atPpq, int leadKind, const sf::SampleData* lead, int hitKind, const sf::SampleData* hit)
+double Engine::transFireTo (double atPpq, int leadKind, const sf::SampleData* lead, int hitKind, const sf::SampleData* hit, float leadGain, float hitGain)
 {
     if (! running.load()) return -1.0;
     const double pos = songPos();
     if (atPpq <= pos) return -1.0;
     trans.askLeadKind = leadKind; trans.askLead = lead; trans.askHitKind = hitKind; trans.askHit = hit;
+    trans.askLeadGain = leadGain; trans.askHitGain = hitGain;
     trans.askFrom = pos; trans.askAt = atPpq; trans.askNow = false;
     trans.askSeq.fetch_add (1);
     return atPpq;
@@ -2288,6 +2289,7 @@ void Engine::clearSetsAt()
 double Engine::transFire (int bars)
 {
     trans.askLeadKind = -1; trans.askHitKind = -1;         // (FIRE by hand: what the two slots say)
+    trans.askLeadGain = 1.0f; trans.askHitGain = 1.0f;
     if (! running.load()) { trans.askNow = true; trans.askSeq.fetch_add (1); return -1.0; }
     const double len = (double) juce::jlimit (1, 64, bars) * 4.0, pos = songPos();
     const double at = std::ceil ((pos + 1.0) / len) * len;

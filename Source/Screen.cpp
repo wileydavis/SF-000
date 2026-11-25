@@ -832,7 +832,8 @@ Screen::Tip Screen::tipFor (const Hit& h) const
             t.title = h.b == 0 ? "A LEAD-IN INTO THIS PART" : "A HIT ON THIS PART";
             body = String (h.b == 0 ? "LIT: WHEN THE ARRANGEMENT PLAYS, A LEAD-IN IS SET OFF BY ITSELF THAT ENDS ON THIS PART'S BAR LINE. IT STARTS THE TRANSITION'S BARS BEFORE THAT LINE, OR WHEN THE PART BEFORE BEGINS IF THAT ONE IS SHORTER. "
                                     : "LIT: WHEN THE ARRANGEMENT PLAYS, A HIT LANDS ON THIS PART'S BAR LINE, BY ITSELF. ")
-                   + "AMBER: THE SOUND THE BAR'S PLATES SAY. GREEN: A FILE OF THIS PART'S OWN. DROP A SOUND FILE ON THE PLATE TO GIVE IT ONE; A PRESS STEPS THROUGH ITS OWN FILE, THE BAR'S SOUND, AND OFF."
+                   + "AMBER: THE SOUND THE BAR'S PLATES SAY. GREEN: A FILE OF THIS PART'S OWN. DROP A SOUND FILE ON THE PLATE TO GIVE IT ONE; A PRESS STEPS THROUGH ITS OWN FILE, THE BAR'S SOUND, AND OFF. DRAG IT UP OR DOWN FOR ITS LEVEL IN THIS PART, -24 TO +12 DB BESIDE THE TRANSITION'S LEVEL (SAID ON IT WHEN IT IS NOT NOUGHT)."
+                   + (h.a < (int) ses.arrangement.size() ? " NOW " + String (h.b == 0 ? ses.arrangement[(size_t) h.a].inDb : ses.arrangement[(size_t) h.a].hitDb) + " DB." : String())
                    + (h.a < (int) ses.arrangement.size() && (h.b == 0 ? ses.arrangement[(size_t) h.a].inFile : ses.arrangement[(size_t) h.a].hitFile).isNotEmpty()
                         ? " ITS OWN: " + juce::File (h.b == 0 ? ses.arrangement[(size_t) h.a].inFile : ses.arrangement[(size_t) h.a].hitFile).getFileName().toUpperCase() + "." : String());
             break;
@@ -4502,7 +4503,7 @@ void Screen::drawArrange (G& g)
         const R br (x0, y0 + 54, 66, 40), mr (x0 + 70, y0 + 54, 96, 40);
         if (i > 0 || true) { hit (br, hArrBars, i, 0); if (i > 0) hit (mr, hArrMorph, i, 0); }
         for (int k = 0; k < kLanes + 4; ++k) hit (R (x0 + (float) k * 17.4f, y0 + 27, 16.0f, 24), hArrKey, i, k);      // (the last: N, its notes)
-        hit (R (x0 + 184, y0 + 75, 37, 20), hArrTrans, i, 0); hit (R (x0 + 223, y0 + 75, 37, 20), hArrTrans, i, 1);      // (its IN and its HIT)
+        hit (R (x0 + 166, y0 + 75, 46, 20), hArrTrans, i, 0); hit (R (x0 + 214, y0 + 75, 46, 20), hArrTrans, i, 1);      // (its IN and its HIT: pressed, what it plays; dragged, how loud)
         if (! vis (g, r)) continue;
         card (g, r, i == selPart);
         {
@@ -4530,8 +4531,11 @@ void Screen::drawArrange (G& g)
         text (g, hms ((double) ses.arrBarsBefore (i) * 4.0 * 60.0 / tempo) + " FOR " + hms ((double) p.bars * 4.0 * 60.0 / tempo), R (x0 + 168, y0 + 54, 92, 20), fLbl, col::black, juce::Justification::centredRight);
         // TRANSITION into this part: IN, a lead-in that ends on its bar line; HIT, a hit that lands with it. Amber: with what the
         // bar's plates say; green: with a file of the part's own (dropped on the plate).
-        plate (g, x0 + 186, y0 + 76, "IN", fLbl, 9, p.transIn == 2 ? col::green : p.transIn == 1 ? col::amber : col::putty, col::black, 18);
-        plate (g, x0 + 225, y0 + 76, "HIT", fLbl, 6, p.transHit == 2 ? col::green : p.transHit == 1 ? col::amber : col::putty, col::black, 18);
+        // (the hundred and eighteenth build) each with its own level, beside the TRANSITION's: dragged up or down, said on it
+        auto dbSays = [] (int db) { return db == 0 ? String() : (db > 0 ? " +" : " ") + String (db); };
+        const String inSays = "IN" + dbSays (p.inDb), hitSays = "HIT" + dbSays (p.hitDb);
+        plate (g, x0 + 212 - (std::ceil (tw (fLbl, inSays)) + 10), y0 + 76, inSays, fLbl, 5, p.transIn == 2 ? col::green : p.transIn == 1 ? col::amber : col::putty, col::black, 18);
+        plate (g, x0 + 260 - (std::ceil (tw (fLbl, hitSays)) + 10), y0 + 76, hitSays, fLbl, 5, p.transHit == 2 ? col::green : p.transHit == 1 ? col::amber : col::putty, col::black, 18);
     }
     // The rack, beside the parts: the same one the library is. The bin's chips, or an open stack's, are on its bench to take
     // parts from (ADD on a chip, or the chip carried onto the arrangement); a stack's pile carried onto the arrangement is a
@@ -5122,7 +5126,8 @@ void Screen::downOn (Hit on, juce::Point<float> p)
             break;
         }
         case hArrTrans:
-            if (h->a < (int) ses.arrangement.size()) { selPart = h->a; ses.arrTransStep (h->a, h->b); repaint(); }
+            // (pressed and let go: what it plays, stepped, as the hand comes off. Dragged: its level)
+            if (h->a < (int) ses.arrangement.size()) { selPart = h->a; drag.v0 = (float) (h->b == 0 ? ses.arrangement[(size_t) h->a].inDb : ses.arrangement[(size_t) h->a].hitDb); repaint(); }
             break;
         case hArrKey:
         {
@@ -5318,6 +5323,11 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
         case hArrMorph:
             if (drag.a < (int) ses.arrangement.size()) { ses.arrSet (drag.a, -1, juce::jlimit (0, 11, (int) std::lround (drag.v0 + dy / 22.0f))); repaint(); }
             break;
+        case hArrTrans:     // (four points of the hand to a dB)
+            if (! drag.moved && std::abs (dy) < 4.0f) break;
+            drag.moved = true;
+            if (drag.a < (int) ses.arrangement.size()) { ses.arrTransDb (drag.a, drag.b, (int) std::lround (drag.v0 + dy / 4.0f)); repaint(); }
+            break;
         case hLen:
         {
             Pattern pat = ses.pattern (ses.activeLane);
@@ -5397,6 +5407,7 @@ void Screen::release (const juce::MouseEvent* e)
     if (drag.kind == hDisplay) if (auto* pr = eng.processorFor (cfg)) pr->mod().displayMouseUp();
     cfgStale = true;
     if (drag.kind == hStep && ! drag.moved) stepTap (drag.a);
+    if (drag.kind == hArrTrans && ! drag.moved && drag.a < (int) ses.arrangement.size()) { ses.arrTransStep (drag.a, drag.b); repaint(); }     // (pressed, not dragged)
     if (drag.kind == hAct && heldAct (drag.a) && ! drag.fired)
     {
         rackSay (drag.a == aDelete || drag.a == aOpenDelete ? "HOLD DELETE UNTIL IT IS FULL OF LIGHT: THEN IT IS DELETED" : drag.a == aNewTrack ? "HOLD NEW UNTIL IT IS FULL OF LIGHT: THEN THE RIG IS AS IT STARTS"
@@ -6218,7 +6229,7 @@ juce::Point<float> Screen::where (const juce::MouseEvent& e) const
     if (! three || stage == nullptr) return logical (e.position);
     // A knob in the hand turns by how far the hand has moved, as on the flat screen, however near
     // the eye is. Anything else is wherever the pointer is on the instrument.
-    if (mouseIsDown && (drag.kind == hKnob || drag.kind == hRead || drag.kind == hSnapKnob || drag.kind == hDepth || drag.kind == hLen || drag.kind == hSetup || drag.kind == hArrBars || drag.kind == hArrMorph || drag.kind == hTie))
+    if (mouseIsDown && (drag.kind == hKnob || drag.kind == hRead || drag.kind == hSnapKnob || drag.kind == hDepth || drag.kind == hLen || drag.kind == hSetup || drag.kind == hArrBars || drag.kind == hArrMorph || drag.kind == hArrTrans || drag.kind == hTie))
         return drag.start + (e.position - pressAt) / std::max (0.05f, pointsPerUnit());
     return stage->unitsAt (e.position);
 }
