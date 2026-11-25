@@ -1,6 +1,6 @@
 // SF-000: the app. A window on the screens, the audio device, and three command-line tools:
 //   SF-000 --test [--wav file]                 offline audio and timing checks
-//   SF-000 --shot file.png [--page library|macros] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat|--dark] [--info [--point x,y]] [--phones]   draw a screen to a PNG
+//   SF-000 --shot file.png [--page library|macros|arrange [--breaks]] [--lane N] [--cfg lane|insert|return|space] [--space conv] [--scale 2] [--flat|--dark] [--info [--point x,y]] [--phones]   draw a screen to a PNG
 //   SF-000 --dump                              every hosted module's parameters and presets
 //   SF-000 --e16 file.oxie16                   write the OXI E16 scene (a page per lane, the snapshot page)
 //   SF-000 --miditest                          notes in, the E16's knobs and rings, the clock out: offline checks
@@ -5126,6 +5126,45 @@ static void arrMorphTest (int& bad)
     check (cutK >= 0 && own && arrived, "parts of 4 bars, MORPH as long as each: each plays its own snapshot's notes from its own bar line, and its sound has arrived by its end (" + said.trim() + ")");
 }
 
+// (the hundred and seventeenth build) an arrangement's BREAK: the last beat of the part before it is silent of the lanes' steps,
+// the DUB's tail passes through it, and the part after it is on its bar line
+static void breakTest (int& bad)
+{
+    using namespace sf0;
+    std::printf ("An arrangement's BREAK (the hundred and seventeenth build)\n");
+    auto check = [&bad] (bool ok, const juce::String& what) { std::printf ("  %s: %s\n", ok ? "ok  " : "FAIL", what.toRawUTF8()); std::fflush (stdout); if (! ok) ++bad; };
+    Engine e; e.prepare (48000.0, 256);
+    Session ses (e, false);
+    ses.userSet (cx::kGlide, 0.0f);
+    juce::AudioBuffer<float> b (2, 256);
+    for (int l = 0; l < kLanes; ++l) e.setPattern (l, Pattern());
+    for (int l = 1; l < kLanes; ++l) e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);        // (the kick alone, and what it sends)
+    e.set (cx::kRetMS + 2, 1.0f, 0.0);                                                  // (SPACE out: the DUB's tail alone)
+    Pattern p; p.length = 16; for (int i = 0; i < 16; i += 4) { p.steps[(size_t) i].on = true; p.steps[(size_t) i].gate = 0.5f; }
+    e.setPattern (0, p);
+    e.set (cx::lane (0, cx::kSendA), 0.9f, 0.0);
+    for (int i = 0; i < 8; ++i) e.render (b);
+    const auto A = ses.take(); ses.finishTakes (true);
+    ses.arrAdd (A); ses.arrSet (0, 2, 0);
+    const int br = ses.arrAddBreak (0, 1);
+    ses.arrAdd (A); ses.arrSet (2, 1, 0);
+    const bool shaped = br == 1 && ses.arrangement.size() == 3 && ses.arrangement[1].isBreak() && ses.arrBars() == 3 && ses.arrBarsBefore (2) == 2 && Session::breakName (1) == "1/4 BAR" && Session::breakName (6) == "1 1/2 BARS";
+    // kept and read again
+    ses.arrsCopy ("COPY");                  // (the first kept as the file keeps it; the copy on the page)
+    ses.arrsLoad (0);                       // (the first read back from what was kept)
+    const bool kept = ses.arrangement.size() == 3 && ses.arrangement[1].breakQ == 1;
+    ses.arrPlay (0);
+    std::vector<float> x; std::vector<double> at;
+    const double zero = 0.0;
+    for (int i = 0; i < 2000 && (ses.arrPlaying() || i < 20); ++i) { e.render (b); ses.arrTick(); const double q0 = e.songPos(); for (int k = 0; k < 256; ++k) { x.push_back (std::abs (b.getSample (0, k))); at.push_back (q0); } }
+    auto peak = [&] (double from, double to) { float m = 0.0f; for (size_t i = 0; i < x.size(); ++i) if (at[i] >= from && at[i] < to) m = std::max (m, x[i]); return 20.0 * std::log10 (m + 1.0e-12); };
+    const double hit6 = peak (6.0 + zero, 6.25), hit7 = peak (7.0, 7.25), tail7 = peak (7.25, 8.0), hit8 = peak (8.0, 8.25);
+    check (shaped && kept && hit6 > -30.0 && hit7 < hit6 - 10.0 && tail7 > -80.0 && hit8 > -30.0,
+           "a BREAK of 1/4 BAR after a part of 2 bars: its last beat has no kick (" + juce::String (juce::roundToInt (hit7)) + " dB against " + juce::String (juce::roundToInt (hit6))
+           + " on the beat before), the DUB's tail goes on through it (" + juce::String (juce::roundToInt (tail7)) + " dB), and the next part is on bar 3 (" + juce::String (juce::roundToInt (hit8))
+           + " dB); kept and read again as it was");
+}
+
 static void synthEngineTest (int& bad)
 {
     using namespace synthcheck;
@@ -5875,7 +5914,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     using namespace sf0;
     int bad = 0;
     // (SF000_TEST_NEW set: the newest checks alone, POCKETS', for when they are what is being worked on)
-    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
+    if (std::getenv ("SF000_TEST_NEW") != nullptr) { std::printf ("SF-000 offline checks: the newest only\n"); { const char w = std::getenv ("SF000_TEST_NEW")[0]; if (w == 'm') knobMotionTest (bad); else if (w == 'a') arrangementTest (bad); else if (w == 's') stackNotesTest (bad); else if (w == 'h') stackBlendTest (bad); else if (w == 'p') samplerTest (bad); else if (w == 'f') forgeTest (bad); else if (w == 'c') pocketCurveTest (bad); else if (w == 'q') eqTest (bad); else if (w == 'w') stereoLoopTest (bad); else if (w == 'n') gainAndGlideNotesTest (bad); else if (w == 'x') markersTest (bad); else if (w == 'e') pitchBendTest (bad); else if (w == 'k') arrsKeptTest (bad); else if (w == 'v') seeingTest (bad); else if (w == 'l') stepLockTest (bad); else if (w == 'z') compressorTest (bad); else if (w == 'r') airwindowsTest (bad); else if (w == 'y') layerLiveTest (bad); else if (w == 'u') { sameEngineTest (bad); motionTargetsTest (bad); } else if (w == 'i') { loneStepTest (bad); levelSilentTest (bad); } else if (w == 'o') { mixTest (bad); plainSaysTest (bad); } else if (w == 'd') { reachTest (bad); insertsTest (bad); } else if (w == 'g') moveFxTest (bad); else if (w == 'j') { forgeMoreTest (bad); forgeFinishTest (bad); } else if (w == 'P') sampleEngineTest (bad); else if (w == 'Y') synthEngineTest (bad); else if (w == 'L') samePlaysTest (bad); else if (w == 'K') displayKnobTest (bad); else if (w == 'W') idleWatchTest (bad); else if (w == 'C') chaseTest (bad); else if (w == 'A') arrMorphTest (bad); else if (w == 'B') breakTest (bad); else { if (w != 'b') pocketsTest (bad); convolutionBandsTest (bad); } } std::printf ("%s\n", bad == 0 ? "(the newest checks only: passed)" : "(the newest checks only: FAILED)"); return bad; }
     std::array<float, kLanes> lanePk {};
     std::array<bool, kLanes> waitsForFile {};
     auto run = [&] (int block, double bars, std::vector<float>* keep, int solo, float* lufsOut, float* peakOut, std::array<double, kLanes>* laneRms, int* firstOnset)
@@ -8311,6 +8350,7 @@ static int selfTest (const juce::String& wavPath, double bars = 16.0)
     idleWatchTest (bad);                // (the hundred and fourteenth build)
     chaseTest (bad);                    // (the hundred and fifteenth build)
     arrMorphTest (bad);                 // (the hundred and sixteenth build)
+    breakTest (bad);                    // (the hundred and seventeenth build)
     forgeMoreTest (bad);
     forgeFinishTest (bad);
     synthEngineTest (bad);              // (the hundred and second build)
@@ -13621,10 +13661,11 @@ static int shot (const juce::StringArray& args)
         // an arrangement made of the snapshots it comes with, caught playing a little way into its third part
         static const int bars[] = { 8, 16, 8, 32, 16, 8, 16 }, morph[] = { 0, 5, 0, 7, 4, 0, 6 };
         for (int i = 0; i < 7 && i + 1 < (int) ses.library.size(); ++i) { ses.arrAdd (ses.library[(size_t) (1 + (i * 3) % ((int) ses.library.size() - 1))].id); ses.arrSet (i, bars[i], morph[i]); }
+        if (args.contains ("--breaks")) { ses.arrAddBreak (1, 1); ses.arrAddBreak (4, 6); }      // (--breaks: a BREAK of a quarter after the second part, one of a bar and a half after the fourth)
         ses.arrPlay (2);
         const int blocks = (int) ((14.0 * 60.0 / e.tempo()) * 48000.0 / 512.0);
         for (int i = 0; i < blocks; ++i) { e.render (b); ses.arrTick(); }
-        sc.testPickPart (3);
+        sc.testPickPart (args.contains ("--breaks") ? 2 : 3);
         if (args.contains ("--arrs"))
         {
             // (--arrs: the arrangements kept, on the rack's shelf: that one named, a copy of it, and a short one, with the first back on the page)

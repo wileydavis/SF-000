@@ -484,6 +484,11 @@ public:
         juce::String inFile, hitFile;
         bool notes = true;              // it brings its snapshot's notes (its own key, N: not the library's NOTES, which is for recalls made by hand)
         bool edited = false;            // its snapshot was made for it by EDIT (and is written over by the next, if nothing else uses it)
+        // (the hundred and seventeenth build) a BREAK: no snapshot, its length in quarters of a bar. Nothing of the lanes' steps is
+        // played through it, and the tails of what came before pass through. It ends on the bar line the next part begins on:
+        // its whole bars are its own (bars), and a quarter, a half, three quarters are taken from the end of the part before.
+        int breakQ = 0;
+        bool isBreak() const            { return breakQ > 0; }
         juce::NamedValueSet more;       // what the file says of it that this build does not know: carried
     };
     std::vector<ArrPart> arrangement;
@@ -502,6 +507,9 @@ public:
     void arrNotes (int part, bool on);                  // a part that brings its snapshot's notes, or leaves the sequencers as they are
     void arrSet (int part, int bars, int morph);        // (either below 0: as it is)
     void arrLanes (int part, juce::uint32 lanes);       // the parts of the rig it takes from its snapshot
+    int arrAddBreak (int after, int quarters = 1);      // a BREAK after that part (-1: at the end); its place, or -1: no room
+    void arrSetBreak (int part, int quarters);          // a BREAK's length, in quarters of a bar (1 to 64)
+    static juce::String breakName (int quarters);       // "1/4 BAR", "1 1/2 BARS"
     // Playing it. From stopped: its first part (or `from`) is recalled at once and the clock sets
     // off from the top. While the clock runs: that part comes in on the next bar line. At its end
     // the clock stops. RUN stopped by hand puts the arrangement down.
@@ -897,6 +905,8 @@ private:
     bool arrOn = false, arrWait = false;
     int arrAt = -1, arrStarts = 0, arrTicks = 0;
     int arrTransFor = -1;                               // (the part the TRANSITION was last set off for, while the arrangement plays)
+    int arrBreakFor = -1;                               // (the part whose BREAK, and any straight after it, the engine was last given)
+    void arrBreakAhead();                               // the next BREAK given to the engine, in the song's beats, if it is not yet
     struct TransPend { int kind = 0; juce::int64 id = 0; Scope scope; int ctl = -1; float v = 0.0f; bool sounding = true, onAudio = false; };
     std::vector<TransPend> transPend;                   // what waits for the line: recalls (kind 0) and controls set (1)
     bool transDoing = false;

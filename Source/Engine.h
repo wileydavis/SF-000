@@ -115,6 +115,10 @@ public:
     float handShown (int i) const               { return teaches (i) ? juce::jlimit (0.0f, 1.0f, target (i) + teachDiff[(size_t) (i % cx::kPerLane)].load()) : shown (i); }     // where a knob is drawn
     float stands (int i) const                  { return baseV[(size_t) i].load(); }      // where it stands or has travelled to: what sounds, less MOTION's push
     void set (int i, float v, double glideBeats = 0.0);
+    // (the hundred and seventeenth build) an arrangement's BREAK: from one place in the song to another (beats, as songPos
+    // counts them), no lane's steps are played and what they hold ends; the tails pass through. Any thread.
+    void setBreak (double from, double to)      { brkFrom.store (from); brkTo.store (to); }
+    void clearBreak()                           { brkTo.store (-1.0e18); brkFrom.store (-1.0e18); }
     // (SF-000, the hundred and thirteenth build) A module's display dragged (SYNTH's SHAPE, its filter's point, its envelope):
     // where what it moves is one of the panel's knobs, the knob is turned, by this (the session's hand: LEARN, the snapshot
     // knobs and the rest see it as the knob turned), so the knob, the display and what a snapshot keeps are one. Unset,
@@ -175,6 +179,7 @@ public:
     // in dB (-100: nothing); the session reads them, logs what sounded, and puts them back to -100. idleMaster: the mix out.
     std::array<std::atomic<float>, kMixFaders> idleDb;
     std::atomic<float> idleMaster { -100.0f };
+    std::atomic<double> brkFrom { -1.0e18 }, brkTo { -1.0e18 };
     std::atomic<int> idleNotesIn { 0 };                      // notes played in from outside since the session last looked
     static constexpr double kIdleSeconds = 20.0;
     // the master's loudness, with the short-term figure lufs is: momentary (400 ms) and integrated (since RUN, or since asked)
@@ -719,7 +724,8 @@ private:
         std::atomic<int> delay { 0 };
         Pattern shared;                         // under patLock
         std::atomic<bool> patDirty { true }, patWait { false };    // patWait: taken up at the next bar line
-        std::atomic<bool> restrike { false };                       // (the hundred and fifteenth build: what the pattern holds struck again, next block)
+        std::atomic<bool> restrike { false };
+        bool inBreak = false;                                       // (audio thread: within an arrangement's BREAK, what it held stopped)                       // (the hundred and fifteenth build: what the pattern holds struck again, next block)
         std::atomic<float> patAfter { 0.0f }; std::atomic<bool> patFresh { false }; double patDue = -1.0e18;      // (not before this bar line: setPattern's afterBeats)
         int insLat = 0;                         // what its inserts delay it by
         float lowZ[2] = { 0.0f, 0.0f }, lowAcc = 0.0f; int lowBin = -1;      // the low end across the bar: its low-pass, and the bin being filled

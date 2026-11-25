@@ -82,9 +82,71 @@ void Session::arrSet (int part, int bars, int morph)
 {
     if (part < 0 || part >= (int) arrangement.size()) return;
     auto& p = arrangement[(size_t) part];
+    if (p.isBreak()) { if (bars >= 0) arrSetBreak (part, bars * 4); return; }        // (a BREAK's length is its own: in quarters)
     if (bars >= 0) p.bars = juce::jlimit (1, kArrMaxBars, bars);
     if (morph >= 0) p.morph = juce::jlimit (0, 11, morph);
     touch();
+}
+
+// ---- BREAK (the hundred and seventeenth build). Wiley, Nov 24: "for arrangement, can you give me a "snapshot" block i can add
+// between snapshots that can be as short as 1/4 bar but are silent but with whatever reverb or delay or effect tails from what
+// came before it passed through. for dramatic beat pauses." Asked where a short one sits: "Ends on next bar" (it ends where
+// the next part begins; whole bars are its own, a quarter or a half or three taken from the end of the part before).
+juce::String Session::breakName (int q)
+{
+    q = juce::jmax (1, q);
+    const int whole = q / 4, part = q % 4;
+    static const char* const frac[] = { "", "1/4", "1/2", "3/4" };
+    juce::String s;
+    if (whole > 0) s << whole;
+    if (part > 0) s << (whole > 0 ? " " : "") << frac[part];
+    return s + (q <= 4 ? " BAR" : " BARS");
+}
+
+int Session::arrAddBreak (int after, int quarters)
+{
+    if ((int) arrangement.size() >= kArrMost || print != nullptr) return -1;
+    ArrPart p;
+    p.breakQ = juce::jlimit (1, 64, quarters);
+    p.bars = p.breakQ / 4;
+    const int at = after >= 0 && after < (int) arrangement.size() ? after + 1 : (int) arrangement.size();
+    arrangement.insert (arrangement.begin() + at, p);
+    logAction ("add_break", 0, { { "arr", arrAtId }, { "at", at }, { "quarters", p.breakQ } });
+    if (arrOn && at <= arrAt) ++arrAt;
+    if (arrEdit >= 0 && at <= arrEdit) ++arrEdit;
+    arrBreakFor = -1;
+    touch();
+    if (onChange) onChange();
+    return at;
+}
+
+void Session::arrSetBreak (int part, int quarters)
+{
+    if (part < 0 || part >= (int) arrangement.size() || ! arrangement[(size_t) part].isBreak()) return;
+    auto& p = arrangement[(size_t) part];
+    p.breakQ = juce::jlimit (1, 64, quarters);
+    p.bars = p.breakQ / 4;
+    arrBreakFor = -1;                       // (given to the engine again, as it now is, while it is still ahead)
+    touch();
+    if (onChange) onChange();
+}
+
+void Session::arrBreakAhead()
+{
+    if (! arrOn || arrWait) return;
+    const int n = (int) arrangement.size();
+    for (int j : { arrAt, arrAt + 1 })
+    {
+        if (j < 0 || j >= n || ! arrangement[(size_t) j].isBreak() || (j > 0 && arrangement[(size_t) (j - 1)].isBreak())) continue;
+        if (arrBreakFor == j) return;
+        // the BREAK, with any straight after it, as one: it ends where the part after them begins
+        int last = j, q = 0;
+        while (last < n && arrangement[(size_t) last].isBreak()) q += arrangement[(size_t) last++].breakQ;
+        const double end = arrZero + (double) arrBarsBefore (last) * 4.0;
+        engine.setBreak (end - (double) q, end);
+        arrBreakFor = j;
+        return;
+    }
 }
 
 void Session::arrLanes (int part, juce::uint32 lanes)
@@ -251,7 +313,7 @@ bool Session::usedBesides (juce::int64 snap, int part) const
 
 bool Session::arrEditBegin (int part)
 {
-    if (part < 0 || part >= (int) arrangement.size() || print != nullptr) return false;
+    if (part < 0 || part >= (int) arrangement.size() || print != nullptr || arrangement[(size_t) part].isBreak()) return false;
     if (arrOn) arrStop();
     if (cueId != 0) cue (0);
     // (stopped, so that nothing of the way there is heard; then it plays, from the top of its bars)
@@ -277,7 +339,7 @@ void Session::arrEditDrop()
 
 int Session::arrCopy (int part, bool after)
 {
-    if (part < 0 || part >= (int) arrangement.size() || (int) arrangement.size() >= kArrMost || print != nullptr) return -1;
+    if (part < 0 || part >= (int) arrangement.size() || (int) arrangement.size() >= kArrMost || print != nullptr || arrangement[(size_t) part].isBreak()) return -1;
     ArrPart p = arrangement[(size_t) part];
     p.transIn = 0; p.transHit = 0; p.inFile = {}; p.hitFile = {};      // (its lead-in and hit belong where they were put)
     p.edited = false;                                                   // (its snapshot is the part's: an EDIT of the copy makes its own)
@@ -375,7 +437,7 @@ int Session::arrToStack()
     // (each with its part's keys, N among them: put on a knob, a part that brought its notes brings them there)
     {
         const Quiet q (*this);          // (one thing done: the arrangement kept as a stack, logged once)
-        for (auto& p : arrangement) rackAdd (at, p.snap, (p.lanes & kAllLanes) | (p.notes ? kNotesKey : 0u));
+        for (auto& p : arrangement) if (! p.isBreak()) rackAdd (at, p.snap, (p.lanes & kAllLanes) | (p.notes ? kNotesKey : 0u));      // (a BREAK has no chip)
     }
     logAction ("arr_to_stack", 0, { { "arr", arrAtId }, { "stack", stacks[(size_t) at].id }, { "name", stacks[(size_t) at].name }, { "chips", (int) arrangement.size() } });
     return at;
@@ -390,7 +452,7 @@ void Session::arrPlay (int from)
     // the arrangement plays is still heard, as one pressed while the set plays is.)
     if (cueId != 0) cue (0);
     logAction ("play", 0, { { "arr", arrAtId }, { "from", from }, { "parts", (int) arrangement.size() } });
-    arrOn = true; arrTicks = 0; arrTransFor = -1;
+    arrOn = true; arrTicks = 0; arrTransFor = -1; arrBreakFor = -1; engine.clearBreak();
     for (auto& p : arrangement) { if (p.transIn == 2) engine.transAsset (p.inFile); if (p.transHit == 2) engine.transAsset (p.hitFile); }       // (the parts' own files, read before it plays)
     if (! engine.isRunning())
     {
@@ -400,6 +462,11 @@ void Session::arrPlay (int from)
         logAction ("part", arrangement[(size_t) from].snap, { { "arr", arrAtId }, { "at", from }, { "bars", arrangement[(size_t) from].bars }, { "morph", arrangement[(size_t) from].morph }, { "parts", (int) (arrangement[(size_t) from].lanes & kAllLanes) } });
         arrZero = -(double) arrBarsBefore (from) * 4.0;
         arrStarts = engine.starts(); arrWait = true;       // (until the clock has set off, the place it says is the last run's)
+        {
+            // (a BREAK at or just after the part it starts from: given before the clock sets off, so its first beat is in it)
+            const juce::ScopedValueSetter<bool> notWaiting (arrWait, false);
+            arrBreakAhead();
+        }
         engine.setRunning (true);
     }
     else
@@ -418,6 +485,7 @@ void Session::arrStop()
 {
     if (! arrOn) return;
     arrOn = false; arrAt = -1;
+    engine.clearBreak(); arrBreakFor = -1;
     engine.setRunning (false);
     if (onChange) onChange();
 }
@@ -432,7 +500,7 @@ void Session::arrTick()
 {
     if (! arrOn) return;
     if (arrWait) { if (engine.starts() == arrStarts) return; arrWait = false; }
-    if (! engine.isRunning()) { arrOn = false; arrAt = -1; if (onChange) onChange(); return; }      // stopped by hand: it is put down
+    if (! engine.isRunning()) { arrOn = false; arrAt = -1; engine.clearBreak(); arrBreakFor = -1; if (onChange) onChange(); return; }      // stopped by hand: it is put down
     const double pos = engine.songPos() - arrZero;
     const int next = arrAt + 1;
     // A part that is come into with the TRANSITION: set off its BARS before the part's bar line (at once, if the part before
@@ -455,13 +523,16 @@ void Session::arrTick()
         const double at = engine.transFireTo (arrZero + (double) arrBarsBefore (next) * 4.0, lk, ls, hk, hs);
         if (at >= 0.0) transAt = at;
     }
+    arrBreakAhead();
     if (next < (int) arrangement.size())
     {
         if (pos >= (double) arrBarsBefore (next) * 4.0 - kArrLead)
         {
-            // (FROM HERE, come into while the clock runs: with what every part before it left, over its own way in)
-            if (arrBringNext) arrBring (next, std::max (kArrCut, arrMorphBars (next) * 4.0)); else arrRecall (next, std::max (kArrCut, arrMorphBars (next) * 4.0));
-            arrBringNext = false;
+            // (FROM HERE, come into while the clock runs: with what every part before it left, over its own way in. A BREAK
+            // recalls nothing: the engine was given its place, and what it leaves is what the part after it comes into.)
+            if (arrangement[(size_t) next].isBreak()) {}
+            else if (arrBringNext) arrBring (next, std::max (kArrCut, arrMorphBars (next) * 4.0)); else arrRecall (next, std::max (kArrCut, arrMorphBars (next) * 4.0));
+            if (! arrangement[(size_t) next].isBreak()) arrBringNext = false;
             arrAt = next;
             // (the log: the arrangement has come to this part. What follows what, as it was played)
             logAction ("part", arrangement[(size_t) next].snap, { { "arr", arrAtId }, { "at", next }, { "bars", arrangement[(size_t) next].bars }, { "morph", arrangement[(size_t) next].morph }, { "parts", (int) (arrangement[(size_t) next].lanes & kAllLanes) } });
@@ -474,6 +545,7 @@ void Session::arrTick()
         // (a print stops itself, on the sample)
         arrOn = false; arrAt = -1;
         engine.setRunning (false);
+        engine.clearBreak(); arrBreakFor = -1;
         if (onChange) onChange();
     }
 }
@@ -619,6 +691,7 @@ var Session::arrToVar() const
         auto* po = new juce::DynamicObject();
         po->setProperty ("snap", p.snap);
         po->setProperty ("bars", p.bars);
+        if (p.isBreak()) po->setProperty ("break", p.breakQ);                                                       // (absent: a part, not a BREAK)
         po->setProperty ("morph", glideBarsFor ((float) juce::jlimit (0, 11, p.morph) / 11.0f));       // (in bars: a later build may have other lengths)
         if ((p.lanes & kAllLanes) != kAllLanes) po->setProperty ("lanes", (juce::int64) (p.lanes & kAllLanes));     // (absent: all of them)
         if (p.transIn != 0) po->setProperty ("transIn", p.transIn);                                                 // (absent: not)
@@ -647,6 +720,12 @@ void Session::arrFromVar (const var& v)
         {
             ArrPart p;
             p.snap = (juce::int64) pv.getProperty ("snap", 0);
+            if (const int q = (int) pv.getProperty ("break", 0); q > 0)
+            {
+                p.snap = 0; p.breakQ = juce::jlimit (1, 64, q); p.bars = p.breakQ / 4;
+                arrangement.push_back (p);
+                continue;
+            }
             if (findSnap (p.snap) == nullptr) continue;             // (its snapshot has gone: so has the part)
             p.bars = juce::jlimit (1, kArrMaxBars, (int) pv.getProperty ("bars", 8));
             const double mb = (double) pv.getProperty ("morph", 0.0);
@@ -654,7 +733,7 @@ void Session::arrFromVar (const var& v)
             for (int i = 0; i < 12; ++i) if (glideBarsFor ((float) i / 11.0f) <= mb + 1.0e-9) p.morph = i;      // the nearest length this build has, not over it
             if (auto* po = pv.getDynamicObject())
                 for (auto& q : po->getProperties())
-                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile") && q.name != juce::Identifier ("edited")) p.more.set (q.name, q.value);
+                    if (q.name != juce::Identifier ("snap") && q.name != juce::Identifier ("break") && q.name != juce::Identifier ("bars") && q.name != juce::Identifier ("morph") && q.name != juce::Identifier ("lanes") && q.name != juce::Identifier ("notes") && q.name != juce::Identifier ("transIn") && q.name != juce::Identifier ("transHit") && q.name != juce::Identifier ("inFile") && q.name != juce::Identifier ("hitFile") && q.name != juce::Identifier ("edited")) p.more.set (q.name, q.value);
             p.transIn = juce::jlimit (0, 2, (int) pv.getProperty ("transIn", 0)); p.transHit = juce::jlimit (0, 2, (int) pv.getProperty ("transHit", 0));
             p.inFile = pathOf (pv.getProperty ("inFile", "").toString()); p.hitFile = pathOf (pv.getProperty ("hitFile", "").toString());
             p.notes = (bool) pv.getProperty ("notes", true);
@@ -864,6 +943,7 @@ String Session::printBegin (const juce::File& root)
     p->total = (juce::int64) std::llround ((double) arrBars() * 4.0 * 60.0 / p->tempo * p->rate);
     p->eng->setRecSink (printTimeOnly ? nullptr : p.get());
     p->ses->arrOn = true; p->ses->arrAt = 0; p->ses->arrZero = 0.0; p->ses->arrWait = false;
+    p->ses->arrBreakFor = -1; p->ses->arrBreakAhead();         // (a BREAK at the top: there from the first beat)
     p->eng->setRunning (true);
     printNote = "PRINTING";
     printFolder = dir;

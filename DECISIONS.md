@@ -6703,6 +6703,23 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - *Mine:* **an arrangement's part brings its notes on its own bar line, whatever its MORPH**, and its sound morphs in
        over MORPH (FROM HERE's too). A recall made by hand is as it was.
 
+## BREAK, in an arrangement (Nov 24): the hundred and seventeenth build
+
+799. **You**, Nov 24, 18:46: "for arrangement, can you give me a "snapshot" block i can add between snapshots that can be as
+     short as 1/4 bar but are silent but with whatever reverb or delay or effect tails from what came before it passed
+     through. for dramatic beat pauses." Asked where a short one sits, given the bar grid: **"Ends on next bar"**.
+     - **BREAK** (the key, after the chosen part): a part with no snapshot, a quarter of a bar to 16 bars long (drag its
+       LENGTH, a quarter at a time). From its start to its end no lane's steps are played and what they hold ends on its
+       first sample; the instruments' releases, the inserts' and the returns' tails pass through; notes played in from
+       outside still sound. It ends on the bar line the next part begins on: its whole bars are its own, and a quarter, a
+       half or three quarters are taken from the end of the part before it, so the part after it lands on its downbeat.
+     - *Mine:* **nothing is recalled for it**: the part after it is recalled as any part is (inside the beat before its
+       line), and comes into what the BREAK left. A drone held into it ends, and is struck again on its far side. Two or more
+       BREAKs together are one. The engine is given each BREAK's place in the song's beats as the part before it plays (and
+       before the clock sets off, where one is at the top), so it begins and ends to the sample; a print has them too.
+     - *Mine:* **a BREAK has no chip**: EDIT and COPY are not lit on one, and TO STACK leaves it out. In the line it is a dark
+       block over the end of what it takes from; its card says where it ends and what it takes.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

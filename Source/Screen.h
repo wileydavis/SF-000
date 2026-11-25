@@ -365,6 +365,7 @@ private:
                aArrange, aArrPlay, aArrHere, aArrEarlier, aArrLater, aArrRemove, aArrClear, aArrPrint, aArrEdit, aArrStack,
                aEditKeep, aEditDrop,
                aArrCopyBefore, aArrCopyAfter,      // (the hundred and fifth build) the chosen part again, beside it, into EDIT
+               aArrBreak,                          // (the hundred and seventeenth build) a BREAK after the chosen part
                aFetch,
                aStackCue,
                // the rack: the chip in hand (into the open stack; out of it; earlier, later; into another pocket), and the open thing itself

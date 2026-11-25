@@ -3281,10 +3281,31 @@ void Engine::render (juce::AudioBuffer<float>& out)
         // (the hundred and fifteenth build) a step edited in that reaches over now sounds now; PLAYS turned, or a setting
         // heard from the next note changed, and what the pattern holds is struck again (a drone's next time round may be
         // bars away)
+        // (the hundred and seventeenth build) an arrangement's BREAK: from brkFrom to brkTo (the song's beats) no lane's steps
+        // are played, what they hold ends on its first sample, and whatever sounds on (an instrument's release, the effects'
+        // tails, the returns) passes through. Notes from outside still play.
+        const double bF = brkFrom.load (std::memory_order_relaxed), bT = brkTo.load (std::memory_order_relaxed);
+        const bool brkSet = run && bT > bF;
+        const bool inBrk = brkSet && ppq >= bF - 1e-9 && ppq < bT - 1e-9;
         {
             const bool again2 = ln.restrike.exchange (false) || ln.player.pitched != pitchedWas;
-            if (run && ! starting && ! seqOff && ! ln.patWait.load() && (edited || again2)) ln.player.chase (ppq, again2, ln.midi);
+            if (run && ! starting && ! seqOff && ! inBrk && ! ln.patWait.load() && (edited || again2)) ln.player.chase (ppq, again2, ln.midi);
         }
+        // the steps of [a, b), less any of the BREAK: it stops what sounds on its first sample, and what the pattern holds over
+        // its end is struck there
+        auto steps = [&] (double a, double b2)
+        {
+            if (! brkSet || b2 <= bF + 1e-12 || a >= bT - 1e-12) { ln.player.render (a, b2, spb, n, ln.midi, ppq); return; }
+            if (a < bF) ln.player.render (a, bF, spb, n, ln.midi, ppq);
+            if (! ln.inBreak) { ln.player.stop (ln.midi, juce::jlimit (0, std::max (0, n - 1), (int) std::floor ((std::max (a, bF) - ppq) * spb + 1e-6))); ln.inBreak = true; }
+            if (b2 > bT)
+            {
+                ln.inBreak = false;
+                ln.player.chase (bT, false, ln.midi);
+                ln.player.render (bT, b2, spb, n, ln.midi, ppq);
+            }
+        };
+        if (! brkSet) ln.inBreak = false;
         if (run)
         {
             // a recalled pattern is taken up on the bar line, to the sample: the block is rendered round it
@@ -3298,15 +3319,15 @@ void Engine::render (juce::AudioBuffer<float>& out)
             }
             if (ln.patWait.load() && bar < to - 1e-12 && bar >= ln.patDue - 1e-6)
             {
-                if (bar > ppq && ! seqOff) ln.player.render (ppq, bar, spb, n, ln.midi, ppq);
+                if (bar > ppq && ! seqOff) steps (ppq, bar);
                 {
                     const juce::SpinLock::ScopedTryLockType g (patLock);
                     if (g.isLocked()) ln.player.pat = ln.shared; else ln.patDirty = true;      // (the screen is writing it: next block)
                 }
                 ln.patWait = false;
-                if (! seqOff) ln.player.render (std::max (ppq, bar), to, spb, n, ln.midi, ppq);
+                if (! seqOff) steps (std::max (ppq, bar), to);
             }
-            else if (! seqOff) ln.player.render (ppq, to, spb, n, ln.midi, ppq);
+            else if (! seqOff) steps (ppq, to);
         }
         // notes from outside, on this lane's channel
         if (! liveMidi.isEmpty())

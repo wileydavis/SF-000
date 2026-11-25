@@ -922,6 +922,15 @@ COMPRESSOR, RADIO, DEREZ, ENSEMBLE, TAPE and CLIP.
   values and its steps' locks moved to where they are now; a slot that held FILTER or WEAVE is
   empty (FORMAT.md, `lists` 8).
 
+### BREAK, in an arrangement (hundred and seventeenth build)
+
+**BREAK** puts a silent part after the chosen one: from a quarter of a bar to 16 bars (drag its
+LENGTH). Through it no lane's steps play and what they hold ends; the tails of what came before
+(an instrument's release, the inserts, DUB and SPACE) pass through, and notes played in from
+outside still sound. It ends on the bar line where the next part begins: whole bars are its own,
+and a quarter, a half or three quarters come off the end of the part before, so the next part
+lands on its downbeat (DECISIONS 799).
+
 ### An arrangement's parts bring their notes on their own line (hundred and sixteenth build)
 
 A part of an arrangement brings its snapshot's notes on its own bar line, whatever its MORPH; its

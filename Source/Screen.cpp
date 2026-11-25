@@ -973,6 +973,7 @@ Screen::Tip Screen::tipFor (const Hit& h) const
                 { aEditKeep, "KEEP", "EDIT: THE RIG AS IT STANDS BECOMES A NEW SNAPSHOT AND TAKES THE PART'S PLACE IN THE ARRANGEMENT (RETURN). THE SNAPSHOT THE PART HAD IS LEFT AS IT IS." },
                 { aEditDrop, "DROP", "EDIT: NOTHING IS KEPT, AND THE ARRANGEMENT IS AS IT WAS. THE RIG STAYS AS YOU LEFT IT. A PART MADE BY COPY BEFORE OR AFTER AND NOT YET KEPT IS TAKEN OUT AGAIN." },
                 { aArrCopyBefore, "COPY BEFORE", "THE CHOSEN PART AGAIN, JUST BEFORE IT (SHIFT [): ITS SNAPSHOT, BARS, MORPH AND KEYS, NOT ITS LEAD-IN OR HIT. THE COPY OPENS IN EDIT IN THE MAIN VIEW: TAKE THINGS AWAY OR CHANGE THEM, THEN KEEP MAKES IT A NEW SNAPSHOT OF ITS OWN AND THE ONE YOU COPIED IS NOT TOUCHED. DROP TAKES THE COPY OUT AGAIN. FOR BUILDING THE PEAK FIRST AND WORKING BACK FROM IT." },
+                { aArrBreak, "BREAK", "A BREAK AFTER THE CHOSEN PART: SILENCE FROM EVERY LANE'S STEPS, WITH THE TAILS OF WHAT CAME BEFORE (REVERB, DELAY, AN INSTRUMENT'S RELEASE) PASSING THROUGH. DRAG ITS LENGTH: A QUARTER OF A BAR UP TO 16 BARS. IT ENDS ON THE BAR LINE THE NEXT PART BEGINS ON: WHOLE BARS ARE ITS OWN, AND A QUARTER, A HALF OR THREE QUARTERS ARE TAKEN FROM THE END OF THE PART BEFORE IT, SO THE PART AFTER IT LANDS ON ITS DOWNBEAT. NOTES PLAYED IN FROM OUTSIDE STILL SOUND." },
                 { aArrCopyAfter, "COPY AFTER", "THE CHOSEN PART AGAIN, JUST AFTER IT (SHIFT ]): ITS SNAPSHOT, BARS, MORPH AND KEYS, NOT ITS LEAD-IN OR HIT. THE COPY OPENS IN EDIT IN THE MAIN VIEW: CHANGE IT, THEN KEEP MAKES IT A NEW SNAPSHOT OF ITS OWN AND THE ONE YOU COPIED IS NOT TOUCHED. DROP TAKES THE COPY OUT AGAIN." },
                 { aArrEarlier, "EARLIER", "MOVES THE CHOSEN PART ONE PLACE EARLIER." },
                 { aArrLater, "LATER", "MOVES THE CHOSEN PART ONE PLACE LATER." },
@@ -4413,6 +4414,21 @@ void Screen::drawArrange (G& g)
         for (int i = 0; i < n; ++i)
         {
             const auto& p = ses.arrangement[(size_t) i];
+            if (p.isBreak())
+            {
+                // (the hundred and seventeenth build) a BREAK: as long as it is, ending on the next part's line (over the end of
+                // the part before it, by a quarter, a half or three), dark, its length on it where there is room
+                const double endB = (double) (ses.arrBarsBefore (i) + p.bars) * 4.0, startB = std::max (0.0, endB - (double) p.breakQ);
+                const float bx = x0 + w * (float) (startB / ((double) total * 4.0)), bw = std::max (3.0f, w * (float) ((endB - startB) / ((double) total * 4.0)));
+                const R br (bx, y0, bw, h);
+                hit (br, hArrPart, i, 0);
+                if (! vis (g, R (bx, line.getY(), bw, line.getHeight()))) continue;
+                g.setColour (i == playing ? col::green.darker (0.6f) : i == selPart ? col::yellow.darker (0.4f) : Colour (0xff2B2A28));
+                g.fillRect (br.reduced (0.0f, 3.0f));
+                g.setColour (Colour (0xffB9B4AA)); g.drawRect (br.reduced (0.0f, 3.0f), 1.0f);
+                if (bw > 40.0f) text (g, fitted ("BREAK", fLbl, bw - 6.0f), br, fLbl, col::lit);
+                continue;
+            }
             const float bx = x0 + w * (float) ses.arrBarsBefore (i) / (float) total, bw = w * (float) p.bars / (float) total;
             const R br (bx, y0, bw, h);
             hit (br, hArrPart, i, 0);
@@ -4457,6 +4473,30 @@ void Screen::drawArrange (G& g)
         const auto& p = ses.arrangement[(size_t) i];
         const R r (23.0f + (float) (q % 4) * 282, 184.0f + (float) (q / 4) * 113, 272, 107);
         hit (r, hArrPart, i, 0);
+        if (p.isBreak())
+        {
+            // (the hundred and seventeenth build) a BREAK's card: its number, BREAK, where it ends, and its LENGTH to drag
+            const float x0 = r.getX() + 6, y0 = r.getY() + 6;
+            const R br (x0, y0 + 54, 96, 40);
+            hit (br, hArrBars, i, 0);
+            if (! vis (g, r)) continue;
+            card (g, r, i == selPart);
+            const String num (i + 1);
+            const float wTag = std::max (30.0f, std::ceil (tw (fLegend, num)) + 8.0f);
+            tag (g, R (x0, y0, wTag, 24), num);
+            plate (g, x0 + wTag, y0, "BREAK", fLegend, 8, i == playing ? col::green : Colour (0xff2B2A28), i == playing ? col::black : col::lit, 24);
+            const String ends = "ENDS ON BAR " + String (ses.arrBarsBefore (i) + p.bars + 1);
+            plate (g, r.getRight() - 6 - (std::ceil (tw (fNote, ends)) + 12), y0, ends, fNote, 6, col::white, col::black, 24);
+            text (g, "SILENT. THE TAILS PASS THROUGH.", R (x0, y0 + 28, 260, 22), fLbl, col::black, juce::Justification::centredLeft);
+            readout (g, br, "LENGTH", Session::breakName (p.breakQ));
+            if (p.breakQ % 4 != 0 && i > 0)
+            {
+                text (g, "TAKES " + Session::breakName (p.breakQ % 4), R (x0 + 102, y0 + 56, 158, 18), fLbl, col::black, juce::Justification::centredLeft);
+                text (g, "FROM THE END OF PART " + String (i), R (x0 + 102, y0 + 74, 158, 18), fLbl, col::black, juce::Justification::centredLeft);
+            }
+            else text (g, p.bars > 0 ? String ("BARS OF ITS OWN") : String(), R (x0 + 102, y0 + 56, 158, 36), fLbl, col::black, juce::Justification::centredLeft);
+            continue;
+        }
         nameAt (1, ses.arrangement[(size_t) i].snap, -1, {}, chipNameRect (r, i + 1));
         const float x0 = r.getX() + 6, y0 = r.getY() + 6;
         const R br (x0, y0 + 54, 66, 40), mr (x0 + 70, y0 + 54, 96, 40);
@@ -4521,18 +4561,21 @@ void Screen::drawArrange (G& g)
     const bool editing = ses.arrEdit >= 0;
     actKey (g, aArrPlay, x0 + 368, ky, 64, play ? "STOP" : "PLAY", play ? col::green : col::putty, 5, n > 0, play);
     actKey (g, aArrHere, x0 + 434, ky, 64, "FROM HERE", col::yellow, 5, selPart >= 0);
-    actKey (g, aArrEdit, x0 + 500, ky, 64, "EDIT", editing ? col::amber : col::yellow, 5, selPart >= 0 && ! pr, editing);
+    const bool selBreak = selPart >= 0 && selPart < n && ses.arrangement[(size_t) selPart].isBreak();      // (a BREAK has no snapshot to edit or copy)
+    actKey (g, aArrEdit, x0 + 500, ky, 64, "EDIT", editing ? col::amber : col::yellow, 5, selPart >= 0 && ! pr && ! selBreak, editing);
     // (the hundred and fifth build) the chosen part again, before it or after it, and into EDIT: build the peak, then work out from it
-    const bool room = selPart >= 0 && n < Session::kArrMost && ! pr;
+    const bool room = selPart >= 0 && n < Session::kArrMost && ! pr && ! selBreak;
     actKey (g, aArrCopyBefore, x0 + 574, ky, 80, "COPY BEFORE", col::yellow, 5, room);
     actKey (g, aArrCopyAfter, x0 + 656, ky, 80, "COPY AFTER", col::yellow, 5, room);
+    // (the hundred and seventeenth build) a BREAK after the chosen part (or at the end)
+    actKey (g, aArrBreak, x0 + 738, ky, 64, "BREAK", col::yellow, 5, n < Session::kArrMost && ! pr);
     // (the words a stack's row and a knob's pile have: the chosen part earlier, later, or taken out of the arrangement)
-    actKey (g, aArrEarlier, x0 + 746, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
-    actKey (g, aArrLater, x0 + 812, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
-    actKey (g, aArrRemove, x0 + 878, ky, 64, "TAKE OUT", col::yellow, 5, selPart >= 0);
-    actKey (g, aArrClear, x0 + 960, ky, 64, "CLEAR", col::red, 5, n > 0);
-    actKey (g, aArrStack, x0 + 1042, ky, 64, "TO STACK", col::yellow, 5, n > 0);
-    actKey (g, aArrPrint, x0 + 1108, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
+    actKey (g, aArrEarlier, x0 + 820, ky, 64, "EARLIER", col::yellow, 5, selPart > 0);
+    actKey (g, aArrLater, x0 + 886, ky, 64, "LATER", col::yellow, 5, selPart >= 0 && selPart < n - 1);
+    actKey (g, aArrRemove, x0 + 952, ky, 64, "TAKE OUT", col::yellow, 5, selPart >= 0);
+    actKey (g, aArrClear, x0 + 1034, ky, 64, "CLEAR", col::red, 5, n > 0);
+    actKey (g, aArrStack, x0 + 1116, ky, 64, "TO STACK", col::yellow, 5, n > 0);
+    actKey (g, aArrPrint, x0 + 1182, ky, 64, pr ? "STOP" : "PRINT", pr ? col::green : col::yellow, 5, n > 0, pr);
     if (vis (g, strip))
     {
         String now;
@@ -4540,18 +4583,18 @@ void Screen::drawArrange (G& g)
         else if (play && playing >= 0)
         {
             const auto* sn = ses.findSnap (ses.arrangement[(size_t) playing].snap);
-            now = "PLAYING PART " + String (playing + 1) + " OF " + String (n) + (sn != nullptr ? ": " + sn->name : String()) + ".  BAR " + String (juce::jlimit (1, total, (int) std::floor (std::max (0.0, ses.arrPos()) / 4.0) + 1)) + " OF " + String (total) + ".";
+            now = "PLAYING PART " + String (playing + 1) + " OF " + String (n) + (ses.arrangement[(size_t) playing].isBreak() ? String (": BREAK") : sn != nullptr ? ": " + sn->name : String()) + ".  BAR " + String (juce::jlimit (1, total, (int) std::floor (std::max (0.0, ses.arrPos()) / 4.0) + 1)) + " OF " + String (total) + ".";
         }
         else if (play) now = "COMES IN ON THE NEXT BAR LINE.";
         else if (editing) now = "PART " + String (ses.arrEdit + 1) + " IS BEING EDITED IN THE MAIN VIEW: KEEP OR DROP IT THERE (EDIT GOES BACK TO IT).";
         else now = ses.printNote;
         g.setColour (tone (col::black)); g.setFont (fLegend);
-        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 1192, (int) y0, 478, 24), juce::Justification::centredLeft, 2, 0.7f);
+        g.drawFittedText (now, juce::Rectangle<int> ((int) x0 + 1262, (int) y0, 408, 24), juce::Justification::centredLeft, 2, 0.7f);
         const String help = "PRESS A CHIP IN THE RACK TO HEAR IT; ITS ADD PUTS IT AFTER THE CHOSEN PART, WITH THE PARTS LIT ON IT. CARRIED ONTO THE ARRANGEMENT IT GOES AT THE END; A STACK'S PILE CARRIED HERE IS A PART FOR EACH OF ITS CHIPS. "
                             "A PART'S KEYS: WHAT IT TAKES OF ITS CHIP. DRAG ITS BARS, AND ITS MORPH: HOW LONG THE WAY IN. EDIT: THE CHOSEN PART IN THE MAIN VIEW, KEPT AS A NEW CHIP IN ITS PLACE. COPY BEFORE, AFTER (SHIFT [ ]): THE PART AGAIN BESIDE IT, INTO EDIT. "
-                            "TO STACK: THE PARTS AS A STACK, FOR A KNOB. PRINT: THE TRACK AND ITS STEMS AS FILES, WHERE TAKES GO.";
+                            "BREAK: SILENCE AFTER THE CHOSEN PART, ITS TAILS PASSING THROUGH. TO STACK: THE PARTS AS A STACK, FOR A KNOB. PRINT: THE TRACK AND ITS STEMS AS FILES, WHERE TAKES GO.";
         g.setFont (fLbl);
-        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1192, (int) y0 + 28, 478, 68), juce::Justification::topLeft, 6, 0.75f);
+        g.drawFittedText (help, juce::Rectangle<int> ((int) x0 + 1262, (int) y0 + 28, 408, 68), juce::Justification::topLeft, 6, 0.75f);
     }
     drawCarry (g);          // (what is in the hand, over everything)
 }
@@ -4671,6 +4714,15 @@ void Screen::act (int a)
             selPart = at;
             if (const int line = selPart / 4; line < arrScroll) arrScroll = line; else if (line > arrScroll + 6) arrScroll = line - 6;
             if (ses.arrEdit == at) setPage (pMain);
+            break;
+        }
+        case aArrBreak:
+        {
+            if (ses.printing()) break;
+            const int at = ses.arrAddBreak (selPart, 1);
+            if (at < 0) { ses.printNote = "NO ROOM: AN ARRANGEMENT HOLDS " + String (Session::kArrMost) + " PARTS."; break; }
+            selPart = at;
+            if (const int line = selPart / 4; line < arrScroll) arrScroll = line; else if (line > arrScroll + 6) arrScroll = line - 6;
             break;
         }
         case aArrStack:
@@ -5084,7 +5136,7 @@ void Screen::downOn (Hit on, juce::Point<float> p)
             if (ses.cueing() == id) ses.cueWith (id, Session::scopeOf (lanes));
             break;
         }
-        case hArrBars:  selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].bars; break;
+        case hArrBars:  selPart = h->a; { const auto& ap = ses.arrangement[(size_t) h->a]; drag.v0 = (float) (ap.isBreak() ? ap.breakQ : ap.bars); } break;
         case hArrMorph: selPart = h->a; drag.v0 = (float) ses.arrangement[(size_t) h->a].morph; break;
         case hPick:
         {
@@ -5256,7 +5308,12 @@ void Screen::mouseDrag (const juce::MouseEvent& e)
             if (ses.tieSet (tiesAt(), drag.a, (int) std::lround (drag.v0 + dy / 3.0f))) repaint();
             break;
         case hArrBars:      // (ten points of the hand to a bar)
-            if (drag.a < (int) ses.arrangement.size()) { ses.arrSet (drag.a, juce::jlimit (1, Session::kArrMaxBars, (int) std::lround (drag.v0 + dy / 10.0f)), -1); repaint(); }
+            if (drag.a < (int) ses.arrangement.size())
+            {
+                if (ses.arrangement[(size_t) drag.a].isBreak()) ses.arrSetBreak (drag.a, juce::jlimit (1, 64, (int) std::lround (drag.v0 + dy / 10.0f)));      // (a BREAK: ten points to a quarter of a bar)
+                else ses.arrSet (drag.a, juce::jlimit (1, Session::kArrMaxBars, (int) std::lround (drag.v0 + dy / 10.0f)), -1);
+                repaint();
+            }
             break;
         case hArrMorph:
             if (drag.a < (int) ses.arrangement.size()) { ses.arrSet (drag.a, -1, juce::jlimit (0, 11, (int) std::lround (drag.v0 + dy / 22.0f))); repaint(); }
@@ -5432,7 +5489,7 @@ void Screen::mouseDoubleClick (const juce::MouseEvent& e)
         else if (h->kind == hSnapKnob) ses.pressSnapKnob (h->a);       // press: its nearest snapshot becomes the base
         else if (h->kind == hDepth) { ses.knobs[(size_t) h->a].depth = 1.0f; ses.turnSnapKnob (h->a, ses.value (cx::kSnap + h->a)); }
         else if (recallHit (*h)) {}                                         // (a chip: two quick presses take it to the set)
-        else if (h->kind == hArrBars) ses.arrSet (h->a, 8, -1);            // (eight bars; cut)
+        else if (h->kind == hArrBars) { if (h->a < (int) ses.arrangement.size() && ses.arrangement[(size_t) h->a].isBreak()) ses.arrSetBreak (h->a, 1); else ses.arrSet (h->a, 8, -1); }      // (eight bars; cut. A BREAK: a quarter of a bar)
         else if (h->kind == hArrMorph) ses.arrSet (h->a, -1, 0);
         else if (h->kind == hSetup && h->a < (int) cfgParams.size())
         {
