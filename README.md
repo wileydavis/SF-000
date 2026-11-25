@@ -947,12 +947,12 @@ outside still sound. It ends on the bar line where the next part begins: whole b
 and a quarter, a half or three quarters come off the end of the part before, so the next part
 lands on its downbeat (DECISIONS 799).
 
-### An arrangement's parts bring their notes on their own line (hundred and sixteenth build)
+### An arrangement's notes at the morph's end (hundred and twentieth build)
 
-A part of an arrangement brings its snapshot's notes on its own bar line, whatever its MORPH; its
-sound morphs in over MORPH. Before, a morphed part's notes waited for the morph's end, and with
-MORPH as long as the part they never came (DECISIONS 798). A recall by hand still brings the notes
-with the glide's end.
+A part of an arrangement brings its snapshot's notes at the end of its MORPH, once its sound has
+arrived, and the part before's notes play on under the morph; but at the latest a bar before the
+part ends, so a MORPH as long as the part still has its notes heard (DECISIONS 802, taking back the
+hundred and sixteenth build's "on its own line", 798). A recall by hand is as it was.
 
 ### Held notes struck when they should sound (hundred and fifteenth build)
 

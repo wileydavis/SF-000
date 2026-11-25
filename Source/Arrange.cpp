@@ -223,15 +223,25 @@ bool Session::arrTransFile (int part, int slot, const juce::File& f)
     return true;
 }
 
+// (the hundred and twentieth build) Wiley, Nov 25: "for arrange, I ;ike it better when the notes came in at the end of a morph.
+// when they come in at the beginning, the paramaters often aren't right and the sound can be weird." A part's notes come at
+// its MORPH's end again, as a recall by hand's do; but at the latest a bar before the part ends (on its line, a part of one
+// bar), so that a MORPH as long as the part still has its notes heard in it (what the hundred and sixteenth build was for).
+double Session::arrNotesCap (int part) const
+{
+    if (part < 0 || part >= (int) arrangement.size()) return 0.0;
+    return std::max (0.0, ((double) arrangement[(size_t) part].bars - 1.0) * 4.0);
+}
+
 void Session::arrRecall (int part, double beats)
 {
     if (part < 0 || part >= (int) arrangement.size()) return;
     // (printed, a part brings its notes whatever NOTES says: there is nothing outside to play them)
     // (its notes: as the part's own N key says, lit as a part starts. Not as the library's NOTES says: that one is for a recall
     // made by hand, and a switch on another page silently emptied every part of its notes.)
-    notesOnLine = true;
+    notesCap = arrNotesCap (part);
     recallOver (arrangement[(size_t) part].snap, beats, arrangement[(size_t) part].notes, arrangement[(size_t) part].lanes);
-    notesOnLine = false;
+    notesCap = -1.0;
 }
 
 // ---- what came before
@@ -301,9 +311,9 @@ void Session::arrBring (int part, double beats)
     const Snapshot st = arrStateAt (part, notes);
     stacksLeft (-1);
     glideOver = std::max (0.0, beats);
-    notesOnLine = true;
+    notesCap = arrNotesCap (part);
     applySnapshot (st, recallGlide(), &notes);
-    notesOnLine = false;
+    notesCap = -1.0;
     glideOver = -1.0;
     baseId = arrangement[(size_t) part].snap;
     selStep = -1;

@@ -6767,6 +6767,17 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        it; a display is given no more height than leaves them that. SYNTH's then gives up the room from its table's row
        (209 over a lane's EQ, 230 elsewhere). The status line is narrowed by the CHOP key's width.
 
+## An arrangement's notes at the morph's end again (Nov 25): the hundred and twentieth build
+
+802. **You**, Nov 25, 13:34: "for arrange, I ;ike it better when the notes came in at the end of a morph. when they come in
+     at the beginning, the paramaters often aren't right and the sound can be weird."
+     - A part's notes come at the end of its MORPH again, as a recall by hand's do; the part before's notes play on under
+       the morph until then. This takes back 798's "on its own bar line".
+     - *Mine:* **at the latest a bar before the part ends** (on its line, for a part one bar long). A MORPH as long as the
+       part ends on the next part's line, where the next part takes over: with no limit its notes were never heard at all,
+       the fault 798 was about. So a 16-bar part with a 16-bar MORPH brings its notes for its last bar, the sound 15/16 of
+       the way there; a 16-bar part with an 8-bar MORPH brings them on bar 9, the sound all the way there.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

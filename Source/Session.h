@@ -926,7 +926,9 @@ private:
     bool arrBringNext = false;          // FROM HERE while the clock runs: the part that comes in is brought with all that came before it
     double recallGlide() const          { return glideOver >= 0.0 ? glideOver : glideBeats(); }
     void arrRecall (int part, double beats);
-    bool notesOnLine = false;           // (an arrangement's part being recalled: its notes on the next bar line, not at its morph's end)
+    double arrNotesCap (int part) const;        // (how long after its line a part's notes may wait for its MORPH: a bar before its end)
+    double notesCap = -1.0;             // (an arrangement's part being recalled: its notes at its morph's end, but no later than this many beats
+                                        // after its line, a bar before the part ends; -1: a recall by hand, at the morph's end. The hundred and twentieth build)
     juce::var arrToVar() const;
     void arrFromVar (const juce::var&);
     juce::NamedValueSet arrMore;

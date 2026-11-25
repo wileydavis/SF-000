@@ -2665,12 +2665,11 @@ void Session::applySnapshot (const Snapshot& s, double glide, const std::array<b
     //    (with the audio not yet started there is nothing playing to leave: the change is simply made)
     settleHolds();                  // (a lane a stack knob was holding between two instruments: the one that arrived is its instrument)
     // (the notes, and what goes with them: at the end of a travel of a bar or more; with a shorter one, or none, on the next bar line)
-    // (an arrangement's part brings its notes on its own bar line, whatever its MORPH: the hundred and sixteenth build. Wiley,
-    // Nov 24: "when morphed in arrange wven with all lanes and notes selected, the morph doesn't end sounding like the
-    // snapshot" and "no morph cuts between snapshots seems to have the correct sounds. But morphing iver 16 bars does not."
-    // A part's notes came at its MORPH's end, which is the next part's line when MORPH is the part's length, and the next
-    // part's recall then put them off again: the parts played the notes of the part before, or of the first.)
-    const double notesAfter = glide >= 4.0 && ! notesOnLine ? glide : 0.0;
+    // (an arrangement's part: at its MORPH's end too, but a bar before the part ends at the latest. The hundred and sixteenth
+    // build had them on the part's line, whatever its MORPH: a MORPH as long as the part had its notes due on the next
+    // part's line, where the next part's recall put them off again, and the parts played the notes of the part before. Wiley
+    // liked them better at the end, the sound there first: the hundred and twentieth build)
+    const double notesAfter = glide < 4.0 ? 0.0 : notesCap >= 0.0 ? std::min (glide, notesCap) : glide;
     if (engine.isPrepared()) for (int l = 0; l < kLanes; ++l) if (laneJumps (s, l)) engine.forkVoice (l, glide);
     // (and each lane's model before its knobs: a model with sound knobs of its own names what the first eight places mean,
     // so the values that follow reach what this snapshot meant by them)
