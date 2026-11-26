@@ -847,9 +847,11 @@ void SFProcessor::processChunk (juce::AudioBuffer<float>& buffer, juce::AudioBuf
     {
         mainView.clear();
         if (extra != nullptr) extra->clear();
+        module->faultCapture();                 // (SF-000, the hundred and twenty-first build: what was sounding, for the log)
         module->reset();
         overSamples = 0;
         fault = true;
+        faultKind = bad ? 1 : 2;                // (SF-000, the hundred and twenty-first build: which, for SF-000's log)
         faultCount.fetch_add (1);
     }
     else

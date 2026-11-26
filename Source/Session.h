@@ -287,6 +287,12 @@ public:
     // nothing here reads it. What ONLINE or a LOAD does to the library is not the player's, and is not logged.
     void logAction (const char* what, juce::int64 chip = 0, const juce::NamedValueSet& more = {});
     void idleWatch();                           // (the idle watch: see Session.cpp)
+    // (the hundred and twenty-first build) THE FAULT WATCH: a processor reset by the guard (NaN, or held at its ceiling) is
+    // logged ("fault": where, which, how many times) and FAULT lit for ten seconds from it
+    void faultWatch();
+    bool faultLit() const                       { return juce::Time::getMillisecondCounter() < faultUntil; }
+    std::map<const void*, int> faultsSeen;
+    juce::uint32 faultUntil = 0;
     juce::String idleSaid;                      // the last thing heard with the clock stopped 20 s, as INFO says it (empty: none)
     juce::File logDir() const;
     void waitForLog();                  // until what was logged is on the disk (tests; quitting)

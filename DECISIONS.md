@@ -6778,6 +6778,24 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
        the fault 798 was about. So a 16-bar part with a 16-bar MORPH brings its notes for its last bar, the sound 15/16 of
        the way there; a 16-bar part with an 8-bar MORPH brings them on bar 9, the sound all the way there.
 
+## The fault watch (Nov 25): the hundred and twenty-first build
+
+803. **You**, Nov 25, 15:59 and 16:01: "I still get occasional bursts of sounds at idle after the last build." and "faulkt
+     light is also on". The idle watch's log (114) had PAD and LEAD at +12.0 dB with no note played in, one after the other
+     every 15 to 35 s for minutes: +12 dB is the ceiling the guard holds an instrument's output to, and an output held there a
+     quarter of a second is reset, which is what lit FAULT (and kept it lit for good, saying nothing of which).
+     - **Not found yet.** Your session.json, opened here at 48 and 44.1 kHz, each of the arrangement's snapshots recalled,
+       played and left stopped (LEAD with the psy file; the other samples are not here): nothing. Nor 600 settings of SYNTH
+       on LEAD and PAD, with and without the lane's own and MOTION's, nor 40 of each insert effect, nor 60 of the whole rig.
+     - *Mine:* **every reset is now logged** ("fault": where, which module, NaN or held at the ceiling, how many times, whether
+       the clock ran), and for a lane, what was in it at that moment: how loud the sound was after each engine, after its
+       FILTER, POCKET and LEVEL, how many voices each engine had, how many keys were down and how many notes came that block.
+       The next burst says where it starts.
+     - *Mine:* **FAULT is lit for ten seconds from a reset**, not for good; SETUP's engine line says the last ("RESET: PAD
+       (HELD AT +12 DB)").
+     - Diagnostics for this, kept: `--idlesession SESSION.json PLAYSECS IDLESECS` (with `SF000_IDLE_SNAPS`, `_FILES`,
+       `_RATE`, `_BLOCK`), `--idlefuzz`, `--fxfuzz`, `--rigfuzz`.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

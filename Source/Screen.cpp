@@ -2344,12 +2344,12 @@ void Screen::drawMaster (G& g, R r)
         plate (g, fx, y0 + 4, says, fLbl, 4, ses.finishAt > 0 ? col::amber : col::putty, col::black, 18);
         hit (R (fx - 2, y0 + 3, fw + 4, 20), hAct, aFinish, 0);
         // FAULT, between the title and FINISH: its lamp, and the word where there is room for it
-        // (lit: a module said something is wrong with its sound, or a buffer ran late in the last three seconds. SET UP says which)
+        // (lit: a module was reset by the guard in the last ten seconds, or a buffer ran late in the last three. SETUP says which)
         const float lx = x0 + wTitle + 2 + wChan + 4;
         if (lx + 9 < fx - 2)
         {
             g.setColour (tone (col::black)); g.fillRect (R (lx, y0 + 5, 9, 18));
-            g.setColour (eng.fault.load() || eng.overLately() ? col::amber : tone (col::grey)); g.fillRect (R (lx + 2, y0 + 7, 5, 14));
+            g.setColour (ses.faultLit() || eng.overLately() ? col::amber : tone (col::grey));      // (the hundred and twenty-first build: ten seconds from a reset, not for good) g.fillRect (R (lx + 2, y0 + 7, 5, 14));
             if (lx + 12 + std::ceil (tw (fLbl, "FAULT")) < fx - 2) text (g, "FAULT", R (lx + 12, y0, 40, 26), fLbl, col::black, juce::Justification::centredLeft);
         }
     }

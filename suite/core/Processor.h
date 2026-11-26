@@ -148,6 +148,7 @@ public:
     std::atomic<bool> clipped { false };
     std::atomic<bool> fault { false };      // NaN / runaway: the module was reset (header shows FAULT)
     std::atomic<int> faultCount { 0 };
+    std::atomic<int> faultKind { 0 };       // (SF-000, the hundred and twenty-first build) the last: 1 NaN or Inf, 2 held at the clamp (runaway)
 
     juce::AudioProcessorValueTreeState apvts;
 

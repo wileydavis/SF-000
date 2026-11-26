@@ -1548,6 +1548,24 @@ SFProcessor* Engine::processorFor (Target t) const
     return t.slot == 0 ? retA.get() : space[(size_t) spaceWant.load()].get();
 }
 
+std::vector<Engine::ProcAt> Engine::allProcessors() const
+{
+    std::vector<ProcAt> v;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        const juce::String ln (lanes()[(size_t) l].name);
+        if (auto* vc = lane[(size_t) l].voice.load(); vc != nullptr && vc->proc) v.push_back ({ vc->proc.get(), ln });
+        for (int k = 0; k < kSlots; ++k)
+            if (auto* in = lane[(size_t) l].ins[k].load(); in != nullptr && in->proc && in->type >= 0 && in->type < (int) effects().size())
+                v.push_back ({ in->proc.get(), ln + " INSERT " + juce::String (k + 1) + " " + effects()[(size_t) in->type].name });
+    }
+    if (retA) v.push_back ({ retA.get(), "DUB" });
+    for (size_t k = 0; k < space.size(); ++k) if (space[k]) v.push_back ({ space[k].get(), "SPACE " + juce::String ((int) k + 1) });
+    if (busProc) v.push_back ({ busProc.get(), "DRUM BUS" });
+    for (auto& m : master) if (m) v.push_back ({ m.get(), "MASTER " + m->getName().fromFirstOccurrenceOf ("SF ", false, false) });
+    return v;
+}
+
 const KnobDef* Engine::masterCompKnob()
 {
     for (auto& st : masterChain()) if (juce::String (st.module) == "GLUE") return &st.knob;

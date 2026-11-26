@@ -554,6 +554,10 @@ public:
     bool setAt (int ctl, float v, double atPpq);
     void clearSetsAt();     // a sample's own controls (GAIN, NORMALISE, PLAY, ENVELOPE) as they open: the same, for a snapshot from before them
     SFProcessor* processorFor (Target) const;
+    // (the hundred and twenty-first build) every processor in the rig, with where it is, for the fault watch (message thread)
+    struct ProcAt { SFProcessor* proc; juce::String where; };
+    std::vector<ProcAt> allProcessors() const;
+    juce::String faultSaid;                     // (message thread) the fault watch's last, as SETUP says it (Session::faultWatch)
     // (SF-000) how a change of a lane instrument's parameter reaches a note that is sounding, on the model the lane has
     // now (the suite's Module.h, Reach). Not the lane's instrument's (an effect's, the mix's): LIVE.
     sf::Reach reachOf (int lane, const juce::String& id) const;

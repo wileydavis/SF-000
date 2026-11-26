@@ -321,3 +321,8 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   `core/SampleTables.h`: `chopFrom` (Live's Raw-off slices) and the recording's overview, in `Scan`.
   `modules/SynthDisplay.cpp`: rewritten round the table (the stack, HARMONICS, the strip), squeezed where given less than
   230. All marked `(SF-000, the hundred and nineteenth build)` (DECISIONS 801).
+
+- **The hundred and twenty-first build: the fault watch.** `core/Module.h`: `faultCapture` and `faultNote`. `core/Processor.h`,
+  `.cpp`: `faultKind`, and the module asked to keep what was sounding before the guard resets it. `modules/Lane.cpp`: each
+  engine's peak, voices, keys and notes of the block, kept at a reset and said. `modules/SynthEngine.h`, `SampleEngine.h`:
+  `voicesNow`. All marked `(SF-000, the hundred and twenty-first build)` (DECISIONS 803).

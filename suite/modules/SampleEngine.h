@@ -100,6 +100,7 @@ public:
     // Adds this block's sound to L and R (layerGain: what a LAYER note is scaled by).
     void render (const Ctx& c, float* L, float* R, int n, float layerGain = 1.0f);
     bool sounding() const { return active > 0; }
+    int voicesNow() const { return active; }      // (SF-000, the hundred and twenty-first build: the fault watch)
     bool holds() const { return holdsNow; }
     // (SF-000, the hundred and third build) GATE turned as notes sound: as SynthEngine's
     void gateNow (int hold, const int* down, int numDown);

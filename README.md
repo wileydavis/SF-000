@@ -947,6 +947,12 @@ outside still sound. It ends on the bar line where the next part begins: whole b
 and a quarter, a half or three quarters come off the end of the part before, so the next part
 lands on its downbeat (DECISIONS 799).
 
+### The fault watch (hundred and twenty-first build)
+
+When the guard resets a module (a sound that went to +12 dB and stayed, or broke), the log says
+which, and for a lane what was inside it: each engine's level, its voices, the keys down. FAULT is
+lit for ten seconds from it, and SETUP says the last (DECISIONS 803).
+
 ### An arrangement's notes at the morph's end (hundred and twentieth build)
 
 A part of an arrangement brings its snapshot's notes at the end of its MORPH, once its sound has

@@ -246,9 +246,17 @@ public:
             if (e == kForge && (fg.sounding() || mA == kForge || (layerOn && mB == kForge))) fg.render (l, r, n, g);
         };
         // (an engine that is neither, ringing out after it was let go, goes with MODEL's)
+        // (the hundred and twenty-first build: how loud the sound is after each engine, for the fault watch)
+        auto peakOf = [n] (const float* l, const float* r) { float p = 0.0f; for (int i = 0; i < n; ++i) p = std::max (p, std::max (std::fabs (l[i]), std::fabs (r[i]))); return p; };
         for (int e = 0; e < 3; ++e)
+        {
             if (! (layerOn && e == mB)) renderInto (e, aL, aR, layer);
+            lastPk[e] = peakOf (aL, aR);
+        }
         if (layerOn) renderInto (mB, bL, bR, layer);
+        lastPk[3] = layerOn ? peakOf (bL, bR) : 0.0f;
+        lastVoices[0] = eng.voicesNow(); lastVoices[1] = sy.voicesNow(); lastVoices[2] = fg.sounding() ? 1 : 0;
+        lastKeys = numDown; lastEvents = (int) events.size(); lastModel = mA;
         const float k0 = c.v0 (SPLIT), k1 = c.v (SPLIT);
         split.set (c.v (SPLITHZ), 1.0f / (1.0f + layer), LayerSplit::amount (k1));
         const bool splitOff = ! layerOn || split.off (LayerSplit::amount (k0), LayerSplit::amount (k1));
@@ -261,7 +269,26 @@ public:
             hist.push (std::fabs (0.5f * (l + r)));
         }
         const float pocket = role.pocket && ! c.b (PPOST) ? c.v (PDEPTH) : 0.0f;
+        lastPk[4] = peakOf (L, R);
         out.process (c, io, FILT, RES, pocket, role.pocket ? c.v (PSHAPE) : 0.0f, false, LEVEL, ! role.follows);
+        lastPk[5] = peakOf (io.getReadPointer (0), io.getReadPointer (1));
+    }
+
+    // (SF-000, the hundred and twenty-first build) THE FAULT WATCH: where in the lane the sound was when the guard reset it
+    void faultCapture() override
+    {
+        for (int k = 0; k < 6; ++k) capPk[k].store (lastPk[k]);
+        for (int k = 0; k < 3; ++k) capVoices[k].store (lastVoices[k]);
+        capKeys.store (lastKeys); capEvents.store (lastEvents); capModel.store (lastModel);
+    }
+    juce::String faultNote() const override
+    {
+        auto db = [] (float p) { return juce::String (juce::Decibels::gainToDecibels (p, -100.0f), 1); };
+        static const char* const names[3] = { "SAMPLE", "SYNTH", "FORGE" };
+        return "model " + juce::String (names[juce::jlimit (0, 2, capModel.load())]) + "; peak after SAMPLE " + db (capPk[0]) + ", SYNTH " + db (capPk[1]) + ", FORGE " + db (capPk[2])
+             + ", layer " + db (capPk[3]) + ", engines " + db (capPk[4]) + ", after filter, pocket and level " + db (capPk[5])
+             + "; voices SAMPLE " + juce::String (capVoices[0].load()) + ", SYNTH " + juce::String (capVoices[1].load()) + ", FORGE " + juce::String (capVoices[2].load())
+             + "; keys down " + juce::String (capKeys.load()) + ", events " + juce::String (capEvents.load());
     }
 
     // ---- the display: SYNTH's or SAMPLE's while it is the model; KICK FORGE's, what the lane gives out
@@ -414,6 +441,8 @@ private:
     static constexpr int kOwn = 70;
     struct DecimHist { std::atomic<float> v[512] {}; int w = 0, k = 0; float acc = 0; void push (float x) { acc = std::max (acc, x); if (++k >= 512) { v[w].store (std::min (1.0f, acc)); w = (w + 1) % 512; k = 0; acc = 0; } } };
     DecimHist hist;
+    float lastPk[6] {}; int lastVoices[3] {}, lastKeys = 0, lastEvents = 0, lastModel = 0;        // (the fault watch: this block's)
+    std::atomic<float> capPk[6] {}; std::atomic<int> capVoices[3] {}, capKeys { 0 }, capEvents { 0 }, capModel { 0 };
 };
 
 // The rig's lanes, by the names they had: what each is in the rig, and how it opens

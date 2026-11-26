@@ -81,6 +81,7 @@ public:
     void noteOff (int offset, int key, int gen);         // key -1: all of them
     void render (const Ctx& c, float* L, float* R, int n, float layerGain = 1.0f);
     bool sounding() const { return active > 0; }
+    int voicesNow() const { return active; }      // (SF-000, the hundred and twenty-first build: the fault watch)
     // whether a note held goes on sounding: played as NOTES, and an envelope that sustains. (SF-000, the hundred and fifteenth
     // build: with SUSTAIN at nought a held note dies away, and a lone step longer than its sequence, tied to itself as a
     // drone, was heard once and never again; the chord lane's patch is so. Struck each time round instead.)

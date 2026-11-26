@@ -4980,6 +4980,31 @@ static void idleWatchTest (int& bad)
     e.setRunning (true); secs (1.0); ses.idleWatch(); e.setRunning (false); secs (5.0); ses.idleWatch();
     check (said() == 1, "playing, and the first 20 s after the clock stops (the tails), are let be");
     (void) line;
+    // (the hundred and twenty-first build) THE FAULT WATCH: PAD's instrument driven past its ceiling a quarter of a second, and
+    // reset by the guard: logged as PAD's, with what was sounding inside it; FAULT lit, and out again ten seconds on
+    {
+        int pad = 0; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == "pad") pad = l;
+        ses.faultWatch();
+        const bool unlit = ! ses.faultLit();
+        auto* p = e.processorFor ({ 0, pad, 0 });
+        for (auto& sp : e.setupParams ({ 0, pad, 0 })) if (sp.id == "sy_gain") e.setSetup ({ 0, pad, 0 }, "sy_gain", 1.0f);
+        ses.userSet (cx::lane (pad, cx::kSeqMute), 1.0f);
+        if (const int li = p->paramIndex ("level"); li >= 0) p->param (li)->setValueNotifyingHost (1.0f);
+        if (const int di = p->paramIndex ("sy_drive"); di >= 0) p->param (di)->setValueNotifyingHost (1.0f);
+        const int was = p->faultCount.load();
+        for (int k = 60; k < 76; ++k) e.noteInAt (juce::MidiMessage::noteOn (pad + 1, k, 1.0f), 0);
+        int tries = 0;
+        while (p->faultCount.load() == was && tries++ < 4) secs (0.5);
+        for (int k = 60; k < 76; ++k) e.noteInAt (juce::MidiMessage::noteOff (pad + 1, k), 0);
+        secs (0.2);
+        ses.logTail.clear();
+        ses.faultWatch();
+        juce::String line; for (auto& l : ses.logTail) if (l.contains ("\"fault\"")) line = l;
+        const bool logged = line.contains ("\"PAD\"") && line.contains ("runaway") && line.contains ("voices SAMPLE") && ses.faultLit() && e.faultSaid.contains ("PAD");
+        check (p->faultCount.load() > was ? unlit && logged : true,
+               p->faultCount.load() > was ? "a reset by the guard is logged with where and what was sounding, and FAULT is lit: " + line.substring (0, 400)
+                                          : juce::String ("(PAD could not be driven past its ceiling: the fault watch not checked here)"));
+    }
 }
 
 // (the hundred and fifteenth build) Wiley, Nov 24: a sustained note added while playing, PLAYS turned and back, the chord
@@ -5389,6 +5414,155 @@ static void wavetableTest (int& bad)
         check (! listed && on > 0.5f && off < 0.5f && back > 0.5f, "CHOP is a key's, in no cell of CONFIG (" + juce::String (listed ? "listed" : "not listed") + "); turned on (" + juce::String (on, 1) + ") and taken in a snapshot, turned off (" + juce::String (off, 1) + "), the snapshot recalled brings it back (" + juce::String (back, 1) + ")");
     }
     dir.deleteRecursively();
+}
+
+// (diagnostic) --idlefuzz LANE SEEDS: SYNTH on a lane at random settings, notes played and let go, then left; says each
+// setting that sounds 10 s after the notes ended, or that the guard reset
+static int idleFuzz (const juce::String& laneSlug, int seeds, int firstSeed)
+{
+    const bool allOf = std::getenv ("SF000_FUZZ_ALL") != nullptr;      // (every parameter, MOTION too, not only SYNTH's)
+    using namespace sf0;
+    int li = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == laneSlug) li = l;
+    if (li < 0) return 1;
+    int found = 0, silent = 0;
+    for (int seed = firstSeed; seed < firstSeed + seeds; ++seed)
+    {
+        juce::Random rnd (seed);
+        const auto& lane = lanes()[(size_t) li];
+        SFProcessor q (sf::makeModule (lane.module));
+        auto setPlain = [&q] (const char* id, float v) { if (const int i = q.paramIndex (id); i >= 0) q.param (i)->setValueNotifyingHost (q.param (i)->convertTo0to1 (v)); };
+        for (auto& f : lane.fixed) setPlain (f.param, f.value);
+        if (const int mi = q.paramIndex ("model"); mi >= 0) { const auto& ch = q.allSpecs()[(size_t) mi].choices; for (int k = 0; k < (int) ch.size(); ++k) if (ch[(size_t) k] == "SYNTH") setPlain ("model", (float) k); }
+        juce::String said;
+        const auto& specs = q.allSpecs();
+        for (int i = 0; i < (allOf ? (int) specs.size() : q.numModuleParams()); ++i)
+        {
+            const juce::String id (specs[(size_t) i].id);
+            if (id == "model" || (! allOf && ! id.startsWith ("sy_")) || rnd.nextFloat() < 0.5f) continue;
+            const float v = rnd.nextFloat() < 0.3f ? (rnd.nextBool() ? 1.0f : 0.0f) : rnd.nextFloat();
+            q.param (i)->setValueNotifyingHost (v);
+            said << id << "=" << juce::String (q.param (i)->convertFrom0to1 (v), 3) << " ";
+        }
+        q.setRateAndBufferSizeDetails (48000.0, 256); q.prepareToPlay (48000.0, 256);
+        juce::AudioBuffer<float> b (2, 256);
+        const int blocks = (int) (40.0 * 48000.0 / 256.0), offAt = (int) (1.5 * 48000.0 / 256.0);
+        float late = 0.0f, played = 0.0f; double lateAt = 0.0;
+        for (int k = 0; k < blocks; ++k)
+        {
+            juce::MidiBuffer midi;
+            if (k == 2) { midi.addEvent (juce::MidiMessage::noteOn (1, 48, 0.9f), 0); midi.addEvent (juce::MidiMessage::noteOn (1, 55, 0.6f), 10); midi.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 20); }
+            if (k == offAt) for (int n : { 48, 55, 60 }) midi.addEvent (juce::MidiMessage::noteOff (1, n), 0);
+            b.clear(); q.processBlock (b, midi);
+            if (k < offAt) played = std::max (played, b.getMagnitude (0, 0, 256));
+            if (k > offAt + (int) (10.0 * 48000.0 / 256.0)) { const float pk = std::max (b.getMagnitude (0, 0, 256), b.getMagnitude (1, 0, 256)); if (pk > late) { late = pk; lateAt = k * 256.0 / 48000.0; } }
+        }
+        if (played < 1.0e-3f) ++silent;
+        if (late > 0.01f || q.fault.load())
+        {
+            ++found;
+            std::printf ("seed %d: peak %.3f at %.1f s, fault %d, resets %d\n  %s\n", seed, late, lateAt, (int) q.fault.load(), q.faultCount.load(), said.toRawUTF8());
+            std::fflush (stdout);
+        }
+    }
+    std::printf ("%d of %d sound when they should not (%d silent while played)\n", found, seeds, silent);
+    return 0;
+}
+
+// (diagnostic) --fxfuzz SEEDS: each insert effect at random settings (FREEZE and THROW off), given half a second of noise
+// and then nothing: says each that reaches the guard's ceiling, is reset, or still sounds 30 s on
+static int fxFuzz (int seeds, int firstSeed)
+{
+    using namespace sf0;
+    for (const auto& fx : effects())
+    {
+        int found = 0;
+        for (int seed = firstSeed; seed < firstSeed + seeds; ++seed)
+        {
+            juce::Random rnd (seed * 7919 + 13);
+            SFProcessor q (sf::makeModule (fx.module));
+            juce::String said;
+            const auto& specs = q.allSpecs();
+            for (int i = 0; i < q.numModuleParams(); ++i)
+            {
+                const juce::String id (specs[(size_t) i].id);
+                if (id == "freeze" || id == "throw") { q.param (i)->setValueNotifyingHost (0.0f); continue; }
+                if (rnd.nextFloat() < 0.4f) continue;
+                const float v = rnd.nextFloat() < 0.3f ? (rnd.nextBool() ? 1.0f : 0.0f) : rnd.nextFloat();
+                q.param (i)->setValueNotifyingHost (v);
+                said << id << "=" << juce::String (q.param (i)->convertFrom0to1 (v), 3) << " ";
+            }
+            q.setRateAndBufferSizeDetails (48000.0, 256); q.prepareToPlay (48000.0, 256);
+            juce::AudioBuffer<float> b (2, 256); juce::MidiBuffer none;
+            const int blocks = (int) (45.0 * 48000.0 / 256.0), feed = (int) (0.5 * 48000.0 / 256.0), lateFrom = (int) (30.0 * 48000.0 / 256.0);
+            float late = 0.0f, most = 0.0f;
+            for (int k = 0; k < blocks; ++k)
+            {
+                b.clear();
+                if (k < feed) for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 256; ++i) b.setSample (ch, i, 0.5f * (rnd.nextFloat() * 2.0f - 1.0f));
+                q.processBlock (b, none);
+                const float pk = std::max (b.getMagnitude (0, 0, 256), b.getMagnitude (1, 0, 256));
+                if (k >= feed) most = std::max (most, pk);
+                if (k >= lateFrom) late = std::max (late, pk);
+            }
+            if (late > 0.02f || most > 3.9f || q.faultCount.load() > 0)
+            {
+                ++found;
+                if (found <= 4) std::printf ("%s seed %d: after %.3f, at 30 s on %.3f, resets %d\n  %s\n", fx.name, seed, most, late, q.faultCount.load(), said.toRawUTF8());
+            }
+        }
+        std::printf ("%s: %d of %d\n", fx.name, found, seeds);
+        std::fflush (stdout);
+    }
+    return 0;
+}
+
+// (diagnostic) --rigfuzz SEEDS FIRST: the whole rig, PAD and LEAD at random settings (MOTION too) and random steps, played
+// four bars and stopped, then left 40 s: says each that the idle watch or the fault watch hears
+static int rigFuzz (int seeds, int firstSeed)
+{
+    using namespace sf0;
+    int found = 0;
+    for (int seed = firstSeed; seed < firstSeed + seeds; ++seed)
+    {
+        juce::Random rnd (seed * 31 + 7);
+        Engine e; e.prepare (48000.0, 256);
+        Session ses (e, false);
+        juce::AudioBuffer<float> b (2, 256);
+        auto secs = [&] (double t) { for (int i = 0; i < (int) (t * 48000.0 / 256.0); ++i) e.render (b); };
+        secs (0.2);
+        juce::String said;
+        for (const char* slug : { "pad", "lead" })
+        {
+            int l = 0; for (int k = 0; k < kLanes; ++k) if (juce::String (lanes()[(size_t) k].slug) == slug) l = k;
+            auto* p = e.processorFor ({ 0, l, 0 });
+            const auto& specs = p->allSpecs();
+            for (int i = 0; i < (int) specs.size(); ++i)
+            {
+                const juce::String id (specs[(size_t) i].id);
+                if (id == "model" || id == "layer_model" || id.startsWith ("sp_") || id.startsWith ("fg_") || rnd.nextFloat() < 0.6f) continue;
+                const float v = rnd.nextFloat() < 0.3f ? (rnd.nextBool() ? 1.0f : 0.0f) : rnd.nextFloat();
+                p->param (i)->setValueNotifyingHost (v);
+                said << slug << "." << id << "=" << juce::String (p->param (i)->convertFrom0to1 (v), 3) << " ";
+            }
+            Pattern pt; pt.length = 1 + rnd.nextInt (16);
+            for (int i = 0; i < pt.length; ++i) if (rnd.nextFloat() < 0.4f) { pt.steps[(size_t) i].on = true; pt.steps[(size_t) i].note = rnd.nextInt (12); pt.steps[(size_t) i].octave = 2 + rnd.nextInt (3); pt.steps[(size_t) i].gate = rnd.nextFloat() < 0.3f ? 16.0f : rnd.nextFloat() * 2.0f; pt.steps[(size_t) i].vel = rnd.nextFloat(); }
+            ses.setPattern (l, pt);
+        }
+        for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) != "pad" && juce::String (lanes()[(size_t) l].slug) != "lead") e.set (cx::lane (l, cx::kMute), 1.0f, 0.0);
+        e.setRunning (true); secs (8.0); e.setRunning (false);
+        secs (21.0); ses.idleWatch(); ses.faultWatch();
+        juce::String heard;
+        for (int k = 0; k < 7; ++k) { secs (3.0); ses.idleWatch(); ses.faultWatch(); }
+        for (auto& line : ses.logTail) if (line.contains ("\"idle_sound\"") || line.contains ("\"fault\"")) heard << "    " << line << "\n";
+        if (heard.isNotEmpty())
+        {
+            ++found;
+            std::printf ("seed %d:\n%s  %s\n", seed, heard.toRawUTF8(), said.toRawUTF8());
+            std::fflush (stdout);
+        }
+    }
+    std::printf ("%d of %d heard at idle\n", found, seeds);
+    return 0;
 }
 
 static void synthEngineTest (int& bad)
@@ -8704,6 +8878,56 @@ static int finishRig (const juce::StringArray& args)
 // in buffers of N samples (256), no faster than real time, while this thread runs the session's timer, which brings each
 // part. What came out is written to DIR/X.wav (live.wav), with how long each buffer took. --single: the same calls made
 // from one thread, a buffer and then a look at the arrangement, for a render to hold the other against.
+// (diagnostic) --idlesession SESSION.json [PLAYSECS] [IDLESECS]: the session as it opens, played PLAYSECS (0: not) and then
+// left stopped: what the idle watch and the fault watch say, every 3 s
+static int idleSession (const juce::StringArray& args)
+{
+    using namespace sf0;
+    const int at = args.indexOf ("--idlesession");
+    const juce::File src (args[at + 1].unquoted());
+    const double playFor = at + 2 < args.size() ? args[at + 2].getDoubleValue() : 0.0, idleFor = at + 3 < args.size() ? args[at + 3].getDoubleValue() : 120.0;
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sf000-idlesession");
+    dir.deleteRecursively(); dir.createDirectory();
+    src.copyFileTo (dir.getChildFile ("session.json"));
+    Session::stateFileForTests = dir.getChildFile ("session.json");
+    {
+        const double rate = std::getenv ("SF000_IDLE_RATE") != nullptr ? std::atof (std::getenv ("SF000_IDLE_RATE")) : 48000.0;
+        const int blk = std::getenv ("SF000_IDLE_BLOCK") != nullptr ? std::atoi (std::getenv ("SF000_IDLE_BLOCK")) : 256;
+        Engine e; e.prepare (rate, blk);
+        Session ses (e, true);
+        juce::AudioBuffer<float> b (2, blk);
+        auto secs = [&] (double t) { for (int i = 0; i < (int) (t * rate / blk); ++i) e.render (b); };
+        secs (1.0);
+        if (const char* fl = std::getenv ("SF000_IDLE_FILES"))       // ("7=/path,9=/path": files put on lanes by number from 0)
+            for (auto& one : juce::StringArray::fromTokens (fl, ",", ""))
+                e.loadFile (one.upToFirstOccurrenceOf ("=", false, false).getIntValue(), juce::File (one.fromFirstOccurrenceOf ("=", false, false)));
+        sf::tables::waitForScans(); secs (1.0);
+        for (int l = 0; l < kLanes; ++l)
+        {
+            juce::String m; for (auto& sp : e.setupParams ({ 0, l, 0 })) if (sp.id == "model" || sp.id == "sy_table_a") m << sp.id << "=" << sp.text << " ";
+            std::printf ("%s: %s file %s, pattern %d steps\n", lanes()[(size_t) l].name, m.toRawUTF8(), e.laneFile (l).toRawUTF8(), ses.pattern (l).length);
+        }
+        juce::StringArray snaps; if (const char* sn = std::getenv ("SF000_IDLE_SNAPS")) snaps.addTokens (sn, ",", ""); else snaps.add ("");
+        for (auto& sid : snaps)
+        {
+            if (sid.isNotEmpty()) { ses.recall (sid.getLargeIntValue()); secs (2.0); std::printf ("== %s\n", sid.toRawUTF8()); std::fflush (stdout); }
+            if (playFor > 0.0) { e.setRunning (true); secs (playFor); e.setRunning (false); }
+            ses.logTail.clear();
+            for (double t = 0.0; t < idleFor; t += 3.0)
+            {
+                secs (3.0); ses.idleWatch(); ses.faultWatch();
+                for (auto& line : ses.logTail)
+                    if (line.contains ("\"idle_sound\"") || line.contains ("\"fault\"")) std::printf ("%6.0f s: %s\n", t + 3.0, line.toRawUTF8());
+                ses.logTail.clear();
+                std::fflush (stdout);
+            }
+        }
+    }
+    Session::stateFileForTests = juce::File();
+    dir.deleteRecursively();
+    return 0;
+}
+
 static int liveSession (const juce::StringArray& args)
 {
     using namespace sf0;
@@ -17550,7 +17774,7 @@ private:
         const int lateN = engine.overCount.load(), dropped = devices.getXRunCount();
         load.setText ("ENGINE: " + juce::String (juce::roundToInt (100.0 * engine.cpu.load())) + " % OF EACH BUFFER'S TIME (THE SOUND'S SHARE OF ONE CORE)\n"
                           + juce::String (juce::roundToInt (100.0 * engine.cpuMost.load())) + " % AT THE MOST LATELY. "
-                          + (engine.fault.load() ? juce::String ("A MODULE REPORTS A FAULT. ") : juce::String())
+                          + (engine.faultSaid.isNotEmpty() ? "LAST " + engine.faultSaid + ". " : juce::String())
                           + (lateN == 0 ? juce::String ("NO BUFFER HAS RUN LATE") : "RUN LATE (EACH A GAP IN THE SOUND): " + juce::String (lateN))
                           + (dropped > 0 ? ", DROPPED: " + juce::String (dropped) : juce::String()),
                       juce::dontSendNotification);
@@ -19255,6 +19479,10 @@ public:
             quit(); return;
         }
         if (args.contains ("--uitest")) { setApplicationReturnValue (uiTest()); quit(); return; }
+        if (args.contains ("--fxfuzz")) { const int at = args.indexOf ("--fxfuzz"); setApplicationReturnValue (fxFuzz (args[at + 1].getIntValue(), args[at + 2].getIntValue())); quit(); return; }
+        if (args.contains ("--rigfuzz")) { const int at = args.indexOf ("--rigfuzz"); setApplicationReturnValue (rigFuzz (args[at + 1].getIntValue(), args[at + 2].getIntValue())); quit(); return; }
+        if (args.contains ("--idlesession")) { setApplicationReturnValue (idleSession (args)); quit(); return; }
+        if (args.contains ("--idlefuzz")) { const int at = args.indexOf ("--idlefuzz"); setApplicationReturnValue (idleFuzz (args[at + 1], args[at + 2].getIntValue(), args[at + 3].getIntValue())); quit(); return; }
         if (args.contains ("--cfgcheck")) { juce::String says; const bool ok = configStays (says); std::printf ("%s %s\n", ok ? "  ok  " : "  FAIL", says.toRawUTF8()); setApplicationReturnValue (ok ? 0 : 1); quit(); return; }
         if (args.contains ("--stagetest")) { setApplicationReturnValue (stageTest()); quit(); return; }
         if (args.contains ("--onlinetest"))

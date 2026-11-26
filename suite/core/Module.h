@@ -195,6 +195,10 @@ public:
     // (SF-000, the ninety-fourth build) Does a note held for good go on sounding? Not a sample that plays once and is over:
     // a sequence's only step, longer than the sequence, is then struck every time round and not tied to itself (LanePlayer).
     virtual bool holdsNotes() const                 { return true; }
+    // (SF-000, the hundred and twenty-first build) the guard is about to reset it (audio thread: keep what was sounding, no
+    // allocation); what it kept, said for SF-000's log (message thread)
+    virtual void faultCapture() {}
+    virtual juce::String faultNote() const          { return {}; }
     // The status line the display shows (SF TERROIR's imports and captures), as text. Message thread.
     virtual juce::String statusLine() const         { return {}; }
     virtual void paint (juce::Graphics&, juce::Rectangle<float>) {}

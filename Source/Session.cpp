@@ -3,6 +3,7 @@
 #include "Build.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include "core/Sample.h"
+#include "core/Processor.h"
 #include "modules/SampleEngine.h"
 
 namespace sf0
@@ -65,6 +66,7 @@ void Session::timerCallback()
     if (const bool run = engine.isRunning(); run != logRunWas) { logRunWas = run; logAction (run ? "run" : "stop", 0, { { "bpm", (double) engine.tempo() } }); }
     engine.tidy();
     idleWatch();
+    faultWatch();
     pullHeard();
     if (samplesMoved) { samplesMoved = false; sweepSamples(); }      // a sample was given: the one it replaced, if nothing holds it now, goes
     // (the timer runs faster while a snapshot waits for its sound; the file is still written no more than every three seconds)
@@ -93,6 +95,28 @@ void Session::idleWatch()
         idleSaid = "HEARD WHILE STOPPED: " + (from.isEmpty() ? juce::String ("THE MIX") : from.joinIntoString (", ")) + " (MIX " + juce::String (mix, 1) + " DB"
                  + (notesIn > 0 ? ", " + juce::String (notesIn) + " NOTES PLAYED IN)" : ", NO NOTE PLAYED IN)");
         logAction ("idle_sound", 0, { { "from", from.joinIntoString (", ") }, { "db", (double) most }, { "mix_db", (double) mix }, { "notes_in", notesIn } });
+    }
+}
+
+// THE FAULT WATCH (the hundred and twenty-first build): Wiley, Nov 25, "I still get occasional bursts of sounds at idle after
+// the last build." and "faulkt light is also on". The idle watch heard PAD and LEAD at +12 dB, the guard's ceiling: a
+// processor held there a quarter of a second is reset, and the FAULT lamp stayed lit for good after, not saying which. Now
+// each reset is logged with where it was, and the lamp is lit ten seconds from the last.
+void Session::faultWatch()
+{
+    for (auto& pa : engine.allProcessors())
+    {
+        const int now = pa.proc->faultCount.load();
+        auto it = faultsSeen.find (pa.proc);
+        if (it == faultsSeen.end()) { faultsSeen[pa.proc] = now; continue; }        // (one first seen: what it had is not new)
+        if (now <= it->second) continue;
+        const int more = now - it->second;
+        it->second = now;
+        const int kind = pa.proc->faultKind.load();
+        engine.faultSaid = "RESET: " + pa.where + (kind == 1 ? " (NOT A NUMBER)" : " (HELD AT +12 DB)") + (more > 1 ? ", " + juce::String (more) + " TIMES" : juce::String());
+        faultUntil = juce::Time::getMillisecondCounter() + 10000;
+        logAction ("fault", 0, { { "where", pa.where }, { "module", pa.proc->getName() }, { "kind", juce::String (kind == 1 ? "nan" : "runaway") }, { "times", more },
+                                 { "running", engine.isRunning() }, { "inside", pa.proc->mod().faultNote() } });
     }
 }
 
