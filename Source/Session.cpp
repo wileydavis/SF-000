@@ -106,6 +106,21 @@ void Session::faultWatch()
 {
     for (auto& pa : engine.allProcessors())
     {
+        // (the hundred and twenty-second build) at the clamp, and not reset (a crackle): logged with what was sounding inside,
+        // while the clock is stopped (playing, a patch driven that hard is heard for what it is)
+        {
+            const int c = pa.proc->clampCount.load();
+            auto ci = clampsSeen.find (pa.proc);
+            if (ci == clampsSeen.end()) clampsSeen[pa.proc] = c;
+            else if (c > ci->second)
+            {
+                const int more = c - ci->second;
+                ci->second = c;
+                if (! engine.isRunning())
+                    logAction ("clamp", 0, { { "where", pa.where }, { "times", more }, { "peak_db", (double) juce::Decibels::gainToDecibels (pa.proc->clampPeak.load(), -100.0f) },
+                                             { "inside", pa.proc->mod().faultNote() } });
+            }
+        }
         const int now = pa.proc->faultCount.load();
         auto it = faultsSeen.find (pa.proc);
         if (it == faultsSeen.end()) { faultsSeen[pa.proc] = now; continue; }        // (one first seen: what it had is not new)

@@ -148,7 +148,9 @@ public:
     std::atomic<bool> clipped { false };
     std::atomic<bool> fault { false };      // NaN / runaway: the module was reset (header shows FAULT)
     std::atomic<int> faultCount { 0 };
-    std::atomic<int> faultKind { 0 };       // (SF-000, the hundred and twenty-first build) the last: 1 NaN or Inf, 2 held at the clamp (runaway)
+    std::atomic<int> faultKind { 0 };
+    std::atomic<int> clampCount { 0 };      // (SF-000, the hundred and twenty-second build) times the output came to the clamp after a quiet second
+    std::atomic<float> clampPeak { 0.0f };  //   and how far past it it would have gone       // (SF-000, the hundred and twenty-first build) the last: 1 NaN or Inf, 2 held at the clamp (runaway)
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -234,6 +236,7 @@ private:
 
     // Safety
     int overSamples = 0;
+    int clampQuiet = 1 << 30;               // (SF-000, the hundred and twenty-second build) samples since the output was last at the clamp
     // PANIC: output gain (fades 5 ms), a press still to complete (fade out, then reset).
     int panicPos = 240, panicInPos = 240;   // PANIC output / input gain, in samples of the 5 ms ramp
     bool panicDown = false;

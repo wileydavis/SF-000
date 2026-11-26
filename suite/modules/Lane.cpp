@@ -272,6 +272,9 @@ public:
         lastPk[4] = peakOf (L, R);
         out.process (c, io, FILT, RES, pocket, role.pocket ? c.v (PSHAPE) : 0.0f, false, LEVEL, ! role.follows);
         lastPk[5] = peakOf (io.getReadPointer (0), io.getReadPointer (1));
+        // (the blocks before it, for the fault watch: was something sounding just before, or did it come from nothing?)
+        ring[ringAt] = { lastPk[1], lastPk[4], lastPk[5], lastVoices[1], lastVoices[0], lastEvents };
+        ringAt = (ringAt + 1) % kRing;
     }
 
     // (SF-000, the hundred and twenty-first build) THE FAULT WATCH: where in the lane the sound was when the guard reset it
@@ -280,6 +283,8 @@ public:
         for (int k = 0; k < 6; ++k) capPk[k].store (lastPk[k]);
         for (int k = 0; k < 3; ++k) capVoices[k].store (lastVoices[k]);
         capKeys.store (lastKeys); capEvents.store (lastEvents); capModel.store (lastModel);
+        // (the ring, oldest first: its writer is this thread, and the reader is let read it once the count has moved)
+        for (int k = 0; k < kRing; ++k) capRing[k] = ring[(ringAt + k) % kRing];
     }
     juce::String faultNote() const override
     {
@@ -288,7 +293,13 @@ public:
         return "model " + juce::String (names[juce::jlimit (0, 2, capModel.load())]) + "; peak after SAMPLE " + db (capPk[0]) + ", SYNTH " + db (capPk[1]) + ", FORGE " + db (capPk[2])
              + ", layer " + db (capPk[3]) + ", engines " + db (capPk[4]) + ", after filter, pocket and level " + db (capPk[5])
              + "; voices SAMPLE " + juce::String (capVoices[0].load()) + ", SYNTH " + juce::String (capVoices[1].load()) + ", FORGE " + juce::String (capVoices[2].load())
-             + "; keys down " + juce::String (capKeys.load()) + ", events " + juce::String (capEvents.load());
+             + "; keys down " + juce::String (capKeys.load()) + ", events " + juce::String (capEvents.load())
+             + "; the blocks before (SYNTH dB, engines dB, out dB, SYNTH voices, SAMPLE voices, events): " + [this, &db]
+               {
+                   juce::String r;
+                   for (int k = 0; k < kRing; ++k) r << "[" << db (capRing[k].sy) << " " << db (capRing[k].eng) << " " << db (capRing[k].out) << " " << capRing[k].syV << " " << capRing[k].spV << " " << capRing[k].ev << "]";
+                   return r;
+               }();
     }
 
     // ---- the display: SYNTH's or SAMPLE's while it is the model; KICK FORGE's, what the lane gives out
@@ -443,6 +454,9 @@ private:
     DecimHist hist;
     float lastPk[6] {}; int lastVoices[3] {}, lastKeys = 0, lastEvents = 0, lastModel = 0;        // (the fault watch: this block's)
     std::atomic<float> capPk[6] {}; std::atomic<int> capVoices[3] {}, capKeys { 0 }, capEvents { 0 }, capModel { 0 };
+    struct RingBlock { float sy = 0, eng = 0, out = 0; int syV = 0, spV = 0, ev = 0; };
+    static constexpr int kRing = 12;
+    RingBlock ring[kRing], capRing[kRing]; int ringAt = 0;
 };
 
 // The rig's lanes, by the names they had: what each is in the rig, and how it opens

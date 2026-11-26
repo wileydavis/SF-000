@@ -839,6 +839,14 @@ void SFProcessor::processChunk (juce::AudioBuffer<float>& buffer, juce::AudioBuf
     };
     guard (mainView);
     if (extra != nullptr) guard (*extra);
+    // (SF-000, the hundred and twenty-second build) at the clamp at all, the first block in a second: what was sounding kept,
+    // for SF-000's log (a spike too short to be reset is heard as a crackle, and said nothing)
+    if (peak >= 3.99f)
+    {
+        if (clampQuiet > (int) sr) { module->faultCapture(); clampPeak.store (peak); clampCount.fetch_add (1); }
+        clampQuiet = 0;
+    }
+    else clampQuiet = std::min (clampQuiet + n, 1 << 30);
     // Held at the clamp for 250 ms = runaway (feedback, broken state): reset.
     if (peak >= 3.99f) overSamples += n;
     else if (peak < 2.0f) overSamples = 0;

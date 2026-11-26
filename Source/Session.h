@@ -291,7 +291,7 @@ public:
     // logged ("fault": where, which, how many times) and FAULT lit for ten seconds from it
     void faultWatch();
     bool faultLit() const                       { return juce::Time::getMillisecondCounter() < faultUntil; }
-    std::map<const void*, int> faultsSeen;
+    std::map<const void*, int> faultsSeen, clampsSeen;
     juce::uint32 faultUntil = 0;
     juce::String idleSaid;                      // the last thing heard with the clock stopped 20 s, as INFO says it (empty: none)
     juce::File logDir() const;

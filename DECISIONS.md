@@ -6796,6 +6796,23 @@ The code is in the repo `snapshot-library`; what was decided is kept here with t
      - Diagnostics for this, kept: `--idlesession SESSION.json PLAYSECS IDLESECS` (with `SF000_IDLE_SNAPS`, `_FILES`,
        `_RATE`, `_BLOCK`), `--idlefuzz`, `--fxfuzz`, `--rigfuzz`.
 
+## What a crackle is made of (Nov 25): the hundred and twenty-second build
+
+804. **You**, Nov 25, 18:57 and 18:58: "now theres a high pitch crackle and echo on lane 9. occurts every ferw minutes. no
+     fault." and "stopped." The log: CHORD at +12.0 dB with nothing played in, DUB after it; no "fault". Your recording
+     (00_SET_1.wav, stopped throughout): silence for four minutes, then for some 20 samples a tone at the very top of the
+     range (each sample the other sign of the one before) growing a fifth again every sample out of nothing, a 15 ms crack
+     at the ceiling, and DUB's and SPACE's tails of it for a third of a second. Either a filter come loose, ringing at
+     the top of the range, or (*Mine*, as likely) a hard click with the master's own ringing ahead of it. Too short to be held at the ceiling a quarter of a second, the guard let it pass, and FAULT
+     said nothing.
+     - **Not found yet.** Your session from the recording's start, stopped five minutes here (held notes on CHORD too):
+       silent. The lane's always-running filters (FILTER, POCKET, the oversampling) were read through: each stays steady.
+     - *Mine:* **a module that comes to the ceiling at all, after a quiet second, keeps what was in it then** and, while the
+       clock is stopped, the log has it ("clamp": where, how far over, and inside a lane each engine's level, the voices,
+       the keys down, the notes of the block, and the twelve blocks before it). The next crackle says which part of CHORD
+       it comes from, and whether a voice was sounding.
+     - `--idlesession` takes `SF000_IDLE_HOLD` (notes held); `--idlefuzz` `SF000_FUZZ_HOLD` and `SF000_FUZZ_WAV`.
+
 ## Not verified
 
 - **The hundred and sixth to tenth builds (788 to 792) are measured, not heard**: GALAXY on a lane,

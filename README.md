@@ -951,7 +951,9 @@ lands on its downbeat (DECISIONS 799).
 
 When the guard resets a module (a sound that went to +12 dB and stayed, or broke), the log says
 which, and for a lane what was inside it: each engine's level, its voices, the keys down. FAULT is
-lit for ten seconds from it, and SETUP says the last (DECISIONS 803).
+lit for ten seconds from it, and SETUP says the last (DECISIONS 803). With the clock stopped, a module
+that so much as touches +12 dB is logged the same way ("clamp"), with the twelve blocks before it:
+a crackle too short to be reset (DECISIONS 804).
 
 ### An arrangement's notes at the morph's end (hundred and twentieth build)
 

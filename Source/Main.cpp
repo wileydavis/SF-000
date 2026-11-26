@@ -5001,8 +5001,11 @@ static void idleWatchTest (int& bad)
         ses.faultWatch();
         juce::String line; for (auto& l : ses.logTail) if (l.contains ("\"fault\"")) line = l;
         const bool logged = line.contains ("\"PAD\"") && line.contains ("runaway") && line.contains ("voices SAMPLE") && ses.faultLit() && e.faultSaid.contains ("PAD");
-        check (p->faultCount.load() > was ? unlit && logged : true,
-               p->faultCount.load() > was ? "a reset by the guard is logged with where and what was sounding, and FAULT is lit: " + line.substring (0, 400)
+        juce::String clamp; for (auto& l : ses.logTail) if (l.contains ("\"clamp\"") && l.contains ("\"PAD\"")) clamp = l;
+        const bool clamped = clamp.contains ("\"PAD\"") && clamp.contains ("the blocks before") && clamp.contains ("peak_db");
+        check (p->faultCount.load() > was ? unlit && logged && clamped : true,
+               p->faultCount.load() > was ? "a reset by the guard is logged with where and what was sounding, and FAULT is lit: " + line.substring (0, 300)
+                                            + "; and the first block at the clamp, with the blocks before it (the hundred and twenty-second build): " + clamp.substring (0, 600)
                                           : juce::String ("(PAD could not be driven past its ceiling: the fault watch not checked here)"));
     }
 }
@@ -5420,7 +5423,8 @@ static void wavetableTest (int& bad)
 // setting that sounds 10 s after the notes ended, or that the guard reset
 static int idleFuzz (const juce::String& laneSlug, int seeds, int firstSeed)
 {
-    const bool allOf = std::getenv ("SF000_FUZZ_ALL") != nullptr;      // (every parameter, MOTION too, not only SYNTH's)
+    const bool allOf = std::getenv ("SF000_FUZZ_ALL") != nullptr;
+    const bool holdOn = std::getenv ("SF000_FUZZ_HOLD") != nullptr;      // (the notes held on: whether a held voice runs away)      // (every parameter, MOTION too, not only SYNTH's)
     using namespace sf0;
     int li = -1; for (int l = 0; l < kLanes; ++l) if (juce::String (lanes()[(size_t) l].slug) == laneSlug) li = l;
     if (li < 0) return 1;
@@ -5447,17 +5451,29 @@ static int idleFuzz (const juce::String& laneSlug, int seeds, int firstSeed)
         juce::AudioBuffer<float> b (2, 256);
         const int blocks = (int) (40.0 * 48000.0 / 256.0), offAt = (int) (1.5 * 48000.0 / 256.0);
         float late = 0.0f, played = 0.0f; double lateAt = 0.0;
+        const char* wavTo = std::getenv ("SF000_FUZZ_WAV");      // (one seed's sound, to a file)
+        juce::AudioBuffer<float> all (2, wavTo != nullptr ? blocks * 256 : 1);
         for (int k = 0; k < blocks; ++k)
         {
             juce::MidiBuffer midi;
             if (k == 2) { midi.addEvent (juce::MidiMessage::noteOn (1, 48, 0.9f), 0); midi.addEvent (juce::MidiMessage::noteOn (1, 55, 0.6f), 10); midi.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 20); }
-            if (k == offAt) for (int n : { 48, 55, 60 }) midi.addEvent (juce::MidiMessage::noteOff (1, n), 0);
+            if (k == offAt && ! holdOn) for (int n : { 48, 55, 60 }) midi.addEvent (juce::MidiMessage::noteOff (1, n), 0);
             b.clear(); q.processBlock (b, midi);
             if (k < offAt) played = std::max (played, b.getMagnitude (0, 0, 256));
-            if (k > offAt + (int) (10.0 * 48000.0 / 256.0)) { const float pk = std::max (b.getMagnitude (0, 0, 256), b.getMagnitude (1, 0, 256)); if (pk > late) { late = pk; lateAt = k * 256.0 / 48000.0; } }
+            if (wavTo != nullptr) for (int ch = 0; ch < 2; ++ch) all.copyFrom (ch, k * 256, b, ch, 0, 256);
+            if (holdOn && k > offAt) { const float pk = std::max (b.getMagnitude (0, 0, 256), b.getMagnitude (1, 0, 256)); if (pk > 3.9f && late < pk) { late = pk; lateAt = k * 256.0 / 48000.0; } }
+            else if (k > offAt + (int) (10.0 * 48000.0 / 256.0)) { const float pk = std::max (b.getMagnitude (0, 0, 256), b.getMagnitude (1, 0, 256)); if (pk > late) { late = pk; lateAt = k * 256.0 / 48000.0; } }
         }
         if (played < 1.0e-3f) ++silent;
-        if (late > 0.01f || q.fault.load())
+        if (wavTo != nullptr)
+        {
+            juce::File f (wavTo); f.deleteFile();
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::AudioFormatWriter> w { wav.createWriterFor (new juce::FileOutputStream (f), 48000.0, 2, 32, {}, 0) };
+            if (w) w->writeFromAudioSampleBuffer (all, 0, all.getNumSamples());
+            std::printf ("params: %s\n", said.toRawUTF8());
+        }
+        if ((holdOn ? late > 3.9f : late > 0.01f) || q.fault.load())
         {
             ++found;
             std::printf ("seed %d: peak %.3f at %.1f s, fault %d, resets %d\n  %s\n", seed, late, lateAt, (int) q.fault.load(), q.faultCount.load(), said.toRawUTF8());
@@ -8912,6 +8928,9 @@ static int idleSession (const juce::StringArray& args)
         {
             if (sid.isNotEmpty()) { ses.recall (sid.getLargeIntValue()); secs (2.0); std::printf ("== %s\n", sid.toRawUTF8()); std::fflush (stdout); }
             if (playFor > 0.0) { e.setRunning (true); secs (playFor); e.setRunning (false); }
+            if (const char* hold = std::getenv ("SF000_IDLE_HOLD"))         // ("9:60,9:64": notes held from here, by channel)
+                for (auto& one : juce::StringArray::fromTokens (hold, ",", ""))
+                    e.noteInAt (juce::MidiMessage::noteOn (one.upToFirstOccurrenceOf (":", false, false).getIntValue(), one.fromFirstOccurrenceOf (":", false, false).getIntValue(), 0.8f), 0);
             ses.logTail.clear();
             for (double t = 0.0; t < idleFor; t += 3.0)
             {

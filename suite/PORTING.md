@@ -326,3 +326,7 @@ To take newer suite code: copy the three folders again and re-apply the changes 
   `.cpp`: `faultKind`, and the module asked to keep what was sounding before the guard resets it. `modules/Lane.cpp`: each
   engine's peak, voices, keys and notes of the block, kept at a reset and said. `modules/SynthEngine.h`, `SampleEngine.h`:
   `voicesNow`. All marked `(SF-000, the hundred and twenty-first build)` (DECISIONS 803).
+
+- **The hundred and twenty-second build: at the clamp.** `core/Processor.h`, `.cpp`: `clampCount`, `clampPeak`,
+  `clampQuiet`; the module's `faultCapture` asked the first block at the clamp after a quiet second. `modules/Lane.cpp`:
+  a ring of the last twelve blocks, kept with it. All marked `(SF-000, the hundred and twenty-second build)` (DECISIONS 804).
